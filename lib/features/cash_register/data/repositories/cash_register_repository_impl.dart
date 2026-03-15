@@ -8,13 +8,18 @@ class CashRegisterRepositoryImpl implements CashRegisterRepository {
   CashRegisterRepositoryImpl({required this.remoteDataSource});
 
   @override
+  Future<List<CashRegisterShift>> getAllShifts() async {
+    return await remoteDataSource.getAllShifts();
+  }
+
+  @override
   Future<CashRegisterShift?> getCurrentShift() async {
     return await remoteDataSource.getCurrentShift();
   }
 
   @override
-  Future<CashRegisterShift> openShift(double openingBalance) async {
-    return await remoteDataSource.openShift(openingBalance);
+  Future<CashRegisterShift> openShift(double openingBalance, int userId) async {
+    return await remoteDataSource.openShift(openingBalance, userId);
   }
 
   @override

@@ -159,13 +159,23 @@ class _PosScreenState extends State<PosScreen> {
           TextButton.icon(
             icon: const Icon(Icons.receipt_long_outlined, color: Colors.blueAccent),
             label: const Text('Ventas del Día', style: TextStyle(color: Colors.blueAccent)),
-            onPressed: () => Navigator.of(context).pushNamed('/sales-history'),
+            onPressed: () async {
+              final authorized = await AdminPinDialog.verify(context, action: 'Ver Ventas', permissionKey: 'view_global_history');
+              if (authorized && context.mounted) {
+                Navigator.of(context).pushNamed('/sales-history');
+              }
+            },
           ),
           const SizedBox(width: 4),
           TextButton.icon(
             icon: const Icon(Icons.inventory_2_outlined, color: Colors.deepPurple),
             label: const Text('Catálogo', style: TextStyle(color: Colors.deepPurple)),
-            onPressed: () => Navigator.of(context).pushNamed('/catalog'),
+            onPressed: () async {
+              final authorized = await AdminPinDialog.verify(context, action: 'Gestionar Catálogo', permissionKey: 'manage_catalog');
+              if (authorized && context.mounted) {
+                Navigator.of(context).pushNamed('/catalog');
+              }
+            },
           ),
           const SizedBox(width: 8),
           
@@ -202,6 +212,12 @@ class _PosScreenState extends State<PosScreen> {
                   ),
                   onSelected: (value) async {
                     switch (value) {
+                      case 'shift_audit':
+                        final auditAuth = await AdminPinDialog.verify(context, action: 'Ver Auditoría de Turnos', permissionKey: 'view_global_history');
+                        if (auditAuth && context.mounted) {
+                          Navigator.of(context).pushNamed('/shift-audit');
+                        }
+                        break;
                       case 'settings':
                         final authorized = await AdminPinDialog.verify(context, action: 'Acceder a Configuración');
                         if (authorized && context.mounted) {
@@ -242,6 +258,15 @@ class _PosScreenState extends State<PosScreen> {
                     }
                   },
                   itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+                    const PopupMenuItem<String>(
+                      value: 'shift_audit',
+                      child: ListTile(
+                        leading: Icon(Icons.history_edu),
+                        title: Text('Auditoría de Turnos (Z)'),
+                        contentPadding: EdgeInsets.zero,
+                        dense: true,
+                      ),
+                    ),
                     const PopupMenuItem<String>(
                       value: 'settings',
                       child: ListTile(

@@ -7,6 +7,7 @@ class CashRegisterShift {
   final double? totalSales;
   final double? difference;
   final String status;
+  final dynamic user;
 
   CashRegisterShift({
     required this.id,
@@ -17,6 +18,7 @@ class CashRegisterShift {
     this.totalSales,
     this.difference,
     required this.status,
+    this.user,
   });
 
   bool get isOpen => status == 'open';

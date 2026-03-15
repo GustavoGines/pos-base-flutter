@@ -18,6 +18,7 @@ import 'features/cash_register/presentation/pages/cash_register_screen.dart';
 import 'features/cash_register/presentation/pages/close_shift_screen.dart';
 import 'features/sales_history/presentation/pages/sales_history_screen.dart';
 import 'features/auth/presentation/pages/login_screen.dart';
+import 'features/cash_register/presentation/pages/shift_audit_screen.dart';
 
 // Repositories & DataSources
 import 'features/settings/data/datasources/settings_remote_datasource.dart';
@@ -31,6 +32,7 @@ import 'features/catalog/domain/usecases/get_products_usecase.dart';
 
 import 'features/cash_register/data/datasources/cash_register_remote_datasource.dart';
 import 'features/cash_register/data/repositories/cash_register_repository_impl.dart';
+import 'features/cash_register/domain/usecases/get_all_shifts_usecase.dart';
 import 'features/cash_register/domain/usecases/open_shift_usecase.dart';
 import 'features/cash_register/domain/usecases/get_current_shift_usecase.dart';
 import 'features/cash_register/domain/usecases/close_shift_usecase.dart';
@@ -108,6 +110,7 @@ void main() {
         ChangeNotifierProvider(
           create: (_) => CashRegisterProvider(
             getCurrentShiftUseCase: GetCurrentShiftUseCase(cashRegisterRepo),
+            getAllShiftsUseCase: GetAllShiftsUseCase(cashRegisterRepo),
             openShiftUseCase: OpenShiftUseCase(cashRegisterRepo),
             closeShiftUseCase: CloseShiftUseCase(cashRegisterRepo)
           ),
@@ -216,7 +219,8 @@ class _MainAppState extends State<MainApp> {
                 isLoading: cashProv.isLoading,
                 errorMessage: cashProv.errorMessage,
                 onOpenShift: (amount) async {
-                  final success = await cashProv.openShift(amount);
+                  final userId = ctx.read<AuthProvider>().currentUser?['id'] ?? 1;
+                  final success = await cashProv.openShift(amount, userId);
                   if (success) {
                     // Usamos navigatorKey para evitar contexto desactivado en callback async
                     navigatorKey.currentState?.pushReplacementNamed('/pos');
@@ -233,6 +237,7 @@ class _MainAppState extends State<MainApp> {
         '/close-shift': (context) => const CloseShiftScreen(),
         '/catalog': (context) => const CatalogScreen(),
         '/sales-history': (context) => const SalesHistoryScreen(),
+        '/shift-audit': (context) => const ShiftAuditScreen(),
         '/users': (context) => const UsersManagerScreen(),
         '/settings': (context) => const SettingsScreen(),
       },

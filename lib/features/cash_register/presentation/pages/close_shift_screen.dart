@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/cash_register_provider.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
+import '../../../auth/presentation/providers/auth_provider.dart';
 
 class CloseShiftScreen extends StatefulWidget {
   const CloseShiftScreen({Key? key}) : super(key: key);
@@ -63,8 +64,11 @@ class _CloseShiftScreenState extends State<CloseShiftScreen> {
     
     if (mounted) {
       if (success) {
-        // Redirige al inicio (CashRegisterScreen) vaciando el stack de navegación
-        Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false);
+        try {
+          context.read<AuthProvider>().logout();
+        } catch (_) {}
+        // Redirige al inicio (LoginScreen) vaciando el stack de navegación
+        Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
       } else {
         SnackBarService.error(context, provider.errorMessage ?? 'Error al cerrar el turno.');
       }

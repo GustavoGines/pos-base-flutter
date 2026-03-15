@@ -114,22 +114,34 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
                         children: [
                           const Text('Período:', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey)),
                           const SizedBox(height: 8),
-                          SegmentedButton<String>(
-                            segments: const [
-                              ButtonSegment(value: 'shift', label: Text('Turno')),
-                              ButtonSegment(value: 'today', label: Text('Hoy')),
-                              ButtonSegment(value: 'month', label: Text('Mes')),
-                              ButtonSegment(value: 'year', label: Text('Año')),
-                            ],
-                            selected: {provider.currentPeriod},
-                            onSelectionChanged: (set) {
-                              provider.loadSales(period: set.first);
-                              setState(() => _selectedSale = null);
+                          Consumer<AuthProvider>(
+                            builder: (context, auth, _) {
+                              final canViewGlobal = auth.hasPermission('view_global_history');
+                              
+                              // Si no puede ver el global history y de alguna forma el selected fue alterado
+                              // deberíamos forzarlo al turno actual. Por diseño el estado arranca en 'shift'
+                              return SegmentedButton<String>(
+                                segments: [
+                                  const ButtonSegment(value: 'shift', label: Text('Turno')),
+                                  if (canViewGlobal) ...const [
+                                    ButtonSegment(value: 'today', label: Text('Hoy')),
+                                    ButtonSegment(value: 'month', label: Text('Mes')),
+                                    ButtonSegment(value: 'year', label: Text('Año')),
+                                  ],
+                                ],
+                                selected: {
+                                  canViewGlobal ? provider.currentPeriod : 'shift'
+                                },
+                                onSelectionChanged: (set) {
+                                  provider.loadSales(period: set.first);
+                                  setState(() => _selectedSale = null);
+                                },
+                                style: SegmentedButton.styleFrom(
+                                  selectedBackgroundColor: Colors.blue.shade100,
+                                  textStyle: const TextStyle(fontSize: 12),
+                                ),
+                              );
                             },
-                            style: SegmentedButton.styleFrom(
-                              selectedBackgroundColor: Colors.blue.shade100,
-                              textStyle: const TextStyle(fontSize: 12),
-                            ),
                           ),
                           const SizedBox(height: 16),
                           Row(
@@ -498,7 +510,7 @@ class _TicketDetailPanel extends StatelessWidget {
                     children: [
                       Icon(Icons.payments_outlined, size: 16, color: Colors.grey.shade600),
                       const SizedBox(width: 6),
-                      Text('Medio: ${sale.paymentMethod}', style: TextStyle(color: Colors.grey.shade700, fontSize: 14)),
+                      Text('Medio: ${_translatePaymentMethod(sale.paymentMethod)}', style: TextStyle(color: Colors.grey.shade700, fontSize: 14)),
                     ],
                   ),
                 ],
@@ -596,5 +608,18 @@ class _TicketDetailPanel extends StatelessWidget {
         ),
       ],
     );
+  }
+
+  String _translatePaymentMethod(String method) {
+    switch (method.toLowerCase()) {
+      case 'cash':
+        return 'Efectivo';
+      case 'card':
+        return 'Tarjeta';
+      case 'transfer':
+        return 'Transferencia';
+      default:
+        return method;
+    }
   }
 }

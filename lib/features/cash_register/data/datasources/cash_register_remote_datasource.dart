@@ -4,7 +4,8 @@ import '../models/cash_register_shift_model.dart';
 
 abstract class CashRegisterRemoteDataSource {
   Future<CashRegisterShiftModel?> getCurrentShift();
-  Future<CashRegisterShiftModel> openShift(double openingBalance);
+  Future<List<CashRegisterShiftModel>> getAllShifts();
+  Future<CashRegisterShiftModel> openShift(double openingBalance, int userId);
   Future<CashRegisterShiftModel> closeShift(double countedCash);
 }
 
@@ -39,12 +40,33 @@ class CashRegisterRemoteDataSourceImpl implements CashRegisterRemoteDataSource {
   }
 
   @override
-  Future<CashRegisterShiftModel> openShift(double openingBalance) async {
+  Future<List<CashRegisterShiftModel>> getAllShifts() async {
+    try {
+      final response = await client.get(
+        Uri.parse('$baseUrl/cash-register/shifts'),
+        headers: {'Accept': 'application/json'},
+      );
+
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> jsonResponse = json.decode(response.body);
+        final List<dynamic> data = jsonResponse['data'] ?? [];
+        return data.map((e) => CashRegisterShiftModel.fromJson(e)).toList();
+      } else {
+        throw Exception('Failed to load shifts history (Status: ${response.statusCode})');
+      }
+    } catch (e) {
+      print('=== API Error en getAllShifts: $e ===');
+      rethrow;
+    }
+  }
+
+  @override
+  Future<CashRegisterShiftModel> openShift(double openingBalance, int userId) async {
     try {
       final response = await client.post(
         Uri.parse('$baseUrl/cash-register/open'),
         headers: {'Accept': 'application/json', 'Content-Type': 'application/json'},
-        body: json.encode({'opening_balance': openingBalance}),
+        body: json.encode({'opening_balance': openingBalance, 'user_id': userId}),
       );
 
       if (response.statusCode == 201) {

@@ -6,7 +6,7 @@ class OpenShiftUseCase {
 
   OpenShiftUseCase(this.repository);
 
-  Future<CashRegisterShift> call(double openingBalance) async {
-    return await repository.openShift(openingBalance);
+  Future<CashRegisterShift> call(double openingBalance, int userId) async {
+    return await repository.openShift(openingBalance, userId);
   }
 }

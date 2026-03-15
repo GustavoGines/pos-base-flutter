@@ -5,6 +5,7 @@ import '../../domain/entities/product.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import '../widgets/categories_manager_dialog.dart';
 import '../widgets/print_labels_dialog.dart';
+import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
 
 class CatalogScreen extends StatefulWidget {
   const CatalogScreen({Key? key}) : super(key: key);
@@ -61,7 +62,10 @@ class _CatalogScreenState extends State<CatalogScreen> {
                     foregroundColor: const Color(0xFF3B82F6),
                     side: const BorderSide(color: Color(0xFF3B82F6)),
                   ),
-                  onPressed: () => _openCategoriesManager(context),
+                  onPressed: () async {
+                    final auth = await AdminPinDialog.verify(context, action: 'Gestionar Categorías', permissionKey: 'manage_catalog');
+                    if (auth && context.mounted) _openCategoriesManager(context);
+                  },
                 ),
               ),
               // Botón Aumento Masivo
@@ -73,7 +77,10 @@ class _CatalogScreenState extends State<CatalogScreen> {
                   style: FilledButton.styleFrom(backgroundColor: Colors.deepOrange),
                   onPressed: provider.isLoading
                       ? null
-                      : () => _showBulkUpdateDialog(context, provider),
+                      : () async {
+                          final auth = await AdminPinDialog.verify(context, action: 'Aumento Masivo de Precios', permissionKey: 'manage_catalog');
+                          if (auth && context.mounted) _showBulkUpdateDialog(context, provider);
+                        },
                 ),
               ),
               // Botón Nuevo Producto
@@ -82,7 +89,10 @@ class _CatalogScreenState extends State<CatalogScreen> {
                 child: FilledButton.icon(
                   icon: const Icon(Icons.add, size: 18),
                   label: const Text('Nuevo Producto'),
-                  onPressed: () => _showProductForm(context, provider),
+                  onPressed: () async {
+                    final auth = await AdminPinDialog.verify(context, action: 'Crear Nuevo Producto', permissionKey: 'manage_catalog');
+                    if (auth && context.mounted) _showProductForm(context, provider);
+                  },
                 ),
               ),
             ],
@@ -193,19 +203,28 @@ class _CatalogScreenState extends State<CatalogScreen> {
                     icon: const Icon(Icons.warehouse_outlined, size: 18),
                     color: Colors.teal,
                     tooltip: 'Ajuste de Stock',
-                    onPressed: () => _showStockAdjustment(context, provider, p),
+                    onPressed: () async {
+                      final auth = await AdminPinDialog.verify(context, action: 'Ajustar Stock', permissionKey: 'adjust_stock');
+                      if (auth && context.mounted) _showStockAdjustment(context, provider, p);
+                    },
                   ),
                   IconButton(
                     icon: const Icon(Icons.edit_outlined, size: 18),
                     color: Colors.blue,
                     tooltip: 'Editar',
-                    onPressed: () => _showProductForm(context, provider, product: p),
+                    onPressed: () async {
+                      final auth = await AdminPinDialog.verify(context, action: 'Editar Producto', permissionKey: 'manage_catalog');
+                      if (auth && context.mounted) _showProductForm(context, provider, product: p);
+                    },
                   ),
                   IconButton(
                     icon: const Icon(Icons.delete_outline, size: 18),
                     color: Colors.red,
                     tooltip: 'Eliminar',
-                    onPressed: () => _confirmDelete(context, provider, p),
+                    onPressed: () async {
+                      final auth = await AdminPinDialog.verify(context, action: 'Eliminar Producto', permissionKey: 'manage_catalog');
+                      if (auth && context.mounted) _confirmDelete(context, provider, p);
+                    },
                   ),
                 ],
               )),
@@ -716,7 +735,7 @@ class _StockAdjustmentDialogState extends State<StockAdjustmentDialog> {
       if (ok) {
         final newStock = widget.provider.products
             .firstWhere((p) => p.id == widget.product.id,
-                orElse: () => widget.product)
+                orElse: () => widget.product as dynamic)
             .stock;
         final action = _selectedType == 'in' ? 'ingresaron' : 'egresaron';
         SnackBarService.success(

@@ -80,7 +80,22 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
       if (response.statusCode == 201) {
         return json.decode(response.body);
       } else {
-        throw Exception('Failed to process sale (Status: ${response.statusCode})');
+        // Extraer detalles del error del backend para mayor visibilidad
+        String detail = '';
+        try {
+          final errBody = json.decode(response.body);
+          if (errBody is Map) {
+            if (errBody.containsKey('errors')) {
+              final errs = errBody['errors'] as Map;
+              detail = errs.values.expand((v) => v is List ? v : [v]).join(', ');
+            } else if (errBody.containsKey('message')) {
+              detail = errBody['message'];
+            }
+          }
+        } catch (_) {
+          detail = response.body;
+        }
+        throw Exception('Error al procesar venta: $detail (HTTP ${response.statusCode})');
       }
     } catch (e) {
       print('=== API Error en processSale: $e ===');

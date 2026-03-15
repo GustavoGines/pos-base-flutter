@@ -139,27 +139,33 @@ class _AdminPinDialogState extends State<AdminPinDialog> {
               style: const TextStyle(color: Colors.black54),
             ),
             const SizedBox(height: 24),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: List.generate(_pinLength, (index) {
-                final isActive = index < _pin.length;
-                return Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 6),
-                  width: 16,
-                  height: 16,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: isActive ? Colors.redAccent : Colors.grey.shade200,
-                  ),
-                );
-              }),
+            SizedBox(
+              height: 16,
+              child: _isLoading
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.redAccent),
+                    )
+                  : Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: List.generate(_pinLength, (index) {
+                        final isActive = index < _pin.length;
+                        return Container(
+                          margin: const EdgeInsets.symmetric(horizontal: 6),
+                          width: 16,
+                          height: 16,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: isActive ? Colors.redAccent : Colors.grey.shade200,
+                          ),
+                        );
+                      }),
+                    ),
             ),
             const SizedBox(height: 24),
-            if (_isLoading)
-              const CircularProgressIndicator()
-            else
-              SizedBox(
-                width: 240,
+            SizedBox(
+              width: 240,
                 child: GridView.count(
                   crossAxisCount: 3,
                   shrinkWrap: true,

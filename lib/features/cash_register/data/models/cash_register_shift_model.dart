@@ -10,6 +10,7 @@ class CashRegisterShiftModel extends CashRegisterShift {
     double? totalSales,
     double? difference,
     required String status,
+    dynamic user,
   }) : super(
           id: id,
           openedAt: openedAt,
@@ -19,6 +20,7 @@ class CashRegisterShiftModel extends CashRegisterShift {
           totalSales: totalSales,
           difference: difference,
           status: status,
+          user: user,
         );
 
   factory CashRegisterShiftModel.fromJson(Map<String, dynamic> json) {
@@ -31,6 +33,7 @@ class CashRegisterShiftModel extends CashRegisterShift {
       totalSales: json['total_sales'] != null ? double.parse(json['total_sales'].toString()) : null,
       difference: json['difference'] != null ? double.parse(json['difference'].toString()) : null,
       status: json['status'],
+      user: json['user'],
     );
   }
 }

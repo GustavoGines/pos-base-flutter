@@ -84,25 +84,34 @@ class _LoginScreenState extends State<LoginScreen> {
               const Text('Ingrese su PIN para continuar', style: TextStyle(fontSize: 14, color: Colors.black54)),
               const SizedBox(height: 32),
 
-              // Indicadores de PIN
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: List.generate(_pinLength, (index) {
-                  final isActive = index < _pin.length;
-                  return Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 8),
-                    width: 24,
-                    height: 24,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: isActive ? const Color(0xFF3B82F6) : Colors.grey.shade200,
-                      border: Border.all(
-                        color: isActive ? const Color(0xFF3B82F6) : Colors.grey.shade400,
-                        width: 2,
+              // Indicadores de PIN o Spinner de carga
+              SizedBox(
+                height: 24,
+                child: provider.isLoading
+                    ? const SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(strokeWidth: 3),
+                      )
+                    : Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: List.generate(_pinLength, (index) {
+                          final isActive = index < _pin.length;
+                          return Container(
+                            margin: const EdgeInsets.symmetric(horizontal: 8),
+                            width: 24,
+                            height: 24,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: isActive ? const Color(0xFF3B82F6) : Colors.grey.shade200,
+                              border: Border.all(
+                                color: isActive ? const Color(0xFF3B82F6) : Colors.grey.shade400,
+                                width: 2,
+                              ),
+                            ),
+                          );
+                        }),
                       ),
-                    ),
-                  );
-                }),
               ),
               const SizedBox(height: 16),
 
@@ -125,11 +134,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
               const SizedBox(height: 24),
 
-              if (provider.isLoading)
-                const Padding(
-                  padding: EdgeInsets.only(bottom: 24.0),
-                  child: CircularProgressIndicator(),
-                ),
 
               // Teclado Numérico
               SizedBox(

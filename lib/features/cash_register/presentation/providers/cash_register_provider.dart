@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../domain/entities/cash_register_shift.dart';
+import '../../domain/usecases/get_all_shifts_usecase.dart';
 import '../../domain/usecases/get_current_shift_usecase.dart';
 import '../../domain/usecases/open_shift_usecase.dart';
 import '../../domain/usecases/close_shift_usecase.dart';
@@ -15,6 +16,11 @@ class CashRegisterProvider with ChangeNotifier {
   CashRegisterShift? _currentShift;
   CashRegisterShift? get currentShift => _currentShift;
 
+  List<CashRegisterShift> _shiftsHistory = [];
+  List<CashRegisterShift> get shiftsHistory => _shiftsHistory;
+
+  final GetAllShiftsUseCase? getAllShiftsUseCase;
+
   bool _isLoading = false;
   bool get isLoading => _isLoading;
 
@@ -23,6 +29,7 @@ class CashRegisterProvider with ChangeNotifier {
 
   CashRegisterProvider({
     required this.getCurrentShiftUseCase,
+    this.getAllShiftsUseCase,
     required this.openShiftUseCase,
     required this.closeShiftUseCase,
     this.printerService,  // Opcional
@@ -40,11 +47,25 @@ class CashRegisterProvider with ChangeNotifier {
     }
   }
 
-  Future<bool> openShift(double initialBalance) async {
+  Future<void> loadAllShifts() async {
+    if (getAllShiftsUseCase == null) return;
     _clearError();
     _setLoading(true);
     try {
-      _currentShift = await openShiftUseCase(initialBalance);
+      _shiftsHistory = await getAllShiftsUseCase!();
+      notifyListeners();
+    } catch (e) {
+      _errorMessage = e.toString();
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  Future<bool> openShift(double initialBalance, int userId) async {
+    _clearError();
+    _setLoading(true);
+    try {
+      _currentShift = await openShiftUseCase(initialBalance, userId);
       return true;
     } catch (e) {
       _errorMessage = e.toString();
