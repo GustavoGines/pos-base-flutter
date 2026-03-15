@@ -10,15 +10,21 @@ class ProcessSaleUseCase {
   Future<Sale> call({
     required double total,
     required String paymentMethod,
+    double? tenderedAmount,
+    double? changeAmount,
     required int shiftId,
     required List<CartItem> items,
+    int? userId,
   }) async {
     if (items.isEmpty) throw Exception('El carrito está vacío');
     return await repository.processSale(
       total: total, 
-      paymentMethod: paymentMethod, 
+      paymentMethod: paymentMethod,
+      tenderedAmount: tenderedAmount,
+      changeAmount: changeAmount,
       shiftId: shiftId, 
-      items: items
+      items: items,
+      userId: userId,
     );
   }
 }

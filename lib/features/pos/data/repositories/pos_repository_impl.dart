@@ -19,15 +19,21 @@ class PosRepositoryImpl implements PosRepository {
   Future<Sale> processSale({
     required double total,
     required String paymentMethod,
+    double? tenderedAmount,
+    double? changeAmount,
     required int shiftId,
     required List<CartItem> items,
+    int? userId,
   }) async {
     // Retornamos un Sale 'dummy' o parseado tras la respuesta correcta para fines de la app
     final response = await remoteDataSource.processSale(
       total: total,
       paymentMethod: paymentMethod,
+      tenderedAmount: tenderedAmount,
+      changeAmount: changeAmount,
       shiftId: shiftId,
       items: items,
+      userId: userId,
     );
     
     return Sale(

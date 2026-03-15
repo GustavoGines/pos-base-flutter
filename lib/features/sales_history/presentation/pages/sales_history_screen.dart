@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../providers/sales_history_provider.dart';
 import '../../domain/entities/sale_record.dart';
+import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
+import '../../../auth/presentation/providers/auth_provider.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 
 class SalesHistoryScreen extends StatefulWidget {
@@ -14,6 +16,8 @@ class SalesHistoryScreen extends StatefulWidget {
 
 class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
   SaleRecord? _selectedSale;
+  String _searchQuery = '';
+  String _statusFilter = 'Todas'; // 'Todas', 'Activas', 'Anuladas'
 
   @override
   void initState() {
@@ -33,7 +37,6 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
   Widget build(BuildContext context) {
     return Consumer<SalesHistoryProvider>(
       builder: (context, provider, _) {
-        // Actualiza la referencia del ticket seleccionado si mutó (ej. anulación)
         if (_selectedSale != null) {
           final updated = provider.sales.where((s) => s.id == _selectedSale!.id).firstOrNull;
           if (updated != null) {
@@ -41,12 +44,45 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
           }
         }
 
+        final filteredSales = provider.sales.where((sale) {
+          if (_statusFilter == 'Activas' && sale.isVoided) return false;
+          if (_statusFilter == 'Anuladas' && !sale.isVoided) return false;
+          if (_searchQuery.isNotEmpty) {
+            if (!sale.id.toString().contains(_searchQuery)) return false;
+          }
+          return true;
+        }).toList();
+
         return Scaffold(
           appBar: AppBar(
             title: const Text('Historial de Ventas'),
             centerTitle: false,
             elevation: 0,
             actions: [
+              Consumer<AuthProvider>(
+                builder: (context, auth, _) => TextButton.icon(
+                  icon: const Icon(Icons.person_outline, size: 16),
+                  label: Text(auth.currentUser?['name'] ?? 'Sesión', style: const TextStyle(fontWeight: FontWeight.bold)),
+                  style: TextButton.styleFrom(foregroundColor: Colors.blueGrey.shade600),
+                  onPressed: () async {
+                    final confirmed = await showDialog<bool>(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        title: const Text('Cambiar Usuario'),
+                        content: const Text('¿Deseas volver a la pantalla de ingreso de PIN?'),
+                        actions: [
+                          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+                          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Cambiar')),
+                        ],
+                      ),
+                    );
+                    if (confirmed == true && context.mounted) {
+                      context.read<AuthProvider>().logout();
+                      Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
+                    }
+                  },
+                ),
+              ),
               IconButton(
                 icon: const Icon(Icons.refresh),
                 tooltip: 'Recargar',
@@ -95,6 +131,42 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
                               textStyle: const TextStyle(fontSize: 12),
                             ),
                           ),
+                          const SizedBox(height: 16),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: TextField(
+                                  decoration: InputDecoration(
+                                    hintText: 'Buscar ticket #...',
+                                    hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 13),
+                                    prefixIcon: const Icon(Icons.search, size: 20),
+                                    filled: true,
+                                    fillColor: Colors.white,
+                                    isDense: true,
+                                    contentPadding: EdgeInsets.zero,
+                                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: Colors.grey.shade300)),
+                                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: Colors.grey.shade300)),
+                                  ),
+                                  onChanged: (val) => setState(() => _searchQuery = val.trim()),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              SegmentedButton<String>(
+                                segments: const [
+                                  ButtonSegment(value: 'Todas', icon: Icon(Icons.checklist, size: 16)),
+                                  ButtonSegment(value: 'Activas', icon: Icon(Icons.check_circle_outline, size: 16)),
+                                  ButtonSegment(value: 'Anuladas', icon: Icon(Icons.cancel_outlined, size: 16)),
+                                ],
+                                selected: {_statusFilter},
+                                onSelectionChanged: (set) => setState(() => _statusFilter = set.first),
+                                style: SegmentedButton.styleFrom(
+                                  selectedBackgroundColor: Colors.white,
+                                  textStyle: const TextStyle(fontSize: 12),
+                                ),
+                                showSelectedIcon: false,
+                              ),
+                            ],
+                          ),
                         ],
                       ),
                     ),
@@ -102,13 +174,13 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
                     // Barra de progreso y listado
                     if (provider.isLoading) const LinearProgressIndicator(),
                     Expanded(
-                      child: provider.sales.isEmpty && !provider.isLoading
+                      child: filteredSales.isEmpty && !provider.isLoading
                           ? _EmptyStateList()
                           : ListView.separated(
-                              itemCount: provider.sales.length,
+                              itemCount: filteredSales.length,
                               separatorBuilder: (_, __) => const Divider(height: 1, indent: 64),
                               itemBuilder: (ctx, i) {
-                                final sale = provider.sales[i];
+                                final sale = filteredSales[i];
                                 final isSelected = _selectedSale?.id == sale.id;
                                 return _SaleListTile(
                                   sale: sale,
@@ -213,13 +285,29 @@ class _SaleListTile extends StatelessWidget {
             Text('$timeStr Hs', style: TextStyle(color: Colors.grey.shade500, fontSize: 12)),
         ],
       ),
-      subtitle: Row(
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.inventory_2_outlined, size: 14, color: Colors.grey.shade500),
-          const SizedBox(width: 4),
-          Text('${sale.items.length} ítem${sale.items.length != 1 ? 's' : ''}'),
-          const Spacer(),
-          Text(dateStr, style: TextStyle(color: Colors.grey.shade500, fontSize: 12)),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              Icon(Icons.inventory_2_outlined, size: 14, color: Colors.grey.shade500),
+              const SizedBox(width: 4),
+              Text('${sale.items.length} ítem${sale.items.length != 1 ? 's' : ''}', style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
+              const Spacer(),
+              Text(dateStr, style: TextStyle(color: Colors.grey.shade500, fontSize: 12)),
+            ],
+          ),
+          if (sale.userName != null) ...[
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Icon(Icons.person_outline, size: 14, color: Colors.blueGrey.shade400),
+                const SizedBox(width: 4),
+                Text('Atendido por: ${sale.userName}', style: TextStyle(color: Colors.blueGrey.shade600, fontSize: 11, fontStyle: FontStyle.italic)),
+              ],
+            ),
+          ]
         ],
       ),
     );
@@ -290,6 +378,10 @@ class _TicketDetailPanel extends StatelessWidget {
   const _TicketDetailPanel({required this.sale, required this.provider});
 
   Future<void> _handleVoid(BuildContext context) async {
+    final authorized = await AdminPinDialog.verify(context, action: 'Anular Ticket #${sale.id}', permissionKey: 'void_sales');
+    if (!authorized) return;
+    if (!context.mounted) return;
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -374,7 +466,19 @@ class _TicketDetailPanel extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 8),
-                  Text(dateStr, style: TextStyle(color: Colors.grey.shade600, fontSize: 14)),
+                  Row(
+                    children: [
+                      Icon(Icons.calendar_today_outlined, size: 14, color: Colors.grey.shade600),
+                      const SizedBox(width: 6),
+                      Text(dateStr, style: TextStyle(color: Colors.grey.shade600, fontSize: 14)),
+                      if (sale.userName != null) ...[
+                        const SizedBox(width: 16),
+                        Icon(Icons.person_outline, size: 14, color: Colors.blueGrey.shade600),
+                        const SizedBox(width: 4),
+                        Text('Atendido por: ${sale.userName}', style: TextStyle(color: Colors.blueGrey.shade800, fontWeight: FontWeight.w500)),
+                      ]
+                    ],
+                  ),
                 ],
               ),
               Column(

@@ -43,6 +43,10 @@ dependencies:
   # Comunicación con puertos serie COM/USB en Windows y Linux
   flutter_libserialport: ^0.2.0
   intl: ^0.20.2
+  equatable: ^2.0.5
+  pdf: ^3.11.3
+  printing: ^5.14.2
+  barcode: ^2.2.9
 
 dev_dependencies:
   flutter_test:

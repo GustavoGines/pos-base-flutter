@@ -6,6 +6,11 @@ import '../models/category_model.dart';
 abstract class CatalogRemoteDataSource {
   Future<List<ProductModel>> fetchProducts();
   Future<List<CategoryModel>> fetchCategories();
+  // Category CRUD
+  Future<CategoryModel> createCategory(String name, {String? description});
+  Future<CategoryModel> updateCategory(int id, String name, {String? description});
+  Future<void> deleteCategory(int id);
+  // Product CRUD
   Future<ProductModel> createProduct(Map<String, dynamic> productData);
   Future<ProductModel> updateProduct(int id, Map<String, dynamic> productData);
   Future<void> deleteProduct(int id);
@@ -16,7 +21,7 @@ abstract class CatalogRemoteDataSource {
   });
   Future<Map<String, dynamic>> adjustStock({
     required int productId,
-    required String type,  // 'in' o 'out'
+    required String type,
     required double quantity,
     String? notes,
   });
@@ -62,6 +67,64 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
       }
     } catch (e) {
       print('=== API Error en fetchCategories: $e ===');
+      rethrow;
+    }
+  }
+
+  @override
+  Future<CategoryModel> createCategory(String name, {String? description}) async {
+    try {
+      final response = await client.post(
+        Uri.parse('$baseUrl/catalog/categories'),
+        headers: {'Accept': 'application/json', 'Content-Type': 'application/json'},
+        body: json.encode({'name': name, if (description != null) 'description': description}),
+      );
+      if (response.statusCode == 201) {
+        return CategoryModel.fromJson(json.decode(response.body));
+      } else {
+        throw Exception('Error al crear categoría: ${response.body}');
+      }
+    } catch (e) {
+      print('=== API Error en createCategory: $e ===');
+      rethrow;
+    }
+  }
+
+  @override
+  Future<CategoryModel> updateCategory(int id, String name, {String? description}) async {
+    try {
+      final response = await client.put(
+        Uri.parse('$baseUrl/catalog/categories/$id'),
+        headers: {'Accept': 'application/json', 'Content-Type': 'application/json'},
+        body: json.encode({'name': name, if (description != null) 'description': description}),
+      );
+      if (response.statusCode == 200) {
+        return CategoryModel.fromJson(json.decode(response.body));
+      } else {
+        throw Exception('Error al actualizar categoría: ${response.body}');
+      }
+    } catch (e) {
+      print('=== API Error en updateCategory: $e ===');
+      rethrow;
+    }
+  }
+
+  @override
+  Future<void> deleteCategory(int id) async {
+    try {
+      final response = await client.delete(
+        Uri.parse('$baseUrl/catalog/categories/$id'),
+        headers: {'Accept': 'application/json'},
+      );
+      if (response.statusCode == 422) {
+        final error = json.decode(response.body);
+        throw Exception(error['message'] ?? 'No se puede eliminar: tiene productos asociados.');
+      }
+      if (response.statusCode != 204) {
+        throw Exception('Error al eliminar categoría (Status: ${response.statusCode})');
+      }
+    } catch (e) {
+      print('=== API Error en deleteCategory: $e ===');
       rethrow;
     }
   }

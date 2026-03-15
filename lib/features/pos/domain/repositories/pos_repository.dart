@@ -7,7 +7,10 @@ abstract class PosRepository {
   Future<Sale> processSale({
     required double total,
     required String paymentMethod,
+    double? tenderedAmount,
+    double? changeAmount,
     required int shiftId,
     required List<CartItem> items,
+    int? userId,
   });
 }

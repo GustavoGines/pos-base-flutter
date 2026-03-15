@@ -148,4 +148,67 @@ class CatalogProvider with ChangeNotifier {
       notifyListeners();
     }
   }
+
+  // ───────────────────────────────────────────────────────
+  // GESTIÓN DE CATEGORÍAS
+  // ───────────────────────────────────────────────────────
+
+  /// Crea una nueva categoría y la agrega a la lista local.
+  Future<bool> createCategory(String name, {String? description}) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      final created = await repository.createCategory(name, description: description);
+      _categories = [..._categories, created];
+      return true;
+    } catch (e) {
+      _errorMessage = e.toString();
+      return false;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  /// Edita el nombre (y descripción) de una categoría existente.
+  Future<bool> updateCategory(int id, String name, {String? description}) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      final updated = await repository.updateCategory(id, name, description: description);
+      final idx = _categories.indexWhere((c) => c.id == id);
+      if (idx != -1) {
+        final newList = List.of(_categories);
+        newList[idx] = updated;
+        _categories = newList;
+      }
+      return true;
+    } catch (e) {
+      _errorMessage = e.toString();
+      return false;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  /// Elimina una categoría. El backend rechaza con 422 si tiene productos.
+  Future<bool> deleteCategory(int id) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      await repository.deleteCategory(id);
+      _categories.removeWhere((c) => c.id == id);
+      return true;
+    } catch (e) {
+      _errorMessage = e.toString();
+      return false;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
 }

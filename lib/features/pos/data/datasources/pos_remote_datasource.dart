@@ -8,8 +8,11 @@ abstract class PosRemoteDataSource {
   Future<dynamic> processSale({
     required double total,
     required String paymentMethod,
+    double? tenderedAmount,
+    double? changeAmount,
     required int shiftId,
     required List<CartItem> items,
+    int? userId,
   });
 }
 
@@ -43,14 +46,20 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
   Future<dynamic> processSale({
     required double total,
     required String paymentMethod,
+    double? tenderedAmount,
+    double? changeAmount,
     required int shiftId,
     required List<CartItem> items,
+    int? userId,
   }) async {
     try {
       final payload = {
         'total': total,
         'payment_method': paymentMethod,
+        if (tenderedAmount != null) 'tendered_amount': tenderedAmount,
+        if (changeAmount != null) 'change_amount': changeAmount,
         'cash_register_shift_id': shiftId,
+        if (userId != null) 'user_id': userId,
         'items': items.map((item) => {
           'product_id': item.product.id,
           'quantity': item.quantity,

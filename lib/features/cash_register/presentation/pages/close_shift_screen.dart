@@ -64,7 +64,7 @@ class _CloseShiftScreenState extends State<CloseShiftScreen> {
     if (mounted) {
       if (success) {
         // Redirige al inicio (CashRegisterScreen) vaciando el stack de navegación
-        Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+        Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false);
       } else {
         SnackBarService.error(context, provider.errorMessage ?? 'Error al cerrar el turno.');
       }

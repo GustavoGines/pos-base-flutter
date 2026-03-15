@@ -40,6 +40,8 @@ class SaleRecord {
   final String status;  // 'active' | 'voided'
   final DateTime createdAt;
   final List<SaleItemRecord> items;
+  final int? userId;
+  final String? userName;
 
   const SaleRecord({
     required this.id,
@@ -48,6 +50,8 @@ class SaleRecord {
     required this.status,
     required this.createdAt,
     required this.items,
+    this.userId,
+    this.userName,
   });
 
   bool get isVoided => status == 'voided';
@@ -63,6 +67,8 @@ class SaleRecord {
       status: json['status'] as String? ?? 'active',
       createdAt: DateTime.parse(json['created_at'] as String),
       items: itemsList,
+      userId: json['user_id'] as int?,
+      userName: json['user']?['name'] as String?,
     );
   }
 }

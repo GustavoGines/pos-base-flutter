@@ -19,6 +19,21 @@ class CatalogRepositoryImpl implements CatalogRepository {
   }
 
   @override
+  Future<Category> createCategory(String name, {String? description}) async {
+    return await remoteDataSource.createCategory(name, description: description);
+  }
+
+  @override
+  Future<Category> updateCategory(int id, String name, {String? description}) async {
+    return await remoteDataSource.updateCategory(id, name, description: description);
+  }
+
+  @override
+  Future<void> deleteCategory(int id) async {
+    return await remoteDataSource.deleteCategory(id);
+  }
+
+  @override
   Future<Product> createProduct(Map<String, dynamic> productData) async {
     return await remoteDataSource.createProduct(productData);
   }

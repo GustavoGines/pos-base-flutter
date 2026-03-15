@@ -7,20 +7,23 @@ import 'features/settings/presentation/providers/settings_provider.dart';
 import 'features/catalog/presentation/providers/catalog_provider.dart';
 import 'features/cash_register/presentation/providers/cash_register_provider.dart';
 import 'features/pos/presentation/providers/pos_provider.dart';
+import 'features/sales_history/presentation/providers/sales_history_provider.dart';
+import 'features/auth/presentation/providers/auth_provider.dart';
 
 // Screens
-import 'features/cash_register/presentation/pages/cash_register_screen.dart';
-import 'features/cash_register/presentation/pages/close_shift_screen.dart';
+import 'features/settings/presentation/pages/settings_screen.dart';
 import 'features/pos/presentation/pages/pos_screen.dart';
 import 'features/catalog/presentation/pages/catalog_screen.dart';
+import 'features/cash_register/presentation/pages/cash_register_screen.dart';
+import 'features/cash_register/presentation/pages/close_shift_screen.dart';
 import 'features/sales_history/presentation/pages/sales_history_screen.dart';
-import 'features/sales_history/presentation/providers/sales_history_provider.dart';
-import 'features/sales_history/data/datasources/sales_history_remote_datasource.dart';
+import 'features/auth/presentation/pages/login_screen.dart';
 
 // Repositories & DataSources
 import 'features/settings/data/datasources/settings_remote_datasource.dart';
 import 'features/settings/data/repositories/settings_repository_impl.dart';
 import 'features/settings/domain/usecases/get_settings_usecase.dart';
+import 'features/settings/domain/usecases/update_settings_usecase.dart';
 
 import 'features/catalog/data/datasources/catalog_remote_datasource.dart';
 import 'features/catalog/data/repositories/catalog_repository_impl.dart';
@@ -28,14 +31,24 @@ import 'features/catalog/domain/usecases/get_products_usecase.dart';
 
 import 'features/cash_register/data/datasources/cash_register_remote_datasource.dart';
 import 'features/cash_register/data/repositories/cash_register_repository_impl.dart';
-import 'features/cash_register/domain/usecases/get_current_shift_usecase.dart';
 import 'features/cash_register/domain/usecases/open_shift_usecase.dart';
+import 'features/cash_register/domain/usecases/get_current_shift_usecase.dart';
 import 'features/cash_register/domain/usecases/close_shift_usecase.dart';
 
 import 'features/pos/data/datasources/pos_remote_datasource.dart';
 import 'features/pos/data/repositories/pos_repository_impl.dart';
 import 'features/pos/domain/usecases/process_sale_usecase.dart';
 import 'features/pos/domain/usecases/search_products_usecase.dart';
+
+import 'features/sales_history/data/datasources/sales_history_remote_datasource.dart';
+
+import 'features/auth/data/datasources/auth_remote_datasource.dart';
+import 'features/auth/domain/repositories/auth_repository.dart';
+
+import 'features/users/data/datasources/users_remote_datasource.dart';
+import 'features/users/data/repositories/users_repository.dart';
+import 'features/users/presentation/providers/users_provider.dart';
+import 'features/users/presentation/pages/users_manager_screen.dart';
 
 void main() {
   // Inicialización de Dependencias Base (DI)
@@ -46,6 +59,7 @@ void main() {
   final settingsRepo = SettingsRepositoryImpl(
       remoteDataSource: SettingsRemoteDataSourceImpl(baseUrl: apiBaseUrl, client: httpClient));
   final getSettingsUseCase = GetSettingsUseCase(settingsRepo);
+  final updateSettingsUseCase = UpdateSettingsUseCase(settingsRepo);
 
   // Catalog
   final catalogRepo = CatalogRepositoryImpl(
@@ -64,10 +78,28 @@ void main() {
   final salesHistoryDataSource = SalesHistoryRemoteDataSource(
       baseUrl: apiBaseUrl, client: httpClient);
 
+  // Auth
+  final authRepo = AuthRepository(
+      remoteDataSource: AuthRemoteDataSource(baseUrl: apiBaseUrl, client: httpClient));
+
+  // Users
+  final usersRepo = UsersRepository(
+      dataSource: UsersRemoteDataSource(baseUrl: apiBaseUrl, client: httpClient));
+
   runApp(
     MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => SettingsProvider(getSettingsUseCase: getSettingsUseCase), lazy: false),
+        ChangeNotifierProvider(
+          create: (_) => AuthProvider(repository: authRepo),
+          lazy: false,
+        ),
+        ChangeNotifierProvider(
+          create: (_) => SettingsProvider(
+            getSettingsUseCase: getSettingsUseCase,
+            updateSettingsUseCase: updateSettingsUseCase,
+          ), 
+          lazy: false
+        ),
         ChangeNotifierProvider(create: (_) => SalesHistoryProvider(dataSource: salesHistoryDataSource), lazy: false),
         ChangeNotifierProvider(create: (_) => CatalogProvider(
           getProductsUseCase: getProductsUseCase,
@@ -87,7 +119,11 @@ void main() {
             searchProductsUseCase: SearchProductsUseCase(posRepo)
           ),
           lazy: false,
-        )
+        ),
+        ChangeNotifierProvider(
+          create: (_) => UsersProvider(repository: usersRepo),
+          lazy: true,  // Solo carga cuando se navega a Personal y Accesos
+        ),
       ],
       child: const MainApp(),
     ),
@@ -131,28 +167,32 @@ class _MainAppState extends State<MainApp> {
   @override
   Widget build(BuildContext context) {
     if (_isInitializing) {
-      return const MaterialApp(
+      return MaterialApp(
         debugShowCheckedModeBanner: false,
         home: Scaffold(
-          body: Center(child: CircularProgressIndicator()),
+          backgroundColor: const Color(0xFF1E2D45),
+          body: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.point_of_sale_rounded, size: 72, color: Color(0xFF3B82F6)),
+                const SizedBox(height: 24),
+                const Text('POS Base', style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Colors.white)),
+                const SizedBox(height: 8),
+                const Text('Iniciando sistema...', style: TextStyle(fontSize: 14, color: Colors.white54)),
+                const SizedBox(height: 32),
+                const SizedBox(
+                  width: 40,
+                  height: 40,
+                  child: CircularProgressIndicator(color: Color(0xFF3B82F6), strokeWidth: 3),
+                ),
+              ],
+            ),
+          ),
         ),
       );
     }
 
-    final cashRegisterProvider = context.watch<CashRegisterProvider>();
-    final settingsProvider = context.watch<SettingsProvider>();
-    
-    if (cashRegisterProvider.isLoading || settingsProvider.isLoading) {
-      return const MaterialApp(
-        debugShowCheckedModeBanner: false,
-        home: Scaffold(
-          body: Center(child: CircularProgressIndicator()),
-        ),
-      );
-    }
-
-    final shift = cashRegisterProvider.currentShift;
-    final bool isShiftOpen = shift != null && shift.isOpen;
 
     return MaterialApp(
       navigatorKey: navigatorKey,
@@ -162,32 +202,39 @@ class _MainAppState extends State<MainApp> {
         primarySwatch: Colors.blue,
         useMaterial3: true,
       ),
-      home: Builder(
-        builder: (ctx) {
-          if (isShiftOpen) {
-            return const PosScreen();
-          } else {
-            return CashRegisterScreen(
-              isLoading: cashRegisterProvider.isLoading,
-              errorMessage: cashRegisterProvider.errorMessage,
-              onOpenShift: (amount) async {
-                final success = await cashRegisterProvider.openShift(amount);
-                if (success) {
-                  navigatorKey.currentState?.pushReplacementNamed('/pos');
-                }
-              },
-              onContinueToPos: () {
-                navigatorKey.currentState?.pushReplacementNamed('/pos');
-              },
-            );
-          }
-        },
-      ),
+      initialRoute: '/login',
       routes: {
+        '/login': (context) => const LoginScreen(),
+        '/home': (context) => Consumer<CashRegisterProvider>(
+          builder: (ctx, cashProv, _) {
+            final shift = cashProv.currentShift;
+            final bool open = shift != null && shift.isOpen;
+            if (open) {
+              return const PosScreen();
+            } else {
+              return CashRegisterScreen(
+                isLoading: cashProv.isLoading,
+                errorMessage: cashProv.errorMessage,
+                onOpenShift: (amount) async {
+                  final success = await cashProv.openShift(amount);
+                  if (success) {
+                    // Usamos navigatorKey para evitar contexto desactivado en callback async
+                    navigatorKey.currentState?.pushReplacementNamed('/pos');
+                  }
+                },
+                onContinueToPos: () {
+                  navigatorKey.currentState?.pushReplacementNamed('/pos');
+                },
+              );
+            }
+          },
+        ),
         '/pos': (context) => const PosScreen(),
         '/close-shift': (context) => const CloseShiftScreen(),
         '/catalog': (context) => const CatalogScreen(),
         '/sales-history': (context) => const SalesHistoryScreen(),
+        '/users': (context) => const UsersManagerScreen(),
+        '/settings': (context) => const SettingsScreen(),
       },
     );
   }

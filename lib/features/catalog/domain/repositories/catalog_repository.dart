@@ -4,6 +4,11 @@ import '../entities/category.dart';
 abstract class CatalogRepository {
   Future<List<Product>> getProducts();
   Future<List<Category>> getCategories();
+  // Category CRUD
+  Future<Category> createCategory(String name, {String? description});
+  Future<Category> updateCategory(int id, String name, {String? description});
+  Future<void> deleteCategory(int id);
+  // Product CRUD
   Future<Product> createProduct(Map<String, dynamic> productData);
   Future<Product> updateProduct(int id, Map<String, dynamic> productData);
   Future<void> deleteProduct(int id);

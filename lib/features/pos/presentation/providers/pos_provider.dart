@@ -3,14 +3,13 @@ import '../../domain/entities/cart_item.dart';
 import '../../domain/usecases/process_sale_usecase.dart';
 import '../../domain/usecases/search_products_usecase.dart';
 import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
-import 'package:frontend_desktop/features/cash_register/domain/entities/cash_register_shift.dart';
 import 'package:frontend_desktop/features/settings/domain/entities/business_settings.dart';
 import 'package:frontend_desktop/core/utils/receipt_printer_service.dart';
 
 class PosProvider with ChangeNotifier {
   final ProcessSaleUseCase processSaleUseCase;
   final SearchProductsUseCase searchProductsUseCase;
-  final ReceiptPrinterService? printerService;  // Inyección opcional
+  final ReceiptPrinterService? printerService; // Inyección opcional
 
   List<CartItem> _cart = [];
   List<CartItem> get cart => _cart;
@@ -24,7 +23,7 @@ class PosProvider with ChangeNotifier {
   PosProvider({
     required this.processSaleUseCase,
     required this.searchProductsUseCase,
-    this.printerService,  // Opcional: si no hay impresora configrada, se omite silenciosamente
+    this.printerService, // Opcional: si no hay impresora configrada, se omite silenciosamente
   });
 
   double get cartTotal {
@@ -37,7 +36,7 @@ class PosProvider with ChangeNotifier {
     if (product.isSoldByWeight) {
       return false; // Indica a la UI que detenga el insert y pida el peso
     }
-    
+
     // Si no es por peso
     _addToCartDirectly(product, 1.0);
     return true; // Se agregó correctamente por unidad
@@ -61,8 +60,10 @@ class PosProvider with ChangeNotifier {
       _cart.add(CartItem(product: product, quantity: quantity));
     } else {
       // Chequear si el producto unitario ya existe en el carrito
-      final index = _cart.indexWhere((item) => item.product.id == product.id && !item.product.isSoldByWeight);
-      
+      final index = _cart.indexWhere(
+        (item) => item.product.id == product.id && !item.product.isSoldByWeight,
+      );
+
       if (index >= 0) {
         // Incrementamos
         _cart[index].quantity += quantity;
@@ -96,17 +97,25 @@ class PosProvider with ChangeNotifier {
     try {
       return await searchProductsUseCase(query);
     } catch (e) {
-       _errorMessage = e.toString();
-       notifyListeners();
-       return [];
+      _errorMessage = e.toString();
+      notifyListeners();
+      return [];
     }
   }
 
   /// [settings] es necesario para personalizar el ticket con datos del negocio.
   /// [settings] puede ser null, en ese caso no se imprime nada.
-  Future<bool> checkout(CashRegisterShift currentShift, String paymentMethod, [BusinessSettings? settings]) async {
+  Future<bool> processCheckout({
+    required int shiftId,
+    required String paymentMethod,
+    required double tenderedAmount,
+    required double changeAmount,
+    int? userId,
+    String? userName,
+    BusinessSettings? settings,
+  }) async {
     if (_cart.isEmpty) return false;
-    
+
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
@@ -119,20 +128,26 @@ class PosProvider with ChangeNotifier {
       await processSaleUseCase(
         total: totalSnapshot,
         paymentMethod: paymentMethod,
-        shiftId: currentShift.id,
+        tenderedAmount: tenderedAmount,
+        changeAmount: changeAmount,
+        shiftId: shiftId,
         items: _cart,
+        userId: userId,
       );
-      
+
       clearCart();
 
       // Impresión del ticket de venta (silenciosa si no hay impresora configurada)
       if (printerService != null && settings != null) {
-        printerService!.printSaleTicket(
-          items: cartSnapshot,
-          total: totalSnapshot,
-          settings: settings,
-          paymentMethod: paymentMethod,
-        ).catchError((e) => debugPrint('=== Printer Error: $e ==='));
+        printerService!
+            .printSaleTicket(
+              items: cartSnapshot,
+              total: totalSnapshot,
+              settings: settings,
+              paymentMethod: paymentMethod,
+              userName: userName,
+            )
+            .catchError((e) => debugPrint('=== Printer Error: $e ==='));
       }
 
       return true;

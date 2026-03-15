@@ -1,47 +1,45 @@
 import '../../domain/entities/business_settings.dart';
 
 class BusinessSettingsModel extends BusinessSettings {
-  BusinessSettingsModel({
-    required String companyName,
-    required String currencySymbol,
-    required String timezone,
-    required String receiptFooterMessage,
-    String? taxId,
-    String? logoPath,
+  const BusinessSettingsModel({
+    String? companyName,
     String? address,
     String? phone,
+    String? taxId,
+    String? receiptFooterMessage,
+    String printerType = 'none',
+    String? printerComPort,
+    String? printerIpAddress,
+    String? printerIpPort,
   }) : super(
           companyName: companyName,
-          currencySymbol: currencySymbol,
-          timezone: timezone,
-          receiptFooterMessage: receiptFooterMessage,
-          taxId: taxId,
-          logoPath: logoPath,
           address: address,
           phone: phone,
+          taxId: taxId,
+          receiptFooterMessage: receiptFooterMessage,
+          printerType: printerType,
+          printerComPort: printerComPort,
+          printerIpAddress: printerIpAddress,
+          printerIpPort: printerIpPort,
         );
 
   factory BusinessSettingsModel.fromJson(Map<String, dynamic> json) {
     return BusinessSettingsModel(
-      companyName: json['company_name'] ?? 'Mi Negocio',
-      currencySymbol: json['currency_symbol'] ?? '\$',
-      timezone: json['timezone'] ?? 'UTC',
-      receiptFooterMessage: json['receipt_footer_message'] ?? '',
-      taxId: json['tax_id'],
-      logoPath: json['logo_path'],
+      companyName: json['company_name'],
       address: json['address'],
       phone: json['phone'],
+      taxId: json['tax_id'],
+      receiptFooterMessage: json['receipt_footer_message'],
+      printerType: json['printer_type'] ?? 'none',
+      printerComPort: json['printer_com_port'],
+      printerIpAddress: json['printer_ip_address'],
+      printerIpPort: json['printer_ip_port'],
     );
   }
 
   Map<String, dynamic> toJson() {
     return {
       'company_name': companyName,
-      'currency_symbol': currencySymbol,
-      'timezone': timezone,
-      'receipt_footer_message': receiptFooterMessage,
-      'tax_id': taxId,
-      'logo_path': logoPath,
       'address': address,
       'phone': phone,
     };

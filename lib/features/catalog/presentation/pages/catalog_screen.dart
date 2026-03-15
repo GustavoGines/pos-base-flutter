@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 import '../providers/catalog_provider.dart';
 import '../../domain/entities/product.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
+import '../widgets/categories_manager_dialog.dart';
+import '../widgets/print_labels_dialog.dart';
 
 class CatalogScreen extends StatefulWidget {
   const CatalogScreen({Key? key}) : super(key: key);
@@ -22,6 +24,18 @@ class _CatalogScreenState extends State<CatalogScreen> {
     });
   }
 
+  Future<void> _openCategoriesManager(BuildContext context) async {
+    await showDialog<bool>(
+      context: context,
+      builder: (_) => const CategoriesManagerDialog(),
+    );
+    // Al cerrar el Dialog, recargamos para que los dropdowns de producto
+    // reflejen las nuevas categorías
+    if (mounted) {
+      context.read<CatalogProvider>().loadProducts();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer<CatalogProvider>(
@@ -37,6 +51,19 @@ class _CatalogScreenState extends State<CatalogScreen> {
             title: const Text('Catálogo de Productos'),
             centerTitle: false,
             actions: [
+              // Botón Gestionar Categorías
+              Padding(
+                padding: const EdgeInsets.only(right: 8.0),
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.label_outline, size: 18),
+                  label: const Text('Categorías'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFF3B82F6),
+                    side: const BorderSide(color: Color(0xFF3B82F6)),
+                  ),
+                  onPressed: () => _openCategoriesManager(context),
+                ),
+              ),
               // Botón Aumento Masivo
               Padding(
                 padding: const EdgeInsets.only(right: 8.0),
@@ -151,6 +178,17 @@ class _CatalogScreenState extends State<CatalogScreen> {
               DataCell(Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  IconButton(
+                    icon: const Icon(Icons.print_outlined, size: 18),
+                    color: Colors.deepPurple,
+                    tooltip: 'Imprimir Etiquetas',
+                    onPressed: () {
+                      showDialog(
+                        context: context,
+                        builder: (_) => PrintLabelsDialog(product: p),
+                      );
+                    },
+                  ),
                   IconButton(
                     icon: const Icon(Icons.warehouse_outlined, size: 18),
                     color: Colors.teal,

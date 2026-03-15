@@ -11,4 +11,9 @@ class SettingsRepositoryImpl implements SettingsRepository {
   Future<BusinessSettings> getSettings() async {
     return await remoteDataSource.fetchSettings();
   }
+
+  @override
+  Future<BusinessSettings> updateSettings(Map<String, dynamic> data) async {
+    return await remoteDataSource.updateSettings(data);
+  }
 }

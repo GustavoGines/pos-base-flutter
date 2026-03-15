@@ -61,7 +61,34 @@ class PrinterConfig {
 class ReceiptPrinterService {
   PrinterConfig config;
 
-  ReceiptPrinterService({required this.config});
+  // Singleton pattern
+  static final ReceiptPrinterService _instance = ReceiptPrinterService._internal(config: PrinterConfig.defaultUsb());
+  static ReceiptPrinterService get instance => _instance;
+
+  ReceiptPrinterService._internal({required this.config});
+
+  /// Permite reconfigurar el hardware en caliente (desde SettingsScreen)
+  Future<void> reconfigureFromSettings(BusinessSettings settings) async {
+    PrinterConnectionType type;
+    switch (settings.printerType.toLowerCase()) {
+      case 'network':
+        type = PrinterConnectionType.tcp;
+        break;
+      case 'usb':
+        type = PrinterConnectionType.usb;
+        break;
+      default:
+        // Si es 'none' u otro, dejamos configurado algo pero no imprimirá (manejado arriba en UI o interceptado aquí)
+        type = PrinterConnectionType.usb;
+    }
+
+    config = PrinterConfig(
+      connectionType: type,
+      tcpHost: settings.printerIpAddress,
+      tcpPort: int.tryParse(settings.printerIpPort ?? '9100') ?? 9100,
+      comPort: settings.printerComPort,
+    );
+  }
 
   // ─────────────────────────────────────────────────────────────────────────────
   // API PÚBLICA
@@ -77,6 +104,7 @@ class ReceiptPrinterService {
     required BusinessSettings settings,
     String paymentMethod = 'EFECTIVO',
     String? receiptNumber,
+    String? userName,
   }) async {
     final profile = await CapabilityProfile.load();
     final generator = Generator(config.paperSize, profile);
@@ -85,7 +113,7 @@ class ReceiptPrinterService {
     // ── Encabezado ──────────────────────────────────────────────
     bytes += generator.reset();
     bytes += generator.text(
-      settings.companyName.toUpperCase(),
+      settings.companyName?.toUpperCase() ?? 'MI NEGOCIO',
       styles: const PosStyles(
         bold: true,
         align: PosAlign.center,
@@ -110,6 +138,9 @@ class ReceiptPrinterService {
       PosColumn(text: _formatDate(now), width: 7),
       PosColumn(text: receiptNumber != null ? '#${receiptNumber.padLeft(6, '0')}' : '', width: 5, styles: const PosStyles(align: PosAlign.right)),
     ]);
+    if (userName != null) {
+      bytes += generator.text('Cajero: $userName', styles: const PosStyles(align: PosAlign.left));
+    }
     bytes += generator.hr();
 
     // ── Items ────────────────────────────────────────────────────
@@ -123,9 +154,9 @@ class ReceiptPrinterService {
       final subtotal = item.subtotal;
       bytes += generator.text(item.product.name, styles: const PosStyles(bold: false));
       bytes += generator.row([
-        PosColumn(text: '  $cantStr @ ${settings.currencySymbol}${price.toStringAsFixed(2)}', width: 7),
+        PosColumn(text: '  $cantStr @ \$${price.toStringAsFixed(2)}', width: 7),
         PosColumn(
-          text: '${settings.currencySymbol}${subtotal.toStringAsFixed(2)}',
+          text: '\$${subtotal.toStringAsFixed(2)}',
           width: 5,
           styles: const PosStyles(align: PosAlign.right, bold: true),
         ),
@@ -134,10 +165,11 @@ class ReceiptPrinterService {
     bytes += generator.hr();
 
     // ── Total ────────────────────────────────────────────────────
+    bytes += generator.hr(linesAfter: 1);
     bytes += generator.row([
       PosColumn(text: 'TOTAL:', width: 6, styles: const PosStyles(bold: true, height: PosTextSize.size2, width: PosTextSize.size2)),
       PosColumn(
-        text: '${settings.currencySymbol}${total.toStringAsFixed(2)}',
+        text: '\$${total.toStringAsFixed(2)}',
         width: 6,
         styles: const PosStyles(bold: true, align: PosAlign.right, height: PosTextSize.size2, width: PosTextSize.size2),
       ),
@@ -149,8 +181,8 @@ class ReceiptPrinterService {
     bytes += generator.hr();
 
     // ── Pie de página ────────────────────────────────────────────
-    if (settings.receiptFooterMessage.isNotEmpty) {
-      bytes += generator.text(settings.receiptFooterMessage, styles: const PosStyles(align: PosAlign.center));
+    if (settings.receiptFooterMessage != null && settings.receiptFooterMessage!.isNotEmpty) {
+      bytes += generator.text(settings.receiptFooterMessage!, styles: const PosStyles(align: PosAlign.center));
     }
     bytes += generator.text('¡Gracias por su compra!', styles: const PosStyles(align: PosAlign.center, bold: true));
     bytes += generator.feed(3);
@@ -173,7 +205,7 @@ class ReceiptPrinterService {
 
     bytes += generator.reset();
     bytes += generator.text(
-      settings.companyName.toUpperCase(),
+      settings.companyName?.toUpperCase() ?? 'MI NEGOCIO',
       styles: const PosStyles(bold: true, align: PosAlign.center, height: PosTextSize.size2, width: PosTextSize.size2),
     );
     bytes += generator.text('━━━ CIERRE Z ━━━', styles: const PosStyles(align: PosAlign.center, bold: true));
@@ -192,7 +224,7 @@ class ReceiptPrinterService {
 
     bytes += generator.text('RESUMEN DEL TURNO', styles: const PosStyles(bold: true));
     bytes += generator.hr(ch: '-');
-    final currency = settings.currencySymbol;
+    const currency = '\$';
     bytes += _labelValue(generator, 'Saldo inicial:', '$currency${shift.openingBalance.toStringAsFixed(2)}');
     bytes += _labelValue(generator, 'Ventas del turno:', '$currency${(shift.totalSales ?? 0.0).toStringAsFixed(2)}');
     bytes += _labelValue(generator, 'Efectivo esperado:', '$currency${((shift.openingBalance) + (shift.totalSales ?? 0.0)).toStringAsFixed(2)}');

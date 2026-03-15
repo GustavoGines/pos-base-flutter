@@ -4,6 +4,9 @@ import '../providers/pos_provider.dart';
 import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
 import 'package:frontend_desktop/features/catalog/presentation/providers/catalog_provider.dart';
 import 'package:frontend_desktop/features/cash_register/presentation/providers/cash_register_provider.dart';
+import '../widgets/checkout_dialog.dart';
+import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
+import '../../../auth/presentation/providers/auth_provider.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 
 class PosScreen extends StatefulWidget {
@@ -132,14 +135,15 @@ class _PosScreenState extends State<PosScreen> {
       return;
     }
 
-    // Por simplificación en esta Fase, asumimos "Efectivo"
-    final success = await posProvider.checkout(currentShift, 'Efectivo');
+    // Abrimos el CheckoutDialog y esperamos a ver si sale exitoso (true)
+    final success = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false, // Forzar uso de botones
+      builder: (_) => CheckoutDialog(total: posProvider.cartTotal),
+    );
     
-    if (success) {
+    if (success == true) {
       SnackBarService.success(context, '¡Venta registrada con éxito!');
-    } else {
-      final errMsg = posProvider.errorMessage ?? 'Error desconocido al procesar la venta.';
-      SnackBarService.error(context, errMsg);
     }
     
     _searchFocusNode.requestFocus();
@@ -163,15 +167,114 @@ class _PosScreenState extends State<PosScreen> {
             label: const Text('Catálogo', style: TextStyle(color: Colors.deepPurple)),
             onPressed: () => Navigator.of(context).pushNamed('/catalog'),
           ),
-          const SizedBox(width: 4),
-          TextButton.icon(
-            icon: const Icon(Icons.lock_outline, color: Colors.redAccent),
-            label: const Text('Cerrar Turno', style: TextStyle(color: Colors.redAccent)),
-            onPressed: () {
-              Navigator.of(context).pushNamed('/close-shift');
+          const SizedBox(width: 8),
+          
+          // --- Menú Desplegable del Usuario ---
+          Consumer<AuthProvider>(
+            builder: (context, auth, _) {
+              final userName = auth.currentUser?['name'] ?? 'Sesión';
+              return Padding(
+                padding: const EdgeInsets.only(right: 16),
+                child: PopupMenuButton<String>(
+                  offset: const Offset(0, 45),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  tooltip: 'Opciones de Usuario',
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.blueGrey.shade50,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: Colors.blueGrey.shade200),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.person_outline, size: 20, color: Colors.blueGrey),
+                        const SizedBox(width: 8),
+                        Text(
+                          userName,
+                          style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey),
+                        ),
+                        const SizedBox(width: 4),
+                        const Icon(Icons.arrow_drop_down, color: Colors.blueGrey),
+                      ],
+                    ),
+                  ),
+                  onSelected: (value) async {
+                    switch (value) {
+                      case 'settings':
+                        final authorized = await AdminPinDialog.verify(context, action: 'Acceder a Configuración');
+                        if (authorized && context.mounted) {
+                          Navigator.of(context).pushNamed('/settings');
+                        }
+                        break;
+                      case 'logout':
+                        final confirmed = await showDialog<bool>(
+                          context: context,
+                          builder: (ctx) => AlertDialog(
+                            title: const Row(
+                              children: [
+                                Icon(Icons.swap_horiz_rounded, color: Colors.blueGrey),
+                                SizedBox(width: 8),
+                                Text('Cambiar Usuario'),
+                              ],
+                            ),
+                            content: const Text('¿Deseas cerrar la sesión actual y volver a la pantalla de ingreso de PIN?'),
+                            actions: [
+                              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+                              FilledButton.icon(
+                                onPressed: () => Navigator.pop(ctx, true),
+                                icon: const Icon(Icons.logout_rounded),
+                                label: const Text('Cambiar'),
+                                style: FilledButton.styleFrom(backgroundColor: Colors.blueGrey.shade700),
+                              ),
+                            ],
+                          ),
+                        );
+                        if (confirmed == true && context.mounted) {
+                          context.read<AuthProvider>().logout();
+                          Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
+                        }
+                        break;
+                      case 'close_shift':
+                        Navigator.of(context).pushNamed('/close-shift');
+                        break;
+                    }
+                  },
+                  itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+                    const PopupMenuItem<String>(
+                      value: 'settings',
+                      child: ListTile(
+                        leading: Icon(Icons.settings_outlined),
+                        title: Text('Configuración del Sistema'),
+                        contentPadding: EdgeInsets.zero,
+                        dense: true,
+                      ),
+                    ),
+                    const PopupMenuItem<String>(
+                      value: 'logout',
+                      child: ListTile(
+                        leading: Icon(Icons.swap_horiz_rounded),
+                        title: Text('Cambiar Usuario / Bloquear'),
+                        contentPadding: EdgeInsets.zero,
+                        dense: true,
+                      ),
+                    ),
+                    const PopupMenuDivider(),
+                    const PopupMenuItem<String>(
+                      value: 'close_shift',
+                      child: ListTile(
+                        leading: Icon(Icons.lock_outline, color: Colors.redAccent),
+                        title: Text('Cerrar Turno / Caja', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
+                        contentPadding: EdgeInsets.zero,
+                        dense: true,
+                      ),
+                    ),
+                  ],
+                ),
+              );
             },
           ),
-          const SizedBox(width: 8),
         ],
       ),
       body: SafeArea(
