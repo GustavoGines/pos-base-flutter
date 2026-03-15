@@ -26,6 +26,24 @@ class ProductModel extends Product {
           category: category,
         );
 
+  @override
+  ProductModel copyWithStock(double newStock) {
+    return ProductModel(
+      id: id,
+      name: name,
+      barcode: barcode,
+      internalCode: internalCode,
+      costPrice: costPrice,
+      sellingPrice: sellingPrice,
+      stock: newStock,
+      active: active,
+      isSoldByWeight: isSoldByWeight,
+      category: category != null 
+          ? CategoryModel(id: category!.id, name: category!.name, description: category!.description)
+          : null,
+    );
+  }
+
   factory ProductModel.fromJson(Map<String, dynamic> json) {
     return ProductModel(
       id: json['id'],

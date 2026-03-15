@@ -153,6 +153,12 @@ class _PosScreenState extends State<PosScreen> {
         centerTitle: false,
         actions: [
           TextButton.icon(
+            icon: const Icon(Icons.receipt_long_outlined, color: Colors.blueAccent),
+            label: const Text('Ventas del Día', style: TextStyle(color: Colors.blueAccent)),
+            onPressed: () => Navigator.of(context).pushNamed('/sales-history'),
+          ),
+          const SizedBox(width: 4),
+          TextButton.icon(
             icon: const Icon(Icons.inventory_2_outlined, color: Colors.deepPurple),
             label: const Text('Catálogo', style: TextStyle(color: Colors.deepPurple)),
             onPressed: () => Navigator.of(context).pushNamed('/catalog'),
