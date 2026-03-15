@@ -18,7 +18,7 @@ class CashRegisterRepositoryImpl implements CashRegisterRepository {
   }
 
   @override
-  Future<CashRegisterShift> closeShift(double closingBalance) async {
-    return await remoteDataSource.closeShift(closingBalance);
+  Future<CashRegisterShift> closeShift(double countedCash) async {
+    return await remoteDataSource.closeShift(countedCash);
   }
 }

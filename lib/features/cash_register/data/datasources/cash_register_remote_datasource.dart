@@ -5,7 +5,7 @@ import '../models/cash_register_shift_model.dart';
 abstract class CashRegisterRemoteDataSource {
   Future<CashRegisterShiftModel?> getCurrentShift();
   Future<CashRegisterShiftModel> openShift(double openingBalance);
-  Future<CashRegisterShiftModel> closeShift(double closingBalance);
+  Future<CashRegisterShiftModel> closeShift(double countedCash);
 }
 
 class CashRegisterRemoteDataSourceImpl implements CashRegisterRemoteDataSource {
@@ -59,12 +59,12 @@ class CashRegisterRemoteDataSourceImpl implements CashRegisterRemoteDataSource {
   }
 
   @override
-  Future<CashRegisterShiftModel> closeShift(double closingBalance) async {
+  Future<CashRegisterShiftModel> closeShift(double countedCash) async {
     try {
       final response = await client.post(
         Uri.parse('$baseUrl/cash-register/close'),
         headers: {'Accept': 'application/json', 'Content-Type': 'application/json'},
-        body: json.encode({'closing_balance': closingBalance}),
+        body: json.encode({'counted_cash': countedCash}),
       );
 
       if (response.statusCode == 200) {

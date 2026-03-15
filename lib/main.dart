@@ -10,7 +10,9 @@ import 'features/pos/presentation/providers/pos_provider.dart';
 
 // Screens
 import 'features/cash_register/presentation/pages/cash_register_screen.dart';
+import 'features/cash_register/presentation/pages/close_shift_screen.dart';
 import 'features/pos/presentation/pages/pos_screen.dart';
+import 'features/catalog/presentation/pages/catalog_screen.dart';
 
 // Repositories & DataSources
 import 'features/settings/data/datasources/settings_remote_datasource.dart';
@@ -59,7 +61,10 @@ void main() {
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => SettingsProvider(getSettingsUseCase: getSettingsUseCase), lazy: false),
-        ChangeNotifierProvider(create: (_) => CatalogProvider(getProductsUseCase: getProductsUseCase), lazy: false),
+        ChangeNotifierProvider(create: (_) => CatalogProvider(
+          getProductsUseCase: getProductsUseCase,
+          repository: catalogRepo,
+        ), lazy: false),
         ChangeNotifierProvider(
           create: (_) => CashRegisterProvider(
             getCurrentShiftUseCase: GetCurrentShiftUseCase(cashRegisterRepo),
@@ -172,6 +177,8 @@ class _MainAppState extends State<MainApp> {
       ),
       routes: {
         '/pos': (context) => const PosScreen(),
+        '/close-shift': (context) => const CloseShiftScreen(),
+        '/catalog': (context) => const CatalogScreen(),
       },
     );
   }

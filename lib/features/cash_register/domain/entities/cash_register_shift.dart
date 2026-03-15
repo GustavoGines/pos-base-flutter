@@ -4,6 +4,8 @@ class CashRegisterShift {
   final DateTime? closedAt;
   final double openingBalance;
   final double? closingBalance;
+  final double? totalSales;
+  final double? difference;
   final String status;
 
   CashRegisterShift({
@@ -12,6 +14,8 @@ class CashRegisterShift {
     this.closedAt,
     required this.openingBalance,
     this.closingBalance,
+    this.totalSales,
+    this.difference,
     required this.status,
   });
 

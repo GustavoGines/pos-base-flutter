@@ -6,7 +6,7 @@ class CloseShiftUseCase {
 
   CloseShiftUseCase(this.repository);
 
-  Future<CashRegisterShift> call(double closingBalance) async {
-    return await repository.closeShift(closingBalance);
+  Future<CashRegisterShift> call(double countedCash) async {
+    return await repository.closeShift(countedCash);
   }
 }

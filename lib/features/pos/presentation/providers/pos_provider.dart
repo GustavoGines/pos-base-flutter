@@ -4,10 +4,13 @@ import '../../domain/usecases/process_sale_usecase.dart';
 import '../../domain/usecases/search_products_usecase.dart';
 import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
 import 'package:frontend_desktop/features/cash_register/domain/entities/cash_register_shift.dart';
+import 'package:frontend_desktop/features/settings/domain/entities/business_settings.dart';
+import 'package:frontend_desktop/core/utils/receipt_printer_service.dart';
 
 class PosProvider with ChangeNotifier {
   final ProcessSaleUseCase processSaleUseCase;
   final SearchProductsUseCase searchProductsUseCase;
+  final ReceiptPrinterService? printerService;  // Inyección opcional
 
   List<CartItem> _cart = [];
   List<CartItem> get cart => _cart;
@@ -21,6 +24,7 @@ class PosProvider with ChangeNotifier {
   PosProvider({
     required this.processSaleUseCase,
     required this.searchProductsUseCase,
+    this.printerService,  // Opcional: si no hay impresora configrada, se omite silenciosamente
   });
 
   double get cartTotal {
@@ -98,22 +102,39 @@ class PosProvider with ChangeNotifier {
     }
   }
 
-  Future<bool> checkout(CashRegisterShift currentShift, String paymentMethod) async {
+  /// [settings] es necesario para personalizar el ticket con datos del negocio.
+  /// [settings] puede ser null, en ese caso no se imprime nada.
+  Future<bool> checkout(CashRegisterShift currentShift, String paymentMethod, [BusinessSettings? settings]) async {
     if (_cart.isEmpty) return false;
     
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
 
+    // Capturamos una copia del carrito ANTES del clearCart() para el ticket
+    final cartSnapshot = List<CartItem>.from(_cart);
+    final totalSnapshot = cartTotal;
+
     try {
       await processSaleUseCase(
-        total: cartTotal,
+        total: totalSnapshot,
         paymentMethod: paymentMethod,
         shiftId: currentShift.id,
         items: _cart,
       );
       
       clearCart();
+
+      // Impresión del ticket de venta (silenciosa si no hay impresora configurada)
+      if (printerService != null && settings != null) {
+        printerService!.printSaleTicket(
+          items: cartSnapshot,
+          total: totalSnapshot,
+          settings: settings,
+          paymentMethod: paymentMethod,
+        ).catchError((e) => debugPrint('=== Printer Error: $e ==='));
+      }
+
       return true;
     } catch (e) {
       _errorMessage = e.toString();

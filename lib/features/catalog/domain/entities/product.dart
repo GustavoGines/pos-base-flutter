@@ -24,4 +24,18 @@ class Product {
     required this.isSoldByWeight,
     this.category,
   });
+  Product copyWithStock(double newStock) {
+    return Product(
+      id: id,
+      name: name,
+      barcode: barcode,
+      internalCode: internalCode,
+      costPrice: costPrice,
+      sellingPrice: sellingPrice,
+      stock: newStock,
+      active: active,
+      isSoldByWeight: isSoldByWeight,
+      category: category,
+    );
+  }
 }

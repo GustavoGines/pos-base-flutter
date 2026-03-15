@@ -4,6 +4,7 @@ import '../providers/pos_provider.dart';
 import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
 import 'package:frontend_desktop/features/catalog/presentation/providers/catalog_provider.dart';
 import 'package:frontend_desktop/features/cash_register/presentation/providers/cash_register_provider.dart';
+import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 
 class PosScreen extends StatefulWidget {
   const PosScreen({Key? key}) : super(key: key);
@@ -117,9 +118,7 @@ class _PosScreenState extends State<PosScreen> {
       provider.submitWeighedProduct(product, weight);
       Navigator.pop(dialogContext);
     } else {
-      ScaffoldMessenger.of(dialogContext).showSnackBar(
-        const SnackBar(content: Text('Por favor, ingrese un peso válido en Kg.'), backgroundColor: Colors.red),
-      );
+      SnackBarService.error(dialogContext, 'Por favor, ingrese un peso válido en Kg.');
     }
   }
 
@@ -129,9 +128,7 @@ class _PosScreenState extends State<PosScreen> {
     
     final currentShift = cashRegisterProvider.currentShift;
     if (currentShift == null || !currentShift.isOpen) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Error: No hay turno de caja abierto.')),
-      );
+      SnackBarService.error(context, 'No hay turno de caja abierto.');
       return;
     }
 
@@ -139,13 +136,10 @@ class _PosScreenState extends State<PosScreen> {
     final success = await posProvider.checkout(currentShift, 'Efectivo');
     
     if (success) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('¡Venta registrada con éxito!', style: TextStyle(color: Colors.white)), backgroundColor: Colors.green),
-      );
+      SnackBarService.success(context, '¡Venta registrada con éxito!');
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: \${posProvider.errorMessage}')),
-      );
+      final errMsg = posProvider.errorMessage ?? 'Error desconocido al procesar la venta.';
+      SnackBarService.error(context, errMsg);
     }
     
     _searchFocusNode.requestFocus();
@@ -157,6 +151,22 @@ class _PosScreenState extends State<PosScreen> {
       appBar: AppBar(
         title: const Text('Punto de Venta (POS)'),
         centerTitle: false,
+        actions: [
+          TextButton.icon(
+            icon: const Icon(Icons.inventory_2_outlined, color: Colors.deepPurple),
+            label: const Text('Catálogo', style: TextStyle(color: Colors.deepPurple)),
+            onPressed: () => Navigator.of(context).pushNamed('/catalog'),
+          ),
+          const SizedBox(width: 4),
+          TextButton.icon(
+            icon: const Icon(Icons.lock_outline, color: Colors.redAccent),
+            label: const Text('Cerrar Turno', style: TextStyle(color: Colors.redAccent)),
+            onPressed: () {
+              Navigator.of(context).pushNamed('/close-shift');
+            },
+          ),
+          const SizedBox(width: 8),
+        ],
       ),
       body: SafeArea(
         child: LayoutBuilder(
@@ -267,17 +277,46 @@ class _PosScreenState extends State<PosScreen> {
                     const SizedBox(height: 8),
                     SizedBox(
                       width: double.infinity,
-                      height: 50,
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: pos.cart.isEmpty ? Colors.grey : Colors.blue,
-                          foregroundColor: Colors.white,
-                          textStyle: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)
+                      height: 54,
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: pos.cart.isEmpty
+                                ? Colors.grey.shade400
+                                : pos.isLoading
+                                    ? Colors.blue.shade300
+                                    : Colors.blue.shade700,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            elevation: pos.isLoading ? 0 : 4,
+                          ),
+                          onPressed: pos.cart.isEmpty || pos.isLoading ? null : _handleCheckout,
+                          child: pos.isLoading
+                              ? const Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    SizedBox(
+                                      width: 22,
+                                      height: 22,
+                                      child: CircularProgressIndicator(
+                                        color: Colors.white,
+                                        strokeWidth: 2.5,
+                                      ),
+                                    ),
+                                    SizedBox(width: 10),
+                                    Text('Procesando...', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                                  ],
+                                )
+                              : const Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(Icons.point_of_sale_rounded, size: 22),
+                                    SizedBox(width: 8),
+                                    Text('COBRAR', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, letterSpacing: 1.5)),
+                                  ],
+                                ),
                         ),
-                        onPressed: pos.cart.isEmpty || pos.isLoading ? null : _handleCheckout,
-                        child: pos.isLoading 
-                            ? const CircularProgressIndicator(color: Colors.white) 
-                            : const Text('COBRAR'),
                       ),
                     )
                   ],
