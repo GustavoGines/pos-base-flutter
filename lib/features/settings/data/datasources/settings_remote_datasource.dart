@@ -1,0 +1,34 @@
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import '../models/business_settings_model.dart';
+
+abstract class SettingsRemoteDataSource {
+  Future<BusinessSettingsModel> fetchSettings();
+}
+
+class SettingsRemoteDataSourceImpl implements SettingsRemoteDataSource {
+  final String baseUrl; // ej. http://localhost:8000/api
+  final http.Client client;
+
+  SettingsRemoteDataSourceImpl({required this.baseUrl, required this.client});
+
+  @override
+  Future<BusinessSettingsModel> fetchSettings() async {
+    try {
+      final response = await client.get(
+        Uri.parse('$baseUrl/settings'),
+        headers: {'Accept': 'application/json'},
+      );
+
+      if (response.statusCode == 200) {
+        final jsonMap = json.decode(response.body);
+        return BusinessSettingsModel.fromJson(jsonMap);
+      } else {
+        throw Exception('Failed to load settings (Status: ${response.statusCode})');
+      }
+    } catch (e) {
+      print('=== API Error en fetchSettings: $e ===');
+      rethrow;
+    }
+  }
+}
