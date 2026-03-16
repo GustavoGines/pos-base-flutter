@@ -10,6 +10,7 @@ class BusinessSettings extends Equatable {
   final String? printerComPort;
   final String? printerIpAddress;
   final String? printerIpPort;
+  final String? comPortScale;
 
   const BusinessSettings({
     this.companyName,
@@ -21,6 +22,7 @@ class BusinessSettings extends Equatable {
     this.printerComPort,
     this.printerIpAddress,
     this.printerIpPort,
+    this.comPortScale,
   });
 
   @override
@@ -34,5 +36,6 @@ class BusinessSettings extends Equatable {
         printerComPort,
         printerIpAddress,
         printerIpPort,
+        comPortScale,
       ];
 }

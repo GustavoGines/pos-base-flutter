@@ -28,6 +28,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _ipAddressCtrl = TextEditingController();
   final _ipPortCtrl = TextEditingController();
 
+  // Balanza
+  final _comPortScaleCtrl = TextEditingController();
+
   @override
   void initState() {
     super.initState();
@@ -46,6 +49,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _comPortCtrl.text = settings.printerComPort ?? '';
         _ipAddressCtrl.text = settings.printerIpAddress ?? '';
         _ipPortCtrl.text = settings.printerIpPort ?? '';
+        
+        _comPortScaleCtrl.text = settings.comPortScale ?? '';
         if (mounted) {
            setState(() {}); 
         }
@@ -63,6 +68,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _comPortCtrl.dispose();
     _ipAddressCtrl.dispose();
     _ipPortCtrl.dispose();
+    _comPortScaleCtrl.dispose();
     super.dispose();
   }
 
@@ -80,6 +86,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       'printer_com_port': _comPortCtrl.text.trim(),
       'printer_ip_address': _ipAddressCtrl.text.trim(),
       'printer_ip_port': _ipPortCtrl.text.trim(),
+      'com_port_scale': _comPortScaleCtrl.text.trim(),
     };
 
     final success = await provider.saveSettings(data);
@@ -164,6 +171,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     Expanded(
                       child: Column(
                         children: [
+                          // --- TARJETA IMPRESORA TÉRMICA ---
                           _buildSectionCard(
                             title: 'Hardware (Impresora Térmica)',
                             icon: Icons.print_outlined,
@@ -188,8 +196,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                     if (val != null) setState(() => _printerType = val);
                                   },
                                 ),
-                                const SizedBox(height: 24),
-                                
+                                const SizedBox(height: 16),
                                 // Opciones Dinámicas según Tipo
                                 if (_printerType == 'usb') ...[
                                   Container(
@@ -241,21 +248,42 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                     alignment: Alignment.center,
                                     decoration: BoxDecoration(color: Colors.grey.shade200, borderRadius: BorderRadius.circular(8)),
                                     child: Text('La impresión física está desactivada', style: TextStyle(color: Colors.grey.shade600)),
-                                  )
+                                  ),
                                 ],
                               ],
                             ),
                           ),
-                          
+
+                          const SizedBox(height: 24),
+
+                          // --- TARJETA BALANZA ---
+                          _buildSectionCard(
+                            title: 'Balanza de Mostrador (Hardware)',
+                            icon: Icons.scale_outlined,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('Conexión Serial (COM)', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey)),
+                                const SizedBox(height: 4),
+                                const Text(
+                                  'Si dejas este campo vacío, la lectura de peso desde balanza estará deshabilitada.',
+                                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                                ),
+                                const SizedBox(height: 16),
+                                _buildTextField('Puerto COM Balanza', _comPortScaleCtrl, hint: 'Ej: COM3, /dev/ttyUSB0', icon: Icons.cable_outlined),
+                              ],
+                            ),
+                          ),
+
                           const SizedBox(height: 32),
-                          
-                          // Botón Guardar (Ocupa el ancho)
+
+                          // --- BOTÓN GUARDAR (al fondo, ancho completo) ---
                           SizedBox(
                             width: double.infinity,
                             height: 60,
                             child: FilledButton.icon(
                               onPressed: provider.isLoading ? null : _saveSettings,
-                              icon: provider.isLoading 
+                              icon: provider.isLoading
                                   ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                                   : const Icon(Icons.save_outlined, size: 28),
                               label: const Text('GUARDAR CONFIGURACIÓN', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: 1)),
