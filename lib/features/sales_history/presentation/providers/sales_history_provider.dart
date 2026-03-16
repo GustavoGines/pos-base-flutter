@@ -17,6 +17,14 @@ class SalesHistoryProvider with ChangeNotifier {
   String _currentPeriod = 'shift';
   String get currentPeriod => _currentPeriod;
 
+  int? _selectedUserId;
+  int? get selectedUserId => _selectedUserId;
+
+  void setSelectedUserId(int? id) {
+    _selectedUserId = id;
+    loadSales();
+  }
+
   SalesHistoryProvider({required this.dataSource});
 
   Future<void> loadSales({String? period, int? shiftId}) async {
@@ -27,7 +35,7 @@ class SalesHistoryProvider with ChangeNotifier {
     _errorMessage = null;
     notifyListeners();
     try {
-      _sales = await dataSource.fetchSales(period: _currentPeriod, shiftId: shiftId);
+      _sales = await dataSource.fetchSales(period: _currentPeriod, shiftId: shiftId, userId: _selectedUserId);
     } catch (e) {
       _errorMessage = e.toString();
     } finally {

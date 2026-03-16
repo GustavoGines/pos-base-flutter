@@ -5,6 +5,7 @@ import '../providers/sales_history_provider.dart';
 import '../../domain/entities/sale_record.dart';
 import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
+import '../../../users/presentation/providers/users_provider.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 
 class SalesHistoryScreen extends StatefulWidget {
@@ -24,6 +25,7 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<SalesHistoryProvider>().loadSales();
+      context.read<UsersProvider>().loadUsers();
     });
   }
 
@@ -144,6 +146,46 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
                             },
                           ),
                           const SizedBox(height: 16),
+                          Consumer2<AuthProvider, UsersProvider>(
+                            builder: (context, auth, users, _) {
+                              if (!auth.hasPermission('view_global_history')) return const SizedBox.shrink();
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 16),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  children: [
+                                    const Text('Cajero:', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey)),
+                                    const SizedBox(height: 8),
+                                    Container(
+                                      decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(color: Colors.grey.shade300),
+                                      ),
+                                      child: DropdownButtonHideUnderline(
+                                        child: DropdownButton<int?>(
+                                          value: provider.selectedUserId,
+                                          isExpanded: true,
+                                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                                          items: [
+                                            const DropdownMenuItem(value: null, child: Text('Todos los cajeros')),
+                                            ...users.users.map((u) => DropdownMenuItem(
+                                              value: u['id'] as int,
+                                              child: Text(u['name'] ?? ''),
+                                            )),
+                                          ],
+                                          onChanged: (val) {
+                                            provider.setSelectedUserId(val);
+                                            setState(() => _selectedSale = null);
+                                          },
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
                           Row(
                             children: [
                               Expanded(

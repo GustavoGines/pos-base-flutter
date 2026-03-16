@@ -95,6 +95,7 @@ class _ShiftAuditScreenState extends State<ShiftAuditScreen> {
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(12),
                     child: DataTable(
+                      showCheckboxColumn: false,
                       headingRowColor: MaterialStateProperty.all(Colors.blueGrey.shade50),
                       columnSpacing: 24,
                       dataRowMinHeight: 60,
@@ -124,16 +125,10 @@ class _ShiftAuditScreenState extends State<ShiftAuditScreen> {
   DataRow _buildDataRow(CashRegisterShift shift) {
     final diff = shift.difference ?? 0.0;
     
-    String userLabel = 'Desconocido';
-    if (shift.user != null) {
-      if (shift.user is Map) {
-        userLabel = shift.user['name'] ?? 'Desconocido';
-      } else {
-        userLabel = shift.user.toString();
-      }
-    }
+    String userLabel = _getUserName(shift);
 
     return DataRow(
+      onSelectChanged: (_) => _showShiftDetails(context, shift),
       cells: [
         DataCell(Text(shift.id.toString(), style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.grey))),
         DataCell(Row(
@@ -151,6 +146,83 @@ class _ShiftAuditScreenState extends State<ShiftAuditScreen> {
         DataCell(_buildDifferenceBadge(diff, shift.status)),
         DataCell(_buildStatusBadge(shift.status)),
       ],
+    );
+  }
+
+  String _getUserName(CashRegisterShift shift) {
+    if (shift.user != null) {
+      if (shift.user is Map) return shift.user['name'] ?? 'Desconocido';
+      return shift.user.toString();
+    }
+    return 'Desconocido';
+  }
+
+  void _showShiftDetails(BuildContext context, CashRegisterShift shift) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.receipt_long, color: Colors.blueGrey),
+            const SizedBox(width: 10),
+            Text('Detalles del Turno #${shift.id}'),
+          ],
+        ),
+        content: SizedBox(
+          width: 400,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildDetailRow('Cajero:', _getUserName(shift)),
+                _buildDetailRow('Apertura:', _formatDate(shift.openedAt)),
+                _buildDetailRow('Cierre:', shift.closedAt != null ? _formatDate(shift.closedAt!) : 'En curso'),
+                const Divider(height: 32),
+                _buildDetailRow('Fondo Inicial (Apertura):', '\$${shift.openingBalance.toStringAsFixed(2)}'),
+                _buildDetailRow('Ventas Netas del Turno:', '\$${(shift.totalSales ?? 0.0).toStringAsFixed(2)}'),
+                const Divider(height: 32),
+                _buildDetailRow('Total Esperado en Caja:', '\$${(shift.openingBalance + (shift.totalSales ?? 0.0)).toStringAsFixed(2)}', isBold: true),
+                _buildDetailRow('Dinero Contado (Declarado):', '\$${(shift.closingBalance ?? 0.0).toStringAsFixed(2)}', isBold: true),
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Diferencia:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                    _buildDifferenceBadge(shift.difference ?? 0.0, shift.status),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cerrar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDetailRow(String label, String value, {bool isBold = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6.0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: const TextStyle(color: Colors.blueGrey)),
+          Text(
+            value,
+            style: TextStyle(
+              fontWeight: isBold ? FontWeight.bold : FontWeight.w500,
+              fontSize: isBold ? 16 : 14,
+              color: isBold ? Colors.black87 : Colors.black54,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
