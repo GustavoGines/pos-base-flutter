@@ -1,6 +1,6 @@
-# 🚀 Sistema POS Base - Frontend (Desktop / Flutter)
+# 🚀 Sistema POS - Frontend (Desktop / Flutter)
 
-Este repositorio contiene el **Frontend** del Sistema POS Base, una solución de Punto de Venta de grado empresarial construida con **Flutter** para entornos de escritorio (Windows/Linux/macOS), optimizado para velocidad, seguridad y operaciones con hardware in-situ.
+Este repositorio contiene el **Frontend** del Sistema POS, una solución de Punto de Venta de grado empresarial construida con **Flutter** para entornos de escritorio (Windows/Linux/macOS), optimizado para velocidad, seguridad y operaciones con hardware in-situ.
 
 ## ✨ Características Principales
 
