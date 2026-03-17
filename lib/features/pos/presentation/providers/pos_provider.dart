@@ -21,9 +21,13 @@ class PosProvider with ChangeNotifier {
 
   // Guard: evita que un doble-click genere dos API calls antes de que el Consumer reconstruya el botón
   bool _isHoldingOrder = false;
+  bool get isHoldingOrder => _isHoldingOrder;
 
   String? _errorMessage;
   String? get errorMessage => _errorMessage;
+
+  String? _printerWarning;
+  String? get printerWarning => _printerWarning;
 
   // ── Órdenes Pendientes ──────────────────────────────────────────
   List<Map<String, dynamic>> _pendingSales = [];
@@ -160,6 +164,7 @@ class PosProvider with ChangeNotifier {
 
     _isLoading = true;
     _errorMessage = null;
+    _printerWarning = null;
     notifyListeners();
 
     final cartSnapshot = List<CartItem>.from(_cart);
@@ -197,15 +202,18 @@ class PosProvider with ChangeNotifier {
       clearCart();
 
       if (printerService != null && settings != null) {
-        printerService!
-            .printSaleTicket(
-              items: cartSnapshot,
-              total: totalSnapshot,
-              settings: settings,
-              paymentMethod: paymentMethod,
-              userName: userName,
-            )
-            .catchError((e) => debugPrint('=== Printer Error: $e ==='));
+        try {
+          await printerService!.printSaleTicket(
+            items: cartSnapshot,
+            total: totalSnapshot,
+            settings: settings,
+            paymentMethod: paymentMethod,
+            userName: userName,
+          );
+        } catch (e) {
+          _printerWarning = 'Venta exitosa, pero la impresora no responde: ${e.toString()}';
+          debugPrint('=== Printer Error: $e ===');
+        }
       }
 
       return true;
@@ -318,6 +326,7 @@ class PosProvider with ChangeNotifier {
   }) async {
     _isLoading = true;
     _errorMessage = null;
+    _printerWarning = null;
     notifyListeners();
 
     try {
@@ -357,15 +366,18 @@ class PosProvider with ChangeNotifier {
         }).toList();
 
         if (ticketItems.isNotEmpty) {
-          printerService!
-              .printSaleTicket(
-                items: ticketItems,
-                total: saleTotal,
-                settings: settings,
-                paymentMethod: paymentMethod,
-                userName: userName,
-              )
-              .catchError((e) => debugPrint('=== Printer Error (pending): $e ==='));
+          try {
+            await printerService!.printSaleTicket(
+              items: ticketItems,
+              total: saleTotal,
+              settings: settings,
+              paymentMethod: paymentMethod,
+              userName: userName,
+            );
+          } catch (e) {
+            _printerWarning = 'Cobro exitoso, pero la impresora no responde: ${e.toString()}';
+            debugPrint('=== Printer Error (pending): $e ===');
+          }
         }
       }
 

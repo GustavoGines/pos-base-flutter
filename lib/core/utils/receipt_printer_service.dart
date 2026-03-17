@@ -292,7 +292,7 @@ class ReceiptPrinterService {
       socket = await Socket.connect(
         config.tcpHost!,
         config.tcpPort ?? 9100,
-        timeout: const Duration(seconds: 5),
+        timeout: const Duration(seconds: 3),
       );
       socket.add(data);
       await socket.flush();

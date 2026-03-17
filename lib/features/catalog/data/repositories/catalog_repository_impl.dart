@@ -9,8 +9,8 @@ class CatalogRepositoryImpl implements CatalogRepository {
   CatalogRepositoryImpl({required this.remoteDataSource});
 
   @override
-  Future<List<Product>> getProducts() async {
-    return await remoteDataSource.fetchProducts();
+  Future<Map<String, dynamic>> getProducts({int page = 1, String? search, String? sortBy, String? sortDirection}) async {
+    return await remoteDataSource.fetchProducts(page: page, search: search, sortBy: sortBy, sortDirection: sortDirection);
   }
 
   @override

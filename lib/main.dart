@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 // Providers
 import 'features/settings/presentation/providers/settings_provider.dart';
@@ -52,9 +53,30 @@ import 'features/users/data/repositories/users_repository.dart';
 import 'features/users/presentation/providers/users_provider.dart';
 import 'features/users/presentation/pages/users_manager_screen.dart';
 
-void main() {
+class FadePageRouteTransitionsBuilder extends PageTransitionsBuilder {
+  const FadePageRouteTransitionsBuilder();
+
+  @override
+  Widget buildTransitions<T>(
+    PageRoute<T> route,
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    return FadeTransition(opacity: animation, child: child);
+  }
+}
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  // Obtener URL de la API del almacenamiento local
+  final prefs = await SharedPreferences.getInstance();
+  final savedApiUrl = prefs.getString('api_base_url') ?? 'http://127.0.0.1:8000/api';
+
   // Inicialización de Dependencias Base (DI)
-  const String apiBaseUrl = 'http://127.0.0.1:8000/api';
+  final String apiBaseUrl = savedApiUrl;
   final httpClient = http.Client();
 
   // Settings
@@ -205,6 +227,13 @@ class _MainAppState extends State<MainApp> {
       theme: ThemeData(
         primarySwatch: Colors.blue,
         useMaterial3: true,
+        pageTransitionsTheme: const PageTransitionsTheme(
+          builders: <TargetPlatform, PageTransitionsBuilder>{
+            TargetPlatform.windows: FadePageRouteTransitionsBuilder(),
+            TargetPlatform.linux: FadePageRouteTransitionsBuilder(),
+            TargetPlatform.macOS: FadePageRouteTransitionsBuilder(),
+          },
+        ),
       ),
       initialRoute: '/login',
       routes: {

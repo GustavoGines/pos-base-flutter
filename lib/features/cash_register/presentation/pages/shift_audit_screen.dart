@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../providers/cash_register_provider.dart';
 import '../../domain/entities/cash_register_shift.dart';
 import 'package:intl/intl.dart';
+import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
 
 class ShiftAuditScreen extends StatefulWidget {
   const ShiftAuditScreen({Key? key}) : super(key: key);
@@ -24,20 +25,16 @@ class _ShiftAuditScreenState extends State<ShiftAuditScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.grey.shade100,
-      appBar: AppBar(
-        title: const Text('Auditoría de Turnos de Caja'),
-        elevation: 0,
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.blueGrey.shade900,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: () {
-              context.read<CashRegisterProvider>().loadAllShifts();
-            },
-          ),
-          const SizedBox(width: 16),
-        ],
+      appBar: GlobalAppBar(
+        currentRoute: '/shift-audit',
+        title: 'Auditoría de Cajas',
+        extraAction: IconButton(
+          icon: const Icon(Icons.refresh),
+          tooltip: 'Recargar Historial',
+          onPressed: () {
+            context.read<CashRegisterProvider>().loadAllShifts();
+          },
+        ),
       ),
       body: Consumer<CashRegisterProvider>(
         builder: (context, provider, _) {

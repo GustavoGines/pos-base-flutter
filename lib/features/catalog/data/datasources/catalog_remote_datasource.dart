@@ -4,7 +4,8 @@ import '../models/product_model.dart';
 import '../models/category_model.dart';
 
 abstract class CatalogRemoteDataSource {
-  Future<List<ProductModel>> fetchProducts();
+  /// Returns a map with 'data' (List<ProductModel>), 'current_page', 'last_page'.
+  Future<Map<String, dynamic>> fetchProducts({int page = 1, String? search, String? sortBy, String? sortDirection});
   Future<List<CategoryModel>> fetchCategories();
   // Category CRUD
   Future<CategoryModel> createCategory(String name, {String? description});
@@ -34,20 +35,28 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
   CatalogRemoteDataSourceImpl({required this.baseUrl, required this.client});
 
   @override
-  Future<List<ProductModel>> fetchProducts() async {
+  Future<Map<String, dynamic>> fetchProducts({int page = 1, String? search, String? sortBy, String? sortDirection}) async {
     try {
-      final response = await client.get(
-        Uri.parse('$baseUrl/catalog/products'),
-        headers: {'Accept': 'application/json'},
-      );
+      final queryParams = <String, String>{'page': page.toString()};
+      if (search != null && search.isNotEmpty) queryParams['search'] = search;
+      if (sortBy != null) queryParams['sort_by'] = sortBy;
+      if (sortDirection != null) queryParams['sort_direction'] = sortDirection;
+
+      final uri = Uri.parse('$baseUrl/catalog/products').replace(queryParameters: queryParams);
+      final response = await client.get(uri, headers: {'Accept': 'application/json'});
+
       if (response.statusCode == 200) {
-        final List<dynamic> jsonList = json.decode(response.body);
-        return jsonList.map((j) => ProductModel.fromJson(j)).toList();
+        final Map<String, dynamic> json = jsonDecode(response.body);
+        final List<dynamic> dataList = json['data'] as List<dynamic>;
+        return {
+          'data': dataList.map((j) => ProductModel.fromJson(j)).toList(),
+          'current_page': json['current_page'] as int,
+          'last_page': json['last_page'] as int,
+        };
       } else {
         throw Exception('Failed to load products (Status: ${response.statusCode})');
       }
     } catch (e) {
-      print('=== API Error en fetchProducts: $e ===');
       rethrow;
     }
   }

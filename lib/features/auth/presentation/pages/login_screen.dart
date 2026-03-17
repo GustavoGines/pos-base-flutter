@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/auth_provider.dart';
 import '../../../../core/utils/snack_bar_service.dart';
 
@@ -52,16 +53,90 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  Future<void> _showServerConfigDialog() async {
+    final prefs = await SharedPreferences.getInstance();
+    final currentUrl = prefs.getString('api_base_url') ?? 'http://127.0.0.1:8000/api';
+    
+    if (!mounted) return;
+    final ctrl = TextEditingController(text: currentUrl);
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.dns_outlined, color: Colors.blueAccent),
+            SizedBox(width: 8),
+            Text('Red y Servidor', style: TextStyle(fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Apunta este frontend a la computadora principal (Servidor).\n'
+              'Ejemplo: http://192.168.1.50:8000/api',
+              style: TextStyle(color: Colors.blueGrey, fontSize: 13),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: ctrl,
+              decoration: InputDecoration(
+                labelText: 'URL de la API',
+                prefixIcon: const Icon(Icons.link),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton.icon(
+            onPressed: () async {
+              final newUrl = ctrl.text.trim();
+              if (newUrl.isNotEmpty) {
+                await prefs.setString('api_base_url', newUrl);
+                if (!ctx.mounted) return;
+                Navigator.pop(ctx);
+                SnackBarService.success(context, 'Configuración de red guardada.\nPor favor reinicia la aplicación para aplicar.');
+              }
+            },
+            icon: const Icon(Icons.save),
+            label: const Text('Guardar'),
+            style: FilledButton.styleFrom(backgroundColor: Colors.blue.shade800),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<AuthProvider>();
 
     return Scaffold(
       backgroundColor: const Color(0xFF1E2D45),
-      body: Center(
-        child: SingleChildScrollView(
-          child: Container(
-            width: 400,
+      body: Stack(
+        children: [
+          // Botón de configuración
+          Positioned(
+            top: 24,
+            right: 24,
+            child: IconButton(
+              icon: const Icon(Icons.settings_ethernet, color: Colors.white54, size: 28),
+              tooltip: 'Configurar Servidor',
+              onPressed: _showServerConfigDialog,
+            ),
+          ),
+          Center(
+            child: SingleChildScrollView(
+              child: Container(
+                width: 400,
             padding: const EdgeInsets.all(40),
             decoration: BoxDecoration(
               color: Colors.white,
@@ -157,7 +232,9 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
       ),
     ),
-  );
+   ],
+  ),
+ );
 }
 
   Widget _buildKey(String value, {IconData? icon}) {

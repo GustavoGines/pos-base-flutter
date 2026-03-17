@@ -7,7 +7,7 @@ import 'package:frontend_desktop/features/catalog/presentation/providers/catalog
 import 'package:frontend_desktop/features/cash_register/presentation/providers/cash_register_provider.dart';
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
 import '../widgets/checkout_dialog.dart';
-import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
+import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import 'package:flutter_libserialport/flutter_libserialport.dart';
@@ -442,7 +442,13 @@ class _PosScreenState extends State<PosScreen> {
     );
     
     if (success == true) {
-      SnackBarService.success(context, '¡Venta registrada con éxito!');
+      if (mounted) {
+        if (posProvider.printerWarning != null) {
+          SnackBarService.warning(context, posProvider.printerWarning!);
+        } else {
+          SnackBarService.success(context, '¡Venta registrada con éxito!');
+        }
+      }
     }
     
     _searchFocusNode.requestFocus();
@@ -634,179 +640,30 @@ class _PosScreenState extends State<PosScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Punto de Venta (POS)'),
-        centerTitle: false,
-        actions: [
-          // ── Ícono de Órdenes Pendientes con Badge ──────────────
-          Consumer<PosProvider>(
-            builder: (ctx, pos, _) {
-              final count = pos.pendingCount;
-              return Padding(
-                padding: const EdgeInsets.only(right: 4),
-                child: Badge(
-                  label: Text('$count', style: const TextStyle(color: Colors.white, fontSize: 11)),
-                  isLabelVisible: count > 0,
-                  backgroundColor: Colors.redAccent,
-                  child: IconButton(
-                    tooltip: 'Órdenes en Espera',
-                    icon: Icon(
-                      Icons.pending_actions_rounded,
-                      color: count > 0 ? Colors.orange.shade700 : Colors.blueGrey,
-                      size: 28,
-                    ),
-                    onPressed: _showPendingOrdersDialog,
+      appBar: GlobalAppBar(
+        currentRoute: '/pos',
+        extraAction: Consumer<PosProvider>(
+          builder: (ctx, pos, _) {
+            final count = pos.pendingCount;
+            return Padding(
+              padding: const EdgeInsets.only(right: 4),
+              child: Badge(
+                label: Text('$count', style: const TextStyle(color: Colors.white, fontSize: 11)),
+                isLabelVisible: count > 0,
+                backgroundColor: Colors.redAccent,
+                child: IconButton(
+                  tooltip: 'Órdenes en Espera',
+                  icon: Icon(
+                    Icons.pending_actions_rounded,
+                    color: count > 0 ? Colors.orange.shade700 : Colors.blueGrey,
+                    size: 28,
                   ),
+                  onPressed: _showPendingOrdersDialog,
                 ),
-              );
-            },
-          ),
-          TextButton.icon(
-            icon: const Icon(Icons.receipt_long_outlined, color: Colors.blueAccent),
-            label: const Text('Ventas del Día', style: TextStyle(color: Colors.blueAccent)),
-            onPressed: () async {
-              final authorized = await AdminPinDialog.verify(context, action: 'Ver Ventas', permissionKey: 'view_global_history');
-              if (authorized && context.mounted) {
-                Navigator.of(context).pushNamed('/sales-history');
-              }
-            },
-          ),
-          const SizedBox(width: 4),
-          TextButton.icon(
-            icon: const Icon(Icons.inventory_2_outlined, color: Colors.deepPurple),
-            label: const Text('Catálogo', style: TextStyle(color: Colors.deepPurple)),
-            onPressed: () async {
-              final authorized = await AdminPinDialog.verify(context, action: 'Gestionar Catálogo', permissionKey: 'manage_catalog');
-              if (authorized && context.mounted) {
-                Navigator.of(context).pushNamed('/catalog');
-              }
-            },
-          ),
-          const SizedBox(width: 8),
-          
-          // --- Menú Desplegable del Usuario ---
-          Consumer<AuthProvider>(
-            builder: (context, auth, _) {
-              final userName = auth.currentUser?['name'] ?? 'Sesión';
-              return Padding(
-                padding: const EdgeInsets.only(right: 16),
-                child: PopupMenuButton<String>(
-                  offset: const Offset(0, 45),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  tooltip: 'Opciones de Usuario',
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: Colors.blueGrey.shade50,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: Colors.blueGrey.shade200),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.person_outline, size: 20, color: Colors.blueGrey),
-                        const SizedBox(width: 8),
-                        Text(
-                          userName,
-                          style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey),
-                        ),
-                        const SizedBox(width: 4),
-                        const Icon(Icons.arrow_drop_down, color: Colors.blueGrey),
-                      ],
-                    ),
-                  ),
-                  onSelected: (value) async {
-                    switch (value) {
-                      case 'shift_audit':
-                        final auditAuth = await AdminPinDialog.verify(context, action: 'Ver Auditoría de Turnos', permissionKey: 'view_global_history');
-                        if (auditAuth && context.mounted) {
-                          Navigator.of(context).pushNamed('/shift-audit');
-                        }
-                        break;
-                      case 'settings':
-                        final authorized = await AdminPinDialog.verify(context, action: 'Acceder a Configuración');
-                        if (authorized && context.mounted) {
-                          Navigator.of(context).pushNamed('/settings');
-                        }
-                        break;
-                      case 'logout':
-                        final confirmed = await showDialog<bool>(
-                          context: context,
-                          builder: (ctx) => AlertDialog(
-                            title: const Row(
-                              children: [
-                                Icon(Icons.swap_horiz_rounded, color: Colors.blueGrey),
-                                SizedBox(width: 8),
-                                Text('Cambiar Usuario'),
-                              ],
-                            ),
-                            content: const Text('¿Deseas cerrar la sesión actual y volver a la pantalla de ingreso de PIN?'),
-                            actions: [
-                              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
-                              FilledButton.icon(
-                                onPressed: () => Navigator.pop(ctx, true),
-                                icon: const Icon(Icons.logout_rounded),
-                                label: const Text('Cambiar'),
-                                style: FilledButton.styleFrom(backgroundColor: Colors.blueGrey.shade700),
-                              ),
-                            ],
-                          ),
-                        );
-                        if (confirmed == true && context.mounted) {
-                          context.read<AuthProvider>().logout();
-                          Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
-                        }
-                        break;
-                      case 'close_shift':
-                        Navigator.of(context).pushNamed('/close-shift');
-                        break;
-                    }
-                  },
-                  itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-                    if (auth.isAdmin)
-                      const PopupMenuItem<String>(
-                        value: 'shift_audit',
-                        child: ListTile(
-                          leading: Icon(Icons.history_edu),
-                          title: Text('Auditoría de Turnos (Z)'),
-                          contentPadding: EdgeInsets.zero,
-                          dense: true,
-                        ),
-                      ),
-                    const PopupMenuItem<String>(
-                      value: 'settings',
-                      child: ListTile(
-                        leading: Icon(Icons.settings_outlined),
-                        title: Text('Configuración del Sistema'),
-                        contentPadding: EdgeInsets.zero,
-                        dense: true,
-                      ),
-                    ),
-                    const PopupMenuItem<String>(
-                      value: 'logout',
-                      child: ListTile(
-                        leading: Icon(Icons.swap_horiz_rounded),
-                        title: Text('Cambiar Usuario / Bloquear'),
-                        contentPadding: EdgeInsets.zero,
-                        dense: true,
-                      ),
-                    ),
-                    const PopupMenuDivider(),
-                    const PopupMenuItem<String>(
-                      value: 'close_shift',
-                      child: ListTile(
-                        leading: Icon(Icons.lock_outline, color: Colors.redAccent),
-                        title: Text('Cerrar Turno / Caja', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
-                        contentPadding: EdgeInsets.zero,
-                        dense: true,
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            },
-          ),
-        ],
+              ),
+            );
+          },
+        ),
       ),
       body: SafeArea(
         child: LayoutBuilder(

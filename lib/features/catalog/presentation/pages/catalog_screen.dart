@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/catalog_provider.dart';
@@ -6,6 +7,7 @@ import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import '../widgets/categories_manager_dialog.dart';
 import '../widgets/print_labels_dialog.dart';
 import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
+import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
 
 class CatalogScreen extends StatefulWidget {
   const CatalogScreen({Key? key}) : super(key: key);
@@ -15,13 +17,30 @@ class CatalogScreen extends StatefulWidget {
 }
 
 class _CatalogScreenState extends State<CatalogScreen> {
-  String _searchQuery = '';
+  final _searchController = TextEditingController();
+  Timer? _debounceTimer;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<CatalogProvider>().loadProducts();
+      context.read<CatalogProvider>().loadProducts(page: 1);
+    });
+  }
+
+  @override
+  void dispose() {
+    _debounceTimer?.cancel();
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _onSearchChanged(String value) {
+    _debounceTimer?.cancel();
+    _debounceTimer = Timer(const Duration(milliseconds: 500), () {
+      if (mounted) {
+        context.read<CatalogProvider>().loadProducts(page: 1, search: value);
+      }
     });
   }
 
@@ -30,10 +49,8 @@ class _CatalogScreenState extends State<CatalogScreen> {
       context: context,
       builder: (_) => const CategoriesManagerDialog(),
     );
-    // Al cerrar el Dialog, recargamos para que los dropdowns de producto
-    // reflejen las nuevas categorías
     if (mounted) {
-      context.read<CatalogProvider>().loadProducts();
+      context.read<CatalogProvider>().loadProducts(page: 1);
     }
   }
 
@@ -41,89 +58,80 @@ class _CatalogScreenState extends State<CatalogScreen> {
   Widget build(BuildContext context) {
     return Consumer<CatalogProvider>(
       builder: (context, provider, _) {
-        final filtered = provider.products.where((p) =>
-          p.name.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-          (p.barcode?.contains(_searchQuery) ?? false) ||
-          p.internalCode.contains(_searchQuery),
-        ).toList();
-
         return Scaffold(
-          appBar: AppBar(
-            title: const Text('Catálogo de Productos'),
-            centerTitle: false,
-            actions: [
-              // Botón Gestionar Categorías
-              Padding(
-                padding: const EdgeInsets.only(right: 8.0),
-                child: OutlinedButton.icon(
-                  icon: const Icon(Icons.label_outline, size: 18),
-                  label: const Text('Categorías'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: const Color(0xFF3B82F6),
-                    side: const BorderSide(color: Color(0xFF3B82F6)),
-                  ),
-                  onPressed: () async {
-                    final auth = await AdminPinDialog.verify(context, action: 'Gestionar Categorías', permissionKey: 'manage_catalog');
-                    if (auth && context.mounted) _openCategoriesManager(context);
-                  },
-                ),
-              ),
-              // Botón Aumento Masivo
-              Padding(
-                padding: const EdgeInsets.only(right: 8.0),
-                child: FilledButton.icon(
-                  icon: const Icon(Icons.trending_up, size: 18),
-                  label: const Text('Aumento Masivo'),
-                  style: FilledButton.styleFrom(backgroundColor: Colors.deepOrange),
-                  onPressed: provider.isLoading
-                      ? null
-                      : () async {
-                          final auth = await AdminPinDialog.verify(context, action: 'Aumento Masivo de Precios', permissionKey: 'manage_catalog');
-                          if (auth && context.mounted) _showBulkUpdateDialog(context, provider);
-                        },
-                ),
-              ),
-              // Botón Nuevo Producto
-              Padding(
-                padding: const EdgeInsets.only(right: 12.0),
-                child: FilledButton.icon(
-                  icon: const Icon(Icons.add, size: 18),
-                  label: const Text('Nuevo Producto'),
-                  onPressed: () async {
-                    final auth = await AdminPinDialog.verify(context, action: 'Crear Nuevo Producto', permissionKey: 'manage_catalog');
-                    if (auth && context.mounted) _showProductForm(context, provider);
-                  },
-                ),
-              ),
-            ],
-          ),
+          appBar: GlobalAppBar(currentRoute: '/catalog'),
           body: Column(
             children: [
-              // Barra de búsqueda
+              // ── Toolbar: Search + Actions ─────────────────────────
               Padding(
-                padding: const EdgeInsets.all(12.0),
-                child: TextField(
-                  decoration: InputDecoration(
-                    hintText: 'Buscar por nombre, código de barras o código interno...',
-                    prefixIcon: const Icon(Icons.search),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                    contentPadding: const EdgeInsets.symmetric(vertical: 10),
-                  ),
-                  onChanged: (val) => setState(() => _searchQuery = val),
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _searchController,
+                        onChanged: _onSearchChanged,
+                        decoration: InputDecoration(
+                          hintText: 'Buscar por nombre, código de barras o código interno...',
+                          prefixIcon: const Icon(Icons.search),
+                          suffixIcon: _searchController.text.isNotEmpty
+                              ? IconButton(
+                                  icon: const Icon(Icons.clear),
+                                  onPressed: () {
+                                    _searchController.clear();
+                                    context.read<CatalogProvider>().loadProducts(page: 1);
+                                  },
+                                )
+                              : null,
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                          contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    OutlinedButton.icon(
+                      icon: const Icon(Icons.label_outline, size: 18),
+                      label: const Text('Categorías'),
+                      onPressed: () async {
+                        final auth = await AdminPinDialog.verify(context, action: 'Gestionar Categorías', permissionKey: 'manage_catalog');
+                        if (auth && context.mounted) _openCategoriesManager(context);
+                      },
+                    ),
+                    const SizedBox(width: 8),
+                    OutlinedButton.icon(
+                      icon: const Icon(Icons.trending_up, size: 18, color: Colors.deepOrange),
+                      label: const Text('Aumento Masivo', style: TextStyle(color: Colors.deepOrange)),
+                      style: OutlinedButton.styleFrom(side: const BorderSide(color: Colors.deepOrange)),
+                      onPressed: provider.isLoading
+                          ? null
+                          : () async {
+                              final auth = await AdminPinDialog.verify(context, action: 'Aumento Masivo de Precios', permissionKey: 'manage_catalog');
+                              if (auth && context.mounted) _showBulkUpdateDialog(context, provider);
+                            },
+                    ),
+                    const SizedBox(width: 8),
+                    FilledButton.icon(
+                      icon: const Icon(Icons.add, size: 18),
+                      label: const Text('Nuevo Producto'),
+                      onPressed: () async {
+                        final auth = await AdminPinDialog.verify(context, action: 'Crear Nuevo Producto', permissionKey: 'manage_catalog');
+                        if (auth && context.mounted) _showProductForm(context, provider);
+                      },
+                    ),
+                  ],
                 ),
               ),
-              // Estado de carga / error
-              if (provider.isLoading)
-                const LinearProgressIndicator(),
+              // ── Loading bar ──────────────────────────────────────
+              if (provider.isLoading) const LinearProgressIndicator(),
               if (provider.errorMessage != null)
                 Container(
                   color: Colors.red.shade50,
                   padding: const EdgeInsets.all(8),
                   child: Text(provider.errorMessage!, style: TextStyle(color: Colors.red.shade700)),
                 ),
-              // Tabla de productos
+              // ── Product Table ─────────────────────────────────────
               Expanded(
-                child: filtered.isEmpty && !provider.isLoading
+                child: provider.products.isEmpty && !provider.isLoading
                     ? Center(
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
@@ -134,8 +142,38 @@ class _CatalogScreenState extends State<CatalogScreen> {
                           ],
                         ),
                       )
-                    : _buildProductsTable(filtered, provider),
+                    : _buildProductsTable(provider.products, provider),
               ),
+              // ── Pagination Controls ───────────────────────────────
+              if (!provider.isLoading && provider.lastPage > 1)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade50,
+                    border: Border(top: BorderSide(color: Colors.grey.shade200)),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.chevron_left),
+                        onPressed: provider.hasPrevPage ? () => provider.prevPage() : null,
+                        tooltip: 'Página anterior',
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        'Página ${provider.currentPage} de ${provider.lastPage}',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                      ),
+                      const SizedBox(width: 12),
+                      IconButton(
+                        icon: const Icon(Icons.chevron_right),
+                        onPressed: provider.hasNextPage ? () => provider.nextPage() : null,
+                        tooltip: 'Página siguiente',
+                      ),
+                    ],
+                  ),
+                ),
             ],
           ),
         );
@@ -144,65 +182,119 @@ class _CatalogScreenState extends State<CatalogScreen> {
   }
 
   Widget _buildProductsTable(List<Product> products, CatalogProvider provider) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.vertical,
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: DataTable(
-          columnSpacing: 20,
-          horizontalMargin: 16,
-          headingRowColor: WidgetStateProperty.all(Colors.grey.shade100),
-          columns: const [
-            DataColumn(label: Text('#', style: TextStyle(fontWeight: FontWeight.bold))),
-            DataColumn(label: Text('Nombre', style: TextStyle(fontWeight: FontWeight.bold))),
-            DataColumn(label: Text('Cód. Barras', style: TextStyle(fontWeight: FontWeight.bold))),
-            DataColumn(label: Text('Cód. Interno', style: TextStyle(fontWeight: FontWeight.bold))),
-            DataColumn(label: Text('Categoría', style: TextStyle(fontWeight: FontWeight.bold))),
-            DataColumn(label: Text('Costo', style: TextStyle(fontWeight: FontWeight.bold)), numeric: true),
-            DataColumn(label: Text('Venta', style: TextStyle(fontWeight: FontWeight.bold)), numeric: true),
-            DataColumn(label: Text('Stock', style: TextStyle(fontWeight: FontWeight.bold)), numeric: true),
-            DataColumn(label: Text('Balanza', style: TextStyle(fontWeight: FontWeight.bold))),
-            DataColumn(label: Text('Activo', style: TextStyle(fontWeight: FontWeight.bold))),
-            DataColumn(label: Text('Acciones', style: TextStyle(fontWeight: FontWeight.bold))),
-          ],
-          rows: products.map((p) => DataRow(
-            cells: [
-              DataCell(Text(p.id.toString())),
-              DataCell(Text(p.name)),
-              DataCell(Text(p.barcode ?? '—')),
-              DataCell(
-                Text(p.internalCode, style: TextStyle(fontFamily: 'monospace', fontSize: 12, color: Colors.grey.shade700)),
-              ),
-              DataCell(Text(p.category?.name ?? '—')),
-              DataCell(Text('\$${p.costPrice.toStringAsFixed(2)}')),
-              DataCell(
-                Text('\$${p.sellingPrice.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold)),
-              ),
-              DataCell(Text(p.isSoldByWeight ? '${p.stock.toStringAsFixed(3)} kg' : p.stock.toStringAsFixed(0))),
-              DataCell(
-                Icon(p.isSoldByWeight ? Icons.scale : Icons.inventory_2, size: 18, color: p.isSoldByWeight ? Colors.deepPurple : Colors.blueGrey),
-              ),
-              DataCell(
-                Icon(p.active ? Icons.check_circle : Icons.cancel, color: p.active ? Colors.green : Colors.red, size: 20),
-              ),
-              DataCell(Row(
-                mainAxisSize: MainAxisSize.min,
+    // Responsive flex values instead of fixed pixels
+    const int fId = 1;
+    const int fNombre = 4;
+    const int fBarcode = 2;
+    const int fInterno = 2;
+    const int fCat = 2;
+    const int fCosto = 1;
+    const int fVenta = 1;
+    const int fStock = 1;
+    const int fBal = 1;
+    const int fActivo = 1;
+    const int fAcciones = 2;
+
+    Widget cell(int flexValue, Widget child) => Expanded(
+          flex: flexValue,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
+            child: child,
+          ),
+        );
+
+    TextStyle headerStyle() => const TextStyle(fontWeight: FontWeight.bold, fontSize: 13);
+
+    // Sortable header button (Flex)
+    Widget sortHeader(int flexValue, String label, String sortKey) {
+      final isActive = provider.sortBy == sortKey;
+      final isAsc = provider.sortDirection == 'asc';
+      return Expanded(
+        flex: flexValue,
+        child: InkWell(
+          onTap: () {
+            final newDir = isActive && isAsc ? 'desc' : 'asc';
+            provider.loadProducts(page: 1, sortBy: sortKey, sortDirection: newDir);
+          },
+          borderRadius: BorderRadius.circular(4),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Flexible(
+                  child: Text(
+                    label,
+                    style: headerStyle().copyWith(color: isActive ? Colors.blue.shade700 : Colors.black87),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (isActive) ...[
+                  const SizedBox(width: 3),
+                  Icon(
+                    isAsc ? Icons.arrow_upward : Icons.arrow_downward,
+                    size: 13,
+                    color: Colors.blue.shade700,
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    Widget headerRow() => Container(
+          color: Colors.grey.shade100,
+          child: Row(
+            children: [
+              cell(fId, Text('#', style: headerStyle())),
+              sortHeader(fNombre, 'Nombre', 'name'),
+              sortHeader(fBarcode, 'Cód. Barras', 'barcode'),
+              sortHeader(fInterno, 'Cód. Interno', 'internal_code'),
+              sortHeader(fCat, 'Categoría', 'category_id'),
+              sortHeader(fCosto, 'Costo', 'cost_price'),
+              sortHeader(fVenta, 'Venta', 'selling_price'),
+              sortHeader(fStock, 'Stock', 'stock'),
+              sortHeader(fBal, 'Balanza', 'is_sold_by_weight'),
+              sortHeader(fActivo, 'Activo', 'active'),
+              cell(fAcciones, Text('Acciones', style: headerStyle(), overflow: TextOverflow.ellipsis)),
+            ],
+          ),
+        );
+
+    Widget productRow(Product p, int index) => Container(
+          color: index.isOdd ? Colors.grey.shade50 : Colors.white,
+          child: Row(
+            children: [
+              cell(fId, Text(p.id.toString(), style: TextStyle(color: Colors.grey.shade500, fontSize: 12), overflow: TextOverflow.ellipsis)),
+              cell(fNombre, Text(p.name, overflow: TextOverflow.ellipsis, maxLines: 1)),
+              cell(fBarcode, Text(p.barcode ?? '—', style: TextStyle(fontSize: 12, color: Colors.grey.shade700), overflow: TextOverflow.ellipsis)),
+              cell(fInterno, Text(p.internalCode, style: TextStyle(fontFamily: 'monospace', fontSize: 12, color: Colors.grey.shade600), overflow: TextOverflow.ellipsis)),
+              cell(fCat, Text(p.category?.name ?? '—', overflow: TextOverflow.ellipsis)),
+              cell(fCosto, Text('\$${p.costPrice.toStringAsFixed(2)}', overflow: TextOverflow.ellipsis)),
+              cell(fVenta, Text('\$${p.sellingPrice.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis)),
+              cell(fStock, Text(p.isSoldByWeight ? '${p.stock.toStringAsFixed(2)} kg' : p.stock.toStringAsFixed(0), overflow: TextOverflow.ellipsis)),
+              cell(fBal, Align(alignment: Alignment.centerLeft, child: Icon(p.isSoldByWeight ? Icons.scale : Icons.inventory_2, size: 18, color: p.isSoldByWeight ? Colors.deepPurple : Colors.blueGrey))),
+              cell(fActivo, Align(alignment: Alignment.centerLeft, child: Icon(p.active ? Icons.check_circle : Icons.cancel, color: p.active ? Colors.green : Colors.red, size: 20))),
+              cell(fAcciones, Wrap(
+                spacing: 4,
+                runSpacing: 4,
                 children: [
                   IconButton(
                     icon: const Icon(Icons.print_outlined, size: 18),
                     color: Colors.deepPurple,
                     tooltip: 'Imprimir Etiquetas',
-                    onPressed: () {
-                      showDialog(
-                        context: context,
-                        builder: (_) => PrintLabelsDialog(product: p),
-                      );
-                    },
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    onPressed: () => showDialog(context: context, builder: (_) => PrintLabelsDialog(product: p)),
                   ),
                   IconButton(
                     icon: const Icon(Icons.warehouse_outlined, size: 18),
                     color: Colors.teal,
                     tooltip: 'Ajuste de Stock',
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
                     onPressed: () async {
                       final auth = await AdminPinDialog.verify(context, action: 'Ajustar Stock', permissionKey: 'adjust_stock');
                       if (auth && context.mounted) _showStockAdjustment(context, provider, p);
@@ -212,6 +304,8 @@ class _CatalogScreenState extends State<CatalogScreen> {
                     icon: const Icon(Icons.edit_outlined, size: 18),
                     color: Colors.blue,
                     tooltip: 'Editar',
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
                     onPressed: () async {
                       final auth = await AdminPinDialog.verify(context, action: 'Editar Producto', permissionKey: 'manage_catalog');
                       if (auth && context.mounted) _showProductForm(context, provider, product: p);
@@ -221,6 +315,8 @@ class _CatalogScreenState extends State<CatalogScreen> {
                     icon: const Icon(Icons.delete_outline, size: 18),
                     color: Colors.red,
                     tooltip: 'Eliminar',
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
                     onPressed: () async {
                       final auth = await AdminPinDialog.verify(context, action: 'Eliminar Producto', permissionKey: 'manage_catalog');
                       if (auth && context.mounted) _confirmDelete(context, provider, p);
@@ -229,9 +325,21 @@ class _CatalogScreenState extends State<CatalogScreen> {
                 ],
               )),
             ],
-          )).toList(),
+          ),
+        );
+
+    return Column(
+      children: [
+        headerRow(),
+        const Divider(height: 1),
+        Expanded(
+          child: ListView.separated(
+            itemCount: products.length,
+            separatorBuilder: (_, __) => Divider(height: 1, color: Colors.grey.shade200),
+            itemBuilder: (_, i) => productRow(products[i], i),
+          ),
         ),
-      ),
+      ],
     );
   }
 
