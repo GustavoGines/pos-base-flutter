@@ -7,6 +7,7 @@ import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
 import '../../../users/presentation/providers/users_provider.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
+import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
 
 class SalesHistoryScreen extends StatefulWidget {
   const SalesHistoryScreen({Key? key}) : super(key: key);
@@ -56,44 +57,8 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
         }).toList();
 
         return Scaffold(
-          appBar: AppBar(
-            title: const Text('Historial de Ventas'),
-            centerTitle: false,
-            elevation: 0,
-            actions: [
-              Consumer<AuthProvider>(
-                builder: (context, auth, _) => TextButton.icon(
-                  icon: const Icon(Icons.person_outline, size: 16),
-                  label: Text(auth.currentUser?['name'] ?? 'Sesión', style: const TextStyle(fontWeight: FontWeight.bold)),
-                  style: TextButton.styleFrom(foregroundColor: Colors.blueGrey.shade600),
-                  onPressed: () async {
-                    final confirmed = await showDialog<bool>(
-                      context: context,
-                      builder: (ctx) => AlertDialog(
-                        title: const Text('Cambiar Usuario'),
-                        content: const Text('¿Deseas volver a la pantalla de ingreso de PIN?'),
-                        actions: [
-                          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
-                          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Cambiar')),
-                        ],
-                      ),
-                    );
-                    if (confirmed == true && context.mounted) {
-                      context.read<AuthProvider>().logout();
-                      Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
-                    }
-                  },
-                ),
-              ),
-              IconButton(
-                icon: const Icon(Icons.refresh),
-                tooltip: 'Recargar',
-                onPressed: provider.isLoading ? null : () => provider.loadSales(),
-              ),
-              const SizedBox(width: 8),
-            ],
-          ),
-          body: Row(
+      appBar: const GlobalAppBar(currentRoute: '/sales-history'),
+      body: Row(
             children: [
               // ── Panel Izquierdo: Lista de Ventas y Filtros ────────────────────
               Container(
@@ -225,6 +190,60 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
                       ),
                     ),
                     
+                    // ── Panel de Resumen Financiero ──────────────────────────
+                    if (!provider.isLoading)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
+                        ),
+                        child: Column(
+                          children: [
+                            Row(
+                              children: [
+                                _BuildSummaryCard(
+                                  label: 'Efectivo',
+                                  value: provider.totalCash,
+                                  color: Colors.green.shade600,
+                                  bgColor: Colors.green.shade50,
+                                  icon: Icons.payments_outlined,
+                                ),
+                                const SizedBox(width: 8),
+                                _BuildSummaryCard(
+                                  label: 'Transfer.',
+                                  value: provider.totalTransfers,
+                                  color: Colors.blue.shade600,
+                                  bgColor: Colors.blue.shade50,
+                                  icon: Icons.qr_code_2,
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                _BuildSummaryCard(
+                                  label: 'Tarjeta',
+                                  value: provider.totalCards,
+                                  color: Colors.orange.shade700,
+                                  bgColor: Colors.orange.shade50,
+                                  icon: Icons.credit_card,
+                                ),
+                                const SizedBox(width: 8),
+                                _BuildSummaryCard(
+                                  label: 'Total',
+                                  value: provider.totalVentas,
+                                  color: Colors.blueGrey.shade800,
+                                  bgColor: Colors.blueGrey.shade50,
+                                  icon: Icons.account_balance_wallet_outlined,
+                                  isTotal: true,
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+
                     // Barra de progreso y listado
                     if (provider.isLoading) const LinearProgressIndicator(),
                     Expanded(
@@ -243,33 +262,6 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
                                 );
                               },
                             ),
-                    ),
-                    
-                    // Resumen Footer
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.blueGrey.shade900,
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text('Total Periodo', style: TextStyle(color: Colors.white70, fontSize: 12)),
-                               Text('\$${provider.totalVentas.toStringAsFixed(2)}', style: const TextStyle(color: Colors.greenAccent, fontSize: 18, fontWeight: FontWeight.bold)),
-                            ],
-                          ),
-                          Row(
-                            children: [
-                              _MiniStat(label: 'Activas', value: provider.countActive.toString(), color: Colors.lightBlueAccent),
-                              const SizedBox(width: 16),
-                              _MiniStat(label: 'Anuladas', value: provider.countVoided.toString(), color: Colors.orangeAccent),
-                            ],
-                          )
-                        ],
-                      ),
                     ),
                   ],
                 ),
@@ -296,6 +288,68 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
 }
 
 // ─── Componentes del Panel Izquierdo ──────────────────────────────────────────
+
+class _BuildSummaryCard extends StatelessWidget {
+  final String label;
+  final double value;
+  final Color color;
+  final Color bgColor;
+  final IconData icon;
+  final bool isTotal;
+
+  const _BuildSummaryCard({
+    required this.label,
+    required this.value,
+    required this.color,
+    required this.bgColor,
+    required this.icon,
+    this.isTotal = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: color.withOpacity(0.3)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.6),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, size: 16, color: color),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label, style: TextStyle(fontSize: 11, color: Colors.blueGrey.shade600, fontWeight: FontWeight.w600)),
+                  Text(
+                    '\$${value.toStringAsFixed(2)}',
+                    style: TextStyle(
+                      fontSize: isTotal ? 16 : 14,
+                      fontWeight: FontWeight.bold,
+                      color: color,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            )
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 class _SaleListTile extends StatelessWidget {
   final SaleRecord sale;
@@ -364,25 +418,6 @@ class _SaleListTile extends StatelessWidget {
           ]
         ],
       ),
-    );
-  }
-}
-
-class _MiniStat extends StatelessWidget {
-  final String label;
-  final String value;
-  final Color color;
-
-  const _MiniStat({required this.label, required this.value, required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: [
-        Text(label, style: const TextStyle(color: Colors.white54, fontSize: 11)),
-        Text(value, style: TextStyle(color: color, fontSize: 14, fontWeight: FontWeight.bold)),
-      ],
     );
   }
 }

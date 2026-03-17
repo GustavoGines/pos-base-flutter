@@ -3,7 +3,8 @@ import 'package:provider/provider.dart';
 import '../providers/settings_provider.dart';
 import '../../../../core/utils/snack_bar_service.dart';
 import '../../../../core/utils/receipt_printer_service.dart';
-import '../../../auth/presentation/providers/auth_provider.dart';
+import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
+
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({Key? key}) : super(key: key);
@@ -107,27 +108,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final provider = context.watch<SettingsProvider>();
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Configuración del Sistema'),
-        elevation: 0,
-        actions: [
-          Consumer<AuthProvider>(
-            builder: (context, auth, _) {
-              if (!auth.isAdmin) return const SizedBox.shrink();
-              return Padding(
-                padding: const EdgeInsets.only(right: 16),
-                child: FilledButton.icon(
-                  onPressed: () => Navigator.of(context).pushNamed('/users'),
-                  icon: const Icon(Icons.people_rounded, size: 18),
-                  label: const Text('Personal y Accesos'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: Colors.blue.shade800,
-                  ),
-                ),
-              );
-            },
-          ),
-        ],
+      appBar: GlobalAppBar(
+        currentRoute: '/settings',
+        title: 'Ajustes del Sistema',
+        showBackButton: true,
       ),
       backgroundColor: Colors.grey.shade100,
       body: provider.isLoading

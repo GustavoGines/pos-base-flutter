@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../domain/entities/product.dart';
 import '../../domain/entities/category.dart';
@@ -20,21 +21,61 @@ class CatalogProvider with ChangeNotifier {
   String? _errorMessage;
   String? get errorMessage => _errorMessage;
 
+  // ── Pagination State ─────────────────────────────────────
+  int _currentPage = 1;
+  int _lastPage = 1;
+  int get currentPage => _currentPage;
+  int get lastPage => _lastPage;
+  bool get hasNextPage => _currentPage < _lastPage;
+  bool get hasPrevPage => _currentPage > 1;
+
+  // ── Search ───────────────────────────────────────────────
+  String _searchQuery = '';
+
+  // ── Sort ─────────────────────────────────────────────────
+  String _sortBy = 'name';
+  String _sortDirection = 'asc';
+  String get sortBy => _sortBy;
+  String get sortDirection => _sortDirection;
+
   CatalogProvider({required this.getProductsUseCase, required this.repository});
 
-  Future<void> loadProducts() async {
+  Future<void> loadProducts({int page = 1, String? search, String? sortBy, String? sortDirection}) async {
     _isLoading = true;
     _errorMessage = null;
+    if (search != null) _searchQuery = search;
+    if (sortBy != null) _sortBy = sortBy;
+    if (sortDirection != null) _sortDirection = sortDirection;
     notifyListeners();
     try {
-      _products = await getProductsUseCase();
-      _categories = await repository.getCategories();
+      final result = await getProductsUseCase(
+        page: page,
+        search: _searchQuery.isNotEmpty ? _searchQuery : null,
+        sortBy: _sortBy,
+        sortDirection: _sortDirection,
+      );
+      _products = List<Product>.from(result['data'] as List);
+      _currentPage = result['current_page'] as int;
+      _lastPage = result['last_page'] as int;
+      if (page == 1) {
+        if (_categories.isEmpty) {
+          _categories = await repository.getCategories();
+        }
+      }
     } catch (e) {
       _errorMessage = e.toString();
     } finally {
       _isLoading = false;
       notifyListeners();
     }
+  }
+
+  Future<void> nextPage() async {
+    if (hasNextPage) await loadProducts(page: _currentPage + 1);
+  }
+
+  Future<void> prevPage() async {
+    if (hasPrevPage) await loadProducts(page: _currentPage - 1);
   }
 
   Future<bool> createProduct(Map<String, dynamic> data) async {
@@ -103,8 +144,8 @@ class CatalogProvider with ChangeNotifier {
         categoryId: categoryId,
         brandId: brandId,
       );
-      // Reload products to reflect new prices
-      _products = await getProductsUseCase();
+      // Reload current page to reflect new prices
+      await loadProducts(page: _currentPage);
       return result['message'] as String?;
     } catch (e) {
       _errorMessage = e.toString();
@@ -115,8 +156,6 @@ class CatalogProvider with ChangeNotifier {
     }
   }
 
-  /// Ajuste manual de stock (entrada o salida de mercadería).
-  /// Actualiza el stock localmente usando `new_stock` devuelto por el backend.
   Future<bool> adjustStock({
     required int productId,
     required String type,
@@ -133,7 +172,6 @@ class CatalogProvider with ChangeNotifier {
         quantity: quantity,
         notes: notes,
       );
-      // Actualizar el stock en la lista local sin tener que recargar toda la lista
       final newStock = double.parse(result['new_stock'].toString());
       final idx = _products.indexWhere((p) => p.id == productId);
       if (idx != -1) {
@@ -153,7 +191,6 @@ class CatalogProvider with ChangeNotifier {
   // GESTIÓN DE CATEGORÍAS
   // ───────────────────────────────────────────────────────
 
-  /// Crea una nueva categoría y la agrega a la lista local.
   Future<bool> createCategory(String name, {String? description}) async {
     _isLoading = true;
     _errorMessage = null;
@@ -171,7 +208,6 @@ class CatalogProvider with ChangeNotifier {
     }
   }
 
-  /// Edita el nombre (y descripción) de una categoría existente.
   Future<bool> updateCategory(int id, String name, {String? description}) async {
     _isLoading = true;
     _errorMessage = null;
@@ -194,7 +230,6 @@ class CatalogProvider with ChangeNotifier {
     }
   }
 
-  /// Elimina una categoría. El backend rechaza con 422 si tiene productos.
   Future<bool> deleteCategory(int id) async {
     _isLoading = true;
     _errorMessage = null;

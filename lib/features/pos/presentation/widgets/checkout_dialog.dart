@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../providers/pos_provider.dart';
 import '../../../cash_register/presentation/providers/cash_register_provider.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
+import '../../../settings/presentation/providers/settings_provider.dart';
 import '../../../../core/utils/snack_bar_service.dart';
 
 /// Diálogo de cobro reutilizable para:
@@ -22,6 +23,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   String _paymentMethod = 'cash';
   final _amountCtrl = TextEditingController();
   final _focusNode = FocusNode();
+  bool _printReceipt = true;
 
   @override
   void initState() {
@@ -62,6 +64,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     final posProvider = context.read<PosProvider>();
     final currentUser = context.read<AuthProvider>().currentUser;
     final userName = currentUser?['name'] as String?;
+    final settings = context.read<SettingsProvider>().settings;
 
     final double finalTendered = _paymentMethod == 'cash' ? _tendered : widget.total;
     final double finalChange = _paymentMethod == 'cash' ? _change : 0.0;
@@ -77,6 +80,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         tenderedAmount: finalTendered,
         changeAmount: finalChange,
         userName: userName,
+        settings: _printReceipt ? settings : null,
       );
     } else {
       // ── Venta normal ───────────────────────────────────────────
@@ -95,11 +99,15 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         changeAmount: finalChange,
         userId: userId,
         userName: userName,
+        settings: _printReceipt ? settings : null,
       );
     }
 
     if (mounted) {
       if (success) {
+        if (posProvider.printerWarning != null) {
+          SnackBarService.warning(context, posProvider.printerWarning!);
+        }
         Navigator.of(context).pop(true);
       } else {
         SnackBarService.error(context, posProvider.errorMessage ?? 'Error al procesar el pago');

@@ -4,6 +4,7 @@ import '../providers/users_provider.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
 import '../widgets/employee_form_dialog.dart';
 import '../../../../core/utils/snack_bar_service.dart';
+import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
 
 class UsersManagerScreen extends StatefulWidget {
   const UsersManagerScreen({Key? key}) : super(key: key);
@@ -78,28 +79,20 @@ class _UsersManagerScreenState extends State<UsersManagerScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey.shade100,
-      appBar: AppBar(
-        title: const Row(
-          children: [
-            Icon(Icons.people_rounded, size: 24),
-            SizedBox(width: 10),
-            Text('Personal y Accesos'),
-          ],
-        ),
-        elevation: 0,
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 16),
-            child: FilledButton.icon(
-              onPressed: () => _openForm(),
-              icon: const Icon(Icons.person_add_rounded, size: 18),
-              label: const Text('Nuevo Empleado'),
-              style: FilledButton.styleFrom(backgroundColor: Colors.blue.shade800),
-            ),
+      appBar: GlobalAppBar(
+        currentRoute: '/staff',
+        title: 'Personal y Permisos',
+        showBackButton: true,
+        extraAction: Padding(
+          padding: const EdgeInsets.only(right: 16.0),
+          child: FilledButton.icon(
+            icon: const Icon(Icons.person_add),
+            label: const Text('Nuevo Empleado'),
+            onPressed: () => _openForm(), // Reverted to original _openForm call
           ),
-        ],
+        ),
       ),
+      backgroundColor: Colors.grey.shade50,
       body: Consumer<UsersProvider>(
         builder: (context, provider, _) {
           if (provider.isLoading) {

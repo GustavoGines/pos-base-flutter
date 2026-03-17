@@ -2,7 +2,8 @@ import '../entities/product.dart';
 import '../entities/category.dart';
 
 abstract class CatalogRepository {
-  Future<List<Product>> getProducts();
+  /// Returns {data: List<Product>, current_page: int, last_page: int}
+  Future<Map<String, dynamic>> getProducts({int page = 1, String? search, String? sortBy, String? sortDirection});
   Future<List<Category>> getCategories();
   // Category CRUD
   Future<Category> createCategory(String name, {String? description});

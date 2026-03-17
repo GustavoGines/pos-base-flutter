@@ -67,6 +67,16 @@ class SalesHistoryProvider with ChangeNotifier {
   // Totales y estadísticas rápidas
   double get totalVentas =>
       _sales.where((s) => !s.isVoided).fold(0.0, (sum, s) => sum + s.total);
+      
+  double get totalCash =>
+      _sales.where((s) => !s.isVoided && s.paymentMethod == 'cash').fold(0.0, (sum, s) => sum + s.total);
+      
+  double get totalCards =>
+      _sales.where((s) => !s.isVoided && s.paymentMethod == 'card').fold(0.0, (sum, s) => sum + s.total);
+      
+  double get totalTransfers =>
+      _sales.where((s) => !s.isVoided && s.paymentMethod == 'transfer').fold(0.0, (sum, s) => sum + s.total);
+
   int get countActive => _sales.where((s) => !s.isVoided).length;
   int get countVoided => _sales.where((s) => s.isVoided).length;
 }
