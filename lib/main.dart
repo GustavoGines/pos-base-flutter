@@ -181,7 +181,7 @@ class _MainAppState extends State<MainApp> {
               children: [
                 const Icon(Icons.point_of_sale_rounded, size: 72, color: Color(0xFF3B82F6)),
                 const SizedBox(height: 24),
-                const Text('POS Base', style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Colors.white)),
+                const Text('Sistema POS', style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Colors.white)),
                 const SizedBox(height: 8),
                 const Text('Iniciando sistema...', style: TextStyle(fontSize: 14, color: Colors.white54)),
                 const SizedBox(height: 32),
@@ -201,7 +201,7 @@ class _MainAppState extends State<MainApp> {
     return MaterialApp(
       navigatorKey: navigatorKey,
       debugShowCheckedModeBanner: false,
-      title: 'POS Base - Marca Blanca',
+      title: 'Sistema POS',
       theme: ThemeData(
         primarySwatch: Colors.blue,
         useMaterial3: true,

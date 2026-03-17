@@ -22,4 +22,5 @@ abstract class PosRepository {
     required double changeAmount,
     List<CartItem>? items,
   });
+  Future<Map<String, dynamic>> voidPendingSale(int saleId);
 }

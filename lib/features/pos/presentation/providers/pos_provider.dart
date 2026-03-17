@@ -278,6 +278,32 @@ class PosProvider with ChangeNotifier {
   }
 
   // ─────────────────────────────────────────────────────────────────
+  // Anular una orden pendiente (eliminarla y devolver stock)
+  // ─────────────────────────────────────────────────────────────────
+  Future<bool> voidPendingOrder(int saleId) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      await repository.voidPendingSale(saleId);
+      
+      if (_activePendingSaleId == saleId) {
+        clearRecall();
+      }
+
+      await loadPendingSales();
+      return true;
+    } catch (e) {
+      _errorMessage = e.toString();
+      return false;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────
   // Cobrar una orden pendiente
   // ─────────────────────────────────────────────────────────────────
   Future<bool> payPendingSale({
