@@ -79,9 +79,9 @@ class _LoginScreenState extends State<LoginScreen> {
             children: [
               const Icon(Icons.point_of_sale_rounded, size: 64, color: Color(0xFF3B82F6)),
               const SizedBox(height: 16),
-              const Text('Mi POS Corporativo', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.black87)),
+              const Text('Sistema POS', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.black87)),
               const SizedBox(height: 8),
-              const Text('Ingrese su PIN para continuar', style: TextStyle(fontSize: 14, color: Colors.black54)),
+              const Text('Ingreso al sistema', style: TextStyle(fontSize: 14, color: Colors.black54)),
               const SizedBox(height: 32),
 
               // Indicadores de PIN o Spinner de carga

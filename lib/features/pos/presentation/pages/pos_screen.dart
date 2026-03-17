@@ -478,6 +478,42 @@ class _PosScreenState extends State<PosScreen> {
   // ────────────────────────────────────────────────────────────────
   // MODAL DE ÓRDENES PENDIENTES
   // ────────────────────────────────────────────────────────────────
+  Future<void> _handleDeletePendingOrder(int saleId, PosProvider posProvider, {StateSetter? setStateDialog}) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Anular Orden en Espera', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+        content: Text('¿Desea anular la orden #$saleId?\nEsta acción devolverá los productos al stock físico y no se puede deshacer.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          FilledButton.icon(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade600),
+            onPressed: () => Navigator.pop(ctx, true),
+            icon: const Icon(Icons.delete, size: 18),
+            label: const Text('Anular'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      final success = await posProvider.voidPendingOrder(saleId);
+      if (mounted) {
+        if (success) {
+          SnackBarService.success(context, 'Orden #$saleId anulada. El stock fue restaurado.');
+          if (setStateDialog != null) {
+            setStateDialog(() {});
+          } else {
+            _searchFocusNode.requestFocus();
+          }
+        } else {
+          SnackBarService.error(context, posProvider.errorMessage ?? 'Error al anular orden');
+        }
+      }
+    }
+  }
+
+  // ────────────────────────────────────────────────────────────────
   void _showPendingOrdersDialog() async {
     final posProvider = Provider.of<PosProvider>(context, listen: false);
     await posProvider.loadPendingSales(); // Refrescar antes de mostrar
@@ -551,19 +587,30 @@ class _PosScreenState extends State<PosScreen> {
                                 style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.black87)),
                             subtitle: Text('$userName · $itemCount ítems · $timeStr',
                                 style: const TextStyle(fontSize: 13, color: Colors.grey)),
-                            trailing: FilledButton.icon(
-                              onPressed: () {
-                                Navigator.pop(dialogContext);
-                                posProvider.recallOrderToCart(sale);
-                                SnackBarService.success(context, '📥 Orden #$saleId cargada al carrito para revisión.');
-                                _searchFocusNode.requestFocus();
-                              },
-                              icon: const Icon(Icons.download_rounded, size: 18),
-                              label: const Text('Recuperar'),
-                              style: FilledButton.styleFrom(
-                                backgroundColor: Colors.orange.shade700,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                              ),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  icon: const Icon(Icons.delete_outline, color: Colors.red),
+                                  tooltip: 'Anular orden',
+                                  onPressed: () => _handleDeletePendingOrder(saleId, posProvider, setStateDialog: setStateDialog),
+                                ),
+                                const SizedBox(width: 8),
+                                FilledButton.icon(
+                                  onPressed: () {
+                                    Navigator.pop(dialogContext);
+                                    posProvider.recallOrderToCart(sale);
+                                    SnackBarService.success(context, '📥 Orden #$saleId cargada al carrito para revisión.');
+                                    _searchFocusNode.requestFocus();
+                                  },
+                                  icon: const Icon(Icons.download_rounded, size: 18),
+                                  label: const Text('Recuperar'),
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: Colors.orange.shade700,
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                  ),
+                                ),
+                              ],
                             ),
                           );
                         },
@@ -808,6 +855,14 @@ class _PosScreenState extends State<PosScreen> {
                         style: TextStyle(color: Colors.orange.shade900, fontWeight: FontWeight.bold),
                       ),
                     ),
+                    IconButton(
+                      icon: Icon(Icons.delete_outline, color: Colors.red.shade700, size: 18),
+                      tooltip: 'Anular Orden',
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      onPressed: () => _handleDeletePendingOrder(pos.activePendingSaleId!, pos),
+                    ),
+                    const SizedBox(width: 8),
                     IconButton(
                       icon: Icon(Icons.close, color: Colors.orange.shade900, size: 18),
                       tooltip: 'Cancelar Edición',

@@ -23,6 +23,7 @@ abstract class PosRemoteDataSource {
     required double changeAmount,
     List<CartItem>? items,
   });
+  Future<dynamic> voidPendingSale(int saleId);
 }
 
 class PosRemoteDataSourceImpl implements PosRemoteDataSource {
@@ -179,6 +180,25 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
       }
     } catch (e) {
       print('=== API Error en payPendingSale: $e ===');
+      rethrow;
+    }
+  }
+
+  @override
+  Future<dynamic> voidPendingSale(int saleId) async {
+    try {
+      final response = await client.post(
+        Uri.parse('$baseUrl/sales/$saleId/void'),
+        headers: {'Accept': 'application/json'},
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return json.decode(response.body);
+      } else {
+        throw Exception('Error al anular orden pendiente (HTTP ${response.statusCode})');
+      }
+    } catch (e) {
+      print('=== API Error en voidPendingSale: $e ===');
       rethrow;
     }
   }
