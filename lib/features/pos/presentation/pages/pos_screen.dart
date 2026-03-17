@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/pos_provider.dart';
@@ -22,18 +23,32 @@ class _PosScreenState extends State<PosScreen> {
   final FocusNode _searchFocusNode = FocusNode();
   final TextEditingController _searchController = TextEditingController();
 
+  // Búsqueda en vivo: se actualiza con onChanged sin necesidad de Enter
+  String _searchQuery = '';
+  
+  Timer? _pendingOrdersTimer;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _searchFocusNode.requestFocus();
-      // Asegurarse de cargar los productos de acceso rápido desde la BD
       Provider.of<CatalogProvider>(context, listen: false).loadProducts();
+      // Cargar el contador de órdenes pendientes al abrir el POS
+      Provider.of<PosProvider>(context, listen: false).loadPendingSales();
+      
+      // Polling de 15 segundos para refrescar órdenes pendientes en background
+      _pendingOrdersTimer = Timer.periodic(const Duration(seconds: 15), (timer) {
+        if (mounted) {
+          Provider.of<PosProvider>(context, listen: false).loadPendingSales();
+        }
+      });
     });
   }
 
   @override
   void dispose() {
+    _pendingOrdersTimer?.cancel();
     _searchFocusNode.dispose();
     _searchController.dispose();
     super.dispose();
@@ -44,43 +59,95 @@ class _PosScreenState extends State<PosScreen> {
     String cleanQuery = query.trim();
     
     // --- LÓGICA EAN-13 BALANZA ETIQUETADORA ---
-    // Estándar local: 20 IIIII PPPPP C (13 dígitos)
-    // 20 = Prefijo balanza
-    // IIIII = Código interno del producto (5 dígitos)
-    // PPPPP = Peso en gramos (5 dígitos)
-    // C = Checksum
     bool isEan13Scale = cleanQuery.length == 13 && cleanQuery.startsWith('20');
     double weightFromBarcode = 0.0;
     
     if (isEan13Scale) {
       final itemCodeStr = cleanQuery.substring(2, 7);
       final weightStr = cleanQuery.substring(7, 12);
-      
-      // Intentamos quitar ceros a la izquierda para el código, ya que a veces
-      // el 'internal_code' en sistema es "1" y en la balanza es "00001".
       cleanQuery = int.parse(itemCodeStr).toString(); 
-      weightFromBarcode = double.parse(weightStr) / 1000.0; // a Kg.
+      weightFromBarcode = double.parse(weightStr) / 1000.0;
     }
     
     final posProvider = Provider.of<PosProvider>(context, listen: false);
-    
-    // Busca producto por query (texto normal o el itemCode extraido)
     final results = await posProvider.search(cleanQuery);
     
-    if (results.isNotEmpty) {
-      if (isEan13Scale) {
-        // Ingreso directo saltando Modal
-        posProvider.submitWeighedProduct(results.first, weightFromBarcode);
-      } else {
-        // Ingreso normal con modal si amerita
-        _handleProductSelection(results.first);
-      }
+    if (!mounted) return;
+
+    if (results.isEmpty) {
+      SnackBarService.error(context, 'Producto no encontrado: "$cleanQuery"');
+    } else if (isEan13Scale) {
+      // EAN-13 balanza: agregar directo con peso embebido
+      posProvider.submitWeighedProduct(results.first, weightFromBarcode);
+    } else if (results.length == 1) {
+      // Un único resultado: agregar directo
+      _handleProductSelection(results.first);
     } else {
-      SnackBarService.error(context, 'Producto no encontrado');
+      // Múltiples resultados: mostrar selector
+      await _showProductPickerDialog(results, cleanQuery);
     }
 
     _searchController.clear();
+    setState(() => _searchQuery = '');
     _searchFocusNode.requestFocus();
+  }
+
+  /// Diálogo para seleccionar entre múltiples resultados de búsqueda
+  Future<void> _showProductPickerDialog(List<Product> results, String query) async {
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            const Icon(Icons.search, color: Colors.blueAccent),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text('Resultados para "$query"',
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  overflow: TextOverflow.ellipsis),
+            ),
+          ],
+        ),
+        contentPadding: const EdgeInsets.fromLTRB(0, 8, 0, 0),
+        content: SizedBox(
+          width: 480,
+          child: ListView.separated(
+            shrinkWrap: true,
+            itemCount: results.length,
+            separatorBuilder: (_, __) => const Divider(height: 1),
+            itemBuilder: (_, i) {
+              final p = results[i];
+              return ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: p.isSoldByWeight ? Colors.orange.shade100 : Colors.blue.shade50,
+                  child: Icon(
+                    p.isSoldByWeight ? Icons.scale_rounded : Icons.inventory_2_outlined,
+                    color: p.isSoldByWeight ? Colors.orange.shade700 : Colors.blue.shade700,
+                    size: 20,
+                  ),
+                ),
+                title: Text(p.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: Text(
+                  p.isSoldByWeight ? 'Por Kg · \$${p.sellingPrice.toStringAsFixed(2)}/Kg' : '\$${p.sellingPrice.toStringAsFixed(2)}',
+                ),
+                trailing: const Icon(Icons.add_circle_outline, color: Colors.green),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _handleProductSelection(p);
+                },
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancelar'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _handleProductSelection(Product product) {
@@ -354,6 +421,10 @@ class _PosScreenState extends State<PosScreen> {
     }
   }
 
+  // Helper de conversión segura String/num → double
+  double _toDouble(dynamic value) =>
+      value == null ? 0.0 : double.tryParse(value.toString()) ?? 0.0;
+
   void _handleCheckout() async {
     final posProvider = Provider.of<PosProvider>(context, listen: false);
     final cashRegisterProvider = Provider.of<CashRegisterProvider>(context, listen: false);
@@ -364,10 +435,9 @@ class _PosScreenState extends State<PosScreen> {
       return;
     }
 
-    // Abrimos el CheckoutDialog y esperamos a ver si sale exitoso (true)
     final success = await showDialog<bool>(
       context: context,
-      barrierDismissible: false, // Forzar uso de botones
+      barrierDismissible: false,
       builder: (_) => CheckoutDialog(total: posProvider.cartTotal),
     );
     
@@ -378,6 +448,142 @@ class _PosScreenState extends State<PosScreen> {
     _searchFocusNode.requestFocus();
   }
 
+  // ────────────────────────────────────────────────────────────────
+  // PREVENTA: Dejar el carrito actual en espera (status = pending)
+  // ────────────────────────────────────────────────────────────────
+  void _handleHoldOrder() async {
+    final posProvider = Provider.of<PosProvider>(context, listen: false);
+    final cashRegisterProvider = Provider.of<CashRegisterProvider>(context, listen: false);
+    final currentUser = context.read<AuthProvider>().currentUser;
+
+    final currentShift = cashRegisterProvider.currentShift;
+    if (currentShift == null || !currentShift.isOpen) {
+      SnackBarService.error(context, 'No hay turno de caja abierto.');
+      return;
+    }
+
+    final success = await posProvider.holdOrder(
+      shiftId: currentShift.id,
+      userId: currentUser?['id'] as int?,
+    );
+
+    if (success && mounted) {
+      SnackBarService.success(context, '📋 Orden guardada en espera.');
+    } else if (!success && mounted) {
+      SnackBarService.error(context, posProvider.errorMessage ?? 'No se pudo guardar la orden.');
+    }
+    _searchFocusNode.requestFocus();
+  }
+
+  // ────────────────────────────────────────────────────────────────
+  // MODAL DE ÓRDENES PENDIENTES
+  // ────────────────────────────────────────────────────────────────
+  void _showPendingOrdersDialog() async {
+    final posProvider = Provider.of<PosProvider>(context, listen: false);
+    await posProvider.loadPendingSales(); // Refrescar antes de mostrar
+
+    if (!mounted) return;
+
+    await showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (ctx, setStateDialog) {
+            final pendingSales = posProvider.pendingSales;
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+              contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+              title: Row(
+                children: [
+                  Icon(Icons.pending_actions_rounded, color: Colors.orange.shade700),
+                  const SizedBox(width: 10),
+                  const Text('Órdenes en Espera', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.refresh, color: Colors.blueGrey),
+                    tooltip: 'Actualizar',
+                    onPressed: () async {
+                      await posProvider.loadPendingSales();
+                      setStateDialog(() {});
+                    },
+                  ),
+                ],
+              ),
+              content: SizedBox(
+                width: 520,
+                child: pendingSales.isEmpty
+                    ? const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 32),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.check_circle_outline, size: 56, color: Colors.green),
+                            SizedBox(height: 12),
+                            Text('¡No hay órdenes en espera!', style: TextStyle(fontSize: 16, color: Colors.grey)),
+                          ],
+                        ),
+                      )
+                    : ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: pendingSales.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        itemBuilder: (_, index) {
+                          final sale = pendingSales[index];
+                          final saleId = (sale['id'] as num).toInt();
+                          final total = _toDouble(sale['total']);
+                          final userName = sale['user']?['name'] ?? 'Sin cajero';
+                          final createdAt = sale['created_at'] != null
+                              ? DateTime.tryParse(sale['created_at'].toString())?.toLocal()
+                              : null;
+                          final timeStr = createdAt != null
+                              ? '${createdAt.hour.toString().padLeft(2, '0')}:${createdAt.minute.toString().padLeft(2, '0')}'
+                              : '';
+                          final itemCount = (sale['items'] as List?)?.length ?? 0;
+
+                          return ListTile(
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                            leading: CircleAvatar(
+                              backgroundColor: Colors.orange.shade100,
+                              child: Text('#$saleId', style: TextStyle(color: Colors.orange.shade800, fontWeight: FontWeight.bold, fontSize: 13)),
+                            ),
+                            title: Text('\$${total.toStringAsFixed(2)}',
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.black87)),
+                            subtitle: Text('$userName · $itemCount ítems · $timeStr',
+                                style: const TextStyle(fontSize: 13, color: Colors.grey)),
+                            trailing: FilledButton.icon(
+                              onPressed: () {
+                                Navigator.pop(dialogContext);
+                                posProvider.recallOrderToCart(sale);
+                                SnackBarService.success(context, '📥 Orden #$saleId cargada al carrito para revisión.');
+                                _searchFocusNode.requestFocus();
+                              },
+                              icon: const Icon(Icons.download_rounded, size: 18),
+                              label: const Text('Recuperar'),
+                              style: FilledButton.styleFrom(
+                                backgroundColor: Colors.orange.shade700,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+              ),
+              actionsPadding: const EdgeInsets.all(16),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('Cerrar'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+    _searchFocusNode.requestFocus();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -385,6 +591,29 @@ class _PosScreenState extends State<PosScreen> {
         title: const Text('Punto de Venta (POS)'),
         centerTitle: false,
         actions: [
+          // ── Ícono de Órdenes Pendientes con Badge ──────────────
+          Consumer<PosProvider>(
+            builder: (ctx, pos, _) {
+              final count = pos.pendingCount;
+              return Padding(
+                padding: const EdgeInsets.only(right: 4),
+                child: Badge(
+                  label: Text('$count', style: const TextStyle(color: Colors.white, fontSize: 11)),
+                  isLabelVisible: count > 0,
+                  backgroundColor: Colors.redAccent,
+                  child: IconButton(
+                    tooltip: 'Órdenes en Espera',
+                    icon: Icon(
+                      Icons.pending_actions_rounded,
+                      color: count > 0 ? Colors.orange.shade700 : Colors.blueGrey,
+                      size: 28,
+                    ),
+                    onPressed: _showPendingOrdersDialog,
+                  ),
+                ),
+              );
+            },
+          ),
           TextButton.icon(
             icon: const Icon(Icons.receipt_long_outlined, color: Colors.blueAccent),
             label: const Text('Ventas del Día', style: TextStyle(color: Colors.blueAccent)),
@@ -560,8 +789,39 @@ class _PosScreenState extends State<PosScreen> {
   Widget _buildCartPanel() {
     return Consumer<PosProvider>(
       builder: (context, pos, child) {
+        final isRecall = pos.activePendingSaleId != null;
+
         return Column(
           children: [
+            // Banner de Recuperación de Orden
+            if (isRecall)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                color: Colors.orange.shade50,
+                child: Row(
+                  children: [
+                    Icon(Icons.sync_rounded, color: Colors.orange.shade800, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Editando Orden #${pos.activePendingSaleId}',
+                        style: TextStyle(color: Colors.orange.shade900, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    IconButton(
+                      icon: Icon(Icons.close, color: Colors.orange.shade900, size: 18),
+                      tooltip: 'Cancelar Edición',
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      onPressed: () {
+                        pos.clearRecall();
+                        _searchFocusNode.requestFocus();
+                      },
+                    ),
+                  ],
+                ),
+              ),
+
             // Header del carrito
             Container(
               padding: const EdgeInsets.all(16),
@@ -605,84 +865,93 @@ class _PosScreenState extends State<PosScreen> {
                     ),
             ),
 
-            // Footer (Total y Cobrar)
+            // Footer (Total + Doble Botón)
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
               decoration: BoxDecoration(
                 color: Colors.white,
                 boxShadow: [
                   BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, -5))
-                ]
+                ],
               ),
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      crossAxisAlignment: CrossAxisAlignment.baseline,
-                      textBaseline: TextBaseline.alphabetic,
-                      children: [
-                        const Text('TOTAL:', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                        const SizedBox(width: 4),
-                        Expanded(
-                          child: Text(
-                            '\$${pos.cartTotal.toStringAsFixed(2)}', 
-                            style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.green),
-                            textAlign: TextAlign.right,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 54,
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        child: ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: pos.cart.isEmpty
-                                ? Colors.grey.shade400
-                                : pos.isLoading
-                                    ? Colors.blue.shade300
-                                    : Colors.blue.shade700,
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                            elevation: pos.isLoading ? 0 : 4,
-                          ),
-                          onPressed: pos.cart.isEmpty || pos.isLoading ? null : _handleCheckout,
-                          child: pos.isLoading
-                              ? const Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    SizedBox(
-                                      width: 22,
-                                      height: 22,
-                                      child: CircularProgressIndicator(
-                                        color: Colors.white,
-                                        strokeWidth: 2.5,
-                                      ),
-                                    ),
-                                    SizedBox(width: 10),
-                                    Text('Procesando...', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                                  ],
-                                )
-                              : const Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(Icons.point_of_sale_rounded, size: 22),
-                                    SizedBox(width: 8),
-                                    Text('COBRAR', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, letterSpacing: 1.5)),
-                                  ],
-                                ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // ── Total ────────────────────────────────────────────
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: CrossAxisAlignment.baseline,
+                    textBaseline: TextBaseline.alphabetic,
+                    children: [
+                      const Text('TOTAL:', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          '\$${pos.cartTotal.toStringAsFixed(2)}',
+                          style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.green),
+                          textAlign: TextAlign.right,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                    )
-                  ],
-                ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+
+                  // ── Botón: Dejar en Espera ────────────────────────────
+                  SizedBox(
+                    width: double.infinity,
+                    height: 44,
+                    child: OutlinedButton.icon(
+                      onPressed: pos.cart.isEmpty || pos.isLoading || isRecall ? null : _handleHoldOrder,
+                      icon: const Icon(Icons.pending_actions_rounded, size: 18),
+                      label: const Text('Dejar en Espera', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.blueGrey.shade700,
+                        side: BorderSide(color: pos.cart.isEmpty ? Colors.grey.shade300 : Colors.blueGrey.shade400),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+
+                  // ── Botón Principal: Cobrar ───────────────────────────
+                  SizedBox(
+                    width: double.infinity,
+                    height: 54,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: pos.cart.isEmpty
+                            ? Colors.grey.shade400
+                            : pos.isLoading
+                                ? Colors.green.shade300
+                                : Colors.green.shade600,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        elevation: pos.isLoading ? 0 : 4,
+                      ),
+                      onPressed: pos.cart.isEmpty || pos.isLoading ? null : _handleCheckout,
+                      child: pos.isLoading
+                          ? const Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                SizedBox(width: 22, height: 22,
+                                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5)),
+                                SizedBox(width: 10),
+                                Text('Procesando...', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                              ],
+                            )
+                          : const Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.point_of_sale_rounded, size: 22),
+                                SizedBox(width: 8),
+                                Text('💵 COBRAR', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
+                              ],
+                            ),
+                    ),
+                  ),
+                ],
               ),
             )
           ],
@@ -697,34 +966,64 @@ class _PosScreenState extends State<PosScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Barra de búsqueda con foco fijo (Escáner de código de barras)
+          // Barra de búsqueda con filtro en vivo
           TextField(
             controller: _searchController,
             focusNode: _searchFocusNode,
             decoration: InputDecoration(
-              hintText: 'Escanear código de barras o buscar producto...',
+              hintText: 'Escribir nombre o escanear código...',
               prefixIcon: const Icon(Icons.search),
-              suffixIcon: IconButton(
-                icon: const Icon(Icons.clear),
-                onPressed: () {
-                  _searchController.clear();
-                  _searchFocusNode.requestFocus();
-                },
-              ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
+              suffixIcon: _searchQuery.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear),
+                      onPressed: () {
+                        _searchController.clear();
+                        setState(() => _searchQuery = '');
+                        _searchFocusNode.requestFocus();
+                      },
+                    )
+                  : null,
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
               filled: true,
               fillColor: Colors.grey.shade100,
             ),
+            // Filtro local instantáneo (sin API call)
+            onChanged: (val) => setState(() => _searchQuery = val.trim().toLowerCase()),
+            // Enter: para códigos de barras (API call + agregar al carrito)
             onSubmitted: _onProductScannedOrSearched,
           ),
           
-          const SizedBox(height: 24),
-          const Text('Acceso Rápido (Favoritos / Sin Código)', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           const SizedBox(height: 16),
 
-          // Grilla de productos rápidos
+          // ── Header dinámico ────────────────────────────────────────────
+          if (_searchQuery.isEmpty) ...[  
+            const Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Acceso Rápido', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                      Text('Productos por peso · Sin código de barras · Más vendidos',
+                          style: TextStyle(fontSize: 12, color: Colors.grey)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ] else ...[  
+            Row(
+              children: [
+                const Icon(Icons.filter_list_rounded, color: Colors.blueAccent),
+                const SizedBox(width: 6),
+                Text('Resultados para "${_searchController.text}"',
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.blueAccent)),
+              ],
+            ),
+          ],
+          const SizedBox(height: 12),
+
+          // ── Grilla dinámica ────────────────────────────────────────────
           Expanded(
             child: Consumer<CatalogProvider>(
               builder: (context, catalog, child) {
@@ -732,35 +1031,75 @@ class _PosScreenState extends State<PosScreen> {
                   return const Center(child: CircularProgressIndicator());
                 }
 
-                if (catalog.products.isEmpty) {
-                  return const Center(child: Text('No hay productos en el catálogo.'));
+                // Determinar qué mostrar: filtrado por búsqueda o Acceso Rápido
+                final List<Product> displayItems;
+                if (_searchQuery.isEmpty) {
+                  // Acceso Rápido: productos por peso primero, luego unitarios
+                  final weighted = catalog.products.where((p) => p.isSoldByWeight).toList();
+                  final regular  = catalog.products.where((p) => !p.isSoldByWeight).toList();
+                  displayItems = [...weighted, ...regular];
+                } else {
+                  // Búsqueda local en tiempo real — sin API, instantáneo
+                  displayItems = catalog.products.where((p) {
+                    final q = _searchQuery;
+                    return p.name.toLowerCase().contains(q) ||
+                           (p.barcode?.contains(q) ?? false) ||
+                           p.internalCode.toLowerCase().contains(q);
+                  }).toList();
+                }
+
+                if (displayItems.isEmpty) {
+                  return Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.search_off, size: 56, color: Colors.grey),
+                        const SizedBox(height: 12),
+                        Text(
+                          _searchQuery.isEmpty
+                              ? 'No hay productos en el catálogo.'
+                              : 'No se encontraron productos para "${_searchController.text}"',
+                          style: const TextStyle(color: Colors.grey, fontSize: 15),
+                          textAlign: TextAlign.center,
+                        ),
+                        if (_searchQuery.isNotEmpty) ...[  
+                          const SizedBox(height: 8),
+                          const Text('Presá Enter para buscar en el servidor',
+                              style: TextStyle(color: Colors.blueGrey, fontSize: 13)),
+                        ],
+                      ],
+                    ),
+                  );
                 }
 
                 return GridView.builder(
                   gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
                     maxCrossAxisExtent: 180,
                     childAspectRatio: 0.85,
-                    crossAxisSpacing: 16,
-                    mainAxisSpacing: 16,
+                    crossAxisSpacing: 12,
+                    mainAxisSpacing: 12,
                   ),
-                  itemCount: catalog.products.length,
+                  itemCount: displayItems.length,
                   itemBuilder: (context, index) {
-                    final product = catalog.products[index];
+                    final product = displayItems[index];
+                    final isByWeight = product.isSoldByWeight;
+
                     return InkWell(
-                      onTap: () {
-                        _handleProductSelection(product);
-                      },
+                      borderRadius: BorderRadius.circular(10),
+                      onTap: () => _handleProductSelection(product),
                       child: Card(
                         elevation: 2,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                         child: Container(
                           decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(8),
+                            borderRadius: BorderRadius.circular(10),
                             gradient: LinearGradient(
-                              colors: [Colors.blue.shade50, Colors.white],
+                              colors: isByWeight
+                                  ? [Colors.orange.shade50, Colors.white]   // naranja para granel
+                                  : [Colors.blue.shade50, Colors.white],    // azul para unitarios
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
-                            )
+                            ),
                           ),
                           child: Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 8.0),
@@ -768,29 +1107,57 @@ class _PosScreenState extends State<PosScreen> {
                               mainAxisAlignment: MainAxisAlignment.center,
                               crossAxisAlignment: CrossAxisAlignment.center,
                               children: [
+                                // Ícono diferenciador
+                                Icon(
+                                  isByWeight ? Icons.scale_rounded : Icons.inventory_2_outlined,
+                                  color: isByWeight ? Colors.orange.shade600 : Colors.blue.shade600,
+                                  size: 24,
+                                ),
+                                const SizedBox(height: 4),
                                 Expanded(
                                   child: Center(
                                     child: Text(
                                       product.name, 
                                       textAlign: TextAlign.center,
-                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                                       maxLines: 3,
                                       overflow: TextOverflow.ellipsis,
                                     ),
                                   ),
                                 ),
                                 const SizedBox(height: 4),
-                                Text(
-                                  '\$${product.sellingPrice.toStringAsFixed(2)}',
-                                  style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 16),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: isByWeight ? Colors.orange.shade100 : Colors.green.shade50,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    isByWeight
+                                        ? '\$${product.sellingPrice.toStringAsFixed(2)}/Kg'
+                                        : '\$${product.sellingPrice.toStringAsFixed(2)}',
+                                    style: TextStyle(
+                                      color: isByWeight ? Colors.orange.shade800 : Colors.green.shade700,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
                                 ),
-                                if (product.isSoldByWeight)
-                                  const Padding(
-                                    padding: EdgeInsets.only(top: 4.0),
-                                    child: Text('Por Peso (Kg)', style: TextStyle(color: Colors.orange, fontSize: 11)),
-                                  )
+                                // Badge "Por Peso" para los productos de granel
+                                if (isByWeight) ...[  
+                                  const SizedBox(height: 3),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                                    decoration: BoxDecoration(
+                                      color: Colors.orange.shade200,
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text('⚖️ Por Kg',
+                                      style: TextStyle(fontSize: 10, color: Colors.orange.shade900, fontWeight: FontWeight.w600)),
+                                  ),
+                                ],
                               ],
                             ),
                           ),
@@ -799,9 +1166,9 @@ class _PosScreenState extends State<PosScreen> {
                     );
                   },
                 );
-              }
+              },
             ),
-          )
+          ),
         ],
       ),
     );

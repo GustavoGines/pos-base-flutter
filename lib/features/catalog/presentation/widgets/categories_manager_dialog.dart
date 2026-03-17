@@ -3,13 +3,8 @@ import 'package:provider/provider.dart';
 import '../providers/catalog_provider.dart';
 import '../../domain/entities/category.dart';
 
-/// Dialog de gestión ABM (Alta/Baja/Modificación) de Categorías.
-///
-/// Permite:
-///  - Ver la lista de categorías actuales
-///  - Crear nuevas categorías rápidamente
-///  - Editar el nombre de una categoría (inline)
-///  - Eliminar (con protección del backend si tiene productos)
+/// Dialog de gestión ABM de Categorías.
+/// Estilo consistente con ProductFormDialog y BulkPriceUpdateDialog del sistema.
 class CategoriesManagerDialog extends StatefulWidget {
   const CategoriesManagerDialog({Key? key}) : super(key: key);
 
@@ -18,11 +13,10 @@ class CategoriesManagerDialog extends StatefulWidget {
 }
 
 class _CategoriesManagerDialogState extends State<CategoriesManagerDialog> {
-  final _newNameCtrl = TextEditingController();
+  final _newNameCtrl  = TextEditingController();
   final _newFocusNode = FocusNode();
   bool _adding = false;
 
-  // Para edición inline
   int? _editingId;
   final _editCtrl = TextEditingController();
 
@@ -34,17 +28,18 @@ class _CategoriesManagerDialogState extends State<CategoriesManagerDialog> {
     super.dispose();
   }
 
+  // ── Acciones ────────────────────────────────────────────────────
+
   Future<void> _createCategory(CatalogProvider provider) async {
     final name = _newNameCtrl.text.trim();
     if (name.isEmpty) return;
-
     setState(() => _adding = true);
     final ok = await provider.createCategory(name);
     if (!mounted) return;
     setState(() => _adding = false);
-
     if (ok) {
       _newNameCtrl.clear();
+      _newFocusNode.requestFocus();
       _showSnack('Categoría "$name" creada', isError: false);
     } else {
       _showSnack(provider.errorMessage ?? 'Error al crear categoría', isError: true);
@@ -53,10 +48,7 @@ class _CategoriesManagerDialogState extends State<CategoriesManagerDialog> {
 
   Future<void> _saveEdit(CatalogProvider provider, int id) async {
     final name = _editCtrl.text.trim();
-    if (name.isEmpty) {
-      setState(() => _editingId = null);
-      return;
-    }
+    if (name.isEmpty) { setState(() => _editingId = null); return; }
     final ok = await provider.updateCategory(id, name);
     if (!mounted) return;
     if (ok) {
@@ -71,16 +63,14 @@ class _CategoriesManagerDialogState extends State<CategoriesManagerDialog> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: Colors.white,
-        title: const Text('Confirmar eliminación', style: TextStyle(color: Colors.black87)),
+        title: const Text('Confirmar eliminación'),
         content: Text(
           '¿Eliminar la categoría "${cat.name}"?\n\nSi tiene productos asociados, la operación será rechazada.',
-          style: const TextStyle(color: Colors.black54),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade700),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade600),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Eliminar'),
           ),
@@ -88,16 +78,13 @@ class _CategoriesManagerDialogState extends State<CategoriesManagerDialog> {
       ),
     );
     if (confirm != true || !mounted) return;
-
     final ok = await provider.deleteCategory(cat.id);
     if (!mounted) return;
     if (ok) {
       _showSnack('Categoría "${cat.name}" eliminada', isError: false);
     } else {
-      // Extraer mensaje limpio del error
       final raw = provider.errorMessage ?? 'Error al eliminar';
-      final clean = raw.replaceFirst('Exception: ', '');
-      _showSnack(clean, isError: true, duration: const Duration(seconds: 5));
+      _showSnack(raw.replaceFirst('Exception: ', ''), isError: true, duration: const Duration(seconds: 5));
     }
   }
 
@@ -111,128 +98,74 @@ class _CategoriesManagerDialogState extends State<CategoriesManagerDialog> {
     ));
   }
 
+  // ── Build ────────────────────────────────────────────────────────
+
   @override
   Widget build(BuildContext context) {
-    return Dialog(
-      backgroundColor: Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: SizedBox(
+    return AlertDialog(
+      title: Row(
+        children: [
+          Icon(Icons.label_rounded, color: Theme.of(context).colorScheme.primary),
+          const SizedBox(width: 10),
+          const Text('Gestión de Categorías'),
+        ],
+      ),
+      contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+      content: SizedBox(
         width: 480,
-        height: 560,
+        height: 420,
         child: Column(
           children: [
-            // ── Header ──────────────────────────────────────
-            _buildHeader(),
-            // ── Add row ─────────────────────────────────────
-            _buildAddRow(),
+            // ── Fila agregar ──────────────────────────────────
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _newNameCtrl,
+                    focusNode: _newFocusNode,
+                    decoration: InputDecoration(
+                      hintText: 'Nombre de nueva categoría...',
+                      prefixIcon: Icon(Icons.add, color: Theme.of(context).colorScheme.primary),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                    ),
+                    onSubmitted: (_) => _createCategory(context.read<CatalogProvider>()),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Consumer<CatalogProvider>(
+                  builder: (ctx, provider, _) => FilledButton.icon(
+                    icon: _adding
+                        ? const SizedBox(width: 16, height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        : const Icon(Icons.check, size: 18),
+                    label: Text(_adding ? 'Guardando...' : 'Agregar'),
+                    onPressed: _adding ? null : () => _createCategory(provider),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
             Divider(color: Colors.grey.shade200, height: 1),
-            // ── List ────────────────────────────────────────
+
+            // ── Lista de categorías ───────────────────────────
             Expanded(child: _buildCategoryList()),
-            // ── Footer ──────────────────────────────────────
-            _buildFooter(),
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildHeader() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-      decoration: BoxDecoration(
-        color: Colors.grey.shade50,
-        borderRadius: const BorderRadius.only(
-          topLeft: Radius.circular(16),
-          topRight: Radius.circular(16),
+      actions: [
+        Consumer<CatalogProvider>(
+          builder: (_, p, __) => Text(
+            '${p.categories.length} categoría${p.categories.length != 1 ? 's' : ''}',
+            style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+          ),
         ),
-        border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: const Color(0xFF3B82F6).withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: const Icon(Icons.label_outline, color: Color(0xFF3B82F6), size: 20),
-          ),
-          const SizedBox(width: 14),
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Gestión de Categorías',
-                    style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 16)),
-                Text('Crear, editar y eliminar categorías del catálogo',
-                    style: TextStyle(color: Colors.black54, fontSize: 12)),
-              ],
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.close, color: Colors.black54),
-            onPressed: () => Navigator.of(context).pop(true), // true = hubo cambios, recargar
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildAddRow() {
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Row(
-        children: [
-          Expanded(
-            child: TextField(
-              controller: _newNameCtrl,
-              focusNode: _newFocusNode,
-              style: const TextStyle(color: Colors.black87),
-              decoration: InputDecoration(
-                hintText: 'Nombre de nueva categoría...',
-                hintStyle: const TextStyle(color: Colors.black54),
-                prefixIcon: const Icon(Icons.add, color: Color(0xFF3B82F6)),
-                filled: true,
-                fillColor: Colors.white,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide: BorderSide(color: Colors.grey.shade300),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide: BorderSide(color: Colors.grey.shade300),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide: const BorderSide(color: Color(0xFF3B82F6)),
-                ),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              ),
-              onSubmitted: (_) {
-                final provider = context.read<CatalogProvider>();
-                _createCategory(provider);
-              },
-            ),
-          ),
-          const SizedBox(width: 10),
-          Consumer<CatalogProvider>(
-            builder: (ctx, provider, _) => ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF3B82F6),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-              ),
-              icon: _adding
-                  ? const SizedBox(
-                      width: 16, height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                  : const Icon(Icons.check, size: 18),
-              label: const Text('Agregar'),
-              onPressed: _adding ? null : () => _createCategory(provider),
-            ),
-          ),
-        ],
-      ),
+        const Spacer(),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(true),
+          child: const Text('Cerrar'),
+        ),
+      ],
     );
   }
 
@@ -245,20 +178,17 @@ class _CategoriesManagerDialogState extends State<CategoriesManagerDialog> {
         }
         if (cats.isEmpty) {
           return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.label_off_outlined, size: 48, color: Colors.grey.shade400),
-                const SizedBox(height: 12),
-                const Text('Sin categorías', style: TextStyle(color: Colors.black54)),
-              ],
-            ),
+            child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+              Icon(Icons.label_off_outlined, size: 48, color: Colors.grey.shade300),
+              const SizedBox(height: 12),
+              const Text('Sin categorías creadas', style: TextStyle(color: Colors.black45)),
+            ]),
           );
         }
         return ListView.separated(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          padding: const EdgeInsets.symmetric(vertical: 8),
           itemCount: cats.length,
-          separatorBuilder: (_, __) => const SizedBox(height: 4),
+          separatorBuilder: (_, __) => Divider(color: Colors.grey.shade100, height: 1),
           itemBuilder: (ctx, i) => _buildCategoryTile(provider, cats[i]),
         );
       },
@@ -268,107 +198,68 @@ class _CategoriesManagerDialogState extends State<CategoriesManagerDialog> {
   Widget _buildCategoryTile(CatalogProvider provider, Category cat) {
     final isEditing = _editingId == cat.id;
 
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
-      decoration: BoxDecoration(
-        color: isEditing ? Colors.blue.shade50 : Colors.white,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: isEditing ? Colors.blue.shade300 : Colors.grey.shade200,
-        ),
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+      leading: CircleAvatar(
+        radius: 16,
+        backgroundColor: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+        child: Icon(Icons.label_rounded,
+            color: Theme.of(context).colorScheme.primary, size: 16),
       ),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        leading: Container(
-          width: 32,
-          height: 32,
-          decoration: BoxDecoration(
-            color: const Color(0xFF3B82F6).withOpacity(0.1),
-            borderRadius: BorderRadius.circular(6),
-          ),
-          child: const Icon(Icons.label, color: Color(0xFF3B82F6), size: 16),
-        ),
-        title: isEditing
-            ? TextField(
-                controller: _editCtrl,
-                autofocus: true,
-                style: const TextStyle(color: Colors.black87, fontSize: 14),
-                decoration: const InputDecoration(
-                  border: InputBorder.none,
-                  isDense: true,
-                ),
-                onSubmitted: (_) => _saveEdit(provider, cat.id),
-              )
-            : Text(cat.name,
-                style: const TextStyle(color: Colors.black87, fontSize: 14, fontWeight: FontWeight.w500)),
-        subtitle: cat.description != null && cat.description!.isNotEmpty
-            ? Text(cat.description!, style: const TextStyle(color: Colors.black54, fontSize: 12))
-            : null,
-        trailing: provider.isLoading && _editingId == cat.id
-            ? const SizedBox(
-                width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-            : Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (isEditing) ...[
-                    // Guardar
-                    IconButton(
-                      icon: const Icon(Icons.check_circle, color: Colors.green, size: 20),
-                      tooltip: 'Guardar',
-                      onPressed: () => _saveEdit(provider, cat.id),
-                    ),
-                    // Cancelar
-                    IconButton(
-                      icon: const Icon(Icons.cancel, color: Colors.black54, size: 20),
-                      tooltip: 'Cancelar',
-                      onPressed: () => setState(() => _editingId = null),
-                    ),
-                  ] else ...[
-                    // Editar
-                    IconButton(
-                      icon: const Icon(Icons.edit_outlined, color: Color(0xFF3B82F6), size: 18),
-                      tooltip: 'Editar',
-                      onPressed: () {
-                        setState(() {
+      title: isEditing
+          ? TextField(
+              controller: _editCtrl,
+              autofocus: true,
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+              decoration: const InputDecoration(
+                border: InputBorder.none,
+                isDense: true,
+                contentPadding: EdgeInsets.zero,
+              ),
+              onSubmitted: (_) => _saveEdit(provider, cat.id),
+            )
+          : Text(cat.name,
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+      subtitle: (!isEditing && cat.description != null && cat.description!.isNotEmpty)
+          ? Text(cat.description!,
+              style: const TextStyle(fontSize: 12, color: Colors.black45))
+          : null,
+      trailing: provider.isLoading && _editingId == cat.id
+          ? const SizedBox(width: 20, height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2))
+          : Row(
+              mainAxisSize: MainAxisSize.min,
+              children: isEditing
+                  ? [
+                      IconButton(
+                        icon: const Icon(Icons.check_rounded, color: Colors.green, size: 20),
+                        tooltip: 'Guardar',
+                        onPressed: () => _saveEdit(provider, cat.id),
+                      ),
+                      IconButton(
+                        icon: Icon(Icons.close_rounded, color: Colors.grey.shade500, size: 20),
+                        tooltip: 'Cancelar',
+                        onPressed: () => setState(() => _editingId = null),
+                      ),
+                    ]
+                  : [
+                      IconButton(
+                        icon: Icon(Icons.edit_outlined,
+                            color: Theme.of(context).colorScheme.primary, size: 18),
+                        tooltip: 'Editar',
+                        onPressed: () => setState(() {
                           _editingId = cat.id;
                           _editCtrl.text = cat.name;
-                        });
-                      },
-                    ),
-                    // Eliminar
-                    IconButton(
-                      icon: Icon(Icons.delete_outline, color: Colors.red.shade400, size: 18),
-                      tooltip: 'Eliminar',
-                      onPressed: () => _deleteCategory(provider, cat),
-                    ),
-                  ],
-                ],
-              ),
-      ),
-    );
-  }
-
-  Widget _buildFooter() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-      decoration: BoxDecoration(
-        border: Border(top: BorderSide(color: Colors.grey.shade200)),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Consumer<CatalogProvider>(
-            builder: (_, p, __) => Text(
-              '${p.categories.length} categoría${p.categories.length != 1 ? 's' : ''}',
-              style: const TextStyle(color: Colors.black54, fontSize: 12),
+                        }),
+                      ),
+                      IconButton(
+                        icon: Icon(Icons.delete_outline,
+                            color: Colors.red.shade400, size: 18),
+                        tooltip: 'Eliminar',
+                        onPressed: () => _deleteCategory(provider, cat),
+                      ),
+                    ],
             ),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Cerrar'),
-          ),
-        ],
-      ),
     );
   }
 }

@@ -24,8 +24,8 @@ class PosRepositoryImpl implements PosRepository {
     required int shiftId,
     required List<CartItem> items,
     int? userId,
+    String status = 'completed',
   }) async {
-    // Retornamos un Sale 'dummy' o parseado tras la respuesta correcta para fines de la app
     final response = await remoteDataSource.processSale(
       total: total,
       paymentMethod: paymentMethod,
@@ -34,8 +34,9 @@ class PosRepositoryImpl implements PosRepository {
       shiftId: shiftId,
       items: items,
       userId: userId,
+      status: status,
     );
-    
+
     return Sale(
       id: response['sale']['id'],
       total: total,
@@ -44,8 +45,32 @@ class PosRepositoryImpl implements PosRepository {
         id: shiftId,
         openedAt: DateTime.now(),
         openingBalance: 0,
-        status: 'open'
-      )
+        status: 'open',
+      ),
     );
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchPendingSales() async {
+    final list = await remoteDataSource.fetchPendingSales();
+    return list.cast<Map<String, dynamic>>();
+  }
+
+  @override
+  Future<Map<String, dynamic>> payPendingSale({
+    required int saleId,
+    required String paymentMethod,
+    required double tenderedAmount,
+    required double changeAmount,
+    List<CartItem>? items,
+  }) async {
+    final response = await remoteDataSource.payPendingSale(
+      saleId: saleId,
+      paymentMethod: paymentMethod,
+      tenderedAmount: tenderedAmount,
+      changeAmount: changeAmount,
+      items: items,
+    );
+    return response as Map<String, dynamic>;
   }
 }

@@ -13,6 +13,15 @@ abstract class PosRemoteDataSource {
     required int shiftId,
     required List<CartItem> items,
     int? userId,
+    String status,
+  });
+  Future<List<dynamic>> fetchPendingSales();
+  Future<dynamic> payPendingSale({
+    required int saleId,
+    required String paymentMethod,
+    required double tenderedAmount,
+    required double changeAmount,
+    List<CartItem>? items,
   });
 }
 
@@ -25,8 +34,11 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
   @override
   Future<List<ProductModel>> searchProducts(String query) async {
     try {
+      final uri = Uri.parse('$baseUrl/pos/products/search')
+          .replace(queryParameters: {'query': query});
+
       final response = await client.get(
-        Uri.parse('$baseUrl/pos/products/search?query=$query'),
+        uri,
         headers: {'Accept': 'application/json'},
       );
 
@@ -51,11 +63,13 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
     required int shiftId,
     required List<CartItem> items,
     int? userId,
+    String status = 'completed',
   }) async {
     try {
       final payload = {
         'total': total,
         'payment_method': paymentMethod,
+        'status': status,
         if (tenderedAmount != null) 'tendered_amount': tenderedAmount,
         if (changeAmount != null) 'change_amount': changeAmount,
         'cash_register_shift_id': shiftId,
@@ -80,7 +94,6 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
       if (response.statusCode == 201) {
         return json.decode(response.body);
       } else {
-        // Extraer detalles del error del backend para mayor visibilidad
         String detail = '';
         try {
           final errBody = json.decode(response.body);
@@ -99,6 +112,73 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
       }
     } catch (e) {
       print('=== API Error en processSale: $e ===');
+      rethrow;
+    }
+  }
+
+  @override
+  Future<List<dynamic>> fetchPendingSales() async {
+    try {
+      final response = await client.get(
+        Uri.parse('$baseUrl/sales/pending'),
+        headers: {'Accept': 'application/json'},
+      );
+      if (response.statusCode == 200) {
+        return json.decode(response.body) as List<dynamic>;
+      } else {
+        throw Exception('Error al cargar órdenes pendientes (HTTP ${response.statusCode})');
+      }
+    } catch (e) {
+      print('=== API Error en fetchPendingSales: $e ===');
+      rethrow;
+    }
+  }
+
+  @override
+  Future<dynamic> payPendingSale({
+    required int saleId,
+    required String paymentMethod,
+    required double tenderedAmount,
+    required double changeAmount,
+    List<CartItem>? items,
+  }) async {
+    try {
+      final payload = {
+        'payment_method': paymentMethod,
+        'tendered_amount': tenderedAmount,
+        'change_amount': changeAmount,
+      };
+      if (items != null) {
+        payload['items'] = items.map((item) => {
+          'product_id': item.product.id,
+          'quantity': item.quantity,
+          'unit_price': item.product.sellingPrice,
+          'subtotal': item.subtotal,
+        }).toList();
+      }
+
+      final response = await client.put(
+        Uri.parse('$baseUrl/sales/$saleId/pay'),
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: json.encode(payload),
+      );
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      } else {
+        String detail = '';
+        try {
+          final errBody = json.decode(response.body);
+          detail = errBody['message'] ?? response.body;
+        } catch (_) {
+          detail = response.body;
+        }
+        throw Exception('Error al cobrar orden: $detail (HTTP ${response.statusCode})');
+      }
+    } catch (e) {
+      print('=== API Error en payPendingSale: $e ===');
       rethrow;
     }
   }

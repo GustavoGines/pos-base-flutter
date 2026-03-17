@@ -15,16 +15,18 @@ class ProcessSaleUseCase {
     required int shiftId,
     required List<CartItem> items,
     int? userId,
+    String status = 'completed',
   }) async {
     if (items.isEmpty) throw Exception('El carrito está vacío');
     return await repository.processSale(
-      total: total, 
+      total: total,
       paymentMethod: paymentMethod,
       tenderedAmount: tenderedAmount,
       changeAmount: changeAmount,
-      shiftId: shiftId, 
+      shiftId: shiftId,
       items: items,
       userId: userId,
+      status: status,
     );
   }
 }

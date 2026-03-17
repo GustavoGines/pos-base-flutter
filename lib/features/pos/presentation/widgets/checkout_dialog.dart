@@ -5,17 +5,21 @@ import '../../../cash_register/presentation/providers/cash_register_provider.dar
 import '../../../auth/presentation/providers/auth_provider.dart';
 import '../../../../core/utils/snack_bar_service.dart';
 
+/// Diálogo de cobro reutilizable para:
+///  - Ventas normales: [saleId] es null → llama a [posProvider.processCheckout]
+///  - Pago de preventas: [saleId] es el ID de la venta → llama a [posProvider.payPendingSale]
 class CheckoutDialog extends StatefulWidget {
   final double total;
+  final int? saleId; // null = venta normal; non-null = cobro de preventa
 
-  const CheckoutDialog({Key? key, required this.total}) : super(key: key);
+  const CheckoutDialog({Key? key, required this.total, this.saleId}) : super(key: key);
 
   @override
   State<CheckoutDialog> createState() => _CheckoutDialogState();
 }
 
 class _CheckoutDialogState extends State<CheckoutDialog> {
-  String _paymentMethod = 'cash'; // 'cash', 'card', 'transfer'
+  String _paymentMethod = 'cash';
   final _amountCtrl = TextEditingController();
   final _focusNode = FocusNode();
 
@@ -23,7 +27,6 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   void initState() {
     super.initState();
     _amountCtrl.addListener(_onAmountChanged);
-    // Seleccionar todo al abrir (si tiene valor)
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_paymentMethod == 'cash') {
         _focusNode.requestFocus();
@@ -39,9 +42,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     super.dispose();
   }
 
-  void _onAmountChanged() {
-    setState(() {}); // Forzar repintado para calcular vuelto y estado del botón
-  }
+  void _onAmountChanged() => setState(() {});
 
   double get _tendered {
     if (_amountCtrl.text.isEmpty) return 0.0;
@@ -51,10 +52,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   double get _change => _tendered - widget.total;
 
   bool get _canSubmit {
-    if (_paymentMethod == 'cash') {
-      return _tendered >= widget.total;
-    }
-    // Si es tarjeta/transferencia, el tendered es exactamente el total
+    if (_paymentMethod == 'cash') return _tendered >= widget.total;
     return true;
   }
 
@@ -62,31 +60,47 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     if (!_canSubmit) return;
 
     final posProvider = context.read<PosProvider>();
-    final shiftId = context.read<CashRegisterProvider>().currentShift?.id;
     final currentUser = context.read<AuthProvider>().currentUser;
-    final userId = currentUser?['id'] as int?;
     final userName = currentUser?['name'] as String?;
-
-    if (shiftId == null) {
-      SnackBarService.error(context, 'No hay turno de caja abierto');
-      return;
-    }
 
     final double finalTendered = _paymentMethod == 'cash' ? _tendered : widget.total;
     final double finalChange = _paymentMethod == 'cash' ? _change : 0.0;
 
-    final success = await posProvider.processCheckout(
-      shiftId: shiftId,
-      paymentMethod: _paymentMethod,
-      tenderedAmount: finalTendered,
-      changeAmount: finalChange,
-      userId: userId,
-      userName: userName,
-    );
+    bool success;
+
+    if (widget.saleId != null) {
+      // ── Cobro de preventa ──────────────────────────────────────
+      success = await posProvider.payPendingSale(
+        saleId: widget.saleId!,
+        saleTotal: widget.total,
+        paymentMethod: _paymentMethod,
+        tenderedAmount: finalTendered,
+        changeAmount: finalChange,
+        userName: userName,
+      );
+    } else {
+      // ── Venta normal ───────────────────────────────────────────
+      final shiftId = context.read<CashRegisterProvider>().currentShift?.id;
+      final userId = currentUser?['id'] as int?;
+
+      if (shiftId == null) {
+        SnackBarService.error(context, 'No hay turno de caja abierto');
+        return;
+      }
+
+      success = await posProvider.processCheckout(
+        shiftId: shiftId,
+        paymentMethod: _paymentMethod,
+        tenderedAmount: finalTendered,
+        changeAmount: finalChange,
+        userId: userId,
+        userName: userName,
+      );
+    }
 
     if (mounted) {
       if (success) {
-        Navigator.of(context).pop(true); // Indica éxito
+        Navigator.of(context).pop(true);
       } else {
         SnackBarService.error(context, posProvider.errorMessage ?? 'Error al procesar el pago');
       }
@@ -95,6 +109,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final isPending = widget.saleId != null;
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       backgroundColor: Colors.white,
@@ -104,8 +119,20 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // ── Título y Total ────────────────────────
-            const Text('Total a Pagar', style: TextStyle(fontSize: 18, color: Colors.black54)),
+            // ── Título ────────────────────────────────────────────
+            if (isPending) ...[
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.receipt_long_outlined, color: Colors.blue.shade700, size: 22),
+                  const SizedBox(width: 8),
+                  Text('Cobrar Orden #${widget.saleId}',
+                      style: TextStyle(fontSize: 18, color: Colors.blue.shade700, fontWeight: FontWeight.bold)),
+                ],
+              ),
+              const SizedBox(height: 8),
+            ] else
+              const Text('Total a Pagar', style: TextStyle(fontSize: 18, color: Colors.black54)),
             const SizedBox(height: 8),
             Text(
               '\$${widget.total.toStringAsFixed(2)}',
@@ -113,7 +140,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
             ),
             const SizedBox(height: 32),
 
-            // ── Método de Pago ─────────────────────────
+            // ── Método de Pago ─────────────────────────────────────
             const Align(
               alignment: Alignment.centerLeft,
               child: Text('Método de Pago', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
@@ -130,7 +157,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
             ),
             const SizedBox(height: 32),
 
-            // ── Calculadora (Solo Efectivo) ────────────
+            // ── Calculadora (Solo Efectivo) ────────────────────────
             if (_paymentMethod == 'cash') ...[
               const Align(
                 alignment: Alignment.centerLeft,
@@ -181,7 +208,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
 
             const SizedBox(height: 40),
 
-            // ── Botones de Acción ──────────────────────
+            // ── Botones de Acción ──────────────────────────────────
             Row(
               children: [
                 Expanded(
@@ -202,7 +229,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                     builder: (ctx, provider, _) {
                       return ElevatedButton(
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF3B82F6),
+                          backgroundColor: const Color(0xFF22C55E),
                           padding: const EdgeInsets.symmetric(vertical: 16),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           disabledBackgroundColor: Colors.grey.shade300,
@@ -210,7 +237,10 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                         onPressed: (_canSubmit && !provider.isLoading) ? _processCheckout : null,
                         child: provider.isLoading
                             ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                            : const Text('CONFIRMAR PAGO', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
+                            : Text(
+                                isPending ? 'CONFIRMAR COBRO' : 'CONFIRMAR PAGO',
+                                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                              ),
                       );
                     },
                   ),

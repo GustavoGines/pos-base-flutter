@@ -119,7 +119,8 @@ void main() {
         ChangeNotifierProvider(
           create: (_) => PosProvider(
             processSaleUseCase: ProcessSaleUseCase(posRepo),
-            searchProductsUseCase: SearchProductsUseCase(posRepo)
+            searchProductsUseCase: SearchProductsUseCase(posRepo),
+            repository: posRepo,
           ),
           lazy: false,
         ),

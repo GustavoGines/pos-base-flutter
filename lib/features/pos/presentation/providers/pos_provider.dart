@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../domain/entities/cart_item.dart';
 import '../../domain/usecases/process_sale_usecase.dart';
 import '../../domain/usecases/search_products_usecase.dart';
+import '../../domain/repositories/pos_repository.dart';
 import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
 import 'package:frontend_desktop/features/settings/domain/entities/business_settings.dart';
 import 'package:frontend_desktop/core/utils/receipt_printer_service.dart';
@@ -9,7 +10,8 @@ import 'package:frontend_desktop/core/utils/receipt_printer_service.dart';
 class PosProvider with ChangeNotifier {
   final ProcessSaleUseCase processSaleUseCase;
   final SearchProductsUseCase searchProductsUseCase;
-  final ReceiptPrinterService? printerService; // Inyección opcional
+  final PosRepository repository;
+  final ReceiptPrinterService? printerService;
 
   List<CartItem> _cart = [];
   List<CartItem> get cart => _cart;
@@ -17,36 +19,44 @@ class PosProvider with ChangeNotifier {
   bool _isLoading = false;
   bool get isLoading => _isLoading;
 
+  // Guard: evita que un doble-click genere dos API calls antes de que el Consumer reconstruya el botón
+  bool _isHoldingOrder = false;
+
   String? _errorMessage;
   String? get errorMessage => _errorMessage;
+
+  // ── Órdenes Pendientes ──────────────────────────────────────────
+  List<Map<String, dynamic>> _pendingSales = [];
+  List<Map<String, dynamic>> get pendingSales => _pendingSales;
+
+  bool _isPendingLoading = false;
+  bool get isPendingLoading => _isPendingLoading;
+
+  int get pendingCount => _pendingSales.length;
+
+  int? _activePendingSaleId;
+  int? get activePendingSaleId => _activePendingSaleId;
 
   PosProvider({
     required this.processSaleUseCase,
     required this.searchProductsUseCase,
-    this.printerService, // Opcional: si no hay impresora configrada, se omite silenciosamente
+    required this.repository,
+    this.printerService,
   });
 
   double get cartTotal {
     return _cart.fold(0.0, (sum, item) => sum + item.subtotal);
   }
 
-  // Se añade al carrito. Si retorna un booleano falso,
-  // indica a la UI que muestre un popup de balanza antes de integrarlo.
   bool requestAddToCart(Product product) {
     if (product.isSoldByWeight) {
-      return false; // Indica a la UI que detenga el insert y pida el peso
+      return false;
     }
-
-    // Si no es por peso
     _addToCartDirectly(product, 1.0);
-    return true; // Se agregó correctamente por unidad
+    return true;
   }
 
-  // Agrega al carrito directamente (usado internamente o luego del popup de peso)
   void submitWeighedProduct(Product product, double weightInKg) {
-    // Sistema anti-errores: Si el usuario escribe 1500 (gramos) en vez de 1.5Kg,
-    // es estadísticamente imposible que compre 1.5 toneladas de Harina.
-    // Asumimos que sobrepasar los 50Kg significa que typeó en gramos y lo auto-convertimos.
     double finalWeight = weightInKg;
     if (finalWeight > 50) {
       finalWeight = finalWeight / 1000.0;
@@ -56,19 +66,14 @@ class PosProvider with ChangeNotifier {
 
   void _addToCartDirectly(Product product, double quantity) {
     if (product.isSoldByWeight) {
-      // Los productos pesados SIEMPRE entran como tickets separados
       _cart.add(CartItem(product: product, quantity: quantity));
     } else {
-      // Chequear si el producto unitario ya existe en el carrito
       final index = _cart.indexWhere(
         (item) => item.product.id == product.id && !item.product.isSoldByWeight,
       );
-
       if (index >= 0) {
-        // Incrementamos
         _cart[index].quantity += quantity;
       } else {
-        // Nuevo item unitario
         _cart.add(CartItem(product: product, quantity: quantity));
       }
     }
@@ -90,6 +95,42 @@ class PosProvider with ChangeNotifier {
 
   void clearCart() {
     _cart.clear();
+    _activePendingSaleId = null;
+    notifyListeners();
+  }
+
+  void clearRecall() {
+    _activePendingSaleId = null;
+    clearCart();
+  }
+
+  void recallOrderToCart(Map<String, dynamic> sale) {
+    clearCart();
+    // Use un temporizador mínimo o asegure que se haya limpiado el carrito (ya es sincrónico).
+    
+    final saleId = (sale['id'] as num).toInt();
+    final rawItems = (sale['items'] as List?) ?? [];
+    
+    final List<CartItem> recalledItems = rawItems.map<CartItem>((itemMap) {
+      final prod = itemMap['product'] as Map<String, dynamic>? ?? {};
+      final product = Product(
+        id: (prod['id'] as num?)?.toInt() ?? 0,
+        name: itemMap['product_name']?.toString() ?? prod['name']?.toString() ?? 'Producto',
+        internalCode: '',
+        costPrice: 0,
+        sellingPrice: double.tryParse(itemMap['unit_price'].toString()) ?? 0.0,
+        stock: double.tryParse(prod['stock'].toString()) ?? 0.0,
+        active: true,
+        isSoldByWeight: prod['is_sold_by_weight'] == true || prod['is_sold_by_weight'] == 1,
+      );
+      return CartItem(
+        product: product,
+        quantity: double.tryParse(itemMap['quantity'].toString()) ?? 1.0,
+      );
+    }).toList();
+
+    _cart.addAll(recalledItems);
+    _activePendingSaleId = saleId;
     notifyListeners();
   }
 
@@ -103,8 +144,9 @@ class PosProvider with ChangeNotifier {
     }
   }
 
-  /// [settings] es necesario para personalizar el ticket con datos del negocio.
-  /// [settings] puede ser null, en ese caso no se imprime nada.
+  // ─────────────────────────────────────────────────────────────────
+  // FLUJO NORMAL: Cobrar directamente
+  // ─────────────────────────────────────────────────────────────────
   Future<bool> processCheckout({
     required int shiftId,
     required String paymentMethod,
@@ -120,24 +162,40 @@ class PosProvider with ChangeNotifier {
     _errorMessage = null;
     notifyListeners();
 
-    // Capturamos una copia del carrito ANTES del clearCart() para el ticket
     final cartSnapshot = List<CartItem>.from(_cart);
     final totalSnapshot = cartTotal;
 
     try {
-      await processSaleUseCase(
-        total: totalSnapshot,
-        paymentMethod: paymentMethod,
-        tenderedAmount: tenderedAmount,
-        changeAmount: changeAmount,
-        shiftId: shiftId,
-        items: _cart,
-        userId: userId,
-      );
+      if (_activePendingSaleId != null) {
+        final success = await payPendingSale(
+          saleId: _activePendingSaleId!,
+          saleTotal: totalSnapshot,
+          paymentMethod: paymentMethod,
+          tenderedAmount: tenderedAmount,
+          changeAmount: changeAmount,
+          userName: userName,
+          settings: settings,
+          items: cartSnapshot,
+        );
+        if (!success) {
+          // El error se seteó dentro de payPendingSale
+          return false;
+        }
+      } else {
+        await processSaleUseCase(
+          total: totalSnapshot,
+          paymentMethod: paymentMethod,
+          tenderedAmount: tenderedAmount,
+          changeAmount: changeAmount,
+          shiftId: shiftId,
+          items: cartSnapshot,
+          userId: userId,
+          status: 'completed',
+        );
+      }
 
       clearCart();
 
-      // Impresión del ticket de venta (silenciosa si no hay impresora configurada)
       if (printerService != null && settings != null) {
         printerService!
             .printSaleTicket(
@@ -150,6 +208,142 @@ class PosProvider with ChangeNotifier {
             .catchError((e) => debugPrint('=== Printer Error: $e ==='));
       }
 
+      return true;
+    } catch (e) {
+      _errorMessage = e.toString();
+      return false;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // FLUJO PREVENTA: Dejar en espera
+  // ─────────────────────────────────────────────────────────────────
+  Future<bool> holdOrder({
+    required int shiftId,
+    int? userId,
+  }) async {
+    if (_cart.isEmpty) return false;
+    // Guard contra doble-click: solo permite un holdOrder a la vez
+    if (_isHoldingOrder || _isLoading) return false;
+
+    _isHoldingOrder = true;
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    // Snapshot inmutable del carrito ANTES del await
+    final cartSnapshot = List<CartItem>.from(_cart);
+    final totalSnapshot = cartTotal;
+
+    try {
+      await processSaleUseCase(
+        total: totalSnapshot,
+        paymentMethod: 'pending',
+        shiftId: shiftId,
+        items: cartSnapshot,
+        userId: userId,
+        status: 'pending',
+      );
+
+      clearCart();
+      await loadPendingSales();
+      return true;
+    } catch (e) {
+      _errorMessage = e.toString();
+      return false;
+    } finally {
+      _isHoldingOrder = false;
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // Cargar lista de pendientes desde el backend
+  // ─────────────────────────────────────────────────────────────────
+  Future<void> loadPendingSales() async {
+    _isPendingLoading = true;
+    notifyListeners();
+    try {
+      _pendingSales = await repository.fetchPendingSales();
+    } catch (e) {
+      debugPrint('=== Error cargando pendientes: $e ===');
+    } finally {
+      _isPendingLoading = false;
+      notifyListeners();
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // Cobrar una orden pendiente
+  // ─────────────────────────────────────────────────────────────────
+  Future<bool> payPendingSale({
+    required int saleId,
+    required double saleTotal,
+    required String paymentMethod,
+    required double tenderedAmount,
+    required double changeAmount,
+    String? userName,
+    BusinessSettings? settings,
+    List<CartItem>? items,
+  }) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      await repository.payPendingSale(
+        saleId: saleId,
+        paymentMethod: paymentMethod,
+        tenderedAmount: tenderedAmount,
+        changeAmount: changeAmount,
+        items: items,
+      );
+
+      // Imprimir ticket si hay impresora configurada. 
+      // (Si items != null, significa que venimos desde processCheckout, que YA imprime el ticket)
+      if (printerService != null && settings != null && items == null) {
+        // Reconstruir CartItems desde el mapa en memoria para el ticket
+        final pendingEntry = _pendingSales.firstWhere(
+          (s) => s['id'] == saleId,
+          orElse: () => <String, dynamic>{},
+        );
+        final rawItems = (pendingEntry['items'] as List?) ?? [];
+        final ticketItems = rawItems.map<CartItem>((itemMap) {
+          final prod = itemMap['product'] as Map<String, dynamic>? ?? {};
+          final product = Product(
+            id: (prod['id'] as num?)?.toInt() ?? 0,
+            name: itemMap['product_name']?.toString() ?? prod['name']?.toString() ?? 'Producto',
+            internalCode: '',
+            costPrice: 0,
+            sellingPrice: double.tryParse(itemMap['unit_price'].toString()) ?? 0.0,
+            stock: 0,
+            active: true,
+            isSoldByWeight: prod['is_sold_by_weight'] == true || prod['is_sold_by_weight'] == 1,
+          );
+          return CartItem(
+            product: product,
+            quantity: double.tryParse(itemMap['quantity'].toString()) ?? 1.0,
+          );
+        }).toList();
+
+        if (ticketItems.isNotEmpty) {
+          printerService!
+              .printSaleTicket(
+                items: ticketItems,
+                total: saleTotal,
+                settings: settings,
+                paymentMethod: paymentMethod,
+                userName: userName,
+              )
+              .catchError((e) => debugPrint('=== Printer Error (pending): $e ==='));
+        }
+      }
+
+      await loadPendingSales();
       return true;
     } catch (e) {
       _errorMessage = e.toString();
