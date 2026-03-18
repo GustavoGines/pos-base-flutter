@@ -65,7 +65,7 @@ class SaleRecord {
       total: double.parse(json['total'].toString()),
       paymentMethod: json['payment_method'] as String,
       status: json['status'] as String? ?? 'active',
-      createdAt: DateTime.parse(json['created_at'] as String),
+      createdAt: DateTime.parse(json['created_at'] as String).toLocal(),
       items: itemsList,
       userId: json['user_id'] as int?,
       userName: json['user']?['name'] as String?,

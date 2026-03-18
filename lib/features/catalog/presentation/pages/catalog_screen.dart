@@ -23,8 +23,11 @@ class _CatalogScreenState extends State<CatalogScreen> {
   @override
   void initState() {
     super.initState();
+    // Siempre resetear la búsqueda al entrar a esta pantalla.
+    // Garantiza que el buscador visual y los resultados estén en sincronía.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<CatalogProvider>().loadProducts(page: 1);
+      _searchController.clear();
+      context.read<CatalogProvider>().loadProducts(page: 1, search: '');
     });
   }
 
@@ -68,23 +71,26 @@ class _CatalogScreenState extends State<CatalogScreen> {
                 child: Row(
                   children: [
                     Expanded(
-                      child: TextField(
-                        controller: _searchController,
-                        onChanged: _onSearchChanged,
-                        decoration: InputDecoration(
-                          hintText: 'Buscar por nombre, código de barras o código interno...',
-                          prefixIcon: const Icon(Icons.search),
-                          suffixIcon: _searchController.text.isNotEmpty
-                              ? IconButton(
-                                  icon: const Icon(Icons.clear),
-                                  onPressed: () {
-                                    _searchController.clear();
-                                    context.read<CatalogProvider>().loadProducts(page: 1);
-                                  },
-                                )
-                              : null,
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                          contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                      child: ListenableBuilder(
+                        listenable: _searchController,
+                        builder: (context, _) => TextField(
+                          controller: _searchController,
+                          onChanged: _onSearchChanged,
+                          decoration: InputDecoration(
+                            hintText: 'Buscar por nombre, código de barras o código interno...',
+                            prefixIcon: const Icon(Icons.search),
+                            suffixIcon: _searchController.text.isNotEmpty
+                                ? IconButton(
+                                    icon: const Icon(Icons.clear),
+                                    onPressed: () {
+                                      _searchController.clear();
+                                      context.read<CatalogProvider>().loadProducts(page: 1, search: '');
+                                    },
+                                  )
+                                : null,
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                            contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                          ),
                         ),
                       ),
                     ),

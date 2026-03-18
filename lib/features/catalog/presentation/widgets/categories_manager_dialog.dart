@@ -153,17 +153,22 @@ class _CategoriesManagerDialogState extends State<CategoriesManagerDialog> {
           ],
         ),
       ),
+      actionsPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
       actions: [
-        Consumer<CatalogProvider>(
-          builder: (_, p, __) => Text(
-            '${p.categories.length} categoría${p.categories.length != 1 ? 's' : ''}',
-            style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
-          ),
-        ),
-        const Spacer(),
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(true),
-          child: const Text('Cerrar'),
+        Row(
+          children: [
+            Consumer<CatalogProvider>(
+              builder: (_, p, __) => Text(
+                '${p.categories.length} categoría${p.categories.length != 1 ? 's' : ''}',
+                style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+              ),
+            ),
+            const Spacer(),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Cerrar'),
+            ),
+          ],
         ),
       ],
     );
