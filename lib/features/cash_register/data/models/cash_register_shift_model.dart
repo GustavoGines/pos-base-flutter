@@ -26,8 +26,8 @@ class CashRegisterShiftModel extends CashRegisterShift {
   factory CashRegisterShiftModel.fromJson(Map<String, dynamic> json) {
     return CashRegisterShiftModel(
       id: json['id'],
-      openedAt: DateTime.parse(json['opened_at']),
-      closedAt: json['closed_at'] != null ? DateTime.parse(json['closed_at']) : null,
+      openedAt: DateTime.parse(json['opened_at']).toLocal(),
+      closedAt: json['closed_at'] != null ? DateTime.parse(json['closed_at']).toLocal() : null,
       openingBalance: double.parse(json['opening_balance'].toString()),
       closingBalance: json['closing_balance'] != null ? double.parse(json['closing_balance'].toString()) : null,
       totalSales: json['total_sales'] != null ? double.parse(json['total_sales'].toString()) : null,

@@ -23,8 +23,11 @@ class _PosScreenState extends State<PosScreen> {
   final FocusNode _searchFocusNode = FocusNode();
   final TextEditingController _searchController = TextEditingController();
 
-  // Búsqueda en vivo: se actualiza con onChanged sin necesidad de Enter
+  // Búsqueda: resultados del servidor, query visual y timer de debounce
   String _searchQuery = '';
+  List<Product> _searchResults = [];
+  bool _isSearching = false;
+  Timer? _debounceSearchTimer;
   
   Timer? _pendingOrdersTimer;
 
@@ -33,7 +36,9 @@ class _PosScreenState extends State<PosScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _searchFocusNode.requestFocus();
-      Provider.of<CatalogProvider>(context, listen: false).loadProducts();
+      // Siempre cargar la lista COMPLETA al entrar a POS, ignorando cualquier
+      // búsqueda que el módulo de Catálogo haya dejado activa en el provider.
+      Provider.of<CatalogProvider>(context, listen: false).loadProducts(page: 1, search: '');
       // Cargar el contador de órdenes pendientes al abrir el POS
       Provider.of<PosProvider>(context, listen: false).loadPendingSales();
       
@@ -49,9 +54,38 @@ class _PosScreenState extends State<PosScreen> {
   @override
   void dispose() {
     _pendingOrdersTimer?.cancel();
+    _debounceSearchTimer?.cancel();
     _searchFocusNode.dispose();
     _searchController.dispose();
     super.dispose();
+  }
+
+  /// Búsqueda en vivo vía API con debounce de 400ms
+  void _onPosSearchChanged(String value) {
+    final query = value.trim();
+    _debounceSearchTimer?.cancel();
+
+    if (query.isEmpty) {
+      setState(() {
+        _searchQuery = '';
+        _searchResults = [];
+        _isSearching = false;
+      });
+      return;
+    }
+
+    setState(() => _searchQuery = query);
+
+    _debounceSearchTimer = Timer(const Duration(milliseconds: 400), () async {
+      if (!mounted || _searchQuery.isEmpty) return;
+      setState(() => _isSearching = true);
+      final results = await Provider.of<PosProvider>(context, listen: false).search(query);
+      if (!mounted) return;
+      setState(() {
+        _searchResults = results;
+        _isSearching = false;
+      });
+    });
   }
 
   void _onProductScannedOrSearched(String query) async {
@@ -878,19 +912,24 @@ class _PosScreenState extends State<PosScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Barra de búsqueda con filtro en vivo
+          // Barra de búsqueda con búsqueda server-side vía API
           TextField(
             controller: _searchController,
             focusNode: _searchFocusNode,
             decoration: InputDecoration(
               hintText: 'Escribir nombre o escanear código...',
-              prefixIcon: const Icon(Icons.search),
+              prefixIcon: _isSearching
+                  ? const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+                    )
+                  : const Icon(Icons.search),
               suffixIcon: _searchQuery.isNotEmpty
                   ? IconButton(
                       icon: const Icon(Icons.clear),
                       onPressed: () {
                         _searchController.clear();
-                        setState(() => _searchQuery = '');
+                        _onPosSearchChanged('');
                         _searchFocusNode.requestFocus();
                       },
                     )
@@ -899,8 +938,8 @@ class _PosScreenState extends State<PosScreen> {
               filled: true,
               fillColor: Colors.grey.shade100,
             ),
-            // Filtro local instantáneo (sin API call)
-            onChanged: (val) => setState(() => _searchQuery = val.trim().toLowerCase()),
+            // Búsqueda en tiempo real con debounce → API completa
+            onChanged: _onPosSearchChanged,
             // Enter: para códigos de barras (API call + agregar al carrito)
             onSubmitted: _onProductScannedOrSearched,
           ),
@@ -943,7 +982,7 @@ class _PosScreenState extends State<PosScreen> {
                   return const Center(child: CircularProgressIndicator());
                 }
 
-                // Determinar qué mostrar: filtrado por búsqueda o Acceso Rápido
+                // Determinar qué mostrar: resultados de API o Acceso Rápido
                 final List<Product> displayItems;
                 if (_searchQuery.isEmpty) {
                   // Acceso Rápido: productos por peso primero, luego unitarios
@@ -951,13 +990,8 @@ class _PosScreenState extends State<PosScreen> {
                   final regular  = catalog.products.where((p) => !p.isSoldByWeight).toList();
                   displayItems = [...weighted, ...regular];
                 } else {
-                  // Búsqueda local en tiempo real — sin API, instantáneo
-                  displayItems = catalog.products.where((p) {
-                    final q = _searchQuery;
-                    return p.name.toLowerCase().contains(q) ||
-                           (p.barcode?.contains(q) ?? false) ||
-                           p.internalCode.toLowerCase().contains(q);
-                  }).toList();
+                  // Resultados del servidor — búsqueda real sobre toda la BD
+                  displayItems = _searchResults;
                 }
 
                 if (displayItems.isEmpty) {
