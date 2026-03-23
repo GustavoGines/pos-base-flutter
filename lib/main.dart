@@ -11,6 +11,8 @@ import 'features/pos/presentation/providers/pos_provider.dart';
 import 'features/sales_history/presentation/providers/sales_history_provider.dart';
 import 'features/auth/presentation/providers/auth_provider.dart';
 
+import 'core/network/api_client.dart';
+
 // Screens
 import 'features/settings/presentation/pages/settings_screen.dart';
 import 'features/pos/presentation/pages/pos_screen.dart';
@@ -73,42 +75,42 @@ void main() async {
   
   // Obtener URL de la API del almacenamiento local
   final prefs = await SharedPreferences.getInstance();
-  final savedApiUrl = prefs.getString('api_base_url') ?? 'http://127.0.0.1:8000/api';
+  final savedApiUrl = prefs.getString('pos_api') ?? 'http://127.0.0.1:8000/api';
 
   // Inicialización de Dependencias Base (DI)
-  final String apiBaseUrl = savedApiUrl;
-  final httpClient = http.Client();
+  final String apiUrl = savedApiUrl;
+  final httpClient = ApiClient(http.Client());
 
-  // Settings
+   // Settings
   final settingsRepo = SettingsRepositoryImpl(
-      remoteDataSource: SettingsRemoteDataSourceImpl(baseUrl: apiBaseUrl, client: httpClient));
+      remoteDataSource: SettingsRemoteDataSourceImpl(baseUrl: apiUrl, client: httpClient));
   final getSettingsUseCase = GetSettingsUseCase(settingsRepo);
   final updateSettingsUseCase = UpdateSettingsUseCase(settingsRepo);
 
   // Catalog
   final catalogRepo = CatalogRepositoryImpl(
-      remoteDataSource: CatalogRemoteDataSourceImpl(baseUrl: apiBaseUrl, client: httpClient));
+      remoteDataSource: CatalogRemoteDataSourceImpl(baseUrl: apiUrl, client: httpClient));
   final getProductsUseCase = GetProductsUseCase(catalogRepo);
 
   // Cash Register
   final cashRegisterRepo = CashRegisterRepositoryImpl(
-      remoteDataSource: CashRegisterRemoteDataSourceImpl(baseUrl: apiBaseUrl, client: httpClient));
+      remoteDataSource: CashRegisterRemoteDataSourceImpl(baseUrl: apiUrl, client: httpClient));
   
   // Pos
   final posRepo = PosRepositoryImpl(
-      remoteDataSource: PosRemoteDataSourceImpl(baseUrl: apiBaseUrl, client: httpClient));
+      remoteDataSource: PosRemoteDataSourceImpl(baseUrl: apiUrl, client: httpClient));
 
   // Sales History
   final salesHistoryDataSource = SalesHistoryRemoteDataSource(
-      baseUrl: apiBaseUrl, client: httpClient);
+      baseUrl: apiUrl, client: httpClient);
 
   // Auth
   final authRepo = AuthRepository(
-      remoteDataSource: AuthRemoteDataSource(baseUrl: apiBaseUrl, client: httpClient));
+      remoteDataSource: AuthRemoteDataSource(baseUrl: apiUrl, client: httpClient));
 
   // Users
   final usersRepo = UsersRepository(
-      dataSource: UsersRemoteDataSource(baseUrl: apiBaseUrl, client: httpClient));
+      dataSource: UsersRemoteDataSource(baseUrl: apiUrl, client: httpClient));
 
   runApp(
     MultiProvider(

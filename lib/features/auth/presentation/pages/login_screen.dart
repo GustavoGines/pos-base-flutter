@@ -55,7 +55,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _showServerConfigDialog() async {
     final prefs = await SharedPreferences.getInstance();
-    final currentUrl = prefs.getString('api_base_url') ?? 'http://127.0.0.1:8000/api';
+    final currentUrl = prefs.getString('pos_api') ?? 'http://127.0.0.1:8000/api';
     
     if (!mounted) return;
     final ctrl = TextEditingController(text: currentUrl);
@@ -100,7 +100,7 @@ class _LoginScreenState extends State<LoginScreen> {
             onPressed: () async {
               final newUrl = ctrl.text.trim();
               if (newUrl.isNotEmpty) {
-                await prefs.setString('api_base_url', newUrl);
+                await prefs.setString('pos_api', newUrl);
                 if (!ctx.mounted) return;
                 Navigator.pop(ctx);
                 SnackBarService.success(context, 'Configuración de red guardada.\nPor favor reinicia la aplicación para aplicar.');

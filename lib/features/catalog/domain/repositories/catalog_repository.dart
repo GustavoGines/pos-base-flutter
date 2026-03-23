@@ -13,8 +13,11 @@ abstract class CatalogRepository {
   Future<Product> createProduct(Map<String, dynamic> productData);
   Future<Product> updateProduct(int id, Map<String, dynamic> productData);
   Future<void> deleteProduct(int id);
+  Future<Map<String, dynamic>> bulkDeleteProducts(List<int> ids);
+  Future<Map<String, dynamic>> bulkUpdateProducts(List<int> ids, {int? categoryId, bool? active});
   Future<Map<String, dynamic>> bulkPriceUpdate({
     required double percentage,
+    List<int>? productIds,
     int? categoryId,
     int? brandId,
   });

@@ -130,8 +130,43 @@ class CatalogProvider with ChangeNotifier {
     }
   }
 
+  Future<String?> bulkDeleteProducts(List<int> ids) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      final result = await repository.bulkDeleteProducts(ids);
+      await loadProducts(page: _currentPage);
+      return result['message'] as String?;
+    } catch (e) {
+      _errorMessage = e.toString();
+      return null;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<String?> bulkUpdateProducts(List<int> ids, {int? categoryId, bool? active}) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      final result = await repository.bulkUpdateProducts(ids, categoryId: categoryId, active: active);
+      await loadProducts(page: _currentPage);
+      return result['message'] as String?;
+    } catch (e) {
+      _errorMessage = e.toString();
+      return null;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
   Future<String?> bulkPriceUpdate({
     required double percentage,
+    List<int>? productIds,
     int? categoryId,
     int? brandId,
   }) async {
@@ -141,6 +176,7 @@ class CatalogProvider with ChangeNotifier {
     try {
       final result = await repository.bulkPriceUpdate(
         percentage: percentage,
+        productIds: productIds,
         categoryId: categoryId,
         brandId: brandId,
       );

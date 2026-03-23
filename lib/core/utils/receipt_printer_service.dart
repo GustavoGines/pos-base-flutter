@@ -130,7 +130,7 @@ class ReceiptPrinterService {
     if (settings.phone != null && settings.phone!.isNotEmpty) {
       bytes += generator.text('Tel: ${settings.phone}', styles: const PosStyles(align: PosAlign.center));
     }
-    bytes += generator.hr(ch: '─');
+    bytes += generator.hr(ch: '=');
 
     // ── Fecha y número de comprobante ────────────────────────────
     final now = DateTime.now();
@@ -208,7 +208,7 @@ class ReceiptPrinterService {
       settings.companyName?.toUpperCase() ?? 'MI NEGOCIO',
       styles: const PosStyles(bold: true, align: PosAlign.center, height: PosTextSize.size2, width: PosTextSize.size2),
     );
-    bytes += generator.text('━━━ CIERRE Z ━━━', styles: const PosStyles(align: PosAlign.center, bold: true));
+    bytes += generator.text('=== CIERRE Z ===', styles: const PosStyles(align: PosAlign.center, bold: true));
     bytes += generator.hr();
 
     final closedAt = shift.closedAt ?? DateTime.now();
@@ -228,7 +228,7 @@ class ReceiptPrinterService {
     bytes += _labelValue(generator, 'Saldo inicial:', '$currency${shift.openingBalance.toStringAsFixed(2)}');
     bytes += _labelValue(generator, 'Ventas del turno:', '$currency${(shift.totalSales ?? 0.0).toStringAsFixed(2)}');
     bytes += _labelValue(generator, 'Efectivo esperado:', '$currency${((shift.openingBalance) + (shift.totalSales ?? 0.0)).toStringAsFixed(2)}');
-    bytes += generator.hr(ch: '─');
+    bytes += generator.hr(ch: '=');
     bytes += _labelValue(generator, 'Efectivo contado:', '$currency${(shift.closingBalance ?? 0.0).toStringAsFixed(2)}');
 
     final diff = shift.difference ?? 0.0;

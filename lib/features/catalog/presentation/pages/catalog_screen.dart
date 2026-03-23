@@ -19,6 +19,7 @@ class CatalogScreen extends StatefulWidget {
 class _CatalogScreenState extends State<CatalogScreen> {
   final _searchController = TextEditingController();
   Timer? _debounceTimer;
+  final Map<int, Product> _selectedProducts = {};
 
   @override
   void initState() {
@@ -95,6 +96,58 @@ class _CatalogScreenState extends State<CatalogScreen> {
                       ),
                     ),
                     const SizedBox(width: 12),
+                    if (_selectedProducts.isNotEmpty) ...[
+                      PopupMenuButton<int>(
+                        tooltip: 'Acciones en Lote',
+                        offset: const Offset(0, 45),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        onSelected: (val) {
+                          switch (val) {
+                            case 1: _bulkUpdateCategory(provider); break;
+                            case 2: _bulkToggleActive(provider); break;
+                            case 3:
+                              AdminPinDialog.verify(context, action: 'Aumento Masivo Lote', permissionKey: 'manage_catalog').then((auth) {
+                                if (auth && context.mounted) {
+                                  showDialog(context: context, builder: (_) => BulkPriceUpdateDialog(provider: provider, targetProductIds: _selectedProducts.keys.toList())).then((_) => setState(() => _selectedProducts.clear()));
+                                }
+                              });
+                              break;
+                            case 4: showDialog(context: context, builder: (_) => PrintLabelsDialog(products: _selectedProducts.values.toList())); break;
+                            case 5: _confirmBulkDelete(provider); break;
+                            case 6: setState(() => _selectedProducts.clear()); break;
+                          }
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.shade800,
+                            borderRadius: BorderRadius.circular(8),
+                            boxShadow: [BoxShadow(color: Colors.blue.withOpacity(0.3), blurRadius: 4, offset: const Offset(0, 2))],
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.checklist, color: Colors.white, size: 18),
+                              const SizedBox(width: 8),
+                              Text('Lote (${_selectedProducts.length})', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                              const SizedBox(width: 4),
+                              const Icon(Icons.keyboard_arrow_down, color: Colors.white, size: 20),
+                            ],
+                          ),
+                        ),
+                        itemBuilder: (context) => [
+                          const PopupMenuItem(value: 1, child: Row(children: [Icon(Icons.folder_outlined, color: Colors.orange, size: 20), SizedBox(width: 12), Text('Mover Categoría')])),
+                          const PopupMenuItem(value: 2, child: Row(children: [Icon(Icons.power_settings_new, color: Colors.teal, size: 20), SizedBox(width: 12), Text('Cambiar Estado')])),
+                          const PopupMenuItem(value: 3, child: Row(children: [Icon(Icons.trending_up, color: Colors.deepOrange, size: 20), SizedBox(width: 12), Text('Actualizar Precios')])),
+                          const PopupMenuItem(value: 4, child: Row(children: [Icon(Icons.print_outlined, color: Colors.deepPurple, size: 20), SizedBox(width: 12), Text('Imprimir Etiquetas')])),
+                          const PopupMenuDivider(),
+                          const PopupMenuItem(value: 5, child: Row(children: [Icon(Icons.delete_outline, color: Colors.red, size: 20), SizedBox(width: 12), Text('Eliminar Todo')])),
+                          const PopupMenuDivider(),
+                          const PopupMenuItem(value: 6, child: Row(children: [Icon(Icons.deselect, color: Colors.grey, size: 20), SizedBox(width: 12), Text('Cancelar Selección')])),
+                        ],
+                      ),
+                      const SizedBox(width: 12),
+                    ],
                     OutlinedButton.icon(
                       icon: const Icon(Icons.label_outline, size: 18),
                       label: const Text('Categorías'),
@@ -189,6 +242,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
 
   Widget _buildProductsTable(List<Product> products, CatalogProvider provider) {
     // Responsive flex values instead of fixed pixels
+    const int fCheck = 1;
     const int fId = 1;
     const int fNombre = 4;
     const int fBarcode = 2;
@@ -254,6 +308,23 @@ class _CatalogScreenState extends State<CatalogScreen> {
           color: Colors.grey.shade100,
           child: Row(
             children: [
+              cell(
+                fCheck,
+                Checkbox(
+                  value: _selectedProducts.length == products.length && products.isNotEmpty,
+                  onChanged: (bool? val) {
+                    setState(() {
+                      if (val == true) {
+                        for (var p in products) {
+                          _selectedProducts[p.id] = p;
+                        }
+                      } else {
+                        _selectedProducts.clear();
+                      }
+                    });
+                  },
+                ),
+              ),
               cell(fId, Text('#', style: headerStyle())),
               sortHeader(fNombre, 'Nombre', 'name'),
               sortHeader(fBarcode, 'Cód. Barras', 'barcode'),
@@ -270,9 +341,24 @@ class _CatalogScreenState extends State<CatalogScreen> {
         );
 
     Widget productRow(Product p, int index) => Container(
-          color: index.isOdd ? Colors.grey.shade50 : Colors.white,
+          color: _selectedProducts.containsKey(p.id) ? Colors.blue.shade50 : (index.isOdd ? Colors.grey.shade50 : Colors.white),
           child: Row(
             children: [
+              cell(
+                fCheck,
+                Checkbox(
+                  value: _selectedProducts.containsKey(p.id),
+                  onChanged: (bool? val) {
+                    setState(() {
+                      if (val == true) {
+                        _selectedProducts[p.id] = p;
+                      } else {
+                        _selectedProducts.remove(p.id);
+                      }
+                    });
+                  },
+                ),
+              ),
               cell(fId, Text(p.id.toString(), style: TextStyle(color: Colors.grey.shade500, fontSize: 12), overflow: TextOverflow.ellipsis)),
               cell(fNombre, Text(p.name, overflow: TextOverflow.ellipsis, maxLines: 1)),
               cell(fBarcode, Text(p.barcode ?? '—', style: TextStyle(fontSize: 12, color: Colors.grey.shade700), overflow: TextOverflow.ellipsis)),
@@ -293,7 +379,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                     tooltip: 'Imprimir Etiquetas',
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints(),
-                    onPressed: () => showDialog(context: context, builder: (_) => PrintLabelsDialog(product: p)),
+                    onPressed: () => showDialog(context: context, builder: (_) => PrintLabelsDialog(products: [p])),
                   ),
                   IconButton(
                     icon: const Icon(Icons.warehouse_outlined, size: 18),
@@ -373,6 +459,114 @@ class _CatalogScreenState extends State<CatalogScreen> {
       context: ctx,
       builder: (_) => BulkPriceUpdateDialog(provider: provider),
     );
+  }
+
+  Future<void> _confirmBulkDelete(CatalogProvider provider) async {
+    final auth = await AdminPinDialog.verify(context, action: 'Eliminar Múltiples Productos', permissionKey: 'manage_catalog');
+    if (!auth) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Eliminar Lote', style: TextStyle(color: Colors.red)),
+        content: Text('¿Está seguro que desea eliminar DEFINITIVAMENTE los ${_selectedProducts.length} productos seleccionados?\nEsta acción no se puede deshacer.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          FilledButton.icon(
+            icon: const Icon(Icons.delete_forever),
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            label: const Text('Eliminar Todo'),
+            onPressed: () => Navigator.pop(ctx, true),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      final msg = await provider.bulkDeleteProducts(_selectedProducts.keys.toList());
+      if (msg != null) {
+        SnackBarService.success(context, msg);
+        setState(() => _selectedProducts.clear());
+      } else {
+        SnackBarService.error(context, provider.errorMessage ?? 'Error al eliminar masivamente');
+      }
+    }
+  }
+
+  Future<void> _bulkUpdateCategory(CatalogProvider provider) async {
+    final auth = await AdminPinDialog.verify(context, action: 'Categorizar Lote', permissionKey: 'manage_catalog');
+    if (!auth) return;
+
+    int? newCategory = await showDialog<int?>(
+      context: context,
+      builder: (ctx) {
+        int? selected;
+        return AlertDialog(
+          title: const Text('Mover a Categoría'),
+          content: DropdownButtonFormField<int?>(
+            decoration: const InputDecoration(labelText: 'Elige la nueva categoría', border: OutlineInputBorder()),
+            items: [
+              const DropdownMenuItem(value: null, child: Text('— Quitar categoría —')),
+              ...provider.categories.map((c) => DropdownMenuItem(value: c.id, child: Text(c.name))),
+            ],
+            onChanged: (val) => selected = val,
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, selected ?? -1), child: const Text('Mover')),
+          ],
+        );
+      },
+    );
+
+    if (newCategory != null && mounted) {
+      final finalCat = newCategory == -1 ? null : newCategory;
+      final msg = await provider.bulkUpdateProducts(_selectedProducts.keys.toList(), categoryId: finalCat);
+      if (msg != null) {
+        SnackBarService.success(context, msg);
+        setState(() => _selectedProducts.clear());
+      } else {
+        SnackBarService.error(context, provider.errorMessage ?? 'Error al actualizar categoría');
+      }
+    }
+  }
+
+  Future<void> _bulkToggleActive(CatalogProvider provider) async {
+    final auth = await AdminPinDialog.verify(context, action: 'Cambiar Estado por Lote', permissionKey: 'manage_catalog');
+    if (!auth) return;
+
+    bool? activeStatus = await showDialog<bool?>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Cambiar Estado (Activo/Inactivo)'),
+        content: const Text('¿Qué estado desea aplicar a los productos seleccionados?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, null), child: const Text('Cancelar')),
+          FilledButton.icon(
+            icon: const Icon(Icons.cancel_outlined),
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            label: const Text('Dar de Baja (Desactivar)'),
+            onPressed: () => Navigator.pop(ctx, false),
+          ),
+          FilledButton.icon(
+            icon: const Icon(Icons.check_circle_outline),
+            style: FilledButton.styleFrom(backgroundColor: Colors.green),
+            label: const Text('Dar de Alta (Activar)'),
+            onPressed: () => Navigator.pop(ctx, true),
+          ),
+        ],
+      ),
+    );
+
+    if (activeStatus != null && mounted) {
+      final msg = await provider.bulkUpdateProducts(_selectedProducts.keys.toList(), active: activeStatus);
+      if (msg != null) {
+        SnackBarService.success(context, msg);
+        setState(() => _selectedProducts.clear());
+      } else {
+        SnackBarService.error(context, provider.errorMessage ?? 'Error al actualizar estado');
+      }
+    }
   }
 
   void _confirmDelete(BuildContext ctx, CatalogProvider provider, Product p) async {
@@ -606,8 +800,9 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
 // ─────────────────────────────────────────────────────────────────────────────
 class BulkPriceUpdateDialog extends StatefulWidget {
   final CatalogProvider provider;
+  final List<int>? targetProductIds;
 
-  const BulkPriceUpdateDialog({Key? key, required this.provider}) : super(key: key);
+  const BulkPriceUpdateDialog({Key? key, required this.provider, this.targetProductIds}) : super(key: key);
 
   @override
   State<BulkPriceUpdateDialog> createState() => _BulkPriceUpdateDialogState();
@@ -630,9 +825,9 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
       return;
     }
 
-    final String filterLabel = _selectedCategoryId == null
-        ? 'todo el catálogo'
-        : 'la categoría seleccionada';
+    final String filterLabel = widget.targetProductIds != null
+        ? 'los ${widget.targetProductIds!.length} productos seleccionados'
+        : (_selectedCategoryId == null ? 'todo el catálogo' : 'la categoría seleccionada');
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -669,6 +864,7 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
 
     final message = await widget.provider.bulkPriceUpdate(
       percentage: pct,
+      productIds: widget.targetProductIds,
       categoryId: _selectedCategoryId,
     );
 
@@ -731,19 +927,33 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
               keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
             ),
             const SizedBox(height: 16),
-            DropdownButtonFormField<int?>(
-              value: _selectedCategoryId,
-              decoration: const InputDecoration(
-                labelText: 'Aplica a',
-                prefixIcon: Icon(Icons.filter_alt_outlined),
-                border: OutlineInputBorder(),
+            if (widget.targetProductIds == null) ...[
+              DropdownButtonFormField<int?>(
+                value: _selectedCategoryId,
+                decoration: const InputDecoration(
+                  labelText: 'Aplica a',
+                  prefixIcon: Icon(Icons.filter_alt_outlined),
+                  border: OutlineInputBorder(),
+                ),
+                items: [
+                  const DropdownMenuItem<int?>(value: null, child: Text('📦 Todo el catálogo')),
+                  ...categories.map((c) => DropdownMenuItem<int?>(value: c.id, child: Text('📂 ${c.name}'))),
+                ],
+                onChanged: (val) => setState(() => _selectedCategoryId = val),
               ),
-              items: [
-                const DropdownMenuItem<int?>(value: null, child: Text('📦 Todo el catálogo')),
-                ...categories.map((c) => DropdownMenuItem<int?>(value: c.id, child: Text('📂 ${c.name}'))),
-              ],
-              onChanged: (val) => setState(() => _selectedCategoryId = val),
-            ),
+            ] else ...[
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(4)),
+                child: Row(
+                  children: [
+                    Icon(Icons.check_circle, color: Colors.blue.shade700, size: 16),
+                    const SizedBox(width: 8),
+                    Text('Aplicando a ${widget.targetProductIds!.length} productos seleccionados', style: TextStyle(color: Colors.blue.shade900, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+              ),
+            ],
           ],
         ),
       ),
