@@ -214,7 +214,24 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
               ),
             ],
 
-            const SizedBox(height: 40),
+            const SizedBox(height: 16),
+
+            // ── Eco-Friendly UX (Impresión Térmica) ────────────────
+            CheckboxListTile(
+              title: const Text('Imprimir Comprobante', style: TextStyle(fontWeight: FontWeight.bold)),
+              subtitle: const Text('Desactive para ahorrar papel si el cliente no requiere copia física', style: TextStyle(fontSize: 12)),
+              value: _printReceipt,
+              activeColor: const Color(0xFF3B82F6),
+              contentPadding: EdgeInsets.zero,
+              controlAffinity: ListTileControlAffinity.leading,
+              onChanged: (val) {
+                if (val != null) {
+                  setState(() => _printReceipt = val);
+                }
+              },
+            ),
+
+            const SizedBox(height: 24),
 
             // ── Botones de Acción ──────────────────────────────────
             Row(

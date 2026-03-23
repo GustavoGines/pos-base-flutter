@@ -49,13 +49,25 @@ class CatalogRepositoryImpl implements CatalogRepository {
   }
 
   @override
+  Future<Map<String, dynamic>> bulkDeleteProducts(List<int> ids) async {
+    return await remoteDataSource.bulkDeleteProducts(ids);
+  }
+
+  @override
+  Future<Map<String, dynamic>> bulkUpdateProducts(List<int> ids, {int? categoryId, bool? active}) async {
+    return await remoteDataSource.bulkUpdateProducts(ids, categoryId: categoryId, active: active);
+  }
+
+  @override
   Future<Map<String, dynamic>> bulkPriceUpdate({
     required double percentage,
+    List<int>? productIds,
     int? categoryId,
     int? brandId,
   }) async {
     return await remoteDataSource.bulkPriceUpdate(
       percentage: percentage,
+      productIds: productIds,
       categoryId: categoryId,
       brandId: brandId,
     );

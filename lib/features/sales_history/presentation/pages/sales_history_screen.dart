@@ -8,6 +8,10 @@ import '../../../auth/presentation/providers/auth_provider.dart';
 import '../../../users/presentation/providers/users_provider.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
+import 'package:frontend_desktop/core/utils/receipt_printer_service.dart';
+import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
+import 'package:frontend_desktop/features/pos/domain/entities/cart_item.dart';
+import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
 
 class SalesHistoryScreen extends StatefulWidget {
   const SalesHistoryScreen({Key? key}) : super(key: key);
@@ -651,8 +655,47 @@ class _TicketDetailPanel extends StatelessWidget {
                 icon: const Icon(Icons.print_outlined),
                 label: const Text('Imprimir Copia'),
                 style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16)),
-                onPressed: () {
-                  SnackBarService.info(context, 'Re-impresión en desarrollo.');
+                onPressed: () async {
+                  final settings = context.read<SettingsProvider>().settings;
+                  if (settings != null) {
+                    try {
+                      // Mapear SaleItemRecord a CartItem para la impresión
+                      final itemsParaImprimir = sale.items.map((item) {
+                        return CartItem(
+                          product: Product(
+                            id: item.productId ?? 0,
+                            name: item.productName,
+                            sellingPrice: item.unitPrice,
+                            costPrice: item.unitPrice,
+                            isSoldByWeight: item.isSoldByWeight,
+                            stock: 0,
+                            internalCode: '',
+                            barcode: '',
+                            active: true,
+                          ),
+                          quantity: item.quantity,
+                        );
+                      }).toList();
+
+                      await ReceiptPrinterService.instance.printSaleTicket(
+                        items: itemsParaImprimir,
+                        total: sale.total,
+                        settings: settings,
+                        paymentMethod: sale.paymentMethod,
+                        receiptNumber: sale.id.toString(),
+                        userName: sale.userName,
+                      );
+                      if (context.mounted) {
+                        SnackBarService.success(context, 'Ticket #${sale.id} enviado a la impresora.');
+                      }
+                    } catch (e) {
+                      if (context.mounted) {
+                        SnackBarService.error(context, 'Error de impresión: $e');
+                      }
+                    }
+                  } else {
+                    SnackBarService.error(context, 'Configuración de impresora no disponible.');
+                  }
                 },
               ),
               const SizedBox(width: 16),

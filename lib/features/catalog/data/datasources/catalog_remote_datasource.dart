@@ -15,8 +15,11 @@ abstract class CatalogRemoteDataSource {
   Future<ProductModel> createProduct(Map<String, dynamic> productData);
   Future<ProductModel> updateProduct(int id, Map<String, dynamic> productData);
   Future<void> deleteProduct(int id);
+  Future<Map<String, dynamic>> bulkDeleteProducts(List<int> ids);
+  Future<Map<String, dynamic>> bulkUpdateProducts(List<int> ids, {int? categoryId, bool? active});
   Future<Map<String, dynamic>> bulkPriceUpdate({
     required double percentage,
+    List<int>? productIds,
     int? categoryId,
     int? brandId,
   });
@@ -193,13 +196,57 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
   }
 
   @override
+  Future<Map<String, dynamic>> bulkDeleteProducts(List<int> ids) async {
+    try {
+      final response = await client.post(
+        Uri.parse('$baseUrl/catalog/products/bulk-delete'),
+        headers: {'Accept': 'application/json', 'Content-Type': 'application/json'},
+        body: json.encode({'product_ids': ids}),
+      );
+      if (response.statusCode == 200) {
+        return json.decode(response.body) as Map<String, dynamic>;
+      } else {
+        throw Exception('Failed to bulk delete products: ${response.body}');
+      }
+    } catch (e) {
+      print('=== API Error en bulkDeleteProducts: $e ===');
+      rethrow;
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> bulkUpdateProducts(List<int> ids, {int? categoryId, bool? active}) async {
+    try {
+      final body = <String, dynamic>{'product_ids': ids};
+      if (categoryId != null) body['category_id'] = categoryId;
+      if (active != null) body['active'] = active;
+
+      final response = await client.put(
+        Uri.parse('$baseUrl/catalog/products/bulk-update'),
+        headers: {'Accept': 'application/json', 'Content-Type': 'application/json'},
+        body: json.encode(body),
+      );
+      if (response.statusCode == 200) {
+        return json.decode(response.body) as Map<String, dynamic>;
+      } else {
+        throw Exception('Failed to bulk update products: ${response.body}');
+      }
+    } catch (e) {
+      print('=== API Error en bulkUpdateProducts: $e ===');
+      rethrow;
+    }
+  }
+
+  @override
   Future<Map<String, dynamic>> bulkPriceUpdate({
     required double percentage,
+    List<int>? productIds,
     int? categoryId,
     int? brandId,
   }) async {
     try {
       final body = <String, dynamic>{'percentage': percentage};
+      if (productIds != null && productIds.isNotEmpty) body['product_ids'] = productIds;
       if (categoryId != null) body['category_id'] = categoryId;
       if (brandId != null) body['brand_id'] = brandId;
 
