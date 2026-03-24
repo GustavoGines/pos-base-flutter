@@ -8,18 +8,18 @@ import '../../../features/settings/domain/entities/business_settings.dart';
 
 /// Tipo de conexión con la impresora térmica
 enum PrinterConnectionType {
-  tcp,  // Red (IP + Puerto) — la mayoría de impresoras WiFi y LAN
-  usb,  // Puerto COM/USB vía libserialport (Windows/Linux)
+  tcp, // Red (IP + Puerto) — la mayoría de impresoras WiFi y LAN
+  usb, // Puerto COM/USB vía libserialport (Windows/Linux)
 }
 
 /// Configuración de la impresora
 class PrinterConfig {
   final PrinterConnectionType connectionType;
-  final String? tcpHost;       // IP de la impresora (solo TCP)
-  final int? tcpPort;          // Puerto TCP (normalmente 9100)
-  final String? comPort;       // Puerto COM (solo USB, ej: "COM3")
-  final int baudRate;          // Velocidad del puerto serie (default: 115200)
-  final PaperSize paperSize;   // Tamaño del papel.
+  final String? tcpHost; // IP de la impresora (solo TCP)
+  final int? tcpPort; // Puerto TCP (normalmente 9100)
+  final String? comPort; // Puerto COM (solo USB, ej: "COM3")
+  final int baudRate; // Velocidad del puerto serie (default: 115200)
+  final PaperSize paperSize; // Tamaño del papel.
 
   const PrinterConfig({
     required this.connectionType,
@@ -62,7 +62,8 @@ class ReceiptPrinterService {
   PrinterConfig config;
 
   // Singleton pattern
-  static final ReceiptPrinterService _instance = ReceiptPrinterService._internal(config: PrinterConfig.defaultUsb());
+  static final ReceiptPrinterService _instance =
+      ReceiptPrinterService._internal(config: PrinterConfig.defaultUsb());
   static ReceiptPrinterService get instance => _instance;
 
   ReceiptPrinterService._internal({required this.config});
@@ -121,70 +122,183 @@ class ReceiptPrinterService {
         width: PosTextSize.size2,
       ),
     );
+    bytes += generator.feed(1);
+
     if (settings.address != null && settings.address!.isNotEmpty) {
-      bytes += generator.text(settings.address!, styles: const PosStyles(align: PosAlign.center));
+      bytes += generator.text(
+        settings.address!,
+        styles: const PosStyles(align: PosAlign.center),
+      );
     }
     if (settings.taxId != null && settings.taxId!.isNotEmpty) {
-      bytes += generator.text('CUIT: ${settings.taxId}', styles: const PosStyles(align: PosAlign.center));
+      bytes += generator.text(
+        'CUIT: ${settings.taxId}',
+        styles: const PosStyles(align: PosAlign.center, bold: true),
+      );
     }
     if (settings.phone != null && settings.phone!.isNotEmpty) {
-      bytes += generator.text('Tel: ${settings.phone}', styles: const PosStyles(align: PosAlign.center));
+      bytes += generator.text(
+        'Tel: ${settings.phone}',
+        styles: const PosStyles(align: PosAlign.center),
+      );
     }
     bytes += generator.hr(ch: '=');
+
+    bytes += generator.text(
+      'COMPROBANTE DE VENTA',
+      styles: const PosStyles(align: PosAlign.center, bold: true),
+    );
+    bytes += generator.hr(ch: '-');
 
     // ── Fecha y número de comprobante ────────────────────────────
     final now = DateTime.now();
     bytes += generator.row([
-      PosColumn(text: _formatDate(now), width: 7),
-      PosColumn(text: receiptNumber != null ? '#${receiptNumber.padLeft(6, '0')}' : '', width: 5, styles: const PosStyles(align: PosAlign.right)),
+      PosColumn(
+        text: 'FECHA: ${_formatDate(now)}',
+        width: 7,
+        styles: const PosStyles(bold: true),
+      ),
+      PosColumn(
+        text: receiptNumber != null
+            ? 'TICKET #${receiptNumber.padLeft(6, '0')}'
+            : '',
+        width: 5,
+        styles: const PosStyles(align: PosAlign.right, bold: true),
+      ),
     ]);
     if (userName != null) {
-      bytes += generator.text('Cajero: $userName', styles: const PosStyles(align: PosAlign.left));
+      bytes += generator.text(
+        'CAJERO: ${userName.toUpperCase()}',
+        styles: const PosStyles(align: PosAlign.left),
+      );
     }
-    bytes += generator.hr();
+    bytes += generator.hr(ch: '=');
 
     // ── Items ────────────────────────────────────────────────────
-    bytes += generator.text('DETALLE', styles: const PosStyles(bold: true));
+    bytes += generator.row([
+      PosColumn(text: 'CANT', width: 2, styles: const PosStyles(bold: true)),
+      PosColumn(
+        text: 'DESCRIPCIÓN',
+        width: 6,
+        styles: const PosStyles(bold: true),
+      ),
+      PosColumn(
+        text: 'TOTAL',
+        width: 4,
+        styles: const PosStyles(align: PosAlign.right, bold: true),
+      ),
+    ]);
     bytes += generator.hr(ch: '-');
+
+    int totalItemsQty = 0;
+
     for (final item in items) {
-      final cantStr = item.product.isSoldByWeight
-          ? '${item.quantity.toStringAsFixed(3)} Kg'
-          : '${item.quantity.toInt()} x';
+      final isWeight = item.product.isSoldByWeight;
+      final cantStr = isWeight
+          ? item.quantity.toStringAsFixed(3)
+          : item.quantity.toInt().toString();
+
+      if (!isWeight) totalItemsQty += item.quantity.toInt();
+
       final price = item.product.sellingPrice;
       final subtotal = item.subtotal;
-      bytes += generator.text(item.product.name, styles: const PosStyles(bold: false));
+
+      // Primera línea: Nombre del producto
+      bytes += generator.text(
+        item.product.name.toUpperCase(),
+        styles: const PosStyles(bold: true),
+      );
+      // Segunda línea: Cantidad | Precio unitario | Subtotal
       bytes += generator.row([
-        PosColumn(text: '  $cantStr @ \$${price.toStringAsFixed(2)}', width: 7),
+        PosColumn(text: cantStr, width: 2),
+        PosColumn(text: 'x \$${price.toStringAsFixed(2)}', width: 6),
         PosColumn(
           text: '\$${subtotal.toStringAsFixed(2)}',
-          width: 5,
-          styles: const PosStyles(align: PosAlign.right, bold: true),
+          width: 4,
+          styles: const PosStyles(align: PosAlign.right),
         ),
       ]);
+      bytes += generator.feed(1); // Espacio pequeño entre items
     }
-    bytes += generator.hr();
+    bytes += generator.hr(ch: '=');
 
     // ── Total ────────────────────────────────────────────────────
-    bytes += generator.hr(linesAfter: 1);
     bytes += generator.row([
-      PosColumn(text: 'TOTAL:', width: 6, styles: const PosStyles(bold: true, height: PosTextSize.size2, width: PosTextSize.size2)),
+      PosColumn(
+        text: 'TOTAL A PAGAR:',
+        width: 7,
+        styles: const PosStyles(bold: true, height: PosTextSize.size2),
+      ),
       PosColumn(
         text: '\$${total.toStringAsFixed(2)}',
-        width: 6,
-        styles: const PosStyles(bold: true, align: PosAlign.right, height: PosTextSize.size2, width: PosTextSize.size2),
+        width: 5,
+        styles: const PosStyles(
+          bold: true,
+          align: PosAlign.right,
+          height: PosTextSize.size2,
+          width: PosTextSize.size2,
+        ),
+      ),
+    ]);
+    bytes += generator.feed(1);
+    bytes += generator.row([
+      PosColumn(
+        text: 'MÉTODO DE PAGO:',
+        width: 7,
+        styles: const PosStyles(bold: true),
+      ),
+      PosColumn(
+        text: paymentMethod.toUpperCase(),
+        width: 5,
+        styles: const PosStyles(align: PosAlign.right, bold: true),
       ),
     ]);
     bytes += generator.row([
-      PosColumn(text: 'Forma de pago:', width: 6),
-      PosColumn(text: paymentMethod, width: 6, styles: const PosStyles(align: PosAlign.right)),
+      PosColumn(
+        text: 'UNIDADES VENDIDAS:',
+        width: 9,
+        styles: const PosStyles(bold: true),
+      ),
+      PosColumn(
+        text: '$totalItemsQty',
+        width: 3,
+        styles: const PosStyles(align: PosAlign.right, bold: true),
+      ),
     ]);
-    bytes += generator.hr();
+    bytes += generator.hr(ch: '-');
 
-    // ── Pie de página ────────────────────────────────────────────
-    if (settings.receiptFooterMessage != null && settings.receiptFooterMessage!.isNotEmpty) {
-      bytes += generator.text(settings.receiptFooterMessage!, styles: const PosStyles(align: PosAlign.center));
+    // ── Código de barras (Nro Comprobante) y Pie ──────────────────
+    if (receiptNumber != null && receiptNumber.isNotEmpty) {
+      try {
+        // Imprime un código de barras limpio si hay número de comprobante
+        bytes += generator.barcode(
+          Barcode.code128(receiptNumber.padLeft(8, '0').codeUnits),
+          width: 2,
+          height: 60,
+        );
+      } catch (e) {
+        // Ignorar si el string no permite ser code128 (aunque números padLeft siempre deberían funcionar)
+      }
+      bytes += generator.feed(1);
     }
-    bytes += generator.text('¡Gracias por su compra!', styles: const PosStyles(align: PosAlign.center, bold: true));
+
+    if (settings.receiptFooterMessage != null &&
+        settings.receiptFooterMessage!.isNotEmpty) {
+      bytes += generator.text(
+        settings.receiptFooterMessage!,
+        styles: const PosStyles(align: PosAlign.center, bold: true),
+      );
+    }
+    bytes += generator.feed(1);
+    bytes += generator.text(
+      '*** GRACIAS POR SU COMPRA ***',
+      styles: const PosStyles(align: PosAlign.center, bold: true),
+    );
+    bytes += generator.text(
+      'Conserve este ticket para devoluciones',
+      styles: const PosStyles(align: PosAlign.center),
+    );
+
     bytes += generator.feed(3);
     bytes += generator.cut();
 
@@ -206,45 +320,91 @@ class ReceiptPrinterService {
     bytes += generator.reset();
     bytes += generator.text(
       settings.companyName?.toUpperCase() ?? 'MI NEGOCIO',
-      styles: const PosStyles(bold: true, align: PosAlign.center, height: PosTextSize.size2, width: PosTextSize.size2),
+      styles: const PosStyles(
+        bold: true,
+        align: PosAlign.center,
+        height: PosTextSize.size2,
+        width: PosTextSize.size2,
+      ),
     );
-    bytes += generator.text('=== CIERRE Z ===', styles: const PosStyles(align: PosAlign.center, bold: true));
+    bytes += generator.text(
+      '=== CIERRE Z ===',
+      styles: const PosStyles(align: PosAlign.center, bold: true),
+    );
     bytes += generator.hr();
 
     final closedAt = shift.closedAt ?? DateTime.now();
     bytes += generator.row([
       PosColumn(text: 'Apertura:', width: 6),
-      PosColumn(text: _formatDate(shift.openedAt), width: 6, styles: const PosStyles(align: PosAlign.right)),
+      PosColumn(
+        text: _formatDate(shift.openedAt),
+        width: 6,
+        styles: const PosStyles(align: PosAlign.right),
+      ),
     ]);
     bytes += generator.row([
       PosColumn(text: 'Cierre:', width: 6),
-      PosColumn(text: _formatDate(closedAt), width: 6, styles: const PosStyles(align: PosAlign.right)),
+      PosColumn(
+        text: _formatDate(closedAt),
+        width: 6,
+        styles: const PosStyles(align: PosAlign.right),
+      ),
     ]);
     bytes += generator.hr();
 
-    bytes += generator.text('RESUMEN DEL TURNO', styles: const PosStyles(bold: true));
+    bytes += generator.text(
+      'RESUMEN DEL TURNO',
+      styles: const PosStyles(bold: true),
+    );
     bytes += generator.hr(ch: '-');
     const currency = '\$';
-    bytes += _labelValue(generator, 'Saldo inicial:', '$currency${shift.openingBalance.toStringAsFixed(2)}');
-    bytes += _labelValue(generator, 'Ventas del turno:', '$currency${(shift.totalSales ?? 0.0).toStringAsFixed(2)}');
-    bytes += _labelValue(generator, 'Efectivo esperado:', '$currency${((shift.openingBalance) + (shift.totalSales ?? 0.0)).toStringAsFixed(2)}');
+    bytes += _labelValue(
+      generator,
+      'Saldo inicial:',
+      '$currency${shift.openingBalance.toStringAsFixed(2)}',
+    );
+    bytes += _labelValue(
+      generator,
+      'Ventas del turno:',
+      '$currency${(shift.totalSales ?? 0.0).toStringAsFixed(2)}',
+    );
+    bytes += _labelValue(
+      generator,
+      'Efectivo esperado:',
+      '$currency${((shift.openingBalance) + (shift.totalSales ?? 0.0)).toStringAsFixed(2)}',
+    );
     bytes += generator.hr(ch: '=');
-    bytes += _labelValue(generator, 'Efectivo contado:', '$currency${(shift.closingBalance ?? 0.0).toStringAsFixed(2)}');
+    bytes += _labelValue(
+      generator,
+      'Efectivo contado:',
+      '$currency${(shift.closingBalance ?? 0.0).toStringAsFixed(2)}',
+    );
 
     final diff = shift.difference ?? 0.0;
     final diffStr = diff >= 0
         ? '+$currency${diff.toStringAsFixed(2)} (SOBRANTE)'
         : '-$currency${diff.abs().toStringAsFixed(2)} (FALTANTE)';
     bytes += generator.row([
-      PosColumn(text: 'Diferencia:', width: 6, styles: const PosStyles(bold: true)),
+      PosColumn(
+        text: 'Diferencia:',
+        width: 6,
+        styles: const PosStyles(bold: true),
+      ),
       PosColumn(
         text: diffStr,
         width: 6,
-        styles: PosStyles(bold: true, align: PosAlign.right, fontType: diff < 0 ? PosFontType.fontB : PosFontType.fontA),
+        styles: PosStyles(
+          bold: true,
+          align: PosAlign.right,
+          fontType: diff < 0 ? PosFontType.fontB : PosFontType.fontA,
+        ),
       ),
     ]);
     bytes += generator.hr();
-    bytes += generator.text('Firma cajero: ___________________', styles: const PosStyles(align: PosAlign.center));
+    bytes += generator.text(
+      'Firma cajero: ___________________',
+      styles: const PosStyles(align: PosAlign.center),
+    );
     bytes += generator.feed(4);
     bytes += generator.cut();
 
@@ -258,7 +418,11 @@ class ReceiptPrinterService {
   List<int> _labelValue(Generator gen, String label, String value) {
     return gen.row([
       PosColumn(text: label, width: 7),
-      PosColumn(text: value, width: 5, styles: const PosStyles(align: PosAlign.right, bold: true)),
+      PosColumn(
+        text: value,
+        width: 5,
+        styles: const PosStyles(align: PosAlign.right, bold: true),
+      ),
     ]);
   }
 
@@ -286,7 +450,9 @@ class ReceiptPrinterService {
 
   /// Envía los bytes por socket TCP (impresoras de red / WiFi)
   Future<void> _sendViaTcp(Uint8List data) async {
-    if (config.tcpHost == null) throw Exception('ReceiptPrinterService: tcpHost no configurado.');
+    if (config.tcpHost == null) {
+      throw Exception('ReceiptPrinterService: tcpHost no configurado.');
+    }
     Socket? socket;
     try {
       socket = await Socket.connect(
@@ -303,7 +469,9 @@ class ReceiptPrinterService {
 
   /// Envía los bytes por puerto COM/USB (impresoras USB via Serial Port)
   Future<void> _sendViaSerialPort(Uint8List data) async {
-    if (config.comPort == null) throw Exception('ReceiptPrinterService: comPort no configurado.');
+    if (config.comPort == null) {
+      throw Exception('ReceiptPrinterService: comPort no configurado.');
+    }
     final port = SerialPort(config.comPort!);
     try {
       if (!port.openWrite()) {

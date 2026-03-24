@@ -14,7 +14,7 @@ import 'package:frontend_desktop/features/pos/domain/entities/cart_item.dart';
 import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
 
 class SalesHistoryScreen extends StatefulWidget {
-  const SalesHistoryScreen({Key? key}) : super(key: key);
+  const SalesHistoryScreen({super.key});
 
   @override
   State<SalesHistoryScreen> createState() => _SalesHistoryScreenState();
@@ -55,7 +55,10 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
           if (_statusFilter == 'Activas' && sale.isVoided) return false;
           if (_statusFilter == 'Anuladas' && !sale.isVoided) return false;
           if (_searchQuery.isNotEmpty) {
-            if (!sale.id.toString().contains(_searchQuery)) return false;
+            // Eliminar ceros a la izquierda para soportar el escáner de código de barras del ticket
+            final cleanQuery = _searchQuery.replaceFirst(RegExp(r'^0+'), '');
+            final searchQueryToUse = cleanQuery.isEmpty ? _searchQuery : cleanQuery;
+            if (!sale.id.toString().contains(searchQueryToUse)) return false;
           }
           return true;
         }).toList();
@@ -255,7 +258,7 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
                           ? _EmptyStateList()
                           : ListView.separated(
                               itemCount: filteredSales.length,
-                              separatorBuilder: (_, __) => const Divider(height: 1, indent: 64),
+                              separatorBuilder: (context, index) => const Divider(height: 1, indent: 64),
                               itemBuilder: (ctx, i) {
                                 final sale = filteredSales[i];
                                 final isSelected = _selectedSale?.id == sale.id;
@@ -318,14 +321,14 @@ class _BuildSummaryCard extends StatelessWidget {
         decoration: BoxDecoration(
           color: bgColor,
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: color.withOpacity(0.3)),
+          border: Border.all(color: color.withValues(alpha: 0.3)),
         ),
         child: Row(
           children: [
             Container(
               padding: const EdgeInsets.all(6),
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.6),
+                color: Colors.white.withValues(alpha: 0.6),
                 shape: BoxShape.circle,
               ),
               child: Icon(icon, size: 16, color: color),
@@ -608,7 +611,7 @@ class _TicketDetailPanel extends StatelessWidget {
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(12),
-                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4))],
+                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 4))],
                 border: Border.all(color: Colors.black12),
               ),
               child: ClipRRect(
