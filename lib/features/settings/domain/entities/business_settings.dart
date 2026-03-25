@@ -11,6 +11,9 @@ class BusinessSettings extends Equatable {
   final String? printerIpAddress;
   final String? printerIpPort;
   final String? comPortScale;
+  final String? licenseStatus;
+  final String? licensePlanType;
+  final String? licenseAllowedAddons;
 
   const BusinessSettings({
     this.companyName,
@@ -23,6 +26,9 @@ class BusinessSettings extends Equatable {
     this.printerIpAddress,
     this.printerIpPort,
     this.comPortScale,
+    this.licenseStatus,
+    this.licensePlanType,
+    this.licenseAllowedAddons,
   });
 
   @override
@@ -37,5 +43,8 @@ class BusinessSettings extends Equatable {
         printerIpAddress,
         printerIpPort,
         comPortScale,
+        licenseStatus,
+        licensePlanType,
+        licenseAllowedAddons,
       ];
 }

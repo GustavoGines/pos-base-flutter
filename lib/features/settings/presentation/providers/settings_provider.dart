@@ -10,6 +10,9 @@ class SettingsProvider with ChangeNotifier {
   BusinessSettings? _settings;
   BusinessSettings? get settings => _settings;
 
+  bool get isLicenseActive => _settings?.licenseStatus == 'active';
+  String get currentPlan => _settings?.licensePlanType ?? 'basic';
+
   bool _isLoading = false;
   bool get isLoading => _isLoading;
 

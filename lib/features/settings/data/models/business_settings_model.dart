@@ -12,6 +12,9 @@ class BusinessSettingsModel extends BusinessSettings {
     String? printerIpAddress,
     String? printerIpPort,
     String? comPortScale,
+    String? licenseStatus,
+    String? licensePlanType,
+    String? licenseAllowedAddons,
   }) : super(
           companyName: companyName,
           address: address,
@@ -23,6 +26,9 @@ class BusinessSettingsModel extends BusinessSettings {
           printerIpAddress: printerIpAddress,
           printerIpPort: printerIpPort,
           comPortScale: comPortScale,
+          licenseStatus: licenseStatus,
+          licensePlanType: licensePlanType,
+          licenseAllowedAddons: licenseAllowedAddons,
         );
 
   factory BusinessSettingsModel.fromJson(Map<String, dynamic> json) {
@@ -37,6 +43,9 @@ class BusinessSettingsModel extends BusinessSettings {
       printerIpAddress: json['printer_ip_address'],
       printerIpPort: json['printer_ip_port'],
       comPortScale: json['com_port_scale'],
+      licenseStatus: json['license_status'],
+      licensePlanType: json['license_plan_type'],
+      licenseAllowedAddons: json['license_allowed_addons'],
     );
   }
 
