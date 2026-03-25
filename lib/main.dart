@@ -10,6 +10,7 @@ import 'features/cash_register/presentation/providers/cash_register_provider.dar
 import 'features/pos/presentation/providers/pos_provider.dart';
 import 'features/sales_history/presentation/providers/sales_history_provider.dart';
 import 'features/auth/presentation/providers/auth_provider.dart';
+import 'features/customers/providers/customer_provider.dart';
 
 import 'core/network/api_client.dart';
 
@@ -22,6 +23,7 @@ import 'features/cash_register/presentation/pages/close_shift_screen.dart';
 import 'features/sales_history/presentation/pages/sales_history_screen.dart';
 import 'features/auth/presentation/pages/login_screen.dart';
 import 'features/cash_register/presentation/pages/shift_audit_screen.dart';
+import 'features/customers/presentation/screens/customers_screen.dart';
 
 // Repositories & DataSources
 import 'features/settings/data/datasources/settings_remote_datasource.dart';
@@ -152,6 +154,10 @@ void main() async {
           create: (_) => UsersProvider(repository: usersRepo),
           lazy: true,  // Solo carga cuando se navega a Personal y Accesos
         ),
+        ChangeNotifierProvider(
+          create: (_) => CustomerProvider(baseUrl: apiUrl),
+          lazy: false,
+        ),
       ],
       child: const MainApp(),
     ),
@@ -272,6 +278,7 @@ class _MainAppState extends State<MainApp> {
         '/shift-audit': (context) => const ShiftAuditScreen(),
         '/users': (context) => const UsersManagerScreen(),
         '/settings': (context) => const SettingsScreen(),
+        '/cuentas-corrientes': (context) => const CustomersScreen(),
       },
     );
   }

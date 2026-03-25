@@ -1,0 +1,177 @@
+import 'dart:convert';
+import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import '../models/customer_model.dart';
+
+class CustomerProvider extends ChangeNotifier {
+  final String baseUrl;
+  
+  bool _isLoading = false;
+  List<Customer> _customers = [];
+  String _searchQuery = '';
+
+  bool get isLoading => _isLoading;
+  List<Customer> get customers => _customers;
+  String get searchQuery => _searchQuery;
+
+  CustomerProvider({required this.baseUrl});
+
+  String _parseError(http.Response response) {
+    try {
+      final errData = json.decode(response.body);
+      if (errData['errors'] != null && errData['errors'].isNotEmpty) {
+        final firstKey = errData['errors'].keys.first;
+        return errData['errors'][firstKey][0];
+      }
+      return errData['message'] ?? errData['error'] ?? 'Error desconocido';
+    } catch (_) {
+      return 'Error ${response.statusCode}';
+    }
+  }
+
+  Future<void> fetchCustomers({String? search}) async {
+    _isLoading = true;
+    notifyListeners();
+    
+    try {
+      final queryParam = (search != null && search.isNotEmpty) ? '?search=$search' : '';
+      final response = await http.get(Uri.parse('$baseUrl/customers$queryParam'), headers: {
+        'Accept': 'application/json',
+      });
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final items = data['data'] as List;
+        _customers = items.map((e) => Customer.fromJson(e)).toList();
+      } else {
+        throw Exception(_parseError(response));
+      }
+    } catch (e) {
+      _customers = [];
+      throw Exception(e.toString().replaceAll('Exception: ', ''));
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> createCustomer(Map<String, dynamic> data) async {
+    try {
+      if (!data.containsKey('balance') || data['balance'].toString().isEmpty) {
+        data['balance'] = 0.00;
+      }
+      
+      final response = await http.post(
+        Uri.parse('$baseUrl/customers'),
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: json.encode(data),
+      );
+
+      if (response.statusCode == 201) {
+        await fetchCustomers(search: _searchQuery);
+        return true;
+      } else {
+        throw Exception(_parseError(response));
+      }
+    } catch (e) {
+      throw Exception(e.toString().replaceAll('Exception: ', ''));
+    }
+  }
+
+  Future<bool> updateCustomer(int id, Map<String, dynamic> data) async {
+    try {
+      final response = await http.put(
+        Uri.parse('$baseUrl/customers/$id'),
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: json.encode(data),
+      );
+
+      if (response.statusCode == 200) {
+        await fetchCustomers(search: _searchQuery);
+        return true;
+      } else {
+        throw Exception(_parseError(response));
+      }
+    } catch (e) {
+      throw Exception(e.toString().replaceAll('Exception: ', ''));
+    }
+  }
+
+  Future<bool> deleteCustomer(int id) async {
+    try {
+      final response = await http.delete(
+        Uri.parse('$baseUrl/customers/$id'),
+        headers: {
+          'Accept': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 204 || response.statusCode == 200) {
+        await fetchCustomers(search: _searchQuery);
+        return true;
+      } else {
+        throw Exception(_parseError(response));
+      }
+    } catch (e) {
+      throw Exception(e.toString().replaceAll('Exception: ', ''));
+    }
+  }
+
+  Future<bool> registerPayment(int customerId, double amount, String description) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/customers/$customerId/payments'),
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: json.encode({
+          'amount': amount,
+          'description': description,
+        }),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final idx = _customers.indexWhere((c) => c.id == customerId);
+        if (idx != -1) {
+          await fetchSingleCustomer(customerId);
+        }
+        return true;
+      } else {
+        throw Exception(_parseError(response));
+      }
+    } catch (e) {
+      throw Exception(e.toString().replaceAll('Exception: ', ''));
+    }
+  }
+
+  Future<void> fetchSingleCustomer(int customerId) async {
+    try {
+      final response = await http.get(Uri.parse('$baseUrl/customers/$customerId'), headers: {
+        'Accept': 'application/json',
+      });
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final updatedCustomer = Customer.fromJson(data);
+        final idx = _customers.indexWhere((c) => c.id == customerId);
+        if (idx != -1) {
+          _customers[idx] = updatedCustomer;
+          notifyListeners();
+        }
+      }
+    } catch (e) {
+      // Silencioso
+    }
+  }
+  
+  void setSearchQuery(String query) {
+    _searchQuery = query;
+    fetchCustomers(search: query);
+  }
+}
