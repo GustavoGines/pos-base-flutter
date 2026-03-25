@@ -75,33 +75,48 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
               ),
 
               // ── CENTER BLOCK (navigation tabs — always centered) ──────
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _buildNavTab(
-                    context: context,
-                    label: 'Terminal POS',
-                    icon: Icons.point_of_sale,
-                    route: '/pos',
-                    activeColor: Colors.teal.shade700,
-                  ),
-                  _buildNavTab(
-                    context: context,
-                    label: 'Ventas del Día',
-                    icon: Icons.receipt_long_outlined,
-                    route: '/sales-history',
-                    activeColor: Colors.blueAccent,
-                    permissionKey: 'view_global_history',
-                  ),
-                  _buildNavTab(
-                    context: context,
-                    label: 'Catálogo',
-                    icon: Icons.inventory_2_outlined,
-                    route: '/catalog',
-                    activeColor: Colors.deepPurple,
-                    permissionKey: 'manage_catalog',
-                  ),
-                ],
+              Consumer<SettingsProvider>(
+                builder: (context, settings, _) {
+                  final String currentPlan = settings.currentPlan;
+                  final bool isProOrEnterprise = currentPlan == 'pro' || currentPlan == 'enterprise';
+
+                  return Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _buildNavTab(
+                        context: context,
+                        label: 'Terminal POS',
+                        icon: Icons.point_of_sale,
+                        route: '/pos',
+                        activeColor: Colors.teal.shade700,
+                      ),
+                      _buildNavTab(
+                        context: context,
+                        label: 'Ventas del Día',
+                        icon: Icons.receipt_long_outlined,
+                        route: '/sales-history',
+                        activeColor: Colors.blueAccent,
+                        permissionKey: 'view_global_history',
+                      ),
+                      _buildNavTab(
+                        context: context,
+                        label: 'Catálogo',
+                        icon: Icons.inventory_2_outlined,
+                        route: '/catalog',
+                        activeColor: Colors.deepPurple,
+                        permissionKey: 'manage_catalog',
+                      ),
+                      _buildNavTab(
+                        context: context,
+                        label: 'Cuentas Corrientes',
+                        icon: isProOrEnterprise ? Icons.account_balance_wallet_outlined : Icons.lock_outline,
+                        route: '/cuentas-corrientes',
+                        activeColor: Colors.orange.shade700,
+                        isLocked: !isProOrEnterprise,
+                      ),
+                    ],
+                  );
+                },
               ),
 
               // ── RIGHT BLOCK ───────────────────────────────────────────
@@ -131,9 +146,10 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
     required String route,
     required Color activeColor,
     String? permissionKey,
+    bool isLocked = false,
   }) {
     final isActive = currentRoute == route;
-    final color = isActive ? activeColor : Colors.blueGrey;
+    final color = isLocked ? Colors.grey.shade400 : (isActive ? activeColor : Colors.blueGrey);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 2.0),
@@ -189,6 +205,27 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
               onPressed: isActive
                   ? null
                   : () async {
+                      if (isLocked) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: const Row(
+                              children: [
+                                Icon(Icons.star, color: Colors.amber),
+                                SizedBox(width: 8),
+                                Expanded(child: Text('Esta función requiere el plan PRO. Comunícate con soporte para actualizar tu licencia.')),
+                              ],
+                            ),
+                            backgroundColor: Colors.blueGrey.shade900,
+                            behavior: SnackBarBehavior.floating,
+                            action: SnackBarAction(
+                              label: 'OK',
+                              textColor: Colors.amber,
+                              onPressed: () {},
+                            ),
+                          ),
+                        );
+                        return;
+                      }
                       if (permissionKey != null) {
                         final authorized = await AdminPinDialog.verify(
                             context,
