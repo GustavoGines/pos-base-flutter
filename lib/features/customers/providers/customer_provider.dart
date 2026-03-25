@@ -9,10 +9,12 @@ class CustomerProvider extends ChangeNotifier {
   bool _isLoading = false;
   List<Customer> _customers = [];
   String _searchQuery = '';
+  List<Map<String, dynamic>> _pendingSales = [];
 
   bool get isLoading => _isLoading;
   List<Customer> get customers => _customers;
   String get searchQuery => _searchQuery;
+  List<Map<String, dynamic>> get pendingSales => _pendingSales;
 
   CustomerProvider({required this.baseUrl});
 
@@ -138,18 +140,58 @@ class CustomerProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> registerPayment(int customerId, double amount, String description) async {
+  Future<void> fetchPendingSales(int customerId) async {
     try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/customers/$customerId/pending-sales'),
+        headers: {
+          'Accept': 'application/json',
+        },
+      );
+      if (response.statusCode == 200) {
+        final List<dynamic> data = json.decode(response.body);
+        _pendingSales = data.map((item) => item as Map<String, dynamic>).toList();
+        notifyListeners();
+      }
+    } catch (e) {
+      _pendingSales = [];
+      notifyListeners();
+    }
+  }
+
+  Future<void> clearPendingSales() async {
+    _pendingSales = [];
+    notifyListeners();
+  }
+
+  Future<bool> registerPayment({
+    required int customerId, 
+    required double amount, 
+    required String paymentMethod,
+    String description = '',
+    List<int> saleIds = const [],
+  }) async {
+    try {
+      final Map<String, dynamic> bodyPayload = {
+        'amount': amount,
+        'payment_method': paymentMethod,
+      };
+
+      if (description.isNotEmpty) {
+        bodyPayload['description'] = description;
+      }
+      
+      if (saleIds.isNotEmpty) {
+        bodyPayload['sale_ids'] = saleIds;
+      }
+
       final response = await http.post(
         Uri.parse('$baseUrl/customers/$customerId/payments'),
         headers: {
           'Accept': 'application/json',
           'Content-Type': 'application/json',
         },
-        body: json.encode({
-          'amount': amount,
-          'description': description,
-        }),
+        body: json.encode(bodyPayload),
       );
 
       if (response.statusCode == 200 || response.statusCode == 201) {

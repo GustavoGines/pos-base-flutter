@@ -43,8 +43,8 @@ class BusinessSettingsModel extends BusinessSettings {
       printerIpAddress: json['printer_ip_address'],
       printerIpPort: json['printer_ip_port'],
       comPortScale: json['com_port_scale'],
-      licenseStatus: json['license_status'],
-      licensePlanType: json['license_plan_type'],
+      licenseStatus: json['license_key'],     // The actual license key string
+      licensePlanType: json['app_plan'],       // Written by LicenseSyncService as 'app_plan'
       licenseAllowedAddons: json['license_allowed_addons'],
     );
   }

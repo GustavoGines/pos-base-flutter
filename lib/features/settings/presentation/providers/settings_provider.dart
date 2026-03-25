@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import '../../domain/entities/business_settings.dart';
 import '../../domain/usecases/get_settings_usecase.dart';
 import '../../domain/usecases/update_settings_usecase.dart';
@@ -50,6 +52,33 @@ class SettingsProvider with ChangeNotifier {
     } catch (e) {
       _errorMessage = e.toString();
       return false;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  /// Activation: POSTs the new license key to /api/settings/license.
+  /// Returns the new plan string on success, throws on error.
+  Future<String> activateLicense(String baseUrl, String licenseKey) async {
+    _isLoading = true;
+    notifyListeners();
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/settings/license'),
+        headers: {'Accept': 'application/json', 'Content-Type': 'application/json'},
+        body: json.encode({'license_key': licenseKey}),
+      );
+
+      final data = json.decode(response.body);
+      if (response.statusCode == 200) {
+        final plan = data['plan'] as String? ?? 'basic';
+        // Refresh local settings so Feature Gating reacts immediately
+        await loadSettings();
+        return plan;
+      } else {
+        throw Exception(data['error'] ?? 'Error al validar la licencia.');
+      }
     } finally {
       _isLoading = false;
       notifyListeners();

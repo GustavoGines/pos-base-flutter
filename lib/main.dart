@@ -72,6 +72,33 @@ class FadePageRouteTransitionsBuilder extends PageTransitionsBuilder {
   }
 }
 
+/// Silently refreshes the SettingsProvider (plan, license_key) on every
+/// navigation event so Feature Gating reacts immediately to background
+/// heartbeat updates without a full app restart.
+class LicenseRefreshObserver extends NavigatorObserver {
+  final BuildContext Function() contextGetter;
+
+  LicenseRefreshObserver(this.contextGetter);
+
+  void _refresh() {
+    try {
+      // Fire-and-forget: do NOT await, never block navigation.
+      Provider.of<SettingsProvider>(contextGetter(), listen: false).loadSettings();
+    } catch (_) {
+      // Context might be unmounted during startup — silently ignore.
+    }
+  }
+
+  @override
+  void didPush(Route route, Route? previousRoute) => _refresh();
+
+  @override
+  void didPop(Route route, Route? previousRoute) => _refresh();
+
+  @override
+  void didReplace({Route? newRoute, Route? oldRoute}) => _refresh();
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
@@ -234,6 +261,9 @@ class _MainAppState extends State<MainApp> {
 
     return MaterialApp(
       navigatorKey: navigatorKey,
+      navigatorObservers: [
+        LicenseRefreshObserver(() => navigatorKey.currentContext!),
+      ],
       debugShowCheckedModeBanner: false,
       title: 'Sistema POS',
       theme: ThemeData(
