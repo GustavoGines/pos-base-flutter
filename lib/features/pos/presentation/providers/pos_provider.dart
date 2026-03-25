@@ -157,6 +157,7 @@ class PosProvider with ChangeNotifier {
     required double tenderedAmount,
     required double changeAmount,
     int? userId,
+    int? customerId,
     String? userName,
     BusinessSettings? settings,
   }) async {
@@ -195,6 +196,7 @@ class PosProvider with ChangeNotifier {
           shiftId: shiftId,
           items: cartSnapshot,
           userId: userId,
+          customerId: customerId,
           status: 'completed',
         );
       }

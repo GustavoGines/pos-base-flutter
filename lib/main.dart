@@ -154,8 +154,12 @@ void main() async {
           create: (_) => UsersProvider(repository: usersRepo),
           lazy: true,  // Solo carga cuando se navega a Personal y Accesos
         ),
-        ChangeNotifierProvider(
+        ChangeNotifierProxyProvider<SettingsProvider, CustomerProvider>(
           create: (_) => CustomerProvider(baseUrl: apiUrl),
+          update: (_, settingsProvider, customerProvider) {
+            customerProvider!.setCurrentPlan(settingsProvider.currentPlan);
+            return customerProvider;
+          },
           lazy: false,
         ),
       ],

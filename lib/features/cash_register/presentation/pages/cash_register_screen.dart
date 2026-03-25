@@ -70,6 +70,8 @@ class _CashRegisterScreenState extends State<CashRegisterScreen> {
                   TextField(
                     controller: _amountController,
                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    textInputAction: TextInputAction.done,
+                    onSubmitted: (_) => _submit(),
                     decoration: const InputDecoration(
                       labelText: 'Monto Inicial (Efectivo)',
                       prefixIcon: Icon(Icons.attach_money),

@@ -151,6 +151,8 @@ class _CloseShiftScreenState extends State<CloseShiftScreen> {
                         TextField(
                           controller: _countedCashController,
                           keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          textInputAction: TextInputAction.done,
+                          onSubmitted: (_) => _handleCloseShift(),
                           decoration: const InputDecoration(
                             labelText: 'Efectivo contado en la caja física',
                             prefixIcon: Icon(Icons.calculate),

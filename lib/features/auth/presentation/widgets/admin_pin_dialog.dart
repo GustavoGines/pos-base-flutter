@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../../../../core/utils/snack_bar_service.dart';
@@ -45,6 +46,14 @@ class _AdminPinDialogState extends State<AdminPinDialog> {
   static const int _pinLength = 4;
   bool _isLoading = false;
 
+  final FocusNode _focusNode = FocusNode();
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
+
   void _onKeypadTap(String value) {
     if (_isLoading) return;
     
@@ -61,6 +70,26 @@ class _AdminPinDialogState extends State<AdminPinDialog> {
           _verifyAdminPin();
         }
       }
+    }
+  }
+
+  void _handlePhysicalKey(KeyEvent event) {
+    if (event is! KeyDownEvent) return;
+
+    final key = event.logicalKey;
+    final ch = event.character;
+
+    // Números (0-9) y Numpad (0-9)
+    if (ch != null && RegExp(r'^[0-9]$').hasMatch(ch)) {
+      _onKeypadTap(ch);
+    } 
+    // Backspace
+    else if (key == LogicalKeyboardKey.backspace) {
+      _onKeypadTap('del');
+    }
+    // Delete o Clear
+    else if (key == LogicalKeyboardKey.delete || key == LogicalKeyboardKey.escape) {
+      _onKeypadTap('clr');
     }
   }
 
@@ -89,13 +118,17 @@ class _AdminPinDialogState extends State<AdminPinDialog> {
     // IMPORTANTE: Restauramos siempre al usuario original (cajero) para no mutar la sesión activa
     provider.restoreUser(currentUserSnapshot);
     
-    setState(() {
-      _isLoading = false;
-      _pin = '';
-    });
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+        _pin = '';
+      });
+      // Devolver foco al diálogo tras cerrar snackbars etc
+      _focusNode.requestFocus();
 
-    if (isAuthorized && mounted) {
-      Navigator.of(context).pop(true);
+      if (isAuthorized) {
+        Navigator.of(context).pop(true);
+      }
     }
   }
 
@@ -121,51 +154,55 @@ class _AdminPinDialogState extends State<AdminPinDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Container(
-        padding: const EdgeInsets.all(24),
-        width: 380,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.admin_panel_settings_rounded, size: 48, color: Colors.redAccent),
-            const SizedBox(height: 16),
-            const Text('Acceso Restringido', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            Text(
-              'Ingresar PIN de Administrador para:\n${widget.actionDescription}',
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.black54),
-            ),
-            const SizedBox(height: 24),
-            SizedBox(
-              height: 16,
-              child: _isLoading
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.redAccent),
-                    )
-                  : Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: List.generate(_pinLength, (index) {
-                        final isActive = index < _pin.length;
-                        return Container(
-                          margin: const EdgeInsets.symmetric(horizontal: 6),
-                          width: 16,
-                          height: 16,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: isActive ? Colors.redAccent : Colors.grey.shade200,
-                          ),
-                        );
-                      }),
-                    ),
-            ),
-            const SizedBox(height: 24),
-            SizedBox(
-              width: 240,
+    return KeyboardListener(
+      focusNode: _focusNode,
+      autofocus: true,
+      onKeyEvent: _handlePhysicalKey,
+      child: Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          width: 380,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.admin_panel_settings_rounded, size: 48, color: Colors.redAccent),
+              const SizedBox(height: 16),
+              const Text('Acceso Restringido', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              Text(
+                'Ingresar PIN de Administrador para:\n${widget.actionDescription}',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.black54),
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                height: 16,
+                child: _isLoading
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.redAccent),
+                      )
+                    : Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: List.generate(_pinLength, (index) {
+                          final isActive = index < _pin.length;
+                          return Container(
+                            margin: const EdgeInsets.symmetric(horizontal: 6),
+                            width: 16,
+                            height: 16,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: isActive ? Colors.redAccent : Colors.grey.shade200,
+                            ),
+                          );
+                        }),
+                      ),
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: 240,
                 child: GridView.count(
                   crossAxisCount: 3,
                   shrinkWrap: true,
@@ -180,7 +217,8 @@ class _AdminPinDialogState extends State<AdminPinDialog> {
                   ],
                 ),
               ),
-          ],
+            ],
+          ),
         ),
       ),
     );

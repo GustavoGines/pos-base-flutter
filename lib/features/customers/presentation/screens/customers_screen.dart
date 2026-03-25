@@ -26,6 +26,10 @@ class _CustomersScreenState extends State<CustomersScreen> {
     setState(() {
       _selectedCustomer = customer;
     });
+    // Fetch individual customer details (including transactions)
+    if (_selectedCustomer != null) {
+      context.read<CustomerProvider>().fetchSingleCustomer(_selectedCustomer!.id);
+    }
   }
 
   void _confirmDelete(BuildContext context, int id, String name) {
@@ -305,7 +309,7 @@ class _CustomerDetailPanel extends StatelessWidget {
                     children: [
                       Icon(Icons.badge_outlined, size: 14, color: Colors.grey.shade600),
                       const SizedBox(width: 6),
-                      Text('DNI: ${customer.documentNumber ?? 'N/A'}', style: TextStyle(color: Colors.grey.shade600, fontSize: 14)),
+                      Text('DNI: ${customer.documentNumber}', style: TextStyle(color: Colors.grey.shade600, fontSize: 14)),
                       if (customer.creditLimit > 0) ...[
                         const SizedBox(width: 16),
                         Icon(Icons.credit_score_outlined, size: 14, color: Colors.blueGrey.shade600),
