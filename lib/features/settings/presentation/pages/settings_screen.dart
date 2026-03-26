@@ -35,6 +35,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   // Licencia
   final _licenseKeyCtrl = TextEditingController();
   bool _isActivatingLicense = false;
+  bool _isSyncingLicense = false;
 
   @override
   void initState() {
@@ -132,6 +133,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
       SnackBarService.error(context, e.toString().replaceAll('Exception: ', ''));
     } finally {
       if (mounted) setState(() => _isActivatingLicense = false);
+    }
+  }
+
+  Future<void> _syncLicense() async {
+    setState(() => _isSyncingLicense = true);
+    try {
+      final provider = context.read<SettingsProvider>();
+      const baseUrl = 'http://127.0.0.1/Sistema_POS/pos-backend/public/api';
+      await provider.syncLicenseWithServer(baseUrl);
+      if (!mounted) return;
+      SnackBarService.success(context, '✅ Permisos sincronizados con éxito.');
+    } catch (e) {
+      if (!mounted) return;
+      SnackBarService.error(context, e.toString().replaceAll('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _isSyncingLicense = false);
     }
   }
 
@@ -414,45 +431,85 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           const SizedBox(height: 20),
           const Divider(),
-          const SizedBox(height: 12),
-          const Text(
-            'Activar Nueva Clave',
-            style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _licenseKeyCtrl,
-            decoration: InputDecoration(
-              labelText: 'Nueva Clave de Licencia',
-              hintText: 'Ej: XXXX-XXXX-XXXX-XXXX',
-              border: const OutlineInputBorder(),
-              prefixIcon: const Icon(Icons.vpn_key_outlined),
-              suffixIcon: IconButton(
-                icon: const Icon(Icons.clear, size: 18),
-                onPressed: () => _licenseKeyCtrl.clear(),
-              ),
-            ),
-          ),
           const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
-            height: 48,
-            child: ElevatedButton.icon(
-              onPressed: _isActivatingLicense ? null : _activateLicense,
-              icon: _isActivatingLicense
-                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Icon(Icons.verified_outlined),
-              label: Text(
-                _isActivatingLicense ? 'Verificando...' : 'Verificar y Activar',
-                style: const TextStyle(fontWeight: FontWeight.bold),
+          
+          if (provider.isLicenseActive) ...[
+            const Text(
+              'Módulos Activos',
+              style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey),
+            ),
+            const SizedBox(height: 12),
+            if (provider.allowedAddons.isEmpty)
+              const Text('Ninguno', style: TextStyle(color: Colors.grey, fontStyle: FontStyle.italic))
+            else
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: provider.allowedAddons.map((addon) {
+                  final formattedAddon = addon.split('_').map((w) => w.isNotEmpty ? '${w[0].toUpperCase()}${w.substring(1)}' : '').join(' ');
+                  return Chip(label: Text(formattedAddon), backgroundColor: Colors.indigo.shade50, side: BorderSide.none);
+                }).toList(),
               ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.indigo.shade700,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: ElevatedButton.icon(
+                onPressed: _isSyncingLicense ? null : _syncLicense,
+                icon: _isSyncingLicense
+                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : const Icon(Icons.sync_rounded),
+                label: Text(
+                  _isSyncingLicense ? 'Sincronizando...' : '🔄 Sincronizar Permisos',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.teal.shade600,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
               ),
             ),
-          ),
+          ] else ...[
+            const Text(
+              'Activar Nueva Clave',
+              style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _licenseKeyCtrl,
+              decoration: InputDecoration(
+                labelText: 'Nueva Clave de Licencia',
+                hintText: 'Ej: XXXX-XXXX-XXXX-XXXX',
+                border: const OutlineInputBorder(),
+                prefixIcon: const Icon(Icons.vpn_key_outlined),
+                suffixIcon: IconButton(
+                  icon: const Icon(Icons.clear, size: 18),
+                  onPressed: () => _licenseKeyCtrl.clear(),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: ElevatedButton.icon(
+                onPressed: _isActivatingLicense ? null : _activateLicense,
+                icon: _isActivatingLicense
+                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : const Icon(Icons.verified_outlined),
+                label: Text(
+                  _isActivatingLicense ? 'Verificando...' : 'Verificar y Activar',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.indigo.shade700,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );

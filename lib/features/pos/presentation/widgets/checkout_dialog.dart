@@ -169,8 +169,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   @override
   Widget build(BuildContext context) {
     final isPending = widget.saleId != null;
-    final currentPlan = context.watch<SettingsProvider>().currentPlan;
-    final isProPlan = currentPlan == 'pro' || currentPlan == 'enterprise';
+    final settingsProvider = context.watch<SettingsProvider>();
+    final canUseCuentaCorriente = settingsProvider.hasFeature('cuentas_corrientes');
 
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -218,9 +218,9 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                   _buildMethodBtn('transfer', 'Transf.', Icons.qr_code_2),
                   const SizedBox(width: 10),
                   _buildMethodBtn(
-                    'cuenta_corriente', 'Fiado',
-                    isProPlan ? Icons.account_balance_wallet_outlined : Icons.lock_outline,
-                    isLocked: !isProPlan,
+                    'cuenta_corriente', 'Cta. Cte.',
+                    canUseCuentaCorriente ? Icons.account_balance_wallet_outlined : Icons.lock_outline,
+                    isLocked: !canUseCuentaCorriente,
                   ),
                 ],
               ),

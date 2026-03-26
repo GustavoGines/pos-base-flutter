@@ -31,18 +31,18 @@ class CustomerProvider extends ChangeNotifier {
     }
   }
 
-  // Plan detectado para Feature Gating. Solo bloquea cuando el plan fue confirmado.
-  String _currentPlan = 'basic';
-  bool _planConfirmed = false;
+  // Plan detectado para Feature Gating. Solo bloquea cuando fue confirmado.
+  bool _hasAccessToModule = false;
+  bool _accessConfirmed = false;
 
-  void setCurrentPlan(String plan) {
-    _currentPlan = plan;
-    _planConfirmed = true;
+  void setAccess(bool hasAccess) {
+    _hasAccessToModule = hasAccess;
+    _accessConfirmed = true;
   }
 
   Future<void> fetchCustomers({String? search}) async {
-    if (_planConfirmed && _currentPlan == 'basic') {
-      throw Exception('El módulo de Cuentas Corrientes requiere el Plan PRO.');
+    if (_accessConfirmed && !_hasAccessToModule) {
+      throw Exception('El módulo de Cuentas Corrientes requiere el Plan PRO o el módulo adicional habilitado.');
     }
     _isLoading = true;
     notifyListeners();
@@ -70,8 +70,8 @@ class CustomerProvider extends ChangeNotifier {
   }
 
   Future<bool> createCustomer(Map<String, dynamic> data) async {
-    if (_planConfirmed && _currentPlan == 'basic') {
-      throw Exception('El módulo de Cuentas Corrientes requiere el Plan PRO.');
+    if (_accessConfirmed && !_hasAccessToModule) {
+      throw Exception('El módulo de Cuentas Corrientes requiere el Plan PRO o el módulo adicional habilitado.');
     }
     try {
       if (!data.containsKey('balance') || data['balance'].toString().isEmpty) {

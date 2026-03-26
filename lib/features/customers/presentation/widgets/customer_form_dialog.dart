@@ -16,6 +16,7 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
   final _formKey = GlobalKey<FormState>();
   late TextEditingController _nameController;
   late TextEditingController _documentController;
+  late TextEditingController _phoneController;
   late TextEditingController _creditLimitController;
   
   bool _isSubmitting = false;
@@ -25,6 +26,7 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
     super.initState();
     _nameController = TextEditingController(text: widget.customer?.name ?? '');
     _documentController = TextEditingController(text: widget.customer?.documentNumber ?? '');
+    _phoneController = TextEditingController(text: widget.customer?.phone ?? '');
     _creditLimitController = TextEditingController(text: widget.customer != null ? widget.customer!.creditLimit.toString() : '');
   }
 
@@ -37,6 +39,7 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
       final payload = {
         'name': _nameController.text.trim(),
         'document_number': _documentController.text.trim(),
+        'phone': _phoneController.text.trim(),
         'credit_limit': double.tryParse(_creditLimitController.text.trim()) ?? 0.0,
       };
 
@@ -74,6 +77,7 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
   void dispose() {
     _nameController.dispose();
     _documentController.dispose();
+    _phoneController.dispose();
     _creditLimitController.dispose();
     super.dispose();
   }
@@ -100,6 +104,12 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
                 controller: _documentController,
                 decoration: const InputDecoration(labelText: 'Documento / DNI *', border: OutlineInputBorder()),
                 validator: (val) => val == null || val.isEmpty ? 'Requerido' : null,
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _phoneController,
+                keyboardType: TextInputType.phone,
+                decoration: const InputDecoration(labelText: 'Teléfono (Opcional)', border: OutlineInputBorder()),
               ),
               const SizedBox(height: 16),
               TextFormField(

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import '../../domain/entities/business_settings.dart';
 
 class BusinessSettingsModel extends BusinessSettings {
@@ -14,7 +15,8 @@ class BusinessSettingsModel extends BusinessSettings {
     String? comPortScale,
     String? licenseStatus,
     String? licensePlanType,
-    String? licenseAllowedAddons,
+    List<String>? licenseAllowedAddons,
+    String? lastLicenseCheck,
   }) : super(
           companyName: companyName,
           address: address,
@@ -29,6 +31,7 @@ class BusinessSettingsModel extends BusinessSettings {
           licenseStatus: licenseStatus,
           licensePlanType: licensePlanType,
           licenseAllowedAddons: licenseAllowedAddons,
+          lastLicenseCheck: lastLicenseCheck,
         );
 
   factory BusinessSettingsModel.fromJson(Map<String, dynamic> json) {
@@ -45,8 +48,27 @@ class BusinessSettingsModel extends BusinessSettings {
       comPortScale: json['com_port_scale'],
       licenseStatus: json['license_key'],     // The actual license key string
       licensePlanType: json['app_plan'],       // Written by LicenseSyncService as 'app_plan'
-      licenseAllowedAddons: json['license_allowed_addons'],
+      licenseAllowedAddons: _parseAddons(json['license_allowed_addons']),
+      lastLicenseCheck: json['last_license_check'],
     );
+  }
+
+  static List<String>? _parseAddons(dynamic value) {
+    if (value == null) return null;
+    if (value is List) {
+      return value.map((e) => e.toString()).toList();
+    }
+    if (value is String) {
+      try {
+        final decoded = jsonDecode(value);
+        if (decoded is List) {
+          return decoded.map((e) => e.toString()).toList();
+        }
+      } catch (_) {
+        return [];
+      }
+    }
+    return [];
   }
 
   Map<String, dynamic> toJson() {

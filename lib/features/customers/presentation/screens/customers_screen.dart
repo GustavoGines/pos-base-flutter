@@ -189,7 +189,16 @@ class _CustomersScreenState extends State<CustomersScreen> {
                                     child: Row(
                                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                       children: [
-                                        Text('DNI: ${customer.documentNumber}', style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
+                                        Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Text('DNI: ${customer.documentNumber}', style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
+                                            if (customer.phone != null && customer.phone!.isNotEmpty) ...[
+                                              const SizedBox(width: 8),
+                                              Text('· 📞 ${customer.phone}', style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
+                                            ]
+                                          ],
+                                        ),
                                         Row(
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
@@ -310,6 +319,12 @@ class _CustomerDetailPanel extends StatelessWidget {
                       Icon(Icons.badge_outlined, size: 14, color: Colors.grey.shade600),
                       const SizedBox(width: 6),
                       Text('DNI: ${customer.documentNumber}', style: TextStyle(color: Colors.grey.shade600, fontSize: 14)),
+                      if (customer.phone != null && customer.phone!.isNotEmpty) ...[
+                        const SizedBox(width: 16),
+                        Icon(Icons.phone_outlined, size: 14, color: Colors.grey.shade600),
+                        const SizedBox(width: 4),
+                        Text(customer.phone!, style: TextStyle(color: Colors.grey.shade600, fontSize: 14)),
+                      ],
                       if (customer.creditLimit > 0) ...[
                         const SizedBox(width: 16),
                         Icon(Icons.credit_score_outlined, size: 14, color: Colors.blueGrey.shade600),
@@ -377,6 +392,8 @@ class _CustomerDetailPanel extends StatelessWidget {
                               final trx = customer.transactions[index];
                               final isPayment = trx.type == 'payment';
 
+                              final localDate = trx.createdAt.toLocal();
+
                               return ListTile(
                                 contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                                 leading: CircleAvatar(
@@ -395,7 +412,7 @@ class _CustomerDetailPanel extends StatelessWidget {
                                 subtitle: Padding(
                                   padding: const EdgeInsets.only(top: 4.0),
                                   child: Text(
-                                    '${trx.createdAt.day}/${trx.createdAt.month}/${trx.createdAt.year} ${trx.createdAt.hour}:${trx.createdAt.minute.toString().padLeft(2, '0')}', 
+                                    '${localDate.day}/${localDate.month}/${localDate.year} ${localDate.hour}:${localDate.minute.toString().padLeft(2, '0')}', 
                                     style: TextStyle(color: Colors.blueGrey.shade400, fontSize: 13)
                                   ),
                                 ),

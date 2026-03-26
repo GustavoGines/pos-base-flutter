@@ -11,6 +11,7 @@ import 'features/pos/presentation/providers/pos_provider.dart';
 import 'features/sales_history/presentation/providers/sales_history_provider.dart';
 import 'features/auth/presentation/providers/auth_provider.dart';
 import 'features/customers/providers/customer_provider.dart';
+import 'features/trash/providers/trash_provider.dart';
 
 import 'core/network/api_client.dart';
 
@@ -24,6 +25,7 @@ import 'features/sales_history/presentation/pages/sales_history_screen.dart';
 import 'features/auth/presentation/pages/login_screen.dart';
 import 'features/cash_register/presentation/pages/shift_audit_screen.dart';
 import 'features/customers/presentation/screens/customers_screen.dart';
+import 'features/trash/presentation/screens/trash_screen.dart';
 
 // Repositories & DataSources
 import 'features/settings/data/datasources/settings_remote_datasource.dart';
@@ -83,7 +85,11 @@ class LicenseRefreshObserver extends NavigatorObserver {
   void _refresh() {
     try {
       // Fire-and-forget: do NOT await, never block navigation.
-      Provider.of<SettingsProvider>(contextGetter(), listen: false).loadSettings();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        try {
+          Provider.of<SettingsProvider>(contextGetter(), listen: false).loadSettings();
+        } catch (_) {}
+      });
     } catch (_) {
       // Context might be unmounted during startup — silently ignore.
     }
@@ -184,11 +190,12 @@ void main() async {
         ChangeNotifierProxyProvider<SettingsProvider, CustomerProvider>(
           create: (_) => CustomerProvider(baseUrl: apiUrl),
           update: (_, settingsProvider, customerProvider) {
-            customerProvider!.setCurrentPlan(settingsProvider.currentPlan);
+            customerProvider!.setAccess(settingsProvider.hasFeature('cuentas_corrientes'));
             return customerProvider;
           },
           lazy: false,
         ),
+        ChangeNotifierProvider(create: (_) => TrashProvider(baseUrl: apiUrl), lazy: false),
       ],
       child: const MainApp(),
     ),
@@ -313,6 +320,7 @@ class _MainAppState extends State<MainApp> {
         '/users': (context) => const UsersManagerScreen(),
         '/settings': (context) => const SettingsScreen(),
         '/cuentas-corrientes': (context) => const CustomersScreen(),
+        '/trash': (context) => const TrashScreen(),
       },
     );
   }

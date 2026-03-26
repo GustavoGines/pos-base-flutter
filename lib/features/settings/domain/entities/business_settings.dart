@@ -13,7 +13,8 @@ class BusinessSettings extends Equatable {
   final String? comPortScale;
   final String? licenseStatus;
   final String? licensePlanType;
-  final String? licenseAllowedAddons;
+  final List<String>? licenseAllowedAddons;
+  final String? lastLicenseCheck;
 
   const BusinessSettings({
     this.companyName,
@@ -29,6 +30,7 @@ class BusinessSettings extends Equatable {
     this.licenseStatus,
     this.licensePlanType,
     this.licenseAllowedAddons,
+    this.lastLicenseCheck,
   });
 
   @override
@@ -46,5 +48,6 @@ class BusinessSettings extends Equatable {
         licenseStatus,
         licensePlanType,
         licenseAllowedAddons,
+        lastLicenseCheck,
       ];
 }

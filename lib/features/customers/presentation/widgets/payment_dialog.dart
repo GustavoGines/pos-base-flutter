@@ -25,7 +25,7 @@ class _PaymentDialogState extends State<PaymentDialog> {
   @override
   void initState() {
     super.initState();
-    _descriptionController.text = 'Abono en caja';
+    _descriptionController.text = '';
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<CustomerProvider>().fetchPendingSales(widget.customer.id);
     });
@@ -154,7 +154,7 @@ class _PaymentDialogState extends State<PaymentDialog> {
                         _descriptionController.text = '';
                         _calculateSelectedAmount();
                       } else {
-                        _descriptionController.text = 'Abono en caja';
+                        _descriptionController.text = '';
                         _amountController.text = '';
                       }
                     });

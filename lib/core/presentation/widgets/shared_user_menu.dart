@@ -49,6 +49,12 @@ class SharedUserMenu extends StatelessWidget {
                 case 'users':
                   Navigator.of(context).pushNamed('/users');
                   break;
+                case 'trash':
+                  final authorized = await AdminPinDialog.verify(context, action: 'Acceder a Papelera');
+                  if (authorized && context.mounted) {
+                    Navigator.of(context).pushNamed('/trash');
+                  }
+                  break;
                 case 'settings':
                   final authorized = await AdminPinDialog.verify(context, action: 'Acceder a Configuración');
                   if (authorized && context.mounted) {
@@ -110,6 +116,15 @@ class SharedUserMenu extends StatelessWidget {
                 ),
                 const PopupMenuDivider(),
               ],
+              const PopupMenuItem<String>(
+                value: 'trash',
+                child: ListTile(
+                  leading: Icon(Icons.delete_outline),
+                  title: Text('Papelera de Reciclaje'),
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                ),
+              ),
               const PopupMenuItem<String>(
                 value: 'settings',
                 child: ListTile(

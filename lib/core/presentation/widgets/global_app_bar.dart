@@ -33,52 +33,49 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
           child: Row(
             children: [
               // ── LEFT BLOCK ────────────────────────────────────────────
-              Expanded(
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Padding(
-                    padding: const EdgeInsets.only(left: 4),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // Back button for secondary screens
-                        if (showBackButton)
-                          IconButton(
-                            icon: const Icon(Icons.arrow_back_rounded, color: Colors.blueGrey),
-                            tooltip: 'Volver',
-                            onPressed: () => Navigator.of(context).pop(),
-                          )
-                        else
-                          const SizedBox(width: 8),
-                        const Icon(Icons.point_of_sale_rounded,
-                            color: Colors.blueAccent, size: 28),
+              Flexible(
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 4),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Back button for secondary screens
+                      if (showBackButton)
+                        IconButton(
+                          icon: const Icon(Icons.arrow_back_rounded, color: Colors.blueGrey),
+                          tooltip: 'Volver',
+                          onPressed: () => Navigator.of(context).pop(),
+                        )
+                      else
                         const SizedBox(width: 8),
-                        Flexible(
-                          child: Consumer<SettingsProvider>(
-                            builder: (context, settings, _) {
-                              final name =
-                                  settings.settings?.companyName ?? title;
-                              return Text(
-                                name.isNotEmpty ? name : title,
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.bold, fontSize: 18),
-                                overflow: TextOverflow.ellipsis,
-                                maxLines: 1,
-                              );
-                            },
-                          ),
+                      const Icon(Icons.point_of_sale_rounded,
+                          color: Colors.blueAccent, size: 28),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Consumer<SettingsProvider>(
+                          builder: (context, settings, _) {
+                            final name =
+                                settings.settings?.companyName ?? title;
+                            return Text(
+                              name.isNotEmpty ? name : title,
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.bold, fontSize: 18),
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
+                            );
+                          },
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
               ),
+              const Spacer(),
 
               // ── CENTER BLOCK (navigation tabs — always centered) ──────
               Consumer<SettingsProvider>(
                 builder: (context, settings, _) {
-                  final String currentPlan = settings.currentPlan;
-                  final bool isProOrEnterprise = currentPlan == 'pro' || currentPlan == 'enterprise';
+                  final bool canAccessCuentasCorrientes = settings.hasFeature('cuentas_corrientes');
 
                   return Row(
                     mainAxisSize: MainAxisSize.min,
@@ -109,28 +106,28 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                       _buildNavTab(
                         context: context,
                         label: 'Cuentas Corrientes',
-                        icon: isProOrEnterprise ? Icons.account_balance_wallet_outlined : Icons.lock_outline,
+                        icon: canAccessCuentasCorrientes ? Icons.account_balance_wallet_outlined : Icons.lock_outline,
                         route: '/cuentas-corrientes',
                         activeColor: Colors.orange.shade700,
-                        isLocked: !isProOrEnterprise,
+                        isLocked: !canAccessCuentasCorrientes,
                       ),
                     ],
                   );
                 },
               ),
 
+              const Spacer(),
+
               // ── RIGHT BLOCK ───────────────────────────────────────────
-              Expanded(
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    if (extraAction != null) ...[
-                      extraAction!,
-                      const SizedBox(width: 8),
-                    ],
-                    const SharedUserMenu(),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (extraAction != null) ...[
+                    extraAction!,
+                    const SizedBox(width: 8),
                   ],
-                ),
+                  const SharedUserMenu(),
+                ],
               ),
             ],
           ),
@@ -256,7 +253,7 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                                           style: TextStyle(fontSize: 14, color: Colors.black87),
                                         ),
                                         const SizedBox(height: 16),
-                                        _proFeature('Fiados y límites de crédito por cliente'),
+                                        _proFeature('Cuentas corrientes y límites de crédito por cliente'),
                                         _proFeature('Pago de tickets específicos'),
                                         _proFeature('Historial de movimientos en tiempo real'),
                                         _proFeature('Alertas de crédito insuficiente'),
