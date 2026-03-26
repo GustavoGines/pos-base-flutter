@@ -592,7 +592,7 @@ class _TicketDetailPanel extends StatelessWidget {
                   const SizedBox(height: 4),
                   Row(
                     children: [
-                      Icon(Icons.payments_outlined, size: 16, color: Colors.grey.shade600),
+                      Icon(_getPaymentIcon(sale.paymentMethod), size: 16, color: Colors.grey.shade600),
                       const SizedBox(width: 6),
                       Text('Medio: ${_translatePaymentMethod(sale.paymentMethod)}', style: TextStyle(color: Colors.grey.shade700, fontSize: 14)),
                     ],
@@ -741,8 +741,25 @@ class _TicketDetailPanel extends StatelessWidget {
         return 'Tarjeta';
       case 'transfer':
         return 'Transferencia';
+      case 'cuenta_corriente':
+        return 'Cuenta Corriente';
       default:
         return method;
+    }
+  }
+
+  IconData _getPaymentIcon(String method) {
+    switch (method.toLowerCase()) {
+      case 'cash':
+        return Icons.attach_money;
+      case 'card':
+        return Icons.credit_card;
+      case 'transfer':
+        return Icons.qr_code_2;
+      case 'cuenta_corriente':
+        return Icons.account_balance_wallet_outlined;
+      default:
+        return Icons.payments_outlined;
     }
   }
 }

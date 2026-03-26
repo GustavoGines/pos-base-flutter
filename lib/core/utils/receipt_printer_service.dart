@@ -433,8 +433,10 @@ class ReceiptPrinterService {
     return [0x1B, 0x70, 0x00, 0x64, 0xC8];
   }
 
-  String _formatDate(DateTime dt) =>
-      '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+  String _formatDate(DateTime dt) {
+    final localDt = dt.toLocal();
+    return '${localDt.day.toString().padLeft(2, '0')}/${localDt.month.toString().padLeft(2, '0')}/${localDt.year} ${localDt.hour.toString().padLeft(2, '0')}:${localDt.minute.toString().padLeft(2, '0')}';
+  }
 
   /// Envía los bytes a la impresora según el tipo de conexión configurado.
   Future<void> _send(Uint8List data) async {

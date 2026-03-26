@@ -10,6 +10,8 @@ import 'features/cash_register/presentation/providers/cash_register_provider.dar
 import 'features/pos/presentation/providers/pos_provider.dart';
 import 'features/sales_history/presentation/providers/sales_history_provider.dart';
 import 'features/auth/presentation/providers/auth_provider.dart';
+import 'features/customers/providers/customer_provider.dart';
+import 'features/trash/providers/trash_provider.dart';
 
 import 'core/network/api_client.dart';
 
@@ -22,6 +24,8 @@ import 'features/cash_register/presentation/pages/close_shift_screen.dart';
 import 'features/sales_history/presentation/pages/sales_history_screen.dart';
 import 'features/auth/presentation/pages/login_screen.dart';
 import 'features/cash_register/presentation/pages/shift_audit_screen.dart';
+import 'features/customers/presentation/screens/customers_screen.dart';
+import 'features/trash/presentation/screens/trash_screen.dart';
 
 // Repositories & DataSources
 import 'features/settings/data/datasources/settings_remote_datasource.dart';
@@ -68,6 +72,37 @@ class FadePageRouteTransitionsBuilder extends PageTransitionsBuilder {
   ) {
     return FadeTransition(opacity: animation, child: child);
   }
+}
+
+/// Silently refreshes the SettingsProvider (plan, license_key) on every
+/// navigation event so Feature Gating reacts immediately to background
+/// heartbeat updates without a full app restart.
+class LicenseRefreshObserver extends NavigatorObserver {
+  final BuildContext Function() contextGetter;
+
+  LicenseRefreshObserver(this.contextGetter);
+
+  void _refresh() {
+    try {
+      // Fire-and-forget: do NOT await, never block navigation.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        try {
+          Provider.of<SettingsProvider>(contextGetter(), listen: false).loadSettings();
+        } catch (_) {}
+      });
+    } catch (_) {
+      // Context might be unmounted during startup — silently ignore.
+    }
+  }
+
+  @override
+  void didPush(Route route, Route? previousRoute) => _refresh();
+
+  @override
+  void didPop(Route route, Route? previousRoute) => _refresh();
+
+  @override
+  void didReplace({Route? newRoute, Route? oldRoute}) => _refresh();
 }
 
 void main() async {
@@ -152,6 +187,15 @@ void main() async {
           create: (_) => UsersProvider(repository: usersRepo),
           lazy: true,  // Solo carga cuando se navega a Personal y Accesos
         ),
+        ChangeNotifierProxyProvider<SettingsProvider, CustomerProvider>(
+          create: (_) => CustomerProvider(baseUrl: apiUrl),
+          update: (_, settingsProvider, customerProvider) {
+            customerProvider!.setAccess(settingsProvider.hasFeature('cuentas_corrientes'));
+            return customerProvider;
+          },
+          lazy: false,
+        ),
+        ChangeNotifierProvider(create: (_) => TrashProvider(baseUrl: apiUrl), lazy: false),
       ],
       child: const MainApp(),
     ),
@@ -224,6 +268,9 @@ class _MainAppState extends State<MainApp> {
 
     return MaterialApp(
       navigatorKey: navigatorKey,
+      navigatorObservers: [
+        LicenseRefreshObserver(() => navigatorKey.currentContext!),
+      ],
       debugShowCheckedModeBanner: false,
       title: 'Sistema POS',
       theme: ThemeData(
@@ -272,6 +319,8 @@ class _MainAppState extends State<MainApp> {
         '/shift-audit': (context) => const ShiftAuditScreen(),
         '/users': (context) => const UsersManagerScreen(),
         '/settings': (context) => const SettingsScreen(),
+        '/cuentas-corrientes': (context) => const CustomersScreen(),
+        '/trash': (context) => const TrashScreen(),
       },
     );
   }

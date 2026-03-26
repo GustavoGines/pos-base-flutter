@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../../../../core/utils/snack_bar_service.dart';
@@ -45,6 +46,21 @@ class _AdminPinDialogState extends State<AdminPinDialog> {
   static const int _pinLength = 4;
   bool _isLoading = false;
 
+  final FocusNode _focusNode = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    HardwareKeyboard.instance.addHandler(_handleKeyEvent);
+  }
+
+  @override
+  void dispose() {
+    HardwareKeyboard.instance.removeHandler(_handleKeyEvent);
+    _focusNode.dispose();
+    super.dispose();
+  }
+
   void _onKeypadTap(String value) {
     if (_isLoading) return;
     
@@ -62,6 +78,52 @@ class _AdminPinDialogState extends State<AdminPinDialog> {
         }
       }
     }
+  }
+
+  bool _handleKeyEvent(KeyEvent event) {
+    if (event is! KeyDownEvent) return false;
+
+    final key = event.logicalKey;
+    final ch = event.character;
+
+    bool handled = true;
+
+    // Números (0-9) y Numpad (0-9)
+    if (ch != null && RegExp(r'^[0-9]$').hasMatch(ch)) {
+      _onKeypadTap(ch);
+    } else if (key == LogicalKeyboardKey.numpad0 || key == LogicalKeyboardKey.digit0) {
+      _onKeypadTap('0');
+    } else if (key == LogicalKeyboardKey.numpad1 || key == LogicalKeyboardKey.digit1) {
+      _onKeypadTap('1');
+    } else if (key == LogicalKeyboardKey.numpad2 || key == LogicalKeyboardKey.digit2) {
+      _onKeypadTap('2');
+    } else if (key == LogicalKeyboardKey.numpad3 || key == LogicalKeyboardKey.digit3) {
+      _onKeypadTap('3');
+    } else if (key == LogicalKeyboardKey.numpad4 || key == LogicalKeyboardKey.digit4) {
+      _onKeypadTap('4');
+    } else if (key == LogicalKeyboardKey.numpad5 || key == LogicalKeyboardKey.digit5) {
+      _onKeypadTap('5');
+    } else if (key == LogicalKeyboardKey.numpad6 || key == LogicalKeyboardKey.digit6) {
+      _onKeypadTap('6');
+    } else if (key == LogicalKeyboardKey.numpad7 || key == LogicalKeyboardKey.digit7) {
+      _onKeypadTap('7');
+    } else if (key == LogicalKeyboardKey.numpad8 || key == LogicalKeyboardKey.digit8) {
+      _onKeypadTap('8');
+    } else if (key == LogicalKeyboardKey.numpad9 || key == LogicalKeyboardKey.digit9) {
+      _onKeypadTap('9');
+    }
+    // Backspace
+    else if (key == LogicalKeyboardKey.backspace) {
+      _onKeypadTap('del');
+    }
+    // Delete o Clear
+    else if (key == LogicalKeyboardKey.delete || key == LogicalKeyboardKey.escape) {
+      _onKeypadTap('clr');
+    } else {
+      handled = false;
+    }
+
+    return handled;
   }
 
   Future<void> _verifyAdminPin() async {
@@ -89,13 +151,17 @@ class _AdminPinDialogState extends State<AdminPinDialog> {
     // IMPORTANTE: Restauramos siempre al usuario original (cajero) para no mutar la sesión activa
     provider.restoreUser(currentUserSnapshot);
     
-    setState(() {
-      _isLoading = false;
-      _pin = '';
-    });
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+        _pin = '';
+      });
+      // Devolver foco al diálogo tras cerrar snackbars etc
+      _focusNode.requestFocus();
 
-    if (isAuthorized && mounted) {
-      Navigator.of(context).pop(true);
+      if (isAuthorized) {
+        Navigator.of(context).pop(true);
+      }
     }
   }
 
@@ -166,20 +232,20 @@ class _AdminPinDialogState extends State<AdminPinDialog> {
             const SizedBox(height: 24),
             SizedBox(
               width: 240,
-                child: GridView.count(
-                  crossAxisCount: 3,
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  crossAxisSpacing: 12,
-                  mainAxisSpacing: 12,
-                  children: [
-                    for (var i = 1; i <= 9; i++) _buildKey(i.toString()),
-                    _buildKey('clr', icon: Icons.clear_all),
-                    _buildKey('0'),
-                    _buildKey('del', icon: Icons.backspace_outlined),
-                  ],
-                ),
+              child: GridView.count(
+                crossAxisCount: 3,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                crossAxisSpacing: 12,
+                mainAxisSpacing: 12,
+                children: [
+                  for (var i = 1; i <= 9; i++) _buildKey(i.toString()),
+                  _buildKey('clr', icon: Icons.clear_all),
+                  _buildKey('0'),
+                  _buildKey('del', icon: Icons.backspace_outlined),
+                ],
               ),
+            ),
           ],
         ),
       ),

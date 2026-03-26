@@ -32,6 +32,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
   // Balanza
   final _comPortScaleCtrl = TextEditingController();
 
+  // Licencia
+  final _licenseKeyCtrl = TextEditingController();
+  bool _isActivatingLicense = false;
+  bool _isSyncingLicense = false;
+
   @override
   void initState() {
     super.initState();
@@ -70,6 +75,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _ipAddressCtrl.dispose();
     _ipPortCtrl.dispose();
     _comPortScaleCtrl.dispose();
+    _licenseKeyCtrl.dispose();
     super.dispose();
   }
 
@@ -103,6 +109,49 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  Future<void> _activateLicense() async {
+    final key = _licenseKeyCtrl.text.trim();
+    if (key.isEmpty) {
+      SnackBarService.error(context, 'Ingresá la clave de licencia antes de continuar.');
+      return;
+    }
+
+    setState(() => _isActivatingLicense = true);
+
+    try {
+      final provider = context.read<SettingsProvider>();
+      // The baseUrl matches the one set in main.dart for settings
+      // We read it from the datasource's baseUrl via the provider's usecase chain.
+      // As a shortcut on the local network, we rely on the same base URL used for the app.
+      const baseUrl = 'http://127.0.0.1/Sistema_POS/pos-backend/public/api';
+      final newPlan = await provider.activateLicense(baseUrl, key);
+      if (!mounted) return;
+      _licenseKeyCtrl.clear();
+      SnackBarService.success(context, '✅ Licencia activada. Plan: ${newPlan.toUpperCase()}');
+    } catch (e) {
+      if (!mounted) return;
+      SnackBarService.error(context, e.toString().replaceAll('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _isActivatingLicense = false);
+    }
+  }
+
+  Future<void> _syncLicense() async {
+    setState(() => _isSyncingLicense = true);
+    try {
+      final provider = context.read<SettingsProvider>();
+      const baseUrl = 'http://127.0.0.1/Sistema_POS/pos-backend/public/api';
+      await provider.syncLicenseWithServer(baseUrl);
+      if (!mounted) return;
+      SnackBarService.success(context, '✅ Permisos sincronizados con éxito.');
+    } catch (e) {
+      if (!mounted) return;
+      SnackBarService.error(context, e.toString().replaceAll('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _isSyncingLicense = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<SettingsProvider>();
@@ -123,30 +172,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // --- COLUMNA IZQUIERDA: DATOS DE NEGOCIO ---
+                    // --- COLUMNA IZQUIERDA: LICENCIA + DATOS DE NEGOCIO ---
                     Expanded(
-                      child: _buildSectionCard(
-                        title: 'Datos del Negocio',
-                        icon: Icons.storefront_outlined,
-                        child: Column(
-                          children: [
-                            _buildTextField('Nombre del Comercio', _companyNameCtrl, icon: Icons.badge_outlined),
-                            const SizedBox(height: 16),
-                            _buildTextField('Dirección / Sucursal', _addressCtrl, icon: Icons.location_on_outlined),
-                            const SizedBox(height: 16),
-                            Row(
+                      child: Column(
+                        children: [
+                          // --- TARJETA DE LICENCIA ---
+                          _buildLicenseCard(provider),
+                          const SizedBox(height: 24),
+                          // --- DATOS DE NEGOCIO ---
+                          _buildSectionCard(
+                            title: 'Datos del Negocio',
+                            icon: Icons.storefront_outlined,
+                            child: Column(
                               children: [
-                                Expanded(child: _buildTextField('Teléfono', _phoneCtrl, icon: Icons.phone_outlined)),
-                                const SizedBox(width: 16),
-                                Expanded(child: _buildTextField('CUIT / RUT / Tax ID', _taxIdCtrl, icon: Icons.receipt_long_outlined)),
+                                _buildTextField('Nombre del Comercio', _companyNameCtrl, icon: Icons.badge_outlined),
+                                const SizedBox(height: 16),
+                                _buildTextField('Dirección / Sucursal', _addressCtrl, icon: Icons.location_on_outlined),
+                                const SizedBox(height: 16),
+                                Row(
+                                  children: [
+                                    Expanded(child: _buildTextField('Teléfono', _phoneCtrl, icon: Icons.phone_outlined)),
+                                    const SizedBox(width: 16),
+                                    Expanded(child: _buildTextField('CUIT / RUT / Tax ID', _taxIdCtrl, icon: Icons.receipt_long_outlined)),
+                                  ],
+                                ),
+                                const SizedBox(height: 16),
+                                _buildTextField('Mensaje de Pie de Página (Ticket)', _footerCtrl, 
+                                    icon: Icons.message_outlined, maxLines: 2, 
+                                    hint: 'Ej: ¡Gracias por su compra! Vuelva pronto.'),
                               ],
                             ),
-                            const SizedBox(height: 16),
-                            _buildTextField('Mensaje de Pie de Página (Ticket)', _footerCtrl, 
-                                icon: Icons.message_outlined, maxLines: 2, 
-                                hint: 'Ej: ¡Gracias por su compra! Vuelva pronto.'),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
                     ),
                     const SizedBox(width: 32),
@@ -287,12 +344,183 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  Widget _buildLicenseCard(SettingsProvider provider) {
+    final plan = provider.currentPlan;
+
+    Color planColor;
+    Color planBgColor;
+    IconData planIcon;
+    String planLabel;
+
+    switch (plan) {
+      case 'pro':
+        planColor = Colors.purple.shade700;
+        planBgColor = Colors.purple.shade50;
+        planIcon = Icons.workspace_premium;
+        planLabel = 'PRO';
+        break;
+      case 'enterprise':
+        planColor = Colors.amber.shade800;
+        planBgColor = Colors.amber.shade50;
+        planIcon = Icons.diamond_outlined;
+        planLabel = 'ENTERPRISE';
+        break;
+      case 'blocked':
+        planColor = Colors.red.shade700;
+        planBgColor = Colors.red.shade50;
+        planIcon = Icons.block;
+        planLabel = 'BLOQUEADO';
+        break;
+      default: // basic
+        planColor = Colors.blueGrey.shade600;
+        planBgColor = Colors.blueGrey.shade50;
+        planIcon = Icons.lock_outline;
+        planLabel = 'BÁSICO';
+    }
+
+    final rawKey = provider.settings?.licenseStatus ?? '';
+    final maskedKey = rawKey.length > 4
+        ? '****-****-****-${rawKey.substring(rawKey.length - 4)}'
+        : (rawKey.isEmpty ? 'Sin clave registrada' : rawKey);
+
+    return _buildSectionCard(
+      title: 'Licencia del Sistema',
+      icon: Icons.verified_user_outlined,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: planBgColor,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: planColor.withValues(alpha: 0.4)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(planIcon, size: 16, color: planColor),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Plan $planLabel',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: planColor,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  maskedKey,
+                  style: TextStyle(
+                    fontFamily: 'monospace',
+                    fontSize: 13,
+                    color: Colors.grey.shade600,
+                    letterSpacing: 1.2,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          const Divider(),
+          const SizedBox(height: 16),
+          
+          if (provider.isLicenseActive) ...[
+            const Text(
+              'Módulos Activos',
+              style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey),
+            ),
+            const SizedBox(height: 12),
+            if (provider.allowedAddons.isEmpty)
+              const Text('Ninguno', style: TextStyle(color: Colors.grey, fontStyle: FontStyle.italic))
+            else
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: provider.allowedAddons.map((addon) {
+                  final formattedAddon = addon.split('_').map((w) => w.isNotEmpty ? '${w[0].toUpperCase()}${w.substring(1)}' : '').join(' ');
+                  return Chip(label: Text(formattedAddon), backgroundColor: Colors.indigo.shade50, side: BorderSide.none);
+                }).toList(),
+              ),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: ElevatedButton.icon(
+                onPressed: _isSyncingLicense ? null : _syncLicense,
+                icon: _isSyncingLicense
+                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : const Icon(Icons.sync_rounded),
+                label: Text(
+                  _isSyncingLicense ? 'Sincronizando...' : '🔄 Sincronizar Permisos',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.teal.shade600,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
+            ),
+          ] else ...[
+            const Text(
+              'Activar Nueva Clave',
+              style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _licenseKeyCtrl,
+              decoration: InputDecoration(
+                labelText: 'Nueva Clave de Licencia',
+                hintText: 'Ej: XXXX-XXXX-XXXX-XXXX',
+                border: const OutlineInputBorder(),
+                prefixIcon: const Icon(Icons.vpn_key_outlined),
+                suffixIcon: IconButton(
+                  icon: const Icon(Icons.clear, size: 18),
+                  onPressed: () => _licenseKeyCtrl.clear(),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: ElevatedButton.icon(
+                onPressed: _isActivatingLicense ? null : _activateLicense,
+                icon: _isActivatingLicense
+                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : const Icon(Icons.verified_outlined),
+                label: Text(
+                  _isActivatingLicense ? 'Verificando...' : 'Verificar y Activar',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.indigo.shade700,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget _buildSectionCard({required String title, required IconData icon, required Widget child}) {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4))],
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 4))],
         border: Border.all(color: Colors.black12),
       ),
       child: Column(

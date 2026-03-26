@@ -13,6 +13,7 @@ abstract class PosRemoteDataSource {
     required int shiftId,
     required List<CartItem> items,
     int? userId,
+    int? customerId,
     String status,
   });
   Future<List<dynamic>> fetchPendingSales();
@@ -64,6 +65,7 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
     required int shiftId,
     required List<CartItem> items,
     int? userId,
+    int? customerId,
     String status = 'completed',
   }) async {
     try {
@@ -75,6 +77,7 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
         if (changeAmount != null) 'change_amount': changeAmount,
         'cash_register_shift_id': shiftId,
         if (userId != null) 'user_id': userId,
+        if (customerId != null) 'customer_id': customerId,
         'items': items.map((item) => {
           'product_id': item.product.id,
           'quantity': item.quantity,

@@ -15,6 +15,7 @@ class ProcessSaleUseCase {
     required int shiftId,
     required List<CartItem> items,
     int? userId,
+    int? customerId,
     String status = 'completed',
   }) async {
     if (items.isEmpty) throw Exception('El carrito está vacío');
@@ -26,6 +27,7 @@ class ProcessSaleUseCase {
       shiftId: shiftId,
       items: items,
       userId: userId,
+      customerId: customerId,
       status: status,
     );
   }

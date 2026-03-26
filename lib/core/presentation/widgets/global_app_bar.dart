@@ -33,52 +33,49 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
           child: Row(
             children: [
               // ── LEFT BLOCK ────────────────────────────────────────────
-              Expanded(
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Padding(
-                    padding: const EdgeInsets.only(left: 4),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // Back button for secondary screens
-                        if (showBackButton)
-                          IconButton(
-                            icon: const Icon(Icons.arrow_back_rounded, color: Colors.blueGrey),
-                            tooltip: 'Volver',
-                            onPressed: () => Navigator.of(context).pop(),
-                          )
-                        else
-                          const SizedBox(width: 8),
-                        const Icon(Icons.point_of_sale_rounded,
-                            color: Colors.blueAccent, size: 28),
+              Flexible(
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 4),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Back button for secondary screens
+                      if (showBackButton)
+                        IconButton(
+                          icon: const Icon(Icons.arrow_back_rounded, color: Colors.blueGrey),
+                          tooltip: 'Volver',
+                          onPressed: () => Navigator.of(context).pop(),
+                        )
+                      else
                         const SizedBox(width: 8),
-                        Flexible(
-                          child: Consumer<SettingsProvider>(
-                            builder: (context, settings, _) {
-                              final name =
-                                  settings.settings?.companyName ?? title;
-                              return Text(
-                                name.isNotEmpty ? name : title,
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.bold, fontSize: 18),
-                                overflow: TextOverflow.ellipsis,
-                                maxLines: 1,
-                              );
-                            },
-                          ),
+                      const Icon(Icons.point_of_sale_rounded,
+                          color: Colors.blueAccent, size: 28),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Consumer<SettingsProvider>(
+                          builder: (context, settings, _) {
+                            final name =
+                                settings.settings?.companyName ?? title;
+                            return Text(
+                              name.isNotEmpty ? name : title,
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.bold, fontSize: 18),
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
+                            );
+                          },
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
               ),
+              const Spacer(),
 
               // ── CENTER BLOCK (navigation tabs — always centered) ──────
               Consumer<SettingsProvider>(
                 builder: (context, settings, _) {
-                  final String currentPlan = settings.currentPlan;
-                  final bool isProOrEnterprise = currentPlan == 'pro' || currentPlan == 'enterprise';
+                  final bool canAccessCuentasCorrientes = settings.hasFeature('cuentas_corrientes');
 
                   return Row(
                     mainAxisSize: MainAxisSize.min,
@@ -109,28 +106,28 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                       _buildNavTab(
                         context: context,
                         label: 'Cuentas Corrientes',
-                        icon: isProOrEnterprise ? Icons.account_balance_wallet_outlined : Icons.lock_outline,
+                        icon: canAccessCuentasCorrientes ? Icons.account_balance_wallet_outlined : Icons.lock_outline,
                         route: '/cuentas-corrientes',
                         activeColor: Colors.orange.shade700,
-                        isLocked: !isProOrEnterprise,
+                        isLocked: !canAccessCuentasCorrientes,
                       ),
                     ],
                   );
                 },
               ),
 
+              const Spacer(),
+
               // ── RIGHT BLOCK ───────────────────────────────────────────
-              Expanded(
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    if (extraAction != null) ...[
-                      extraAction!,
-                      const SizedBox(width: 8),
-                    ],
-                    const SharedUserMenu(),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (extraAction != null) ...[
+                    extraAction!,
+                    const SizedBox(width: 8),
                   ],
-                ),
+                  const SharedUserMenu(),
+                ],
               ),
             ],
           ),
@@ -206,21 +203,83 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                   ? null
                   : () async {
                       if (isLocked) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: const Row(
-                              children: [
-                                Icon(Icons.star, color: Colors.amber),
-                                SizedBox(width: 8),
-                                Expanded(child: Text('Esta función requiere el plan PRO. Comunícate con soporte para actualizar tu licencia.')),
-                              ],
-                            ),
-                            backgroundColor: Colors.blueGrey.shade900,
-                            behavior: SnackBarBehavior.floating,
-                            action: SnackBarAction(
-                              label: 'OK',
-                              textColor: Colors.amber,
-                              onPressed: () {},
+                        showDialog(
+                          context: context,
+                          builder: (_) => Dialog(
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                            clipBehavior: Clip.antiAlias,
+                            child: SizedBox(
+                              width: 400,
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  // Gradient header
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 24),
+                                    decoration: const BoxDecoration(
+                                      gradient: LinearGradient(
+                                        colors: [Color(0xFF7C3AED), Color(0xFF3B82F6)],
+                                        begin: Alignment.topLeft,
+                                        end: Alignment.bottomRight,
+                                      ),
+                                    ),
+                                    child: Column(
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.all(14),
+                                          decoration: BoxDecoration(
+                                            color: Colors.white.withOpacity(0.15),
+                                            shape: BoxShape.circle,
+                                          ),
+                                          child: const Icon(Icons.workspace_premium_rounded, color: Colors.white, size: 36),
+                                        ),
+                                        const SizedBox(height: 12),
+                                        const Text('Módulo PRO Disponible',
+                                            style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+                                        const SizedBox(height: 6),
+                                        Text('Plan Básico activo',
+                                            style: TextStyle(color: Colors.white.withOpacity(0.75), fontSize: 13)),
+                                      ],
+                                    ),
+                                  ),
+                                  // Body
+                                  Padding(
+                                    padding: const EdgeInsets.all(24),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        const Text(
+                                          'Lleva el control total de tus clientes con el módulo de Cuentas Corrientes:',
+                                          style: TextStyle(fontSize: 14, color: Colors.black87),
+                                        ),
+                                        const SizedBox(height: 16),
+                                        _proFeature('Cuentas corrientes y límites de crédito por cliente'),
+                                        _proFeature('Pago de tickets específicos'),
+                                        _proFeature('Historial de movimientos en tiempo real'),
+                                        _proFeature('Alertas de crédito insuficiente'),
+                                        const SizedBox(height: 20),
+                                        const Text(
+                                          'Contacta a soporte para activar la Fase 2 de tu Sistema POS.',
+                                          style: TextStyle(fontSize: 12, color: Colors.black54),
+                                        ),
+                                        const SizedBox(height: 20),
+                                        SizedBox(
+                                          width: double.infinity,
+                                          child: ElevatedButton(
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: const Color(0xFF7C3AED),
+                                              padding: const EdgeInsets.symmetric(vertical: 14),
+                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                            ),
+                                            onPressed: () => Navigator.pop(context),
+                                            child: const Text('Entendido', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         );
@@ -247,3 +306,16 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
     );
   }
 }
+
+/// Helper top-level para el diálogo de upgrade PRO
+Widget _proFeature(String text) => Padding(
+  padding: const EdgeInsets.only(bottom: 8),
+  child: Row(
+    children: [
+      const Icon(Icons.check_circle_rounded, color: Color(0xFF7C3AED), size: 18),
+      const SizedBox(width: 10),
+      Expanded(child: Text(text, style: const TextStyle(fontSize: 13, color: Colors.black87))),
+    ],
+  ),
+);
+

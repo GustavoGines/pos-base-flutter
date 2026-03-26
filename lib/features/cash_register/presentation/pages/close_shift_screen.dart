@@ -151,6 +151,8 @@ class _CloseShiftScreenState extends State<CloseShiftScreen> {
                         TextField(
                           controller: _countedCashController,
                           keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          textInputAction: TextInputAction.done,
+                          onSubmitted: (_) => _handleCloseShift(),
                           decoration: const InputDecoration(
                             labelText: 'Efectivo contado en la caja física',
                             prefixIcon: Icon(Icons.calculate),
@@ -234,6 +236,7 @@ class _CloseShiftScreenState extends State<CloseShiftScreen> {
   }
 
   String _formatDate(DateTime dt) {
-    return '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+    final localDt = dt.toLocal();
+    return '${localDt.day.toString().padLeft(2, '0')}/${localDt.month.toString().padLeft(2, '0')}/${localDt.year} ${localDt.hour.toString().padLeft(2, '0')}:${localDt.minute.toString().padLeft(2, '0')}';
   }
 }

@@ -12,6 +12,7 @@ abstract class PosRepository {
     required int shiftId,
     required List<CartItem> items,
     int? userId,
+    int? customerId,
     String status,
   });
   Future<List<Map<String, dynamic>>> fetchPendingSales();
