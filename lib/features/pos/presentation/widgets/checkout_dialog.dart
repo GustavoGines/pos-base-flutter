@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/pos_provider.dart';
+import '../../domain/entities/payment_method.dart';
 import '../../../cash_register/presentation/providers/cash_register_provider.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
 import '../../../settings/presentation/providers/settings_provider.dart';
@@ -8,6 +9,23 @@ import '../../../customers/presentation/widgets/customer_form_dialog.dart';
 import '../../../customers/providers/customer_provider.dart';
 import '../../../customers/models/customer_model.dart';
 import '../../../../core/utils/snack_bar_service.dart';
+
+class PaymentLine {
+  PaymentMethod? method;
+  TextEditingController controller;
+
+  PaymentLine({this.method, double initialAmount = 0.0})
+      : controller = TextEditingController(text: initialAmount > 0 ? initialAmount.toStringAsFixed(2) : '');
+
+  double get amount => double.tryParse(controller.text) ?? 0.0;
+  
+  double get surcharge => method?.calculateSurcharge(amount) ?? 0.0;
+  double get total => amount + surcharge;
+
+  void dispose() {
+    controller.dispose();
+  }
+}
 
 class CheckoutDialog extends StatefulWidget {
   final double total;
@@ -20,68 +38,111 @@ class CheckoutDialog extends StatefulWidget {
 }
 
 class _CheckoutDialogState extends State<CheckoutDialog> {
-  String _paymentMethod = 'cash';
-  final _amountCtrl = TextEditingController();
-  final _focusNode = FocusNode();
+  final List<PaymentLine> _lines = [];
   bool _printReceipt = true;
 
-  // ── Cuenta Corriente ────────────────────────────────────────────
+  // Global cash tendered
+  final _cashTenderedCtrl = TextEditingController();
+
   Customer? _selectedCustomer;
 
   @override
   void initState() {
     super.initState();
-    _amountCtrl.addListener(_onAmountChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_paymentMethod == 'cash') _focusNode.requestFocus();
+      _initFirstLine();
     });
+    _cashTenderedCtrl.addListener(() => setState(() {}));
+  }
+
+  void _initFirstLine() {
+    final provider = context.read<PosProvider>();
+    if (provider.paymentMethods.isNotEmpty) {
+      final defaultCash = provider.paymentMethods.firstWhere((p) => p.isCash, orElse: () => provider.paymentMethods.first);
+      final line = PaymentLine(method: defaultCash, initialAmount: widget.total);
+      line.controller.addListener(_onAmountChanged);
+      setState(() {
+        _lines.add(line);
+        _cashTenderedCtrl.text = widget.total.toStringAsFixed(2);
+      });
+    }
   }
 
   @override
   void dispose() {
-    _amountCtrl.removeListener(_onAmountChanged);
-    _amountCtrl.dispose();
-    _focusNode.dispose();
+    for (var line in _lines) {
+      line.dispose();
+    }
+    _cashTenderedCtrl.dispose();
     super.dispose();
   }
 
   void _onAmountChanged() => setState(() {});
 
-  double get _tendered {
-    if (_amountCtrl.text.isEmpty) return 0.0;
-    return double.tryParse(_amountCtrl.text) ?? 0.0;
+  void _addLine() {
+    final provider = context.read<PosProvider>();
+    if (provider.paymentMethods.isEmpty) return;
+    
+    // Auto-fill available balance
+    double left = _pendingBalance > 0 ? _pendingBalance : 0.0;
+
+    final line = PaymentLine(method: provider.paymentMethods.first, initialAmount: left);
+    line.controller.addListener(_onAmountChanged);
+    setState(() => _lines.add(line));
   }
 
-  double get _change => _tendered - widget.total;
-
-  bool get _canSubmit {
-    if (_paymentMethod == 'cash') return _tendered >= widget.total;
-    if (_paymentMethod == 'cuenta_corriente') return _selectedCustomer != null;
-    return true;
+  void _removeLine(int index) {
+    if (_lines.length > 1) {
+      final line = _lines[index];
+      line.controller.removeListener(_onAmountChanged);
+      line.dispose();
+      setState(() => _lines.removeAt(index));
+    }
   }
+
+  double get _totalBaseAmount => _lines.fold(0, (sum, line) => sum + line.amount);
+  double get _totalSurcharge => _lines.fold(0, (sum, line) => sum + line.surcharge);
+  double get _grandTotal => widget.total + _totalSurcharge;
+  double get _pendingBalance => widget.total - _totalBaseAmount;
+
+  double get _cashRequired {
+    return _lines.where((l) => l.method?.isCash == true).fold(0.0, (sum, l) => sum + l.total);
+  }
+
+  double get _actualTendered {
+    if (_cashRequired == 0) return 0;
+    return double.tryParse(_cashTenderedCtrl.text) ?? 0.0;
+  }
+
+  double get _change {
+    if (_cashRequired == 0) return 0.0;
+    return _actualTendered - _cashRequired;
+  }
+
+  bool get _hasCuentaCorriente => _lines.any((l) => l.method?.code == 'cuenta_corriente');
 
   double get _availableCredit {
     if (_selectedCustomer == null) return 0;
     return (_selectedCustomer!.creditLimit) - (_selectedCustomer!.balance);
   }
 
-  // ── Selector de cliente ─────────────────────────────────────────
+  bool get _canSubmit {
+    if (_pendingBalance > 0.01) return false; // Allowed tiny floating errors
+    if (_cashRequired > 0 && _actualTendered < (_cashRequired - 0.01)) return false;
+    if (_hasCuentaCorriente && _selectedCustomer == null) return false;
+    return true;
+  }
+
   Future<void> _openCustomerPicker() async {
     final customerProvider = context.read<CustomerProvider>();
-    // Asegurar que la lista esté cargada antes de abrir el picker
     if (customerProvider.customers.isEmpty && !customerProvider.isLoading) {
       try {
         await customerProvider.fetchCustomers();
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('No se pudo cargar la lista de clientes: ${e.toString().replaceAll("Exception: ", "")}'),
-              backgroundColor: Colors.red,
-            ),
-          );
+          SnackBarService.error(context, 'No se pudo cargar la lista de clientes.');
         }
-        return; // No abrir el dialog si falló la carga
+        return;
       }
     }
 
@@ -99,13 +160,13 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   }
 
   Future<void> _processCheckout() async {
-    // ── Validaciones de negocio para Cuenta Corriente ─────────────
-    if (_paymentMethod == 'cuenta_corriente') {
+    if (_hasCuentaCorriente) {
       if (_selectedCustomer == null) {
         SnackBarService.error(context, 'Debe seleccionar un cliente para fiar.');
         return;
       }
-      if (widget.total > _availableCredit) {
+      final ccNeed = _lines.where((l) => l.method?.code == 'cuenta_corriente').fold(0.0, (s, l) => s + l.total);
+      if (ccNeed > _availableCredit) {
         SnackBarService.error(context,
           'El cliente no tiene límite de crédito suficiente. '
           'Disponible: \$${_availableCredit.toStringAsFixed(2)}');
@@ -119,18 +180,24 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     final userName = currentUser?['name'] as String?;
     final settings = context.read<SettingsProvider>().settings;
 
-    final double finalTendered = _paymentMethod == 'cash' ? _tendered : widget.total;
-    final double finalChange = _paymentMethod == 'cash' ? _change : 0.0;
+    // Convert lines to payload
+    List<Map<String, dynamic>> paymentsPayload = _lines.map((l) => {
+      'payment_method_id': l.method!.id,
+      'base_amount': l.amount,
+      'surcharge_amount': l.surcharge,
+      'total_amount': l.total,
+    }).toList();
 
     bool success;
 
     if (isPending) {
       success = await posProvider.payPendingSale(
         saleId: widget.saleId!,
-        saleTotal: widget.total,
-        paymentMethod: _paymentMethod,
-        tenderedAmount: finalTendered,
-        changeAmount: finalChange,
+        saleTotal: _grandTotal,
+        totalSurcharge: _totalSurcharge,
+        payments: paymentsPayload,
+        tenderedAmount: _actualTendered,
+        changeAmount: _change,
         userName: userName,
         settings: _printReceipt ? settings : null,
       );
@@ -145,9 +212,10 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
 
       success = await posProvider.processCheckout(
         shiftId: shiftId,
-        paymentMethod: _paymentMethod,
-        tenderedAmount: finalTendered,
-        changeAmount: finalChange,
+        totalSurcharge: _totalSurcharge,
+        payments: paymentsPayload,
+        tenderedAmount: _actualTendered,
+        changeAmount: _change,
         userId: userId,
         customerId: _selectedCustomer?.id,
         userName: userName,
@@ -169,21 +237,36 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final provider = context.watch<PosProvider>();
     final isPending = widget.saleId != null;
-    final settingsProvider = context.watch<SettingsProvider>();
-    final canUseCuentaCorriente = settingsProvider.hasFeature('cuentas_corrientes');
+
+    if (provider.paymentMethods.isEmpty) {
+      return Dialog(
+        child: Container(
+          padding: const EdgeInsets.all(32),
+          child: const Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 16),
+              Text("Cargando métodos de pago..."),
+            ],
+          ),
+        ),
+      );
+    }
 
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       backgroundColor: Colors.white,
       child: Container(
-        width: 480,
+        width: 600,
         padding: const EdgeInsets.all(32),
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // ── Título ─────────────────────────────────────────────
+              // ── Header
               if (isPending) ...[
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -196,167 +279,230 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                 ),
                 const SizedBox(height: 8),
               ] else
-                const Text('Total a Pagar', style: TextStyle(fontSize: 18, color: Colors.black54)),
-              const SizedBox(height: 8),
-              Text(
-                '\$${widget.total.toStringAsFixed(2)}',
-                style: const TextStyle(fontSize: 42, fontWeight: FontWeight.bold, color: Colors.black87),
+                const Text('Desglose de Pago (Split Tender)', style: TextStyle(fontSize: 18, color: Colors.black54, fontWeight: FontWeight.bold)),
+              
+              const SizedBox(height: 16),
+              
+              Container(
+                padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.blue.shade200),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    Column(
+                      children: [
+                        const Text('Total Base', style: TextStyle(fontSize: 14, color: Colors.black54)),
+                        Text('\$${widget.total.toStringAsFixed(2)}', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                    const Text('+', style: TextStyle(fontSize: 24, color: Colors.black26)),
+                    Column(
+                      children: [
+                        const Text('Recargos', style: TextStyle(fontSize: 14, color: Colors.black54)),
+                        Text('\$${_totalSurcharge.toStringAsFixed(2)}', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.orange.shade700)),
+                      ],
+                    ),
+                    const Text('=', style: TextStyle(fontSize: 24, color: Colors.black26)),
+                    Column(
+                      children: [
+                        const Text('Gran Total', style: TextStyle(fontSize: 14, color: Colors.black54, fontWeight: FontWeight.bold)),
+                        Text('\$${_grandTotal.toStringAsFixed(2)}', style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.blue.shade800)),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-              const SizedBox(height: 32),
 
-              // ── Método de Pago ──────────────────────────────────────
-              const Align(
-                alignment: Alignment.centerLeft,
-                child: Text('Método de Pago', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              const SizedBox(height: 24),
+
+              // ── Líneas de Pago
+              Column(
+                children: _lines.asMap().entries.map((entry) {
+                  int idx = entry.key;
+                  PaymentLine line = entry.value;
+
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 12.0),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          flex: 2,
+                          child: DropdownButtonFormField<PaymentMethod>(
+                            decoration: InputDecoration(
+                              labelText: 'Método',
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                            ),
+                            value: line.method,
+                            items: provider.paymentMethods.map((m) => DropdownMenuItem(
+                              value: m,
+                              child: Text(m.name),
+                            )).toList(),
+                            onChanged: (val) {
+                              setState(() {
+                                line.method = val;
+                              });
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          flex: 2,
+                          child: TextFormField(
+                            controller: line.controller,
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            decoration: InputDecoration(
+                              labelText: 'Monto a Cubrir',
+                              prefixText: '\$ ',
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          width: 80,
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade100,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.grey.shade300),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              const Text('Extra', style: TextStyle(fontSize: 10, color: Colors.black54)),
+                              Text('\$${line.surcharge.toStringAsFixed(2)}', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.orange.shade700)),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          icon: const Icon(Icons.remove_circle_outline, color: Colors.red),
+                          onPressed: _lines.length > 1 ? () => _removeLine(idx) : null,
+                        ),
+                      ],
+                    ),
+                  );
+                }).toList(),
               ),
-              const SizedBox(height: 12),
+              
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  icon: const Icon(Icons.add),
+                  label: const Text('Completar con otro método'),
+                  onPressed: _pendingBalance > 0.01 ? _addLine : null,
+                ),
+              ),
+
+              const Divider(height: 32),
+
               Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  _buildMethodBtn('cash', 'Efectivo', Icons.payments_outlined),
-                  const SizedBox(width: 10),
-                  _buildMethodBtn('card', 'Tarjeta', Icons.credit_card),
-                  const SizedBox(width: 10),
-                  _buildMethodBtn('transfer', 'Transf.', Icons.qr_code_2),
-                  const SizedBox(width: 10),
-                  _buildMethodBtn(
-                    'cuenta_corriente', 'Cta. Cte.',
-                    canUseCuentaCorriente ? Icons.account_balance_wallet_outlined : Icons.lock_outline,
-                    isLocked: !canUseCuentaCorriente,
+                  const Text('Saldo Pendiente a Cubrir:', style: TextStyle(fontSize: 16)),
+                  Text(
+                    _pendingBalance > 0 ? '\$${_pendingBalance.toStringAsFixed(2)}' : '\$0.00',
+                    style: TextStyle(
+                      fontSize: 20, 
+                      fontWeight: FontWeight.bold, 
+                      color: _pendingBalance > 0.01 ? Colors.red.shade700 : Colors.green.shade700
+                    ),
                   ),
                 ],
               ),
+
               const SizedBox(height: 24),
 
-              // ── Selector de Cliente (solo Cuenta Corriente) ─────────
-              if (_paymentMethod == 'cuenta_corriente') ...[
+              // Cliente Selector si usa Cta Corriente
+              if (_hasCuentaCorriente) ...[
                 GestureDetector(
                   onTap: _openCustomerPicker,
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: _selectedCustomer != null
-                          ? Colors.purple.shade50
-                          : Colors.orange.shade50,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: _selectedCustomer != null
-                            ? Colors.purple.shade300
-                            : Colors.orange.shade400,
-                        width: 1.5,
-                      ),
+                      color: _selectedCustomer != null ? Colors.purple.shade50 : Colors.orange.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: _selectedCustomer != null ? Colors.purple.shade300 : Colors.orange.shade400),
                     ),
                     child: Row(
                       children: [
-                        Icon(
-                          _selectedCustomer != null ? Icons.person : Icons.person_search_outlined,
-                          color: _selectedCustomer != null ? Colors.purple.shade700 : Colors.orange.shade700,
-                        ),
+                        Icon(Icons.person, color: _selectedCustomer != null ? Colors.purple : Colors.orange),
                         const SizedBox(width: 12),
                         Expanded(
                           child: _selectedCustomer == null
-                              ? Text('Seleccionar Cliente',
-                                  style: TextStyle(color: Colors.orange.shade700, fontWeight: FontWeight.bold))
+                              ? Text('Seleccionar Cliente (Cta. Cte.)', style: TextStyle(color: Colors.orange.shade700, fontWeight: FontWeight.bold))
                               : Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text(_selectedCustomer!.name,
-                                        style: TextStyle(color: Colors.purple.shade700, fontWeight: FontWeight.bold)),
-                                    Text(
-                                      'Crédito disponible: \$${_availableCredit.toStringAsFixed(2)}',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: _availableCredit >= widget.total
-                                            ? Colors.green.shade700
-                                            : Colors.red.shade700,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
+                                    Text(_selectedCustomer!.name, style: TextStyle(color: Colors.purple.shade700, fontWeight: FontWeight.bold)),
+                                    Text('Crédito disp: \$${_availableCredit.toStringAsFixed(2)}', style: TextStyle(fontSize: 12)),
                                   ],
                                 ),
                         ),
-                        Icon(Icons.chevron_right, color: Colors.grey.shade500),
                       ],
                     ),
                   ),
                 ),
-                // Advertencia de crédito insuficiente
-                if (_selectedCustomer != null && _availableCredit < widget.total)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: Row(
-                      children: [
-                        Icon(Icons.warning_amber_rounded, size: 16, color: Colors.red.shade700),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            'Crédito insuficiente. Disponible: \$${_availableCredit.toStringAsFixed(2)}',
-                            style: TextStyle(color: Colors.red.shade700, fontSize: 12, fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
                 const SizedBox(height: 24),
               ],
 
-              // ── Calculadora (Solo Efectivo) ─────────────────────────
-              if (_paymentMethod == 'cash') ...[
-                const Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text('Abona con:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: _amountCtrl,
-                  focusNode: _focusNode,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-                  decoration: InputDecoration(
-                    prefixText: '\$ ',
-                    prefixStyle: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.black54),
-                    filled: true,
-                    fillColor: Colors.grey.shade50,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: Color(0xFF3B82F6), width: 2),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: _change >= 0 ? Colors.green.shade50 : Colors.red.shade50,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: _change >= 0 ? Colors.green.shade200 : Colors.red.shade200),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text('Vuelto:', style: TextStyle(fontSize: 18, color: _change >= 0 ? Colors.green.shade700 : Colors.red.shade700)),
-                      Text(
-                        _change >= 0 ? '\$${_change.toStringAsFixed(2)}' : '-\$${_change.abs().toStringAsFixed(2)}',
-                        style: TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                          color: _change >= 0 ? Colors.green.shade700 : Colors.red.shade700,
+              // Efectivo Recibido y Vuelto
+              if (_cashRequired > 0) ...[
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _cashTenderedCtrl,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        decoration: InputDecoration(
+                          labelText: 'Efectivo Recibido',
+                          prefixText: '\$ ',
+                          filled: true,
+                          fillColor: Colors.green.shade50,
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide(color: Colors.green.shade400, width: 2),
+                          ),
                         ),
                       ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: _change >= 0 ? Colors.green.shade50 : Colors.red.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: _change >= 0 ? Colors.green.shade200 : Colors.red.shade200),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text('Vuelto', style: TextStyle(fontSize: 12, color: _change >= 0 ? Colors.green.shade700 : Colors.red.shade700)),
+                            Text(
+                              _change >= 0 ? '\$${_change.toStringAsFixed(2)}' : '-\$${_change.abs().toStringAsFixed(2)}',
+                              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: _change >= 0 ? Colors.green.shade700 : Colors.red.shade700),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 24),
               ],
 
-              // ── Imprimir comprobante ────────────────────────────────
+              // Options
               CheckboxListTile(
                 title: const Text('Imprimir Comprobante', style: TextStyle(fontWeight: FontWeight.bold)),
-                subtitle: const Text('Desactive para ahorrar papel si el cliente no requiere copia física',
-                    style: TextStyle(fontSize: 12)),
                 value: _printReceipt,
-                activeColor: const Color(0xFF3B82F6),
+                activeColor: Colors.blue.shade600,
                 contentPadding: EdgeInsets.zero,
                 controlAffinity: ListTileControlAffinity.leading,
                 onChanged: (val) {
@@ -365,41 +511,32 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
               ),
               const SizedBox(height: 24),
 
-              // ── Botones de Acción ───────────────────────────────────
+              // Actions
               Row(
                 children: [
                   Expanded(
                     child: OutlinedButton(
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        side: BorderSide(color: Colors.grey.shade300),
-                      ),
+                      style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16)),
                       onPressed: () => Navigator.pop(context),
-                      child: const Text('Cancelar', style: TextStyle(color: Colors.black54, fontSize: 16)),
+                      child: const Text('Cancelar', style: TextStyle(fontSize: 16)),
                     ),
                   ),
                   const SizedBox(width: 16),
                   Expanded(
                     flex: 2,
-                    child: Consumer<PosProvider>(
-                      builder: (ctx, provider, _) {
-                        return ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF22C55E),
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                            disabledBackgroundColor: Colors.grey.shade300,
-                          ),
-                          onPressed: (_canSubmit && !provider.isLoading) ? _processCheckout : null,
-                          child: provider.isLoading
-                              ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                              : Text(
-                                  isPending ? 'CONFIRMAR COBRO' : 'CONFIRMAR PAGO',
-                                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
-                                ),
-                        );
-                      },
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green.shade600,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        disabledBackgroundColor: Colors.grey.shade300,
+                      ),
+                      onPressed: (_canSubmit && !provider.isLoading) ? _processCheckout : null,
+                      child: provider.isLoading
+                          ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                          : Text(
+                              isPending ? 'CONFIRMAR COBRO' : 'CONFIRMAR PAGO',
+                              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                            ),
                     ),
                   ),
                 ],
@@ -410,81 +547,10 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       ),
     );
   }
-
-  Widget _buildMethodBtn(String value, String label, IconData icon, {bool isLocked = false}) {
-    final isSelected = _paymentMethod == value;
-    final Color iconColor = isLocked
-        ? Colors.grey.shade400
-        : (isSelected ? const Color(0xFF3B82F6) : Colors.black54);
-    final Color labelColor = isLocked
-        ? Colors.grey.shade400
-        : (isSelected ? const Color(0xFF3B82F6) : Colors.black87);
-    return Expanded(
-      child: GestureDetector(
-        onTap: () {
-          if (isLocked) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: const Row(
-                  children: [
-                    Icon(Icons.workspace_premium_rounded, color: Colors.amber, size: 18),
-                    SizedBox(width: 8),
-                    Text('Opción exclusiva para el Plan PRO'),
-                  ],
-                ),
-                backgroundColor: Colors.blueGrey.shade900,
-                behavior: SnackBarBehavior.floating,
-                duration: const Duration(seconds: 3),
-              ),
-            );
-            return;
-          }
-          setState(() {
-            _paymentMethod = value;
-            if (value != 'cash') _amountCtrl.clear();
-            if (value != 'cuenta_corriente') _selectedCustomer = null;
-            if (value == 'cash') _focusNode.requestFocus();
-          });
-        },
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          decoration: BoxDecoration(
-            color: isLocked
-                ? Colors.grey.shade50
-                : (isSelected ? const Color(0xFF3B82F6).withOpacity(0.1) : Colors.white),
-            border: Border.all(
-              color: isLocked
-                  ? Colors.grey.shade200
-                  : (isSelected ? const Color(0xFF3B82F6) : Colors.grey.shade300),
-              width: isSelected ? 2 : 1,
-            ),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Column(
-            children: [
-              Icon(icon, color: iconColor, size: 26),
-              const SizedBox(height: 6),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 11,
-                  color: labelColor,
-                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 }
 
-// ── Diálogo picker de cliente ──────────────────────────────────────────────
 class _CustomerPickerDialog extends StatefulWidget {
-  final void Function(Customer) onSelected;
-
+  final Function(Customer) onSelected;
   const _CustomerPickerDialog({required this.onSelected});
 
   @override
@@ -493,15 +559,6 @@ class _CustomerPickerDialog extends StatefulWidget {
 
 class _CustomerPickerDialogState extends State<_CustomerPickerDialog> {
   final _searchCtrl = TextEditingController();
-  String _query = '';
-
-  @override
-  void initState() {
-    super.initState();
-    _searchCtrl.addListener(() {
-      setState(() => _query = _searchCtrl.text.toLowerCase());
-    });
-  }
 
   @override
   void dispose() {
@@ -509,111 +566,78 @@ class _CustomerPickerDialogState extends State<_CustomerPickerDialog> {
     super.dispose();
   }
 
-  List<Customer> _filter(List<Customer> all) {
-    if (_query.isEmpty) return all;
-    return all.where((c) =>
-        c.name.toLowerCase().contains(_query) ||
-        c.documentNumber.toLowerCase().contains(_query)).toList();
-  }
-
   @override
   Widget build(BuildContext context) {
     return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: SizedBox(
-        width: 400,
-        height: 480,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Container(
+        width: 450,
+        height: 600,
+        padding: const EdgeInsets.all(24),
         child: Column(
           children: [
-            // Header
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.purple.shade50,
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.person_search, color: Colors.purple.shade700),
-                  const SizedBox(width: 10),
-                  Text('Seleccionar Cliente',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.purple.shade700)),
-                  const Spacer(),
-                  IconButton(
-                    icon: const Icon(Icons.close, size: 20),
-                    onPressed: () => Navigator.pop(context),
-                    color: Colors.grey.shade600,
-                  ),
-                ],
-              ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Seleccionar Cliente', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)),
+              ],
             ),
-            // Buscador
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: TextField(
-                controller: _searchCtrl,
-                autofocus: true,
-                decoration: InputDecoration(
-                  hintText: 'Buscar por nombre o DNI...',
-                  prefixIcon: const Icon(Icons.search),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                  contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
-                ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _searchCtrl,
+              decoration: InputDecoration(
+                hintText: 'Buscar por nombre, DNI o Tel...',
+                prefixIcon: const Icon(Icons.search),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
               ),
+              onChanged: (_) => setState(() {}),
             ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: ElevatedButton.icon(
-                icon: const Icon(Icons.person_add_alt_1_outlined),
-                label: const Text('Agregar Nuevo Cliente'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.purple.shade50,
-                  foregroundColor: Colors.purple.shade700,
-                  elevation: 0,
-                  minimumSize: const Size(double.infinity, 45),
-                ),
+            const SizedBox(height: 16),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                icon: const Icon(Icons.person_add),
+                label: const Text('NUEVO CLIENTE'),
                 onPressed: () {
                   showDialog(
                     context: context,
-                    barrierDismissible: false,
-                    builder: (_) => const CustomerFormDialog(),
-                  ).then((_) {
-                    if (context.mounted) {
-                      context.read<CustomerProvider>().fetchCustomers();
-                    }
-                  });
+                    builder: (ctx) => const CustomerFormDialog(),
+                  );
                 },
               ),
             ),
             const SizedBox(height: 8),
-            // Lista — Consumer para que se reconstruya cuando fetchCustomers() termina
             Expanded(
               child: Consumer<CustomerProvider>(
-                builder: (_, provider, __) {
-                  if (provider.isLoading) {
+                builder: (ctx, provider, _) {
+                  if (provider.isLoading && provider.customers.isEmpty) {
                     return const Center(child: CircularProgressIndicator());
                   }
-                  final filtered = _filter(provider.customers);
-                  if (filtered.isEmpty) {
-                    return const Center(
-                      child: Text('Sin clientes encontrados', style: TextStyle(color: Colors.black45)),
-                    );
+
+                  final query = _searchCtrl.text.toLowerCase();
+                  final list = provider.customers.where((c) {
+                    return c.name.toLowerCase().contains(query) ||
+                        (c.documentNumber.contains(query)) ||
+                        (c.phone != null && c.phone!.contains(query));
+                  }).toList();
+
+                  if (list.isEmpty) {
+                    return const Center(child: Text('No se encontraron clientes.', style: TextStyle(color: Colors.grey)));
                   }
+
                   return ListView.separated(
-                    itemCount: filtered.length,
-                    separatorBuilder: (_, __) => const Divider(height: 1),
-                    itemBuilder: (_, i) {
-                      final c = filtered[i];
-                      final available = c.creditLimit - c.balance;
+                    itemCount: list.length,
+                    separatorBuilder: (_, __) => const Divider(),
+                    itemBuilder: (ctx, i) {
+                      final c = list[i];
                       return ListTile(
                         leading: CircleAvatar(
-                          backgroundColor: Colors.purple.shade100,
-                          child: Text(c.name[0].toUpperCase(),
-                              style: TextStyle(color: Colors.purple.shade700, fontWeight: FontWeight.bold)),
+                          backgroundColor: Colors.blue.shade100,
+                          child: Text(c.name[0].toUpperCase(), style: const TextStyle(color: Colors.blue)),
                         ),
-                        title: Text(c.name, style: const TextStyle(fontWeight: FontWeight.w600)),
-                        subtitle: Text('DNI: ${c.documentNumber} · Crédito: \$${available.toStringAsFixed(2)}'),
-                        trailing: Icon(Icons.chevron_right, color: Colors.grey.shade400),
+                        title: Text(c.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                        subtitle: Text('ID: ${c.documentNumber} - Tel: ${c.phone ?? '-'}'),
                         onTap: () => widget.onSelected(c),
                       );
                     },

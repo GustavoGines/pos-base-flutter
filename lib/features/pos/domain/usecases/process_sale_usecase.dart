@@ -9,7 +9,8 @@ class ProcessSaleUseCase {
 
   Future<Sale> call({
     required double total,
-    required String paymentMethod,
+    required double totalSurcharge,
+    List<Map<String, dynamic>>? payments,
     double? tenderedAmount,
     double? changeAmount,
     required int shiftId,
@@ -21,7 +22,8 @@ class ProcessSaleUseCase {
     if (items.isEmpty) throw Exception('El carrito está vacío');
     return await repository.processSale(
       total: total,
-      paymentMethod: paymentMethod,
+      totalSurcharge: totalSurcharge,
+      payments: payments,
       tenderedAmount: tenderedAmount,
       changeAmount: changeAmount,
       shiftId: shiftId,

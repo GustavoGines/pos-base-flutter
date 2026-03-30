@@ -5,9 +5,11 @@ import 'package:frontend_desktop/features/catalog/data/models/product_model.dart
 
 abstract class PosRemoteDataSource {
   Future<List<ProductModel>> searchProducts(String query);
+  Future<List<dynamic>> fetchPaymentMethods();
   Future<dynamic> processSale({
     required double total,
-    required String paymentMethod,
+    required double totalSurcharge,
+    List<Map<String, dynamic>>? payments,
     double? tenderedAmount,
     double? changeAmount,
     required int shiftId,
@@ -19,7 +21,8 @@ abstract class PosRemoteDataSource {
   Future<List<dynamic>> fetchPendingSales();
   Future<dynamic> payPendingSale({
     required int saleId,
-    required String paymentMethod,
+    required double totalSurcharge,
+    required List<Map<String, dynamic>> payments,
     required double tenderedAmount,
     required double changeAmount,
     List<CartItem>? items,
@@ -57,9 +60,28 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
   }
 
   @override
+  Future<List<dynamic>> fetchPaymentMethods() async {
+    try {
+      final response = await client.get(
+        Uri.parse('$baseUrl/payment-methods'),
+        headers: {'Accept': 'application/json'},
+      );
+      if (response.statusCode == 200) {
+        return json.decode(response.body) as List<dynamic>;
+      } else {
+        throw Exception('Error al cargar métodos de pago (HTTP ${response.statusCode})');
+      }
+    } catch (e) {
+      print('=== API Error en fetchPaymentMethods: $e ===');
+      rethrow;
+    }
+  }
+
+  @override
   Future<dynamic> processSale({
     required double total,
-    required String paymentMethod,
+    required double totalSurcharge,
+    List<Map<String, dynamic>>? payments,
     double? tenderedAmount,
     double? changeAmount,
     required int shiftId,
@@ -71,7 +93,8 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
     try {
       final payload = {
         'total': total,
-        'payment_method': paymentMethod,
+        'total_surcharge': totalSurcharge,
+        if (payments != null) 'payments': payments,
         'status': status,
         if (tenderedAmount != null) 'tendered_amount': tenderedAmount,
         if (changeAmount != null) 'change_amount': changeAmount,
@@ -141,14 +164,16 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
   @override
   Future<dynamic> payPendingSale({
     required int saleId,
-    required String paymentMethod,
+    required double totalSurcharge,
+    required List<Map<String, dynamic>> payments,
     required double tenderedAmount,
     required double changeAmount,
     List<CartItem>? items,
   }) async {
     try {
       final payload = {
-        'payment_method': paymentMethod,
+        'total_surcharge': totalSurcharge,
+        'payments': payments,
         'tendered_amount': tenderedAmount,
         'change_amount': changeAmount,
       };

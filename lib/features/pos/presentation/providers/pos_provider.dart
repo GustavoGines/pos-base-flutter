@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../domain/entities/cart_item.dart';
+import '../../domain/entities/payment_method.dart';
 import '../../domain/usecases/process_sale_usecase.dart';
 import '../../domain/usecases/search_products_usecase.dart';
 import '../../domain/repositories/pos_repository.dart';
@@ -41,12 +42,17 @@ class PosProvider with ChangeNotifier {
   int? _activePendingSaleId;
   int? get activePendingSaleId => _activePendingSaleId;
 
+  List<PaymentMethod> _paymentMethods = [];
+  List<PaymentMethod> get paymentMethods => _paymentMethods;
+
   PosProvider({
     required this.processSaleUseCase,
     required this.searchProductsUseCase,
     required this.repository,
     this.printerService,
-  });
+  }) {
+    loadPaymentMethods();
+  }
 
   double get cartTotal {
     return _cart.fold(0.0, (sum, item) => sum + item.subtotal);
@@ -148,12 +154,23 @@ class PosProvider with ChangeNotifier {
     }
   }
 
+  Future<void> loadPaymentMethods() async {
+    try {
+      final list = await repository.fetchPaymentMethods();
+      _paymentMethods = list.map((m) => PaymentMethod.fromJson(m)).toList();
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error loading payment methods: $e');
+    }
+  }
+
   // ─────────────────────────────────────────────────────────────────
   // FLUJO NORMAL: Cobrar directamente
   // ─────────────────────────────────────────────────────────────────
   Future<bool> processCheckout({
     required int shiftId,
-    required String paymentMethod,
+    required double totalSurcharge,
+    required List<Map<String, dynamic>> payments,
     required double tenderedAmount,
     required double changeAmount,
     int? userId,
@@ -176,7 +193,8 @@ class PosProvider with ChangeNotifier {
         final success = await payPendingSale(
           saleId: _activePendingSaleId!,
           saleTotal: totalSnapshot,
-          paymentMethod: paymentMethod,
+          totalSurcharge: totalSurcharge,
+          payments: payments,
           tenderedAmount: tenderedAmount,
           changeAmount: changeAmount,
           userName: userName,
@@ -190,7 +208,8 @@ class PosProvider with ChangeNotifier {
       } else {
         await processSaleUseCase(
           total: totalSnapshot,
-          paymentMethod: paymentMethod,
+          totalSurcharge: totalSurcharge,
+          payments: payments,
           tenderedAmount: tenderedAmount,
           changeAmount: changeAmount,
           shiftId: shiftId,
@@ -209,7 +228,7 @@ class PosProvider with ChangeNotifier {
             items: cartSnapshot,
             total: totalSnapshot,
             settings: settings,
-            paymentMethod: paymentMethod,
+            paymentMethod: payments.isNotEmpty ? payments.first['payment_method_id'].toString() : 'unknown',
             userName: userName,
           );
         } catch (e) {
@@ -251,7 +270,8 @@ class PosProvider with ChangeNotifier {
     try {
       await processSaleUseCase(
         total: totalSnapshot,
-        paymentMethod: 'pending',
+        totalSurcharge: 0,
+        payments: [], // Dummy para ordenes pending, se ingora en el form request de laravel por el exclude_if
         shiftId: shiftId,
         items: cartSnapshot,
         userId: userId,
@@ -319,7 +339,8 @@ class PosProvider with ChangeNotifier {
   Future<bool> payPendingSale({
     required int saleId,
     required double saleTotal,
-    required String paymentMethod,
+    required double totalSurcharge,
+    required List<Map<String, dynamic>> payments,
     required double tenderedAmount,
     required double changeAmount,
     String? userName,
@@ -334,7 +355,8 @@ class PosProvider with ChangeNotifier {
     try {
       await repository.payPendingSale(
         saleId: saleId,
-        paymentMethod: paymentMethod,
+        totalSurcharge: totalSurcharge,
+        payments: payments,
         tenderedAmount: tenderedAmount,
         changeAmount: changeAmount,
         items: items,
@@ -373,7 +395,7 @@ class PosProvider with ChangeNotifier {
               items: ticketItems,
               total: saleTotal,
               settings: settings,
-              paymentMethod: paymentMethod,
+              paymentMethod: payments.isNotEmpty ? payments.first['payment_method_id'].toString() : 'unknown',
               userName: userName,
             );
           } catch (e) {
