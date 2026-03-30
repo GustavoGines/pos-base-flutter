@@ -10,6 +10,7 @@ class ProductModel extends Product {
     required double costPrice,
     required double sellingPrice,
     required double stock,
+    double? minStock,
     required bool active,
     required bool isSoldByWeight,
     int? vencimientoDias,
@@ -22,6 +23,7 @@ class ProductModel extends Product {
           costPrice: costPrice,
           sellingPrice: sellingPrice,
           stock: stock,
+          minStock: minStock,
           active: active,
           isSoldByWeight: isSoldByWeight,
           vencimientoDias: vencimientoDias,
@@ -38,6 +40,7 @@ class ProductModel extends Product {
       costPrice: costPrice,
       sellingPrice: sellingPrice,
       stock: newStock,
+      minStock: minStock,
       active: active,
       isSoldByWeight: isSoldByWeight,
       vencimientoDias: vencimientoDias,
@@ -56,6 +59,9 @@ class ProductModel extends Product {
       costPrice: double.tryParse(json['cost_price']?.toString() ?? '0') ?? 0.0,
       sellingPrice: double.tryParse(json['selling_price']?.toString() ?? '0') ?? 0.0,
       stock: double.tryParse(json['stock']?.toString() ?? '0') ?? 0.0,
+      minStock: (json['min_stock'] != null && json['min_stock'].toString().toLowerCase() != 'null') 
+          ? double.tryParse(json['min_stock'].toString()) 
+          : null,
       active: json['active'] == 1 || json['active'] == true || json['active'] == '1' || json['active'] == 'true',
       isSoldByWeight: json['is_sold_by_weight'] == 1 || json['is_sold_by_weight'] == true || json['is_sold_by_weight'] == '1' || json['is_sold_by_weight'] == 'true',
       vencimientoDias: json['vencimiento_dias'] != null

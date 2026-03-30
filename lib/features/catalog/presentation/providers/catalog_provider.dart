@@ -4,6 +4,7 @@ import '../../domain/entities/product.dart';
 import '../../domain/entities/category.dart';
 import '../../domain/repositories/catalog_repository.dart';
 import '../../domain/usecases/get_products_usecase.dart';
+import '../../data/models/product_model.dart';
 
 class CatalogProvider with ChangeNotifier {
   final GetProductsUseCase getProductsUseCase;
@@ -17,6 +18,9 @@ class CatalogProvider with ChangeNotifier {
 
   bool _isLoading = false;
   bool get isLoading => _isLoading;
+
+  List<Product> _criticalAlerts = [];
+  List<Product> get criticalAlerts => _criticalAlerts;
 
   String? _errorMessage;
   String? get errorMessage => _errorMessage;
@@ -62,11 +66,23 @@ class CatalogProvider with ChangeNotifier {
           _categories = await repository.getCategories();
         }
       }
-    } catch (e) {
+    } catch (e, stack) {
+      debugPrint('=== Error in loadProducts ===');
+      debugPrint('Exception: $e');
+      debugPrint('Stack: $stack');
       _errorMessage = e.toString();
     } finally {
       _isLoading = false;
       notifyListeners();
+    }
+  }
+
+  Future<void> fetchCriticalAlerts() async {
+    try {
+      _criticalAlerts = await repository.fetchCriticalAlerts();
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error fetching critical alerts: $e');
     }
   }
 
@@ -196,6 +212,7 @@ class CatalogProvider with ChangeNotifier {
     required int productId,
     required String type,
     required double quantity,
+    double? minStock,
     String? notes,
   }) async {
     _isLoading = true;
@@ -206,12 +223,21 @@ class CatalogProvider with ChangeNotifier {
         productId: productId,
         type: type,
         quantity: quantity,
+        minStock: minStock,
         notes: notes,
       );
-      final newStock = double.parse(result['new_stock'].toString());
-      final idx = _products.indexWhere((p) => p.id == productId);
-      if (idx != -1) {
-        _products[idx] = _products[idx].copyWithStock(newStock);
+      // Actualizamos el producto completo en la lista si el backend lo devuelve (mejor consistencia)
+      if (result.containsKey('product')) {
+        final updatedProduct = ProductModel.fromJson(result['product'] as Map<String, dynamic>);
+        final idx = _products.indexWhere((p) => p.id == productId);
+        if (idx != -1) _products[idx] = updatedProduct;
+      } else {
+        // Fallback al comportamiento anterior si el backend no envía el objeto completo
+        final newStock = double.parse(result['new_stock'].toString());
+        final idx = _products.indexWhere((p) => p.id == productId);
+        if (idx != -1) {
+          _products[idx] = _products[idx].copyWithStock(newStock);
+        }
       }
       return true;
     } catch (e) {

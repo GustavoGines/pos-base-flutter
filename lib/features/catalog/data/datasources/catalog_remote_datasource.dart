@@ -27,8 +27,10 @@ abstract class CatalogRemoteDataSource {
     required int productId,
     required String type,
     required double quantity,
+    double? minStock,
     String? notes,
   });
+  Future<List<ProductModel>> fetchCriticalAlerts();
 }
 
 class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
@@ -271,12 +273,14 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
     required int productId,
     required String type,
     required double quantity,
+    double? minStock,
     String? notes,
   }) async {
     try {
       final body = <String, dynamic>{
         'type': type,
         'quantity': quantity,
+        if (minStock != null) 'min_stock': minStock,
         if (notes != null && notes.isNotEmpty) 'notes': notes,
       };
       final response = await client.post(
@@ -292,6 +296,25 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
       }
     } catch (e) {
       print('=== API Error en adjustStock: $e ===');
+      rethrow;
+    }
+  }
+
+  @override
+  Future<List<ProductModel>> fetchCriticalAlerts() async {
+    try {
+      final response = await client.get(
+        Uri.parse('$baseUrl/catalog/products/alerts/critical'),
+        headers: {'Accept': 'application/json'},
+      );
+      if (response.statusCode == 200) {
+        final List<dynamic> jsonList = json.decode(response.body);
+        return jsonList.map((j) => ProductModel.fromJson(j)).toList();
+      } else {
+        throw Exception('Error al cargar alertas críticas (${response.statusCode})');
+      }
+    } catch (e) {
+      print('=== API Error en fetchCriticalAlerts: $e ===');
       rethrow;
     }
   }

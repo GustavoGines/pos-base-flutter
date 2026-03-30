@@ -3,6 +3,7 @@ import 'package:frontend_desktop/features/auth/presentation/widgets/admin_pin_di
 import 'package:frontend_desktop/core/presentation/widgets/shared_user_menu.dart';
 import 'package:provider/provider.dart';
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
+import 'package:frontend_desktop/features/catalog/presentation/widgets/stock_alert_bell.dart';
 
 class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
   final String currentRoute;
@@ -122,6 +123,8 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  const StockAlertBell(),
+                  const SizedBox(width: 8),
                   if (extraAction != null) ...[
                     extraAction!,
                     const SizedBox(width: 8),

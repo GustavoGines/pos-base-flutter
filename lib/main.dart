@@ -102,9 +102,7 @@ class LicenseRefreshObserver extends NavigatorObserver {
       
       // Fire-and-forget: do NOT await, never block navigation.
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        try {
-          Provider.of<SettingsProvider>(contextGetter(), listen: false).loadSettings();
-        } catch (_) {}
+        contextGetter().read<SettingsProvider>().refreshSettingsSilently();
       });
     } catch (_) {
       // Context might be unmounted during startup — silently ignore.
