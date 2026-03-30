@@ -4,6 +4,7 @@ import '../../../features/settings/presentation/providers/settings_provider.dart
 import '../../../features/auth/presentation/providers/auth_provider.dart';
 import '../../utils/snack_bar_service.dart';
 import '../../services/license_heartbeat_service.dart';
+import '../../config/app_config.dart';
 
 class LicenseLockScreen extends StatefulWidget {
   final GlobalKey<NavigatorState> navigatorKey;
@@ -40,8 +41,7 @@ class _LicenseLockScreenState extends State<LicenseLockScreen> {
     try {
       final provider = context.read<SettingsProvider>();
       // La base URL se toma de la misma que usa el sistema por defecto
-      const baseUrl = 'http://127.0.0.1/Sistema_POS/pos-backend/public/api';
-      await provider.activateLicense(baseUrl, key);
+      await provider.activateLicense(AppConfig.kApiBaseUrl, key);
       if (mounted) {
         SnackBarService.success(context, '✅ Licencia activada con éxito. El sistema se ha desbloqueado.');
       }

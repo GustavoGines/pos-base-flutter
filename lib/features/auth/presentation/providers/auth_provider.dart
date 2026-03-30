@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../domain/repositories/auth_repository.dart';
+import '../../../../core/services/license_heartbeat_service.dart';
 
 class AuthProvider with ChangeNotifier {
   final AuthRepository repository;
@@ -46,6 +47,9 @@ class AuthProvider with ChangeNotifier {
   }
 
   void logout() {
+    // Apagar el motor DRM: cancela los timers y resetea el flag _initialized
+    // para que el próximo login arranque un ciclo completamente limpio.
+    LicenseHeartbeatService().stop();
     _currentUser = null;
     notifyListeners();
   }
