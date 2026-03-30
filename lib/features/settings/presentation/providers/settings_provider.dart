@@ -158,7 +158,7 @@ class SettingsProvider with ChangeNotifier {
       final response = await http.post(
         Uri.parse('$baseUrl/settings/license/sync'),
         headers: {'Accept': 'application/json', 'Content-Type': 'application/json'},
-      ).timeout(const Duration(seconds: 120));
+      ).timeout(const Duration(minutes: 4)); // 4 min: tolera cold-start de Render (2-3 min)
 
       final data = json.decode(response.body);
       if (response.statusCode == 200) {
@@ -205,7 +205,7 @@ class SettingsProvider with ChangeNotifier {
       http.post(
         Uri.parse('${AppConfig.kApiBaseUrl}/settings/license/sync'),
         headers: {'Accept': 'application/json', 'Content-Type': 'application/json'},
-      ).timeout(const Duration(seconds: 120)).then((response) {
+      ).timeout(const Duration(minutes: 4)).then((response) { // 4 min: tolera cold-start de Render
         if (response.statusCode == 200) {
           getSettingsUseCase().then((newSettings) {
             _settings = newSettings;
