@@ -4,9 +4,12 @@ import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
 
 abstract class PosRepository {
   Future<List<Product>> searchProducts(String query);
+  Future<List<Map<String, dynamic>>> fetchPaymentMethods();
+  
   Future<Sale> processSale({
     required double total,
-    required String paymentMethod,
+    required double totalSurcharge,
+    List<Map<String, dynamic>>? payments,
     double? tenderedAmount,
     double? changeAmount,
     required int shiftId,
@@ -18,7 +21,8 @@ abstract class PosRepository {
   Future<List<Map<String, dynamic>>> fetchPendingSales();
   Future<Map<String, dynamic>> payPendingSale({
     required int saleId,
-    required String paymentMethod,
+    required double totalSurcharge,
+    required List<Map<String, dynamic>> payments,
     required double tenderedAmount,
     required double changeAmount,
     List<CartItem>? items,

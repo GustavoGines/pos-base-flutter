@@ -16,9 +16,16 @@ class PosRepositoryImpl implements PosRepository {
   }
 
   @override
+  Future<List<Map<String, dynamic>>> fetchPaymentMethods() async {
+    final list = await remoteDataSource.fetchPaymentMethods();
+    return list.cast<Map<String, dynamic>>();
+  }
+
+  @override
   Future<Sale> processSale({
     required double total,
-    required String paymentMethod,
+    required double totalSurcharge,
+    List<Map<String, dynamic>>? payments,
     double? tenderedAmount,
     double? changeAmount,
     required int shiftId,
@@ -29,7 +36,8 @@ class PosRepositoryImpl implements PosRepository {
   }) async {
     final response = await remoteDataSource.processSale(
       total: total,
-      paymentMethod: paymentMethod,
+      totalSurcharge: totalSurcharge,
+      payments: payments,
       tenderedAmount: tenderedAmount,
       changeAmount: changeAmount,
       shiftId: shiftId,
@@ -42,7 +50,7 @@ class PosRepositoryImpl implements PosRepository {
     return Sale(
       id: response['sale']['id'],
       total: total,
-      paymentMethod: paymentMethod,
+      paymentMethod: payments?.first['payment_method_id']?.toString() ?? 'unknown',
       shift: CashRegisterShift(
         id: shiftId,
         cashRegisterId: 1, // Dummy reference since Pos logic only cares about shiftId locally
@@ -63,14 +71,16 @@ class PosRepositoryImpl implements PosRepository {
   @override
   Future<Map<String, dynamic>> payPendingSale({
     required int saleId,
-    required String paymentMethod,
+    required double totalSurcharge,
+    required List<Map<String, dynamic>> payments,
     required double tenderedAmount,
     required double changeAmount,
     List<CartItem>? items,
   }) async {
     final response = await remoteDataSource.payPendingSale(
       saleId: saleId,
-      paymentMethod: paymentMethod,
+      totalSurcharge: totalSurcharge,
+      payments: payments,
       tenderedAmount: tenderedAmount,
       changeAmount: changeAmount,
       items: items,

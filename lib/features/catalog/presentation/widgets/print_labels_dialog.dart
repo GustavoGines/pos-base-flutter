@@ -162,11 +162,13 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
           ? dateFmt.format(now.add(Duration(days: product.vencimientoDias!)))
           : null;
 
-      final String precioStr = NumberFormat('#,##0.00', 'es_AR').format(finalPrice);
+      final String precioStr = NumberFormat('#,##0', 'es_AR').format(finalPrice);
       final bool isValidEan = Ean13Generator.isValid(ean13);
-
-      return pw.Container(
-        padding: pw.EdgeInsets.symmetric(
+      return pw.SizedBox(
+        width: 55 * PdfPageFormat.mm,
+        height: 45 * PdfPageFormat.mm,
+        child: pw.Container(
+          padding: pw.EdgeInsets.symmetric(
           horizontal: 1.5 * PdfPageFormat.mm,
           vertical: 1.5 * PdfPageFormat.mm,
         ),
@@ -176,11 +178,12 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
         ),
         child: pw.Column(
           crossAxisAlignment: pw.CrossAxisAlignment.center,
+          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, // Distribute properly
           children: [
             // NOMBRE Y GRAMAJE
             pw.Text(
               product.name.toUpperCase(),
-              style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold),
+              style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold),
               textAlign: pw.TextAlign.center,
               maxLines: 2,
               overflow: pw.TextOverflow.clip,
@@ -188,11 +191,10 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
             if (hasWeight) ...[
               pw.Text(
                 '${customWeight.toInt()} GS',
-                style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold),
+                style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold),
                 textAlign: pw.TextAlign.center,
               ),
             ],
-            pw.SizedBox(height: 0.5 * PdfPageFormat.mm),
             
             // FECHAS (ENV y VTO en la misma línea)
             pw.Row(
@@ -200,23 +202,23 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
               children: [
                 pw.Text('ENV: $envStr', style: const pw.TextStyle(fontSize: 7)),
                 if (vtoStr != null) ...[
-                  pw.SizedBox(width: 3 * PdfPageFormat.mm),
+                  pw.SizedBox(width: 4 * PdfPageFormat.mm),
                   pw.Text('VTO: $vtoStr', style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold)),
                 ],
               ],
             ),
-            pw.SizedBox(height: 1 * PdfPageFormat.mm),
             
             // DETALLE DE UNIDADES / PRECIO X KG
             pw.Row(
               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: pw.CrossAxisAlignment.end,
               children: [
                  if (!hasWeight) ... [
                     pw.Column(
                       crossAxisAlignment: pw.CrossAxisAlignment.start,
                       children: [
                         pw.Text('UNIDADES', style: const pw.TextStyle(fontSize: 5)),
-                        pw.Text('1', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
+                        pw.Text('1', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
                       ]
                     )
                  ] else ... [
@@ -225,17 +227,14 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
                        children: [
                          pw.Text('\$/KG', style: pw.TextStyle(fontSize: 5)),
                          pw.Text(
-                           NumberFormat('#,##0.00', 'es_AR').format(product.sellingPrice),
-                           style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold),
+                           NumberFormat('#,##0', 'es_AR').format(product.sellingPrice),
+                           style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold),
                          ),
                        ],
                      ),
                  ],
-                 // Podríamos poner el CONSUMO PREFERENTE aquí si fuera necesario
               ],
             ),
-            
-            pw.Spacer(),
 
             // BLOQUE INFERIOR: CÓDIGO BARRAS (IZQ) + IMPORTE (DER)
             pw.Row(
@@ -253,18 +252,18 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
                          barcode: isValidEan ? pw.Barcode.ean13() : pw.Barcode.code128(),
                          data: ean13,
                          drawText: false,
-                         height: 8 * PdfPageFormat.mm, // Reducido aún más para evitar overflow en pesables
+                         height: 10 * PdfPageFormat.mm, // Seguro para escalar
+                         width: 32 * PdfPageFormat.mm, 
                        ),
                        pw.SizedBox(height: 0.5 * PdfPageFormat.mm),
-                         pw.Center(
-                           child: pw.Text(
-                             Ean13Generator.format(ean13),
-                             style: pw.TextStyle(fontSize: 5.5, font: ttfRegular),
-                           ),
-                         ),
-                       ],
-                     ),
+                       pw.Text(
+                         Ean13Generator.format(ean13),
+                         style: pw.TextStyle(fontSize: 5, font: ttfRegular),
+                         textAlign: pw.TextAlign.center,
+                       ),
+                     ],
                    ),
+                 ),
                  pw.SizedBox(width: 2 * PdfPageFormat.mm),
                  // Columna Importe
                  pw.Expanded(
@@ -273,10 +272,10 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
                      crossAxisAlignment: pw.CrossAxisAlignment.end,
                      mainAxisAlignment: pw.MainAxisAlignment.end,
                      children: [
-                       pw.Text('IMPORTE (\$)', style: pw.TextStyle(fontSize: 6, fontWeight: pw.FontWeight.bold)),
+                       pw.Text('IMPORTE (\$)', style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold)),
                        pw.Text(
                          precioStr,
-                         style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold),
+                         style: pw.TextStyle(fontSize: 22, fontWeight: pw.FontWeight.bold, letterSpacing: -0.5),
                          textAlign: pw.TextAlign.right,
                        ),
                      ],
@@ -284,10 +283,8 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
                  ),
               ]
             ),
-            pw.SizedBox(height: 0.5 * PdfPageFormat.mm),
             
             // PIE DE NEGOCIO (COMPACTADO)
-            // Se eliminó el pw.Divider() para ganar espacio vertical vital
             pw.Text(
               companyName.toUpperCase(),
               style: pw.TextStyle(fontSize: 6, fontWeight: pw.FontWeight.bold),
@@ -307,6 +304,7 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
               ),
           ],
         ),
+       )
       );
     }
 
@@ -329,8 +327,8 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
         pdf.addPage(
           pw.Page(
             pageFormat: format,
-            margin: const pw.EdgeInsets.all(2 * PdfPageFormat.mm),
-            build: (_) => label,
+            margin: pw.EdgeInsets.zero,
+            build: (_) => pw.Center(child: label),
           ),
         );
       }
@@ -342,7 +340,7 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
        );
        for (final label in allLabels) {
          pdf.addPage(
-            pw.Page(pageFormat: format, margin: const pw.EdgeInsets.all(1 * PdfPageFormat.mm), build: (_) => label),
+            pw.Page(pageFormat: format, margin: pw.EdgeInsets.zero, build: (_) => pw.Center(child: label)),
          );
        }
     } else {
@@ -354,13 +352,7 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
             pw.Wrap(
               spacing: 4 * PdfPageFormat.mm,
               runSpacing: 4 * PdfPageFormat.mm,
-              children: allLabels
-                  .map((label) => pw.SizedBox(
-                        width: 55 * PdfPageFormat.mm,
-                        height: 45 * PdfPageFormat.mm,
-                        child: label,
-                      ))
-                  .toList(),
+              children: allLabels,
             ),
           ],
         ),
@@ -769,7 +761,7 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
                     children: [
                       const Text('Total Etq.', style: TextStyle(fontSize: 9, color: Colors.grey)),
                       Text(
-                        '\$${NumberFormat('#,##0.00', 'es_AR').format((currentWeight ?? 0) / 1000 * p.sellingPrice)}',
+                        '\$${NumberFormat('#,##0', 'es_AR').format((currentWeight ?? 0) / 1000 * p.sellingPrice)}',
                         style: const TextStyle(fontSize: 12, color: Colors.deepPurple, fontWeight: FontWeight.bold),
                       )
                     ]
