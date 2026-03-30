@@ -8,18 +8,16 @@ class Ean13Generator {
   /// Genera un EAN-13 interno a partir del ID del producto (PLU).
   /// Si el producto ya tiene un barcode propio de fábrica, lo retorna tal cual.
   static String generate({required int plu, String? existingBarcode}) {
-    // Si ya tiene código de fábrica (externo), no generamos uno interno
-    if (existingBarcode != null &&
-        existingBarcode.isNotEmpty &&
-        !existingBarcode.startsWith('2')) {
+    // Si ya tiene código guardado en base de datos, lo usamos SIEMPRE.
+    if (existingBarcode != null && existingBarcode.isNotEmpty && existingBarcode.length == 13) {
       return existingBarcode;
     }
 
-    // Formato: "2" + PLU 5 dígitos + relleno 6 dígitos + check digit
-    // Total antes del check: 12 dígitos
+    // Formato: "20" + relleno 5 dígitos ceros + PLU 5 dígitos + check digit
+    // Alineándolo con el motor avanzado del backend
     final rawPlu = plu.toString();
     final pluStr = rawPlu.length > 5 ? rawPlu.substring(rawPlu.length - 5) : rawPlu.padLeft(5, '0');
-    final body = '2${pluStr}000000'; // 12 dígitos
+    final body = '2000000$pluStr'; // 12 dígitos
 
     final checkDigit = _calculateCheckDigit(body);
     return '$body$checkDigit';
