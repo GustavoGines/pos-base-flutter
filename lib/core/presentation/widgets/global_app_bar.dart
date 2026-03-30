@@ -89,7 +89,7 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                       ),
                       _buildNavTab(
                         context: context,
-                        label: 'Ventas del Día',
+                        label: 'Registro de Ventas',
                         icon: Icons.receipt_long_outlined,
                         route: '/sales-history',
                         activeColor: Colors.blueAccent,

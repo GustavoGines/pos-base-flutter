@@ -40,6 +40,7 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
   final Map<int, int> _quantities = {};
   final Map<int, double?> _weights = {};
   String _paperFormat = 'custom_55_45';
+  bool _printDates = true;
 
   // Debounce + UniqueKey para forzar rebuild del PdfPreview
   Key _previewKey = UniqueKey();
@@ -100,7 +101,7 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
   // ── Callback para PdfPreview — ignora el PdfPageFormat que pasa el widget
   //    y usa siempre el formato elegido por el usuario en el panel izquierdo
   Future<Uint8List> _buildPdfForPreview(PdfPageFormat _) =>
-      _buildPdfBytes(companyName: _companyName, companyAddress: _companyAddress, companyPhone: _companyPhone, companyTaxId: _companyTaxId);
+      _buildPdfBytes(companyName: _companyName, companyAddress: _companyAddress, companyPhone: _companyPhone, companyTaxId: _companyTaxId, printDates: _printDates);
 
   // ── Motor PDF principal ─────────────────────────────────────────────
   Future<Uint8List> _buildPdfBytes({
@@ -108,6 +109,7 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
     required String companyAddress,
     required String companyPhone,
     required String companyTaxId,
+    required bool printDates,
   }) async {
     // Carga de fuentes con Cache y Fallback de seguridad
     pw.Font ttfRegular;
@@ -196,17 +198,22 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
               ),
             ],
             
-            // FECHAS (ENV y VTO en la misma línea)
-            pw.Row(
-              mainAxisAlignment: pw.MainAxisAlignment.center,
-              children: [
-                pw.Text('ENV: $envStr', style: const pw.TextStyle(fontSize: 7)),
-                if (vtoStr != null) ...[
-                  pw.SizedBox(width: 4 * PdfPageFormat.mm),
-                  pw.Text('VTO: $vtoStr', style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold)),
+            // FECHAS (ENV y VTO)
+            // Lógica Profesional: Solo imprimimos ENV si el usuario lo solicita explícitamente usando el toggle (printDates == true)
+            // Y además, si el producto amerita fechas (es de balanza o tiene vencimiento). Para gaseosas unitarias, se oculta.
+            if (printDates && (hasWeight || vtoStr != null))
+              pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.center,
+                children: [
+                  pw.Text('ENV: $envStr', style: const pw.TextStyle(fontSize: 7)),
+                  if (vtoStr != null) ...[
+                    pw.SizedBox(width: 4 * PdfPageFormat.mm),
+                    pw.Text('VTO: $vtoStr', style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold)),
+                  ],
                 ],
-              ],
-            ),
+              )
+            else
+              pw.SizedBox(height: 3 * PdfPageFormat.mm), // Compensación de espacio para no romper el layout grid
             
             // DETALLE DE UNIDADES / PRECIO X KG
             pw.Row(
@@ -376,6 +383,7 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
         companyAddress: _companyAddress,
         companyPhone: _companyPhone,
         companyTaxId: _companyTaxId,
+        printDates: _printDates,
       );
       if (mounted) Navigator.of(context).pop();
       await Printing.layoutPdf(
@@ -555,6 +563,41 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
                       ),
                     ),
                   ],
+                ),
+                
+                const SizedBox(height: 16),
+                
+                // ── Opciones Avanzadas ───────────────────────
+                Text(
+                  'OPCIONES DE ETIQUETA',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey.shade500,
+                    letterSpacing: 0.8,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.grey.shade200),
+                  ),
+                  child: CheckboxListTile(
+                    title: const Text('Imprimir ENV y VTO', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                    subtitle: const Text('Útil para códigos de góndola o deteriorados.', style: TextStyle(fontSize: 10)),
+                    value: _printDates,
+                    activeColor: Colors.deepPurple,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+                    visualDensity: VisualDensity.compact,
+                    onChanged: (val) {
+                      if (val != null) {
+                        setState(() => _printDates = val);
+                        _schedulePreviewRebuild();
+                      }
+                    },
+                  ),
                 ),
               ],
             ),
