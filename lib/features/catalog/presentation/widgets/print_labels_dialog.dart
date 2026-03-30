@@ -139,7 +139,18 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
     final now = DateTime.now();
     final dateFmt = DateFormat('dd/MM/yy');
 
-    pw.Widget buildLabel(Product product) {
+    double computeHeight(Product product) {
+      final double? customWeight = _weights[product.id];
+      final bool hasWeight = product.isSoldByWeight && customWeight != null && customWeight > 0;
+      final bool hasVto = product.vencimientoDias != null && product.vencimientoDias! > 0;
+      
+      // La altura estándar es 45mm. Si no es balanza y no imprimimos fechas, 
+      // achicamos inteligentemente a 36mm para no desperdiciar papel térmico,
+      // dejando espacio suficiente para el pie de página comercial.
+      return (_printDates && (hasWeight || hasVto)) ? 45.0 : 36.0;
+    }
+
+    pw.Widget buildLabel(Product product, {required double heightLabel}) {
       final double? customWeight = _weights[product.id];
       final bool hasWeight = product.isSoldByWeight && customWeight != null && customWeight > 0;
 
@@ -168,7 +179,7 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
       final bool isValidEan = Ean13Generator.isValid(ean13);
       return pw.SizedBox(
         width: 55 * PdfPageFormat.mm,
-        height: 45 * PdfPageFormat.mm,
+        height: heightLabel * PdfPageFormat.mm,
         child: pw.Container(
           padding: pw.EdgeInsets.symmetric(
           horizontal: 1.5 * PdfPageFormat.mm,
@@ -259,7 +270,7 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
                          barcode: isValidEan ? pw.Barcode.ean13() : pw.Barcode.code128(),
                          data: ean13,
                          drawText: false,
-                         height: 10 * PdfPageFormat.mm, // Seguro para escalar
+                         height: (heightLabel <= 36.0 ? 8 : 10) * PdfPageFormat.mm, // Escala inteligente para códigos cortos
                          width: 32 * PdfPageFormat.mm, 
                        ),
                        pw.SizedBox(height: 0.5 * PdfPageFormat.mm),
@@ -315,12 +326,13 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
       );
     }
 
-    // Generar lista plana de etiquetas
+    // Generar lista plana de etiquetas para reportes o A4
     final List<pw.Widget> allLabels = [];
     for (final p in widget.products) {
       final qty = _quantities[p.id] ?? 1;
+      final h = computeHeight(p);
       for (int i = 0; i < qty; i++) {
-        allLabels.add(buildLabel(p));
+        allLabels.add(buildLabel(p, heightLabel: h));
       }
     }
 
@@ -340,15 +352,21 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
         );
       }
     } else if (_paperFormat == 'custom_55_45') {
-       const format = PdfPageFormat(
-         55 * PdfPageFormat.mm,
-         45 * PdfPageFormat.mm,
-         marginAll: 0,
-       );
-       for (final label in allLabels) {
-         pdf.addPage(
-            pw.Page(pageFormat: format, margin: pw.EdgeInsets.zero, build: (_) => pw.Center(child: label)),
+       for (final p in widget.products) {
+         final qty = _quantities[p.id] ?? 1;
+         final h = computeHeight(p);
+         final format = PdfPageFormat(
+           55 * PdfPageFormat.mm,
+           h * PdfPageFormat.mm,
+           marginAll: 0,
          );
+         final labelWidget = buildLabel(p, heightLabel: h);
+         
+         for (int i = 0; i < qty; i++) {
+            pdf.addPage(
+               pw.Page(pageFormat: format, margin: pw.EdgeInsets.zero, build: (_) => pw.Center(child: labelWidget)),
+            );
+         }
        }
     } else {
       pdf.addPage(
