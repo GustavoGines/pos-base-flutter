@@ -96,9 +96,15 @@ class SaleRecord {
   bool get isVoided => status == 'voided';
   bool get isPending => status == 'pending';
 
-  /// Sumatoria real de recargos de todos los pagos.
+  /// Sumatoria real de recargos de todos los pagos (calculado desde sale_payments).
   double get surchargeTotal =>
       payments.fold(0.0, (sum, p) => sum + p.surchargeAmount);
+
+  /// Ingreso NETO del negocio = total de items vendidos (sin recargo bancario).
+  double get netTotal => total;
+
+  /// Total real cobrado al cliente = base + recargo bancario.
+  double get grandTotal => total + surchargeTotal;
 
   /// Etiqueta resumida de métodos de pago para mostrar en la lista.
   /// Ej: "Efectivo + Tarjeta" o "Transferencia"
