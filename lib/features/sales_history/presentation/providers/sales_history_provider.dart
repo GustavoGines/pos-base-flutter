@@ -82,20 +82,50 @@ class SalesHistoryProvider with ChangeNotifier {
   double get totalVentas =>
       _activeSales.fold(0.0, (sum, s) => sum + s.total);
 
+  /// Ingreso NETO total del negocio (sin recargos bancarios trasladados).
+  double get totalNetVentas =>
+      _activeSales.fold(0.0, (sum, s) => sum + s.netTotal);
+
   double get totalSurcharges =>
       _activeSales.fold(0.0, (sum, s) => sum + s.surchargeTotal);
 
   // ─── Totales por método de pago ─────────────────────────────────────────────
   // Construidos dinámicamente desde los registros de sale_payments.
 
-  /// Mapa de código de método → monto total cobrado en ese método.
-  /// Ej: {'efectivo': 1200.00, 'debito': 3500.00, 'transferencia': 800.00}
+  /// Mapa de código de método → monto TOTAL cobrado al cliente (base + recargo).
+  /// Usado para los chips filtrables (muestra cuánto cobró el cajero en total).
   Map<String, double> get totalByMethod {
     final Map<String, double> result = {};
     for (final sale in _activeSales) {
       for (final payment in sale.payments) {
         result[payment.methodCode] =
             (result[payment.methodCode] ?? 0.0) + payment.totalAmount;
+      }
+    }
+    return result;
+  }
+
+  /// Mapa de código → monto NETO del negocio por método (sin recargo bancario).
+  Map<String, double> get totalByMethodBase {
+    final Map<String, double> result = {};
+    for (final sale in _activeSales) {
+      for (final payment in sale.payments) {
+        result[payment.methodCode] =
+            (result[payment.methodCode] ?? 0.0) + payment.baseAmount;
+      }
+    }
+    return result;
+  }
+
+  /// Mapa de código → recargo bancario acumulado por método de pago.
+  Map<String, double> get totalByMethodSurcharge {
+    final Map<String, double> result = {};
+    for (final sale in _activeSales) {
+      for (final payment in sale.payments) {
+        if (payment.surchargeAmount > 0) {
+          result[payment.methodCode] =
+              (result[payment.methodCode] ?? 0.0) + payment.surchargeAmount;
+        }
       }
     }
     return result;

@@ -355,9 +355,12 @@ class _FinancialSummaryPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final byMethod = provider.totalByMethod;
+    final byMethod = provider.totalByMethod;         // total cobrado al cliente
+    final byMethodBase = provider.totalByMethodBase; // neto del negocio
+    final byMethodSurcharge = provider.totalByMethodSurcharge; // recargo bancario
     final methodNames = provider.methodNames;
     final selectedMethod = provider.methodFilter;
+    final hasSurcharges = provider.totalSurcharges > 0;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -368,16 +371,17 @@ class _FinancialSummaryPanel extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Chips filtrables por método
           if (byMethod.isNotEmpty) ...[
             Wrap(
               spacing: 6.0,
               runSpacing: 8.0,
               children: [
-                // "Todos" chip
+                // Chip "Todos"
                 _MethodChip(
                   label: 'Todos',
-                  amount: provider.totalVentas,
+                  amount: provider.totalVentas + provider.totalSurcharges,
+                  netAmount: hasSurcharges ? provider.totalNetVentas : null,
+                  surchargeAmount: hasSurcharges ? provider.totalSurcharges : null,
                   icon: Icons.account_balance_wallet_outlined,
                   color: Colors.blueGrey.shade700,
                   bgColor: Colors.blueGrey.shade50,
@@ -387,11 +391,15 @@ class _FinancialSummaryPanel extends StatelessWidget {
                 ),
                 ...byMethod.entries.map((entry) {
                   final code = entry.key;
-                  final amount = entry.value;
+                  final total = entry.value;              // cobrado al cliente
+                  final base = byMethodBase[code] ?? total; // neto negocio
+                  final surcharge = byMethodSurcharge[code]; // recargo bancario
                   final name = methodNames[code] ?? code;
                   return _MethodChip(
                     label: name,
-                    amount: amount,
+                    amount: total,
+                    netAmount: (surcharge != null && surcharge > 0) ? base : null,
+                    surchargeAmount: (surcharge != null && surcharge > 0) ? surcharge : null,
                     icon: _iconForCode(code),
                     color: _colorForCode(code),
                     bgColor: _bgForCode(code),
@@ -402,24 +410,6 @@ class _FinancialSummaryPanel extends StatelessWidget {
                 }),
               ],
             ),
-            // Recargos si hay
-            if (provider.totalSurcharges > 0)
-              Padding(
-                padding: const EdgeInsets.only(top: 6),
-                child: Row(
-                  children: [
-                    Icon(Icons.info_outline, size: 12, color: Colors.orange.shade600),
-                    const SizedBox(width: 4),
-                    Text(
-                      'Recargos incluidos: \$${provider.totalSurcharges.toStringAsFixed(2)}',
-                      style: TextStyle(
-                          fontSize: 11,
-                          color: Colors.orange.shade700,
-                          fontStyle: FontStyle.italic),
-                    ),
-                  ],
-                ),
-              ),
           ],
         ],
       ),
@@ -429,7 +419,9 @@ class _FinancialSummaryPanel extends StatelessWidget {
 
 class _MethodChip extends StatelessWidget {
   final String label;
-  final double amount;
+  final double amount;          // total cobrado al cliente
+  final double? netAmount;      // neto del negocio (null = sin recargo)
+  final double? surchargeAmount; // recargo bancario (null = sin recargo)
   final IconData icon;
   final Color color;
   final Color bgColor;
@@ -440,6 +432,8 @@ class _MethodChip extends StatelessWidget {
   const _MethodChip({
     required this.label,
     required this.amount,
+    this.netAmount,
+    this.surchargeAmount,
     required this.icon,
     required this.color,
     required this.bgColor,
@@ -450,6 +444,7 @@ class _MethodChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final hasSurcharge = surchargeAmount != null && surchargeAmount! > 0;
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
@@ -483,6 +478,7 @@ class _MethodChip extends StatelessWidget {
                     color: isSelected ? Colors.white70 : color,
                   ),
                 ),
+                // Total cobrado al cliente (grande y prominente)
                 Text(
                   '\$${amount.toStringAsFixed(2)}',
                   style: TextStyle(
@@ -491,6 +487,28 @@ class _MethodChip extends StatelessWidget {
                     color: isSelected ? Colors.white : color,
                   ),
                 ),
+                // Desglose neto + recargo bancario (Opción B)
+                if (hasSurcharge) ...[
+                  Text(
+                    'Neto: \$${netAmount!.toStringAsFixed(2)}',
+                    style: TextStyle(
+                      fontSize: 9,
+                      color: isSelected
+                          ? Colors.white.withValues(alpha: 0.8)
+                          : color.withValues(alpha: 0.75),
+                    ),
+                  ),
+                  Text(
+                    'Bco: +\$${surchargeAmount!.toStringAsFixed(2)}',
+                    style: TextStyle(
+                      fontSize: 9,
+                      color: isSelected
+                          ? Colors.orange.shade200
+                          : Colors.orange.shade700,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
               ],
             ),
           ],
@@ -824,9 +842,9 @@ class _TicketDetailPanel extends StatelessWidget {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  // Total con tachado si anulada
+                  // Total cobrado al cliente (prominente)
                   Text(
-                    '\$${sale.total.toStringAsFixed(2)}',
+                    '\$${sale.grandTotal.toStringAsFixed(2)}',
                     style: TextStyle(
                       fontSize: 28,
                       fontWeight: FontWeight.bold,
@@ -837,15 +855,32 @@ class _TicketDetailPanel extends StatelessWidget {
                           sale.isVoided ? TextDecoration.lineThrough : null,
                     ),
                   ),
-                  // Recargos
-                  if (hasSurcharge)
+                  // Desglose neto vs recargo bancario (Opción B)
+                  if (hasSurcharge) ...[
                     Text(
-                      'incl. \$${sale.surchargeTotal.toStringAsFixed(2)} recargos',
+                      'Neto: \$${sale.netTotal.toStringAsFixed(2)}',
                       style: TextStyle(
-                          fontSize: 11,
-                          color: Colors.orange.shade700,
-                          fontStyle: FontStyle.italic),
+                        fontSize: 11,
+                        color: Colors.grey.shade600,
+                      ),
                     ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.account_balance_outlined,
+                            size: 11, color: Colors.orange.shade700),
+                        const SizedBox(width: 3),
+                        Text(
+                          'Bco: +\$${sale.surchargeTotal.toStringAsFixed(2)}',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.orange.shade700,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                   const SizedBox(height: 8),
                   // Desglose de pagos
                   ...sale.payments.map((p) => Padding(
