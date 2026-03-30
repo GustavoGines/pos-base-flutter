@@ -1,7 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../providers/catalog_provider.dart';
+import 'package:frontend_desktop/features/catalog/presentation/providers/catalog_provider.dart';
+import '../widgets/stock_adjustment_dialog.dart';
 import '../../domain/entities/product.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import '../widgets/categories_manager_dialog.dart';
@@ -24,11 +25,15 @@ class _CatalogScreenState extends State<CatalogScreen> {
   @override
   void initState() {
     super.initState();
-    // Siempre resetear la búsqueda al entrar a esta pantalla.
-    // Garantiza que el buscador visual y los resultados estén en sincronía.
+    // Cargar productos al inicio
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _searchController.clear();
-      context.read<CatalogProvider>().loadProducts(page: 1, search: '');
+      context.read<CatalogProvider>().loadProducts();
+      
+      // Manejar navegación inteligente desde Alertas
+      final args = ModalRoute.of(context)?.settings.arguments;
+      if (args != null && args is Product) {
+        _showProductForm(context, context.read<CatalogProvider>(), product: args);
+      }
     });
   }
 
@@ -687,6 +692,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
   late TextEditingController _costCtrl;
   late TextEditingController _priceCtrl;
   late TextEditingController _stockCtrl;
+  late TextEditingController _minStockCtrl;
   bool _isSoldByWeight = false;
   bool _active = true;
   int? _categoryId;
@@ -704,6 +710,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     _costCtrl = TextEditingController(text: p != null ? p.costPrice.toStringAsFixed(2) : '');
     _priceCtrl = TextEditingController(text: p != null ? p.sellingPrice.toStringAsFixed(2) : '');
     _stockCtrl = TextEditingController(text: p != null ? p.stock.toStringAsFixed(p.isSoldByWeight ? 3 : 0) : '0');
+    _minStockCtrl = TextEditingController(text: (p?.minStock != null) ? p!.minStock!.toStringAsFixed(0) : '');
     _isSoldByWeight = p?.isSoldByWeight ?? false;
     _active = p?.active ?? true;
     _categoryId = p?.category?.id;
@@ -720,6 +727,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     _costCtrl.dispose();
     _priceCtrl.dispose();
     _stockCtrl.dispose();
+    _minStockCtrl.dispose();
     _expiryCtrl.dispose();
     super.dispose();
   }
@@ -733,6 +741,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
       'cost_price': double.parse(_costCtrl.text.replaceAll(',', '.')),
       'selling_price': double.parse(_priceCtrl.text.replaceAll(',', '.')),
       'stock': double.parse(_stockCtrl.text.replaceAll(',', '.')),
+      'min_stock': _minStockCtrl.text.trim().isNotEmpty ? double.parse(_minStockCtrl.text.replaceAll(',', '.')) : null,
       'is_sold_by_weight': _isSoldByWeight,
       'active': _active,
       if (_categoryId != null) 'category_id': _categoryId,
@@ -848,13 +857,34 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                   ],
                 ),
                 const SizedBox(height: 12),
-                TextFormField(
-                  controller: _stockCtrl,
-                  decoration: InputDecoration(
-                    labelText: 'Stock inicial',
-                    suffixText: _isSoldByWeight ? 'Kg' : 'unidades',
-                  ),
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                Row(
+                  children: [
+                    Expanded(
+                      flex: 4,
+                      child: TextFormField(
+                        controller: _stockCtrl,
+                        decoration: InputDecoration(
+                          labelText: 'Stock inicial',
+                          suffixText: _isSoldByWeight ? 'Kg' : 'unidades',
+                          prefixIcon: const Icon(Icons.inventory_2_outlined),
+                        ),
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      flex: 6,
+                      child: TextFormField(
+                        controller: _minStockCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'Stock Mínimo (Alerta)',
+                          prefixIcon: Icon(Icons.notification_important_outlined),
+                          helperText: 'Opcional: Dejar vacío para no alertar',
+                        ),
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 8),
                 // Switches + Vencimiento
@@ -1102,282 +1132,4 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// MODAL DE AJUSTE DE STOCK
-// ─────────────────────────────────────────────────────────────────────────────
-class StockAdjustmentDialog extends StatefulWidget {
-  final CatalogProvider provider;
-  final Product product;
 
-  const StockAdjustmentDialog({Key? key, required this.provider, required this.product})
-      : super(key: key);
-
-  @override
-  State<StockAdjustmentDialog> createState() => _StockAdjustmentDialogState();
-}
-
-class _StockAdjustmentDialogState extends State<StockAdjustmentDialog> {
-  final _quantityCtrl = TextEditingController();
-  final _notesCtrl = TextEditingController();
-  String _selectedType = 'in';  // 'in' = Ingreso, 'out' = Egreso
-
-  @override
-  void dispose() {
-    _quantityCtrl.dispose();
-    _notesCtrl.dispose();
-    super.dispose();
-  }
-
-  Future<void> _submit() async {
-    final double? qty = double.tryParse(_quantityCtrl.text.replaceAll(',', '.'));
-    if (qty == null || qty <= 0) {
-      SnackBarService.error(context, 'Ingrese una cantidad válida mayor a cero.');
-      return;
-    }
-
-    final typeLabel = _selectedType == 'in' ? 'INGRESO' : 'EGRESO';
-    final unitLabel = widget.product.isSoldByWeight ? 'Kg' : 'unidades';
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Confirmar $typeLabel de Stock'),
-        content: Text.rich(
-          TextSpan(
-            style: Theme.of(ctx).textTheme.bodyMedium,
-            children: [
-              TextSpan(
-                text: '${qty.toStringAsFixed(widget.product.isSoldByWeight ? 3 : 0)} $unitLabel',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: _selectedType == 'in' ? Colors.teal.shade700 : Colors.orange.shade800,
-                ),
-              ),
-              const TextSpan(text: ' de '),
-              TextSpan(
-                text: '"${widget.product.name}"',
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: _selectedType == 'in' ? Colors.teal : Colors.orange.shade700,
-            ),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text('Confirmar $typeLabel'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed != true) return;
-
-    final ok = await widget.provider.adjustStock(
-      productId: widget.product.id,
-      type: _selectedType,
-      quantity: qty,
-      notes: _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
-    );
-
-    if (mounted) {
-      Navigator.of(context).pop();
-      if (ok) {
-        final newStock = widget.provider.products
-            .firstWhere((p) => p.id == widget.product.id,
-                orElse: () => widget.product as dynamic)
-            .stock;
-        final action = _selectedType == 'in' ? 'ingresaron' : 'egresaron';
-        SnackBarService.success(
-          context,
-          '✓ Se $action ${qty.toStringAsFixed(widget.product.isSoldByWeight ? 3 : 0)} $unitLabel. Stock actual: ${newStock.toStringAsFixed(widget.product.isSoldByWeight ? 3 : 0)} $unitLabel.',
-        );
-      } else {
-        SnackBarService.error(context, widget.provider.errorMessage ?? 'Error al ajustar stock.');
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final product = widget.product;
-    final unitLabel = product.isSoldByWeight ? 'Kg' : 'unidades';
-    return AlertDialog(
-      title: Row(
-        children: [
-          Icon(Icons.warehouse_outlined, color: Colors.teal.shade700),
-          const SizedBox(width: 8),
-          const Text('Ajuste de Stock'),
-        ],
-      ),
-      contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
-      content: SizedBox(
-        width: 420,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Info del producto
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade100,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.inventory_2_outlined, size: 20, color: Colors.blueGrey),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(product.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                        Text(
-                          'Stock actual: ${product.stock.toStringAsFixed(product.isSoldByWeight ? 3 : 0)} $unitLabel',
-                          style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // Selector de tipo: Ingreso / Egreso
-            Row(
-              children: [
-                Expanded(
-                  child: _TypeButton(
-                    label: 'Ingreso (+)',
-                    icon: Icons.add_circle_outline,
-                    selectedType: _selectedType,
-                    type: 'in',
-                    activeColor: Colors.teal,
-                    onTap: () => setState(() => _selectedType = 'in'),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _TypeButton(
-                    label: 'Egreso (−)',
-                    icon: Icons.remove_circle_outline,
-                    selectedType: _selectedType,
-                    type: 'out',
-                    activeColor: Colors.orange.shade700,
-                    onTap: () => setState(() => _selectedType = 'out'),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-
-            // Cantidad
-            TextField(
-              controller: _quantityCtrl,
-              autofocus: true,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: InputDecoration(
-                labelText: 'Cantidad a ${_selectedType == 'in' ? 'ingresar' : 'egresar'}',
-                suffixText: unitLabel,
-                prefixIcon: Icon(
-                  _selectedType == 'in' ? Icons.add : Icons.remove,
-                  color: _selectedType == 'in' ? Colors.teal : Colors.orange.shade700,
-                ),
-                border: const OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 12),
-
-            // Motivo
-            TextField(
-              controller: _notesCtrl,
-              maxLines: 2,
-              decoration: const InputDecoration(
-                labelText: 'Motivo / Notas (opcional)',
-                hintText: 'Ej: Compra proveedor García, Devolución, Rotura...',
-                prefixIcon: Icon(Icons.notes_outlined),
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 16),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancelar'),
-        ),
-        Consumer<CatalogProvider>(
-          builder: (_, p, __) => FilledButton.icon(
-            icon: p.isLoading
-                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                : Icon(_selectedType == 'in' ? Icons.add : Icons.remove, size: 18),
-            label: Text(_selectedType == 'in' ? 'Registrar Ingreso' : 'Registrar Egreso'),
-            style: FilledButton.styleFrom(
-              backgroundColor: _selectedType == 'in' ? Colors.teal : Colors.orange.shade700,
-            ),
-            onPressed: p.isLoading ? null : _submit,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-// Botón selector de tipo (Ingreso/Egreso)
-class _TypeButton extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final String type;
-  final String selectedType;
-  final Color activeColor;
-  final VoidCallback onTap;
-
-  const _TypeButton({
-    required this.label,
-    required this.icon,
-    required this.type,
-    required this.selectedType,
-    required this.activeColor,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final isSelected = selectedType == type;
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(vertical: 14),
-        decoration: BoxDecoration(
-          color: isSelected ? activeColor : Colors.grey.shade200,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: isSelected ? activeColor : Colors.grey.shade300,
-            width: isSelected ? 2 : 1,
-          ),
-        ),
-        child: Column(
-          children: [
-            Icon(icon, color: isSelected ? Colors.white : Colors.grey.shade600, size: 28),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              style: TextStyle(
-                color: isSelected ? Colors.white : Colors.grey.shade700,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                fontSize: 13,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}

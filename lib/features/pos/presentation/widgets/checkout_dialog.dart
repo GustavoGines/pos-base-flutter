@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:frontend_desktop/features/catalog/presentation/providers/catalog_provider.dart';
 import '../providers/pos_provider.dart';
 import '../../domain/entities/payment_method.dart';
 import '../../../cash_register/presentation/providers/cash_register_provider.dart';
@@ -335,6 +336,14 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         if (posProvider.printerWarning != null) {
           SnackBarService.warning(context, posProvider.printerWarning!);
         }
+        
+        // Quick Win: Refrescar alertas de stock al finalizar la venta
+        try {
+          context.read<CatalogProvider>().fetchCriticalAlerts();
+        } catch (e) {
+          debugPrint('Error refreshing stock alerts after sale: $e');
+        }
+
         Navigator.of(context).pop(true);
       } else {
         SnackBarService.error(context, posProvider.errorMessage ?? 'Error al procesar el pago');

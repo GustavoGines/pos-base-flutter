@@ -25,6 +25,8 @@ abstract class CatalogRepository {
     required int productId,
     required String type,
     required double quantity,
+    double? minStock,
     String? notes,
   });
+  Future<List<Product>> fetchCriticalAlerts();
 }

@@ -100,6 +100,28 @@ class SettingsProvider with ChangeNotifier {
     }
   }
 
+  /// Refresco silencioso para validaciones de fondo en la navegación.
+  /// No altera 'isLoading' ni 'errorMessage' para evitar asustar al usuario
+  /// con carteles rojos si hay un micro-corte de red.
+  Future<void> refreshSettingsSilently() async {
+    try {
+      final newSettings = await getSettingsUseCase();
+      _settings = newSettings;
+      
+      // Actualizar el Heartbeat con la nueva data (server_time, etc)
+      await LicenseHeartbeatService().initialize(
+        _settings,
+        onSyncRequested: () => syncLicenseWithServer(AppConfig.kApiBaseUrl),
+      );
+      
+      notifyListeners();
+    } catch (e) {
+      // Silencio absoluto: si falla, seguimos con los permisos que ya teníamos
+      // cargados localmente (permitiendo el modo offline de 72h).
+      debugPrint('=== Settings Silencioso: Ignorando error de red ($e) ===');
+    }
+  }
+
   Future<bool> saveSettings(Map<String, dynamic> data) async {
     _isLoading = true;
     _errorMessage = null;

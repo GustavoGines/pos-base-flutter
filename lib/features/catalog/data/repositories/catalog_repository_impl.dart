@@ -78,13 +78,20 @@ class CatalogRepositoryImpl implements CatalogRepository {
     required int productId,
     required String type,
     required double quantity,
+    double? minStock,
     String? notes,
   }) async {
     return await remoteDataSource.adjustStock(
       productId: productId,
       type: type,
       quantity: quantity,
+      minStock: minStock,
       notes: notes,
     );
+  }
+
+  @override
+  Future<List<Product>> fetchCriticalAlerts() async {
+    return await remoteDataSource.fetchCriticalAlerts();
   }
 }
