@@ -15,6 +15,7 @@ import 'features/trash/providers/trash_provider.dart';
 
 import 'core/presentation/widgets/license_guard.dart';
 import 'core/network/api_client.dart';
+import 'core/utils/receipt_printer_service.dart';
 
 // Screens
 import 'features/settings/presentation/pages/settings_screen.dart';
@@ -123,6 +124,9 @@ class LicenseRefreshObserver extends NavigatorObserver {
 void main() async {
   // CRÍTICO: Inicialización obligatoria para assets y plugins en desktop
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Pre-cargar perfil de impresora para evitar crashes de AssetManifest en Windows
+  await ReceiptPrinterService.instance.initialize();
   
   // Obtener URL de la API del almacenamiento local
   final prefs = await SharedPreferences.getInstance();

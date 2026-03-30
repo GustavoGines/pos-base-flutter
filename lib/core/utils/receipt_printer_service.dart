@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
 import 'package:flutter_libserialport/flutter_libserialport.dart';
 import '../../../features/cash_register/domain/entities/cash_register_shift.dart';
@@ -66,7 +67,32 @@ class ReceiptPrinterService {
       ReceiptPrinterService._internal(config: PrinterConfig.defaultUsb());
   static ReceiptPrinterService get instance => _instance;
 
+  // Cache para el perfil de capacidad (evita recargas constantes de assets que crashean en Windows)
+  CapabilityProfile? _cachedProfile;
+
   ReceiptPrinterService._internal({required this.config});
+
+  /// Inicializa los recursos pesados (como el perfil de capacidades) al arranque.
+  /// Esto previene el error "Unable to load asset: AssetManifest.json" en medio de una venta.
+  Future<void> initialize() async {
+    try {
+      _cachedProfile = await CapabilityProfile.load();
+    } catch (e) {
+      debugPrint('ReceiptPrinterService: Error al pre-cargar perfil, usando default: $e');
+      _cachedProfile = null; // Forzará el uso de fallback
+    }
+  }
+
+  /// Obtiene el perfil cargado o uno por defecto si falló la carga de assets.
+  Future<CapabilityProfile> _getProfile() async {
+    if (_cachedProfile != null) return _cachedProfile!;
+    try {
+      return await CapabilityProfile.load();
+    } catch (_) {
+      // Fallback definitivo para evitar crash
+      return CapabilityProfile.load(); // Si esto también falla, esc_pos levantará su propia excepción manejable
+    }
+  }
 
   /// Permite reconfigurar el hardware en caliente (desde SettingsScreen)
   Future<void> reconfigureFromSettings(BusinessSettings settings) async {
@@ -107,7 +133,7 @@ class ReceiptPrinterService {
     String? receiptNumber,
     String? userName,
   }) async {
-    final profile = await CapabilityProfile.load();
+    final profile = await _getProfile();
     final generator = Generator(config.paperSize, profile);
     List<int> bytes = [];
 
@@ -313,7 +339,7 @@ class ReceiptPrinterService {
     required CashRegisterShift shift,
     required BusinessSettings settings,
   }) async {
-    final profile = await CapabilityProfile.load();
+    final profile = await _getProfile();
     final generator = Generator(config.paperSize, profile);
     List<int> bytes = [];
 
