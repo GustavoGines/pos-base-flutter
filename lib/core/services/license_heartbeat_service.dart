@@ -14,6 +14,7 @@ class LicenseHeartbeatService extends ChangeNotifier {
 
   Timer? _heartbeatTimer;
   Timer? _pulseTimer;
+  bool _initialized = false; // Guard para que los timers arranquen solo 1 vez por sesión
   
   // Función para inyectar la dependencia de sincronización desde SettingsProvider
   Future<void> Function()? _onSyncRequested;
@@ -31,16 +32,28 @@ class LicenseHeartbeatService extends ChangeNotifier {
       _onSyncRequested = onSyncRequested;
     }
 
+    // Siempre ejecutamos los checks de seguridad (drift + grace period)
+    // porque el usuario puede volver de un período largo de inactividad.
     await _checkClockDrift();
     await _checkOfflineGrace(settings);
     
-    // Iniciar pulsos de persistencia (cada 15 min para evitar fraude de congelación de tiempo)
-    _pulseTimer?.cancel();
-    _pulseTimer = Timer.periodic(const Duration(minutes: 15), (_) => _updatePulse());
-    
-    // Iniciar Heartbeat de sincronización (cada 30 min)
-    _heartbeatTimer?.cancel();
-    _heartbeatTimer = Timer.periodic(const Duration(minutes: 30), (_) => _triggerSync());
+    // ─── GUARD DE INICIALIZACIÓN ───────────────────────────────────────────
+    // Los Timer.periodic SOLO se crean la primera vez que el usuario inicia 
+    // sesión. Las llamadas subsiguientes desde el LicenseRefreshObserver (que
+    // triggers loadSettings en cada pantalla) solo actualizan el callback de 
+    // sync sin matar ni recrear los timers.
+    if (!_initialized) {
+      _initialized = true;
+
+      // Timer 1: Reloj Policía (cada 15 min)
+      _pulseTimer?.cancel();
+      _pulseTimer = Timer.periodic(const Duration(minutes: 15), (_) => _updatePulse());
+      
+      // Timer 2: Ping Silencioso al servidor (cada 30 min)
+      _heartbeatTimer?.cancel();
+      _heartbeatTimer = Timer.periodic(const Duration(minutes: 30), (_) => _triggerSync());
+    }
+    // ──────────────────────────────────────────────────────────────────────
     
     notifyListeners();
   }
@@ -128,6 +141,11 @@ class LicenseHeartbeatService extends ChangeNotifier {
 
   void stop() {
     _heartbeatTimer?.cancel();
+    _heartbeatTimer = null;
     _pulseTimer?.cancel();
+    _pulseTimer = null;
+    // Reset del flag para que el próximo login inicie un ciclo limpio
+    _initialized = false;
+    _securityStatus = LicenseSecurityStatus.ok;
   }
 }

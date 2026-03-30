@@ -7,6 +7,7 @@ import '../../domain/entities/business_settings.dart';
 import '../../domain/usecases/get_settings_usecase.dart';
 import '../../domain/usecases/update_settings_usecase.dart';
 import '../../../../core/services/license_heartbeat_service.dart';
+import '../../../../core/config/app_config.dart';
 
 class SettingsProvider with ChangeNotifier {
   final GetSettingsUseCase getSettingsUseCase;
@@ -87,7 +88,7 @@ class SettingsProvider with ChangeNotifier {
       // Iniciar el sistema de seguridad DRM (Heartbeat/Security Pulse/Offline Grace)
       await LicenseHeartbeatService().initialize(
         _settings,
-        onSyncRequested: () => syncLicenseWithServer('http://127.0.0.1/Sistema_POS/pos-backend/public/api'),
+        onSyncRequested: () => syncLicenseWithServer(AppConfig.kApiBaseUrl),
       );
       
       _checkAndSyncSilentlyOnStartup();
@@ -201,14 +202,16 @@ class SettingsProvider with ChangeNotifier {
     }
 
     if (needsSync) {
-      const baseUrl = 'http://127.0.0.1/Sistema_POS/pos-backend/public/api';
       http.post(
-        Uri.parse('$baseUrl/settings/license/sync'),
+        Uri.parse('${AppConfig.kApiBaseUrl}/settings/license/sync'),
         headers: {'Accept': 'application/json', 'Content-Type': 'application/json'},
       ).timeout(const Duration(seconds: 120)).then((response) {
         if (response.statusCode == 200) {
           getSettingsUseCase().then((newSettings) {
             _settings = newSettings;
+            // Bug #3 fix: actualizar el Secure Storage con el server_time recibido
+            // para que el Drift Check del próximo ciclo use el reloj del servidor.
+            LicenseHeartbeatService().updateLastSync(newSettings);
             notifyListeners();
           });
         }

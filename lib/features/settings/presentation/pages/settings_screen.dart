@@ -7,6 +7,7 @@ import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../cash_register/presentation/providers/cash_register_provider.dart';
+import '../../../../core/config/app_config.dart';
 
 
 class SettingsScreen extends StatefulWidget {
@@ -126,8 +127,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       // The baseUrl matches the one set in main.dart for settings
       // We read it from the datasource's baseUrl via the provider's usecase chain.
       // As a shortcut on the local network, we rely on the same base URL used for the app.
-      const baseUrl = 'http://127.0.0.1/Sistema_POS/pos-backend/public/api';
-      final newPlan = await provider.activateLicense(baseUrl, key);
+      final newPlan = await provider.activateLicense(AppConfig.kApiBaseUrl, key);
       if (!mounted) return;
       _licenseKeyCtrl.clear();
       SnackBarService.success(context, '✅ Licencia activada. Plan: ${newPlan.toUpperCase()}');
@@ -143,8 +143,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() => _isSyncingLicense = true);
     try {
       final provider = context.read<SettingsProvider>();
-      const baseUrl = 'http://127.0.0.1/Sistema_POS/pos-backend/public/api';
-      await provider.syncLicenseWithServer(baseUrl);
+      await provider.syncLicenseWithServer(AppConfig.kApiBaseUrl);
       if (!mounted) return;
       SnackBarService.success(context, '✅ Permisos sincronizados con éxito.');
     } catch (e) {
