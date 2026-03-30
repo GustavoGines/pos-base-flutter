@@ -122,12 +122,13 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
     } else {
       try {
         // Intentar cargar Roboto desde Google Fonts (Cacheado)
-        ttfRegular = _robotoRegular ??= await PdfGoogleFonts.robotoRegular();
-        ttfBold = _robotoBold ??= await PdfGoogleFonts.robotoBold();
+        // Usar un timeout corto para no bloquear la UI si hay problemas de red
+        ttfRegular = _robotoRegular ??= await PdfGoogleFonts.robotoRegular().timeout(const Duration(seconds: 5));
+        ttfBold = _robotoBold ??= await PdfGoogleFonts.robotoBold().timeout(const Duration(seconds: 5));
       } catch (e) {
-        // Fallback a Helvetica si hay error de assets/red para evitar crash fatal
+        // Fallback a Helvetica si hay error de assets/red/timeout para evitar crash fatal
         debugPrint('Fallo al cargar fuentes remotas o manifiesto de assets: $e');
-        _fontLoadingFailed = true; // No volver a intentar para no saturar la consola
+        _fontLoadingFailed = true; // No volver a intentar en esta sesión
         ttfRegular = pw.Font.helvetica();
         ttfBold = pw.Font.helveticaBold();
       }
