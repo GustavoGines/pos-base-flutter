@@ -13,17 +13,33 @@ import '../../../../core/utils/snack_bar_service.dart';
 class PaymentLine {
   PaymentMethod? method;
   TextEditingController controller;
+  TextEditingController percentageController;
+  FocusNode percentageFocus;
 
   PaymentLine({this.method, double initialAmount = 0.0})
-      : controller = TextEditingController(text: initialAmount > 0 ? initialAmount.toStringAsFixed(2) : '');
+      : controller = TextEditingController(text: initialAmount > 0 ? initialAmount.toStringAsFixed(2) : ''),
+        percentageController = TextEditingController(text: method?.surchargeValue.toStringAsFixed(1) ?? '0.0'),
+        percentageFocus = FocusNode();
 
   double get amount => double.tryParse(controller.text) ?? 0.0;
+  double get currentPercentage => double.tryParse(percentageController.text) ?? 0.0;
   
-  double get surcharge => method?.calculateSurcharge(amount) ?? 0.0;
+  double get surcharge {
+    if (method == null || method!.isCash) return 0.0;
+    return (currentPercentage / 100.0) * amount;
+  }
+  
   double get total => amount + surcharge;
+
+  void updateMethod(PaymentMethod? m) {
+    method = m;
+    percentageController.text = m?.surchargeValue.toStringAsFixed(1) ?? '0.0';
+  }
 
   void dispose() {
     controller.dispose();
+    percentageController.dispose();
+    percentageFocus.dispose();
   }
 }
 
@@ -39,10 +55,15 @@ class CheckoutDialog extends StatefulWidget {
 
 class _CheckoutDialogState extends State<CheckoutDialog> {
   final List<PaymentLine> _lines = [];
+  // Rastreo del último método VÁLIDO por línea para revertir si el usuario
+  // intenta seleccionar una opción bloqueada (ej: cuenta_corriente en plan Basic)
+  final List<PaymentMethod?> _previousValidMethods = [];
   bool _printReceipt = true;
 
   // Global cash tendered
   final _cashTenderedCtrl = TextEditingController();
+  // FocusNode dedicado para poder enfocar el campo por código
+  final _cashTenderedFocus = FocusNode();
 
   Customer? _selectedCustomer;
 
@@ -61,10 +82,13 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       final defaultCash = provider.paymentMethods.firstWhere((p) => p.isCash, orElse: () => provider.paymentMethods.first);
       final line = PaymentLine(method: defaultCash, initialAmount: widget.total);
       line.controller.addListener(_onAmountChanged);
+      line.percentageController.addListener(_onAmountChanged);
       setState(() {
         _lines.add(line);
-        _cashTenderedCtrl.text = widget.total.toStringAsFixed(2);
+        _previousValidMethods.add(defaultCash);
       });
+      // Sincronizar el campo tendered con el efectivo requerido (sin auto-focus en init)
+      _syncCashField();
     }
   }
 
@@ -74,10 +98,43 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       line.dispose();
     }
     _cashTenderedCtrl.dispose();
+    _cashTenderedFocus.dispose();
     super.dispose();
   }
 
   void _onAmountChanged() => setState(() {});
+
+  /// Sincroniza el campo "Efectivo Recibido" con la porción en efectivo actual.
+  /// Se llama en cada cambio estructural: agregar/quitar línea o cambiar método.
+  /// [autoFocus] pone el cursor en el campo para que el cajero tipee el monto recibido.
+  void _syncCashField({bool autoFocus = false}) {
+    final req = _lines
+        .where((l) => l.method?.isCash == true)
+        .fold(0.0, (double sum, l) => sum + l.amount);
+
+    // Actualizar el texto solo si el valor difiere (evita recursión del listener)
+    final currentText = _cashTenderedCtrl.text;
+    final newText = req > 0 ? req.toStringAsFixed(2) : '';
+    if (currentText != newText) {
+      _cashTenderedCtrl.text = newText;
+      // Mover cursor al final del texto
+      _cashTenderedCtrl.selection = TextSelection.fromPosition(
+        TextPosition(offset: _cashTenderedCtrl.text.length),
+      );
+    }
+
+    if (autoFocus && req > 0) {
+      Future.delayed(const Duration(milliseconds: 120), () {
+        if (mounted) {
+          _cashTenderedFocus.requestFocus();
+          _cashTenderedCtrl.selection = TextSelection(
+            baseOffset: 0,
+            extentOffset: _cashTenderedCtrl.text.length,
+          );
+        }
+      });
+    }
+  }
 
   void _addLine() {
     final provider = context.read<PosProvider>();
@@ -86,17 +143,37 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     // Auto-fill available balance
     double left = _pendingBalance > 0 ? _pendingBalance : 0.0;
 
-    final line = PaymentLine(method: provider.paymentMethods.first, initialAmount: left);
+    // Usar el primer método que no sea cuenta_corriente como default seguro
+    final defaultMethod = provider.paymentMethods.firstWhere(
+      (m) => m.code != 'cuenta_corriente',
+      orElse: () => provider.paymentMethods.first,
+    );
+
+    final line = PaymentLine(method: defaultMethod, initialAmount: left);
     line.controller.addListener(_onAmountChanged);
-    setState(() => _lines.add(line));
+    line.percentageController.addListener(_onAmountChanged);
+    setState(() {
+      _lines.add(line);
+      _previousValidMethods.add(defaultMethod);
+    });
+    // Sincronizar el efectivo y auto-enfocar: el cajero tiene que tipear cuánto le dan
+    _syncCashField(autoFocus: defaultMethod.isCash);
   }
 
   void _removeLine(int index) {
     if (_lines.length > 1) {
       final line = _lines[index];
       line.controller.removeListener(_onAmountChanged);
+      line.percentageController.removeListener(_onAmountChanged);
       line.dispose();
-      setState(() => _lines.removeAt(index));
+      setState(() {
+        _lines.removeAt(index);
+        if (index < _previousValidMethods.length) {
+          _previousValidMethods.removeAt(index);
+        }
+      });
+      // Re-sincronizar al quitar una línea (puede cambiar el efectivo requerido)
+      _syncCashField();
     }
   }
 
@@ -131,6 +208,36 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     if (_cashRequired > 0 && _actualTendered < (_cashRequired - 0.01)) return false;
     if (_hasCuentaCorriente && _selectedCustomer == null) return false;
     return true;
+  }
+
+  void _showProUpsellDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Icon(Icons.workspace_premium, color: Colors.orange.shade700, size: 28),
+            const SizedBox(width: 8),
+            const Text('Actualizá a Pro'),
+          ],
+        ),
+        content: const Text(
+            'El módulo de Cuentas Corrientes es exclusivo para licencias Pro y Enterprise.\n\n'
+            '¿Qué te permite?\n'
+            '• Fiar a tus clientes de confianza.\n'
+            '• Controlar saldos deudores.\n'
+            '• Armar estados de cuenta fiables.\n\n'
+            'Contactate para subir de nivel y desbloquearlo de por vida.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            style: TextButton.styleFrom(foregroundColor: Colors.purple.shade700),
+            child: const Text('Entendido', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _openCustomerPicker() async {
@@ -235,9 +342,20 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     }
   }
 
+  IconData _getIconForMethod(String code) {
+    if (code.contains('efectivo')) return Icons.payments_outlined;
+    if (code.contains('debito')) return Icons.credit_card;
+    if (code.contains('credito')) return Icons.credit_score;
+    if (code.contains('transferencia')) return Icons.account_balance_outlined;
+    if (code.contains('cuenta')) return Icons.book_outlined;
+    return Icons.money;
+  }
+
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<PosProvider>();
+    final settings = context.watch<SettingsProvider>().settings;
+    final bool isBasicPlan = settings?.licensePlanType?.toLowerCase() == 'basic';
     final isPending = widget.saleId != null;
 
     if (provider.paymentMethods.isEmpty) {
@@ -290,31 +408,48 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: Colors.blue.shade200),
                 ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
-                  children: [
-                    Column(
-                      children: [
-                        const Text('Total Base', style: TextStyle(fontSize: 14, color: Colors.black54)),
-                        Text('\$${widget.total.toStringAsFixed(2)}', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-                      ],
-                    ),
-                    const Text('+', style: TextStyle(fontSize: 24, color: Colors.black26)),
-                    Column(
-                      children: [
-                        const Text('Recargos', style: TextStyle(fontSize: 14, color: Colors.black54)),
-                        Text('\$${_totalSurcharge.toStringAsFixed(2)}', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.orange.shade700)),
-                      ],
-                    ),
-                    const Text('=', style: TextStyle(fontSize: 24, color: Colors.black26)),
-                    Column(
-                      children: [
-                        const Text('Gran Total', style: TextStyle(fontSize: 14, color: Colors.black54, fontWeight: FontWeight.bold)),
-                        Text('\$${_grandTotal.toStringAsFixed(2)}', style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.blue.shade800)),
-                      ],
-                    ),
-                  ],
-                ),
+                // Mostrar el desglose completo SOLO si hay recargos,
+                // si no, mostrar solo el total para evitar confusión con "$0.00 Recargo"
+                child: _totalSurcharge > 0
+                    ? Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceAround,
+                        children: [
+                          Column(
+                            children: [
+                              const Text('Total Base', style: TextStyle(fontSize: 14, color: Colors.black54)),
+                              Text('\$${widget.total.toStringAsFixed(2)}', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+                            ],
+                          ),
+                          Text('+', style: TextStyle(fontSize: 24, color: Colors.black26)),
+                          Column(
+                            children: [
+                              Text('Recargos', style: TextStyle(fontSize: 14, color: Colors.orange.shade700, fontWeight: FontWeight.bold)),
+                              Text('\$${_totalSurcharge.toStringAsFixed(2)}',
+                                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.orange.shade700)),
+                            ],
+                          ),
+                          Text('=', style: TextStyle(fontSize: 24, color: Colors.black26)),
+                          Column(
+                            children: [
+                              const Text('Gran Total', style: TextStyle(fontSize: 14, color: Colors.black54, fontWeight: FontWeight.bold)),
+                              Text('\$${_grandTotal.toStringAsFixed(2)}',
+                                  style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.blue.shade800)),
+                            ],
+                          ),
+                        ],
+                      )
+                    : Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Column(
+                            children: [
+                              const Text('Total a Cobrar', style: TextStyle(fontSize: 14, color: Colors.black54, fontWeight: FontWeight.bold)),
+                              Text('\$${_grandTotal.toStringAsFixed(2)}',
+                                  style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.blue.shade800)),
+                            ],
+                          ),
+                        ],
+                      ),
               ),
 
               const SizedBox(height: 24),
@@ -331,21 +466,110 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                       children: [
                         Expanded(
                           flex: 2,
+                          // Key con method.id garantiza que Flutter recree el widget
+                          // si hacemos revert explícito, evitando estados visuales desincronizados
                           child: DropdownButtonFormField<PaymentMethod>(
+                            key: ValueKey('dd_${idx}_${line.method?.id}'),
+                            isExpanded: true,
+                            icon: Icon(Icons.arrow_drop_down_rounded, color: Colors.blue.shade700),
                             decoration: InputDecoration(
                               labelText: 'Método',
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                              labelStyle: TextStyle(color: Colors.blue.shade700),
+                              filled: true,
+                              fillColor: Colors.blue.shade50,
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: BorderSide(color: Colors.blue.shade200),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: BorderSide(color: Colors.blue.shade200),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: BorderSide(color: Colors.blue.shade500, width: 2),
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                             ),
                             value: line.method,
-                            items: provider.paymentMethods.map((m) => DropdownMenuItem(
-                              value: m,
-                              child: Text(m.name),
-                            )).toList(),
+                            items: provider.paymentMethods.map((m) {
+                              final bool isCuentaCorriente = m.code == 'cuenta_corriente';
+                              final bool isLocked = isCuentaCorriente && isBasicPlan;
+                              
+                              return DropdownMenuItem<PaymentMethod>(
+                                value: m,
+                                // enabled: true — el item es clickeable aunque sea Premium.
+                                // Al hacer click → onChanged muestra el upsell y revierte.
+                                enabled: true,
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      _getIconForMethod(m.code),
+                                      color: Colors.blue.shade700,
+                                      size: 18,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        m.name,
+                                        style: TextStyle(
+                                          color: Colors.blue.shade900,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    // Hint sutil de que es premium — no deshabilita ni grisea
+                                    if (isLocked) ...[
+                                      const SizedBox(width: 6),
+                                      Tooltip(
+                                        message: 'Función Pro — Hacé clic para conocer más',
+                                        child: Icon(
+                                          Icons.workspace_premium,
+                                          size: 15,
+                                          color: Colors.orange.shade400,
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              );
+                            }).toList(),
                             onChanged: (val) {
+                              if (val == null) return;
+                              
+                              if (val.code == 'cuenta_corriente' && isBasicPlan) {
+                                _showProUpsellDialog();
+                                
+                                // Revertir explícitamente al último método válido
+                                final prev = (idx < _previousValidMethods.length)
+                                    ? _previousValidMethods[idx]
+                                    : line.method;
+                                    
+                                // Truco Flutter: Primero aceptamos el valor bloqueado para forzar a 
+                                // que cambie la `ValueKey` y elimine el estado interno bugeado.
+                                setState(() => line.updateMethod(val));
+                                
+                                // En el microsegundo siguiente, restauramos el método verdadero
+                                // Así Flutter se ve forzado a renderizar desde cero con la opción original.
+                                WidgetsBinding.instance.addPostFrameCallback((_) {
+                                  if (mounted) {
+                                    setState(() => line.updateMethod(prev));
+                                  }
+                                });
+                                return;
+                              }
                               setState(() {
-                                line.method = val;
+                                // Guardar el nuevo método como "previo válido" antes de cambiar
+                                if (idx < _previousValidMethods.length) {
+                                  _previousValidMethods[idx] = val;
+                                }
+                                line.updateMethod(val);
                               });
+                              // Sincronizar el campo de efectivo recibido.
+                              // Si el método elegido es efectivo → auto-foco para que
+                              // el cajero tipee cuánto le dan.
+                              _syncCashField(autoFocus: val.isCash);
                             },
                           ),
                         ),
@@ -362,23 +586,52 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                             ),
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        Container(
-                          width: 80,
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: Colors.grey.shade100,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.grey.shade300),
+                        if (line.method?.isCash != true) ...[
+                          const SizedBox(width: 8),
+                          SizedBox(
+                            width: 64,
+                            child: Focus(
+                              focusNode: line.percentageFocus,
+                              onFocusChange: (hasFocus) {
+                                if (!hasFocus && line.method != null) {
+                                  final newPct = double.tryParse(line.percentageController.text) ?? 0.0;
+                                  if (newPct != line.method!.surchargeValue) {
+                                    provider.updatePaymentMethodSurcharge(line.method!.id, newPct);
+                                  }
+                                }
+                              },
+                              child: TextFormField(
+                                controller: line.percentageController,
+                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                decoration: InputDecoration(
+                                  labelText: '% Int.',
+                                  labelStyle: TextStyle(fontSize: 12, color: Colors.orange.shade700),
+                                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+                                ),
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(fontWeight: FontWeight.bold),
+                              ),
+                            ),
                           ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              const Text('Extra', style: TextStyle(fontSize: 10, color: Colors.black54)),
-                              Text('\$${line.surcharge.toStringAsFixed(2)}', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.orange.shade700)),
-                            ],
+                          const SizedBox(width: 8),
+                          Container(
+                            width: 80,
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: Colors.orange.shade50,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.orange.shade200),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                const Text('Extra', style: TextStyle(fontSize: 10, color: Colors.orange)),
+                                Text('\$${line.surcharge.toStringAsFixed(2)}', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.orange.shade800)),
+                              ],
+                            ),
                           ),
-                        ),
+                        ],
                         const SizedBox(width: 8),
                         IconButton(
                           icon: const Icon(Icons.remove_circle_outline, color: Colors.red),
@@ -458,17 +711,29 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                     Expanded(
                       child: TextField(
                         controller: _cashTenderedCtrl,
+                        focusNode: _cashTenderedFocus,
                         keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        textInputAction: TextInputAction.done,
+                        onTap: () {
+                          // Selecciona todo el texto pre-cargado para sobreescribirlo rápido
+                          _cashTenderedCtrl.selection = TextSelection(
+                            baseOffset: 0,
+                            extentOffset: _cashTenderedCtrl.text.length,
+                          );
+                        },
                         decoration: InputDecoration(
                           labelText: 'Efectivo Recibido',
+                          hintText: 'Ej: 1000.00',
                           prefixText: '\$ ',
                           filled: true,
                           fillColor: Colors.green.shade50,
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                           focusedBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(8),
-                            borderSide: BorderSide(color: Colors.green.shade400, width: 2),
+                            borderSide: BorderSide(color: Colors.green.shade600, width: 2),
                           ),
+                          helperText: 'Ingresá el monto que entrega el cliente',
+                          helperStyle: TextStyle(fontSize: 11, color: Colors.green.shade700),
                         ),
                       ),
                     ),

@@ -164,6 +164,33 @@ class PosProvider with ChangeNotifier {
     }
   }
 
+  Future<bool> updatePaymentMethodSurcharge(int id, double newSurcharge) async {
+    try {
+      await repository.updatePaymentMethodSurcharge(id, newSurcharge);
+      
+      // Update local memory without refreshing the entire list to avoid UI flicker
+      final idx = _paymentMethods.indexWhere((m) => m.id == id);
+      if (idx != -1) {
+        final old = _paymentMethods[idx];
+        _paymentMethods[idx] = PaymentMethod(
+          id: old.id,
+          name: old.name,
+          code: old.code,
+          surchargeType: old.surchargeType,
+          surchargeValue: newSurcharge,
+          isCash: old.isCash,
+          isActive: old.isActive,
+          sortOrder: old.sortOrder,
+        );
+        notifyListeners();
+      }
+      return true;
+    } catch (e) {
+      debugPrint('Error updating surcharge: $e');
+      return false;
+    }
+  }
+
   // ─────────────────────────────────────────────────────────────────
   // FLUJO NORMAL: Cobrar directamente
   // ─────────────────────────────────────────────────────────────────

@@ -28,4 +28,5 @@ abstract class PosRepository {
     List<CartItem>? items,
   });
   Future<Map<String, dynamic>> voidPendingSale(int saleId);
+  Future<void> updatePaymentMethodSurcharge(int id, double surchargeValue);
 }

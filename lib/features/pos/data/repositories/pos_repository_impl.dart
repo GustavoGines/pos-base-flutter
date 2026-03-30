@@ -93,4 +93,9 @@ class PosRepositoryImpl implements PosRepository {
     final response = await remoteDataSource.voidPendingSale(saleId);
     return response as Map<String, dynamic>;
   }
+
+  @override
+  Future<void> updatePaymentMethodSurcharge(int id, double surchargeValue) async {
+    await remoteDataSource.updatePaymentMethodSurcharge(id, surchargeValue);
+  }
 }

@@ -28,6 +28,7 @@ abstract class PosRemoteDataSource {
     List<CartItem>? items,
   });
   Future<dynamic> voidPendingSale(int saleId);
+  Future<void> updatePaymentMethodSurcharge(int id, double surchargeValue);
 }
 
 class PosRemoteDataSourceImpl implements PosRemoteDataSource {
@@ -73,6 +74,26 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
       }
     } catch (e) {
       print('=== API Error en fetchPaymentMethods: $e ===');
+      rethrow;
+    }
+  }
+
+  @override
+  Future<void> updatePaymentMethodSurcharge(int id, double surchargeValue) async {
+    try {
+      final response = await client.put(
+        Uri.parse('$baseUrl/payment-methods/$id'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: json.encode({'surcharge_value': surchargeValue}),
+      );
+      if (response.statusCode != 200) {
+        throw Exception('Error al actualizar recargo (HTTP ${response.statusCode})');
+      }
+    } catch (e) {
+      print('=== API Error en updatePaymentMethodSurcharge: $e ===');
       rethrow;
     }
   }
