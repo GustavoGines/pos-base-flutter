@@ -19,6 +19,10 @@ class BusinessSettingsModel extends BusinessSettings {
     List<String>? licenseAllowedAddons,
     String? lastLicenseCheck,
     String? serverTime,
+    DateTime? licenseExpiresAt,
+    DateTime? licenseNextPaymentAt,
+    String? licenseManageUrl,
+    bool isLifetime = false,
   }) : super(
           companyName: companyName,
           address: address,
@@ -36,6 +40,10 @@ class BusinessSettingsModel extends BusinessSettings {
           licenseAllowedAddons: licenseAllowedAddons,
           lastLicenseCheck: lastLicenseCheck,
           serverTime: serverTime,
+          licenseExpiresAt: licenseExpiresAt,
+          licenseNextPaymentAt: licenseNextPaymentAt,
+          licenseManageUrl: licenseManageUrl,
+          isLifetime: isLifetime,
         );
 
   factory BusinessSettingsModel.fromJson(Map<String, dynamic> json) {
@@ -56,6 +64,10 @@ class BusinessSettingsModel extends BusinessSettings {
       licenseAllowedAddons: _parseAddons(json['license_allowed_addons']),
       lastLicenseCheck: json['last_license_check'],
       serverTime: json['server_time'],
+      licenseExpiresAt: json['license_expires_at'] != null ? DateTime.tryParse(json['license_expires_at']) : null,
+      licenseNextPaymentAt: json['license_next_payment_at'] != null ? DateTime.tryParse(json['license_next_payment_at']) : null,
+      licenseManageUrl: json['license_manage_url'],
+      isLifetime: json['license_is_lifetime'] == '1',
     );
   }
 

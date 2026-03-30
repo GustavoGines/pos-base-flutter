@@ -16,4 +16,11 @@ class SettingsRepositoryImpl implements SettingsRepository {
   Future<BusinessSettings> updateSettings(Map<String, dynamic> data) async {
     return await remoteDataSource.updateSettings(data);
   }
+
+  @override
+  void updateBaseUrl(String newUrl) {
+    if (remoteDataSource is SettingsRemoteDataSourceImpl) {
+      (remoteDataSource as SettingsRemoteDataSourceImpl).updateBaseUrl(newUrl);
+    }
+  }
 }

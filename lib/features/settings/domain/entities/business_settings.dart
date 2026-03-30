@@ -17,6 +17,10 @@ class BusinessSettings extends Equatable {
   final List<String>? licenseAllowedAddons;
   final String? lastLicenseCheck;
   final String? serverTime; // Timestamp from the server
+  final DateTime? licenseExpiresAt;
+  final DateTime? licenseNextPaymentAt;
+  final String? licenseManageUrl;
+  final bool isLifetime;
 
   const BusinessSettings({
     this.companyName,
@@ -35,6 +39,10 @@ class BusinessSettings extends Equatable {
     this.licenseAllowedAddons,
     this.lastLicenseCheck,
     this.serverTime,
+    this.licenseExpiresAt,
+    this.licenseNextPaymentAt,
+    this.licenseManageUrl,
+    this.isLifetime = false,
   });
 
   @override
@@ -55,5 +63,9 @@ class BusinessSettings extends Equatable {
         licenseAllowedAddons,
         lastLicenseCheck,
         serverTime,
+        licenseExpiresAt,
+        licenseNextPaymentAt,
+        licenseManageUrl,
+        isLifetime,
       ];
 }

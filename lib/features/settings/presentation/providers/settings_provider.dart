@@ -8,6 +8,7 @@ import '../../domain/usecases/get_settings_usecase.dart';
 import '../../domain/usecases/update_settings_usecase.dart';
 import '../../../../core/services/license_heartbeat_service.dart';
 import '../../../../core/config/app_config.dart';
+import '../../data/repositories/settings_repository_impl.dart';
 
 class SettingsProvider with ChangeNotifier {
   final GetSettingsUseCase getSettingsUseCase;
@@ -136,6 +137,12 @@ class SettingsProvider with ChangeNotifier {
     } finally {
       _isLoading = false;
       notifyListeners();
+    }
+  }
+
+  void updateBaseUrl(String newUrl) {
+    if (updateSettingsUseCase.repository is SettingsRepositoryImpl) {
+      (updateSettingsUseCase.repository as SettingsRepositoryImpl).updateBaseUrl(newUrl);
     }
   }
 

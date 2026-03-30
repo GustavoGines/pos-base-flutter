@@ -8,10 +8,14 @@ abstract class SettingsRemoteDataSource {
 }
 
 class SettingsRemoteDataSourceImpl implements SettingsRemoteDataSource {
-  final String baseUrl; // ej. http://localhost:8000/api
+  String baseUrl; // ej. http://localhost:8000/api
   final http.Client client;
 
   SettingsRemoteDataSourceImpl({required this.baseUrl, required this.client});
+
+  void updateBaseUrl(String newUrl) {
+    baseUrl = newUrl;
+  }
 
   @override
   Future<BusinessSettingsModel> fetchSettings() async {
