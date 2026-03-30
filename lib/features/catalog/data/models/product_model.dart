@@ -12,6 +12,7 @@ class ProductModel extends Product {
     required double stock,
     required bool active,
     required bool isSoldByWeight,
+    int? vencimientoDias,
     CategoryModel? category,
   }) : super(
           id: id,
@@ -23,6 +24,7 @@ class ProductModel extends Product {
           stock: stock,
           active: active,
           isSoldByWeight: isSoldByWeight,
+          vencimientoDias: vencimientoDias,
           category: category,
         );
 
@@ -38,7 +40,8 @@ class ProductModel extends Product {
       stock: newStock,
       active: active,
       isSoldByWeight: isSoldByWeight,
-      category: category != null 
+      vencimientoDias: vencimientoDias,
+      category: category != null
           ? CategoryModel(id: category!.id, name: category!.name, description: category!.description)
           : null,
     );
@@ -46,16 +49,21 @@ class ProductModel extends Product {
 
   factory ProductModel.fromJson(Map<String, dynamic> json) {
     return ProductModel(
-      id: json['id'],
-      name: json['name'],
-      barcode: json['barcode'],
-      internalCode: json['internal_code'],
-      costPrice: double.parse(json['cost_price'].toString()),
-      sellingPrice: double.parse(json['selling_price'].toString()),
-      stock: double.parse(json['stock'].toString()),
-      active: json['active'] == 1 || json['active'] == true,
-      isSoldByWeight: json['is_sold_by_weight'] == 1 || json['is_sold_by_weight'] == true,
-      category: json['category'] != null ? CategoryModel.fromJson(json['category']) : null,
+      id: json['id'] is int ? json['id'] : int.tryParse(json['id']?.toString() ?? '0') ?? 0,
+      name: json['name']?.toString() ?? 'Sin nombre',
+      barcode: json['barcode']?.toString(),
+      internalCode: json['internal_code']?.toString() ?? '',
+      costPrice: double.tryParse(json['cost_price']?.toString() ?? '0') ?? 0.0,
+      sellingPrice: double.tryParse(json['selling_price']?.toString() ?? '0') ?? 0.0,
+      stock: double.tryParse(json['stock']?.toString() ?? '0') ?? 0.0,
+      active: json['active'] == 1 || json['active'] == true || json['active'] == '1' || json['active'] == 'true',
+      isSoldByWeight: json['is_sold_by_weight'] == 1 || json['is_sold_by_weight'] == true || json['is_sold_by_weight'] == '1' || json['is_sold_by_weight'] == 'true',
+      vencimientoDias: json['vencimiento_dias'] != null
+          ? int.tryParse(json['vencimiento_dias'].toString())
+          : null,
+      category: json['category'] != null && json['category'] is Map<String, dynamic> 
+          ? CategoryModel.fromJson(json['category'] as Map<String, dynamic>) 
+          : null,
     );
   }
 }

@@ -3,10 +3,11 @@ import 'package:http/http.dart' as http;
 import '../models/cash_register_shift_model.dart';
 
 abstract class CashRegisterRemoteDataSource {
-  Future<CashRegisterShiftModel?> getCurrentShift();
+  Future<CashRegisterShiftModel?> getCurrentShift({int? registerId});
   Future<List<CashRegisterShiftModel>> getAllShifts();
-  Future<CashRegisterShiftModel> openShift(double openingBalance, int userId);
-  Future<CashRegisterShiftModel> closeShift(double countedCash);
+  Future<CashRegisterShiftModel> openShift(double openingBalance, int userId, [int? registerId]);
+  Future<CashRegisterShiftModel> closeShift(int shiftId, double countedCash, {int? closerUserId});
+  Future<List<dynamic>> getRegisters();
 }
 
 class CashRegisterRemoteDataSourceImpl implements CashRegisterRemoteDataSource {
@@ -16,20 +17,21 @@ class CashRegisterRemoteDataSourceImpl implements CashRegisterRemoteDataSource {
   CashRegisterRemoteDataSourceImpl({required this.baseUrl, required this.client});
 
   @override
-  Future<CashRegisterShiftModel?> getCurrentShift() async {
+  Future<CashRegisterShiftModel?> getCurrentShift({int? registerId}) async {
     try {
+      final uri = registerId != null
+          ? Uri.parse('$baseUrl/shifts/current?cash_register_id=$registerId')
+          : Uri.parse('$baseUrl/shifts/current');
       final response = await client.get(
-        Uri.parse('$baseUrl/cash-register/current'),
+        uri,
         headers: {'Accept': 'application/json'},
       );
 
       if (response.statusCode == 200) {
-        if (response.body.trim().isEmpty || response.body == 'null' || response.body == '{}') {
-           return null;
-        }
         final jsonMap = json.decode(response.body);
-        if (jsonMap.isEmpty) return null;
         return CashRegisterShiftModel.fromJson(jsonMap);
+      } else if (response.statusCode == 404) {
+        return null;
       } else {
         throw Exception('Failed to load current shift (Status: ${response.statusCode})');
       }
@@ -43,7 +45,7 @@ class CashRegisterRemoteDataSourceImpl implements CashRegisterRemoteDataSource {
   Future<List<CashRegisterShiftModel>> getAllShifts() async {
     try {
       final response = await client.get(
-        Uri.parse('$baseUrl/cash-register/shifts'),
+        Uri.parse('$baseUrl/shifts'),
         headers: {'Accept': 'application/json'},
       );
 
@@ -61,18 +63,28 @@ class CashRegisterRemoteDataSourceImpl implements CashRegisterRemoteDataSource {
   }
 
   @override
-  Future<CashRegisterShiftModel> openShift(double openingBalance, int userId) async {
+  Future<CashRegisterShiftModel> openShift(double openingBalance, int userId, [int? registerId]) async {
     try {
+      final body = <String, dynamic>{
+        'opening_balance': openingBalance,
+        'user_id': userId,
+      };
+      
+      if (registerId != null) {
+        body['cash_register_id'] = registerId;
+      }
+
       final response = await client.post(
-        Uri.parse('$baseUrl/cash-register/open'),
+        Uri.parse('$baseUrl/shifts/open'),
         headers: {'Accept': 'application/json', 'Content-Type': 'application/json'},
-        body: json.encode({'opening_balance': openingBalance, 'user_id': userId}),
+        body: json.encode(body),
       );
 
-      if (response.statusCode == 201) {
-        return CashRegisterShiftModel.fromJson(json.decode(response.body));
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return CashRegisterShiftModel.fromJson(json.decode(response.body)['shift']);
       } else {
-        throw Exception('Failed to open shift (Status: ${response.statusCode})');
+        final errorMsg = json.decode(response.body)['message'] ?? 'Failed to open shift';
+        throw Exception(errorMsg);
       }
     } catch (e) {
       print('=== API Error en openShift: $e ===');
@@ -81,21 +93,44 @@ class CashRegisterRemoteDataSourceImpl implements CashRegisterRemoteDataSource {
   }
 
   @override
-  Future<CashRegisterShiftModel> closeShift(double countedCash) async {
+  Future<CashRegisterShiftModel> closeShift(int shiftId, double countedCash, {int? closerUserId}) async {
     try {
+      final body = <String, dynamic>{'actual_balance': countedCash};
+      if (closerUserId != null) body['closer_user_id'] = closerUserId;
+
       final response = await client.post(
-        Uri.parse('$baseUrl/cash-register/close'),
+        Uri.parse('$baseUrl/shifts/$shiftId/close'),
         headers: {'Accept': 'application/json', 'Content-Type': 'application/json'},
-        body: json.encode({'counted_cash': countedCash}),
+        body: json.encode(body),
       );
 
       if (response.statusCode == 200) {
-        return CashRegisterShiftModel.fromJson(json.decode(response.body));
+        return CashRegisterShiftModel.fromJson(json.decode(response.body)['shift']);
       } else {
-        throw Exception('Failed to close shift (Status: ${response.statusCode})');
+        throw Exception(
+            json.decode(response.body)['message'] ?? 'Failed to close shift (Status: ${response.statusCode})');
       }
     } catch (e) {
       print('=== API Error en closeShift: $e ===');
+      rethrow;
+    }
+  }
+
+  @override
+  Future<List<dynamic>> getRegisters() async {
+    try {
+      final response = await client.get(
+        Uri.parse('$baseUrl/registers'),
+        headers: {'Accept': 'application/json'},
+      );
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      } else {
+        throw Exception('Failed to load registers (Status: ${response.statusCode})');
+      }
+    } catch (e) {
+      print('=== API Error en getRegisters: $e ===');
       rethrow;
     }
   }

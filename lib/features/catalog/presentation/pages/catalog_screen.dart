@@ -69,115 +69,140 @@ class _CatalogScreenState extends State<CatalogScreen> {
               // ── Toolbar: Search + Actions ─────────────────────────
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: ListenableBuilder(
-                        listenable: _searchController,
-                        builder: (context, _) => TextField(
-                          controller: _searchController,
-                          onChanged: _onSearchChanged,
-                          decoration: InputDecoration(
-                            hintText: 'Buscar por nombre, código de barras o código interno...',
-                            prefixIcon: const Icon(Icons.search),
-                            suffixIcon: _searchController.text.isNotEmpty
-                                ? IconButton(
-                                    icon: const Icon(Icons.clear),
-                                    onPressed: () {
-                                      _searchController.clear();
-                                      context.read<CatalogProvider>().loadProducts(page: 1, search: '');
-                                    },
-                                  )
-                                : null,
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                            contentPadding: const EdgeInsets.symmetric(vertical: 10),
-                          ),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final searchWidget = ListenableBuilder(
+                      listenable: _searchController,
+                      builder: (context, _) => TextField(
+                        controller: _searchController,
+                        onChanged: _onSearchChanged,
+                        decoration: InputDecoration(
+                          hintText: 'Buscar por nombre, código de barras o código interno...',
+                          prefixIcon: const Icon(Icons.search),
+                          suffixIcon: _searchController.text.isNotEmpty
+                              ? IconButton(
+                                  icon: const Icon(Icons.clear),
+                                  onPressed: () {
+                                    _searchController.clear();
+                                    context.read<CatalogProvider>().loadProducts(page: 1, search: '');
+                                  },
+                                )
+                              : null,
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                          contentPadding: const EdgeInsets.symmetric(vertical: 10),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 12),
-                    if (_selectedProducts.isNotEmpty) ...[
-                      PopupMenuButton<int>(
-                        tooltip: 'Acciones en Lote',
-                        offset: const Offset(0, 45),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                        onSelected: (val) {
-                          switch (val) {
-                            case 1: _bulkUpdateCategory(provider); break;
-                            case 2: _bulkToggleActive(provider); break;
-                            case 3:
-                              AdminPinDialog.verify(context, action: 'Aumento Masivo Lote', permissionKey: 'manage_catalog').then((auth) {
-                                if (auth && context.mounted) {
-                                  showDialog(context: context, builder: (_) => BulkPriceUpdateDialog(provider: provider, targetProductIds: _selectedProducts.keys.toList())).then((_) => setState(() => _selectedProducts.clear()));
-                                }
-                              });
-                              break;
-                            case 4: showDialog(context: context, builder: (_) => PrintLabelsDialog(products: _selectedProducts.values.toList())); break;
-                            case 5: _confirmBulkDelete(provider); break;
-                            case 6: setState(() => _selectedProducts.clear()); break;
-                          }
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                          decoration: BoxDecoration(
-                            color: Colors.blue.shade800,
-                            borderRadius: BorderRadius.circular(8),
-                            boxShadow: [BoxShadow(color: Colors.blue.withOpacity(0.3), blurRadius: 4, offset: const Offset(0, 2))],
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(Icons.checklist, color: Colors.white, size: 18),
-                              const SizedBox(width: 8),
-                              Text('Lote (${_selectedProducts.length})', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                              const SizedBox(width: 4),
-                              const Icon(Icons.keyboard_arrow_down, color: Colors.white, size: 20),
+                    );
+
+                    final actionRow = Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (_selectedProducts.isNotEmpty) ...[
+                          PopupMenuButton<int>(
+                            tooltip: 'Acciones en Lote',
+                            offset: const Offset(0, 45),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            onSelected: (val) {
+                              switch (val) {
+                                case 1: _bulkUpdateCategory(provider); break;
+                                case 2: _bulkToggleActive(provider); break;
+                                case 3:
+                                  AdminPinDialog.verify(context, action: 'Aumento Masivo Lote', permissionKey: 'manage_catalog').then((auth) {
+                                    if (auth && context.mounted) {
+                                      showDialog(context: context, builder: (_) => BulkPriceUpdateDialog(provider: provider, targetProductIds: _selectedProducts.keys.toList())).then((_) => setState(() => _selectedProducts.clear()));
+                                    }
+                                  });
+                                  break;
+                                case 4: showDialog(context: context, builder: (_) => PrintLabelsDialog(products: _selectedProducts.values.toList())); break;
+                                case 5: _confirmBulkDelete(provider); break;
+                                case 6: setState(() => _selectedProducts.clear()); break;
+                              }
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                              decoration: BoxDecoration(
+                                color: Colors.blue.shade800,
+                                borderRadius: BorderRadius.circular(8),
+                                boxShadow: [BoxShadow(color: Colors.blue.withOpacity(0.3), blurRadius: 4, offset: const Offset(0, 2))],
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.checklist, color: Colors.white, size: 18),
+                                  const SizedBox(width: 8),
+                                  Text('Lote (${_selectedProducts.length})', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                                  const SizedBox(width: 4),
+                                  const Icon(Icons.keyboard_arrow_down, color: Colors.white, size: 20),
+                                ],
+                              ),
+                            ),
+                            itemBuilder: (context) => [
+                              const PopupMenuItem(value: 1, child: Row(children: [Icon(Icons.folder_outlined, color: Colors.orange, size: 20), SizedBox(width: 12), Text('Mover Categoría')])),
+                              const PopupMenuItem(value: 2, child: Row(children: [Icon(Icons.power_settings_new, color: Colors.teal, size: 20), SizedBox(width: 12), Text('Cambiar Estado')])),
+                              const PopupMenuItem(value: 3, child: Row(children: [Icon(Icons.trending_up, color: Colors.deepOrange, size: 20), SizedBox(width: 12), Text('Actualizar Precios')])),
+                              const PopupMenuItem(value: 4, child: Row(children: [Icon(Icons.print_outlined, color: Colors.deepPurple, size: 20), SizedBox(width: 12), Text('Imprimir Etiquetas')])),
+                              const PopupMenuDivider(),
+                              const PopupMenuItem(value: 5, child: Row(children: [Icon(Icons.delete_outline, color: Colors.red, size: 20), SizedBox(width: 12), Text('Eliminar Todo')])),
+                              const PopupMenuDivider(),
+                              const PopupMenuItem(value: 6, child: Row(children: [Icon(Icons.deselect, color: Colors.grey, size: 20), SizedBox(width: 12), Text('Cancelar Selección')])),
                             ],
                           ),
-                        ),
-                        itemBuilder: (context) => [
-                          const PopupMenuItem(value: 1, child: Row(children: [Icon(Icons.folder_outlined, color: Colors.orange, size: 20), SizedBox(width: 12), Text('Mover Categoría')])),
-                          const PopupMenuItem(value: 2, child: Row(children: [Icon(Icons.power_settings_new, color: Colors.teal, size: 20), SizedBox(width: 12), Text('Cambiar Estado')])),
-                          const PopupMenuItem(value: 3, child: Row(children: [Icon(Icons.trending_up, color: Colors.deepOrange, size: 20), SizedBox(width: 12), Text('Actualizar Precios')])),
-                          const PopupMenuItem(value: 4, child: Row(children: [Icon(Icons.print_outlined, color: Colors.deepPurple, size: 20), SizedBox(width: 12), Text('Imprimir Etiquetas')])),
-                          const PopupMenuDivider(),
-                          const PopupMenuItem(value: 5, child: Row(children: [Icon(Icons.delete_outline, color: Colors.red, size: 20), SizedBox(width: 12), Text('Eliminar Todo')])),
-                          const PopupMenuDivider(),
-                          const PopupMenuItem(value: 6, child: Row(children: [Icon(Icons.deselect, color: Colors.grey, size: 20), SizedBox(width: 12), Text('Cancelar Selección')])),
+                          const SizedBox(width: 12),
                         ],
-                      ),
-                      const SizedBox(width: 12),
-                    ],
-                    OutlinedButton.icon(
-                      icon: const Icon(Icons.label_outline, size: 18),
-                      label: const Text('Categorías'),
-                      onPressed: () async {
-                        final auth = await AdminPinDialog.verify(context, action: 'Gestionar Categorías', permissionKey: 'manage_catalog');
-                        if (auth && context.mounted) _openCategoriesManager(context);
-                      },
-                    ),
-                    const SizedBox(width: 8),
-                    OutlinedButton.icon(
-                      icon: const Icon(Icons.trending_up, size: 18, color: Colors.deepOrange),
-                      label: const Text('Aumento Masivo', style: TextStyle(color: Colors.deepOrange)),
-                      style: OutlinedButton.styleFrom(side: const BorderSide(color: Colors.deepOrange)),
-                      onPressed: provider.isLoading
-                          ? null
-                          : () async {
-                              final auth = await AdminPinDialog.verify(context, action: 'Aumento Masivo de Precios', permissionKey: 'manage_catalog');
-                              if (auth && context.mounted) _showBulkUpdateDialog(context, provider);
-                            },
-                    ),
-                    const SizedBox(width: 8),
-                    FilledButton.icon(
-                      icon: const Icon(Icons.add, size: 18),
-                      label: const Text('Nuevo Producto'),
-                      onPressed: () async {
-                        final auth = await AdminPinDialog.verify(context, action: 'Crear Nuevo Producto', permissionKey: 'manage_catalog');
-                        if (auth && context.mounted) _showProductForm(context, provider);
-                      },
-                    ),
-                  ],
+                        OutlinedButton.icon(
+                          icon: const Icon(Icons.label_outline, size: 18),
+                          label: const Text('Categorías'),
+                          onPressed: () async {
+                            final auth = await AdminPinDialog.verify(context, action: 'Gestionar Categorías', permissionKey: 'manage_catalog');
+                            if (auth && context.mounted) _openCategoriesManager(context);
+                          },
+                        ),
+                        const SizedBox(width: 8),
+                        OutlinedButton.icon(
+                          icon: const Icon(Icons.trending_up, size: 18, color: Colors.deepOrange),
+                          label: const Text('Aumento Masivo', style: TextStyle(color: Colors.deepOrange)),
+                          style: OutlinedButton.styleFrom(side: const BorderSide(color: Colors.deepOrange)),
+                          onPressed: provider.isLoading
+                              ? null
+                              : () async {
+                                  final auth = await AdminPinDialog.verify(context, action: 'Aumento Masivo de Precios', permissionKey: 'manage_catalog');
+                                  if (auth && context.mounted) _showBulkUpdateDialog(context, provider);
+                                },
+                        ),
+                        const SizedBox(width: 8),
+                        FilledButton.icon(
+                          icon: const Icon(Icons.add, size: 18),
+                          label: const Text('Nuevo Producto'),
+                          onPressed: () async {
+                            final auth = await AdminPinDialog.verify(context, action: 'Crear Nuevo Producto', permissionKey: 'manage_catalog');
+                            if (auth && context.mounted) _showProductForm(context, provider);
+                          },
+                        ),
+                      ],
+                    );
+
+                    if (constraints.maxWidth < 1000) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          searchWidget,
+                          const SizedBox(height: 12),
+                          SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: actionRow,
+                          ),
+                        ],
+                      );
+                    }
+
+                    return Row(
+                      children: [
+                        Expanded(child: searchWidget),
+                        const SizedBox(width: 12),
+                        actionRow,
+                      ],
+                    );
+                  },
                 ),
               ),
               // ── Loading bar ──────────────────────────────────────
@@ -201,7 +226,20 @@ class _CatalogScreenState extends State<CatalogScreen> {
                           ],
                         ),
                       )
-                    : _buildProductsTable(provider.products, provider),
+                    : LayoutBuilder(
+                        builder: (context, constraints) {
+                          return SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: ConstrainedBox(
+                              constraints: BoxConstraints(
+                                minWidth: 950,
+                                maxWidth: constraints.maxWidth > 950 ? constraints.maxWidth : 950,
+                              ),
+                              child: _buildProductsTable(provider.products, provider),
+                            ),
+                          );
+                        },
+                      ),
               ),
               // ── Pagination Controls ───────────────────────────────
               if (!provider.isLoading && provider.lastPage > 1)
@@ -241,24 +279,25 @@ class _CatalogScreenState extends State<CatalogScreen> {
   }
 
   Widget _buildProductsTable(List<Product> products, CatalogProvider provider) {
-    // Responsive flex values instead of fixed pixels
+    // Responsive flex values para que quepan en pantalla chica
     const int fCheck = 1;
     const int fId = 1;
-    const int fNombre = 4;
-    const int fBarcode = 2;
+    const int fNombre = 6;
+    const int fBarcode = 3;
     const int fInterno = 2;
-    const int fCat = 2;
-    const int fCosto = 1;
-    const int fVenta = 1;
-    const int fStock = 1;
+    const int fCat = 3;
+    const int fCosto = 2;
+    const int fVenta = 2;
+    const int fStock = 2;
     const int fBal = 1;
     const int fActivo = 1;
-    const int fAcciones = 2;
+    const int fVto = 1;
+    const int fAcciones = 3;
 
     Widget cell(int flexValue, Widget child) => Expanded(
           flex: flexValue,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
             child: child,
           ),
         );
@@ -335,6 +374,13 @@ class _CatalogScreenState extends State<CatalogScreen> {
               sortHeader(fStock, 'Stock', 'stock'),
               sortHeader(fBal, 'Balanza', 'is_sold_by_weight'),
               sortHeader(fActivo, 'Activo', 'active'),
+              cell(
+                fVto,
+                Tooltip(
+                  message: 'Días de vida útil configurados por producto',
+                  child: Text('VTO.', style: headerStyle(), overflow: TextOverflow.ellipsis),
+                ),
+              ),
               cell(fAcciones, Text('Acciones', style: headerStyle(), overflow: TextOverflow.ellipsis)),
             ],
           ),
@@ -369,6 +415,28 @@ class _CatalogScreenState extends State<CatalogScreen> {
               cell(fStock, Text(p.isSoldByWeight ? '${p.stock.toStringAsFixed(2)} kg' : p.stock.toStringAsFixed(0), overflow: TextOverflow.ellipsis)),
               cell(fBal, Align(alignment: Alignment.centerLeft, child: Icon(p.isSoldByWeight ? Icons.scale : Icons.inventory_2, size: 18, color: p.isSoldByWeight ? Colors.deepPurple : Colors.blueGrey))),
               cell(fActivo, Align(alignment: Alignment.centerLeft, child: Icon(p.active ? Icons.check_circle : Icons.cancel, color: p.active ? Colors.green : Colors.red, size: 20))),
+              // Columna VTO: muestra los días o un dash si no aplica
+              cell(
+                fVto,
+                p.vencimientoDias != null
+                    ? Tooltip(
+                        message: 'Vence ${p.vencimientoDias} días después del envasado',
+                        child: Text(
+                          '${p.vencimientoDias} d',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: p.vencimientoDias! <= 30
+                                ? Colors.red.shade700
+                                : p.vencimientoDias! <= 90
+                                    ? Colors.orange.shade700
+                                    : Colors.green.shade700,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      )
+                    : Text('—', style: TextStyle(color: Colors.grey.shade400, fontSize: 13)),
+              ),
               cell(fAcciones, Wrap(
                 spacing: 4,
                 runSpacing: 4,
@@ -615,12 +683,14 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
   final _formKey = GlobalKey<FormState>();
   late TextEditingController _nameCtrl;
   late TextEditingController _barcodeCtrl;
+  late TextEditingController _internalCodeCtrl;
   late TextEditingController _costCtrl;
   late TextEditingController _priceCtrl;
   late TextEditingController _stockCtrl;
   bool _isSoldByWeight = false;
   bool _active = true;
   int? _categoryId;
+  late TextEditingController _expiryCtrl;
 
   bool get _isEditing => widget.product != null;
 
@@ -630,21 +700,27 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     final p = widget.product;
     _nameCtrl = TextEditingController(text: p?.name ?? '');
     _barcodeCtrl = TextEditingController(text: p?.barcode ?? '');
+    _internalCodeCtrl = TextEditingController(text: p?.internalCode ?? '');
     _costCtrl = TextEditingController(text: p != null ? p.costPrice.toStringAsFixed(2) : '');
     _priceCtrl = TextEditingController(text: p != null ? p.sellingPrice.toStringAsFixed(2) : '');
     _stockCtrl = TextEditingController(text: p != null ? p.stock.toStringAsFixed(p.isSoldByWeight ? 3 : 0) : '0');
     _isSoldByWeight = p?.isSoldByWeight ?? false;
     _active = p?.active ?? true;
     _categoryId = p?.category?.id;
+    _expiryCtrl = TextEditingController(
+      text: p?.vencimientoDias != null ? p!.vencimientoDias.toString() : '',
+    );
   }
 
   @override
   void dispose() {
     _nameCtrl.dispose();
     _barcodeCtrl.dispose();
+    _internalCodeCtrl.dispose();
     _costCtrl.dispose();
     _priceCtrl.dispose();
     _stockCtrl.dispose();
+    _expiryCtrl.dispose();
     super.dispose();
   }
 
@@ -653,12 +729,15 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     final data = {
       'name': _nameCtrl.text.trim(),
       if (_barcodeCtrl.text.isNotEmpty) 'barcode': _barcodeCtrl.text.trim(),
+      if (_internalCodeCtrl.text.isNotEmpty) 'internal_code': _internalCodeCtrl.text.trim(),
       'cost_price': double.parse(_costCtrl.text.replaceAll(',', '.')),
       'selling_price': double.parse(_priceCtrl.text.replaceAll(',', '.')),
       'stock': double.parse(_stockCtrl.text.replaceAll(',', '.')),
       'is_sold_by_weight': _isSoldByWeight,
       'active': _active,
       if (_categoryId != null) 'category_id': _categoryId,
+      if (_expiryCtrl.text.trim().isNotEmpty)
+        'vencimiento_dias': int.parse(_expiryCtrl.text.trim()),
     };
 
     final bool ok = _isEditing
@@ -696,14 +775,36 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                   validator: (v) => v == null || v.isEmpty ? 'El nombre es obligatorio' : null,
                 ),
                 const SizedBox(height: 12),
-                // Código de barras
-                TextFormField(
-                  controller: _barcodeCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Código de Barras (opcional)',
-                    prefixIcon: Icon(Icons.qr_code),
-                    helperText: 'Deje vacío para que el sistema genere un código EAN-13 automático',
-                  ),
+                // Código Interno (PLU) + Código de barras
+                Row(
+                  children: [
+                    Expanded(
+                      flex: 4,
+                      child: TextFormField(
+                        controller: _internalCodeCtrl,
+                        maxLength: 5,
+                        decoration: const InputDecoration(
+                          labelText: 'PLU (Interno) *',
+                          prefixIcon: Icon(Icons.numbers),
+                          counterText: '',
+                          helperText: '5 dígitos numéricos',
+                        ),
+                        keyboardType: TextInputType.number,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      flex: 6,
+                      child: TextFormField(
+                        controller: _barcodeCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'Código de Barras (EAN)',
+                          prefixIcon: Icon(Icons.qr_code_scanner),
+                          helperText: 'Dejar vacío si es pesable',
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 12),
                 // Categoría
@@ -734,7 +835,14 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                         controller: _priceCtrl,
                         decoration: const InputDecoration(labelText: 'Precio Venta *', prefixText: '\$ '),
                         keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                        validator: (v) => (v == null || double.tryParse(v.replaceAll(',', '.')) == null) ? 'Ingrese un precio válido' : null,
+                        validator: (v) {
+                          if (v == null || double.tryParse(v.replaceAll(',', '.')) == null) return 'Ingrese un precio válido';
+                          final costStr = _costCtrl.text.replaceAll(',', '.');
+                          final cost = double.tryParse(costStr) ?? 0;
+                          final price = double.parse(v.replaceAll(',', '.'));
+                          if (price < cost) return 'El precio de venta debe ser mayor o igual al costo';
+                          return null;
+                        },
                       ),
                     ),
                   ],
@@ -749,7 +857,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
                 ),
                 const SizedBox(height: 8),
-                // Switches
+                // Switches + Vencimiento
                 Row(
                   children: [
                     Expanded(
@@ -771,6 +879,26 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                       ),
                     ),
                   ],
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _expiryCtrl,
+                  decoration: InputDecoration(
+                    labelText: 'Días de Vencimiento (opcional)',
+                    prefixIcon: const Icon(Icons.hourglass_bottom_outlined),
+                    helperText: 'Ej: 90 → VTO = hoy + 90 días. Dejar vacío si no vence.',
+                    suffixText: 'días',
+                    border: const OutlineInputBorder(),
+                  ),
+                  keyboardType: TextInputType.number,
+                  validator: (v) {
+                    if (v == null || v.trim().isEmpty) return null;
+                    final n = int.tryParse(v.trim());
+                    if (n == null || n < 1 || n > 3650) {
+                      return 'Ingresá un número entre 1 y 3650';
+                    }
+                    return null;
+                  },
                 ),
               ],
             ),

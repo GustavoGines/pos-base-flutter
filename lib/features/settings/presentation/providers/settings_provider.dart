@@ -2,9 +2,11 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../domain/entities/business_settings.dart';
 import '../../domain/usecases/get_settings_usecase.dart';
 import '../../domain/usecases/update_settings_usecase.dart';
+import '../../../../core/services/license_heartbeat_service.dart';
 
 class SettingsProvider with ChangeNotifier {
   final GetSettingsUseCase getSettingsUseCase;
@@ -15,8 +17,14 @@ class SettingsProvider with ChangeNotifier {
 
   bool get isLicenseActive {
     final key = _settings?.licenseStatus ?? '';
-    return key.isNotEmpty && currentPlan != 'blocked';
+    final bool licenseValid = key.isNotEmpty && currentPlan != 'blocked';
+    
+    // El "Muro de Fuego" ahora considera el Heartbeat (Offline > 72h o Time Rollback)
+    final heartbeat = LicenseHeartbeatService();
+    return licenseValid && !heartbeat.isBlocked;
   }
+  
+  LicenseSecurityStatus get securityStatus => LicenseHeartbeatService().securityStatus;
   String get currentPlan => _settings?.licensePlanType ?? 'basic';
   List<String> get allowedAddons => _settings?.licenseAllowedAddons ?? [];
 
@@ -35,7 +43,38 @@ class SettingsProvider with ChangeNotifier {
   SettingsProvider({
     required this.getSettingsUseCase,
     required this.updateSettingsUseCase,
-  });
+  }) {
+    _loadLocalSettings();
+    // Escuchar el Heartbeat para reconstruir el UI (como el LicenseGuard) cuando hay bloqueos
+    LicenseHeartbeatService().addListener(_onHeartbeatChanged);
+  }
+
+  void _onHeartbeatChanged() {
+    notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    LicenseHeartbeatService().removeListener(_onHeartbeatChanged);
+    super.dispose();
+  }
+
+  int _assignedRegisterId = 0;
+  int get assignedRegisterId => _assignedRegisterId;
+
+  Future<void> _loadLocalSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    // 0 = sin asignar (usa comportamiento libre/dropdown por defecto)
+    _assignedRegisterId = prefs.getInt('assigned_cash_register_id') ?? 0;
+    notifyListeners();
+  }
+
+  Future<void> setAssignedRegisterId(int id) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('assigned_cash_register_id', id);
+    _assignedRegisterId = id;
+    notifyListeners();
+  }
 
   Future<void> loadSettings() async {
     _isLoading = true;
@@ -44,6 +83,13 @@ class SettingsProvider with ChangeNotifier {
 
     try {
       _settings = await getSettingsUseCase();
+      
+      // Iniciar el sistema de seguridad DRM (Heartbeat/Security Pulse/Offline Grace)
+      await LicenseHeartbeatService().initialize(
+        _settings,
+        onSyncRequested: () => syncLicenseWithServer('http://127.0.0.1/Sistema_POS/pos-backend/public/api'),
+      );
+      
       _checkAndSyncSilentlyOnStartup();
     } catch (e) {
       _errorMessage = e.toString();
@@ -70,8 +116,6 @@ class SettingsProvider with ChangeNotifier {
     }
   }
 
-  /// Activation: POSTs the new license key to /api/settings/license.
-  /// Returns the new plan string on success, throws on error.
   Future<String> activateLicense(String baseUrl, String licenseKey) async {
     _isLoading = true;
     notifyListeners();
@@ -87,8 +131,16 @@ class SettingsProvider with ChangeNotifier {
         final plan = data['plan'] as String? ?? 'basic';
         // Refresh local settings so Feature Gating reacts immediately
         await loadSettings();
+        
+        // Notificar al sistema de seguridad que sincronizamos con el server
+        if (_settings != null) {
+          await LicenseHeartbeatService().updateLastSync(_settings!);
+        }
+        
         return plan;
       } else {
+        // En caso de error, recargamos por si el backend mandó la app a 'blocked'
+        await loadSettings();
         throw Exception(data['error'] ?? 'Error al validar la licencia.');
       }
     } finally {
@@ -110,7 +162,14 @@ class SettingsProvider with ChangeNotifier {
       final data = json.decode(response.body);
       if (response.statusCode == 200) {
         await loadSettings();
+        // Notificar al sistema de seguridad que sincronizamos con el server
+        if (_settings != null) {
+          await LicenseHeartbeatService().updateLastSync(_settings!);
+        }
       } else {
+        // Si el sync detectó revocación, el backend guardó el plan como 'blocked'.
+        // Recargamos settings para forzar al "LicenseGuard" a mostrar la pantalla de bloqueo.
+        await loadSettings();
         throw Exception(data['error'] ?? 'Error al sincronizar permisos.');
       }
     } on TimeoutException {

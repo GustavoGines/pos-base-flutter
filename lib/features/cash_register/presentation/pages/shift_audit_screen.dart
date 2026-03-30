@@ -99,7 +99,9 @@ class _ShiftAuditScreenState extends State<ShiftAuditScreen> {
                       dataRowMaxHeight: 60,
                       columns: const [
                         DataColumn(label: Text('# ID', style: TextStyle(fontWeight: FontWeight.bold))),
-                        DataColumn(label: Text('Cajero (Abierto por)', style: TextStyle(fontWeight: FontWeight.bold))),
+                        DataColumn(label: Text('Abrió', style: TextStyle(fontWeight: FontWeight.bold))),
+                        DataColumn(label: Text('Cerró', style: TextStyle(fontWeight: FontWeight.bold))),
+                        DataColumn(label: Text('🏢 Terminal', style: TextStyle(fontWeight: FontWeight.bold))),
                         DataColumn(label: Text('Apertura', style: TextStyle(fontWeight: FontWeight.bold))),
                         DataColumn(label: Text('Cierre', style: TextStyle(fontWeight: FontWeight.bold))),
                         DataColumn(label: Text('Monto Inicial', style: TextStyle(fontWeight: FontWeight.bold))),
@@ -131,15 +133,40 @@ class _ShiftAuditScreenState extends State<ShiftAuditScreen> {
         DataCell(Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.person_pin, size: 16, color: Colors.blueGrey),
-            const SizedBox(width: 8),
-            Text(userLabel),
+            const Icon(Icons.login, size: 14, color: Colors.green),
+            const SizedBox(width: 6),
+            Text(userLabel, style: const TextStyle(fontWeight: FontWeight.w500)),
           ],
         )),
+        DataCell(
+          shift.closedByUserName != null
+            ? Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.logout, size: 14, color: Colors.red),
+                  const SizedBox(width: 6),
+                  Text(shift.closedByUserName!, style: const TextStyle(fontWeight: FontWeight.w500)),
+                ],
+              )
+            : const Text('---', style: TextStyle(color: Colors.grey)),
+        ),
+        DataCell(
+          Chip(
+            avatar: const Icon(Icons.computer, size: 14, color: Colors.indigo),
+            label: Text(
+              shift.cashRegisterName ?? 'Principal',
+              style: const TextStyle(fontSize: 12),
+            ),
+            backgroundColor: Colors.indigo.shade50,
+            side: BorderSide.none,
+            padding: EdgeInsets.zero,
+            visualDensity: VisualDensity.compact,
+          ),
+        ),
         DataCell(Text(_formatDate(shift.openedAt))),
         DataCell(Text(shift.closedAt != null ? _formatDate(shift.closedAt!) : '---')),
         DataCell(Text('\$${shift.openingBalance.toStringAsFixed(2)}')),
-        DataCell(Text('\$${shift.totalSales?.toStringAsFixed(2) ?? '0.00'}', style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold))),
+        DataCell(Text('\$${((shift.cashSales ?? 0) + (shift.cardSales ?? 0) + (shift.transferSales ?? 0)).toStringAsFixed(2)}', style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold))),
         DataCell(_buildDifferenceBadge(diff, shift.status)),
         DataCell(_buildStatusBadge(shift.status)),
       ],
@@ -147,11 +174,7 @@ class _ShiftAuditScreenState extends State<ShiftAuditScreen> {
   }
 
   String _getUserName(CashRegisterShift shift) {
-    if (shift.user != null) {
-      if (shift.user is Map) return shift.user['name'] ?? 'Desconocido';
-      return shift.user.toString();
-    }
-    return 'Desconocido';
+    return shift.userName ?? 'Desconocido';
   }
 
   void _showShiftDetails(BuildContext context, CashRegisterShift shift) {
@@ -172,15 +195,47 @@ class _ShiftAuditScreenState extends State<ShiftAuditScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildDetailRow('Cajero:', _getUserName(shift)),
+                // --- Terminal Header Chip ---
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.indigo.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.indigo.shade100),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.computer, size: 16, color: Colors.indigo.shade600),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Terminal: ${shift.cashRegisterName ?? "Caja Principal"}',
+                        style: TextStyle(fontWeight: FontWeight.bold, color: Colors.indigo.shade800),
+                      ),
+                    ],
+                  ),
+                ),
+                _buildDetailRow('Abrió:', _getUserName(shift)),
+                if (shift.closedByUserName != null)
+                  _buildDetailRow('Cerró:', shift.closedByUserName!),
                 _buildDetailRow('Apertura:', _formatDate(shift.openedAt)),
                 _buildDetailRow('Cierre:', shift.closedAt != null ? _formatDate(shift.closedAt!) : 'En curso'),
                 const Divider(height: 32),
-                _buildDetailRow('Fondo Inicial (Apertura):', '\$${shift.openingBalance.toStringAsFixed(2)}'),
-                _buildDetailRow('Ventas Netas del Turno:', '\$${(shift.totalSales ?? 0.0).toStringAsFixed(2)}'),
+                _buildDetailRow('Fondo Inicial (Apertura):', '\$${shift.openingBalance.toStringAsFixed(2)}', isBold: true),
+                _buildDetailRow('Ventas Netas Totales:', '\$${((shift.cashSales ?? 0) + (shift.cardSales ?? 0) + (shift.transferSales ?? 0)).toStringAsFixed(2)}'),
+                Padding(
+                  padding: const EdgeInsets.only(left: 16.0),
+                  child: Column(
+                    children: [
+                      _buildDetailRow('• En Efectivo', '\$${(shift.cashSales ?? 0).toStringAsFixed(2)}'),
+                      _buildDetailRow('• Con Tarjeta', '\$${(shift.cardSales ?? 0).toStringAsFixed(2)}'),
+                      _buildDetailRow('• Transf.', '\$${(shift.transferSales ?? 0).toStringAsFixed(2)}'),
+                    ],
+                  ),
+                ),
                 const Divider(height: 32),
-                _buildDetailRow('Total Esperado en Caja:', '\$${(shift.openingBalance + (shift.totalSales ?? 0.0)).toStringAsFixed(2)}', isBold: true),
-                _buildDetailRow('Dinero Contado (Declarado):', '\$${(shift.closingBalance ?? 0.0).toStringAsFixed(2)}', isBold: true),
+                _buildDetailRow('Efectivo Esperado Múltiple:', '\$${(shift.expectedBalance ?? (shift.openingBalance + (shift.cashSales ?? 0))).toStringAsFixed(2)}', isBold: true),
+                _buildDetailRow('Dinero Físico Contado:', '\$${(shift.actualBalance ?? 0.0).toStringAsFixed(2)}', isBold: true),
                 const SizedBox(height: 16),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,

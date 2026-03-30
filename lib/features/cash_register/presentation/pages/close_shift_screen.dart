@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/cash_register_provider.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
-import '../../../auth/presentation/providers/auth_provider.dart';
+import 'cash_shift_summary_screen.dart';
+import 'package:frontend_desktop/features/auth/presentation/providers/auth_provider.dart';
 
 class CloseShiftScreen extends StatefulWidget {
   const CloseShiftScreen({Key? key}) : super(key: key);
@@ -60,15 +61,16 @@ class _CloseShiftScreenState extends State<CloseShiftScreen> {
     if (confirmed != true) return;
 
     final provider = context.read<CashRegisterProvider>();
-    final success = await provider.closeShift(countedCash);
+    final currentUser = context.read<AuthProvider>().currentUser;
+    final closerUserId = currentUser?['id'] as int?;
+    final closedShift = await provider.closeShift(countedCash, closerUserId: closerUserId);
     
     if (mounted) {
-      if (success) {
-        try {
-          context.read<AuthProvider>().logout();
-        } catch (_) {}
-        // Redirige al inicio (LoginScreen) vaciando el stack de navegación
-        Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
+      if (closedShift != null) {
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => CashShiftSummaryScreen(closedShift: closedShift)),
+          (route) => false,
+        );
       } else {
         SnackBarService.error(context, provider.errorMessage ?? 'Error al cerrar el turno.');
       }
@@ -81,8 +83,33 @@ class _CloseShiftScreenState extends State<CloseShiftScreen> {
       builder: (context, provider, _) {
         final shift = provider.currentShift;
         if (shift == null) {
-          return const Scaffold(
-            body: Center(child: Text('No hay turno activo.')),
+          return Scaffold(
+            appBar: AppBar(
+              title: const Text('Cierre de Caja'),
+              centerTitle: true,
+            ),
+            body: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.info_outline, size: 64, color: Colors.blueGrey),
+                  const SizedBox(height: 16),
+                  const Text('No hay ningún turno activo en este momento.', style: TextStyle(fontSize: 18, color: Colors.blueGrey)),
+                  const SizedBox(height: 32),
+                  FilledButton.icon(
+                    onPressed: () {
+                      // Navigate back. This will usually return to LicenseLockScreen or Home.
+                      Navigator.of(context).pop();
+                    },
+                    icon: const Icon(Icons.arrow_back),
+                    label: const Text('Volver al inicio'),
+                    style: FilledButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           );
         }
 

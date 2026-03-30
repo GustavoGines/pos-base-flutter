@@ -15,8 +15,10 @@ class BusinessSettingsModel extends BusinessSettings {
     String? comPortScale,
     String? licenseStatus,
     String? licensePlanType,
+    String? licensePlanMode,
     List<String>? licenseAllowedAddons,
     String? lastLicenseCheck,
+    String? serverTime,
   }) : super(
           companyName: companyName,
           address: address,
@@ -30,8 +32,10 @@ class BusinessSettingsModel extends BusinessSettings {
           comPortScale: comPortScale,
           licenseStatus: licenseStatus,
           licensePlanType: licensePlanType,
+          licensePlanMode: licensePlanMode,
           licenseAllowedAddons: licenseAllowedAddons,
           lastLicenseCheck: lastLicenseCheck,
+          serverTime: serverTime,
         );
 
   factory BusinessSettingsModel.fromJson(Map<String, dynamic> json) {
@@ -48,8 +52,10 @@ class BusinessSettingsModel extends BusinessSettings {
       comPortScale: json['com_port_scale'],
       licenseStatus: json['license_key'],     // The actual license key string
       licensePlanType: json['app_plan'],       // Written by LicenseSyncService as 'app_plan'
+      licensePlanMode: json['license_plan_mode'] ?? 'saas',
       licenseAllowedAddons: _parseAddons(json['license_allowed_addons']),
       lastLicenseCheck: json['last_license_check'],
+      serverTime: json['server_time'],
     );
   }
 

@@ -4,6 +4,9 @@ import '../providers/settings_provider.dart';
 import '../../../../core/utils/snack_bar_service.dart';
 import '../../../../core/utils/receipt_printer_service.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../../../cash_register/presentation/providers/cash_register_provider.dart';
 
 
 class SettingsScreen extends StatefulWidget {
@@ -317,6 +320,47 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           ),
 
                           const SizedBox(height: 32),
+                          
+                          // --- TARJETA ADMINISTRACIÓN ---
+                          _buildSectionCard(
+                            title: 'Administración y Red',
+                            icon: Icons.admin_panel_settings_outlined,
+                            child: Column(
+                              children: [
+                                ListTile(
+                                  leading: const Icon(Icons.computer, color: Colors.blueGrey),
+                                  title: const Text('Gestión de Cajas Físicas'),
+                                  subtitle: const Text('Añadir, renombrar o desactivar terminales físicas'),
+                                  trailing: const Icon(Icons.chevron_right),
+                                  onTap: () {
+                                    if (!provider.hasFeature('multi_caja')) {
+                                      _showUpsellDialog(context);
+                                    } else {
+                                      Navigator.pushNamed(context, '/settings/registers');
+                                    }
+                                  },
+                                ),
+                                const Divider(indent: 16, endIndent: 16),
+                                ListTile(
+                                  leading: const Icon(Icons.dns_outlined, color: Colors.blueGrey),
+                                  title: const Text('Configuración del Servidor y Red'),
+                                  subtitle: const Text('Cambiar la IP o dominio del servidor Backend'),
+                                  trailing: const Icon(Icons.chevron_right),
+                                  onTap: () => _showServerConfigDialog(context),
+                                ),
+                                const Divider(indent: 16, endIndent: 16),
+                                ListTile(
+                                  leading: const Icon(Icons.desktop_windows, color: Colors.blueGrey),
+                                  title: const Text('Terminal Local Asignada'),
+                                  subtitle: Text('ID de Hardware actual: ${provider.assignedRegisterId}'),
+                                  trailing: const Icon(Icons.chevron_right),
+                                  onTap: () => _showTerminalAssignmentDialog(context, provider),
+                                ),
+                              ],
+                            ),
+                          ),
+
+                          const SizedBox(height: 32),
 
                           // --- BOTÓN GUARDAR (al fondo, ancho completo) ---
                           SizedBox(
@@ -547,6 +591,196 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  void _showUpsellDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.workspace_premium, color: Colors.purple),
+            SizedBox(width: 8),
+            Text('Mejora a PRO'),
+          ],
+        ),
+        content: const Text(
+            'La administración de múltiples Cajas Físicas es una función exclusiva del Plan PRO.\n\n'
+            'Adquiere el complemento "Múltiples Cajas" para habilitar el manejo de terminales simultáneas.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Entendido'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.purple, foregroundColor: Colors.white),
+            onPressed: () async {
+              Navigator.pop(ctx);
+              final url = Uri.parse('https://wa.me/5493704787285?text=Hola,%20quiero%20mejorar%20mi%20licencia%20a%20PRO%20para%20M%C3%BAltiples%20Cajas.');
+              if (await canLaunchUrl(url)) {
+                await launchUrl(url);
+              } else {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No se pudo abrir WhatsApp.')));
+                }
+              }
+            },
+            child: const Text('Contactar a Ventas'),
+          )
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showServerConfigDialog(BuildContext context) async {
+    final prefs = await SharedPreferences.getInstance();
+    final currentUrl = prefs.getString('pos_api') ?? 'http://127.0.0.1:8000/api';
+    
+    if (!context.mounted) return;
+    final ctrl = TextEditingController(text: currentUrl);
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.dns_outlined, color: Colors.blueAccent),
+            SizedBox(width: 8),
+            Text('Red y Servidor', style: TextStyle(fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Apunta este frontend a la computadora principal (Servidor).\n'
+              'Ejemplo: http://192.168.1.50:8000/api',
+              style: TextStyle(color: Colors.blueGrey, fontSize: 13),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: ctrl,
+              decoration: InputDecoration(
+                labelText: 'URL de la API',
+                prefixIcon: const Icon(Icons.link),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton.icon(
+            onPressed: () async {
+              final newUrl = ctrl.text.trim();
+              if (newUrl.isNotEmpty) {
+                await prefs.setString('pos_api', newUrl);
+                if (!ctx.mounted) return;
+                Navigator.pop(ctx);
+                SnackBarService.success(context, 'Configuración de red guardada.\nPor favor reinicia la aplicación para aplicar.');
+              }
+            },
+            icon: const Icon(Icons.save),
+            label: const Text('Guardar'),
+            style: FilledButton.styleFrom(backgroundColor: Colors.blue.shade800),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showTerminalAssignmentDialog(BuildContext context, SettingsProvider settingsProvider) async {
+    final cashProvider = context.read<CashRegisterProvider>();
+    
+    // Si no están precargadas las cajas, las traemos
+    if (cashProvider.availableRegisters == null || cashProvider.availableRegisters!.isEmpty) {
+      await cashProvider.loadRegisters();
+    }
+
+    if (!context.mounted) return;
+
+    final registers = cashProvider.availableRegisters ?? [];
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.desktop_windows, color: Colors.indigo),
+              SizedBox(width: 8),
+              Text('Asignar Terminal Local'),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Selecciona qué Caja Física representa esta computadora. '
+                'Si usas Plan Básico, solo estará disponible la Caja Principal.',
+                style: TextStyle(fontSize: 13, color: Colors.grey),
+              ),
+              const SizedBox(height: 16),
+              if (registers.isEmpty)
+                const Text('No hay cajas disponibles en red.', style: TextStyle(color: Colors.red))
+              else
+                DropdownButtonFormField<int>(
+                  value: registers.any((r) => r.id == settingsProvider.assignedRegisterId) 
+                         ? settingsProvider.assignedRegisterId 
+                         : registers.first.id,
+                  decoration: InputDecoration(
+                    labelText: 'Caja Asignada a esta PC',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  items: registers.map((reg) {
+                    return DropdownMenuItem<int>(
+                      value: reg.id,
+                      child: Text('${reg.name} (ID: ${reg.id})'),
+                    );
+                  }).toList(),
+                  onChanged: (newId) async {
+                    if (newId != null) {
+                      // 1. Guardar la nueva terminal en SharedPreferences
+                      await settingsProvider.setAssignedRegisterId(newId);
+                      Navigator.pop(ctx);
+
+                      // 2. Re-verificar si hay turno activo en la nueva terminal
+                      //    Esto actualiza el currentShift en memoria
+                      if (context.mounted) {
+                        await context
+                            .read<CashRegisterProvider>()
+                            .checkCurrentShift(registerId: newId);
+                      }
+
+                      // 3. Navegar a /home para que el router reactivo decida:
+                      //    - Si hay turno abierto → va directo al POS
+                      //    - Si no hay turno → muestra pantalla de Apertura de Caja
+                      if (context.mounted) {
+                        Navigator.of(context).pushNamedAndRemoveUntil(
+                          '/home',
+                          (route) => false,
+                        );
+                      }
+                    }
+                  },
+                ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancelar / Cerrar'),
+            ),
+          ],
+        );
+      },
     );
   }
 

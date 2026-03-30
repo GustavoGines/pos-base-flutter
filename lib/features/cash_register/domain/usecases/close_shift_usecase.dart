@@ -6,7 +6,7 @@ class CloseShiftUseCase {
 
   CloseShiftUseCase(this.repository);
 
-  Future<CashRegisterShift> call(double countedCash) async {
-    return await repository.closeShift(countedCash);
+  Future<CashRegisterShift> call(int shiftId, double countedCash, {int? closerUserId}) async {
+    return await repository.closeShift(shiftId, countedCash, closerUserId: closerUserId);
   }
 }

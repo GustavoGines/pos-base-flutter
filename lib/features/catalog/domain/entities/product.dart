@@ -10,6 +10,7 @@ class Product {
   final double stock;
   final bool active;
   final bool isSoldByWeight;
+  final int? vencimientoDias; // Shelf life — días hasta la caducidad
   final Category? category;
 
   Product({
@@ -22,6 +23,7 @@ class Product {
     required this.stock,
     required this.active,
     required this.isSoldByWeight,
+    this.vencimientoDias,
     this.category,
   });
   Product copyWithStock(double newStock) {
@@ -35,6 +37,7 @@ class Product {
       stock: newStock,
       active: active,
       isSoldByWeight: isSoldByWeight,
+      vencimientoDias: vencimientoDias,
       category: category,
     );
   }

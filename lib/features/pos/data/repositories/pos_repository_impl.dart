@@ -45,6 +45,8 @@ class PosRepositoryImpl implements PosRepository {
       paymentMethod: paymentMethod,
       shift: CashRegisterShift(
         id: shiftId,
+        cashRegisterId: 1, // Dummy reference since Pos logic only cares about shiftId locally
+        userId: userId ?? 1,
         openedAt: DateTime.now(),
         openingBalance: 0,
         status: 'open',

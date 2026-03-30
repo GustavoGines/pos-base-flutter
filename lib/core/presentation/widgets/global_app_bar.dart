@@ -11,12 +11,12 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
   final bool showBackButton;
 
   const GlobalAppBar({
-    Key? key,
+    super.key,
     required this.currentRoute,
     this.title = 'Sistema POS',
     this.extraAction,
     this.showBackButton = false,
-  }) : super(key: key);
+  });
 
   @override
   Size get preferredSize => const Size.fromHeight(kToolbarHeight);
@@ -228,7 +228,7 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                                         Container(
                                           padding: const EdgeInsets.all(14),
                                           decoration: BoxDecoration(
-                                            color: Colors.white.withOpacity(0.15),
+                                            color: Colors.white.withValues(alpha: 0.15),
                                             shape: BoxShape.circle,
                                           ),
                                           child: const Icon(Icons.workspace_premium_rounded, color: Colors.white, size: 36),
@@ -238,7 +238,7 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                                             style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
                                         const SizedBox(height: 6),
                                         Text('Plan Básico activo',
-                                            style: TextStyle(color: Colors.white.withOpacity(0.75), fontSize: 13)),
+                                            style: TextStyle(color: Colors.white.withValues(alpha: 0.75), fontSize: 13)),
                                       ],
                                     ),
                                   ),

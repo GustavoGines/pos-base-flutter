@@ -13,10 +13,12 @@ import 'features/auth/presentation/providers/auth_provider.dart';
 import 'features/customers/providers/customer_provider.dart';
 import 'features/trash/providers/trash_provider.dart';
 
+import 'core/presentation/widgets/license_guard.dart';
 import 'core/network/api_client.dart';
 
 // Screens
 import 'features/settings/presentation/pages/settings_screen.dart';
+import 'features/cash_register/presentation/pages/cash_register_management_screen.dart';
 import 'features/pos/presentation/pages/pos_screen.dart';
 import 'features/catalog/presentation/pages/catalog_screen.dart';
 import 'features/cash_register/presentation/pages/cash_register_screen.dart';
@@ -43,6 +45,7 @@ import 'features/cash_register/domain/usecases/get_all_shifts_usecase.dart';
 import 'features/cash_register/domain/usecases/open_shift_usecase.dart';
 import 'features/cash_register/domain/usecases/get_current_shift_usecase.dart';
 import 'features/cash_register/domain/usecases/close_shift_usecase.dart';
+import 'features/cash_register/domain/usecases/get_registers_usecase.dart';
 
 import 'features/pos/data/datasources/pos_remote_datasource.dart';
 import 'features/pos/data/repositories/pos_repository_impl.dart';
@@ -79,11 +82,23 @@ class FadePageRouteTransitionsBuilder extends PageTransitionsBuilder {
 /// heartbeat updates without a full app restart.
 class LicenseRefreshObserver extends NavigatorObserver {
   final BuildContext Function() contextGetter;
+  final ValueNotifier<String?> routeNotifier;
 
-  LicenseRefreshObserver(this.contextGetter);
+  LicenseRefreshObserver(this.contextGetter, this.routeNotifier);
 
-  void _refresh() {
+  void _refresh(Route? route) {
+    // CRÍTICO: Ignorar popups, dialogos, y dropdowns para no reiniciar estados globales.
+    // Solo recargamos settings cuando el usuario navega a una nueva PANTALLA real.
+    if (route != null && route is! PageRoute) return;
+
     try {
+      // Actualizar el notificador de ruta para el Muro de Fuego
+      if (route != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          routeNotifier.value = route.settings.name;
+        });
+      }
+      
       // Fire-and-forget: do NOT await, never block navigation.
       WidgetsBinding.instance.addPostFrameCallback((_) {
         try {
@@ -96,16 +111,17 @@ class LicenseRefreshObserver extends NavigatorObserver {
   }
 
   @override
-  void didPush(Route route, Route? previousRoute) => _refresh();
+  void didPush(Route route, Route? previousRoute) => _refresh(route);
 
   @override
-  void didPop(Route route, Route? previousRoute) => _refresh();
+  void didPop(Route route, Route? previousRoute) => _refresh(previousRoute);
 
   @override
-  void didReplace({Route? newRoute, Route? oldRoute}) => _refresh();
+  void didReplace({Route? newRoute, Route? oldRoute}) => _refresh(newRoute);
 }
 
 void main() async {
+  // CRÍTICO: Inicialización obligatoria para assets y plugins en desktop
   WidgetsFlutterBinding.ensureInitialized();
   
   // Obtener URL de la API del almacenamiento local
@@ -171,7 +187,8 @@ void main() async {
             getCurrentShiftUseCase: GetCurrentShiftUseCase(cashRegisterRepo),
             getAllShiftsUseCase: GetAllShiftsUseCase(cashRegisterRepo),
             openShiftUseCase: OpenShiftUseCase(cashRegisterRepo),
-            closeShiftUseCase: CloseShiftUseCase(cashRegisterRepo)
+            closeShiftUseCase: CloseShiftUseCase(cashRegisterRepo),
+            getRegistersUseCase: GetRegistersUseCase(cashRegisterRepo),
           ),
           lazy: false,
         ),
@@ -222,10 +239,13 @@ class _MainAppState extends State<MainApp> {
   }
 
   Future<void> _initializeApp() async {
-    // 1. Cargar Settings del negocio
+    // 1. Cargar Settings del negocio (incluye assignedRegisterId desde SharedPrefs)
     await Provider.of<SettingsProvider>(context, listen: false).loadSettings();
-    // 2. Verificar estado de la Caja
-    await Provider.of<CashRegisterProvider>(context, listen: false).checkCurrentShift();
+    // 2. Verificar estado de la Caja de ESTA terminal física asignada
+    final assignedRegisterId = Provider.of<SettingsProvider>(context, listen: false).assignedRegisterId;
+    // Solo filtrar por caja si el usuario configuró explícitamente una terminal (id > 0)
+    await Provider.of<CashRegisterProvider>(context, listen: false)
+        .checkCurrentShift(registerId: assignedRegisterId > 0 ? assignedRegisterId : null);
     
     if (mounted) {
       setState(() {
@@ -235,6 +255,7 @@ class _MainAppState extends State<MainApp> {
   }
 
   final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+  final ValueNotifier<String?> _currentRoute = ValueNotifier<String?>(null);
 
   @override
   Widget build(BuildContext context) {
@@ -269,8 +290,15 @@ class _MainAppState extends State<MainApp> {
     return MaterialApp(
       navigatorKey: navigatorKey,
       navigatorObservers: [
-        LicenseRefreshObserver(() => navigatorKey.currentContext!),
+        LicenseRefreshObserver(() => navigatorKey.currentContext!, _currentRoute),
       ],
+      builder: (context, child) {
+        return LicenseGuard(
+          routeNotifier: _currentRoute,
+          navigatorKey: navigatorKey,
+          child: child!,
+        );
+      },
       debugShowCheckedModeBanner: false,
       title: 'Sistema POS',
       theme: ThemeData(
@@ -297,12 +325,17 @@ class _MainAppState extends State<MainApp> {
               return CashRegisterScreen(
                 isLoading: cashProv.isLoading,
                 errorMessage: cashProv.errorMessage,
-                onOpenShift: (amount) async {
+                onOpenShift: (amount, registerId) async {
                   final userId = ctx.read<AuthProvider>().currentUser?['id'] ?? 1;
-                  final success = await cashProv.openShift(amount, userId);
+                  final success = await cashProv.openShift(amount, userId, registerId);
                   if (success) {
                     // Usamos navigatorKey para evitar contexto desactivado en callback async
                     navigatorKey.currentState?.pushReplacementNamed('/pos');
+                  } else {
+                    final msg = cashProv.errorMessage?.replaceAll('Exception: ', '') ?? 'Error al abrir caja';
+                    ScaffoldMessenger.of(ctx).showSnackBar(
+                      SnackBar(content: Text(msg), backgroundColor: Colors.red),
+                    );
                   }
                 },
                 onContinueToPos: () {
@@ -319,6 +352,7 @@ class _MainAppState extends State<MainApp> {
         '/shift-audit': (context) => const ShiftAuditScreen(),
         '/users': (context) => const UsersManagerScreen(),
         '/settings': (context) => const SettingsScreen(),
+        '/settings/registers': (context) => const CashRegisterManagementScreen(),
         '/cuentas-corrientes': (context) => const CustomersScreen(),
         '/trash': (context) => const TrashScreen(),
       },

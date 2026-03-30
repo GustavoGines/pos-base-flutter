@@ -4,7 +4,8 @@ import '../../domain/usecases/get_all_shifts_usecase.dart';
 import '../../domain/usecases/get_current_shift_usecase.dart';
 import '../../domain/usecases/open_shift_usecase.dart';
 import '../../domain/usecases/close_shift_usecase.dart';
-import 'package:frontend_desktop/features/settings/domain/entities/business_settings.dart';
+import '../../domain/usecases/get_registers_usecase.dart';
+import '../../domain/entities/cash_register.dart';
 import 'package:frontend_desktop/core/utils/receipt_printer_service.dart';
 
 class CashRegisterProvider with ChangeNotifier {
@@ -20,6 +21,10 @@ class CashRegisterProvider with ChangeNotifier {
   List<CashRegisterShift> get shiftsHistory => _shiftsHistory;
 
   final GetAllShiftsUseCase? getAllShiftsUseCase;
+  final GetRegistersUseCase? getRegistersUseCase;
+
+  List<CashRegister>? _availableRegisters;
+  List<CashRegister>? get availableRegisters => _availableRegisters;
 
   bool _isLoading = false;
   bool get isLoading => _isLoading;
@@ -32,14 +37,29 @@ class CashRegisterProvider with ChangeNotifier {
     this.getAllShiftsUseCase,
     required this.openShiftUseCase,
     required this.closeShiftUseCase,
+    this.getRegistersUseCase,
     this.printerService,  // Opcional
   });
 
-  Future<void> checkCurrentShift() async {
+  Future<void> loadRegisters() async {
+    if (getRegistersUseCase == null) return;
     _clearError();
     _setLoading(true);
     try {
-      _currentShift = await getCurrentShiftUseCase();
+      _availableRegisters = await getRegistersUseCase!();
+      notifyListeners();
+    } catch (e) {
+      _errorMessage = e.toString();
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  Future<void> checkCurrentShift({int? registerId}) async {
+    _clearError();
+    _setLoading(true);
+    try {
+      _currentShift = await getCurrentShiftUseCase(registerId: registerId);
     } catch (e) {
       _errorMessage = e.toString();
     } finally {
@@ -61,11 +81,11 @@ class CashRegisterProvider with ChangeNotifier {
     }
   }
 
-  Future<bool> openShift(double initialBalance, int userId) async {
+  Future<bool> openShift(double openingBalance, int userId, [int? registerId]) async {
     _clearError();
     _setLoading(true);
     try {
-      _currentShift = await openShiftUseCase(initialBalance, userId);
+      _currentShift = await openShiftUseCase(openingBalance, userId, registerId);
       return true;
     } catch (e) {
       _errorMessage = e.toString();
@@ -75,25 +95,21 @@ class CashRegisterProvider with ChangeNotifier {
     }
   }
 
-  Future<bool> closeShift(double countedCash, [BusinessSettings? settings]) async {
+  Future<CashRegisterShift?> closeShift(double countedCash, {int? closerUserId}) async {
     _clearError();
     _setLoading(true);
     try {
-      final closedShift = await closeShiftUseCase(countedCash);
-      
-      // Disparar impresión del Ticket de Cierre Z (silenciosa)
-      if (printerService != null && settings != null) {
-        printerService!.printZCloseTicket(
-          shift: closedShift,
-          settings: settings,
-        ).catchError((e) => debugPrint('=== Printer Z Error: $e ==='));
-      }
-
-      _currentShift = null; // Limpiamos el turno activo
-      return true;
+      if (_currentShift == null) return null;
+      final closedShift = await closeShiftUseCase(
+        _currentShift!.id,
+        countedCash,
+        closerUserId: closerUserId,
+      );
+      _currentShift = null;
+      return closedShift;
     } catch (e) {
       _errorMessage = e.toString();
-      return false;
+      return null;
     } finally {
       _setLoading(false);
     }

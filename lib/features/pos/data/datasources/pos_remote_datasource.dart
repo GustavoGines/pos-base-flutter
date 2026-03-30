@@ -75,7 +75,7 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
         'status': status,
         if (tenderedAmount != null) 'tendered_amount': tenderedAmount,
         if (changeAmount != null) 'change_amount': changeAmount,
-        'cash_register_shift_id': shiftId,
+        'cash_shift_id': shiftId,
         if (userId != null) 'user_id': userId,
         if (customerId != null) 'customer_id': customerId,
         'items': items.map((item) => {

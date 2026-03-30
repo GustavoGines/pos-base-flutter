@@ -4,6 +4,7 @@ import '../providers/pos_provider.dart';
 import '../../../cash_register/presentation/providers/cash_register_provider.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
 import '../../../settings/presentation/providers/settings_provider.dart';
+import '../../../customers/presentation/widgets/customer_form_dialog.dart';
 import '../../../customers/providers/customer_provider.dart';
 import '../../../customers/models/customer_model.dart';
 import '../../../../core/utils/snack_bar_service.dart';
@@ -560,6 +561,31 @@ class _CustomerPickerDialogState extends State<_CustomerPickerDialog> {
                 ),
               ),
             ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: ElevatedButton.icon(
+                icon: const Icon(Icons.person_add_alt_1_outlined),
+                label: const Text('Agregar Nuevo Cliente'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.purple.shade50,
+                  foregroundColor: Colors.purple.shade700,
+                  elevation: 0,
+                  minimumSize: const Size(double.infinity, 45),
+                ),
+                onPressed: () {
+                  showDialog(
+                    context: context,
+                    barrierDismissible: false,
+                    builder: (_) => const CustomerFormDialog(),
+                  ).then((_) {
+                    if (context.mounted) {
+                      context.read<CustomerProvider>().fetchCustomers();
+                    }
+                  });
+                },
+              ),
+            ),
+            const SizedBox(height: 8),
             // Lista — Consumer para que se reconstruya cuando fetchCustomers() termina
             Expanded(
               child: Consumer<CustomerProvider>(
