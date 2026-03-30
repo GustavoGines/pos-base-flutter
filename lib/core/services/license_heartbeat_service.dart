@@ -6,7 +6,8 @@ import '../../features/settings/domain/entities/business_settings.dart';
 enum LicenseSecurityStatus { ok, clockTampered, offlineExpired }
 
 class LicenseHeartbeatService extends ChangeNotifier {
-  static final LicenseHeartbeatService _instance = LicenseHeartbeatService._internal();
+  static final LicenseHeartbeatService _instance =
+      LicenseHeartbeatService._internal();
   factory LicenseHeartbeatService() => _instance;
   LicenseHeartbeatService._internal();
 
@@ -14,20 +15,24 @@ class LicenseHeartbeatService extends ChangeNotifier {
 
   Timer? _heartbeatTimer;
   Timer? _pulseTimer;
-  bool _initialized = false; // Guard para que los timers arranquen solo 1 vez por sesión
-  
+  bool _initialized =
+      false; // Guard para que los timers arranquen solo 1 vez por sesión
+
   // Función para inyectar la dependencia de sincronización desde SettingsProvider
   Future<void> Function()? _onSyncRequested;
-  
+
   LicenseSecurityStatus _securityStatus = LicenseSecurityStatus.ok;
   LicenseSecurityStatus get securityStatus => _securityStatus;
 
   bool get isBlocked => _securityStatus != LicenseSecurityStatus.ok;
 
   /// Inicialización: Carga datos locales y verifica Drift inicial
-  Future<void> initialize(BusinessSettings? settings, {Future<void> Function()? onSyncRequested}) async {
+  Future<void> initialize(
+    BusinessSettings? settings, {
+    Future<void> Function()? onSyncRequested,
+  }) async {
     if (settings == null) return;
-    
+
     if (onSyncRequested != null) {
       _onSyncRequested = onSyncRequested;
     }
@@ -36,25 +41,30 @@ class LicenseHeartbeatService extends ChangeNotifier {
     // porque el usuario puede volver de un período largo de inactividad.
     await _checkClockDrift();
     await _checkOfflineGrace(settings);
-    
+
     // ─── GUARD DE INICIALIZACIÓN ───────────────────────────────────────────
-    // Los Timer.periodic SOLO se crean la primera vez que el usuario inicia 
+    // Los Timer.periodic SOLO se crean la primera vez que el usuario inicia
     // sesión. Las llamadas subsiguientes desde el LicenseRefreshObserver (que
-    // triggers loadSettings en cada pantalla) solo actualizan el callback de 
+    // triggers loadSettings en cada pantalla) solo actualizan el callback de
     // sync sin matar ni recrear los timers.
     if (!_initialized) {
       _initialized = true;
 
       // Timer 1: Reloj Policía (cada 15 min)
       _pulseTimer?.cancel();
-      _pulseTimer = Timer.periodic(const Duration(minutes: 15), (_) => _updatePulse());
-      
+      _pulseTimer = Timer.periodic(
+        const Duration(minutes: 15),
+        (_) => _updatePulse(),
+      );
+
       // Timer 2: Ping Silencioso al servidor (cada 30 min)
       _heartbeatTimer?.cancel();
-      _heartbeatTimer = Timer.periodic(const Duration(minutes: 30), (_) => _triggerSync());
+      _heartbeatTimer = Timer.periodic(
+        const Duration(minutes: 30),
+        (_) => _triggerSync(),
+      );
     }
     // ──────────────────────────────────────────────────────────────────────
-    
     notifyListeners();
   }
 
@@ -74,7 +84,7 @@ class LicenseHeartbeatService extends ChangeNotifier {
     try {
       final now = DateTime.now();
       final lastTimeStr = await _storage.read(key: 'drm_last_system_time');
-      
+
       if (lastTimeStr != null) {
         final lastTime = DateTime.parse(lastTimeStr);
         // Si el reloj actual es anterior al último registrado, hay manipulación
@@ -84,14 +94,16 @@ class LicenseHeartbeatService extends ChangeNotifier {
         }
       }
     } catch (e) {
-      // 🚨 FALLBACK CRÍTICO: Si DPAPI falla al desencriptar (archivo corrupto en Windows), 
+      // 🚨 FALLBACK CRÍTICO: Si DPAPI falla al desencriptar (archivo corrupto en Windows),
       // limpiamos el almacenamiento para evitar bloqueos del sistema.
-      debugPrint('Error de seguridad (Storage): $e. Limpiando datos corruptos...');
+      debugPrint(
+        'Error de seguridad (Storage): $e. Limpiando datos corruptos...',
+      );
       try {
         await _storage.deleteAll();
       } catch (_) {}
     }
-    
+
     await _updatePulse();
   }
 
@@ -99,7 +111,10 @@ class LicenseHeartbeatService extends ChangeNotifier {
   Future<void> _updatePulse() async {
     if (_securityStatus == LicenseSecurityStatus.clockTampered) return;
     try {
-      await _storage.write(key: 'drm_last_system_time', value: DateTime.now().toIso8601String());
+      await _storage.write(
+        key: 'drm_last_system_time',
+        value: DateTime.now().toIso8601String(),
+      );
     } catch (_) {
       // Si falla la escritura (ej. error nativo), ignoramos para no romper el flujo
     }
@@ -129,12 +144,15 @@ class LicenseHeartbeatService extends ChangeNotifier {
   /// Actualiza los datos de seguridad tras un ping exitoso al servidor
   Future<void> updateLastSync(BusinessSettings settings) async {
     _securityStatus = LicenseSecurityStatus.ok;
-    
+
     if (settings.serverTime != null) {
       // Usar el tiempo del servidor para resetear la base de tiempo local
-      await _storage.write(key: 'drm_last_system_time', value: settings.serverTime);
+      await _storage.write(
+        key: 'drm_last_system_time',
+        value: settings.serverTime,
+      );
     }
-    
+
     await _checkOfflineGrace(settings);
     notifyListeners();
   }
