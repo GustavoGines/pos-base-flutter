@@ -84,13 +84,12 @@ class _ToastWidget extends StatefulWidget {
   final VoidCallback onDismiss;
 
   const _ToastWidget({
-    Key? key,
     required this.message,
     required this.backgroundColor,
     required this.icon,
     required this.duration,
     required this.onDismiss,
-  }) : super(key: key);
+  });
 
   @override
   State<_ToastWidget> createState() => _ToastWidgetState();

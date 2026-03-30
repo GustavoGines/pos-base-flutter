@@ -6,7 +6,7 @@ class GetCurrentShiftUseCase {
 
   GetCurrentShiftUseCase(this.repository);
 
-  Future<CashRegisterShift?> call() async {
-    return await repository.getCurrentShift();
+  Future<CashRegisterShift?> call({int? registerId}) async {
+    return await repository.getCurrentShift(registerId: registerId);
   }
 }

@@ -13,8 +13,10 @@ class BusinessSettings extends Equatable {
   final String? comPortScale;
   final String? licenseStatus;
   final String? licensePlanType;
+  final String? licensePlanMode; // 'saas' or 'lifetime'
   final List<String>? licenseAllowedAddons;
   final String? lastLicenseCheck;
+  final String? serverTime; // Timestamp from the server
 
   const BusinessSettings({
     this.companyName,
@@ -29,8 +31,10 @@ class BusinessSettings extends Equatable {
     this.comPortScale,
     this.licenseStatus,
     this.licensePlanType,
+    this.licensePlanMode,
     this.licenseAllowedAddons,
     this.lastLicenseCheck,
+    this.serverTime,
   });
 
   @override
@@ -47,7 +51,9 @@ class BusinessSettings extends Equatable {
         comPortScale,
         licenseStatus,
         licensePlanType,
+        licensePlanMode,
         licenseAllowedAddons,
         lastLicenseCheck,
+        serverTime,
       ];
 }

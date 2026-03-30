@@ -699,27 +699,76 @@ class _PosScreenState extends State<PosScreen> {
           },
         ),
       ),
-      body: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            return Row(
-              children: [
-                // PANEL IZQUIERDO: CARRITO (35% Width)
-                SizedBox(
-                  width: constraints.maxWidth * 0.35,
-                  child: _buildCartPanel(),
-                ),
-                
-                const VerticalDivider(width: 1, thickness: 1),
-
-                // PANEL DERECHO: BÚSQUEDA Y GRILLA RÁPIDA (65% Width)
-                Expanded(
-                  child: _buildRightPanel(),
-                )
-              ],
+      body: Consumer<CashRegisterProvider>(
+        builder: (ctx, cashProv, _) {
+          // ── EmptyState: Admin entró sin turno ────────────────────
+          if (cashProv.currentShift == null || !cashProv.currentShift!.isOpen) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    width: 100,
+                    height: 100,
+                    decoration: BoxDecoration(
+                      color: Colors.orange.shade50,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(Icons.point_of_sale_rounded, size: 52, color: Colors.orange.shade400),
+                  ),
+                  const SizedBox(height: 24),
+                  const Text(
+                    'Caja sin turno activo',
+                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.black87),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Para registrar ventas, necesitás abrir\nla caja en esta terminal.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 15, color: Colors.grey.shade600, height: 1.5),
+                  ),
+                  const SizedBox(height: 32),
+                  FilledButton.icon(
+                    onPressed: () {
+                      Navigator.of(context).pushReplacementNamed('/home');
+                    },
+                    icon: const Icon(Icons.lock_open_rounded),
+                    label: const Text('Abrir Caja Ahora', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: Colors.green.shade600,
+                      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Podés seguir navegando el resto del sistema',
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade400),
+                  ),
+                ],
+              ),
             );
           }
-        ),
+          // ── POS Normal ──────────────────────────────────
+          return SafeArea(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                return Row(
+                  children: [
+                    SizedBox(
+                      width: constraints.maxWidth * 0.35,
+                      child: _buildCartPanel(),
+                    ),
+                    const VerticalDivider(width: 1, thickness: 1),
+                    Expanded(
+                      child: _buildRightPanel(),
+                    )
+                  ],
+                );
+              }
+            ),
+          );
+        },
       ),
     );
   }

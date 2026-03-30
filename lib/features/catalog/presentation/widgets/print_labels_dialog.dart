@@ -1,19 +1,36 @@
+import 'dart:async';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+import 'package:provider/provider.dart';
+import 'package:intl/intl.dart';
 import '../../domain/entities/product.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
+import 'package:frontend_desktop/core/utils/ean13_generator.dart';
+import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
 
+// ─────────────────────────────────────────────────────────────────────────────
+// PRINT LABELS DIALOG — Split View con Vista Previa en tiempo real
+//
+// Layout:
+//   ┌──────────────────────────────────────────────────────────────────┐
+//   │ Header                                                           │
+//   ├────────────────────────┬─────────────────────────────────────────┤
+//   │ Panel Izquierdo (320px)│ Panel Derecho — PdfPreview (fill)       │
+//   │ - Lista productos      │                                         │
+//   │ - Selector cantidad    │   [preview en vivo, actualiza 500ms]    │
+//   │ - Selector formato     │                                         │
+//   │ - Resumen total        │                                         │
+//   ├────────────────────────┴─────────────────────────────────────────┤
+//   │ Footer — Cancelar | Imprimir (N)                                 │
+//   └──────────────────────────────────────────────────────────────────┘
+// ─────────────────────────────────────────────────────────────────────────────
 class PrintLabelsDialog extends StatefulWidget {
   final List<Product> products;
-  final String companyName;
 
-  const PrintLabelsDialog({
-    Key? key,
-    required this.products,
-    this.companyName = 'Mi Negocio POS', // Podría venir del SettingsProvider
-  }) : super(key: key);
+  const PrintLabelsDialog({super.key, required this.products});
 
   @override
   State<PrintLabelsDialog> createState() => _PrintLabelsDialogState();
@@ -21,286 +38,981 @@ class PrintLabelsDialog extends StatefulWidget {
 
 class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
   final Map<int, int> _quantities = {};
-  bool _isGenerating = false;
-  String _paperFormat = 'a4'; // Por defecto A4 (grilla multi-etiqueta)
+  final Map<int, double?> _weights = {};
+  String _paperFormat = 'custom_55_45';
+
+  // Debounce + UniqueKey para forzar rebuild del PdfPreview
+  Key _previewKey = UniqueKey();
+  Timer? _debounce;
+
+  // Cache de datos empresa (cargados una sola vez desde SettingsProvider)
+  String _companyName = 'Mi Negocio';
+  String _companyAddress = '';
+  String _companyPhone = '';
+  String _companyTaxId = '';
+
+  static bool _isPrinting = false;
+  static bool _fontLoadingFailed = false;
+
+  // Cache estático de fuentes para evitar re-escaneo de AssetManifest.json (Crash Bloqueante en Windows)
+  static pw.Font? _robotoRegular;
+  static pw.Font? _robotoBold;
 
   @override
   void initState() {
     super.initState();
     for (var p in widget.products) {
       _quantities[p.id] = 1;
-    }
-  }
-
-  bool _isValidEan13(String code) {
-    if (code.length != 13 || double.tryParse(code) == null) return false;
-    int sum = 0;
-    for (int i = 0; i < 12; i++) {
-        int v = int.parse(code[i]);
-        sum += (i % 2 == 0) ? v : v * 3;
-    }
-    int check = (10 - (sum % 10)) % 10;
-    return check == int.parse(code[12]);
-  }
-
-  Future<void> _generateAndPrint() async {
-    setState(() => _isGenerating = true);
-
-    try {
-      final pdf = pw.Document();
-
-      pw.Widget buildLabel(Product product) {
-        final String codeToPrint = (product.barcode != null && product.barcode!.isNotEmpty)
-            ? product.barcode!
-            : product.internalCode;
-
-        return pw.Column(
-          mainAxisAlignment: pw.MainAxisAlignment.center,
-          crossAxisAlignment: pw.CrossAxisAlignment.center,
-          children: [
-            pw.Text(
-              widget.companyName.toUpperCase(),
-              style: pw.TextStyle(fontSize: 6, fontWeight: pw.FontWeight.bold),
-              maxLines: 1,
-            ),
-            pw.SizedBox(height: 1),
-            pw.Text(
-              product.name,
-              style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold),
-              maxLines: 1,
-              overflow: pw.TextOverflow.clip,
-            ),
-            pw.SizedBox(height: 1),
-            pw.Text(
-              '\$${product.sellingPrice.toStringAsFixed(2)}',
-              style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold),
-            ),
-            pw.Spacer(),
-            pw.SizedBox(
-              height: 16,
-              width: 100,
-              child: pw.BarcodeWidget(
-                barcode: _isValidEan13(codeToPrint) 
-                          ? pw.Barcode.ean13()
-                          : pw.Barcode.code128(),
-                data: codeToPrint,
-                drawText: true,
-                textStyle: const pw.TextStyle(fontSize: 6),
-                margin: pw.EdgeInsets.zero,
-              ),
-            ),
-          ],
-        );
-      }
-
-      // Generar la lista plana de todas las etiquetas solicitadas
-      final List<pw.Widget> allLabels = [];
-      for (final p in widget.products) {
-        final qty = _quantities[p.id] ?? 1;
-        for (int i = 0; i < qty; i++) {
-          allLabels.add(
-            pw.Container(
-              width: 50 * PdfPageFormat.mm,
-              height: 25 * PdfPageFormat.mm,
-              padding: const pw.EdgeInsets.all(2 * PdfPageFormat.mm),
-              decoration: pw.BoxDecoration(border: pw.Border.all(color: PdfColors.grey400, width: 0.5)),
-              child: buildLabel(p),
-            )
-          );
-        }
-      }
-
-      if (_paperFormat == 'thermal') {
-        final format = const PdfPageFormat(50 * PdfPageFormat.mm, 25 * PdfPageFormat.mm, marginAll: 2 * PdfPageFormat.mm);
-        for (final labelWidget in allLabels) {
-          pdf.addPage(
-            pw.Page(
-              pageFormat: format,
-              build: (context) => labelWidget, // Ya viene en un Container, no importa. Pinta bien.
-            ),
-          );
-        }
-      } else {
-        // Formato A4 (Grilla Múltiple)
-        pdf.addPage(
-          pw.MultiPage(
-            pageFormat: PdfPageFormat.a4,
-            margin: const pw.EdgeInsets.all(10 * PdfPageFormat.mm),
-            build: (pw.Context context) {
-              return [
-                pw.Wrap(
-                  spacing: 5 * PdfPageFormat.mm,
-                  runSpacing: 5 * PdfPageFormat.mm,
-                  children: allLabels,
-                )
-              ];
-            }
-          ),
-        );
-      }
-
-      final bytes = await pdf.save();
-
-      // Abrir vista previa / diálogo de impresión nativa (Desktop o Web)
-      if (mounted) {
-         Navigator.of(context).pop(); // Cerrar el diálogo primero
-      }
-
-      await Printing.layoutPdf(
-        onLayout: (PdfPageFormat defaultFormat) async => bytes,
-        name: 'Lote_Etiquetas_Pos',
-        dynamicLayout: false, // Forzar formato
-      );
-
-    } catch (e) {
-      if (mounted) {
-        SnackBarService.error(context, 'Error al generar PDF: $e');
-        setState(() => _isGenerating = false);
+      if (p.isSoldByWeight) {
+        _weights[p.id] = 100.0;
       }
     }
+    // Leer settings una sola vez para tenerlos disponibles en el motor PDF
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final s = context.read<SettingsProvider>().settings;
+      setState(() {
+        _companyName = s?.companyName ?? 'Mi Negocio';
+        _companyAddress = s?.address ?? '';
+        _companyPhone = s?.phone ?? '';
+        _companyTaxId = s?.taxId ?? '';
+        _previewKey = UniqueKey();
+      });
+    });
   }
 
   @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Row(
-        children: [
-          Icon(Icons.print_outlined, color: Colors.blueGrey),
-          SizedBox(width: 8),
-          Text('Imprimir Etiquetas'),
-        ],
-      ),
-      content: SizedBox(
-        width: 380,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
+  void dispose() {
+    _debounce?.cancel();
+    super.dispose();
+  }
+
+  int get _totalLabels => _quantities.values.fold(0, (a, b) => a + b);
+
+  // ── Dispara rebuild del preview con debounce de 500ms ──────────────
+  void _schedulePreviewRebuild() {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 500), () {
+      if (mounted) setState(() => _previewKey = UniqueKey());
+    });
+  }
+
+  // ── Callback para PdfPreview — ignora el PdfPageFormat que pasa el widget
+  //    y usa siempre el formato elegido por el usuario en el panel izquierdo
+  Future<Uint8List> _buildPdfForPreview(PdfPageFormat _) =>
+      _buildPdfBytes(companyName: _companyName, companyAddress: _companyAddress, companyPhone: _companyPhone, companyTaxId: _companyTaxId);
+
+  // ── Motor PDF principal ─────────────────────────────────────────────
+  Future<Uint8List> _buildPdfBytes({
+    required String companyName,
+    required String companyAddress,
+    required String companyPhone,
+    required String companyTaxId,
+  }) async {
+    // Carga de fuentes con Cache y Fallback de seguridad
+    pw.Font ttfRegular;
+    pw.Font ttfBold;
+
+    if (_fontLoadingFailed) {
+      // Fallback inmediato si ya sabemos que el sistema de assets de Windows está fallando
+      ttfRegular = pw.Font.helvetica();
+      ttfBold = pw.Font.helveticaBold();
+    } else {
+      try {
+        // Intentar cargar Roboto desde Google Fonts (Cacheado)
+        ttfRegular = _robotoRegular ??= await PdfGoogleFonts.robotoRegular();
+        ttfBold = _robotoBold ??= await PdfGoogleFonts.robotoBold();
+      } catch (e) {
+        // Fallback a Helvetica si hay error de assets/red para evitar crash fatal
+        debugPrint('Fallo al cargar fuentes remotas o manifiesto de assets: $e');
+        _fontLoadingFailed = true; // No volver a intentar para no saturar la consola
+        ttfRegular = pw.Font.helvetica();
+        ttfBold = pw.Font.helveticaBold();
+      }
+    }
+
+    final pdf = pw.Document(
+      theme: pw.ThemeData.withFont(base: ttfRegular, bold: ttfBold),
+    );
+    final now = DateTime.now();
+    final dateFmt = DateFormat('dd/MM/yy');
+
+    pw.Widget buildLabel(Product product) {
+      final double? customWeight = _weights[product.id];
+      final bool hasWeight = product.isSoldByWeight && customWeight != null && customWeight > 0;
+
+      // Determinamos el PLU numérico: Priorizamos el Código Interno (si es numérico), sino usamos el ID
+      final int numericPlu = int.tryParse(product.internalCode) ?? product.id;
+      final String pluStr = numericPlu.toString().padLeft(5, '0');
+
+      final String ean13 = hasWeight 
+          ? Ean13Generator.generateForScale(numericPlu, customWeight)
+          : Ean13Generator.generate(
+              plu: numericPlu,
+              existingBarcode: product.barcode,
+            );
+
+      final double finalPrice = hasWeight 
+          ? product.sellingPrice * (customWeight / 1000)
+          : product.sellingPrice;
+
+      final String envStr = dateFmt.format(now);
+      final String? vtoStr = (product.vencimientoDias != null &&
+              product.vencimientoDias! > 0)
+          ? dateFmt.format(now.add(Duration(days: product.vencimientoDias!)))
+          : null;
+
+      final String precioStr = NumberFormat('#,##0.00', 'es_AR').format(finalPrice);
+      final bool isValidEan = Ean13Generator.isValid(ean13);
+
+      return pw.Container(
+        padding: pw.EdgeInsets.symmetric(
+          horizontal: 1.5 * PdfPageFormat.mm,
+          vertical: 1.5 * PdfPageFormat.mm,
+        ),
+        decoration: pw.BoxDecoration(
+          border: pw.Border.all(color: PdfColors.grey600, width: 0.5),
+          borderRadius: pw.BorderRadius.circular(2),
+        ),
+        child: pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.center,
           children: [
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 250),
-              child: SingleChildScrollView(
-                child: Column(
-                  children: widget.products.map((p) {
-                    final qty = _quantities[p.id] ?? 0;
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(color: Colors.grey.shade50, border: Border.all(color: Colors.grey.shade200), borderRadius: BorderRadius.circular(8)),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(p.name, style: const TextStyle(fontWeight: FontWeight.bold), maxLines: 2, overflow: TextOverflow.ellipsis),
-                                Text(p.barcode ?? p.internalCode, style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
-                              ],
-                            ),
-                          ),
-                          Row(
-                            children: [
-                              IconButton(
-                                onPressed: qty > 0 ? () => setState(() => _quantities[p.id] = qty - 1) : null,
-                                icon: const Icon(Icons.remove_circle_outline),
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints(),
-                              ),
-                              SizedBox(
-                                width: 30,
-                                child: Text('$qty', textAlign: TextAlign.center, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                              ),
-                              IconButton(
-                                onPressed: () => setState(() => _quantities[p.id] = qty + 1),
-                                icon: const Icon(Icons.add_circle_outline),
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints(),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    );
-                  }).toList(),
-                ),
-              ),
+            // NOMBRE Y GRAMAJE
+            pw.Text(
+              product.name.toUpperCase(),
+              style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold),
+              textAlign: pw.TextAlign.center,
+              maxLines: 2,
+              overflow: pw.TextOverflow.clip,
             ),
-            const SizedBox(height: 16),
-            const Text('Formato de Papel:', style: TextStyle(fontWeight: FontWeight.bold)),
-            Row(
+            if (hasWeight) ...[
+              pw.Text(
+                '${customWeight.toInt()} GS',
+                style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold),
+                textAlign: pw.TextAlign.center,
+              ),
+            ],
+            pw.SizedBox(height: 0.5 * PdfPageFormat.mm),
+            
+            // FECHAS (ENV y VTO en la misma línea)
+            pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.center,
               children: [
-                Expanded(
-                  child: RadioListTile<String>(
-                    title: const Text('Térmica (Unitario)', style: TextStyle(fontSize: 11)),
-                    value: 'thermal',
-                    groupValue: _paperFormat,
-                    contentPadding: EdgeInsets.zero,
-                    dense: true,
-                    onChanged: (val) => setState(() => _paperFormat = val!),
-                  ),
-                ),
-                Expanded(
-                  child: RadioListTile<String>(
-                    title: const Text('Hoja A4 (Grilla)', style: TextStyle(fontSize: 11)),
-                    value: 'a4',
-                    groupValue: _paperFormat,
-                    contentPadding: EdgeInsets.zero,
-                    dense: true,
-                    onChanged: (val) => setState(() => _paperFormat = val!),
-                  ),
-                ),
+                pw.Text('ENV: $envStr', style: const pw.TextStyle(fontSize: 7)),
+                if (vtoStr != null) ...[
+                  pw.SizedBox(width: 3 * PdfPageFormat.mm),
+                  pw.Text('VTO: $vtoStr', style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold)),
+                ],
               ],
             ),
-            AnimatedSize(
-              duration: const Duration(milliseconds: 300),
-              child: Container(
-                margin: const EdgeInsets.only(top: 16),
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: _paperFormat == 'thermal' ? Colors.orange.shade50 : Colors.blue.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: _paperFormat == 'thermal' ? Colors.orange.shade200 : Colors.blue.shade200),
+            pw.SizedBox(height: 1 * PdfPageFormat.mm),
+            
+            // DETALLE DE UNIDADES / PRECIO X KG
+            pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              children: [
+                 if (!hasWeight) ... [
+                    pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text('UNIDADES', style: const pw.TextStyle(fontSize: 5)),
+                        pw.Text('1', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
+                      ]
+                    )
+                 ] else ... [
+                     pw.Column(
+                       crossAxisAlignment: pw.CrossAxisAlignment.start,
+                       children: [
+                         pw.Text('\$/KG', style: pw.TextStyle(fontSize: 5)),
+                         pw.Text(
+                           NumberFormat('#,##0.00', 'es_AR').format(product.sellingPrice),
+                           style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold),
+                         ),
+                       ],
+                     ),
+                 ],
+                 // Podríamos poner el CONSUMO PREFERENTE aquí si fuera necesario
+              ],
+            ),
+            
+            pw.Spacer(),
+
+            // BLOQUE INFERIOR: CÓDIGO BARRAS (IZQ) + IMPORTE (DER)
+            pw.Row(
+              crossAxisAlignment: pw.CrossAxisAlignment.end,
+              children: [
+                 // Columna Barcode
+                 pw.Expanded(
+                   flex: 55,
+                   child: pw.Column(
+                     crossAxisAlignment: pw.CrossAxisAlignment.start,
+                     children: [
+                       pw.Text('PLU:$pluStr', style: const pw.TextStyle(fontSize: 5)),
+                       pw.SizedBox(height: 0.5 * PdfPageFormat.mm),
+                       pw.BarcodeWidget(
+                         barcode: isValidEan ? pw.Barcode.ean13() : pw.Barcode.code128(),
+                         data: ean13,
+                         drawText: false,
+                         height: 8 * PdfPageFormat.mm, // Reducido aún más para evitar overflow en pesables
+                       ),
+                       pw.SizedBox(height: 0.5 * PdfPageFormat.mm),
+                         pw.Center(
+                           child: pw.Text(
+                             Ean13Generator.format(ean13),
+                             style: pw.TextStyle(fontSize: 5.5, font: ttfRegular),
+                           ),
+                         ),
+                       ],
+                     ),
+                   ),
+                 pw.SizedBox(width: 2 * PdfPageFormat.mm),
+                 // Columna Importe
+                 pw.Expanded(
+                   flex: 45,
+                   child: pw.Column(
+                     crossAxisAlignment: pw.CrossAxisAlignment.end,
+                     mainAxisAlignment: pw.MainAxisAlignment.end,
+                     children: [
+                       pw.Text('IMPORTE (\$)', style: pw.TextStyle(fontSize: 6, fontWeight: pw.FontWeight.bold)),
+                       pw.Text(
+                         precioStr,
+                         style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold),
+                         textAlign: pw.TextAlign.right,
+                       ),
+                     ],
+                   ),
+                 ),
+              ]
+            ),
+            pw.SizedBox(height: 0.5 * PdfPageFormat.mm),
+            
+            // PIE DE NEGOCIO (COMPACTADO)
+            // Se eliminó el pw.Divider() para ganar espacio vertical vital
+            pw.Text(
+              companyName.toUpperCase(),
+              style: pw.TextStyle(fontSize: 6, fontWeight: pw.FontWeight.bold),
+              textAlign: pw.TextAlign.center,
+              maxLines: 1,
+            ),
+            if (companyAddress.isNotEmpty || companyPhone.isNotEmpty || companyTaxId.isNotEmpty)
+              pw.Text(
+                [
+                  if (companyAddress.isNotEmpty) companyAddress.toUpperCase(),
+                  if (companyPhone.isNotEmpty) 'TEL: $companyPhone',
+                  if (companyTaxId.isNotEmpty) 'CUIT: $companyTaxId'
+                ].join(' • '),
+                style: const pw.TextStyle(fontSize: 4),
+                textAlign: pw.TextAlign.center,
+                maxLines: 2,
+              ),
+          ],
+        ),
+      );
+    }
+
+    // Generar lista plana de etiquetas
+    final List<pw.Widget> allLabels = [];
+    for (final p in widget.products) {
+      final qty = _quantities[p.id] ?? 1;
+      for (int i = 0; i < qty; i++) {
+        allLabels.add(buildLabel(p));
+      }
+    }
+
+    if (_paperFormat == 'thermal') {
+      const format = PdfPageFormat(
+        80 * PdfPageFormat.mm,
+        50 * PdfPageFormat.mm,
+        marginAll: 0,
+      );
+      for (final label in allLabels) {
+        pdf.addPage(
+          pw.Page(
+            pageFormat: format,
+            margin: const pw.EdgeInsets.all(2 * PdfPageFormat.mm),
+            build: (_) => label,
+          ),
+        );
+      }
+    } else if (_paperFormat == 'custom_55_45') {
+       const format = PdfPageFormat(
+         55 * PdfPageFormat.mm,
+         45 * PdfPageFormat.mm,
+         marginAll: 0,
+       );
+       for (final label in allLabels) {
+         pdf.addPage(
+            pw.Page(pageFormat: format, margin: const pw.EdgeInsets.all(1 * PdfPageFormat.mm), build: (_) => label),
+         );
+       }
+    } else {
+      pdf.addPage(
+        pw.MultiPage(
+          pageFormat: PdfPageFormat.a4,
+          margin: const pw.EdgeInsets.all(10 * PdfPageFormat.mm),
+          build: (_) => [
+            pw.Wrap(
+              spacing: 4 * PdfPageFormat.mm,
+              runSpacing: 4 * PdfPageFormat.mm,
+              children: allLabels
+                  .map((label) => pw.SizedBox(
+                        width: 55 * PdfPageFormat.mm,
+                        height: 45 * PdfPageFormat.mm,
+                        child: label,
+                      ))
+                  .toList(),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Uint8List.fromList(await pdf.save());
+  }
+
+  // ── Acción Imprimir ─────────────────────────────────────────────────
+  Future<void> _print() async {
+    if (_totalLabels == 0) {
+      SnackBarService.error(
+          context, 'Seleccioná al menos 1 etiqueta para imprimir.');
+      return;
+    }
+    setState(() => _isPrinting = true);
+    try {
+      final bytes = await _buildPdfBytes(
+        companyName: _companyName,
+        companyAddress: _companyAddress,
+        companyPhone: _companyPhone,
+        companyTaxId: _companyTaxId,
+      );
+      if (mounted) Navigator.of(context).pop();
+      await Printing.layoutPdf(
+        onLayout: (_) async => bytes,
+        name:
+            'Etiquetas_POS_${DateFormat('yyyyMMdd_HHmm').format(DateTime.now())}',
+        dynamicLayout: false,
+      );
+    } catch (e) {
+      if (mounted) {
+        SnackBarService.error(context, 'Error al imprimir: $e');
+        setState(() => _isPrinting = false);
+      }
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // UI BUILD
+  // ═══════════════════════════════════════════════════════════════════
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      clipBehavior: Clip.antiAlias,
+      child: SizedBox(
+        width: 960,
+        height: 660,
+        child: Column(
+          children: [
+            _buildHeader(),
+            const Divider(height: 1),
+            Expanded(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // ── Panel Izquierdo — Controles ───────────────
+                  SizedBox(width: 320, child: _buildLeftPanel()),
+                  const VerticalDivider(width: 1),
+                  // ── Panel Derecho — Vista Previa ──────────────
+                  Expanded(child: _buildPreviewPanel()),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            _buildFooter(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Header ──────────────────────────────────────────────────────────
+  Widget _buildHeader() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+      color: Colors.deepPurple.shade50,
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.deepPurple.shade100,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(Icons.label_important,
+                color: Colors.deepPurple.shade700, size: 22),
+          ),
+          const SizedBox(width: 12),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Imprimir Etiquetas de Precio',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              Text(
+                '${widget.products.length} producto${widget.products.length > 1 ? 's' : ''} · Vista previa en tiempo real',
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+              ),
+            ],
+          ),
+          const Spacer(),
+          IconButton(
+            icon: const Icon(Icons.close),
+            onPressed: () => Navigator.of(context).pop(),
+            tooltip: 'Cancelar',
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Panel Izquierdo ─────────────────────────────────────────────────
+  Widget _buildLeftPanel() {
+    return Container(
+      color: Colors.grey.shade50,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // ── Lista de productos con cantidad ───────────────────
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.all(14),
+              children: [
+                Text(
+                  'CANTIDAD POR PRODUCTO',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey.shade500,
+                    letterSpacing: 0.8,
+                  ),
                 ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                const SizedBox(height: 8),
+                ...widget.products.map((p) => _buildProductQtyRow(p)),
+                const SizedBox(height: 16),
+
+                // ── Selector de formato ───────────────────────
+                Text(
+                  'FORMATO DE IMPRESIÓN',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey.shade500,
+                    letterSpacing: 0.8,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Row(
                   children: [
-                    Icon(
-                      _paperFormat == 'thermal' ? Icons.warning_amber_rounded : Icons.info_outline,
-                      size: 20,
-                      color: _paperFormat == 'thermal' ? Colors.orange.shade700 : Colors.blue.shade700,
+                    Expanded(
+                      child: _FormatCard(
+                        selected: _paperFormat == 'custom_55_45',
+                        icon: Icons.aspect_ratio_rounded,
+                        title: 'Etiq. 55x45',
+                        subtitle: 'Pixel-perfect',
+                        onTap: () {
+                          setState(() {
+                            _paperFormat = 'custom_55_45';
+                            _schedulePreviewRebuild();
+                          });
+                        },
+                        color: Colors.deepPurple,
+                      ),
                     ),
                     const SizedBox(width: 8),
                     Expanded(
-                      child: Text(
-                        _paperFormat == 'thermal'
-                            ? 'Genera páginas de 50x25mm. Elija esta opción SOLO si posee una impresora térmica de etiquetas en rollo (ej: Zebra, Xprinter).'
-                            : 'Genera una grilla en A4. Ideal para impresoras de tinta o láser sobre papel autoadhesivo troquelado estándar.',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: _paperFormat == 'thermal' ? Colors.orange.shade900 : Colors.blue.shade900,
-                          height: 1.3,
-                        ),
+                      child: _FormatCard(
+                        selected: _paperFormat == 'a4',
+                        icon: Icons.grid_view_rounded,
+                        title: 'Plancha A4',
+                        subtitle: 'Página Múltiple',
+                        onTap: () {
+                          setState(() {
+                            _paperFormat = 'a4';
+                            _schedulePreviewRebuild();
+                          });
+                        },
+                        color: Colors.blue,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _FormatCard(
+                        selected: _paperFormat == 'thermal',
+                        icon: Icons.receipt_long_outlined,
+                        title: 'Rollo 80mm',
+                        subtitle: 'Ticketeras',
+                        onTap: () {
+                          setState(() {
+                            _paperFormat = 'thermal';
+                            _schedulePreviewRebuild();
+                          });
+                        },
+                        color: Colors.orange,
                       ),
                     ),
                   ],
                 ),
+              ],
+            ),
+          ),
+
+          // ── Resumen sticky al fondo del panel ─────────────────
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border:
+                  Border(top: BorderSide(color: Colors.grey.shade200)),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.summarize_outlined,
+                  size: 16,
+                  color: _totalLabels > 0
+                      ? Colors.deepPurple
+                      : Colors.grey.shade400,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _totalLabels > 0
+                        ? '$_totalLabels etiqueta${_totalLabels > 1 ? 's' : ''} · ${_paperFormat == 'a4' ? 'Hoja A4' : 'Rollo 80mm'}'
+                        : 'Sin etiquetas seleccionadas',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: _totalLabels > 0
+                          ? Colors.deepPurple.shade700
+                          : Colors.grey.shade500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProductQtyRow(Product p) {
+    final qty = _quantities[p.id] ?? 0;
+    final hasExpiry = p.vencimientoDias != null && p.vencimientoDias! > 0;
+    final double? currentWeight = _weights[p.id];
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: qty > 0 ? Colors.white : Colors.grey.shade100,
+        border: Border.all(
+          color: qty > 0 ? Colors.deepPurple.shade100 : Colors.grey.shade200,
+        ),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      p.name,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.bold, fontSize: 12),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Row(
+                      children: [
+                        Text(
+                          '\$${p.sellingPrice.toStringAsFixed(2)}',
+                          style: const TextStyle(
+                              fontSize: 11,
+                              color: Colors.green,
+                              fontWeight: FontWeight.w600),
+                        ),
+                        if (hasExpiry) ...[
+                          const SizedBox(width: 6),
+                          Icon(Icons.hourglass_bottom_outlined,
+                              size: 10, color: Colors.grey.shade500),
+                          Text(
+                            ' ${p.vencimientoDias}d',
+                            style: TextStyle(
+                                fontSize: 10, color: Colors.grey.shade500),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ],
+                ),
               ),
+              // Selector +/-
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _QtyButton(
+                    icon: Icons.remove,
+                    color: Colors.red.shade300,
+                    onTap: qty > 0
+                        ? () {
+                            setState(() => _quantities[p.id] = qty - 1);
+                            _schedulePreviewRebuild();
+                          }
+                        : null,
+                  ),
+                  SizedBox(
+                    width: 32,
+                    child: Text(
+                      '$qty',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: qty > 0
+                            ? Colors.deepPurple.shade700
+                            : Colors.grey.shade400,
+                      ),
+                    ),
+                  ),
+                  _QtyButton(
+                    icon: Icons.add,
+                    color: Colors.green.shade600,
+                    onTap: () {
+                      setState(() => _quantities[p.id] = qty + 1);
+                      _schedulePreviewRebuild();
+                    },
+                  ),
+                ],
+              ),
+            ],
+          ),
+          if (p.isSoldByWeight && qty > 0) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.orange.shade50,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: Colors.orange.shade200, width: 0.5)
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.scale_rounded, size: 14, color: Colors.orange),
+                  const SizedBox(width: 4),
+                  const Text('Peso:', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                  const SizedBox(width: 4),
+                  SizedBox(
+                    width: 82, // Compactado para evitar overflow en panel de 320px
+                    height: 32,
+                    child: TextFormField(
+                      initialValue: currentWeight?.toInt().toString() ?? '',
+                      keyboardType: const TextInputType.numberWithOptions(decimal: false),
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                      decoration: InputDecoration(
+                        isDense: true,
+                        filled: true,
+                        fillColor: Colors.white,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                        hintText: '100',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(6),
+                          borderSide: BorderSide(color: Colors.orange.shade200, width: 1),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(6),
+                          borderSide: BorderSide(color: Colors.orange.shade200, width: 1),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(6),
+                          borderSide: const BorderSide(color: Colors.orange, width: 1.5),
+                        ),
+                        suffixText: 'gr',
+                        suffixStyle: TextStyle(
+                          fontSize: 10, 
+                          color: Colors.orange.shade800, 
+                          fontWeight: FontWeight.bold
+                        ),
+                      ),
+                      onChanged: (val) {
+                         final w = double.tryParse(val.replaceAll(',', '.'));
+                         if (w != null && w > 0) {
+                           _weights[p.id] = w;
+                         } else {
+                           _weights[p.id] = null;
+                         }
+                         _schedulePreviewRebuild();
+                      },
+                    ),
+                  ),
+                  const Spacer(), // Empuja el importe a la derecha de forma flexible
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text('Total Etq.', style: TextStyle(fontSize: 9, color: Colors.grey)),
+                      Text(
+                        '\$${NumberFormat('#,##0.00', 'es_AR').format((currentWeight ?? 0) / 1000 * p.sellingPrice)}',
+                        style: const TextStyle(fontSize: 12, color: Colors.deepPurple, fontWeight: FontWeight.bold),
+                      )
+                    ]
+                  )
+                ]
+              )
+            )
+          ]
+        ]
+      )
+    );
+  }
+
+  // ── Panel Derecho — Vista Previa ────────────────────────────────────
+  Widget _buildPreviewPanel() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Label de la sección
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          color: Colors.grey.shade100,
+          child: Row(
+            children: [
+              Icon(Icons.preview_outlined,
+                  size: 15, color: Colors.grey.shade600),
+              const SizedBox(width: 6),
+              Text(
+                'VISTA PREVIA — ${_paperFormat == 'a4' ? 'HOJA A4' : 'ROLLO 80mm'}',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.grey.shade600,
+                  letterSpacing: 0.8,
+                ),
+              ),
+              const Spacer(),
+              if (_totalLabels == 0)
+                Text(
+                  'Seleccioná productos para ver el preview',
+                  style:
+                      TextStyle(fontSize: 10, color: Colors.grey.shade500),
+                ),
+            ],
+          ),
+        ),
+        // PdfPreview
+        Expanded(
+          child: _totalLabels == 0
+              ? _buildEmptyPreview()
+              : PdfPreview(
+                  key: _previewKey,
+                  build: _buildPdfForPreview,
+                  // Ocultar toda la barra de herramientas nativa
+                  allowPrinting: false,
+                  allowSharing: false,
+                  canDebug: false,
+                  // Formato inicial para el preview
+                  initialPageFormat: _paperFormat == 'a4'
+                      ? PdfPageFormat.a4
+                      : _paperFormat == 'custom_55_45'
+                          ? const PdfPageFormat(
+                              55 * PdfPageFormat.mm,
+                              45 * PdfPageFormat.mm,
+                            )
+                          : const PdfPageFormat(
+                              80 * PdfPageFormat.mm,
+                              50 * PdfPageFormat.mm,
+                            ),
+                  // Estilo de página con sombra
+                  pdfPreviewPageDecoration: BoxDecoration(
+                    color: Colors.white,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.15),
+                        blurRadius: 6,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  scrollViewDecoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                  ),
+                ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildEmptyPreview() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.label_off_outlined,
+              size: 64, color: Colors.grey.shade300),
+          const SizedBox(height: 16),
+          Text(
+            'Sin etiquetas para previsualizar',
+            style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey.shade500,
+                fontWeight: FontWeight.w500),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Asigná al menos 1 unidad a un producto\npara ver el preview en tiempo real.',
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade400),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Footer ──────────────────────────────────────────────────────────
+  Widget _buildFooter() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+      color: Colors.white,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          TextButton(
+            onPressed:
+                _isPrinting ? null : () => Navigator.of(context).pop(),
+            child: const Text('Cancelar'),
+          ),
+          const SizedBox(width: 12),
+          FilledButton.icon(
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.deepPurple,
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            ),
+            onPressed: (_isPrinting || _totalLabels == 0) ? null : _print,
+            icon: _isPrinting
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.white))
+                : const Icon(Icons.print_outlined, size: 18),
+            label: Text(
+              _isPrinting
+                  ? 'Enviando...'
+                  : 'Imprimir $_totalLabels etiqueta${_totalLabels != 1 ? 's' : ''}',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// WIDGETS AUXILIARES
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _QtyButton extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final VoidCallback? onTap;
+
+  const _QtyButton(
+      {required this.icon, required this.color, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        width: 26,
+        height: 26,
+        decoration: BoxDecoration(
+          color: onTap != null ? color.withOpacity(0.12) : Colors.transparent,
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Icon(
+          icon,
+          size: 16,
+          color: onTap != null ? color : Colors.grey.shade300,
+        ),
+      ),
+    );
+  }
+}
+
+class _FormatCard extends StatelessWidget {
+  final bool selected;
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+  final Color color;
+
+  const _FormatCard({
+    required this.selected,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+        decoration: BoxDecoration(
+          color: selected ? color.withOpacity(0.08) : Colors.white,
+          border: Border.all(
+            color: selected ? color : Colors.grey.shade300,
+            width: selected ? 2 : 1,
+          ),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Column(
+          children: [
+            Icon(icon,
+                color: selected ? color : Colors.grey.shade500, size: 24),
+            const SizedBox(height: 4),
+            Text(
+              title,
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
+                color: selected ? color : Colors.black87,
+              ),
+            ),
+            Text(
+              subtitle,
+              style: TextStyle(fontSize: 9, color: Colors.grey.shade500),
+              textAlign: TextAlign.center,
             ),
           ],
         ),
       ),
-      actions: [
-        TextButton(
-          onPressed: _isGenerating ? null : () => Navigator.of(context).pop(),
-          child: const Text('Cancelar'),
-        ),
-        FilledButton.icon(
-          onPressed: _isGenerating ? null : _generateAndPrint,
-          icon: _isGenerating 
-              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-              : const Icon(Icons.picture_as_pdf, size: 18),
-          label: Text(_isGenerating ? 'Generando...' : 'Generar PDF'),
-        ),
-      ],
     );
   }
 }

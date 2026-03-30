@@ -4,7 +4,7 @@ import '../../../../features/auth/presentation/providers/auth_provider.dart';
 import '../../../../features/auth/presentation/widgets/admin_pin_dialog.dart';
 
 class SharedUserMenu extends StatelessWidget {
-  const SharedUserMenu({Key? key}) : super(key: key);
+  const SharedUserMenu({super.key});
 
   @override
   Widget build(BuildContext context) {
