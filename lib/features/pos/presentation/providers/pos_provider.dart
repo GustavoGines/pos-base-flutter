@@ -126,10 +126,10 @@ class PosProvider with ChangeNotifier {
       final product = Product(
         id: (prod['id'] as num?)?.toInt() ?? 0,
         name: itemMap['product_name']?.toString() ?? prod['name']?.toString() ?? 'Producto',
-        internalCode: '',
+        internalCode: prod['internal_code']?.toString() ?? '',
         costPrice: 0,
         sellingPrice: double.tryParse(itemMap['unit_price'].toString()) ?? 0.0,
-        stock: double.tryParse(prod['stock'].toString()) ?? 0.0,
+        stock: double.tryParse(prod['stock']?.toString() ?? '0') ?? 0.0,
         active: true,
         isSoldByWeight: prod['is_sold_by_weight'] == true || prod['is_sold_by_weight'] == 1,
       );

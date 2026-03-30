@@ -30,6 +30,11 @@ class _PosScreenState extends State<PosScreen> {
   Timer? _debounceSearchTimer;
   
   Timer? _pendingOrdersTimer;
+  
+  // Controladores para el Popover de Órdenes en Espera
+  final _pendingOrdersPortalController = OverlayPortalController();
+  final _pendingOrdersLayerLink = LayerLink();
+  bool _isPendingPinned = false; // Modo Híbrido
 
   @override
   void initState() {
@@ -42,8 +47,8 @@ class _PosScreenState extends State<PosScreen> {
       // Cargar el contador de órdenes pendientes al abrir el POS
       Provider.of<PosProvider>(context, listen: false).loadPendingSales();
       
-      // Polling de 15 segundos para refrescar órdenes pendientes en background
-      _pendingOrdersTimer = Timer.periodic(const Duration(seconds: 15), (timer) {
+      // Polling veloz (5 seg) para recepción casi-inmediata de órdenes en red local/multicaja
+      _pendingOrdersTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
         if (mounted) {
           Provider.of<PosProvider>(context, listen: false).loadPendingSales();
         }
@@ -554,121 +559,213 @@ class _PosScreenState extends State<PosScreen> {
   }
 
   // ────────────────────────────────────────────────────────────────
-  void _showPendingOrdersDialog() async {
-    final posProvider = Provider.of<PosProvider>(context, listen: false);
-    await posProvider.loadPendingSales(); // Refrescar antes de mostrar
+  // ────────────────────────────────────────────────────────────────
+  // POPOVER DE ÓRDENES EN ESPERA (FIJO)
+  // ────────────────────────────────────────────────────────────────
+  // ────────────────────────────────────────────────────────────────
+  // ────────────────────────────────────────────────────────────────
+  // POPOVER DE ÓRDENES EN ESPERA (HÍBRIDO Y ESTABLE)
+  // ────────────────────────────────────────────────────────────────
 
-    if (!mounted) return;
-
-    await showDialog(
-      context: context,
-      builder: (dialogContext) {
-        return StatefulBuilder(
-          builder: (ctx, setStateDialog) {
-            final pendingSales = posProvider.pendingSales;
-            return AlertDialog(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-              titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
-              contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
-              title: Row(
-                children: [
-                  Icon(Icons.pending_actions_rounded, color: Colors.orange.shade700),
-                  const SizedBox(width: 10),
-                  const Text('Órdenes en Espera', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
-                  const Spacer(),
-                  IconButton(
-                    icon: const Icon(Icons.refresh, color: Colors.blueGrey),
-                    tooltip: 'Actualizar',
-                    onPressed: () async {
-                      await posProvider.loadPendingSales();
-                      setStateDialog(() {});
-                    },
-                  ),
-                ],
-              ),
-              content: SizedBox(
-                width: 520,
-                child: pendingSales.isEmpty
-                    ? const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 32),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.check_circle_outline, size: 56, color: Colors.green),
-                            SizedBox(height: 12),
-                            Text('¡No hay órdenes en espera!', style: TextStyle(fontSize: 16, color: Colors.grey)),
-                          ],
-                        ),
-                      )
-                    : ListView.separated(
-                        shrinkWrap: true,
-                        itemCount: pendingSales.length,
-                        separatorBuilder: (_, __) => const Divider(height: 1),
-                        itemBuilder: (_, index) {
-                          final sale = pendingSales[index];
-                          final saleId = (sale['id'] as num).toInt();
-                          final total = _toDouble(sale['total']);
-                          final userName = sale['user']?['name'] ?? 'Sin cajero';
-                          final createdAt = sale['created_at'] != null
-                              ? DateTime.tryParse(sale['created_at'].toString())?.toLocal()
-                              : null;
-                          final timeStr = createdAt != null
-                              ? '${createdAt.hour.toString().padLeft(2, '0')}:${createdAt.minute.toString().padLeft(2, '0')}'
-                              : '';
-                          final itemCount = (sale['items'] as List?)?.length ?? 0;
-
-                          return ListTile(
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-                            leading: CircleAvatar(
-                              backgroundColor: Colors.orange.shade100,
-                              child: Text('#$saleId', style: TextStyle(color: Colors.orange.shade800, fontWeight: FontWeight.bold, fontSize: 13)),
-                            ),
-                            title: Text('\$${total.toStringAsFixed(2)}',
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.black87)),
-                            subtitle: Text('$userName · $itemCount ítems · $timeStr',
-                                style: const TextStyle(fontSize: 13, color: Colors.grey)),
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                IconButton(
-                                  icon: const Icon(Icons.delete_outline, color: Colors.red),
-                                  tooltip: 'Anular orden',
-                                  onPressed: () => _handleDeletePendingOrder(saleId, posProvider, setStateDialog: setStateDialog),
-                                ),
-                                const SizedBox(width: 8),
-                                FilledButton.icon(
-                                  onPressed: () {
-                                    Navigator.pop(dialogContext);
-                                    posProvider.recallOrderToCart(sale);
-                                    SnackBarService.success(context, '📥 Orden #$saleId cargada al carrito para revisión.');
-                                    _searchFocusNode.requestFocus();
-                                  },
-                                  icon: const Icon(Icons.download_rounded, size: 18),
-                                  label: const Text('Recuperar'),
-                                  style: FilledButton.styleFrom(
-                                    backgroundColor: Colors.orange.shade700,
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        },
-                      ),
-              ),
-              actionsPadding: const EdgeInsets.all(16),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(dialogContext),
-                  child: const Text('Cerrar'),
-                ),
+  Widget _buildPendingBadge(int count) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0.8, end: 1.05),
+      duration: const Duration(seconds: 1),
+      curve: Curves.easeInOut,
+      builder: (context, scale, _) {
+        return Transform.scale(
+          scale: scale,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+            decoration: BoxDecoration(
+              color: Colors.redAccent,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.white, width: 1.5),
+              boxShadow: [
+                BoxShadow(color: Colors.redAccent.withOpacity(0.4), blurRadius: 4, spreadRadius: 1),
               ],
-            );
-          },
+            ),
+            constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+            child: Text('$count', style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold), textAlign: TextAlign.center),
+          ),
         );
       },
     );
-    _searchFocusNode.requestFocus();
+  }
+  Widget _buildPendingOrdersOverlay(PosProvider posProvider) {
+    return StatefulBuilder(
+      builder: (context, setOverlayState) {
+        final pendingSales = posProvider.pendingSales;
+
+        Widget content = CompositedTransformFollower(
+          link: _pendingOrdersLayerLink,
+          showWhenUnlinked: false,
+          targetAnchor: Alignment.bottomRight,
+          followerAnchor: Alignment.topRight,
+          offset: const Offset(0, 8),
+          child: Align(
+            alignment: Alignment.topRight,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 400, maxHeight: 600),
+              child: Material(
+                key: const ValueKey('pending_orders_overlay_material'),
+                elevation: 16,
+                borderRadius: BorderRadius.circular(20),
+                clipBehavior: Clip.antiAlias,
+                shadowColor: Colors.black.withOpacity(0.3),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    border: Border.all(color: Colors.grey.shade200),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Header con controles internos
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                        child: Row(
+                          children: [
+                            Icon(Icons.pending_actions_rounded, color: Colors.orange.shade700, size: 24),
+                            const SizedBox(width: 12),
+                            const Expanded(
+                              child: Text('Órdenes en Espera', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                            ),
+                            // PIN con setOverlayState para no romper el layout global
+                            IconButton(
+                              icon: Icon(
+                                _isPendingPinned ? Icons.push_pin : Icons.push_pin_outlined,
+                                size: 20,
+                                color: _isPendingPinned ? Colors.blueAccent : Colors.grey,
+                              ),
+                              tooltip: null, // Parche: eliminamos el tooltip que causa el crash
+                              onPressed: () {
+                                setOverlayState(() {
+                                  _isPendingPinned = !_isPendingPinned;
+                                });
+                                setState(() {}); 
+                              },
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.refresh, size: 20, color: Colors.blueGrey),
+                              tooltip: null, // Parche: eliminamos el tooltip que causa el crash
+                              onPressed: () async {
+                                await posProvider.loadPendingSales();
+                                if (context.mounted) setOverlayState(() {});
+                              },
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.close, size: 20),
+                              tooltip: null,
+                              onPressed: () => _pendingOrdersPortalController.hide(),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Divider(height: 1),
+                      Flexible(
+                        child: pendingSales.isEmpty
+                            ? _buildEmptyPendingState()
+                            : _buildPendingOrdersList(pendingSales, posProvider),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+
+        if (!_isPendingPinned) {
+          return TapRegion(
+            groupId: 'pending_orders_overlay',
+            onTapOutside: (_) => _pendingOrdersPortalController.hide(),
+            child: content,
+          );
+        }
+        return content;
+      },
+    );
+  }
+
+  Widget _buildEmptyPendingState() {
+    return const Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.check_circle_outline, size: 56, color: Colors.green),
+          SizedBox(height: 12),
+          Text('¡No hay órdenes!', style: TextStyle(fontSize: 16, color: Colors.grey)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPendingOrdersList(List<dynamic> pendingSales, PosProvider posProvider) {
+    return ListView.separated(
+      padding: const EdgeInsets.all(12),
+      itemCount: pendingSales.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 8),
+      itemBuilder: (_, index) {
+        final sale = pendingSales[index];
+        final saleId = (sale['id'] as num).toInt();
+        final total = _toDouble(sale['total']);
+        final itemCount = (sale['items'] as List?)?.length ?? 0;
+
+        return Card(
+          elevation: 0,
+          color: Colors.grey.shade50,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: Colors.grey.shade100)),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 14,
+                      backgroundColor: Colors.orange.shade100,
+                      child: Text('#$saleId', style: TextStyle(color: Colors.orange.shade800, fontWeight: FontWeight.bold, fontSize: 10)),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text('\$${total.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                    ),
+                    Text('$itemCount ítem(s)', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      child: const Text('Anular', style: TextStyle(color: Colors.red, fontSize: 12)),
+                      onPressed: () => _handleDeletePendingOrder(saleId, posProvider),
+                    ),
+                    const SizedBox(width: 8),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.orange.shade50,
+                        foregroundColor: Colors.orange.shade900,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                      onPressed: () {
+                        _pendingOrdersPortalController.hide();
+                        posProvider.recallOrderToCart(sale);
+                        SnackBarService.success(context, '📥 Orden #$saleId cargada al carrito.');
+                        _searchFocusNode.requestFocus();
+                      },
+                      child: const Text('RECUPERAR', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -679,20 +776,49 @@ class _PosScreenState extends State<PosScreen> {
         extraAction: Consumer<PosProvider>(
           builder: (ctx, pos, _) {
             final count = pos.pendingCount;
-            return Padding(
-              padding: const EdgeInsets.only(right: 4),
-              child: Badge(
-                label: Text('$count', style: const TextStyle(color: Colors.white, fontSize: 11)),
-                isLabelVisible: count > 0,
-                backgroundColor: Colors.redAccent,
-                child: IconButton(
-                  tooltip: 'Órdenes en Espera',
-                  icon: Icon(
-                    Icons.pending_actions_rounded,
-                    color: count > 0 ? Colors.orange.shade700 : Colors.blueGrey,
-                    size: 28,
+            return TapRegion(
+              groupId: 'pending_orders_overlay',
+              child: CompositedTransformTarget(
+                link: _pendingOrdersLayerLink,
+                child: OverlayPortal(
+                  controller: _pendingOrdersPortalController,
+                  overlayChildBuilder: (context) => _buildPendingOrdersOverlay(pos),
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 4),
+                    child: TweenAnimationBuilder<double>(
+                      key: ValueKey(count > 0),
+                      tween: Tween(begin: 0.0, end: count > 0 ? 1.0 : 0.0),
+                      duration: const Duration(milliseconds: 1500),
+                      curve: Curves.elasticOut,
+                      builder: (context, value, child) {
+                        return Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            Transform.rotate(
+                              angle: count > 0 ? (0.15 * (1.0 - value) * (DateTime.now().second % 5 == 0 ? 1 : 0)) : 0,
+                              child: IconButton(
+                                tooltip: 'Órdenes en Espera',
+                                icon: Icon(
+                                  Icons.pending_actions_rounded,
+                                  color: count > 0 ? Colors.orange.shade700 : Colors.blueGrey,
+                                  size: 28,
+                                ),
+                                onPressed: () => _pendingOrdersPortalController.toggle(),
+                              ),
+                            ),
+                            if (count > 0)
+                              Positioned(
+                                right: 2,
+                                top: 2,
+                                child: IgnorePointer(
+                                  child: _buildPendingBadge(count),
+                                ),
+                              ),
+                          ],
+                        );
+                      },
+                    ),
                   ),
-                  onPressed: _showPendingOrdersDialog,
                 ),
               ),
             );
@@ -839,9 +965,33 @@ class _PosScreenState extends State<PosScreen> {
                       separatorBuilder: (_, __) => const Divider(height: 1),
                       itemBuilder: (context, index) {
                         final item = pos.cart[index];
+                        final bool exceedsStock = item.quantity > item.product.stock;
+                        final String qtyDisplay = item.product.isSoldByWeight 
+                            ? item.quantity.toStringAsFixed(3) 
+                            : item.quantity.toInt().toString();
+                        final String stockDisplay = item.product.isSoldByWeight
+                            ? item.product.stock.toStringAsFixed(3)
+                            : item.product.stock.toInt().toString();
+
                         return ListTile(
-                          title: Text(item.product.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                          subtitle: Text('${item.quantity} x \$${item.product.sellingPrice.toStringAsFixed(2)}'),
+                          title: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(item.product.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                              if (exceedsStock)
+                                Text(
+                                  'Stock disponible: $stockDisplay',
+                                  style: TextStyle(fontSize: 12, color: Colors.orange.shade800),
+                                ),
+                            ],
+                          ),
+                          subtitle: Text(
+                            '$qtyDisplay x \$${item.product.sellingPrice.toStringAsFixed(2)}',
+                            style: TextStyle(
+                              color: exceedsStock ? Colors.red.shade600 : null,
+                              fontWeight: exceedsStock ? FontWeight.bold : null,
+                            ),
+                          ),
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [

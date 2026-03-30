@@ -40,7 +40,9 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
   final Map<int, int> _quantities = {};
   final Map<int, double?> _weights = {};
   String _paperFormat = 'custom_55_45';
-  bool _printDates = true;
+  // Smart default: se activa solo si algún producto tiene balanza o días de vencimiento.
+  // Se calcula en initState() una vez que se conocen los productos.
+  bool _printDates = false;
 
   // Debounce + UniqueKey para forzar rebuild del PdfPreview
   Key _previewKey = UniqueKey();
@@ -68,6 +70,13 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
         _weights[p.id] = 100.0;
       }
     }
+    // Smart default del toggle ENV/VTO:
+    // Si algún producto tiene balanza O tiene días de vencimiento configurados,
+    // activamos el check automáticamente — el cajero quiere esas fechas.
+    // Para productos simples sin fechas (gaseosas, snacks), arranca desmarcado.
+    _printDates = widget.products.any(
+      (p) => p.isSoldByWeight || (p.vencimientoDias != null && p.vencimientoDias! > 0),
+    );
     // Leer settings una sola vez para tenerlos disponibles en el motor PDF
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -141,14 +150,9 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
     final dateFmt = DateFormat('dd/MM/yy');
 
     double computeHeight(Product product) {
-      final double? customWeight = _weights[product.id];
-      final bool hasWeight = product.isSoldByWeight && customWeight != null && customWeight > 0;
-      final bool hasVto = product.vencimientoDias != null && product.vencimientoDias! > 0;
-      
-      // La altura estándar es 45mm. Si no es balanza y no imprimimos fechas, 
-      // achicamos inteligentemente a 36mm para no desperdiciar papel térmico,
-      // dejando espacio suficiente para el pie de página comercial.
-      return (_printDates && (hasWeight || hasVto)) ? 45.0 : 36.0;
+      // La altura estándar es siempre 45mm para garantizar espacio y evitar clipping.
+      // Además, mantenerla en 45mm asegura que los rollos troquelados (55x45) no pierdan calibración.
+      return 45.0;
     }
 
     pw.Widget buildLabel(Product product, {required double heightLabel}) {

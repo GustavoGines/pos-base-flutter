@@ -13,6 +13,8 @@ class StockAlertBell extends StatefulWidget {
 
 class _StockAlertBellState extends State<StockAlertBell> {
   Timer? _refreshTimer;
+  final _overlayController = OverlayPortalController();
+  final _link = LayerLink();
 
   @override
   void initState() {
@@ -24,7 +26,7 @@ class _StockAlertBellState extends State<StockAlertBell> {
       }
     });
 
-    // Polling Silencioso (Latido) cada 2 minutos
+    // Polling Silencioso cada 2 minutos
     _refreshTimer = Timer.periodic(const Duration(minutes: 2), (timer) {
       if (mounted) {
         context.read<CatalogProvider>().fetchCriticalAlerts();
@@ -38,90 +40,174 @@ class _StockAlertBellState extends State<StockAlertBell> {
     super.dispose();
   }
 
-  void _showCriticalList(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => const _StockAlertBottomSheet(),
-    );
+  void _toggleOverlay() {
+    _overlayController.toggle();
   }
 
   @override
   Widget build(BuildContext context) {
+    return TapRegion(
+      groupId: 'stock_alert_overlay',
+      child: CompositedTransformTarget(
+        link: _link,
+        child: OverlayPortal(
+          controller: _overlayController,
+          overlayChildBuilder: (context) => _buildOverlayContent(),
+          child: Consumer<CatalogProvider>(
+            builder: (context, provider, _) {
+              final alerts = provider.criticalAlerts;
+              final count = alerts.length;
+
+              return TweenAnimationBuilder<double>(
+                key: ValueKey(count > 0),
+                tween: Tween(begin: 0.0, end: count > 0 ? 1.0 : 0.0),
+                duration: const Duration(milliseconds: 1500),
+                curve: Curves.elasticOut,
+                builder: (context, value, child) {
+                  return Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      Transform.rotate(
+                        angle: count > 0 ? (0.15 * (1.0 - value) * (DateTime.now().second % 5 == 0 ? 1 : 0)) : 0, 
+                        child: IconButton(
+                          icon: Icon(
+                            count > 0 ? Icons.notifications_active : Icons.notifications_none,
+                            color: count > 0 ? Colors.orange.shade700 : Colors.blueGrey,
+                          ),
+                          tooltip: 'Alertas de Stock',
+                          onPressed: _toggleOverlay,
+                        ),
+                      ),
+                      if (count > 0)
+                        Positioned(
+                          right: 2,
+                          top: 2,
+                          child: IgnorePointer(
+                            child: _buildBadge(count),
+                          ),
+                        ),
+                    ],
+                  );
+                },
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBadge(int count) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0.8, end: 1.05),
+      duration: const Duration(seconds: 1),
+      curve: Curves.easeInOut,
+      builder: (context, scale, _) {
+        return Transform.scale(
+          scale: scale,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+            decoration: BoxDecoration(
+              color: Colors.red,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.white, width: 1.5),
+              boxShadow: [
+                BoxShadow(color: Colors.red.withOpacity(0.4), blurRadius: 4, spreadRadius: 1),
+              ],
+            ),
+            constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+            child: Text('$count', style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold), textAlign: TextAlign.center),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildOverlayContent() {
+    return TapRegion(
+      groupId: 'stock_alert_overlay',
+      onTapOutside: (_) => _overlayController.hide(),
+      child: CompositedTransformFollower(
+        link: _link,
+        showWhenUnlinked: false,
+        targetAnchor: Alignment.bottomRight,
+        followerAnchor: Alignment.topRight,
+        offset: const Offset(0, 8),
+        child: Align(
+          alignment: Alignment.topRight,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 400, maxHeight: 500),
+            child: Material(
+              elevation: 16,
+              borderRadius: BorderRadius.circular(20),
+              clipBehavior: Clip.antiAlias,
+              shadowColor: Colors.black.withOpacity(0.3),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  border: Border.all(color: Colors.grey.shade200),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _buildHeader(),
+                    const Divider(height: 1),
+                    Flexible(child: _buildAlertList()),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeader() {
+    return Padding(
+      padding: const EdgeInsets.all(20),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(color: Colors.orange.shade50, shape: BoxShape.circle),
+            child: Icon(Icons.warning_amber_rounded, color: Colors.orange.shade800, size: 20),
+          ),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Text('Notificaciones de Stock', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          ),
+          IconButton(
+            icon: const Icon(Icons.refresh, size: 20, color: Colors.blueGrey),
+            tooltip: null,
+            onPressed: () => context.read<CatalogProvider>().fetchCriticalAlerts(),
+          ),
+          IconButton(
+            icon: const Icon(Icons.close, size: 20),
+            tooltip: null,
+            onPressed: () => _overlayController.hide(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAlertList() {
     return Consumer<CatalogProvider>(
       builder: (context, provider, _) {
         final alerts = provider.criticalAlerts;
-        final count = alerts.length;
-
-        // Si hay alertas, creamos una animación de "campaneo" sutil
-        return TweenAnimationBuilder<double>(
-          key: ValueKey(count > 0), // Reinicia si cambia el estado
-          tween: Tween(begin: 0.0, end: count > 0 ? 1.0 : 0.0),
-          duration: const Duration(milliseconds: 1500),
-          curve: Curves.elasticOut,
-          builder: (context, value, child) {
-            return Stack(
-              alignment: Alignment.center,
-              children: [
-                // Transformación de rotación para la campana
-                Transform.rotate(
-                  angle: count > 0 ? (0.15 * (1.0 - value) * (DateTime.now().second % 5 == 0 ? 1 : 0)) : 0, 
-                  // Usamos un pequeño truco con el tiempo para que no sea infinito y molesto
-                  child: IconButton(
-                    icon: Icon(
-                      count > 0 ? Icons.notifications_active : Icons.notifications_none,
-                      color: count > 0 ? Colors.orange.shade700 : Colors.blueGrey,
-                    ),
-                    tooltip: 'Alertas de Stock',
-                    onPressed: () => _showCriticalList(context),
-                  ),
-                ),
-                if (count > 0)
-                  Positioned(
-                    right: 2,
-                    top: 2,
-                    child: TweenAnimationBuilder<double>(
-                      tween: Tween(begin: 0.8, end: 1.05),
-                      duration: const Duration(seconds: 1),
-                      curve: Curves.easeInOut,
-                      builder: (context, scale, _) {
-                        return Transform.scale(
-                          scale: scale, // Efecto de pulso en el badge
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: Colors.red,
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: Colors.white, width: 1.5),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.red.withValues(alpha: 0.4),
-                                  blurRadius: 4,
-                                  spreadRadius: 1,
-                                ),
-                              ],
-                            ),
-                            constraints: const BoxConstraints(
-                              minWidth: 16,
-                              minHeight: 16,
-                            ),
-                            child: Text(
-                              '$count',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                          ),
-                        );
-                      },
-                      onEnd: () {}, // Podemos dejarlo vacío o repetir
-                    ),
-                  ),
-              ],
+        if (alerts.isEmpty) {
+          return const Center(child: Text('¡Todo en orden!', style: TextStyle(color: Colors.grey)));
+        }
+        return ListView.separated(
+          padding: const EdgeInsets.all(16),
+          itemCount: alerts.length,
+          separatorBuilder: (_, __) => const SizedBox(height: 12),
+          itemBuilder: (context, index) {
+            final product = alerts[index];
+            return _StockAlertItem(
+              product: product,
+              onAction: () => _overlayController.hide(),
             );
           },
         );
@@ -130,240 +216,70 @@ class _StockAlertBellState extends State<StockAlertBell> {
   }
 }
 
-class _StockAlertBottomSheet extends StatelessWidget {
-  const _StockAlertBottomSheet();
-
-  @override
-  Widget build(BuildContext context) {
-    return Consumer<CatalogProvider>(
-      builder: (context, provider, _) {
-        final alerts = provider.criticalAlerts;
-
-        return Container(
-          height: MediaQuery.of(context).size.height * 0.7,
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
-          ),
-          child: Column(
-            children: [
-              // Handle
-              Container(
-                margin: const EdgeInsets.symmetric(vertical: 12),
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade300,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              // Header
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Colors.orange.shade50,
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(Icons.warning_amber_rounded, color: Colors.orange.shade800),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Stock Crítico',
-                            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                          ),
-                          Text(
-                            '${alerts.length} productos necesitan reposición',
-                            style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
-                          ),
-                        ],
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.refresh),
-                      onPressed: () => provider.fetchCriticalAlerts(),
-                      tooltip: 'Actualizar',
-                    ),
-                  ],
-                ),
-              ),
-              const Divider(),
-              // List
-              Expanded(
-                child: alerts.isEmpty
-                    ? _buildEmptyState()
-                    : ListView.separated(
-                        padding: const EdgeInsets.all(16),
-                        itemCount: alerts.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 12),
-                        itemBuilder: (context, index) {
-                          final product = alerts[index];
-                          return Card(
-                            clipBehavior: Clip.antiAlias,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                            elevation: 0,
-                            color: Colors.grey.shade50,
-                            child: InkWell(
-                              onTap: () {
-                                Navigator.of(context).pop();
-                                showDialog(
-                                  context: context,
-                                  builder: (context) => StockAdjustmentDialog(
-                                    provider: provider,
-                                    product: product,
-                                  ),
-                                );
-                              },
-                              child: Padding(
-                                padding: const EdgeInsets.all(12),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    _StockAlertItem(product: product),
-                                    const Divider(height: 20),
-                                    Row(
-                                      mainAxisAlignment: MainAxisAlignment.end,
-                                      children: [
-                                        TextButton.icon(
-                                          icon: const Icon(Icons.remove_red_eye_outlined, size: 16),
-                                          label: const Text('Ver en Catálogo', style: TextStyle(fontSize: 12)),
-                                          onPressed: () {
-                                            Navigator.of(context).pop();
-                                            // Paso el producto como argumento para navegación inteligente
-                                            Navigator.of(context).pushNamed('/catalog', arguments: product);
-                                          },
-                                        ),
-                                        const SizedBox(width: 8),
-                                        ElevatedButton.icon(
-                                          icon: const Icon(Icons.add_shopping_cart, size: 16),
-                                          label: const Text('Reponer', style: TextStyle(fontSize: 12)),
-                                          style: ElevatedButton.styleFrom(
-                                            backgroundColor: Colors.teal.shade50,
-                                            foregroundColor: Colors.teal.shade700,
-                                            elevation: 0,
-                                          ),
-                                          onPressed: () {
-                                            Navigator.of(context).pop();
-                                            showDialog(
-                                              context: context,
-                                              builder: (context) => StockAdjustmentDialog(
-                                                provider: provider,
-                                                product: product,
-                                              ),
-                                            );
-                                          },
-                                        ),
-                                      ],
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildEmptyState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.check_circle_outline, size: 64, color: Colors.green.shade200),
-          const SizedBox(height: 16),
-          const Text(
-            '¡Todo en orden!',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blueGrey),
-          ),
-          const Text(
-            'No hay productos por debajo del stock mínimo.',
-            style: TextStyle(color: Colors.grey),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _StockAlertItem extends StatelessWidget {
   final dynamic product;
-  const _StockAlertItem({required this.product});
+  final VoidCallback onAction;
+  const _StockAlertItem({required this.product, required this.onAction});
 
   @override
   Widget build(BuildContext context) {
     final double stock = product.stock;
-    final double minStock = product.minStock ?? 0;
     final bool isCritical = stock <= 0;
 
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(15),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(color: isCritical ? Colors.red.shade100 : Colors.orange.shade100),
         boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
+          BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 5, offset: const Offset(0, 2)),
         ],
       ),
-      child: Row(
+      child: Column(
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  product.name,
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  product.internalCode,
-                  style: TextStyle(color: Colors.grey.shade500, fontSize: 12, letterSpacing: 1),
-                ),
-              ],
-            ),
-          ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
+          Row(
             children: [
-              Row(
-                children: [
-                  Text(
-                    product.isSoldByWeight ? stock.toStringAsFixed(3) : stock.toInt().toString(),
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: isCritical ? Colors.red.shade700 : Colors.orange.shade800,
-                    ),
-                  ),
-                  Text(
-                    product.isSoldByWeight ? ' Kg' : ' u',
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                  ),
-                ],
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(product.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13), maxLines: 1, overflow: TextOverflow.ellipsis),
+                    Text(product.internalCode, style: TextStyle(color: Colors.grey.shade500, fontSize: 11)),
+                  ],
+                ),
               ),
               Text(
-                'Mínimo: ${minStock.toInt()}',
-                style: TextStyle(fontSize: 11, color: Colors.grey.shade400, fontStyle: FontStyle.italic),
+                product.isSoldByWeight ? '${stock.toStringAsFixed(3)} Kg' : '${stock.toInt()} u',
+                style: TextStyle(fontWeight: FontWeight.bold, color: isCritical ? Colors.red : Colors.orange.shade800),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              TextButton(
+                onPressed: () {
+                  onAction();
+                  Navigator.of(context).pushNamed('/catalog', arguments: product);
+                },
+                child: const Text('Ver', style: TextStyle(fontSize: 12)),
+              ),
+              const SizedBox(width: 8),
+              ElevatedButton(
+                onPressed: () {
+                  onAction();
+                  showDialog(
+                    context: context,
+                    builder: (context) => StockAdjustmentDialog(
+                      provider: context.read<CatalogProvider>(),
+                      product: product,
+                    ),
+                  );
+                },
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.teal.shade50, foregroundColor: Colors.teal.shade700, elevation: 0),
+                child: const Text('Reponer', style: TextStyle(fontSize: 12)),
               ),
             ],
           ),

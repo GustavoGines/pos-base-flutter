@@ -12,6 +12,7 @@ import 'features/sales_history/presentation/providers/sales_history_provider.dar
 import 'features/auth/presentation/providers/auth_provider.dart';
 import 'features/customers/providers/customer_provider.dart';
 import 'features/trash/providers/trash_provider.dart';
+import 'core/config/app_config.dart';
 
 import 'core/presentation/widgets/license_guard.dart';
 import 'core/network/api_client.dart';
@@ -128,7 +129,7 @@ void main() async {
   
   // Obtener URL de la API del almacenamiento local
   final prefs = await SharedPreferences.getInstance();
-  final savedApiUrl = prefs.getString('pos_api') ?? 'http://127.0.0.1:8000/api';
+  final savedApiUrl = prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
 
   // Inicialización de Dependencias Base (DI)
   final String apiUrl = savedApiUrl;
@@ -229,8 +230,10 @@ class MainApp extends StatefulWidget {
 }
 
 class _MainAppState extends State<MainApp> {
-  // Estado de carga inicial
   bool _isInitializing = true;
+  String? _initError;
+  int _retryCount = 0;
+  static const int _maxRetries = 5;
 
   @override
   void initState() {
@@ -241,17 +244,61 @@ class _MainAppState extends State<MainApp> {
   }
 
   Future<void> _initializeApp() async {
-    // 1. Cargar Settings del negocio (incluye assignedRegisterId desde SharedPrefs)
-    await Provider.of<SettingsProvider>(context, listen: false).loadSettings();
+    final settingsProvider = Provider.of<SettingsProvider>(context, listen: false);
+    setState(() {
+      _isInitializing = true;
+      _initError = null;
+    });
+
+    // 1. Cargar Settings del negocio con lógica de reintento para Render Cold Start
+    bool success = false;
+    while (!success && _retryCount <= _maxRetries) {
+      try {
+        await settingsProvider.loadSettings();
+        success = true;
+      } catch (e) {
+        final prefs = await SharedPreferences.getInstance();
+        final currentUrl = prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
+
+        // Auto-fix: Si estamos en localhost 8000 y falla, probar con Laragon (puerto 80) una vez
+        if (_retryCount == 0 && currentUrl.contains(':8000')) {
+          await prefs.setString('pos_api', AppConfig.kApiBaseUrl);
+          settingsProvider.updateBaseUrl(AppConfig.kApiBaseUrl);
+          continue; // Intento inmediato con la nueva URL
+        }
+
+        if (_retryCount < _maxRetries) {
+          _retryCount++;
+          setState(() {
+            _initError = 'El servidor está despertando. Reintento $_retryCount de $_maxRetries...';
+          });
+          await Future.delayed(const Duration(seconds: 30));
+        } else {
+          setState(() {
+            _isInitializing = false;
+            _initError = 'No se pudo conectar tras varios intentos. Verifique si Laragon está iniciado o si el servidor de licencias en Render está activo.';
+          });
+          return; // Abortar resto de la carga
+        }
+      }
+    }
+
+    if (!success) return;
+
     // 2. Verificar estado de la Caja de ESTA terminal física asignada
-    final assignedRegisterId = Provider.of<SettingsProvider>(context, listen: false).assignedRegisterId;
-    // Solo filtrar por caja si el usuario configuró explícitamente una terminal (id > 0)
-    await Provider.of<CashRegisterProvider>(context, listen: false)
-        .checkCurrentShift(registerId: assignedRegisterId > 0 ? assignedRegisterId : null);
+    try {
+      final assignedRegisterId = settingsProvider.assignedRegisterId;
+      await Provider.of<CashRegisterProvider>(context, listen: false)
+          .checkCurrentShift(registerId: assignedRegisterId > 0 ? assignedRegisterId : null);
+    } catch (_) {
+      // Si falla obtener el turno, no bloqueamos la app pero registramos el error
+      debugPrint('Error al cargar turno inicial');
+    }
     
     if (mounted) {
       setState(() {
         _isInitializing = false;
+        _initError = null;
       });
     }
   }
@@ -259,14 +306,15 @@ class _MainAppState extends State<MainApp> {
   final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
   final ValueNotifier<String?> _currentRoute = ValueNotifier<String?>(null);
 
-  @override
-  Widget build(BuildContext context) {
-    if (_isInitializing) {
-      return MaterialApp(
-        debugShowCheckedModeBanner: false,
-        home: Scaffold(
-          backgroundColor: const Color(0xFF1E2D45),
-          body: Center(
+  Widget _buildLoadingOrErrorScreen() {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      home: Scaffold(
+        backgroundColor: const Color(0xFF1E2D45),
+        body: Center(
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 400),
+            padding: const EdgeInsets.all(32),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -274,18 +322,54 @@ class _MainAppState extends State<MainApp> {
                 const SizedBox(height: 24),
                 const Text('Sistema POS', style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Colors.white)),
                 const SizedBox(height: 8),
-                const Text('Iniciando sistema...', style: TextStyle(fontSize: 14, color: Colors.white54)),
+                Text(_initError != null ? 'ESTADO: $_initError' : 'Iniciando sistema...', 
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 14, color: Colors.white54)),
                 const SizedBox(height: 32),
-                const SizedBox(
-                  width: 40,
-                  height: 40,
-                  child: CircularProgressIndicator(color: Color(0xFF3B82F6), strokeWidth: 3),
-                ),
+                if (_initError != null && _retryCount >= _maxRetries) ...[
+                  const Icon(Icons.error_outline_rounded, color: Colors.redAccent, size: 48),
+                  const SizedBox(height: 24),
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      _retryCount = 0;
+                      _initializeApp();
+                    },
+                    icon: const Icon(Icons.refresh_rounded),
+                    label: const Text('Reintentar Conexión'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextButton.icon(
+                    onPressed: () async {
+                      // Abrir mini-dialog manual para corregir URL (si falla Laragon)
+                      if (!mounted) return;
+                      // Aquí podrías implementar un modal simple si fuera necesario corregir la URL a mano
+                    },
+                    icon: const Icon(Icons.settings_ethernet, color: Colors.white70),
+                    label: const Text('Ajustes de Red', style: TextStyle(color: Colors.white70)),
+                  ),
+                ] else
+                  const SizedBox(
+                    width: 40,
+                    height: 40,
+                    child: CircularProgressIndicator(color: Color(0xFF3B82F6), strokeWidth: 3),
+                  ),
               ],
             ),
           ),
         ),
-      );
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isInitializing || _initError != null) {
+      return _buildLoadingOrErrorScreen();
     }
 
 
