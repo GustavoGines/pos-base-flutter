@@ -47,8 +47,8 @@ class _PosScreenState extends State<PosScreen> {
       // Cargar el contador de órdenes pendientes al abrir el POS
       Provider.of<PosProvider>(context, listen: false).loadPendingSales();
       
-      // Polling de 15 segundos para refrescar órdenes pendientes en background
-      _pendingOrdersTimer = Timer.periodic(const Duration(seconds: 15), (timer) {
+      // Polling veloz (5 seg) para recepción casi-inmediata de órdenes en red local/multicaja
+      _pendingOrdersTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
         if (mounted) {
           Provider.of<PosProvider>(context, listen: false).loadPendingSales();
         }
@@ -563,8 +563,35 @@ class _PosScreenState extends State<PosScreen> {
   // POPOVER DE ÓRDENES EN ESPERA (FIJO)
   // ────────────────────────────────────────────────────────────────
   // ────────────────────────────────────────────────────────────────
+  // ────────────────────────────────────────────────────────────────
   // POPOVER DE ÓRDENES EN ESPERA (HÍBRIDO Y ESTABLE)
   // ────────────────────────────────────────────────────────────────
+
+  Widget _buildPendingBadge(int count) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0.8, end: 1.05),
+      duration: const Duration(seconds: 1),
+      curve: Curves.easeInOut,
+      builder: (context, scale, _) {
+        return Transform.scale(
+          scale: scale,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+            decoration: BoxDecoration(
+              color: Colors.redAccent,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.white, width: 1.5),
+              boxShadow: [
+                BoxShadow(color: Colors.redAccent.withOpacity(0.4), blurRadius: 4, spreadRadius: 1),
+              ],
+            ),
+            constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+            child: Text('$count', style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold), textAlign: TextAlign.center),
+          ),
+        );
+      },
+    );
+  }
   Widget _buildPendingOrdersOverlay(PosProvider posProvider) {
     return StatefulBuilder(
       builder: (context, setOverlayState) {
@@ -651,6 +678,7 @@ class _PosScreenState extends State<PosScreen> {
 
         if (!_isPendingPinned) {
           return TapRegion(
+            groupId: 'pending_orders_overlay',
             onTapOutside: (_) => _pendingOrdersPortalController.hide(),
             child: content,
           );
@@ -748,25 +776,47 @@ class _PosScreenState extends State<PosScreen> {
         extraAction: Consumer<PosProvider>(
           builder: (ctx, pos, _) {
             final count = pos.pendingCount;
-            return CompositedTransformTarget(
-              link: _pendingOrdersLayerLink,
-              child: OverlayPortal(
-                controller: _pendingOrdersPortalController,
-                overlayChildBuilder: (context) => _buildPendingOrdersOverlay(pos),
-                child: Padding(
-                  padding: const EdgeInsets.only(right: 4),
-                  child: Badge(
-                    label: Text('$count', style: const TextStyle(color: Colors.white, fontSize: 11)),
-                    isLabelVisible: count > 0,
-                    backgroundColor: Colors.redAccent,
-                    child: IconButton(
-                      tooltip: 'Órdenes en Espera',
-                      icon: Icon(
-                        Icons.pending_actions_rounded,
-                        color: count > 0 ? Colors.orange.shade700 : Colors.blueGrey,
-                        size: 28,
-                      ),
-                      onPressed: () => _pendingOrdersPortalController.toggle(),
+            return TapRegion(
+              groupId: 'pending_orders_overlay',
+              child: CompositedTransformTarget(
+                link: _pendingOrdersLayerLink,
+                child: OverlayPortal(
+                  controller: _pendingOrdersPortalController,
+                  overlayChildBuilder: (context) => _buildPendingOrdersOverlay(pos),
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 4),
+                    child: TweenAnimationBuilder<double>(
+                      key: ValueKey(count > 0),
+                      tween: Tween(begin: 0.0, end: count > 0 ? 1.0 : 0.0),
+                      duration: const Duration(milliseconds: 1500),
+                      curve: Curves.elasticOut,
+                      builder: (context, value, child) {
+                        return Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            Transform.rotate(
+                              angle: count > 0 ? (0.15 * (1.0 - value) * (DateTime.now().second % 5 == 0 ? 1 : 0)) : 0,
+                              child: IconButton(
+                                tooltip: 'Órdenes en Espera',
+                                icon: Icon(
+                                  Icons.pending_actions_rounded,
+                                  color: count > 0 ? Colors.orange.shade700 : Colors.blueGrey,
+                                  size: 28,
+                                ),
+                                onPressed: () => _pendingOrdersPortalController.toggle(),
+                              ),
+                            ),
+                            if (count > 0)
+                              Positioned(
+                                right: 2,
+                                top: 2,
+                                child: IgnorePointer(
+                                  child: _buildPendingBadge(count),
+                                ),
+                              ),
+                          ],
+                        );
+                      },
                     ),
                   ),
                 ),
@@ -915,9 +965,33 @@ class _PosScreenState extends State<PosScreen> {
                       separatorBuilder: (_, __) => const Divider(height: 1),
                       itemBuilder: (context, index) {
                         final item = pos.cart[index];
+                        final bool exceedsStock = item.quantity > item.product.stock;
+                        final String qtyDisplay = item.product.isSoldByWeight 
+                            ? item.quantity.toStringAsFixed(3) 
+                            : item.quantity.toInt().toString();
+                        final String stockDisplay = item.product.isSoldByWeight
+                            ? item.product.stock.toStringAsFixed(3)
+                            : item.product.stock.toInt().toString();
+
                         return ListTile(
-                          title: Text(item.product.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                          subtitle: Text('${item.quantity} x \$${item.product.sellingPrice.toStringAsFixed(2)}'),
+                          title: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(item.product.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                              if (exceedsStock)
+                                Text(
+                                  'Stock disponible: $stockDisplay',
+                                  style: TextStyle(fontSize: 12, color: Colors.orange.shade800),
+                                ),
+                            ],
+                          ),
+                          subtitle: Text(
+                            '$qtyDisplay x \$${item.product.sellingPrice.toStringAsFixed(2)}',
+                            style: TextStyle(
+                              color: exceedsStock ? Colors.red.shade600 : null,
+                              fontWeight: exceedsStock ? FontWeight.bold : null,
+                            ),
+                          ),
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [

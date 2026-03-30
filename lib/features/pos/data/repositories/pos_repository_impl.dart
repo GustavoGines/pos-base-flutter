@@ -50,7 +50,7 @@ class PosRepositoryImpl implements PosRepository {
     return Sale(
       id: response['sale']['id'],
       total: total,
-      paymentMethod: payments?.first['payment_method_id']?.toString() ?? 'unknown',
+      paymentMethod: (payments != null && payments.isNotEmpty) ? payments.first['payment_method_id']?.toString() ?? 'unknown' : 'unknown',
       shift: CashRegisterShift(
         id: shiftId,
         cashRegisterId: 1, // Dummy reference since Pos logic only cares about shiftId locally

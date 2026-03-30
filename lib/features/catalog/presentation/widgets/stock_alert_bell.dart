@@ -46,47 +46,52 @@ class _StockAlertBellState extends State<StockAlertBell> {
 
   @override
   Widget build(BuildContext context) {
-    return CompositedTransformTarget(
-      link: _link,
-      child: OverlayPortal(
-        controller: _overlayController,
-        overlayChildBuilder: (context) => _buildOverlayContent(),
-        child: Consumer<CatalogProvider>(
-          builder: (context, provider, _) {
-            final alerts = provider.criticalAlerts;
-            final count = alerts.length;
+    return TapRegion(
+      groupId: 'stock_alert_overlay',
+      child: CompositedTransformTarget(
+        link: _link,
+        child: OverlayPortal(
+          controller: _overlayController,
+          overlayChildBuilder: (context) => _buildOverlayContent(),
+          child: Consumer<CatalogProvider>(
+            builder: (context, provider, _) {
+              final alerts = provider.criticalAlerts;
+              final count = alerts.length;
 
-            return TweenAnimationBuilder<double>(
-              key: ValueKey(count > 0),
-              tween: Tween(begin: 0.0, end: count > 0 ? 1.0 : 0.0),
-              duration: const Duration(milliseconds: 1500),
-              curve: Curves.elasticOut,
-              builder: (context, value, child) {
-                return Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    Transform.rotate(
-                      angle: count > 0 ? (0.15 * (1.0 - value) * (DateTime.now().second % 5 == 0 ? 1 : 0)) : 0, 
-                      child: IconButton(
-                        icon: Icon(
-                          count > 0 ? Icons.notifications_active : Icons.notifications_none,
-                          color: count > 0 ? Colors.orange.shade700 : Colors.blueGrey,
+              return TweenAnimationBuilder<double>(
+                key: ValueKey(count > 0),
+                tween: Tween(begin: 0.0, end: count > 0 ? 1.0 : 0.0),
+                duration: const Duration(milliseconds: 1500),
+                curve: Curves.elasticOut,
+                builder: (context, value, child) {
+                  return Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      Transform.rotate(
+                        angle: count > 0 ? (0.15 * (1.0 - value) * (DateTime.now().second % 5 == 0 ? 1 : 0)) : 0, 
+                        child: IconButton(
+                          icon: Icon(
+                            count > 0 ? Icons.notifications_active : Icons.notifications_none,
+                            color: count > 0 ? Colors.orange.shade700 : Colors.blueGrey,
+                          ),
+                          tooltip: 'Alertas de Stock',
+                          onPressed: _toggleOverlay,
                         ),
-                        tooltip: 'Alertas de Stock',
-                        onPressed: _toggleOverlay,
                       ),
-                    ),
-                    if (count > 0)
-                      Positioned(
-                        right: 2,
-                        top: 2,
-                        child: _buildBadge(count),
-                      ),
-                  ],
-                );
-              },
-            );
-          },
+                      if (count > 0)
+                        Positioned(
+                          right: 2,
+                          top: 2,
+                          child: IgnorePointer(
+                            child: _buildBadge(count),
+                          ),
+                        ),
+                    ],
+                  );
+                },
+              );
+            },
+          ),
         ),
       ),
     );
@@ -120,6 +125,7 @@ class _StockAlertBellState extends State<StockAlertBell> {
 
   Widget _buildOverlayContent() {
     return TapRegion(
+      groupId: 'stock_alert_overlay',
       onTapOutside: (_) => _overlayController.hide(),
       child: CompositedTransformFollower(
         link: _link,
@@ -170,6 +176,11 @@ class _StockAlertBellState extends State<StockAlertBell> {
           const SizedBox(width: 12),
           const Expanded(
             child: Text('Notificaciones de Stock', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          ),
+          IconButton(
+            icon: const Icon(Icons.refresh, size: 20, color: Colors.blueGrey),
+            tooltip: null,
+            onPressed: () => context.read<CatalogProvider>().fetchCriticalAlerts(),
           ),
           IconButton(
             icon: const Icon(Icons.close, size: 20),
