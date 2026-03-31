@@ -482,7 +482,7 @@ class _MethodChip extends StatelessWidget {
                 Text(
                   '\$${amount.toStringAsFixed(2)}',
                   style: TextStyle(
-                    fontSize: isTotal ? 13 : 12,
+                    fontSize: isTotal ? 18 : 16,
                     fontWeight: FontWeight.bold,
                     color: isSelected ? Colors.white : color,
                   ),
@@ -492,7 +492,7 @@ class _MethodChip extends StatelessWidget {
                   Text(
                     'Neto: \$${netAmount!.toStringAsFixed(2)}',
                     style: TextStyle(
-                      fontSize: 9,
+                      fontSize: 12,
                       color: isSelected
                           ? Colors.white.withValues(alpha: 0.8)
                           : color.withValues(alpha: 0.75),
@@ -501,7 +501,7 @@ class _MethodChip extends StatelessWidget {
                   Text(
                     'Rec: +\$${surchargeAmount!.toStringAsFixed(2)}',
                     style: TextStyle(
-                      fontSize: 9,
+                      fontSize: 12,
                       color: isSelected
                           ? Colors.orange.shade200
                           : Colors.orange.shade700,
@@ -554,6 +554,7 @@ class _SaleListTile extends StatelessWidget {
           Text(
             '\$${sale.total.toStringAsFixed(2)}',
             style: TextStyle(
+              fontSize: 17,
               fontWeight: FontWeight.bold,
               color: sale.isVoided ? Colors.grey : Colors.green.shade800,
               decoration: sale.isVoided ? TextDecoration.lineThrough : null,
@@ -821,16 +822,16 @@ class _TicketDetailPanel extends StatelessWidget {
                     const SizedBox(height: 6),
                     Row(children: [
                       Icon(Icons.calendar_today_outlined,
-                          size: 13, color: Colors.grey.shade600),
-                      const SizedBox(width: 6),
+                          size: 16, color: Colors.grey.shade600),
+                      const SizedBox(width: 8),
                       Text(dateStr,
                           style: TextStyle(
-                              color: Colors.grey.shade600, fontSize: 13)),
+                              color: Colors.grey.shade600, fontSize: 16)),
                       if (sale.userName != null) ...[
-                        const SizedBox(width: 16),
+                        const SizedBox(width: 24),
                         Icon(Icons.person_outline,
-                            size: 13, color: Colors.blueGrey.shade600),
-                        const SizedBox(width: 4),
+                            size: 16, color: Colors.blueGrey.shade600),
+                        const SizedBox(width: 6),
                         Text(
                           (sale.cashierName == null || sale.userName == sale.cashierName)
                               ? 'Cajero: ${sale.userName}'
@@ -838,7 +839,7 @@ class _TicketDetailPanel extends StatelessWidget {
                           style: TextStyle(
                               color: Colors.blueGrey.shade800,
                               fontWeight: FontWeight.w500,
-                              fontSize: 13),
+                              fontSize: 16),
                         ),
                       ]
                     ]),
@@ -890,11 +891,13 @@ class _TicketDetailPanel extends StatelessWidget {
                     ), */
                   ],
                   const SizedBox(height: 8),
-                  // Desglose de pagos
-                  ...sale.payments.map((p) => Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: _PaymentBadge(payment: p),
-                      )),
+                  // Desglose de pagos (Lado a lado)
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    alignment: WrapAlignment.end,
+                    children: sale.payments.map((p) => _PaymentBadge(payment: p)).toList(),
+                  ),
                 ],
               ),
             ],
@@ -920,29 +923,35 @@ class _TicketDetailPanel extends StatelessWidget {
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(12),
                 child: DataTable(
+                  headingRowHeight: 60,
+                  dataRowMinHeight: 60,
+                  dataRowMaxHeight: 80,
+                  columnSpacing: 40,
                   headingRowColor:
-                      WidgetStateProperty.all(Colors.grey.shade50),
+                      WidgetStateProperty.all(Colors.grey.shade100),
                   columns: const [
                     DataColumn(
                         label: Text('Producto',
-                            style: TextStyle(fontWeight: FontWeight.bold))),
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold))),
                     DataColumn(
                         label: Text('Cant/Peso',
-                            style: TextStyle(fontWeight: FontWeight.bold))),
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold))),
                     DataColumn(
                         label: Text('P. Unitario',
-                            style: TextStyle(fontWeight: FontWeight.bold))),
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold))),
                     DataColumn(
                         label: Text('Subtotal',
-                            style: TextStyle(fontWeight: FontWeight.bold))),
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold))),
                   ],
                   rows: sale.items.map((item) {
                     final textStyle = TextStyle(
+                      fontSize: 16,
                       color: sale.isVoided ? Colors.grey : Colors.black87,
                       decoration: sale.isVoided ? TextDecoration.lineThrough : null,
                     );
                     return DataRow(cells: [
-                      DataCell(Text(item.productName, style: textStyle)),
+                      DataCell(Text(item.productName, 
+                          style: textStyle.copyWith(fontWeight: FontWeight.w500))),
                       DataCell(Text(
                           item.isSoldByWeight
                               ? '${item.quantity.toStringAsFixed(3)} Kg'
@@ -953,6 +962,7 @@ class _TicketDetailPanel extends StatelessWidget {
                           style: textStyle)),
                       DataCell(Text('\$${item.subtotal.toStringAsFixed(2)}',
                           style: textStyle.copyWith(
+                              fontSize: 18,
                               fontWeight: FontWeight.bold))),
                     ]);
                   }).toList(),
@@ -1082,29 +1092,36 @@ class _PaymentBadge extends StatelessWidget {
     final hasSurcharge = payment.surchargeAmount > 0;
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
         color: bg,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(color: color.withValues(alpha: 0.4)),
+        boxShadow: [
+          BoxShadow(
+            color: color.withValues(alpha: 0.1),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(_iconForCode(payment.methodCode), size: 14, color: color),
-          const SizedBox(width: 6),
+          Icon(_iconForCode(payment.methodCode), size: 18, color: color),
+          const SizedBox(width: 8),
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(payment.methodName,
                   style: TextStyle(
-                      fontSize: 11,
+                      fontSize: 13,
                       color: color,
                       fontWeight: FontWeight.w600)),
               Text(
                 '\$${payment.totalAmount.toStringAsFixed(2)}',
                 style: TextStyle(
-                    fontSize: 13,
+                    fontSize: 16,
                     fontWeight: FontWeight.bold,
                     color: color),
               ),
@@ -1112,7 +1129,7 @@ class _PaymentBadge extends StatelessWidget {
                 Text(
                   'base \$${payment.baseAmount.toStringAsFixed(2)} + recargo \$${payment.surchargeAmount.toStringAsFixed(2)}',
                   style: TextStyle(
-                      fontSize: 10,
+                      fontSize: 12,
                       color: Colors.orange.shade700,
                       fontStyle: FontStyle.italic),
                 ),
