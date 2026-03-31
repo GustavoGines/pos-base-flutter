@@ -77,7 +77,8 @@ class SalesHistoryProvider with ChangeNotifier {
 
   // ─── Totales globales (ventas activas) ──────────────────────────────────────
 
-  List<SaleRecord> get _activeSales => _sales.where((s) => !s.isVoided).toList();
+  List<SaleRecord> get _activeSales =>
+      _sales.where((s) => s.status == 'completed').toList();
 
   double get totalVentas =>
       _activeSales.fold(0.0, (sum, s) => sum + s.total);

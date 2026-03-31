@@ -13,6 +13,7 @@ class CashRegisterShift {
   final double? cashSales;
   final double? cardSales;
   final double? transferSales;
+  final double? totalSurcharge;
   final String status;
 
   // Relaciones
@@ -37,6 +38,7 @@ class CashRegisterShift {
     this.cashSales,
     this.cardSales,
     this.transferSales,
+    this.totalSurcharge,
     this.userName,
     this.cashRegisterName,
     this.closedByUserId,
