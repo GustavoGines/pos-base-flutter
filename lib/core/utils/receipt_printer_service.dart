@@ -132,6 +132,7 @@ class ReceiptPrinterService {
     String paymentMethod = 'EFECTIVO',
     String? receiptNumber,
     String? userName,
+    String? cashierName,
     double surchargeAmount = 0.0,  // Recargo bancario trasladado al cliente
     double tenderedAmount = 0.0,   // Efectivo entregado por el cliente
     double changeAmount = 0.0,     // Vuelto entregado al cliente
@@ -196,8 +197,12 @@ class ReceiptPrinterService {
       ),
     ]);
     if (userName != null) {
+      final String cashierLine = (cashierName == null || userName == cashierName)
+          ? 'CAJERO: ${userName.toUpperCase()}'
+          : 'GENERO: ${userName.toUpperCase()} | COBRO: ${cashierName.toUpperCase()}';
+      
       bytes += generator.text(
-        'CAJERO: ${userName.toUpperCase()}',
+        cashierLine,
         styles: const PosStyles(align: PosAlign.left),
       );
     }

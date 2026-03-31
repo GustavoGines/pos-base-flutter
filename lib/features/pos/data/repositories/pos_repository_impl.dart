@@ -75,6 +75,7 @@ class PosRepositoryImpl implements PosRepository {
     required List<Map<String, dynamic>> payments,
     required double tenderedAmount,
     required double changeAmount,
+    int? userId,
     List<CartItem>? items,
   }) async {
     final response = await remoteDataSource.payPendingSale(
@@ -83,6 +84,7 @@ class PosRepositoryImpl implements PosRepository {
       payments: payments,
       tenderedAmount: tenderedAmount,
       changeAmount: changeAmount,
+      userId: userId,
       items: items,
     );
     return response as Map<String, dynamic>;

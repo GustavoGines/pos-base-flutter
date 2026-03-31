@@ -643,11 +643,15 @@ class _SaleListTile extends StatelessWidget {
                 Icon(Icons.person_outline,
                     size: 13, color: Colors.blueGrey.shade400),
                 const SizedBox(width: 4),
-                Text('${sale.userName}',
-                    style: TextStyle(
-                        color: Colors.blueGrey.shade500,
-                        fontSize: 10,
-                        fontStyle: FontStyle.italic)),
+                Text(
+                  (sale.cashierName == null || sale.userName == sale.cashierName)
+                      ? 'Cajero: ${sale.userName}'
+                      : 'Gen: ${sale.userName} | Cob: ${sale.cashierName}',
+                  style: TextStyle(
+                      color: Colors.blueGrey.shade500,
+                      fontSize: 10,
+                      fontStyle: FontStyle.italic),
+                ),
               ],
             ),
           ]
@@ -827,11 +831,15 @@ class _TicketDetailPanel extends StatelessWidget {
                         Icon(Icons.person_outline,
                             size: 13, color: Colors.blueGrey.shade600),
                         const SizedBox(width: 4),
-                        Text('${sale.userName}',
-                            style: TextStyle(
-                                color: Colors.blueGrey.shade800,
-                                fontWeight: FontWeight.w500,
-                                fontSize: 13)),
+                        Text(
+                          (sale.cashierName == null || sale.userName == sale.cashierName)
+                              ? 'Cajero: ${sale.userName}'
+                              : 'Generó: ${sale.userName} | Cobró: ${sale.cashierName}',
+                          style: TextStyle(
+                              color: Colors.blueGrey.shade800,
+                              fontWeight: FontWeight.w500,
+                              fontSize: 13),
+                        ),
                       ]
                     ]),
                   ],
@@ -999,6 +1007,7 @@ class _TicketDetailPanel extends StatelessWidget {
                         paymentMethod: sale.paymentMethodLabel,
                         receiptNumber: sale.id.toString(),
                         userName: sale.userName,
+                        cashierName: sale.cashierName,
                         surchargeAmount: sale.surchargeTotal,
                       );
                       if (context.mounted) {

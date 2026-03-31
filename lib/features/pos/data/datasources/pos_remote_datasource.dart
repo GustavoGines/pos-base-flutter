@@ -25,6 +25,7 @@ abstract class PosRemoteDataSource {
     required List<Map<String, dynamic>> payments,
     required double tenderedAmount,
     required double changeAmount,
+    int? userId,
     List<CartItem>? items,
   });
   Future<dynamic> voidPendingSale(int saleId);
@@ -189,6 +190,7 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
     required List<Map<String, dynamic>> payments,
     required double tenderedAmount,
     required double changeAmount,
+    int? userId,
     List<CartItem>? items,
   }) async {
     try {
@@ -197,6 +199,7 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
         'payments': payments,
         'tendered_amount': tenderedAmount,
         'change_amount': changeAmount,
+        if (userId != null) 'user_id': userId,
       };
       if (items != null) {
         payload['items'] = items.map((item) => {

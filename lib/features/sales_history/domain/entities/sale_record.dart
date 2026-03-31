@@ -80,6 +80,8 @@ class SaleRecord {
   final List<SalePayment> payments;
   final int? userId;
   final String? userName;
+  final int? cashierId;
+  final String? cashierName;
 
   const SaleRecord({
     required this.id,
@@ -91,6 +93,8 @@ class SaleRecord {
     required this.payments,
     this.userId,
     this.userName,
+    this.cashierId,
+    this.cashierName,
   });
 
   bool get isVoided => status == 'voided';
@@ -138,6 +142,8 @@ class SaleRecord {
       payments: paymentsList,
       userId: json['user_id'] as int?,
       userName: json['user']?['name'] as String?,
+      cashierId: json['cashier_id'] as int?,
+      cashierName: json['cashier']?['name'] as String?,
     );
   }
 }
