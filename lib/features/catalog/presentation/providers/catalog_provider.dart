@@ -94,6 +94,23 @@ class CatalogProvider with ChangeNotifier {
     if (hasPrevPage) await loadProducts(page: _currentPage - 1);
   }
 
+  /// Refuerzo Senior: Actualiza los contadores de ventas en memoria para que la UI 
+  /// se reordene al instante sin necesidad de una petición de red.
+  void updateProductSalesCountLocally(Map<int, int> productSales) {
+    bool changed = false;
+    for (var entry in productSales.entries) {
+      final index = _products.indexWhere((p) => p.id == entry.key);
+      if (index != -1) {
+        final current = _products[index];
+        _products[index] = current.copyWith(
+          salesCount: (current.salesCount) + entry.value,
+        );
+        changed = true;
+      }
+    }
+    if (changed) notifyListeners();
+  }
+
   Future<bool> createProduct(Map<String, dynamic> data) async {
     _isLoading = true;
     _errorMessage = null;
@@ -236,7 +253,7 @@ class CatalogProvider with ChangeNotifier {
         final newStock = double.parse(result['new_stock'].toString());
         final idx = _products.indexWhere((p) => p.id == productId);
         if (idx != -1) {
-          _products[idx] = _products[idx].copyWithStock(newStock);
+          _products[idx] = _products[idx].copyWith(stock: newStock);
         }
       }
       return true;

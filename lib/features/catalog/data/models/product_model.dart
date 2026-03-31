@@ -13,6 +13,7 @@ class ProductModel extends Product {
     double? minStock,
     required bool active,
     required bool isSoldByWeight,
+    int salesCount = 0,
     int? vencimientoDias,
     CategoryModel? category,
   }) : super(
@@ -26,27 +27,41 @@ class ProductModel extends Product {
           minStock: minStock,
           active: active,
           isSoldByWeight: isSoldByWeight,
+          salesCount: salesCount,
           vencimientoDias: vencimientoDias,
           category: category,
         );
 
   @override
-  ProductModel copyWithStock(double newStock) {
+  ProductModel copyWith({
+    int? id,
+    String? name,
+    String? barcode,
+    String? internalCode,
+    double? costPrice,
+    double? sellingPrice,
+    double? stock,
+    double? minStock,
+    bool? active,
+    bool? isSoldByWeight,
+    int? salesCount,
+    int? vencimientoDias,
+    covariant CategoryModel? category,
+  }) {
     return ProductModel(
-      id: id,
-      name: name,
-      barcode: barcode,
-      internalCode: internalCode,
-      costPrice: costPrice,
-      sellingPrice: sellingPrice,
-      stock: newStock,
-      minStock: minStock,
-      active: active,
-      isSoldByWeight: isSoldByWeight,
-      vencimientoDias: vencimientoDias,
-      category: category != null
-          ? CategoryModel(id: category!.id, name: category!.name, description: category!.description)
-          : null,
+      id: id ?? this.id,
+      name: name ?? this.name,
+      barcode: barcode ?? this.barcode,
+      internalCode: internalCode ?? this.internalCode,
+      costPrice: costPrice ?? this.costPrice,
+      sellingPrice: sellingPrice ?? this.sellingPrice,
+      stock: stock ?? this.stock,
+      minStock: minStock ?? this.minStock,
+      active: active ?? this.active,
+      isSoldByWeight: isSoldByWeight ?? this.isSoldByWeight,
+      salesCount: salesCount ?? this.salesCount,
+      vencimientoDias: vencimientoDias ?? this.vencimientoDias,
+      category: category ?? (this.category as CategoryModel?),
     );
   }
 
@@ -64,6 +79,9 @@ class ProductModel extends Product {
           : null,
       active: json['active'] == 1 || json['active'] == true || json['active'] == '1' || json['active'] == 'true',
       isSoldByWeight: json['is_sold_by_weight'] == 1 || json['is_sold_by_weight'] == true || json['is_sold_by_weight'] == '1' || json['is_sold_by_weight'] == 'true',
+      salesCount: json['sales_count'] != null 
+          ? (int.tryParse(json['sales_count'].toString()) ?? 0) 
+          : 0,
       vencimientoDias: json['vencimiento_dias'] != null
           ? int.tryParse(json['vencimiento_dias'].toString())
           : null,
