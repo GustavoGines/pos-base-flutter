@@ -30,6 +30,13 @@ class _LicenseLockScreenState extends State<LicenseLockScreen> {
     super.dispose();
   }
 
+  String _sanitizeError(String error) {
+    if (error.contains('<html') || error.contains('<!DOCTYPE') || error.contains('<body')) {
+      return 'Error de comunicación con el servidor. Verifica tu conexión y la URL configurada.';
+    }
+    return error.replaceAll('Exception: ', '');
+  }
+
   Future<void> _activate() async {
     final key = _licenseKeyCtrl.text.trim();
     if (key.isEmpty) {
@@ -47,7 +54,7 @@ class _LicenseLockScreenState extends State<LicenseLockScreen> {
       }
     } catch (e) {
       if (mounted) {
-        SnackBarService.error(context, e.toString().replaceAll('Exception: ', ''));
+        SnackBarService.error(context, _sanitizeError(e.toString()));
       }
     } finally {
       if (mounted) setState(() => _isActivating = false);
@@ -97,14 +104,48 @@ class _LicenseLockScreenState extends State<LicenseLockScreen> {
                 ),
               ),
               const SizedBox(height: 12),
-              Text(
-                widget.securityStatus == LicenseSecurityStatus.clockTampered 
-                    ? 'Se detectó una anomalía en el reloj del sistema.\nPor seguridad, el acceso ha sido revocado. Contacte soporte.'
-                    : widget.securityStatus == LicenseSecurityStatus.offlineExpired
-                        ? 'Se ha excedido el periodo de gracia offline (72hs).\nEs necesario conectar el equipo a internet para validar la suscripción.'
-                        : 'Tu licencia ha expirado, ha sido suspendida o es inexistente en este equipo.\nPara continuar operando, por favor ingresá una clave válida.',
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.white70, fontSize: 14, height: 1.5),
+              Consumer<SettingsProvider>(
+                builder: (context, settings, _) {
+                  final error = settings.errorMessage;
+                  final isConnectionError = error != null && 
+                      (error.toLowerCase().contains('conexión') || 
+                       error.toLowerCase().contains('servidor') ||
+                       error.toLowerCase().contains('json'));
+
+                  if (error != null && isConnectionError) {
+                    return Container(
+                      margin: const EdgeInsets.only(top: 8, bottom: 16),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.red.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.redAccent.withValues(alpha: 0.3)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.wifi_off_rounded, color: Colors.redAccent, size: 20),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              _sanitizeError(error),
+                              style: const TextStyle(color: Colors.redAccent, fontSize: 13, fontWeight: FontWeight.w500),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+
+                  return Text(
+                    widget.securityStatus == LicenseSecurityStatus.clockTampered 
+                        ? 'Se detectó una anomalía en el reloj del sistema.\nPor seguridad, el acceso ha sido revocado. Contacte soporte.'
+                        : widget.securityStatus == LicenseSecurityStatus.offlineExpired
+                            ? 'Se ha excedido el periodo de gracia offline (72hs).\nEs necesario conectar el equipo a internet para validar la suscripción.'
+                            : 'Tu licencia ha expirado, ha sido suspendida o es inexistente en este equipo.\nPara continuar operando, por favor ingresá una clave válida.',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.white70, fontSize: 14, height: 1.5),
+                  );
+                },
               ),
               const SizedBox(height: 40),
               

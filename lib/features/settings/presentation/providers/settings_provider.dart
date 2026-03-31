@@ -94,7 +94,7 @@ class SettingsProvider with ChangeNotifier {
       
       _checkAndSyncSilentlyOnStartup();
     } catch (e) {
-      _errorMessage = e.toString();
+      _errorMessage = e.toString().replaceAll('Exception: ', '');
     } finally {
       _isLoading = false;
       notifyListeners();

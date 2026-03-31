@@ -25,6 +25,7 @@ abstract class PosRepository {
     required List<Map<String, dynamic>> payments,
     required double tenderedAmount,
     required double changeAmount,
+    int? userId,
     List<CartItem>? items,
   });
   Future<Map<String, dynamic>> voidPendingSale(int saleId);

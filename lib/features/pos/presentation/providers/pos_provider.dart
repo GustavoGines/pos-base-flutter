@@ -42,6 +42,9 @@ class PosProvider with ChangeNotifier {
   int? _activePendingSaleId;
   int? get activePendingSaleId => _activePendingSaleId;
 
+  String? _recalledUserName;
+  String? get recalledUserName => _recalledUserName;
+
   List<PaymentMethod> _paymentMethods = [];
   List<PaymentMethod> get paymentMethods => _paymentMethods;
 
@@ -106,6 +109,7 @@ class PosProvider with ChangeNotifier {
   void clearCart() {
     _cart.clear();
     _activePendingSaleId = null;
+    _recalledUserName = null;
     notifyListeners();
   }
 
@@ -141,6 +145,7 @@ class PosProvider with ChangeNotifier {
 
     _cart.addAll(recalledItems);
     _activePendingSaleId = saleId;
+    _recalledUserName = sale['user']?['name'] as String?;
     notifyListeners();
   }
 
@@ -226,6 +231,7 @@ class PosProvider with ChangeNotifier {
           changeAmount: changeAmount,
           userName: userName,
           settings: settings,
+          userId: userId,
           items: cartSnapshot,
         );
         if (!success) {
@@ -256,7 +262,8 @@ class PosProvider with ChangeNotifier {
             total: totalSnapshot,
             settings: settings,
             paymentMethod: payments.isNotEmpty ? payments.first['payment_method_id'].toString() : 'unknown',
-            userName: userName,
+            userName: _recalledUserName ?? userName,
+            cashierName: userName,
             surchargeAmount: totalSurcharge,
             tenderedAmount: tenderedAmount,
             changeAmount: changeAmount,
@@ -375,6 +382,7 @@ class PosProvider with ChangeNotifier {
     required double changeAmount,
     String? userName,
     BusinessSettings? settings,
+    int? userId,
     List<CartItem>? items,
   }) async {
     _isLoading = true;
@@ -389,6 +397,7 @@ class PosProvider with ChangeNotifier {
         payments: payments,
         tenderedAmount: tenderedAmount,
         changeAmount: changeAmount,
+        userId: userId,
         items: items,
       );
 
@@ -426,7 +435,8 @@ class PosProvider with ChangeNotifier {
               total: saleTotal,
               settings: settings,
               paymentMethod: payments.isNotEmpty ? payments.first['payment_method_id'].toString() : 'unknown',
-              userName: userName,
+              userName: pendingEntry['user']?['name'] as String? ?? userName,
+              cashierName: userName,
               surchargeAmount: totalSurcharge,
               tenderedAmount: tenderedAmount,
               changeAmount: changeAmount,

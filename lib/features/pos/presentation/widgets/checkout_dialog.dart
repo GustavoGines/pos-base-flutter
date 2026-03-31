@@ -308,6 +308,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         changeAmount: _change,
         userName: userName,
         settings: _printReceipt ? settings : null,
+        userId: currentUser?['id'] as int?,
       );
     } else {
       final shiftId = context.read<CashRegisterProvider>().currentShift?.id;
