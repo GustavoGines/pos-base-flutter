@@ -499,7 +499,7 @@ class _MethodChip extends StatelessWidget {
                     ),
                   ),
                   Text(
-                    'Bco: +\$${surchargeAmount!.toStringAsFixed(2)}',
+                    'Rec: +\$${surchargeAmount!.toStringAsFixed(2)}',
                     style: TextStyle(
                       fontSize: 9,
                       color: isSelected
@@ -864,14 +864,14 @@ class _TicketDetailPanel extends StatelessWidget {
                         color: Colors.grey.shade600,
                       ),
                     ),
-                    Row(
+                    /* Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(Icons.account_balance_outlined,
                             size: 11, color: Colors.orange.shade700),
                         const SizedBox(width: 3),
                         Text(
-                          'Bco: +\$${sale.surchargeTotal.toStringAsFixed(2)}',
+                          'Rec: +\$${sale.surchargeTotal.toStringAsFixed(2)}',
                           style: TextStyle(
                             fontSize: 11,
                             color: Colors.orange.shade700,
@@ -879,7 +879,7 @@ class _TicketDetailPanel extends StatelessWidget {
                           ),
                         ),
                       ],
-                    ),
+                    ), */
                   ],
                   const SizedBox(height: 8),
                   // Desglose de pagos
@@ -999,6 +999,7 @@ class _TicketDetailPanel extends StatelessWidget {
                         paymentMethod: sale.paymentMethodLabel,
                         receiptNumber: sale.id.toString(),
                         userName: sale.userName,
+                        surchargeAmount: sale.surchargeTotal,
                       );
                       if (context.mounted) {
                         SnackBarService.success(context,

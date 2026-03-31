@@ -132,6 +132,9 @@ class ReceiptPrinterService {
     String paymentMethod = 'EFECTIVO',
     String? receiptNumber,
     String? userName,
+    double surchargeAmount = 0.0,  // Recargo bancario trasladado al cliente
+    double tenderedAmount = 0.0,   // Efectivo entregado por el cliente
+    double changeAmount = 0.0,     // Vuelto entregado al cliente
   }) async {
     final profile = await _getProfile();
     final generator = Generator(config.paperSize, profile);
@@ -249,24 +252,51 @@ class ReceiptPrinterService {
     bytes += generator.hr(ch: '=');
 
     // ── Total ────────────────────────────────────────────────────
-    bytes += generator.row([
-      PosColumn(
-        text: 'TOTAL A PAGAR:',
-        width: 7,
-        styles: const PosStyles(bold: true, height: PosTextSize.size2),
-      ),
-      PosColumn(
-        text: '\$${total.toStringAsFixed(2)}',
-        width: 5,
-        styles: const PosStyles(
-          bold: true,
-          align: PosAlign.right,
-          height: PosTextSize.size2,
-          width: PosTextSize.size2,
-        ),
-      ),
-    ]);
+    // ── Resumen de Pago (Lógica de Totales Térmicos) ──────────────
+    final hasSurcharge = surchargeAmount > 0.01;
+    final hasCash = tenderedAmount > 0.01;
+    final grandTotal = total + surchargeAmount;
+
+    if (hasSurcharge) {
+      // CASO 1: Si hay Recargo (Tarjeta)
+      bytes += _labelValue(
+        generator,
+        'RECARGO BANCARIO:',
+        '\$ ${surchargeAmount.toStringAsFixed(2)}',
+      );
+      bytes += _labelValue(
+        generator,
+        'TOTAL COBRADO:',
+        '\$ ${grandTotal.toStringAsFixed(2)}',
+      );
+    } else if (hasCash) {
+      // CASO 2: Si hay Efectivo (Efectivo con Vuelto)
+      bytes += _labelValue(
+        generator,
+        'TOTAL:',
+        '\$ ${total.toStringAsFixed(2)}',
+      );
+      bytes += _labelValue(
+        generator,
+        'RECIBIDO EFECTIVO:',
+        '\$ ${tenderedAmount.toStringAsFixed(2)}',
+      );
+      bytes += _labelValue(
+        generator,
+        'VUELTO:',
+        '\$ ${changeAmount.toStringAsFixed(2)}',
+      );
+    } else {
+      // Caso estándar (Sin recargos ni detalles de efectivo)
+      bytes += _labelValue(
+        generator,
+        'TOTAL:',
+        '\$ ${total.toStringAsFixed(2)}',
+      );
+    }
+
     bytes += generator.feed(1);
+
     bytes += generator.row([
       PosColumn(
         text: 'MÉTODO DE PAGO:',
@@ -396,8 +426,13 @@ class ReceiptPrinterService {
     );
     bytes += _labelValue(
       generator,
+      'Total Recargos:',
+      '$currency${(shift.totalSurcharge ?? 0.0).toStringAsFixed(2)}',
+    );
+    bytes += _labelValue(
+      generator,
       'Efectivo esperado:',
-      '$currency${((shift.openingBalance) + (shift.totalSales ?? 0.0)).toStringAsFixed(2)}',
+      '$currency${((shift.openingBalance) + (shift.cashSales ?? 0.0)).toStringAsFixed(2)}',
     );
     bytes += generator.hr(ch: '=');
     bytes += _labelValue(

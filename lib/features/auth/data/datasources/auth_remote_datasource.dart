@@ -21,15 +21,36 @@ class AuthRemoteDataSource {
       debugPrint('=== AUTH: Status ${response.statusCode}, body: ${response.body} ===');
 
       if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        return data['user'];
+        try {
+          final data = json.decode(response.body);
+          return data['user'];
+        } catch (_) {
+          throw const FormatException('La respuesta del servidor no es un JSON válido.');
+        }
       } else if (response.statusCode == 401) {
         throw Exception('PIN incorrecto');
+      } else if (response.statusCode == 404) {
+        throw Exception(
+          'Error de conexión: No se encontró el servidor. Por favor, verifica la URL en la configuración (⋮).',
+        );
+      } else if (response.statusCode == 500) {
+        throw Exception('Error interno del servidor. Contacte a soporte técnico.');
       } else {
-        throw Exception('Error del servidor (${response.statusCode}): ${response.body}');
+        throw Exception('Error del servidor (${response.statusCode})');
       }
+    } on FormatException catch (e) {
+      throw Exception(e.message);
     } catch (e) {
       debugPrint('=== AUTH ERROR: $e ===');
+      final errStr = e.toString();
+      if (errStr.contains('SocketException') ||
+          errStr.contains('TimeoutException') ||
+          errStr.contains('ClientException') ||
+          errStr.contains('Connection refused')) {
+        throw Exception(
+          'Error de conexión: No se encontró el servidor. Por favor, verifica la URL en la configuración (⋮).',
+        );
+      }
       rethrow;
     }
   }

@@ -118,6 +118,7 @@ class CashShiftSummaryScreen extends StatelessWidget {
                   _buildRow('Ventas en Efectivo', '\$${(closedShift.cashSales ?? 0).toStringAsFixed(2)}'),
                   _buildRow('Ventas con Tarjeta', '\$${(closedShift.cardSales ?? 0).toStringAsFixed(2)}'),
                   _buildRow('Ventas por Transf.', '\$${(closedShift.transferSales ?? 0).toStringAsFixed(2)}'),
+                  _buildRow('Total Recargos (Tarj/Billeteras)', '\$${(closedShift.totalSurcharge ?? 0).toStringAsFixed(2)}'),
                   const Divider(),
                   _buildRow('Efectivo Esperado', '\$${(closedShift.expectedBalance ?? 0).toStringAsFixed(2)}', bold: true),
                   _buildRow('Efectivo Físico', '\$${(closedShift.actualBalance ?? 0).toStringAsFixed(2)}', bold: true),

@@ -156,7 +156,13 @@ class SettingsProvider with ChangeNotifier {
         body: json.encode({'license_key': licenseKey}),
       );
 
-      final data = json.decode(response.body);
+      final dynamic data;
+      try {
+        data = json.decode(response.body);
+      } catch (_) {
+        throw const FormatException('La respuesta del servidor no es un JSON válido.');
+      }
+
       if (response.statusCode == 200) {
         final plan = data['plan'] as String? ?? 'basic';
         // Refresh local settings so Feature Gating reacts immediately
@@ -168,11 +174,25 @@ class SettingsProvider with ChangeNotifier {
         }
         
         return plan;
+      } else if (response.statusCode == 404) {
+        throw Exception('Error de conexión: No se encontró el servidor. Verifica la URL configurada.');
+      } else if (response.statusCode == 500) {
+        throw Exception('Error interno del servidor. Contacte a soporte técnico.');
       } else {
         // En caso de error, recargamos por si el backend mandó la app a 'blocked'
         await loadSettings();
         throw Exception(data['error'] ?? 'Error al validar la licencia.');
       }
+    } on FormatException catch (e) {
+      throw Exception(e.message);
+    } catch (e) {
+      final errStr = e.toString();
+      if (errStr.contains('SocketException') ||
+          errStr.contains('TimeoutException') ||
+          errStr.contains('ClientException')) {
+        throw Exception('Error de conexión: No se encontró el servidor. Verifica la URL configurada.');
+      }
+      rethrow;
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -189,21 +209,41 @@ class SettingsProvider with ChangeNotifier {
         headers: {'Accept': 'application/json', 'Content-Type': 'application/json'},
       ).timeout(const Duration(minutes: 4)); // 4 min: tolera cold-start de Render (2-3 min)
 
-      final data = json.decode(response.body);
+      final dynamic data;
+      try {
+        data = json.decode(response.body);
+      } catch (_) {
+        throw const FormatException('La respuesta del servidor no es un JSON válido.');
+      }
+
       if (response.statusCode == 200) {
         await loadSettings();
         // Notificar al sistema de seguridad que sincronizamos con el server
         if (_settings != null) {
           await LicenseHeartbeatService().updateLastSync(_settings!);
         }
+      } else if (response.statusCode == 404) {
+        throw Exception('Error de conexión: No se encontró el servidor. Verifica la URL configurada.');
+      } else if (response.statusCode == 500) {
+        throw Exception('Error interno del servidor. Contacte a soporte técnico.');
       } else {
         // Si el sync detectó revocación, el backend guardó el plan como 'blocked'.
         // Recargamos settings para forzar al "LicenseGuard" a mostrar la pantalla de bloqueo.
         await loadSettings();
         throw Exception(data['error'] ?? 'Error al sincronizar permisos.');
       }
+    } on FormatException catch (e) {
+      throw Exception(e.message);
     } on TimeoutException {
       throw Exception('El servidor central se está encendiendo. Por favor, espera 1 minuto y vuelve a intentarlo.');
+    } catch (e) {
+      final errStr = e.toString();
+      if (errStr.contains('SocketException') ||
+          errStr.contains('TimeoutException') ||
+          errStr.contains('ClientException')) {
+        throw Exception('Error de conexión: No se encontró el servidor. Verifica la URL configurada.');
+      }
+      rethrow;
     } finally {
       _isLoading = false;
       notifyListeners();

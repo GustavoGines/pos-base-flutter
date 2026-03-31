@@ -26,13 +26,29 @@ class SettingsRemoteDataSourceImpl implements SettingsRemoteDataSource {
       );
 
       if (response.statusCode == 200) {
-        final jsonMap = json.decode(response.body);
-        return BusinessSettingsModel.fromJson(jsonMap);
+        try {
+          final jsonMap = json.decode(response.body);
+          return BusinessSettingsModel.fromJson(jsonMap);
+        } catch (_) {
+          throw const FormatException('La respuesta del servidor no es un JSON válido.');
+        }
+      } else if (response.statusCode == 404) {
+        throw Exception('Error de conexión: No se encontró el servidor. Verifica la URL configurada.');
+      } else if (response.statusCode == 500) {
+        throw Exception('Error interno del servidor. Contacte a soporte técnico.');
       } else {
         throw Exception('Failed to load settings (Status: ${response.statusCode})');
       }
+    } on FormatException catch (e) {
+      throw Exception(e.message);
     } catch (e) {
       print('=== API Error en fetchSettings: $e ===');
+      final errStr = e.toString();
+      if (errStr.contains('SocketException') ||
+          errStr.contains('TimeoutException') ||
+          errStr.contains('ClientException')) {
+        throw Exception('Error de conexión: No se encontró el servidor. Verifica la URL configurada.');
+      }
       rethrow;
     }
   }
@@ -50,13 +66,29 @@ class SettingsRemoteDataSourceImpl implements SettingsRemoteDataSource {
       );
 
       if (response.statusCode == 200) {
-        final jsonMap = json.decode(response.body);
-        return BusinessSettingsModel.fromJson(jsonMap['settings']);
+        try {
+          final jsonMap = json.decode(response.body);
+          return BusinessSettingsModel.fromJson(jsonMap['settings']);
+        } catch (_) {
+          throw const FormatException('La respuesta del servidor no es un JSON válido.');
+        }
+      } else if (response.statusCode == 404) {
+        throw Exception('Error de conexión: No se encontró el servidor. Verifica la URL configurada.');
+      } else if (response.statusCode == 500) {
+        throw Exception('Error interno del servidor. Contacte a soporte técnico.');
       } else {
         throw Exception('Failed to update settings (Status: ${response.statusCode})');
       }
+    } on FormatException catch (e) {
+      throw Exception(e.message);
     } catch (e) {
       print('=== API Error en updateSettings: $e ===');
+      final errStr = e.toString();
+      if (errStr.contains('SocketException') ||
+          errStr.contains('TimeoutException') ||
+          errStr.contains('ClientException')) {
+        throw Exception('Error de conexión: No se encontró el servidor. Verifica la URL configurada.');
+      }
       rethrow;
     }
   }

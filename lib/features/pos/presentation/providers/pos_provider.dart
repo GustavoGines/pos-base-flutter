@@ -257,6 +257,9 @@ class PosProvider with ChangeNotifier {
             settings: settings,
             paymentMethod: payments.isNotEmpty ? payments.first['payment_method_id'].toString() : 'unknown',
             userName: userName,
+            surchargeAmount: totalSurcharge,
+            tenderedAmount: tenderedAmount,
+            changeAmount: changeAmount,
           );
         } catch (e) {
           _printerWarning = 'Venta exitosa, pero la impresora no responde: ${e.toString()}';
@@ -424,6 +427,9 @@ class PosProvider with ChangeNotifier {
               settings: settings,
               paymentMethod: payments.isNotEmpty ? payments.first['payment_method_id'].toString() : 'unknown',
               userName: userName,
+              surchargeAmount: totalSurcharge,
+              tenderedAmount: tenderedAmount,
+              changeAmount: changeAmount,
             );
           } catch (e) {
             _printerWarning = 'Cobro exitoso, pero la impresora no responde: ${e.toString()}';

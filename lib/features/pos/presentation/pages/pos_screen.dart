@@ -729,9 +729,41 @@ class _PosScreenState extends State<PosScreen> {
                     ),
                     const SizedBox(width: 12),
                     Expanded(
-                      child: Text('\$${total.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('\$${total.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                          Row(
+                            children: [
+                              Icon(Icons.access_time, size: 10, color: Colors.grey.shade500),
+                              const SizedBox(width: 4),
+                              Builder(
+                                builder: (context) {
+                                  final createdAt = sale['created_at'] as String?;
+                                  if (createdAt == null) return const Text('--:--', style: TextStyle(fontSize: 11));
+                                  
+                                  // Forzamos formato ISO UTC (YYYY-MM-DDTHH:mm:ssZ) para que .toLocal() funcione
+                                  final isoStr = createdAt.contains('T') ? createdAt : createdAt.replaceFirst(' ', 'T');
+                                  final utcStr = isoStr.endsWith('Z') ? isoStr : '${isoStr}Z';
+                                  
+                                  final dt = DateTime.tryParse(utcStr)?.toLocal();
+                                  if (dt == null) return Text(createdAt.substring(11, 16), style: const TextStyle(fontSize: 11));
+                                  
+                                  return Text(
+                                    "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}",
+                                    style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                                  );
+                                },
+                              ),
+                              const SizedBox(width: 8),
+                              const Text('•', style: TextStyle(color: Colors.grey, fontSize: 10)),
+                              const SizedBox(width: 8),
+                              Text('$itemCount ítem(s)', style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
-                    Text('$itemCount ítem(s)', style: const TextStyle(fontSize: 12, color: Colors.grey)),
                   ],
                 ),
                 const SizedBox(height: 12),
