@@ -482,11 +482,27 @@ class _PosScreenState extends State<PosScreen> {
     
     if (success == true) {
       if (mounted) {
-        if (posProvider.printerWarning != null) {
-          SnackBarService.warning(context, posProvider.printerWarning!);
-        } else {
-          SnackBarService.success(context, '¡Venta registrada con éxito!');
+        // 1. PRIORIDAD ABSOLUTA: Mostrar confirmación visual de inmediato
+        SnackBarService.success(context, '¡Venta registrada con éxito!');
+        
+        // 2. ACTUALIZACIÓN LOCAL (IN-MEMORY):
+        // Reordenamos el "Acceso Rápido" al instante sin depender de la red.
+        final catalogProvider = Provider.of<CatalogProvider>(context, listen: false);
+        final Map<int, int> soldItems = {};
+        for (var item in posProvider.cart) {
+          soldItems[item.product.id] = (soldItems[item.product.id] ?? 0) + 1;
         }
+        catalogProvider.updateProductSalesCountLocally(soldItems);
+
+        // 3. REFRESCO SILENCIOSO (FIRE-AND-FORGET):
+        // Intentamos sincronizar con el server pero sin mostrar errores al cajero.
+        Future.delayed(const Duration(seconds: 1), () {
+          if (mounted) {
+            catalogProvider.loadProducts(page: 1, search: '').catchError((e) {
+              debugPrint('Refresco silencioso falló (esperado en redes inestables): $e');
+            });
+          }
+        });
       }
     }
     
@@ -1216,10 +1232,22 @@ class _PosScreenState extends State<PosScreen> {
                 // Determinar qué mostrar: resultados de API o Acceso Rápido
                 final List<Product> displayItems;
                 if (_searchQuery.isEmpty) {
-                  // Acceso Rápido: productos por peso primero, luego unitarios
-                  final weighted = catalog.products.where((p) => p.isSoldByWeight).toList();
-                  final regular  = catalog.products.where((p) => !p.isSoldByWeight).toList();
-                  displayItems = [...weighted, ...regular];
+                  // Acceso Rápido Inteligente:
+                  // Nivel 1: Por peso o sin código de barras (siempre arriba)
+                  // Nivel 2: Más vendidos primero
+                  final level1 = catalog.products.where((p) => 
+                    p.isSoldByWeight || (p.barcode == null || p.barcode!.isEmpty)
+                  ).toList();
+                  
+                  final others = catalog.products.where((p) => 
+                    !p.isSoldByWeight && (p.barcode != null && p.barcode!.isNotEmpty)
+                  ).toList();
+
+                  // Ordenar ambos grupos por ventas descendente
+                  level1.sort((a, b) => b.salesCount.compareTo(a.salesCount));
+                  others.sort((a, b) => b.salesCount.compareTo(a.salesCount));
+
+                  displayItems = [...level1, ...others];
                 } else {
                   // Resultados del servidor — búsqueda real sobre toda la BD
                   displayItems = _searchResults;
@@ -1333,6 +1361,33 @@ class _PosScreenState extends State<PosScreen> {
                                     ),
                                     child: Text('⚖️ Por Kg',
                                       style: TextStyle(fontSize: 10, color: Colors.orange.shade900, fontWeight: FontWeight.w600)),
+                                  ),
+                                ],
+                                // Badge de Popularidad (Nivel Senior UX)
+                                if (product.salesCount > 0) ...[
+                                  const SizedBox(height: 4),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                                    decoration: BoxDecoration(
+                                      color: Colors.blue.withValues(alpha: 0.1),
+                                      borderRadius: BorderRadius.circular(4),
+                                      border: Border.all(color: Colors.blue.withValues(alpha: 0.2)),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(Icons.flash_on_rounded, size: 10, color: Colors.blueAccent),
+                                        const SizedBox(width: 2),
+                                        Text(
+                                          '${product.salesCount} vendidos',
+                                          style: const TextStyle(
+                                            fontSize: 9, 
+                                            color: Colors.blueAccent, 
+                                            fontWeight: FontWeight.bold
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 ],
                               ],

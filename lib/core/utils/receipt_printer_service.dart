@@ -359,6 +359,11 @@ class ReceiptPrinterService {
       'Conserve este ticket para devoluciones',
       styles: const PosStyles(align: PosAlign.center),
     );
+    bytes += generator.feed(1);
+    bytes += generator.text(
+      '*** NO VALIDO COMO FACTURA ***',
+      styles: const PosStyles(align: PosAlign.center, bold: true),
+    );
 
     bytes += generator.feed(3);
     bytes += generator.cut();
