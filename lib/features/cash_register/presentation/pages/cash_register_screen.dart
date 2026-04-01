@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/cash_register_provider.dart';
@@ -26,25 +27,50 @@ class _CashRegisterScreenState extends State<CashRegisterScreen> {
   final _amountController = TextEditingController();
   int? _selectedRegisterId;
 
+  /// Polling: refresca el estado de turno cada 10 segundos mientras esta
+  /// pantalla está montada. Si otro terminal abre un turno, el Consumer
+  /// en /home detecta currentShift != null y salta a PosScreen sin que
+  /// el admin tenga que navegar manualmente.
+  Timer? _shiftPollTimer;
+
   @override
   void initState() {
     super.initState();
     Future.microtask(() {
-      if (mounted) {
-        context.read<CashRegisterProvider>().loadRegisters();
-        // Pre-asignar la terminal local solo si el usuario la configuró explícitamente
-        final assignedId = context.read<SettingsProvider>().assignedRegisterId;
-        if (assignedId > 0) {
-          setState(() {
-            _selectedRegisterId = assignedId;
-          });
-        }
+      if (!mounted) return;
+
+      final assignedId = context.read<SettingsProvider>().assignedRegisterId;
+
+      // Pre-asignar la terminal local si fue configurada explícitamente
+      if (assignedId > 0) {
+        setState(() => _selectedRegisterId = assignedId);
       }
+
+      final cashProv = context.read<CashRegisterProvider>();
+
+      // Verificación inmediata al montar
+      cashProv.checkCurrentShift(
+        registerId: assignedId > 0 ? assignedId : null,
+      );
+
+      // Cargar la lista de cajas disponibles (necesaria para el dropdown)
+      cashProv.loadRegisters();
+
+      // Polling cada 10 segundos: detecta turnos abiertos por otras terminales
+      // sin que el admin tenga que navegar. Se cancela automáticamente en dispose().
+      _shiftPollTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+        if (!mounted) return;
+        final id = context.read<SettingsProvider>().assignedRegisterId;
+        context.read<CashRegisterProvider>().checkCurrentShift(
+          registerId: id > 0 ? id : null,
+        );
+      });
     });
   }
 
   @override
   void dispose() {
+    _shiftPollTimer?.cancel();
     _amountController.dispose();
     super.dispose();
   }
