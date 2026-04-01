@@ -97,15 +97,16 @@ class _PosScreenState extends State<PosScreen> {
     if (query.trim().isEmpty) return;
     String cleanQuery = query.trim();
     
-    // --- LÓGICA EAN-13 BALANZA ETIQUETADORA ---
-    bool isEan13Scale = cleanQuery.length == 13 && cleanQuery.startsWith('20');
-    double weightFromBarcode = 0.0;
+    // --- LÓGICA EAN-13 BALANZA ETIQUETADORA (PRECIO EMBEBIDO) ---
+    bool isEan13Scale = cleanQuery.length == 13 && cleanQuery.startsWith('2');
+    double embeddedPrice = 0.0;
     
     if (isEan13Scale) {
-      final itemCodeStr = cleanQuery.substring(2, 7);
-      final weightStr = cleanQuery.substring(7, 12);
+      // Formato: 1 (Prefijo) + 5 (PLU) + 6 (Precio en pesos) + 1 (CheckDigit)
+      final itemCodeStr = cleanQuery.substring(1, 6); // 5 dígitos de PLU
+      final priceStr = cleanQuery.substring(6, 12);   // 6 dígitos de Precio Entero
       cleanQuery = int.parse(itemCodeStr).toString(); 
-      weightFromBarcode = double.parse(weightStr) / 1000.0;
+      embeddedPrice = double.parse(priceStr);
     }
     
     final posProvider = Provider.of<PosProvider>(context, listen: false);
@@ -116,8 +117,17 @@ class _PosScreenState extends State<PosScreen> {
     if (results.isEmpty) {
       SnackBarService.error(context, 'Producto no encontrado: "$cleanQuery"');
     } else if (isEan13Scale) {
-      // EAN-13 balanza: agregar directo con peso embebido
-      posProvider.submitWeighedProduct(results.first, weightFromBarcode);
+      final product = results.first;
+      double calcWeight = 0.0;
+      
+      if (product.sellingPrice > 0) {
+        calcWeight = embeddedPrice / product.sellingPrice;
+      } else {
+        calcWeight = 1.0; // Fallback de seguridad si el producto tiene precio base 0
+      }
+      
+      // EAN-13 balanza: agregar directo con peso equivalente
+      posProvider.submitWeighedProduct(product, calcWeight);
     } else if (results.length == 1) {
       // Un único resultado: agregar directo
       _handleProductSelection(results.first);

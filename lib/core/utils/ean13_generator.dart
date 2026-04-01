@@ -23,21 +23,21 @@ class Ean13Generator {
     return '$body$checkDigit';
   }
 
-  /// Genera un EAN-13 para balanza con el peso codificado en gramos.
+  /// Genera un EAN-13 para balanza con el precio codificado en pesos enteros.
   /// Formato equilibrado compatible con visual display (1-5-6-1): 
-  /// "2" (prefijo) + PLU (5 dígitos) + PESO (6 dígitos) + check digit
-  /// Ejemplo: PLU 31, Peso 100g → "2 00031 000100 C"
-  static String generateForScale(int plu, double weightInGrams) {
+  /// "2" (prefijo) + PLU (5 dígitos) + PRECIO (6 dígitos enterados) + check digit
+  /// Ejemplo: PLU 31, Precio $1500 → "2 00031 001500 C"
+  static String generateForScale(int plu, double priceInPesos) {
     // BLINDAJE SENIOR: No importa el tamaño del PLU, tomamos solo los últimos 5 dígitos 
     // para cumplir con el estándar EAN-13 de balanza.
     final rawPlu = plu.toString();
     final pluStr = rawPlu.length > 5 ? rawPlu.substring(rawPlu.length - 5) : rawPlu.padLeft(5, '0');
     
-    // Lo mismo para el peso (máximo 6 dígitos)
-    final rawWeight = weightInGrams.round().toString();
-    final weightStr = rawWeight.length > 6 ? rawWeight.substring(rawWeight.length - 6) : rawWeight.padLeft(6, '0');
+    // Lo mismo para el precio (máximo 6 dígitos pesos)
+    final rawPrice = priceInPesos.round().toString();
+    final priceStr = rawPrice.length > 6 ? rawPrice.substring(rawPrice.length - 6) : rawPrice.padLeft(6, '0');
 
-    final body = '2$pluStr$weightStr'; // 1 (prefijo) + 5 (plu) + 6 (peso) = 12 dígitos
+    final body = '2$pluStr$priceStr'; // 1 (prefijo) + 5 (plu) + 6 (precio) = 12 dígitos
 
     final checkDigit = _calculateCheckDigit(body);
     return '$body$checkDigit';

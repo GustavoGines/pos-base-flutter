@@ -163,16 +163,16 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
       final int numericPlu = int.tryParse(product.internalCode) ?? product.id;
       final String pluStr = numericPlu.toString().padLeft(5, '0');
 
+      final double finalPrice = hasWeight 
+          ? product.sellingPrice * (customWeight / 1000)
+          : product.sellingPrice;
+
       final String ean13 = hasWeight 
-          ? Ean13Generator.generateForScale(numericPlu, customWeight)
+          ? Ean13Generator.generateForScale(numericPlu, finalPrice)
           : Ean13Generator.generate(
               plu: numericPlu,
               existingBarcode: product.barcode,
             );
-
-      final double finalPrice = hasWeight 
-          ? product.sellingPrice * (customWeight / 1000)
-          : product.sellingPrice;
 
       final String envStr = dateFmt.format(now);
       final String? vtoStr = (product.vencimientoDias != null &&
