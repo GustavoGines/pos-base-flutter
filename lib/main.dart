@@ -15,6 +15,7 @@ import 'features/trash/providers/trash_provider.dart';
 import 'core/config/app_config.dart';
 
 import 'core/presentation/widgets/license_guard.dart';
+import 'core/presentation/widgets/plan_upgrade_dialog.dart';
 import 'core/network/api_client.dart';
 import 'core/utils/receipt_printer_service.dart';
 
@@ -418,10 +419,31 @@ class _MainAppState extends State<MainApp> {
                     // Usamos navigatorKey para evitar contexto desactivado en callback async
                     navigatorKey.currentState?.pushReplacementNamed('/pos');
                   } else {
-                    final msg = cashProv.errorMessage?.replaceAll('Exception: ', '') ?? 'Error al abrir caja';
-                    ScaffoldMessenger.of(ctx).showSnackBar(
-                      SnackBar(content: Text(msg), backgroundColor: Colors.red),
-                    );
+                    final rawError = cashProv.errorMessage ?? '';
+                    final msg = rawError.replaceAll('Exception: ', '');
+
+                    // Detectar error de límite de plan → mostrar modal de upselling
+                    final isPlanLimitError = rawError.contains('Límite de cajas') ||
+                        rawError.contains('plan a PRO') ||
+                        rawError.contains('Actualice su plan');
+
+                    if (isPlanLimitError && ctx.mounted) {
+                      PlanUpgradeDialog.show(
+                        ctx,
+                        featureName: 'Múltiples Cajas Simultáneas',
+                        description:
+                            'Su plan actual permite 1 caja activa a la vez. '
+                            'Para operar con varias terminales simultáneamente '
+                            'es necesario el Plan PRO o Enterprise.\n\n'
+                            'Comuníquese con soporte para ampliar su licencia.',
+                        onNavigateToSettings: () =>
+                            navigatorKey.currentState?.pushNamed('/settings'),
+                      );
+                    } else if (ctx.mounted) {
+                      ScaffoldMessenger.of(ctx).showSnackBar(
+                        SnackBar(content: Text(msg), backgroundColor: Colors.red),
+                      );
+                    }
                   }
                 },
                 onContinueToPos: () {

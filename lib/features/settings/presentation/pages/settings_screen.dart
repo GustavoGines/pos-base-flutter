@@ -4,6 +4,7 @@ import '../providers/settings_provider.dart';
 import '../../../../core/utils/snack_bar_service.dart';
 import '../../../../core/utils/receipt_printer_service.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
+import 'package:frontend_desktop/core/presentation/widgets/plan_upgrade_dialog.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../cash_register/presentation/providers/cash_register_provider.dart';
@@ -520,7 +521,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
             if (provider.hasFeature('multi_caja')) {
               Navigator.pushNamed(context, '/settings/registers');
             } else {
-              _showUpsellDialog(context, 'Gestión Multi-Caja', 'La administración de múltiples terminales físicas es una función exclusiva de los planes PRO y ENTERPRISE.');
+              PlanUpgradeDialog.show(
+                context,
+                featureName: 'Gestión Multi-Caja',
+                description:
+                    'La administración de múltiples terminales físicas es '
+                    'una función exclusiva de los planes PRO y ENTERPRISE.\n\n'
+                    'Comuníquese con soporte para ampliar su licencia.',
+                onNavigateToSettings: () =>
+                    setState(() => _activeSection = SettingsSection.subscription),
+              );
             }
           },
         ),
@@ -528,40 +538,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  void _showUpsellDialog(BuildContext context, String featureName, String description) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Row(
-          children: [
-            const Icon(Icons.stars_rounded, color: Colors.amber, size: 28),
-            const SizedBox(width: 12),
-            Text('Plan Premium Requerido'),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('La función "$featureName" no está disponible en tu plan actual.', style: const TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 12),
-            Text(description),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Entendido')),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              setState(() => _activeSection = SettingsSection.subscription);
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF673AB7), foregroundColor: Colors.white),
-            child: const Text('MEJORAR PLAN'),
-          ),
-        ],
-      ),
-    );
-  }
 
   Widget _buildSectionHeader(String title, String subtitle) {
     return Column(
