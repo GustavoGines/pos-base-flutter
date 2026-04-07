@@ -162,7 +162,6 @@ class ReceiptPrinterService {
 
     final profile = await _getProfile();
     final generator = Generator(config.paperSize, profile);
-    final is58mm = config.paperSize == PaperSize.mm58;
     List<int> bytes = [];
 
 
@@ -207,46 +206,32 @@ class ReceiptPrinterService {
 
     // ── Fecha y número de comprobante ────────────────────────────
     final now = DateTime.now();
-    bytes += generator.row([
-      PosColumn(
-        text: 'FECHA: ${_formatDate(now)}',
-        width: 7,
-        styles: const PosStyles(bold: true),
-      ),
-      PosColumn(
-        text: receiptNumber != null
-            ? 'TICKET #${receiptNumber.padLeft(6, '0')}'
-            : '',
-        width: 5,
-        styles: const PosStyles(align: PosAlign.right, bold: true),
-      ),
-    ]);
+    // Fecha ocupa la línea completa
+    bytes += generator.text(
+      'FECHA: ${_formatDate(now)}',
+      styles: const PosStyles(bold: true, align: PosAlign.left),
+    );
+    // Número de ticket en su propia línea — funciona con cualquier cantidad de dígitos
+    if (receiptNumber != null) {
+      bytes += generator.text(
+        'TICKET N°: ${receiptNumber.padLeft(6, '0')}',
+        styles: const PosStyles(bold: true, align: PosAlign.right),
+      );
+    }
     if (userName != null) {
       final String cashierLine = (cashierName == null || userName == cashierName)
           ? 'CAJERO: ${_cleanText(userName).toUpperCase()}'
-          : 'GENERO: ${_cleanText(userName).toUpperCase()} | COBRO: ${_cleanText(cashierName!).toUpperCase()}';
+          : 'GENERO: ${_cleanText(userName).toUpperCase()} | COBRO: ${_cleanText(cashierName).toUpperCase()}';
       
       bytes += generator.text(
         cashierLine,
         styles: const PosStyles(align: PosAlign.left),
       );
     }
-    bytes += generator.hr(ch: '=');
-
-    // ── Items ────────────────────────────────────────────────────
-    bytes += generator.row([
-      PosColumn(text: 'CANT', width: 2, styles: const PosStyles(bold: true)),
-      PosColumn(
-        text: 'DESCRIPCION',
-        width: 6,
-        styles: const PosStyles(bold: true),
-      ),
-      PosColumn(
-        text: 'TOTAL',
-        width: 4,
-        styles: const PosStyles(align: PosAlign.right, bold: true),
-      ),
-    ]);
+    // ── Items ─────────────────────────────────────────────────────
+    // Formato profesional estilo POS moderno:
+    // Línea 1: [CANT x $PRECIO_UNIT]    [$SUBTOTAL]   (columnas izq/der)
+    // Línea 2: NOMBRE DEL PRODUCTO      (nombre completo abajo, bold)
     bytes += generator.hr(ch: '-');
 
     int totalItemsQty = 0;
@@ -254,51 +239,40 @@ class ReceiptPrinterService {
     for (final item in items) {
       final isWeight = item.product.isSoldByWeight;
       final cantStr = isWeight
-          ? item.quantity.toStringAsFixed(3)
-          : item.quantity.toInt().toString();
+          ? '${item.quantity.toStringAsFixed(3)} kg'
+          : '${item.quantity.toInt()} un';
 
       if (!isWeight) totalItemsQty += item.quantity.toInt();
 
-      final price = item.product.sellingPrice;
-      final subtotal = item.subtotal;
+      final double price = item.product.sellingPrice;
+      final double subtotal = item.subtotal;
 
-      // Nombre del producto siempre limpiado de acentos
       final productName = _cleanText(item.product.name.toUpperCase());
+      final unitPriceStr = '$cantStr x \$${_formatPrice(price)}';
+      final subtotalStr = '\$${_formatPrice(subtotal)}';
 
-      if (is58mm) {
-        // En 58mm imprimimos en 2 líneas para evitar overflow de la columna
-        bytes += generator.text(
-          productName,
-          styles: const PosStyles(bold: true),
-        );
-        bytes += generator.row([
-          PosColumn(text: cantStr, width: 3),
-          PosColumn(text: 'x \$${price.toStringAsFixed(2)}', width: 5),
-          PosColumn(
-            text: '\$${subtotal.toStringAsFixed(2)}',
-            width: 4,
-            styles: const PosStyles(align: PosAlign.right),
-          ),
-        ]);
-      } else {
-        // 80mm layout normal
-        bytes += generator.text(
-          productName,
-          styles: const PosStyles(bold: true),
-        );
-        bytes += generator.row([
-          PosColumn(text: cantStr, width: 2),
-          PosColumn(text: 'x \$${price.toStringAsFixed(2)}', width: 6),
-          PosColumn(
-            text: '\$${subtotal.toStringAsFixed(2)}',
-            width: 4,
-            styles: const PosStyles(align: PosAlign.right),
-          ),
-        ]);
-      }
-      bytes += generator.feed(1); // Espacio pequeño entre items
+      // Línea 1: [3 un x $1500    LEFT] [$4500 RIGHT]
+      bytes += generator.row([
+        PosColumn(
+          text: unitPriceStr,
+          width: 8,
+          styles: const PosStyles(align: PosAlign.left),
+        ),
+        PosColumn(
+          text: subtotalStr,
+          width: 4,
+          styles: const PosStyles(align: PosAlign.right, bold: true),
+        ),
+      ]);
+      // Línea 2: NOMBRE DEL PRODUCTO en negrita
+      bytes += generator.text(
+        productName,
+        styles: const PosStyles(bold: true),
+      );
     }
     bytes += generator.hr(ch: '=');
+
+
 
     // ── Total ────────────────────────────────────────────────────
     // ── Resumen de Pago (Lógica de Totales Térmicos) ──────────────
@@ -346,18 +320,12 @@ class ReceiptPrinterService {
 
     bytes += generator.feed(1);
 
-    bytes += generator.row([
-      PosColumn(
-        text: 'METODO DE PAGO:',
-        width: 7,
-        styles: const PosStyles(bold: true),
-      ),
-      PosColumn(
-        text: _cleanText(paymentMethod).toUpperCase(),
-        width: 5,
-        styles: const PosStyles(align: PosAlign.right, bold: true),
-      ),
-    ]);
+    // ── Método de pago (línea propia si no entra) ─────────────────
+    final cleanPayment = _cleanText(paymentMethod).toUpperCase();
+    bytes += generator.text(
+      'METODO DE PAGO: $cleanPayment',
+      styles: const PosStyles(bold: true, align: PosAlign.left),
+    );
     bytes += generator.row([
       PosColumn(
         text: 'UNIDADES VENDIDAS:',
@@ -372,6 +340,7 @@ class ReceiptPrinterService {
     ]);
     bytes += generator.hr(ch: '-');
 
+    // ── Código de barras del comprobante (sin número duplicado) ──
     if (receiptNumber != null && receiptNumber.isNotEmpty) {
       try {
         final cleanStringForBarcode = receiptNumber.replaceAll(RegExp(r'[^A-Z0-9\-\.\ \$\/\+\%]'), '');
@@ -380,7 +349,9 @@ class ReceiptPrinterService {
             Barcode.code39(cleanStringForBarcode.split('')),
             width: 2,
             height: 60,
+            textPos: BarcodeText.none, // Suprime el *47* del hardware
           );
+          // Texto legible limpio, sin asteriscos
           bytes += generator.text(
             cleanStringForBarcode,
             styles: const PosStyles(align: PosAlign.center),
@@ -392,23 +363,16 @@ class ReceiptPrinterService {
       bytes += generator.feed(1);
     }
 
+    // ── Pie de ticket (SOLO el mensaje configurado por el usuario) ──
+    // No se agregan mensajes hardcodeados adicionales para evitar duplicados.
     if (settings.receiptFooterMessage != null &&
         settings.receiptFooterMessage!.isNotEmpty) {
       bytes += generator.text(
         _cleanText(settings.receiptFooterMessage!),
         styles: const PosStyles(align: PosAlign.center, bold: true),
       );
+      bytes += generator.feed(1);
     }
-    bytes += generator.feed(1);
-    bytes += generator.text(
-      '*** GRACIAS POR SU COMPRA ***',
-      styles: const PosStyles(align: PosAlign.center, bold: true),
-    );
-    bytes += generator.text(
-      'Conserve este ticket para devoluciones',
-      styles: const PosStyles(align: PosAlign.center),
-    );
-    bytes += generator.feed(1);
     bytes += generator.text(
       '*** NO VALIDO COMO FACTURA ***',
       styles: const PosStyles(align: PosAlign.center, bold: true),
@@ -573,6 +537,14 @@ class ReceiptPrinterService {
     // ESC/POS comando: ESC p m t1 t2
     // p=0 (pin2), on=100ms, off=200ms
     return [0x1B, 0x70, 0x00, 0x64, 0xC8];
+  }
+
+  /// Formatea un precio eliminando decimales si son .00
+  String _formatPrice(double value) {
+    if (value == value.truncate()) {
+      return value.toInt().toString();
+    }
+    return value.toStringAsFixed(2);
   }
 
   String _formatDate(DateTime dt) {
