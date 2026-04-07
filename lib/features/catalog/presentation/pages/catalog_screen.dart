@@ -379,13 +379,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
               sortHeader(fStock, 'Stock', 'stock'),
               sortHeader(fBal, 'Balanza', 'is_sold_by_weight'),
               sortHeader(fActivo, 'Activo', 'active'),
-              cell(
-                fVto,
-                Tooltip(
-                  message: 'Días de vida útil configurados por producto',
-                  child: Text('VTO.', style: headerStyle(), overflow: TextOverflow.ellipsis),
-                ),
-              ),
+              sortHeader(fVto, 'VTO.', 'vencimiento_dias'),
               cell(fAcciones, Text('Acciones', style: headerStyle(), overflow: TextOverflow.ellipsis)),
             ],
           ),
