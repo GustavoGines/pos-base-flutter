@@ -266,11 +266,40 @@ class PosProvider with ChangeNotifier {
 
       if (settings != null) {
         try {
+          // Resolver nombres y ordenar: efectivo primero
+          final resolvedPayments = (payments.map((p) {
+            final id = (p['payment_method_id'] as num?)?.toInt();
+            final method = _paymentMethods.firstWhere(
+              (m) => m.id == id,
+              orElse: () => PaymentMethod(
+                id: id ?? 0,
+                name: p['method_name']?.toString() ?? 'PAGO',
+                code: '',
+                surchargeType: 'none',
+                surchargeValue: 0,
+                isCash: false,
+                isActive: true,
+                sortOrder: 0,
+              ),
+            );
+            final amount = (p['total_amount'] as num?)?.toDouble() ??
+                (p['base_amount'] as num?)?.toDouble() ?? 0.0;
+            return {'name': method.name, 'amount': amount, '_isCash': method.isCash};
+          }).toList()
+            ..sort((a, b) {
+              final aCash = (a['_isCash'] as bool?) ?? false;
+              final bCash = (b['_isCash'] as bool?) ?? false;
+              if (aCash == bCash) return 0;
+              return aCash ? -1 : 1; // efectivo primero
+            }))
+              .map((p) => {'name': p['name'], 'amount': p['amount']})
+              .toList();
+
           await _activePrinter.printSaleTicket(
             items: cartSnapshot,
             total: totalSnapshot,
             settings: settings,
-            paymentMethod: payments.isNotEmpty ? payments.first['payment_method_id'].toString() : 'unknown',
+            paymentDetails: resolvedPayments,
             receiptNumber: extractedSaleId,
             userName: _recalledUserName ?? userName,
             cashierName: userName,
@@ -440,11 +469,40 @@ class PosProvider with ChangeNotifier {
 
         if (ticketItems.isNotEmpty) {
           try {
+            // Resolver nombres y ordenar: efectivo primero
+            final resolvedPayments = (payments.map((p) {
+              final id = (p['payment_method_id'] as num?)?.toInt();
+              final method = _paymentMethods.firstWhere(
+                (m) => m.id == id,
+                orElse: () => PaymentMethod(
+                  id: id ?? 0,
+                  name: p['method_name']?.toString() ?? 'PAGO',
+                  code: '',
+                  surchargeType: 'none',
+                  surchargeValue: 0,
+                  isCash: false,
+                  isActive: true,
+                  sortOrder: 0,
+                ),
+              );
+              final amount = (p['total_amount'] as num?)?.toDouble() ??
+                  (p['base_amount'] as num?)?.toDouble() ?? 0.0;
+              return {'name': method.name, 'amount': amount, '_isCash': method.isCash};
+            }).toList()
+              ..sort((a, b) {
+                final aCash = (a['_isCash'] as bool?) ?? false;
+                final bCash = (b['_isCash'] as bool?) ?? false;
+                if (aCash == bCash) return 0;
+                return aCash ? -1 : 1;
+              }))
+                .map((p) => {'name': p['name'], 'amount': p['amount']})
+                .toList();
+
             await printerService!.printSaleTicket(
               items: ticketItems,
               total: saleTotal,
               settings: settings,
-              paymentMethod: payments.isNotEmpty ? payments.first['payment_method_id'].toString() : 'unknown',
+              paymentDetails: resolvedPayments,
               userName: pendingEntry['user']?['name'] as String? ?? userName,
               cashierName: userName,
               surchargeAmount: totalSurcharge,

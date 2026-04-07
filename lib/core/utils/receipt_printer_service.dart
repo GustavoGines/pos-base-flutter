@@ -137,6 +137,7 @@ class ReceiptPrinterService {
     required double total,
     required BusinessSettings settings,
     String paymentMethod = 'EFECTIVO',
+    List<Map<String, dynamic>> paymentDetails = const [], // [{name, amount}]
     String? receiptNumber,
     String? userName,
     String? cashierName,
@@ -274,58 +275,57 @@ class ReceiptPrinterService {
 
 
 
-    // ── Total ────────────────────────────────────────────────────
-    // ── Resumen de Pago (Lógica de Totales Térmicos) ──────────────
+    // ── Resumen de Pago ─────────────────────────────────────────────
     final hasSurcharge = surchargeAmount > 0.01;
-    final hasCash = tenderedAmount > 0.01;
     final grandTotal = total + surchargeAmount;
+    final hasChange = changeAmount > 0.01;
+    final hasTendered = tenderedAmount > 0.01;
 
+    // 1. SUBTOTAL (siempre, es la base antes de recargos)
+    bytes += _labelValue(generator, 'SUBTOTAL:', '\$${_formatPrice(total)}');
+
+    // 2. FORMAS DE PAGO (una por línea con su monto)
+    if (paymentDetails.isNotEmpty) {
+      bytes += generator.hr(ch: '-');
+      for (final pd in paymentDetails) {
+        final methodName = _cleanText((pd['name'] as String? ?? 'PAGO').toUpperCase());
+        final methodAmt = (pd['amount'] as num?)?.toDouble() ?? 0.0;
+        bytes += generator.row([
+          PosColumn(
+            text: methodName,
+            width: 8,
+            styles: const PosStyles(bold: true, align: PosAlign.left),
+          ),
+          PosColumn(
+            text: '\$${_formatPrice(methodAmt)}',
+            width: 4,
+            styles: const PosStyles(bold: true, align: PosAlign.right),
+          ),
+        ]);
+      }
+    }
+
+    // 3. RECARGO BANCARIO (solo si aplica, debajo de los métodos de pago)
     if (hasSurcharge) {
-      // CASO 1: Si hay Recargo (Tarjeta)
-      bytes += _labelValue(
-        generator,
-        'RECARGO BANCARIO:',
-        '\$ ${surchargeAmount.toStringAsFixed(2)}',
-      );
-      bytes += _labelValue(
-        generator,
-        'TOTAL COBRADO:',
-        '\$ ${grandTotal.toStringAsFixed(2)}',
-      );
-    } else if (hasCash) {
-      // CASO 2: Si hay Efectivo (Efectivo con Vuelto)
-      bytes += _labelValue(
-        generator,
-        'TOTAL:',
-        '\$ ${total.toStringAsFixed(2)}',
-      );
-      bytes += _labelValue(
-        generator,
-        'RECIBIDO EFECTIVO:',
-        '\$ ${tenderedAmount.toStringAsFixed(2)}',
-      );
-      bytes += _labelValue(
-        generator,
-        'VUELTO:',
-        '\$ ${changeAmount.toStringAsFixed(2)}',
-      );
-    } else {
-      // Caso estándar (Sin recargos ni detalles de efectivo)
-      bytes += _labelValue(
-        generator,
-        'TOTAL:',
-        '\$ ${total.toStringAsFixed(2)}',
-      );
+      bytes += _labelValue(generator, 'RECARGO BANCARIO:', '\$${_formatPrice(surchargeAmount)}');
+    }
+
+    // 4. TOTAL COBRADO (siempre, es el monto final con recargos)
+    bytes += generator.hr(ch: '-');
+    bytes += _labelValue(generator, 'TOTAL COBRADO:', '\$${_formatPrice(grandTotal)}');
+
+    // 5. RECIBIDO EN EFECTIVO (solo si el cajero ingresó un monto)
+    if (hasTendered) {
+      bytes += _labelValue(generator, 'RECIBIDO EFECTIVO:', '\$${_formatPrice(tenderedAmount)}');
+    }
+
+    // 6. VUELTO (solo si corresponde dar cambio)
+    if (hasChange) {
+      bytes += _labelValue(generator, 'VUELTO:', '\$${_formatPrice(changeAmount)}');
     }
 
     bytes += generator.feed(1);
 
-    // ── Método de pago (línea propia si no entra) ─────────────────
-    final cleanPayment = _cleanText(paymentMethod).toUpperCase();
-    bytes += generator.text(
-      'METODO DE PAGO: $cleanPayment',
-      styles: const PosStyles(bold: true, align: PosAlign.left),
-    );
     bytes += generator.row([
       PosColumn(
         text: 'UNIDADES VENDIDAS:',
@@ -339,6 +339,7 @@ class ReceiptPrinterService {
       ),
     ]);
     bytes += generator.hr(ch: '-');
+
 
     // ── Código de barras del comprobante (sin número duplicado) ──
     if (receiptNumber != null && receiptNumber.isNotEmpty) {
