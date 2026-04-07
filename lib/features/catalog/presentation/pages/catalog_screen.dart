@@ -369,7 +369,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                   },
                 ),
               ),
-              cell(fId, Text('#', style: headerStyle())),
+              sortHeader(fId, '#', 'id'),
               sortHeader(fNombre, 'Nombre', 'name'),
               sortHeader(fBarcode, 'Cód. Barras', 'barcode'),
               sortHeader(fInterno, 'Cód. Interno', 'internal_code'),
