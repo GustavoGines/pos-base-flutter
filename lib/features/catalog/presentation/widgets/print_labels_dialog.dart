@@ -150,9 +150,8 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
     final dateFmt = DateFormat('dd/MM/yy');
 
     double computeHeight(Product product) {
-      // Para impresoras térmicas de 58mm ajustamos a 48mm de alto para alojar las fuentes ampliadas.
+      if (_paperFormat == 'thermal') return 50.0;
       if (_paperFormat == 'thermal_58') return 48.0;
-      // La altura estándar es siempre 45mm para garantizar espacio y evitar clipping
       return 45.0;
     }
 
@@ -284,8 +283,8 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
                             barcode: isValidEan ? pw.Barcode.ean13() : pw.Barcode.code128(),
                             data: ean13,
                             drawText: false,
-                            height: 8 * PdfPageFormat.mm,
-                            width: (widthLabel <= 48.0 ? 24 : 28) * PdfPageFormat.mm,
+                            height: (widthLabel >= 75.0 ? 11 : 8) * PdfPageFormat.mm,
+                            width: (widthLabel > 60.0 ? 36 : (widthLabel <= 48.0 ? 24 : 28)) * PdfPageFormat.mm,
                           ),
                           pw.SizedBox(height: 0.5 * PdfPageFormat.mm),
                           pw.Text(
@@ -346,8 +345,8 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
     }
 
     // Generar lista plana de etiquetas para reportes o A4
+    final double labelWidth = _paperFormat == 'thermal_58' ? 47.0 : (_paperFormat == 'thermal' ? 78.0 : 55.0);
     final List<pw.Widget> allLabels = [];
-    final double labelWidth = _paperFormat == 'thermal_58' ? 47.0 : 55.0;
 
     for (final p in widget.products) {
       final qty = _quantities[p.id] ?? 1;
