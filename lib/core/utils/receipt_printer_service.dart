@@ -276,53 +276,64 @@ class ReceiptPrinterService {
 
 
 
-    // ── Resumen de Pago ─────────────────────────────────────────────
+    // ── Resumen de Pago (Anti-Redundancia) ──────────────────────────
     final hasSurcharge = surchargeAmount > 0.01;
     final grandTotal = total + surchargeAmount;
     final hasChange = changeAmount > 0.01;
     final hasTendered = tenderedAmount > 0.01;
 
-    // 1. SUBTOTAL (siempre, es la base antes de recargos)
-    bytes += _labelValue(generator, 'SUBTOTAL:', '\$${_formatPrice(total)}');
+    final bool isComplexPayment = paymentDetails.length > 1 || hasSurcharge;
 
-    // 2. FORMAS DE PAGO (una por línea con su monto)
-    if (paymentDetails.isNotEmpty) {
-      bytes += generator.hr(ch: '-');
-      for (final pd in paymentDetails) {
-        final methodName = _cleanText((pd['name'] as String? ?? 'PAGO').toUpperCase());
-        final methodAmt = (pd['amount'] as num?)?.toDouble() ?? 0.0;
-        bytes += generator.row([
-          PosColumn(
-            text: methodName,
-            width: 8,
-            styles: const PosStyles(bold: true, align: PosAlign.left),
-          ),
-          PosColumn(
-            text: '\$${_formatPrice(methodAmt)}',
-            width: 4,
-            styles: const PosStyles(bold: true, align: PosAlign.right),
-          ),
-        ]);
+    if (isComplexPayment) {
+      // Caso 3: Venta Compleja (Múltiples métodos o Recargos)
+      bytes += _labelValue(generator, 'SUBTOTAL:', '\$${_formatPrice(total)}');
+
+      if (paymentDetails.isNotEmpty) {
+        bytes += generator.hr(ch: '-');
+        for (final pd in paymentDetails) {
+          final methodName = _cleanText((pd['name'] as String? ?? 'PAGO').toUpperCase());
+          final methodAmt = (pd['amount'] as num?)?.toDouble() ?? 0.0;
+          bytes += _labelValue(generator, methodName, '\$${_formatPrice(methodAmt)}');
+        }
+      } else {
+        bytes += generator.hr(ch: '-');
+        bytes += _labelValue(generator, _cleanText(paymentMethod.toUpperCase()), '\$${_formatPrice(total)}');
       }
-    }
 
-    // 3. RECARGO BANCARIO (solo si aplica, debajo de los métodos de pago)
-    if (hasSurcharge) {
-      bytes += _labelValue(generator, 'RECARGO BANCARIO:', '\$${_formatPrice(surchargeAmount)}');
-    }
+      if (hasSurcharge) {
+        bytes += _labelValue(generator, 'RECARGO BANCARIO:', '\$${_formatPrice(surchargeAmount)}');
+      }
 
-    // 4. TOTAL COBRADO (siempre, es el monto final con recargos)
-    bytes += generator.hr(ch: '-');
-    bytes += _labelValue(generator, 'TOTAL COBRADO:', '\$${_formatPrice(grandTotal)}');
+      bytes += generator.hr(ch: '-');
+      bytes += _labelValue(generator, 'TOTAL COBRADO:', '\$${_formatPrice(grandTotal)}');
 
-    // 5. RECIBIDO EN EFECTIVO (solo si el cajero ingresó un monto)
-    if (hasTendered) {
-      bytes += _labelValue(generator, 'RECIBIDO EFECTIVO:', '\$${_formatPrice(tenderedAmount)}');
-    }
+      if (hasTendered) {
+        bytes += _labelValue(generator, 'EFECTIVO RECIBIDO:', '\$${_formatPrice(tenderedAmount)}');
+      }
+      if (hasChange) {
+        bytes += _labelValue(generator, 'SU VUELTO:', '\$${_formatPrice(changeAmount)}');
+      }
+    } else {
+      // Casos 1 y 2: Venta Simple (Un solo pago, sin recargos)
+      bytes += _labelValue(generator, 'TOTAL GENERAL:', '\$${_formatPrice(grandTotal)}');
+      bytes += generator.hr(ch: '-');
 
-    // 6. VUELTO (solo si corresponde dar cambio)
-    if (hasChange) {
-      bytes += _labelValue(generator, 'VUELTO:', '\$${_formatPrice(changeAmount)}');
+      final singlePaymentName = paymentDetails.isNotEmpty
+          ? _cleanText((paymentDetails.first['name'] as String? ?? 'PAGO').toUpperCase())
+          : _cleanText(paymentMethod.toUpperCase());
+
+      bytes += _labelValue(generator, 'PAGO EN:', singlePaymentName);
+
+      // Si pagó con efectivo, mostramos cuánto dio sólo si hay vuelto o si abona de más/menos.
+      // Si el pago es exacto, no ensuciamos el ticket.
+      final bool isExactCash = hasTendered && (tenderedAmount - grandTotal).abs() < 0.01;
+
+      if (hasTendered && !isExactCash) {
+        bytes += _labelValue(generator, 'EFECTIVO RECIBIDO:', '\$${_formatPrice(tenderedAmount)}');
+      }
+      if (hasChange) {
+        bytes += _labelValue(generator, 'SU VUELTO:', '\$${_formatPrice(changeAmount)}');
+      }
     }
 
     bytes += generator.feed(1);
