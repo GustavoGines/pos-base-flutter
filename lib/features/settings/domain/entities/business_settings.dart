@@ -7,6 +7,7 @@ class BusinessSettings extends Equatable {
   final String? taxId;
   final String? receiptFooterMessage;
   final String printerType;
+  final String printerPaperWidth;
   final String? printerComPort;
   final String? printerIpAddress;
   final String? printerIpPort;
@@ -29,6 +30,7 @@ class BusinessSettings extends Equatable {
     this.taxId,
     this.receiptFooterMessage,
     this.printerType = 'none',
+    this.printerPaperWidth = '58',
     this.printerComPort,
     this.printerIpAddress,
     this.printerIpPort,
@@ -53,6 +55,7 @@ class BusinessSettings extends Equatable {
         taxId,
         receiptFooterMessage,
         printerType,
+        printerPaperWidth,
         printerComPort,
         printerIpAddress,
         printerIpPort,

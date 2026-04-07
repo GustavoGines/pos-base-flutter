@@ -113,13 +113,14 @@ class ReceiptPrinterService {
         type = PrinterConnectionType.usb;
     }
 
+    final paperSize = (settings.printerPaperWidth == '80') ? PaperSize.mm80 : PaperSize.mm58;
+
     config = PrinterConfig(
       connectionType: type,
       tcpHost: settings.printerIpAddress,
       tcpPort: int.tryParse(settings.printerIpPort ?? '9100') ?? 9100,
       comPort: settings.printerComPort,
-      // SIEMPRE forzamos 58mm para la ticketera del cliente
-      paperSize: PaperSize.mm58,
+      paperSize: paperSize,
     );
     debugPrint('  -> Config aplicada: type=$type, comPort=${config.comPort}, paper=${config.paperSize}');
   }

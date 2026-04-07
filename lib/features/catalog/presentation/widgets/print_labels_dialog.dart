@@ -606,33 +606,18 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
                     SizedBox(
                       width: 130,
                       child: _FormatCard(
-                        selected: _paperFormat == 'thermal_58',
+                        selected: _paperFormat == 'thermal_58' || _paperFormat == 'thermal',
                         icon: Icons.receipt_long_outlined,
-                        title: 'Rollo 58mm',
+                        title: 'Rollo Térmico',
                         subtitle: 'Punto de Venta',
                         onTap: () {
                           setState(() {
-                            _paperFormat = 'thermal_58';
+                            final s = context.read<SettingsProvider>().settings;
+                            _paperFormat = s?.printerPaperWidth == '80' ? 'thermal' : 'thermal_58';
                             _schedulePreviewRebuild();
                           });
                         },
                         color: Colors.teal,
-                      ),
-                    ),
-                    SizedBox(
-                      width: 130,
-                      child: _FormatCard(
-                        selected: _paperFormat == 'thermal',
-                        icon: Icons.receipt_long_outlined,
-                        title: 'Rollo 80mm',
-                        subtitle: 'Ticketeras',
-                        onTap: () {
-                          setState(() {
-                            _paperFormat = 'thermal';
-                            _schedulePreviewRebuild();
-                          });
-                        },
-                        color: Colors.orange,
                       ),
                     ),
                   ],

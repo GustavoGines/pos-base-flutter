@@ -33,6 +33,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   // Impresora
   String _printerType = 'none'; // 'none', 'usb', 'network'
+  String _printerPaperWidth = '58'; // '58', '80'
   final _comPortCtrl = TextEditingController();
   final _ipAddressCtrl = TextEditingController();
   final _ipPortCtrl = TextEditingController();
@@ -59,6 +60,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _footerCtrl.text = settings.receiptFooterMessage ?? '';
         
         _printerType = settings.printerType;
+        _printerPaperWidth = settings.printerPaperWidth;
         _comPortCtrl.text = settings.printerComPort ?? '';
         _ipAddressCtrl.text = settings.printerIpAddress ?? '';
         _ipPortCtrl.text = settings.printerIpPort ?? '';
@@ -95,6 +97,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       'tax_id': _taxIdCtrl.text.trim(),
       'receipt_footer_message': _footerCtrl.text.trim(),
       'printer_type': _printerType,
+      'printer_paper_width': _printerPaperWidth,
       'printer_com_port': _comPortCtrl.text.trim(),
       'printer_ip_address': _ipAddressCtrl.text.trim(),
       'printer_ip_port': _ipPortCtrl.text.trim(),
@@ -331,6 +334,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
             DropdownMenuItem(value: 'network', child: Text('Red (TCP/IP)')),
           ],
           onChanged: (val) => setState(() => _printerType = val!),
+        ),
+        const SizedBox(height: 16),
+        DropdownButtonFormField<String>(
+          value: _printerPaperWidth,
+          decoration: _inputDecoration('Ancho del Rollo térmico', Icons.straighten_outlined),
+          items: const [
+            DropdownMenuItem(value: '58', child: Text('Rollos Chicos (58mm) / Económico')),
+            DropdownMenuItem(value: '80', child: Text('Rollos Estándar (80mm) / Premium')),
+          ],
+          onChanged: (val) => setState(() => _printerPaperWidth = val!),
         ),
         if (_printerType != 'none') ...[
           const SizedBox(height: 24),
