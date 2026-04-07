@@ -282,8 +282,8 @@ class PosProvider with ChangeNotifier {
                 sortOrder: 0,
               ),
             );
-            final amount = (p['total_amount'] as num?)?.toDouble() ??
-                (p['base_amount'] as num?)?.toDouble() ?? 0.0;
+            final amount = (p['base_amount'] as num?)?.toDouble() ??
+                (p['total_amount'] as num?)?.toDouble() ?? 0.0;
             return {'name': method.name, 'amount': amount, '_isCash': method.isCash};
           }).toList()
             ..sort((a, b) {
@@ -485,8 +485,8 @@ class PosProvider with ChangeNotifier {
                   sortOrder: 0,
                 ),
               );
-              final amount = (p['total_amount'] as num?)?.toDouble() ??
-                  (p['base_amount'] as num?)?.toDouble() ?? 0.0;
+              final amount = (p['base_amount'] as num?)?.toDouble() ??
+                  (p['total_amount'] as num?)?.toDouble() ?? 0.0;
               return {'name': method.name, 'amount': amount, '_isCash': method.isCash};
             }).toList()
               ..sort((a, b) {

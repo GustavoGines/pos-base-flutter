@@ -1021,11 +1021,23 @@ class _TicketDetailPanel extends StatelessWidget {
                         );
                       }).toList();
 
+                      final paymentDetails = sale.payments.map((p) => {
+                        'name': p.methodName,
+                        'amount': p.baseAmount,
+                        '_isCash': p.isCash,
+                      }).toList()
+                        ..sort((a, b) {
+                          final aCash = a['_isCash'] as bool;
+                          final bCash = b['_isCash'] as bool;
+                          if (aCash == bCash) return 0;
+                          return aCash ? -1 : 1;
+                        });
+
                       await ReceiptPrinterService.instance.printSaleTicket(
                         items: itemsParaImprimir,
                         total: sale.total,
                         settings: settings,
-                        paymentMethod: sale.paymentMethodLabel,
+                        paymentDetails: paymentDetails,
                         receiptNumber: sale.id.toString(),
                         userName: sale.userName,
                         cashierName: sale.cashierName,
