@@ -7,6 +7,7 @@
 #include "generated_plugin_registrant.h"
 
 #include <flutter_libserialport/flutter_libserialport_plugin.h>
+#include <flutter_pos_printer_platform_image_3/flutter_pos_printer_platform_plugin.h>
 #include <flutter_secure_storage_windows/flutter_secure_storage_windows_plugin.h>
 #include <printing/printing_plugin.h>
 #include <url_launcher_windows/url_launcher_windows.h>
@@ -14,6 +15,8 @@
 void RegisterPlugins(flutter::PluginRegistry* registry) {
   FlutterLibserialportPluginRegisterWithRegistrar(
       registry->GetRegistrarForPlugin("FlutterLibserialportPlugin"));
+  FlutterPosPrinterPlatformPluginRegisterWithRegistrar(
+      registry->GetRegistrarForPlugin("FlutterPosPrinterPlatformPlugin"));
   FlutterSecureStorageWindowsPluginRegisterWithRegistrar(
       registry->GetRegistrarForPlugin("FlutterSecureStorageWindowsPlugin"));
   PrintingPluginRegisterWithRegistrar(

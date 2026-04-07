@@ -31,109 +31,109 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
         bottom: false,
         child: SizedBox(
           height: kToolbarHeight,
-          child: Row(
-            children: [
-              // ── LEFT BLOCK ────────────────────────────────────────────
-              Flexible(
-                child: Padding(
-                  padding: const EdgeInsets.only(left: 4),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // Back button for secondary screens
-                      if (showBackButton)
-                        IconButton(
-                          icon: const Icon(Icons.arrow_back_rounded, color: Colors.blueGrey),
-                          tooltip: 'Volver',
-                          onPressed: () => Navigator.of(context).pop(),
-                        )
-                      else
+              child: NavigationToolbar(
+                centerMiddle: true,
+                middleSpacing: 16.0,
+                // ── LEFT BLOCK (leading) ──────────────────────────────────
+                leading: Padding(
+                  padding: const EdgeInsets.only(left: 12),
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Back button for secondary screens
+                        if (showBackButton) ...[
+                          IconButton(
+                            icon: const Icon(Icons.arrow_back_rounded, color: Colors.blueGrey),
+                            tooltip: 'Volver',
+                            onPressed: () => Navigator.of(context).pop(),
+                          ),
+                          const SizedBox(width: 8),
+                        ],
+                        const Icon(Icons.point_of_sale_rounded, color: Colors.blueAccent, size: 28),
                         const SizedBox(width: 8),
-                      const Icon(Icons.point_of_sale_rounded,
-                          color: Colors.blueAccent, size: 28),
-                      const SizedBox(width: 8),
-                      Flexible(
-                        child: Consumer<SettingsProvider>(
+                        Consumer<SettingsProvider>(
                           builder: (context, settings, _) {
-                            final name =
-                                settings.settings?.companyName ?? title;
+                            final name = settings.settings?.companyName ?? title;
                             return Text(
                               name.isNotEmpty ? name : title,
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.bold, fontSize: 18),
-                              overflow: TextOverflow.ellipsis,
-                              maxLines: 1,
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
                             );
                           },
                         ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                // ── CENTER BLOCK (middle) ─────────────────────────────────
+                middle: Consumer<SettingsProvider>(
+                  builder: (context, settings, _) {
+                    final bool canAccessCuentasCorrientes = settings.hasFeature('cuentas_corrientes');
+
+                    return SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _buildNavTab(
+                            context: context,
+                            label: 'Terminal POS',
+                            icon: Icons.point_of_sale,
+                            route: '/pos',
+                            activeColor: Colors.teal.shade700,
+                          ),
+                          _buildNavTab(
+                            context: context,
+                            label: 'Registro de Ventas',
+                            icon: Icons.receipt_long_outlined,
+                            route: '/sales-history',
+                            activeColor: Colors.blueAccent,
+                            permissionKey: 'view_global_history',
+                          ),
+                          _buildNavTab(
+                            context: context,
+                            label: 'Catálogo',
+                            icon: Icons.inventory_2_outlined,
+                            route: '/catalog',
+                            activeColor: Colors.deepPurple,
+                            permissionKey: 'manage_catalog',
+                          ),
+                          _buildNavTab(
+                            context: context,
+                            label: 'Cuentas Corrientes',
+                            icon: canAccessCuentasCorrientes ? Icons.account_balance_wallet_outlined : Icons.lock_outline,
+                            route: '/cuentas-corrientes',
+                            activeColor: Colors.orange.shade700,
+                            isLocked: !canAccessCuentasCorrientes,
+                          ),
+                        ],
                       ),
-                    ],
+                    );
+                  },
+                ),
+
+                // ── RIGHT BLOCK (trailing) ────────────────────────────────
+                trailing: Padding(
+                  padding: const EdgeInsets.only(right: 12),
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const StockAlertBell(),
+                        const SizedBox(width: 8),
+                        if (extraAction != null) ...[
+                          extraAction!,
+                          const SizedBox(width: 8),
+                        ],
+                        const SharedUserMenu(),
+                      ],
+                    ),
                   ),
                 ),
               ),
-              const Spacer(),
-
-              // ── CENTER BLOCK (navigation tabs — always centered) ──────
-              Consumer<SettingsProvider>(
-                builder: (context, settings, _) {
-                  final bool canAccessCuentasCorrientes = settings.hasFeature('cuentas_corrientes');
-
-                  return Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _buildNavTab(
-                        context: context,
-                        label: 'Terminal POS',
-                        icon: Icons.point_of_sale,
-                        route: '/pos',
-                        activeColor: Colors.teal.shade700,
-                      ),
-                      _buildNavTab(
-                        context: context,
-                        label: 'Registro de Ventas',
-                        icon: Icons.receipt_long_outlined,
-                        route: '/sales-history',
-                        activeColor: Colors.blueAccent,
-                        permissionKey: 'view_global_history',
-                      ),
-                      _buildNavTab(
-                        context: context,
-                        label: 'Catálogo',
-                        icon: Icons.inventory_2_outlined,
-                        route: '/catalog',
-                        activeColor: Colors.deepPurple,
-                        permissionKey: 'manage_catalog',
-                      ),
-                      _buildNavTab(
-                        context: context,
-                        label: 'Cuentas Corrientes',
-                        icon: canAccessCuentasCorrientes ? Icons.account_balance_wallet_outlined : Icons.lock_outline,
-                        route: '/cuentas-corrientes',
-                        activeColor: Colors.orange.shade700,
-                        isLocked: !canAccessCuentasCorrientes,
-                      ),
-                    ],
-                  );
-                },
-              ),
-
-              const Spacer(),
-
-              // ── RIGHT BLOCK ───────────────────────────────────────────
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const StockAlertBell(),
-                  const SizedBox(width: 8),
-                  if (extraAction != null) ...[
-                    extraAction!,
-                    const SizedBox(width: 8),
-                  ],
-                  const SharedUserMenu(),
-                ],
-              ),
-            ],
-          ),
         ),
       ),
     );

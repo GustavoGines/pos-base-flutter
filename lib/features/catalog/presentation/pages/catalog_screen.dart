@@ -695,6 +695,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
   late TextEditingController _minStockCtrl;
   bool _isSoldByWeight = false;
   bool _active = true;
+  String _unitType = 'un';
   int? _categoryId;
   late TextEditingController _expiryCtrl;
 
@@ -713,6 +714,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     _minStockCtrl = TextEditingController(text: (p?.minStock != null) ? p!.minStock!.toStringAsFixed(0) : '');
     _isSoldByWeight = p?.isSoldByWeight ?? false;
     _active = p?.active ?? true;
+    _unitType = p?.unitType ?? 'un';
     _categoryId = p?.category?.id;
     _expiryCtrl = TextEditingController(
       text: p?.vencimientoDias != null ? p!.vencimientoDias.toString() : '',
@@ -743,6 +745,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
       'stock': double.parse(_stockCtrl.text.replaceAll(',', '.')),
       'min_stock': _minStockCtrl.text.trim().isNotEmpty ? double.parse(_minStockCtrl.text.replaceAll(',', '.')) : null,
       'is_sold_by_weight': _isSoldByWeight,
+      'unit_type': _unitType,
       'active': _active,
       if (_categoryId != null) 'category_id': _categoryId,
       if (_expiryCtrl.text.trim().isNotEmpty)
@@ -817,16 +820,76 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                 ),
                 const SizedBox(height: 12),
                 // Categoría
-                if (categories.isNotEmpty)
-                  DropdownButtonFormField<int?>(
-                    value: _categoryId,
-                    decoration: const InputDecoration(labelText: 'Categoría', prefixIcon: Icon(Icons.category_outlined)),
-                    items: [
-                      const DropdownMenuItem<int?>(value: null, child: Text('— Sin categoría —')),
-                      ...categories.map((c) => DropdownMenuItem<int?>(value: c.id, child: Text(c.name))),
-                    ],
-                    onChanged: (val) => setState(() => _categoryId = val),
-                  ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: DropdownButtonFormField<int?>(
+                        value: _categoryId,
+                        decoration: const InputDecoration(labelText: 'Categoría', prefixIcon: Icon(Icons.category_outlined)),
+                        items: [
+                          const DropdownMenuItem<int?>(value: null, child: Text('— Sin categoría —')),
+                          ...categories.map((c) => DropdownMenuItem<int?>(value: c.id, child: Text(c.name))),
+                        ],
+                        onChanged: (val) => setState(() => _categoryId = val),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Tooltip(
+                      message: 'Crear nueva categoría rápida',
+                      child: IconButton.filledTonal(
+                        icon: const Icon(Icons.add),
+                        onPressed: () async {
+                          final nameCtrl = TextEditingController();
+                          final created = await showDialog<bool>(
+                            context: context,
+                            builder: (ctx) => AlertDialog(
+                              title: const Text('Nueva Categoría'),
+                              content: TextField(
+                                controller: nameCtrl,
+                                decoration: const InputDecoration(
+                                  labelText: 'Nombre de la categoría',
+                                  border: OutlineInputBorder(),
+                                  prefixIcon: Icon(Icons.label_outline),
+                                ),
+                                autofocus: true,
+                              ),
+                              actions: [
+                                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+                                Consumer<CatalogProvider>(
+                                  builder: (_, p, __) => FilledButton(
+                                    onPressed: p.isLoading
+                                      ? null
+                                      : () async {
+                                          if (nameCtrl.text.trim().isEmpty) return;
+                                          final ok = await p.createCategory(nameCtrl.text.trim());
+                                          if (ok && ctx.mounted) {
+                                            Navigator.pop(ctx, true);
+                                          } else if (ctx.mounted) {
+                                            SnackBarService.error(ctx, p.errorMessage ?? 'Error al crear');
+                                          }
+                                      },
+                                    child: const Text('Crear'),
+                                  )
+                                ),
+                              ],
+                            ),
+                          );
+                          if (created == true && mounted) {
+                            // Cargar la nueva y setearla automáticamente
+                            try {
+                              final newCat = widget.provider.categories.firstWhere((c) => c.name.toLowerCase() == nameCtrl.text.trim().toLowerCase());
+                              setState(() => _categoryId = newCat.id);
+                            } catch (_) {
+                              if (widget.provider.categories.isNotEmpty) {
+                                setState(() => _categoryId = widget.provider.categories.last.id);
+                              }
+                            }
+                          }
+                        },
+                      ),
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 12),
                 Row(
                   children: [
@@ -865,7 +928,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                         controller: _stockCtrl,
                         decoration: InputDecoration(
                           labelText: 'Stock inicial',
-                          suffixText: _isSoldByWeight ? 'Kg' : 'unidades',
+                          suffixText: _unitType,
                           prefixIcon: const Icon(Icons.inventory_2_outlined),
                         ),
                         keyboardType: const TextInputType.numberWithOptions(decimal: true),
@@ -886,29 +949,54 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
-                // Switches + Vencimiento
+                const SizedBox(height: 12),
                 Row(
                   children: [
                     Expanded(
-                      child: SwitchListTile(
-                        dense: true,
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('Venta por peso (balanza)'),
-                        value: _isSoldByWeight,
-                        onChanged: (v) => setState(() => _isSoldByWeight = v),
+                      child: DropdownButtonFormField<String>(
+                        value: _unitType,
+                        decoration: const InputDecoration(
+                          labelText: 'Unidad de Medida',
+                          prefixIcon: Icon(Icons.square_foot),
+                        ),
+                        items: const [
+                          DropdownMenuItem(value: 'un', child: Text('Unidades')),
+                          DropdownMenuItem(value: 'kg', child: Text('Kilogramos')),
+                          DropdownMenuItem(value: 'g', child: Text('Gramos')),
+                          DropdownMenuItem(value: 'lt', child: Text('Litros')),
+                        ],
+                        onChanged: (val) => setState(() {
+                          _unitType = val ?? 'un';
+                          if (_unitType != 'un') {
+                            _isSoldByWeight = true; // Auto-marcar si es peso/volumen
+                          } else {
+                            _isSoldByWeight = false; // Desmarcar si es unidad pura
+                          }
+                        }),
                       ),
                     ),
+                    const SizedBox(width: 12),
                     Expanded(
                       child: SwitchListTile(
                         dense: true,
                         contentPadding: EdgeInsets.zero,
-                        title: const Text('Producto activo'),
-                        value: _active,
-                        onChanged: (v) => setState(() => _active = v),
+                        title: const Text('Venta p/peso (balanza)'),
+                        value: _isSoldByWeight,
+                        onChanged: (v) => setState(() { 
+                          _isSoldByWeight = v;
+                          if (v && _unitType == 'un') _unitType = 'kg'; // Auto set
+                        }),
                       ),
                     ),
                   ],
+                ),
+                const SizedBox(height: 8),
+                SwitchListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Producto activo (Visible en POS)'),
+                  value: _active,
+                  onChanged: (v) => setState(() => _active = v),
                 ),
                 const SizedBox(height: 12),
                 TextFormField(

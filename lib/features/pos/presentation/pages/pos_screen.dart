@@ -97,32 +97,60 @@ class _PosScreenState extends State<PosScreen> {
     if (query.trim().isEmpty) return;
     String cleanQuery = query.trim();
     
-    // --- LÓGICA EAN-13 BALANZA ETIQUETADORA ---
-    bool isEan13Scale = cleanQuery.length == 13 && cleanQuery.startsWith('20');
-    double weightFromBarcode = 0.0;
-    
-    if (isEan13Scale) {
-      final itemCodeStr = cleanQuery.substring(2, 7);
-      final weightStr = cleanQuery.substring(7, 12);
-      cleanQuery = int.parse(itemCodeStr).toString(); 
-      weightFromBarcode = double.parse(weightStr) / 1000.0;
-    }
-    
     final posProvider = Provider.of<PosProvider>(context, listen: false);
-    final results = await posProvider.search(cleanQuery);
+    
+    // 1. Intentamos buscar el código exactamente como se escaneó primero.
+    // Esto es crucial por si el producto es unitario y su código EAN normal comienza con '2'.
+    List<Product> results = await posProvider.search(cleanQuery);
+    
+    bool appliedScaleLogic = false;
+    double embeddedPrice = 0.0;
+    
+    // 2. Si no hubo coincidencias exactas, verificamos si es una etiqueta de balanza (13 dígitos, empieza en '2')
+    if (results.isEmpty && cleanQuery.length == 13 && cleanQuery.startsWith('2')) {
+      // Formato típico local: 1 (Prefijo) + 5 (PLU) + 6 (Precio Entero) + 1 (Dígito Verificador)
+      final itemCodeStr = cleanQuery.substring(1, 6);
+      final priceStr = cleanQuery.substring(6, 12);
+      final pluQuery = int.parse(itemCodeStr).toString(); 
+      embeddedPrice = double.parse(priceStr);
+      
+      // Hacemos una segunda búsqueda usando solamente el PLU extraído
+      results = await posProvider.search(pluQuery);
+      
+      if (results.isNotEmpty) {
+        if (results.first.isSoldByWeight) {
+          appliedScaleLogic = true;
+        } else {
+          // El código parece de balanza, pero el producto en la DB es por unidad (ej: Aceitunas).
+          if (mounted) {
+            SnackBarService.error(context, 'El producto "${results.first.name}" no se vende por peso. Revise la etiqueta.');
+          }
+          _searchController.clear();
+          setState(() => _searchQuery = '');
+          _searchFocusNode.requestFocus();
+          return;
+        }
+      }
+    }
     
     if (!mounted) return;
 
     if (results.isEmpty) {
       SnackBarService.error(context, 'Producto no encontrado: "$cleanQuery"');
-    } else if (isEan13Scale) {
-      // EAN-13 balanza: agregar directo con peso embebido
-      posProvider.submitWeighedProduct(results.first, weightFromBarcode);
+    } else if (appliedScaleLogic) {
+      final product = results.first;
+      double calcWeight = 0.0;
+      
+      if (product.sellingPrice > 0) {
+        calcWeight = embeddedPrice / product.sellingPrice;
+      } else {
+        calcWeight = 1.0; // Fallback de seguridad
+      }
+      
+      posProvider.submitWeighedProduct(product, calcWeight);
     } else if (results.length == 1) {
-      // Un único resultado: agregar directo
       _handleProductSelection(results.first);
     } else {
-      // Múltiples resultados: mostrar selector
       await _showProductPickerDialog(results, cleanQuery);
     }
 

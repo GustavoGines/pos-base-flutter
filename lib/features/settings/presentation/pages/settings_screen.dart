@@ -335,7 +335,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         if (_printerType != 'none') ...[
           const SizedBox(height: 24),
           if (_printerType == 'usb')
-            _buildTextField('Puerto COM', _comPortCtrl, hint: 'Ej: COM3', icon: Icons.usb)
+            _buildTextField('Nombre de Impresora (Windows)', _comPortCtrl, hint: 'Ej: POS-58', icon: Icons.print_outlined)
           else
             Row(
               children: [

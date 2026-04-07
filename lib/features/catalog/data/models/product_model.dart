@@ -15,6 +15,7 @@ class ProductModel extends Product {
     required bool isSoldByWeight,
     int salesCount = 0,
     int? vencimientoDias,
+    String unitType = 'un',
     CategoryModel? category,
   }) : super(
           id: id,
@@ -29,6 +30,7 @@ class ProductModel extends Product {
           isSoldByWeight: isSoldByWeight,
           salesCount: salesCount,
           vencimientoDias: vencimientoDias,
+          unitType: unitType,
           category: category,
         );
 
@@ -46,6 +48,7 @@ class ProductModel extends Product {
     bool? isSoldByWeight,
     int? salesCount,
     int? vencimientoDias,
+    String? unitType,
     covariant CategoryModel? category,
   }) {
     return ProductModel(
@@ -61,6 +64,7 @@ class ProductModel extends Product {
       isSoldByWeight: isSoldByWeight ?? this.isSoldByWeight,
       salesCount: salesCount ?? this.salesCount,
       vencimientoDias: vencimientoDias ?? this.vencimientoDias,
+      unitType: unitType ?? this.unitType,
       category: category ?? (this.category as CategoryModel?),
     );
   }
@@ -85,6 +89,7 @@ class ProductModel extends Product {
       vencimientoDias: json['vencimiento_dias'] != null
           ? int.tryParse(json['vencimiento_dias'].toString())
           : null,
+      unitType: json['unit_type']?.toString() ?? 'un',
       category: json['category'] != null && json['category'] is Map<String, dynamic> 
           ? CategoryModel.fromJson(json['category'] as Map<String, dynamic>) 
           : null,

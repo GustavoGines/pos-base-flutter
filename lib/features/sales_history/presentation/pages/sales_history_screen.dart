@@ -797,7 +797,8 @@ class _TicketDetailPanel extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
+                    Wrap(
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         Text('Ticket #${sale.id}',
                             style: const TextStyle(
@@ -820,29 +821,33 @@ class _TicketDetailPanel extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: 6),
-                    Row(children: [
-                      Icon(Icons.calendar_today_outlined,
-                          size: 16, color: Colors.grey.shade600),
-                      const SizedBox(width: 8),
-                      Text(dateStr,
-                          style: TextStyle(
-                              color: Colors.grey.shade600, fontSize: 16)),
-                      if (sale.userName != null) ...[
-                        const SizedBox(width: 24),
-                        Icon(Icons.person_outline,
-                            size: 16, color: Colors.blueGrey.shade600),
-                        const SizedBox(width: 6),
-                        Text(
-                          (sale.cashierName == null || sale.userName == sale.cashierName)
-                              ? 'Cajero: ${sale.userName}'
-                              : 'Generó: ${sale.userName} | Cobró: ${sale.cashierName}',
-                          style: TextStyle(
-                              color: Colors.blueGrey.shade800,
-                              fontWeight: FontWeight.w500,
-                              fontSize: 16),
-                        ),
-                      ]
-                    ]),
+                    Wrap(
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      runSpacing: 6,
+                      children: [
+                        Icon(Icons.calendar_today_outlined,
+                            size: 16, color: Colors.grey.shade600),
+                        const SizedBox(width: 8),
+                        Text(dateStr,
+                            style: TextStyle(
+                                color: Colors.grey.shade600, fontSize: 16)),
+                        if (sale.userName != null) ...[
+                          const SizedBox(width: 24),
+                          Icon(Icons.person_outline,
+                              size: 16, color: Colors.blueGrey.shade600),
+                          const SizedBox(width: 6),
+                          Text(
+                            (sale.cashierName == null || sale.userName == sale.cashierName)
+                                ? 'Cajero: ${sale.userName}'
+                                : 'Generó: ${sale.userName} | Cobró: ${sale.cashierName}',
+                            style: TextStyle(
+                                color: Colors.blueGrey.shade800,
+                                fontWeight: FontWeight.w500,
+                                fontSize: 16),
+                          ),
+                        ]
+                      ],
+                    ),
                   ],
                 ),
               ),
@@ -922,7 +927,9 @@ class _TicketDetailPanel extends StatelessWidget {
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(12),
-                child: DataTable(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: DataTable(
                   headingRowHeight: 60,
                   dataRowMinHeight: 60,
                   dataRowMaxHeight: 80,
@@ -966,11 +973,12 @@ class _TicketDetailPanel extends StatelessWidget {
                               fontWeight: FontWeight.bold))),
                     ]);
                   }).toList(),
-                ),
-              ),
-            ),
-          ),
-        ),
+                ), // End DataTable
+              ), // End horizontal SingleChildScrollView
+            ), // End ClipRRect
+          ), // End Container
+        ), // End vertical SingleChildScrollView
+      ), // End Expanded
 
         // ── Footer de acciones ────────────────────────────────────────────────
         Container(
@@ -979,8 +987,11 @@ class _TicketDetailPanel extends StatelessWidget {
             color: Colors.white,
             border: Border(top: BorderSide(color: Colors.black12)),
           ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.end,
+          child: Wrap(
+            alignment: WrapAlignment.end,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 16,
+            runSpacing: 16,
             children: [
               OutlinedButton.icon(
                 icon: const Icon(Icons.print_outlined),
@@ -1036,7 +1047,6 @@ class _TicketDetailPanel extends StatelessWidget {
                   }
                 },
               ),
-              const SizedBox(width: 16),
               if (!sale.isVoided) ...[
                 FilledButton.icon(
                   icon: provider.isLoading

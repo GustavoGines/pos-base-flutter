@@ -58,8 +58,11 @@ class PosProvider with ChangeNotifier {
   }
 
   double get cartTotal {
-    return _cart.fold(0.0, (sum, item) => sum + item.subtotal);
+    return _cart.fold(0.0, (total, item) => total + item.subtotal);
   }
+
+  // Garantiza que siempre tengamos un printerService, incluso si no se inyecta
+  ReceiptPrinterService get _activePrinter => printerService ?? ReceiptPrinterService.instance;
 
   bool requestAddToCart(Product product) {
     if (product.isSoldByWeight) {
@@ -221,6 +224,8 @@ class PosProvider with ChangeNotifier {
     final totalSnapshot = cartTotal;
 
     try {
+      String? extractedSaleId;
+
       if (_activePendingSaleId != null) {
         final success = await payPendingSale(
           saleId: _activePendingSaleId!,
@@ -238,8 +243,9 @@ class PosProvider with ChangeNotifier {
           // El error se seteó dentro de payPendingSale
           return false;
         }
+        extractedSaleId = _activePendingSaleId!.toString();
       } else {
-        await processSaleUseCase(
+        final result = await processSaleUseCase(
           total: totalSnapshot,
           totalSurcharge: totalSurcharge,
           payments: payments,
@@ -251,17 +257,21 @@ class PosProvider with ChangeNotifier {
           customerId: customerId,
           status: 'completed',
         );
+
+        // processSaleUseCase retorna entidad Sale
+        extractedSaleId = result.id.toString();
       }
 
       clearCart();
 
-      if (printerService != null && settings != null) {
+      if (settings != null) {
         try {
-          await printerService!.printSaleTicket(
+          await _activePrinter.printSaleTicket(
             items: cartSnapshot,
             total: totalSnapshot,
             settings: settings,
             paymentMethod: payments.isNotEmpty ? payments.first['payment_method_id'].toString() : 'unknown',
+            receiptNumber: extractedSaleId,
             userName: _recalledUserName ?? userName,
             cashierName: userName,
             surchargeAmount: totalSurcharge,

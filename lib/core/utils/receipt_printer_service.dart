@@ -2,7 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
-import 'package:flutter_libserialport/flutter_libserialport.dart';
+import 'package:flutter_pos_printer_platform_image_3/flutter_pos_printer_platform_image_3.dart';
 import '../../../features/cash_register/domain/entities/cash_register_shift.dart';
 import '../../../features/pos/domain/entities/cart_item.dart';
 import '../../../features/settings/domain/entities/business_settings.dart';
@@ -44,7 +44,7 @@ class PrinterConfig {
     connectionType: PrinterConnectionType.usb,
     comPort: 'COM3',
     baudRate: 115200,
-    paperSize: PaperSize.mm80,
+    paperSize: PaperSize.mm58,
   );
 }
 
@@ -96,6 +96,11 @@ class ReceiptPrinterService {
 
   /// Permite reconfigurar el hardware en caliente (desde SettingsScreen)
   Future<void> reconfigureFromSettings(BusinessSettings settings) async {
+    debugPrint('=== PrinterService: reconfigureFromSettings() ===');
+    debugPrint('  printerType: ${settings.printerType}');
+    debugPrint('  comPort: ${settings.printerComPort}');
+    debugPrint('  tcpHost: ${settings.printerIpAddress}');
+
     PrinterConnectionType type;
     switch (settings.printerType.toLowerCase()) {
       case 'network':
@@ -105,7 +110,6 @@ class ReceiptPrinterService {
         type = PrinterConnectionType.usb;
         break;
       default:
-        // Si es 'none' u otro, dejamos configurado algo pero no imprimirá (manejado arriba en UI o interceptado aquí)
         type = PrinterConnectionType.usb;
     }
 
@@ -114,7 +118,10 @@ class ReceiptPrinterService {
       tcpHost: settings.printerIpAddress,
       tcpPort: int.tryParse(settings.printerIpPort ?? '9100') ?? 9100,
       comPort: settings.printerComPort,
+      // SIEMPRE forzamos 58mm para la ticketera del cliente
+      paperSize: PaperSize.mm58,
     );
+    debugPrint('  -> Config aplicada: type=$type, comPort=${config.comPort}, paper=${config.paperSize}');
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -133,18 +140,36 @@ class ReceiptPrinterService {
     String? receiptNumber,
     String? userName,
     String? cashierName,
-    double surchargeAmount = 0.0,  // Recargo bancario trasladado al cliente
-    double tenderedAmount = 0.0,   // Efectivo entregado por el cliente
-    double changeAmount = 0.0,     // Vuelto entregado al cliente
+    double surchargeAmount = 0.0,
+    double tenderedAmount = 0.0,
+    double changeAmount = 0.0,
   }) async {
+    // Guardia: si la impresora está desactivada, no hacer nada
+    if (settings.printerType.toLowerCase() == 'none') {
+      debugPrint('=== PrinterService: printerType=none, saltando impresión ===');
+      return;
+    }
+    // Guardia: si el comPort está vacío en modo USB, no hacer nada
+    if (config.connectionType == PrinterConnectionType.usb &&
+        (config.comPort == null || config.comPort!.trim().isEmpty)) {
+      debugPrint('=== PrinterService: comPort vacío — configure el puerto en Ajustes > Hardware ===');
+      return;
+    }
+
+    debugPrint('=== PrinterService: Iniciando impresión ===');
+    debugPrint('  comPort: ${config.comPort}  paperSize: ${config.paperSize}  type: ${config.connectionType}');
+    debugPrint('  receiptNumber: $receiptNumber  items: ${items.length}');
+
     final profile = await _getProfile();
     final generator = Generator(config.paperSize, profile);
+    final is58mm = config.paperSize == PaperSize.mm58;
     List<int> bytes = [];
+
 
     // ── Encabezado ──────────────────────────────────────────────
     bytes += generator.reset();
     bytes += generator.text(
-      settings.companyName?.toUpperCase() ?? 'MI NEGOCIO',
+      _cleanText(settings.companyName?.toUpperCase() ?? 'MI NEGOCIO'),
       styles: const PosStyles(
         bold: true,
         align: PosAlign.center,
@@ -156,7 +181,7 @@ class ReceiptPrinterService {
 
     if (settings.address != null && settings.address!.isNotEmpty) {
       bytes += generator.text(
-        settings.address!,
+        _cleanText(settings.address!),
         styles: const PosStyles(align: PosAlign.center),
       );
     }
@@ -175,7 +200,7 @@ class ReceiptPrinterService {
     bytes += generator.hr(ch: '=');
 
     bytes += generator.text(
-      'COMPROBANTE DE VENTA',
+      _cleanText('COMPROBANTE DE VENTA'),
       styles: const PosStyles(align: PosAlign.center, bold: true),
     );
     bytes += generator.hr(ch: '-');
@@ -198,8 +223,8 @@ class ReceiptPrinterService {
     ]);
     if (userName != null) {
       final String cashierLine = (cashierName == null || userName == cashierName)
-          ? 'CAJERO: ${userName.toUpperCase()}'
-          : 'GENERO: ${userName.toUpperCase()} | COBRO: ${cashierName.toUpperCase()}';
+          ? 'CAJERO: ${_cleanText(userName).toUpperCase()}'
+          : 'GENERO: ${_cleanText(userName).toUpperCase()} | COBRO: ${_cleanText(cashierName!).toUpperCase()}';
       
       bytes += generator.text(
         cashierLine,
@@ -212,7 +237,7 @@ class ReceiptPrinterService {
     bytes += generator.row([
       PosColumn(text: 'CANT', width: 2, styles: const PosStyles(bold: true)),
       PosColumn(
-        text: 'DESCRIPCIÓN',
+        text: 'DESCRIPCION',
         width: 6,
         styles: const PosStyles(bold: true),
       ),
@@ -237,21 +262,40 @@ class ReceiptPrinterService {
       final price = item.product.sellingPrice;
       final subtotal = item.subtotal;
 
-      // Primera línea: Nombre del producto
-      bytes += generator.text(
-        item.product.name.toUpperCase(),
-        styles: const PosStyles(bold: true),
-      );
-      // Segunda línea: Cantidad | Precio unitario | Subtotal
-      bytes += generator.row([
-        PosColumn(text: cantStr, width: 2),
-        PosColumn(text: 'x \$${price.toStringAsFixed(2)}', width: 6),
-        PosColumn(
-          text: '\$${subtotal.toStringAsFixed(2)}',
-          width: 4,
-          styles: const PosStyles(align: PosAlign.right),
-        ),
-      ]);
+      // Nombre del producto siempre limpiado de acentos
+      final productName = _cleanText(item.product.name.toUpperCase());
+
+      if (is58mm) {
+        // En 58mm imprimimos en 2 líneas para evitar overflow de la columna
+        bytes += generator.text(
+          productName,
+          styles: const PosStyles(bold: true),
+        );
+        bytes += generator.row([
+          PosColumn(text: cantStr, width: 3),
+          PosColumn(text: 'x \$${price.toStringAsFixed(2)}', width: 5),
+          PosColumn(
+            text: '\$${subtotal.toStringAsFixed(2)}',
+            width: 4,
+            styles: const PosStyles(align: PosAlign.right),
+          ),
+        ]);
+      } else {
+        // 80mm layout normal
+        bytes += generator.text(
+          productName,
+          styles: const PosStyles(bold: true),
+        );
+        bytes += generator.row([
+          PosColumn(text: cantStr, width: 2),
+          PosColumn(text: 'x \$${price.toStringAsFixed(2)}', width: 6),
+          PosColumn(
+            text: '\$${subtotal.toStringAsFixed(2)}',
+            width: 4,
+            styles: const PosStyles(align: PosAlign.right),
+          ),
+        ]);
+      }
       bytes += generator.feed(1); // Espacio pequeño entre items
     }
     bytes += generator.hr(ch: '=');
@@ -304,12 +348,12 @@ class ReceiptPrinterService {
 
     bytes += generator.row([
       PosColumn(
-        text: 'MÉTODO DE PAGO:',
+        text: 'METODO DE PAGO:',
         width: 7,
         styles: const PosStyles(bold: true),
       ),
       PosColumn(
-        text: paymentMethod.toUpperCase(),
+        text: _cleanText(paymentMethod).toUpperCase(),
         width: 5,
         styles: const PosStyles(align: PosAlign.right, bold: true),
       ),
@@ -328,17 +372,22 @@ class ReceiptPrinterService {
     ]);
     bytes += generator.hr(ch: '-');
 
-    // ── Código de barras (Nro Comprobante) y Pie ──────────────────
     if (receiptNumber != null && receiptNumber.isNotEmpty) {
       try {
-        // Imprime un código de barras limpio si hay número de comprobante
-        bytes += generator.barcode(
-          Barcode.code128(receiptNumber.padLeft(8, '0').codeUnits),
-          width: 2,
-          height: 60,
-        );
+        final cleanStringForBarcode = receiptNumber.replaceAll(RegExp(r'[^A-Z0-9\-\.\ \$\/\+\%]'), '');
+        if (cleanStringForBarcode.isNotEmpty) {
+          bytes += generator.barcode(
+            Barcode.code39(cleanStringForBarcode.split('')),
+            width: 2,
+            height: 60,
+          );
+          bytes += generator.text(
+            cleanStringForBarcode,
+            styles: const PosStyles(align: PosAlign.center),
+          );
+        }
       } catch (e) {
-        // Ignorar si el string no permite ser code128 (aunque números padLeft siempre deberían funcionar)
+        debugPrint("Error imprimiendo Code39 barcode: $e");
       }
       bytes += generator.feed(1);
     }
@@ -346,7 +395,7 @@ class ReceiptPrinterService {
     if (settings.receiptFooterMessage != null &&
         settings.receiptFooterMessage!.isNotEmpty) {
       bytes += generator.text(
-        settings.receiptFooterMessage!,
+        _cleanText(settings.receiptFooterMessage!),
         styles: const PosStyles(align: PosAlign.center, bold: true),
       );
     }
@@ -385,7 +434,7 @@ class ReceiptPrinterService {
 
     bytes += generator.reset();
     bytes += generator.text(
-      settings.companyName?.toUpperCase() ?? 'MI NEGOCIO',
+      _cleanText(settings.companyName?.toUpperCase() ?? 'MI NEGOCIO'),
       styles: const PosStyles(
         bold: true,
         align: PosAlign.center,
@@ -394,7 +443,7 @@ class ReceiptPrinterService {
       ),
     );
     bytes += generator.text(
-      '=== CIERRE Z ===',
+      _cleanText('=== CIERRE Z ==='),
       styles: const PosStyles(align: PosAlign.center, bold: true),
     );
     bytes += generator.hr();
@@ -419,7 +468,7 @@ class ReceiptPrinterService {
     bytes += generator.hr();
 
     bytes += generator.text(
-      'RESUMEN DEL TURNO',
+      _cleanText('RESUMEN DEL TURNO'),
       styles: const PosStyles(bold: true),
     );
     bytes += generator.hr(ch: '-');
@@ -486,12 +535,34 @@ class ReceiptPrinterService {
   // HELPERS
   // ─────────────────────────────────────────────────────────────────────────────
 
+  /// Elimina acentos y caracteres especiales que no soportan las impresoras térmicas chinas (CP437).
+  String _cleanText(String text) {
+    if (text.isEmpty) return text;
+    const Map<String, String> accents = {
+      'À':'A', 'Á':'A', 'Â':'A', 'Ã':'A', 'Ä':'A', 'Å':'A',
+      'à':'a', 'á':'a', 'â':'a', 'ã':'a', 'ä':'a', 'å':'a',
+      'Ò':'O', 'Ó':'O', 'Ô':'O', 'Õ':'O', 'Ö':'O', 'Ø':'O',
+      'ò':'o', 'ó':'o', 'ô':'o', 'õ':'o', 'ö':'o', 'ø':'o',
+      'È':'E', 'É':'E', 'Ê':'E', 'Ë':'E',
+      'è':'e', 'é':'e', 'ê':'e', 'ë':'e',
+      'Ç':'C', 'ç':'c',
+      'Ì':'I', 'Í':'I', 'Î':'I', 'Ï':'I',
+      'ì':'i', 'í':'i', 'î':'i', 'ï':'i',
+      'Ù':'U', 'Ú':'U', 'Û':'U', 'Ü':'U',
+      'ù':'u', 'ú':'u', 'û':'u', 'ü':'u',
+      'Ñ':'N', 'ñ':'n',
+    };
+    return text.split('').map((char) => accents[char] ?? char).join();
+  }
+
   List<int> _labelValue(Generator gen, String label, String value) {
+    // Para 58mm, si width es 7, usa 18 chars; si width es 5, usa 13 chars.
+    final bool is58mm = config.paperSize == PaperSize.mm58;
     return gen.row([
-      PosColumn(text: label, width: 7),
+      PosColumn(text: label, width: is58mm ? 8 : 7),
       PosColumn(
         text: value,
-        width: 5,
+        width: is58mm ? 4 : 5,
         styles: const PosStyles(align: PosAlign.right, bold: true),
       ),
     ]);
@@ -540,20 +611,23 @@ class ReceiptPrinterService {
     }
   }
 
-  /// Envía los bytes por puerto COM/USB (impresoras USB via Serial Port)
+  /// Envía los bytes usando el driver nativo de Windows (Spooler)
   Future<void> _sendViaSerialPort(Uint8List data) async {
-    if (config.comPort == null) {
-      throw Exception('ReceiptPrinterService: comPort no configurado.');
+    if (config.comPort == null || config.comPort!.isEmpty) {
+      throw Exception('ReceiptPrinterService: Nombre de impresora no configurado.');
     }
-    final port = SerialPort(config.comPort!);
+    
+    final pm = PrinterManager.instance;
     try {
-      if (!port.openWrite()) {
-        throw Exception('No se pudo abrir el puerto ${config.comPort}');
-      }
-      port.write(data);
+      await pm.connect(
+        type: PrinterType.usb,
+        model: UsbPrinterInput(name: config.comPort!),
+      );
+      await pm.send(type: PrinterType.usb, bytes: data.toList());
+      // Damos un breve margen para asegurar que los bytes salgan antes de desconectar
+      await Future.delayed(const Duration(milliseconds: 50));
     } finally {
-      port.close();
-      port.dispose();
+      await pm.disconnect(type: PrinterType.usb);
     }
   }
 }

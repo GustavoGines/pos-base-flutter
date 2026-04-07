@@ -9,6 +9,7 @@ import '../../domain/usecases/update_settings_usecase.dart';
 import '../../../../core/services/license_heartbeat_service.dart';
 import '../../../../core/config/app_config.dart';
 import '../../data/repositories/settings_repository_impl.dart';
+import '../../../../core/utils/receipt_printer_service.dart';
 
 class SettingsProvider with ChangeNotifier {
   final GetSettingsUseCase getSettingsUseCase;
@@ -86,11 +87,16 @@ class SettingsProvider with ChangeNotifier {
     try {
       _settings = await getSettingsUseCase();
       
-      // Iniciar el sistema de seguridad DRM (Heartbeat/Security Pulse/Offline Grace)
+      // Iniciar el sistema de seguridad DRM
       await LicenseHeartbeatService().initialize(
         _settings,
         onSyncRequested: () => syncLicenseWithServer(AppConfig.kApiBaseUrl),
       );
+
+      // Reconfigurar la impresora con los ajustes guardados en la DB
+      if (_settings != null) {
+        await ReceiptPrinterService.instance.reconfigureFromSettings(_settings!);
+      }
       
       _checkAndSyncSilentlyOnStartup();
     } catch (e) {

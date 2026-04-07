@@ -13,6 +13,7 @@ class Product {
   final int? vencimientoDias; // Shelf life — días hasta la caducidad
   final double? minStock;
   final int salesCount;
+  final String unitType;
   final Category? category;
 
   Product({
@@ -28,6 +29,7 @@ class Product {
     required this.isSoldByWeight,
     this.salesCount = 0,
     this.vencimientoDias,
+    this.unitType = 'un',
     this.category,
   });
   Product copyWith({
@@ -43,6 +45,7 @@ class Product {
     bool? isSoldByWeight,
     int? salesCount,
     int? vencimientoDias,
+    String? unitType,
     Category? category,
   }) {
     return Product(
@@ -58,6 +61,7 @@ class Product {
       isSoldByWeight: isSoldByWeight ?? this.isSoldByWeight,
       salesCount: salesCount ?? this.salesCount,
       vencimientoDias: vencimientoDias ?? this.vencimientoDias,
+      unitType: unitType ?? this.unitType,
       category: category ?? this.category,
     );
   }

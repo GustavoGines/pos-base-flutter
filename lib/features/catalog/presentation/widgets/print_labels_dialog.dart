@@ -54,7 +54,7 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
   String _companyPhone = '';
   String _companyTaxId = '';
 
-  static bool _isPrinting = false;
+  bool _isPrinting = false;
   static bool _fontLoadingFailed = false;
 
   // Cache estático de fuentes para evitar re-escaneo de AssetManifest.json (Crash Bloqueante en Windows)
@@ -150,12 +150,14 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
     final dateFmt = DateFormat('dd/MM/yy');
 
     double computeHeight(Product product) {
-      // La altura estándar es siempre 45mm para garantizar espacio y evitar clipping.
-      // Además, mantenerla en 45mm asegura que los rollos troquelados (55x45) no pierdan calibración.
+      // Para impresoras térmicas de 58mm ajustamos a 48mm de alto para alojar las fuentes ampliadas.
+      if (_paperFormat == 'thermal_58') return 48.0;
+      // La altura estándar es siempre 45mm para garantizar espacio y evitar clipping
       return 45.0;
     }
 
-    pw.Widget buildLabel(Product product, {required double heightLabel}) {
+    pw.Widget buildLabel(Product product, {required double heightLabel, required double widthLabel}) {
+      final bool isThermal = _paperFormat.startsWith('thermal');
       final double? customWeight = _weights[product.id];
       final bool hasWeight = product.isSoldByWeight && customWeight != null && customWeight > 0;
 
@@ -163,16 +165,16 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
       final int numericPlu = int.tryParse(product.internalCode) ?? product.id;
       final String pluStr = numericPlu.toString().padLeft(5, '0');
 
+      final double finalPrice = hasWeight 
+          ? product.sellingPrice * (customWeight / 1000)
+          : product.sellingPrice;
+
       final String ean13 = hasWeight 
-          ? Ean13Generator.generateForScale(numericPlu, customWeight)
+          ? Ean13Generator.generateForScale(numericPlu, finalPrice)
           : Ean13Generator.generate(
               plu: numericPlu,
               existingBarcode: product.barcode,
             );
-
-      final double finalPrice = hasWeight 
-          ? product.sellingPrice * (customWeight / 1000)
-          : product.sellingPrice;
 
       final String envStr = dateFmt.format(now);
       final String? vtoStr = (product.vencimientoDias != null &&
@@ -182,162 +184,176 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
 
       final String precioStr = NumberFormat('#,##0', 'es_AR').format(finalPrice);
       final bool isValidEan = Ean13Generator.isValid(ean13);
+
+      // ── Layout completamente plano: un solo Column min-size, sin spaceBetween
+      // spaceBetween causaba que los bloques se separaran más allá del SizedBox
+      // y el PDF renderizaba el contenido en 2 páginas.
       return pw.SizedBox(
-        width: 55 * PdfPageFormat.mm,
+        width: widthLabel * PdfPageFormat.mm,
         height: heightLabel * PdfPageFormat.mm,
-        child: pw.Container(
-          padding: pw.EdgeInsets.symmetric(
-          horizontal: 1.5 * PdfPageFormat.mm,
-          vertical: 1.5 * PdfPageFormat.mm,
-        ),
-        decoration: pw.BoxDecoration(
-          border: pw.Border.all(color: PdfColors.grey600, width: 0.5),
-          borderRadius: pw.BorderRadius.circular(2),
-        ),
-        child: pw.Column(
-          crossAxisAlignment: pw.CrossAxisAlignment.center,
-          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, // Distribute properly
-          children: [
-            // NOMBRE Y GRAMAJE
-            pw.Text(
-              product.name.toUpperCase(),
-              style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold),
-              textAlign: pw.TextAlign.center,
-              maxLines: 2,
-              overflow: pw.TextOverflow.clip,
+        child: pw.ClipRect(
+          child: pw.Container(
+            width: widthLabel * PdfPageFormat.mm,
+            height: heightLabel * PdfPageFormat.mm,
+            padding: pw.EdgeInsets.symmetric(
+              horizontal: isThermal ? 1.0 * PdfPageFormat.mm : 1.5 * PdfPageFormat.mm,
+              vertical:   isThermal ? 1.0 * PdfPageFormat.mm : 1.5 * PdfPageFormat.mm,
             ),
-            if (hasWeight) ...[
-              pw.Text(
-                '${customWeight.toInt()} GS',
-                style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold),
-                textAlign: pw.TextAlign.center,
-              ),
-            ],
-            
-            // FECHAS (ENV y VTO)
-            // Lógica Profesional: Solo imprimimos ENV si el usuario lo solicita explícitamente usando el toggle (printDates == true)
-            // Y además, si el producto amerita fechas (es de balanza o tiene vencimiento). Para gaseosas unitarias, se oculta.
-            if (printDates && (hasWeight || vtoStr != null))
-              pw.Row(
-                mainAxisAlignment: pw.MainAxisAlignment.center,
-                children: [
-                  pw.Text('ENV: $envStr', style: const pw.TextStyle(fontSize: 7)),
-                  if (vtoStr != null) ...[
-                    pw.SizedBox(width: 4 * PdfPageFormat.mm),
-                    pw.Text('VTO: $vtoStr', style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold)),
-                  ],
-                ],
-              )
-            else
-              pw.SizedBox(height: 3 * PdfPageFormat.mm), // Compensación de espacio para no romper el layout grid
-            
-            // DETALLE DE UNIDADES / PRECIO X KG
-            pw.Row(
-              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-              crossAxisAlignment: pw.CrossAxisAlignment.end,
+            decoration: isThermal ? null : pw.BoxDecoration(
+              border: pw.Border.all(color: PdfColors.grey600, width: 0.5),
+              borderRadius: pw.BorderRadius.circular(2),
+            ),
+            child: pw.Column(
+              mainAxisSize: pw.MainAxisSize.min,
+              crossAxisAlignment: pw.CrossAxisAlignment.stretch,
               children: [
-                 if (!hasWeight) ... [
-                    pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.start,
-                      children: [
-                        pw.Text('UNIDADES', style: const pw.TextStyle(fontSize: 5)),
-                        pw.Text('1', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
-                      ]
-                    )
-                 ] else ... [
-                     pw.Column(
-                       crossAxisAlignment: pw.CrossAxisAlignment.start,
-                       children: [
-                         pw.Text('\$/KG', style: pw.TextStyle(fontSize: 5)),
-                         pw.Text(
-                           NumberFormat('#,##0', 'es_AR').format(product.sellingPrice),
-                           style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold),
-                         ),
-                       ],
-                     ),
-                 ],
+                // ── NOMBRE ──
+                pw.Text(
+                  product.name.toUpperCase(),
+                  style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold),
+                  textAlign: pw.TextAlign.center,
+                  maxLines: 2,
+                  overflow: pw.TextOverflow.clip,
+                ),
+                pw.SizedBox(height: 1 * PdfPageFormat.mm),
+
+                // ── GRAMAJE (solo si tiene peso) ──
+                if (hasWeight) ...[
+                  pw.Text(
+                    '${customWeight.toInt()} GS',
+                    style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold),
+                    textAlign: pw.TextAlign.center,
+                  ),
+                  pw.SizedBox(height: 1 * PdfPageFormat.mm),
+                ],
+
+                // ── FECHAS (solo si aplica) ──
+                if (printDates && (hasWeight || vtoStr != null)) ...[
+                  pw.Row(
+                    mainAxisAlignment: pw.MainAxisAlignment.center,
+                    children: [
+                      pw.Text('ENV: $envStr', style: const pw.TextStyle(fontSize: 7)),
+                      if (vtoStr != null) ...[
+                        pw.SizedBox(width: 3 * PdfPageFormat.mm),
+                        pw.Text('VTO: $vtoStr', style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold)),
+                      ],
+                    ],
+                  ),
+                  pw.SizedBox(height: 1 * PdfPageFormat.mm),
+                ],
+
+                // ── UNIDADES / PRECIO X KG ──
+                if (!hasWeight)
+                  pw.Column(
+                    mainAxisSize: pw.MainAxisSize.min,
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Text('UNIDADES', style: const pw.TextStyle(fontSize: 5)),
+                      pw.Text('1', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
+                    ],
+                  )
+                else
+                  pw.Column(
+                    mainAxisSize: pw.MainAxisSize.min,
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Text('\$/KG', style: const pw.TextStyle(fontSize: 5)),
+                      pw.Text(
+                        NumberFormat('#,##0', 'es_AR').format(product.sellingPrice),
+                        style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold),
+                      ),
+                    ],
+                  ),
+
+                pw.SizedBox(height: 1.5 * PdfPageFormat.mm),
+
+                // ── BARCODE + IMPORTE ──
+                pw.Row(
+                  crossAxisAlignment: pw.CrossAxisAlignment.center,
+                  children: [
+                    // Columna código de barras
+                    pw.Expanded(
+                      flex: 58,
+                      child: pw.Column(
+                        mainAxisSize: pw.MainAxisSize.min,
+                        crossAxisAlignment: pw.CrossAxisAlignment.start,
+                        children: [
+                          pw.Text('PLU:$pluStr', style: const pw.TextStyle(fontSize: 5)),
+                          pw.SizedBox(height: 0.5 * PdfPageFormat.mm),
+                          pw.BarcodeWidget(
+                            barcode: isValidEan ? pw.Barcode.ean13() : pw.Barcode.code128(),
+                            data: ean13,
+                            drawText: false,
+                            height: 8 * PdfPageFormat.mm,
+                            width: (widthLabel <= 48.0 ? 24 : 28) * PdfPageFormat.mm,
+                          ),
+                          pw.SizedBox(height: 0.5 * PdfPageFormat.mm),
+                          pw.Text(
+                            Ean13Generator.format(ean13),
+                            style: pw.TextStyle(fontSize: 5, font: ttfRegular),
+                            textAlign: pw.TextAlign.left,
+                          ),
+                        ],
+                      ),
+                    ),
+                    pw.SizedBox(width: 1.5 * PdfPageFormat.mm),
+                    // Columna importe
+                    pw.Expanded(
+                      flex: 42,
+                      child: pw.Column(
+                        mainAxisSize: pw.MainAxisSize.min,
+                        crossAxisAlignment: pw.CrossAxisAlignment.end,
+                        children: [
+                          pw.Text('IMPORTE (\$)', style: pw.TextStyle(fontSize: 6, fontWeight: pw.FontWeight.bold)),
+                          pw.FittedBox(
+                            fit: pw.BoxFit.scaleDown,
+                            child: pw.Text(
+                              precioStr,
+                              style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold, letterSpacing: -0.5),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+
+                pw.SizedBox(height: 1 * PdfPageFormat.mm),
+
+                // ── PIE DE NEGOCIO ──
+                pw.Text(
+                  companyName.toUpperCase(),
+                  style: pw.TextStyle(fontSize: 6, fontWeight: pw.FontWeight.bold),
+                  textAlign: pw.TextAlign.center,
+                  maxLines: 1,
+                ),
+                if (companyAddress.isNotEmpty || companyPhone.isNotEmpty || companyTaxId.isNotEmpty)
+                  pw.Text(
+                    [
+                      if (companyAddress.isNotEmpty) companyAddress.toUpperCase(),
+                      if (companyPhone.isNotEmpty) 'TEL: $companyPhone',
+                      if (companyTaxId.isNotEmpty) 'CUIT: $companyTaxId',
+                    ].join(' • '),
+                    style: const pw.TextStyle(fontSize: 4),
+                    textAlign: pw.TextAlign.center,
+                    maxLines: 1,
+                  ),
               ],
             ),
-
-            // BLOQUE INFERIOR: CÓDIGO BARRAS (IZQ) + IMPORTE (DER)
-            pw.Row(
-              crossAxisAlignment: pw.CrossAxisAlignment.end,
-              children: [
-                 // Columna Barcode
-                 pw.Expanded(
-                   flex: 55,
-                   child: pw.Column(
-                     crossAxisAlignment: pw.CrossAxisAlignment.start,
-                     children: [
-                       pw.Text('PLU:$pluStr', style: const pw.TextStyle(fontSize: 5)),
-                       pw.SizedBox(height: 0.5 * PdfPageFormat.mm),
-                       pw.BarcodeWidget(
-                         barcode: isValidEan ? pw.Barcode.ean13() : pw.Barcode.code128(),
-                         data: ean13,
-                         drawText: false,
-                         height: (heightLabel <= 36.0 ? 8 : 10) * PdfPageFormat.mm, // Escala inteligente para códigos cortos
-                         width: 32 * PdfPageFormat.mm, 
-                       ),
-                       pw.SizedBox(height: 0.5 * PdfPageFormat.mm),
-                       pw.Text(
-                         Ean13Generator.format(ean13),
-                         style: pw.TextStyle(fontSize: 5, font: ttfRegular),
-                         textAlign: pw.TextAlign.center,
-                       ),
-                     ],
-                   ),
-                 ),
-                 pw.SizedBox(width: 2 * PdfPageFormat.mm),
-                 // Columna Importe
-                 pw.Expanded(
-                   flex: 45,
-                   child: pw.Column(
-                     crossAxisAlignment: pw.CrossAxisAlignment.end,
-                     mainAxisAlignment: pw.MainAxisAlignment.end,
-                     children: [
-                       pw.Text('IMPORTE (\$)', style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold)),
-                       pw.Text(
-                         precioStr,
-                         style: pw.TextStyle(fontSize: 22, fontWeight: pw.FontWeight.bold, letterSpacing: -0.5),
-                         textAlign: pw.TextAlign.right,
-                       ),
-                     ],
-                   ),
-                 ),
-              ]
-            ),
-            
-            // PIE DE NEGOCIO (COMPACTADO)
-            pw.Text(
-              companyName.toUpperCase(),
-              style: pw.TextStyle(fontSize: 6, fontWeight: pw.FontWeight.bold),
-              textAlign: pw.TextAlign.center,
-              maxLines: 1,
-            ),
-            if (companyAddress.isNotEmpty || companyPhone.isNotEmpty || companyTaxId.isNotEmpty)
-              pw.Text(
-                [
-                  if (companyAddress.isNotEmpty) companyAddress.toUpperCase(),
-                  if (companyPhone.isNotEmpty) 'TEL: $companyPhone',
-                  if (companyTaxId.isNotEmpty) 'CUIT: $companyTaxId'
-                ].join(' • '),
-                style: const pw.TextStyle(fontSize: 4),
-                textAlign: pw.TextAlign.center,
-                maxLines: 2,
-              ),
-          ],
+          ),
         ),
-       )
       );
     }
 
     // Generar lista plana de etiquetas para reportes o A4
     final List<pw.Widget> allLabels = [];
+    final double labelWidth = _paperFormat == 'thermal_58' ? 47.0 : 55.0;
+
     for (final p in widget.products) {
       final qty = _quantities[p.id] ?? 1;
       final h = computeHeight(p);
       for (int i = 0; i < qty; i++) {
-        allLabels.add(buildLabel(p, heightLabel: h));
+        allLabels.add(buildLabel(p, heightLabel: h, widthLabel: labelWidth));
       }
     }
 
@@ -356,16 +372,31 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
           ),
         );
       }
+    } else if (_paperFormat == 'thermal_58') {
+      const format = PdfPageFormat(
+        48 * PdfPageFormat.mm,
+        48 * PdfPageFormat.mm,
+        marginAll: 0,
+      );
+      for (final label in allLabels) {
+        pdf.addPage(
+          pw.Page(
+            pageFormat: format,
+            margin: pw.EdgeInsets.zero,
+            build: (_) => pw.Align(alignment: pw.Alignment.topCenter, child: label),
+          ),
+        );
+      }
     } else if (_paperFormat == 'custom_55_45') {
        for (final p in widget.products) {
          final qty = _quantities[p.id] ?? 1;
          final h = computeHeight(p);
          final format = PdfPageFormat(
-           55 * PdfPageFormat.mm,
+           labelWidth * PdfPageFormat.mm,
            h * PdfPageFormat.mm,
            marginAll: 0,
          );
-         final labelWidget = buildLabel(p, heightLabel: h);
+         final labelWidget = buildLabel(p, heightLabel: h, widthLabel: labelWidth);
          
          for (int i = 0; i < qty; i++) {
             pdf.addPage(
@@ -536,9 +567,12 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                Row(
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
                   children: [
-                    Expanded(
+                    SizedBox(
+                      width: 130,
                       child: _FormatCard(
                         selected: _paperFormat == 'custom_55_45',
                         icon: Icons.aspect_ratio_rounded,
@@ -553,8 +587,8 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
                         color: Colors.deepPurple,
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(
+                    SizedBox(
+                      width: 130,
                       child: _FormatCard(
                         selected: _paperFormat == 'a4',
                         icon: Icons.grid_view_rounded,
@@ -569,8 +603,24 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
                         color: Colors.blue,
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(
+                    SizedBox(
+                      width: 130,
+                      child: _FormatCard(
+                        selected: _paperFormat == 'thermal_58',
+                        icon: Icons.receipt_long_outlined,
+                        title: 'Rollo 58mm',
+                        subtitle: 'Punto de Venta',
+                        onTap: () {
+                          setState(() {
+                            _paperFormat = 'thermal_58';
+                            _schedulePreviewRebuild();
+                          });
+                        },
+                        color: Colors.teal,
+                      ),
+                    ),
+                    SizedBox(
+                      width: 130,
                       child: _FormatCard(
                         selected: _paperFormat == 'thermal',
                         icon: Icons.receipt_long_outlined,
@@ -893,10 +943,15 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
                               55 * PdfPageFormat.mm,
                               45 * PdfPageFormat.mm,
                             )
-                          : const PdfPageFormat(
-                              80 * PdfPageFormat.mm,
-                              50 * PdfPageFormat.mm,
-                            ),
+                          : _paperFormat == 'thermal_58'
+                              ? const PdfPageFormat(
+                                  58 * PdfPageFormat.mm,
+                                  40 * PdfPageFormat.mm,
+                                )
+                              : const PdfPageFormat(
+                                  80 * PdfPageFormat.mm,
+                                  50 * PdfPageFormat.mm,
+                                ),
                   // Estilo de página con sombra
                   pdfPreviewPageDecoration: BoxDecoration(
                     color: Colors.white,

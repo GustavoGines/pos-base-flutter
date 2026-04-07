@@ -380,10 +380,47 @@ class _MainAppState extends State<MainApp> {
         LicenseRefreshObserver(() => navigatorKey.currentContext!, _currentRoute),
       ],
       builder: (context, child) {
-        return LicenseGuard(
+        final Widget guardedChild = LicenseGuard(
           routeNotifier: _currentRoute,
           navigatorKey: navigatorKey,
           child: child!,
+        );
+
+        // Protección GLOBAL anti-overflow para ventanas estrechas
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            const double minAppWidth = 1024.0;
+            const double minAppHeight = 550.0;
+
+            final bool needsHorizontalScroll = constraints.maxWidth < minAppWidth;
+            final bool needsVerticalScroll = constraints.maxHeight < minAppHeight;
+
+            if (!needsHorizontalScroll && !needsVerticalScroll) {
+              return guardedChild;
+            }
+
+            Widget content = SizedBox(
+              width: needsHorizontalScroll ? minAppWidth : constraints.maxWidth,
+              height: needsVerticalScroll ? minAppHeight : constraints.maxHeight,
+              child: guardedChild,
+            );
+
+            if (needsVerticalScroll) {
+              content = SingleChildScrollView(
+                scrollDirection: Axis.vertical,
+                child: content,
+              );
+            }
+
+            if (needsHorizontalScroll) {
+              content = SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: content,
+              );
+            }
+
+            return content;
+          },
         );
       },
       debugShowCheckedModeBanner: false,
