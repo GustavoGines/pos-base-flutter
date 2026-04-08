@@ -22,6 +22,11 @@ class BusinessSettings extends Equatable {
   final DateTime? licenseNextPaymentAt;
   final String? licenseManageUrl;
   final bool isLifetime;
+  // [feature-flag] Tipo de negocio recibido desde la Licencia remota
+  final String businessType;  // 'retail' | 'hardware_store'
+
+  /// Feature Flag: true si la licencia remota indica modo Ferretería.
+  bool get isHardwareStore => businessType == 'hardware_store';
 
   const BusinessSettings({
     this.companyName,
@@ -45,6 +50,7 @@ class BusinessSettings extends Equatable {
     this.licenseNextPaymentAt,
     this.licenseManageUrl,
     this.isLifetime = false,
+    this.businessType = 'retail', // default 'retail' = sin cambios para licencias existentes
   });
 
   @override
@@ -70,5 +76,6 @@ class BusinessSettings extends Equatable {
         licenseNextPaymentAt,
         licenseManageUrl,
         isLifetime,
+        businessType, // [feature-flag]
       ];
 }

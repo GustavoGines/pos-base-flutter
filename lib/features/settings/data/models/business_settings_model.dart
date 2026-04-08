@@ -24,6 +24,7 @@ class BusinessSettingsModel extends BusinessSettings {
     DateTime? licenseNextPaymentAt,
     String? licenseManageUrl,
     bool isLifetime = false,
+    String businessType = 'retail', // [feature-flag]
   }) : super(
           companyName: companyName,
           address: address,
@@ -46,6 +47,7 @@ class BusinessSettingsModel extends BusinessSettings {
           licenseNextPaymentAt: licenseNextPaymentAt,
           licenseManageUrl: licenseManageUrl,
           isLifetime: isLifetime,
+          businessType: businessType, // [feature-flag]
         );
 
   factory BusinessSettingsModel.fromJson(Map<String, dynamic> json) {
@@ -61,8 +63,8 @@ class BusinessSettingsModel extends BusinessSettings {
       printerIpAddress: json['printer_ip_address'],
       printerIpPort: json['printer_ip_port'],
       comPortScale: json['com_port_scale'],
-      licenseStatus: json['license_key'],     // The actual license key string
-      licensePlanType: json['app_plan'],       // Written by LicenseSyncService as 'app_plan'
+      licenseStatus: json['license_key'],      // The actual license key string
+      licensePlanType: json['app_plan'],        // Written by LicenseSyncService as 'app_plan'
       licensePlanMode: json['license_plan_mode'] ?? 'saas',
       licenseAllowedAddons: _parseAddons(json['license_allowed_addons']),
       lastLicenseCheck: json['last_license_check'],
@@ -71,6 +73,8 @@ class BusinessSettingsModel extends BusinessSettings {
       licenseNextPaymentAt: json['license_next_payment_at'] != null ? DateTime.tryParse(json['license_next_payment_at']) : null,
       licenseManageUrl: json['license_manage_url'],
       isLifetime: json['license_is_lifetime'] == '1',
+      // [feature-flag] leído de la BD local (seteado por LicenseSyncService tras validar con el servidor remoto)
+      businessType: json['license_business_type'] ?? 'retail',
     );
   }
 

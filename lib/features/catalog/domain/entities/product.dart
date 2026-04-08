@@ -7,10 +7,13 @@ class Product {
   final String internalCode;
   final double costPrice;
   final double sellingPrice;
+  // [hardware_store] Listas de Precio — null en clientes retail
+  final double? priceWholesale;
+  final double? priceCard;
   final double stock;
   final bool active;
   final bool isSoldByWeight;
-  final int? vencimientoDias; // Shelf life — días hasta la caducidad
+  final int? vencimientoDias;
   final double? minStock;
   final int salesCount;
   final String unitType;
@@ -23,6 +26,8 @@ class Product {
     required this.internalCode,
     required this.costPrice,
     required this.sellingPrice,
+    this.priceWholesale, // [hardware_store]
+    this.priceCard,      // [hardware_store]
     required this.stock,
     this.minStock,
     required this.active,
@@ -39,6 +44,8 @@ class Product {
     String? internalCode,
     double? costPrice,
     double? sellingPrice,
+    double? priceWholesale, // [hardware_store]
+    double? priceCard,      // [hardware_store]
     double? stock,
     double? minStock,
     bool? active,
@@ -55,6 +62,8 @@ class Product {
       internalCode: internalCode ?? this.internalCode,
       costPrice: costPrice ?? this.costPrice,
       sellingPrice: sellingPrice ?? this.sellingPrice,
+      priceWholesale: priceWholesale ?? this.priceWholesale, // [hardware_store]
+      priceCard: priceCard ?? this.priceCard,                 // [hardware_store]
       stock: stock ?? this.stock,
       minStock: minStock ?? this.minStock,
       active: active ?? this.active,

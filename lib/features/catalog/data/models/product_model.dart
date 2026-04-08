@@ -9,6 +9,8 @@ class ProductModel extends Product {
     required String internalCode,
     required double costPrice,
     required double sellingPrice,
+    double? priceWholesale, // [hardware_store]
+    double? priceCard,      // [hardware_store]
     required double stock,
     double? minStock,
     required bool active,
@@ -24,6 +26,8 @@ class ProductModel extends Product {
           internalCode: internalCode,
           costPrice: costPrice,
           sellingPrice: sellingPrice,
+          priceWholesale: priceWholesale, // [hardware_store]
+          priceCard: priceCard,           // [hardware_store]
           stock: stock,
           minStock: minStock,
           active: active,
@@ -42,6 +46,8 @@ class ProductModel extends Product {
     String? internalCode,
     double? costPrice,
     double? sellingPrice,
+    double? priceWholesale, // [hardware_store]
+    double? priceCard,      // [hardware_store]
     double? stock,
     double? minStock,
     bool? active,
@@ -58,6 +64,8 @@ class ProductModel extends Product {
       internalCode: internalCode ?? this.internalCode,
       costPrice: costPrice ?? this.costPrice,
       sellingPrice: sellingPrice ?? this.sellingPrice,
+      priceWholesale: priceWholesale ?? this.priceWholesale, // [hardware_store]
+      priceCard: priceCard ?? this.priceCard,                 // [hardware_store]
       stock: stock ?? this.stock,
       minStock: minStock ?? this.minStock,
       active: active ?? this.active,
@@ -77,6 +85,13 @@ class ProductModel extends Product {
       internalCode: json['internal_code']?.toString() ?? '',
       costPrice: double.tryParse(json['cost_price']?.toString() ?? '0') ?? 0.0,
       sellingPrice: double.tryParse(json['selling_price']?.toString() ?? '0') ?? 0.0,
+      // [hardware_store] Precios opcionales — null si no vienen del backend
+      priceWholesale: json['price_wholesale'] != null && json['price_wholesale'].toString() != 'null'
+          ? double.tryParse(json['price_wholesale'].toString())
+          : null,
+      priceCard: json['price_card'] != null && json['price_card'].toString() != 'null'
+          ? double.tryParse(json['price_card'].toString())
+          : null,
       stock: double.tryParse(json['stock']?.toString() ?? '0') ?? 0.0,
       minStock: (json['min_stock'] != null && json['min_stock'].toString().toLowerCase() != 'null') 
           ? double.tryParse(json['min_stock'].toString()) 

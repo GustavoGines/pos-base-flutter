@@ -31,6 +31,11 @@ class SettingsProvider with ChangeNotifier {
   String get currentPlan => _settings?.licensePlanType ?? 'basic';
   List<String> get allowedAddons => _settings?.licenseAllowedAddons ?? [];
 
+  // ─── [feature-flag] Ferretería ───────────────────────────────────────────
+  /// True cuando la licencia remota indica business_type = 'hardware_store'.
+  /// Controla la visibilidad de todos los módulos exclusivos de Ferretería.
+  bool get isHardwareStore => _settings?.isHardwareStore ?? false;
+
   /// Feature Gating: Retorna true si el plan es PRO/ENTERPRISE o si tiene el addon específico
   bool hasFeature(String featureName) {
     if (currentPlan == 'pro' || currentPlan == 'enterprise') return true;
