@@ -71,6 +71,7 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                 middle: Consumer<SettingsProvider>(
                   builder: (context, settings, _) {
                     final bool canAccessCuentasCorrientes = settings.hasFeature('cuentas_corrientes');
+                    final bool isHardwareStore = settings.isHardwareStore; // [feature-flag]
 
                     return SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
@@ -100,6 +101,15 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                             activeColor: Colors.deepPurple,
                             permissionKey: 'manage_catalog',
                           ),
+                          // [hardware_store] Tab de Presupuestos — solo visible en modo Ferretería
+                          if (isHardwareStore)
+                            _buildNavTab(
+                              context: context,
+                              label: 'Presupuestos',
+                              icon: Icons.description_outlined,
+                              route: '/quotes',
+                              activeColor: Colors.indigo.shade700,
+                            ),
                           _buildNavTab(
                             context: context,
                             label: 'Cuentas Corrientes',

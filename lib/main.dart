@@ -31,6 +31,10 @@ import 'features/auth/presentation/pages/login_screen.dart';
 import 'features/cash_register/presentation/pages/shift_audit_screen.dart';
 import 'features/customers/presentation/screens/customers_screen.dart';
 import 'features/trash/presentation/screens/trash_screen.dart';
+// [hardware_store] Módulo Presupuestos
+import 'features/quotes/presentation/pages/quote_screen.dart';
+import 'features/quotes/presentation/providers/quote_provider.dart';
+import 'features/quotes/data/quote_repository.dart';
 
 // Repositories & DataSources
 import 'features/settings/data/datasources/settings_remote_datasource.dart';
@@ -217,6 +221,13 @@ void main() async {
           lazy: false,
         ),
         ChangeNotifierProvider(create: (_) => TrashProvider(baseUrl: apiUrl), lazy: false),
+        // [hardware_store] Presupuestos
+        ChangeNotifierProvider(
+          create: (_) => QuoteProvider(
+            repository: QuoteRepository(baseUrl: apiUrl, client: httpClient),
+          ),
+          lazy: true,
+        ),
       ],
       child: const MainApp(),
     ),
@@ -500,6 +511,8 @@ class _MainAppState extends State<MainApp> {
         '/settings/registers': (context) => const CashRegisterManagementScreen(),
         '/cuentas-corrientes': (context) => const CustomersScreen(),
         '/trash': (context) => const TrashScreen(),
+        // [hardware_store]
+        '/quotes': (context) => const QuoteScreen(),
       },
     );
   }
