@@ -24,6 +24,8 @@ class BusinessSettingsModel extends BusinessSettings {
     DateTime? licenseNextPaymentAt,
     String? licenseManageUrl,
     bool isLifetime = false,
+    String businessType = 'retail',
+    List<String> licenseFeatures = const [],
   }) : super(
           companyName: companyName,
           address: address,
@@ -46,6 +48,8 @@ class BusinessSettingsModel extends BusinessSettings {
           licenseNextPaymentAt: licenseNextPaymentAt,
           licenseManageUrl: licenseManageUrl,
           isLifetime: isLifetime,
+          businessType: businessType,
+          licenseFeatures: licenseFeatures,
         );
 
   factory BusinessSettingsModel.fromJson(Map<String, dynamic> json) {
@@ -61,25 +65,34 @@ class BusinessSettingsModel extends BusinessSettings {
       printerIpAddress: json['printer_ip_address'],
       printerIpPort: json['printer_ip_port'],
       comPortScale: json['com_port_scale'],
-      licenseStatus: json['license_key'],     // The actual license key string
-      licensePlanType: json['app_plan'],       // Written by LicenseSyncService as 'app_plan'
+      licenseStatus: json['license_key'],      // The actual license key string
+      licensePlanType: json['app_plan'],        // Written by LicenseSyncService as 'app_plan'
       licensePlanMode: json['license_plan_mode'] ?? 'saas',
-      licenseAllowedAddons: _parseAddons(json['license_allowed_addons']),
+      licenseAllowedAddons: _parseList(json['license_allowed_addons']),
       lastLicenseCheck: json['last_license_check'],
       serverTime: json['server_time'],
       licenseExpiresAt: json['license_expires_at'] != null ? DateTime.tryParse(json['license_expires_at']) : null,
       licenseNextPaymentAt: json['license_next_payment_at'] != null ? DateTime.tryParse(json['license_next_payment_at']) : null,
       licenseManageUrl: json['license_manage_url'],
       isLifetime: json['license_is_lifetime'] == '1',
+      businessType: json['license_business_type'] ?? 'retail',
+      // [feature-flags] Clave nueva del servidor: 'license_addons'.
+      // Retrocompatible: si no existe, intenta la key legada; si tampoco, retorna [].
+      licenseFeatures: _parseList(
+        json['license_addons'] ?? json['license_allowed_addons'],
+      ),
     );
   }
 
-  static List<String>? _parseAddons(dynamic value) {
-    if (value == null) return null;
+  /// Parser ultra-seguro: nunca crashea. Acepta null, String JSON o List nativa.
+  /// Siempre devuelve un List<String> (vacío como mínimo) — nunca null.
+  static List<String> _parseList(dynamic value) {
+    if (value == null) return [];
     if (value is List) {
       return value.map((e) => e.toString()).toList();
     }
     if (value is String) {
+      if (value.isEmpty) return [];
       try {
         final decoded = jsonDecode(value);
         if (decoded is List) {

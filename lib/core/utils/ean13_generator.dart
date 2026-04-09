@@ -17,7 +17,7 @@ class Ean13Generator {
     // Alineándolo con el motor avanzado del backend
     final rawPlu = plu.toString();
     final pluStr = rawPlu.length > 5 ? rawPlu.substring(rawPlu.length - 5) : rawPlu.padLeft(5, '0');
-    final body = '2000000$pluStr'; // 12 dígitos
+    final body = '2${pluStr}000000'; // 12 dígitos (Prefijo 2 + PLU 5 + padding 6)
 
     final checkDigit = _calculateCheckDigit(body);
     return '$body$checkDigit';

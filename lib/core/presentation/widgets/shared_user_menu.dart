@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../../features/auth/presentation/providers/auth_provider.dart';
 import '../../../../features/auth/presentation/widgets/admin_pin_dialog.dart';
+import '../../../../features/settings/presentation/providers/settings_provider.dart';
 
 class SharedUserMenu extends StatelessWidget {
   const SharedUserMenu({super.key});
@@ -94,17 +95,22 @@ class SharedUserMenu extends StatelessWidget {
                   break;
               }
             },
-            itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+            itemBuilder: (BuildContext context) {
+              final settings = context.read<SettingsProvider>();
+              final hasZReports = settings.hasFeature('z_reports');
+
+              return <PopupMenuEntry<String>>[
               if (auth.isAdmin) ...<PopupMenuEntry<String>>[
-                const PopupMenuItem<String>(
-                  value: 'shift_audit',
-                  child: ListTile(
-                    leading: Icon(Icons.history_edu),
-                    title: Text('Auditoría de Turnos (Z)'),
-                    contentPadding: EdgeInsets.zero,
-                    dense: true,
+                if (hasZReports)
+                  const PopupMenuItem<String>(
+                    value: 'shift_audit',
+                    child: ListTile(
+                      leading: Icon(Icons.history_edu),
+                      title: Text('Auditoría de Turnos (Z)'),
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                    ),
                   ),
-                ),
                 const PopupMenuItem<String>(
                   value: 'users',
                   child: ListTile(
@@ -143,17 +149,20 @@ class SharedUserMenu extends StatelessWidget {
                   dense: true,
                 ),
               ),
-              const PopupMenuDivider(),
-              const PopupMenuItem<String>(
-                value: 'close_shift',
-                child: ListTile(
-                  leading: Icon(Icons.lock_outline, color: Colors.redAccent),
-                  title: Text('Cerrar Turno / Caja', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
-                  contentPadding: EdgeInsets.zero,
-                  dense: true,
+              if (hasZReports) ...[
+                const PopupMenuDivider(),
+                const PopupMenuItem<String>(
+                  value: 'close_shift',
+                  child: ListTile(
+                    leading: Icon(Icons.lock_outline, color: Colors.redAccent),
+                    title: Text('Cerrar Turno / Caja', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ];
+            },
           ),
         );
       },

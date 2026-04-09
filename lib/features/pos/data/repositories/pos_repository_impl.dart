@@ -32,6 +32,7 @@ class PosRepositoryImpl implements PosRepository {
     required List<CartItem> items,
     int? userId,
     int? customerId,
+    int? quoteId,
     String status = 'completed',
   }) async {
     final response = await remoteDataSource.processSale(
@@ -44,6 +45,7 @@ class PosRepositoryImpl implements PosRepository {
       items: items,
       userId: userId,
       customerId: customerId,
+      quoteId: quoteId,
       status: status,
     );
 

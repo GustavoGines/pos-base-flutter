@@ -22,6 +22,16 @@ class BusinessSettings extends Equatable {
   final DateTime? licenseNextPaymentAt;
   final String? licenseManageUrl;
   final bool isLifetime;
+  // [feature-flag] Tipo de negocio recibido desde la Licencia remota — solo para uso estético/visual de la UI
+  final String businessType;  // 'retail' | 'hardware_store'
+  // [feature-flags] Array modular de características habilitadas por el Servidor de Licencias
+  final List<String> licenseFeatures;  // ej: ['fast_pos', 'quotes', 'multiple_prices']
+
+  /// Consulta ágil de permisos modulares.
+  bool hasFeature(String featureName) => licenseFeatures.contains(featureName);
+
+  /// Alias legado — mantenido para retrocompatibilidad durante la transición.
+  bool get isHardwareStore => businessType == 'hardware_store' || hasFeature('quotes');
 
   const BusinessSettings({
     this.companyName,
@@ -45,6 +55,8 @@ class BusinessSettings extends Equatable {
     this.licenseNextPaymentAt,
     this.licenseManageUrl,
     this.isLifetime = false,
+    this.businessType = 'retail',
+    this.licenseFeatures = const [],  // default vacío = sin features = sin acceso a módulos extra
   });
 
   @override
@@ -70,5 +82,7 @@ class BusinessSettings extends Equatable {
         licenseNextPaymentAt,
         licenseManageUrl,
         isLifetime,
+        businessType,
+        licenseFeatures,  // [feature-flags]
       ];
 }

@@ -67,23 +67,26 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                   ),
                 ),
 
-                // ── CENTER BLOCK (middle) ─────────────────────────────────
+                // ─── CENTER BLOCK (middle) ──────────────────────────────────────────
                 middle: Consumer<SettingsProvider>(
                   builder: (context, settings, _) {
-                    final bool canAccessCuentasCorrientes = settings.hasFeature('cuentas_corrientes');
+                    final bool canAccessCuentasCorrientes = settings.hasFeature('current_accounts');
+                    final bool canAccessQuotes = settings.hasFeature('quotes'); // [feature-flags]
+                    final bool canAccessPos = settings.hasFeature('fast_pos');
 
                     return SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          _buildNavTab(
-                            context: context,
-                            label: 'Terminal POS',
-                            icon: Icons.point_of_sale,
-                            route: '/pos',
-                            activeColor: Colors.teal.shade700,
-                          ),
+                          if (canAccessPos)
+                            _buildNavTab(
+                              context: context,
+                              label: 'Terminal POS',
+                              icon: Icons.point_of_sale,
+                              route: '/pos',
+                              activeColor: Colors.teal.shade700,
+                            ),
                           _buildNavTab(
                             context: context,
                             label: 'Registro de Ventas',
@@ -100,6 +103,15 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                             activeColor: Colors.deepPurple,
                             permissionKey: 'manage_catalog',
                           ),
+                          // Tab de Presupuestos — controlado por Feature Flag 'quotes'
+                          if (canAccessQuotes)
+                            _buildNavTab(
+                              context: context,
+                              label: 'Presupuestos',
+                              icon: Icons.description_outlined,
+                              route: '/quotes',
+                              activeColor: Colors.indigo.shade700,
+                            ),
                           _buildNavTab(
                             context: context,
                             label: 'Cuentas Corrientes',
@@ -321,4 +333,3 @@ Widget _proFeature(String text) => Padding(
     ],
   ),
 );
-

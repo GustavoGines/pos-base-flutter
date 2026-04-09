@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:frontend_desktop/features/catalog/presentation/providers/catalog_provider.dart';
@@ -9,6 +9,7 @@ import '../widgets/categories_manager_dialog.dart';
 import '../widgets/print_labels_dialog.dart';
 import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
+import '../../../settings/presentation/providers/settings_provider.dart';
 
 class CatalogScreen extends StatefulWidget {
   const CatalogScreen({Key? key}) : super(key: key);
@@ -218,7 +219,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                   padding: const EdgeInsets.all(8),
                   child: Text(provider.errorMessage!, style: TextStyle(color: Colors.red.shade700)),
                 ),
-              // ── Product Table ─────────────────────────────────────
+              // ── Product Table ───────────────────────────────────────────────
               Expanded(
                 child: provider.products.isEmpty && !provider.isLoading
                     ? Center(
@@ -233,14 +234,16 @@ class _CatalogScreenState extends State<CatalogScreen> {
                       )
                     : LayoutBuilder(
                         builder: (context, constraints) {
+                          final hasMultiplePrices = context.watch<SettingsProvider>().hasFeature('multiple_prices');
+                          final minW = hasMultiplePrices ? 1150.0 : 950.0;
                           return SingleChildScrollView(
                             scrollDirection: Axis.horizontal,
                             child: ConstrainedBox(
                               constraints: BoxConstraints(
-                                minWidth: 950,
-                                maxWidth: constraints.maxWidth > 950 ? constraints.maxWidth : 950,
+                                minWidth: minW,
+                                maxWidth: constraints.maxWidth > minW ? constraints.maxWidth : minW,
                               ),
-                              child: _buildProductsTable(provider.products, provider),
+                              child: _buildProductsTable(provider.products, provider, hasMultiplePrices),
                             ),
                           );
                         },
@@ -283,7 +286,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
     );
   }
 
-  Widget _buildProductsTable(List<Product> products, CatalogProvider provider) {
+  Widget _buildProductsTable(List<Product> products, CatalogProvider provider, bool hasMultiplePrices) {
     // Responsive flex values para que quepan en pantalla chica
     const int fCheck = 1;
     const int fId = 1;
@@ -293,6 +296,9 @@ class _CatalogScreenState extends State<CatalogScreen> {
     const int fCat = 3;
     const int fCosto = 2;
     const int fVenta = 2;
+    // [hardware_store] columnas extra — flex 2 cada una
+    const int fMayorista = 2;
+    const int fTarjeta = 2;
     const int fStock = 2;
     const int fBal = 1;
     const int fActivo = 1;
@@ -376,6 +382,11 @@ class _CatalogScreenState extends State<CatalogScreen> {
               sortHeader(fCat, 'Categoría', 'category_id'),
               sortHeader(fCosto, 'Costo', 'cost_price'),
               sortHeader(fVenta, 'Venta', 'selling_price'),
+              // [hardware_store] columnas visibles solo en modo Ferretería
+              if (hasMultiplePrices) ...[
+                cell(fMayorista, Text('Mayorista', style: headerStyle().copyWith(color: Colors.indigo.shade700), overflow: TextOverflow.ellipsis)),
+                cell(fTarjeta, Text('Tarjeta', style: headerStyle().copyWith(color: Colors.teal.shade700), overflow: TextOverflow.ellipsis)),
+              ],
               sortHeader(fStock, 'Stock', 'stock'),
               sortHeader(fBal, 'Balanza', 'is_sold_by_weight'),
               sortHeader(fActivo, 'Activo', 'active'),
@@ -411,6 +422,23 @@ class _CatalogScreenState extends State<CatalogScreen> {
               cell(fCat, Text(p.category?.name ?? '—', overflow: TextOverflow.ellipsis)),
               cell(fCosto, Text('\$${p.costPrice.toStringAsFixed(2)}', overflow: TextOverflow.ellipsis)),
               cell(fVenta, Text('\$${p.sellingPrice.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis)),
+              // [hardware_store] celdas de precios alternativos
+              if (hasMultiplePrices) ...[
+                cell(fMayorista,
+                  p.priceWholesale != null
+                    ? Text('\$${p.priceWholesale!.toStringAsFixed(2)}',
+                        style: TextStyle(color: Colors.indigo.shade700, fontWeight: FontWeight.w600),
+                        overflow: TextOverflow.ellipsis)
+                    : Text('—', style: TextStyle(color: Colors.grey.shade400, fontSize: 13))
+                ),
+                cell(fTarjeta,
+                  p.priceCard != null
+                    ? Text('\$${p.priceCard!.toStringAsFixed(2)}',
+                        style: TextStyle(color: Colors.teal.shade700, fontWeight: FontWeight.w600),
+                        overflow: TextOverflow.ellipsis)
+                    : Text('—', style: TextStyle(color: Colors.grey.shade400, fontSize: 13))
+                ),
+              ],
               cell(fStock, Text(p.isSoldByWeight ? '${p.stock.toStringAsFixed(2)} kg' : p.stock.toStringAsFixed(0), overflow: TextOverflow.ellipsis)),
               cell(fBal, Align(alignment: Alignment.centerLeft, child: Icon(p.isSoldByWeight ? Icons.scale : Icons.inventory_2, size: 18, color: p.isSoldByWeight ? Colors.deepPurple : Colors.blueGrey))),
               cell(fActivo, Align(alignment: Alignment.centerLeft, child: Icon(p.active ? Icons.check_circle : Icons.cancel, color: p.active ? Colors.green : Colors.red, size: 20))),
@@ -685,6 +713,9 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
   late TextEditingController _internalCodeCtrl;
   late TextEditingController _costCtrl;
   late TextEditingController _priceCtrl;
+  // [hardware_store] Listas de precio
+  late TextEditingController _wholesaleCtrl;
+  late TextEditingController _cardCtrl;
   late TextEditingController _stockCtrl;
   late TextEditingController _minStockCtrl;
   bool _isSoldByWeight = false;
@@ -704,6 +735,9 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     _internalCodeCtrl = TextEditingController(text: p?.internalCode ?? '');
     _costCtrl = TextEditingController(text: p != null ? p.costPrice.toStringAsFixed(2) : '');
     _priceCtrl = TextEditingController(text: p != null ? p.sellingPrice.toStringAsFixed(2) : '');
+    // [hardware_store] inicializar desde el producto existente o vacío
+    _wholesaleCtrl = TextEditingController(text: p?.priceWholesale != null ? p!.priceWholesale!.toStringAsFixed(2) : '');
+    _cardCtrl = TextEditingController(text: p?.priceCard != null ? p!.priceCard!.toStringAsFixed(2) : '');
     _stockCtrl = TextEditingController(text: p != null ? p.stock.toStringAsFixed(p.isSoldByWeight ? 3 : 0) : '0');
     _minStockCtrl = TextEditingController(text: (p?.minStock != null) ? p!.minStock!.toStringAsFixed(0) : '');
     _isSoldByWeight = p?.isSoldByWeight ?? false;
@@ -722,6 +756,8 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     _internalCodeCtrl.dispose();
     _costCtrl.dispose();
     _priceCtrl.dispose();
+    _wholesaleCtrl.dispose(); // [hardware_store]
+    _cardCtrl.dispose();      // [hardware_store]
     _stockCtrl.dispose();
     _minStockCtrl.dispose();
     _expiryCtrl.dispose();
@@ -736,6 +772,11 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
       if (_internalCodeCtrl.text.isNotEmpty) 'internal_code': _internalCodeCtrl.text.trim(),
       'cost_price': double.parse(_costCtrl.text.replaceAll(',', '.')),
       'selling_price': double.parse(_priceCtrl.text.replaceAll(',', '.')),
+      // [hardware_store] solo se envían si tienen valor (retrocompatible con retail)
+      if (_wholesaleCtrl.text.trim().isNotEmpty)
+        'price_wholesale': double.parse(_wholesaleCtrl.text.replaceAll(',', '.')),
+      if (_cardCtrl.text.trim().isNotEmpty)
+        'price_card': double.parse(_cardCtrl.text.replaceAll(',', '.')),
       'stock': double.parse(_stockCtrl.text.replaceAll(',', '.')),
       'min_stock': _minStockCtrl.text.trim().isNotEmpty ? double.parse(_minStockCtrl.text.replaceAll(',', '.')) : null,
       'is_sold_by_weight': _isSoldByWeight,
@@ -914,6 +955,79 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                   ],
                 ),
                 const SizedBox(height: 12),
+                // [hardware_store] Listas de Precio — invisibles en modo retail
+                Consumer<SettingsProvider>(
+                  builder: (ctx2, settings, _) {
+                    if (!settings.hasFeature('multiple_prices')) return const SizedBox.shrink();
+                    return Column(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: Colors.indigo.shade50,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.indigo.shade100),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(children: [
+                                Icon(Icons.price_change_outlined, size: 16, color: Colors.indigo.shade700),
+                                const SizedBox(width: 6),
+                                Text('Listas de Precio', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.indigo.shade700)),
+                              ]),
+                              const SizedBox(height: 10),
+                              Row(children: [
+                                Expanded(
+                                  child: TextFormField(
+                                    controller: _wholesaleCtrl,
+                                    decoration: InputDecoration(
+                                      labelText: 'Precio Mayorista',
+                                      prefixText: '\$ ',
+                                      labelStyle: TextStyle(color: Colors.indigo.shade700),
+                                      focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.indigo.shade400)),
+                                      enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.indigo.shade200)),
+                                      border: const OutlineInputBorder(),
+                                      helperText: 'Vacío = no aplica',
+                                    ),
+                                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                    validator: (v) {
+                                      if (v == null || v.trim().isEmpty) return null;
+                                      if (double.tryParse(v.replaceAll(',', '.')) == null) return 'Monto inválido';
+                                      return null;
+                                    },
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: TextFormField(
+                                    controller: _cardCtrl,
+                                    decoration: InputDecoration(
+                                      labelText: 'Precio Tarjeta',
+                                      prefixText: '\$ ',
+                                      labelStyle: TextStyle(color: Colors.teal.shade700),
+                                      focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.teal.shade400)),
+                                      enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.teal.shade200)),
+                                      border: const OutlineInputBorder(),
+                                      helperText: 'Vacío = no aplica',
+                                    ),
+                                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                    validator: (v) {
+                                      if (v == null || v.trim().isEmpty) return null;
+                                      if (double.tryParse(v.replaceAll(',', '.')) == null) return 'Monto inválido';
+                                      return null;
+                                    },
+                                  ),
+                                ),
+                              ]),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+                    );
+                  },
+                ),
                 Row(
                   children: [
                     Expanded(
