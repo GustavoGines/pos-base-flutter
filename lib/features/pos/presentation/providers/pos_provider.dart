@@ -4,6 +4,7 @@ import '../../domain/entities/payment_method.dart';
 import '../../domain/usecases/process_sale_usecase.dart';
 import '../../domain/usecases/search_products_usecase.dart';
 import '../../domain/repositories/pos_repository.dart';
+import '../../data/datasources/pos_remote_datasource.dart' show ClosedShiftException;
 import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
 import 'package:frontend_desktop/features/settings/domain/entities/business_settings.dart';
 import 'package:frontend_desktop/core/utils/receipt_printer_service.dart';
@@ -30,6 +31,18 @@ class PosProvider with ChangeNotifier {
 
   String? _printerWarning;
   String? get printerWarning => _printerWarning;
+
+  // ── Seguridad: Turno Cerrado Remotamente ─────────────────────────
+  // Se activa cuando el backend rechaza una venta porque el turno ya
+  // fue cerrado desde otra terminal. La UI observa este flag para
+  // mostrar el diálogo crítico y forzar la recarga del estado.
+  bool _isShiftClosed = false;
+  bool get isShiftClosed => _isShiftClosed;
+
+  void resetShiftClosedFlag() {
+    _isShiftClosed = false;
+    notifyListeners();
+  }
 
   // ── Órdenes Pendientes ──────────────────────────────────────────
   List<Map<String, dynamic>> _pendingSales = [];
@@ -120,6 +133,7 @@ class PosProvider with ChangeNotifier {
     _activeQuoteId = null;
     _recalledUserName = null;
     _errorMessage = null;
+    _isShiftClosed = false;
     notifyListeners();
   }
 
@@ -334,6 +348,12 @@ class PosProvider with ChangeNotifier {
       }
 
       return true;
+    } on ClosedShiftException catch (e) {
+      // Error crítico de seguridad: el turno fue cerrado desde otra terminal.
+      // Activamos el flag para que la UI muestre el diálogo y fuerce la recarga.
+      _isShiftClosed = true;
+      _errorMessage = e.message;
+      return false;
     } catch (e) {
       _errorMessage = e.toString();
       return false;
@@ -377,6 +397,10 @@ class PosProvider with ChangeNotifier {
       clearCart();
       await loadPendingSales();
       return true;
+    } on ClosedShiftException catch (e) {
+      _isShiftClosed = true;
+      _errorMessage = e.message;
+      return false;
     } catch (e) {
       _errorMessage = e.toString();
       return false;

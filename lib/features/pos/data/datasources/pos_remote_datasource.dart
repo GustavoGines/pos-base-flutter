@@ -3,6 +3,17 @@ import 'package:frontend_desktop/features/pos/domain/entities/cart_item.dart';
 import 'package:http/http.dart' as http;
 import 'package:frontend_desktop/features/catalog/data/models/product_model.dart';
 
+/// Excepción tipada que se lanza cuando el backend rechaza una venta
+/// porque el turno de caja ya fue cerrado desde otra terminal.
+/// Permite a la capa superior distinguir este error crítico de seguridad
+/// de un error de red genérico y forzar la recarga del estado.
+class ClosedShiftException implements Exception {
+  final String message;
+  const ClosedShiftException(this.message);
+  @override
+  String toString() => message;
+}
+
 abstract class PosRemoteDataSource {
   Future<List<ProductModel>> searchProducts(String query);
   Future<List<dynamic>> fetchPaymentMethods();
@@ -147,18 +158,30 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
         return json.decode(response.body);
       } else {
         String detail = '';
+        bool isClosedShift = false;
         try {
           final errBody = json.decode(response.body);
           if (errBody is Map) {
             if (errBody.containsKey('errors')) {
               final errs = errBody['errors'] as Map;
-              detail = errs.values.expand((v) => v is List ? v : [v]).join(', ');
+              // Detectar específicamente el error de turno cerrado
+              if (errs.containsKey('cash_shift_id')) {
+                isClosedShift = true;
+                detail = (errs['cash_shift_id'] as List).first.toString();
+              } else {
+                detail = errs.values.expand((v) => v is List ? v : [v]).join(', ');
+              }
             } else if (errBody.containsKey('message')) {
               detail = errBody['message'];
             }
           }
         } catch (_) {
           detail = response.body;
+        }
+
+        // Lanzar excepción tipada para que el Provider pueda reaccionar específicamente
+        if (isClosedShift) {
+          throw ClosedShiftException(detail);
         }
         throw Exception('Error al procesar venta: $detail (HTTP ${response.statusCode})');
       }

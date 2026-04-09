@@ -588,6 +588,61 @@ class _PosScreenState extends State<PosScreen> {
           }
         });
       }
+    } else if (posProvider.isShiftClosed && mounted) {
+      // ── SEGURIDAD: Turno cerrado remotamente ─────────────────────
+      // El backend rechazó la venta porque el turno ya fue cerrado
+      // desde otra terminal. Mostramos un diálogo crítico no descartable
+      // y forzamos la vuelta al inicio para limpiar todo el estado.
+      await showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          backgroundColor: Colors.red.shade50,
+          title: Row(
+            children: [
+              Icon(Icons.lock_clock, color: Colors.red.shade700, size: 28),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Text(
+                  'Turno Cerrado',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                ),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                posProvider.errorMessage ??
+                    'El turno de caja fue cerrado desde otra terminal.',
+                style: const TextStyle(fontSize: 15),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'La sesión actual ya no es válida. Será redirigido al inicio para actualizar el estado de la caja.',
+                style: TextStyle(fontSize: 13, color: Colors.red.shade700),
+              ),
+            ],
+          ),
+          actions: [
+            FilledButton.icon(
+              style: FilledButton.styleFrom(backgroundColor: Colors.red.shade600),
+              onPressed: () => Navigator.pop(ctx),
+              icon: const Icon(Icons.refresh),
+              label: const Text('Recargar sesión'),
+            ),
+          ],
+        ),
+      );
+
+      // Limpiar estado del provider y navegar al inicio eliminando toda la pila
+      if (mounted) {
+        posProvider.clearCart();
+        Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+      }
     }
     
     _searchFocusNode.requestFocus();
