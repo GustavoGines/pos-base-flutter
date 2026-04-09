@@ -551,13 +551,68 @@ class _PosScreenState extends State<PosScreen> {
   void _handleCheckout() async {
     final posProvider = Provider.of<PosProvider>(context, listen: false);
     final cashRegisterProvider = Provider.of<CashRegisterProvider>(context, listen: false);
-    
+
+    // ── VALIDACIÓN PROACTIVA: Verificar el turno en el servidor ANTES de abrir
+    // la pantalla de cobro. Esto intercepta el caso donde el turno fue cerrado
+    // desde otra terminal mientras este cliente estaba ocioso con el carrito lleno.
+    await cashRegisterProvider.checkCurrentShift();
+
     final currentShift = cashRegisterProvider.currentShift;
+    if (!mounted) return;
+
     if (currentShift == null || !currentShift.isOpen) {
-      SnackBarService.error(context, 'No hay turno de caja abierto.');
+      // El turno ya no existe en el servidor → mostrar cartel de seguridad de inmediato
+      await showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          backgroundColor: Colors.red.shade50,
+          title: Row(
+            children: [
+              Icon(Icons.lock_clock, color: Colors.red.shade700, size: 28),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Text(
+                  'Turno Cerrado',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                ),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'El turno de caja fue cerrado desde otra terminal.',
+                style: TextStyle(fontSize: 15),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'La sesión actual ya no es válida. Será redirigido al inicio para actualizar el estado de la caja.',
+                style: TextStyle(fontSize: 13, color: Colors.red.shade700),
+              ),
+            ],
+          ),
+          actions: [
+            FilledButton.icon(
+              style: FilledButton.styleFrom(backgroundColor: Colors.red.shade600),
+              onPressed: () => Navigator.pop(ctx),
+              icon: const Icon(Icons.refresh),
+              label: const Text('Recargar sesión'),
+            ),
+          ],
+        ),
+      );
+      if (mounted) {
+        posProvider.clearCart();
+        Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+      }
       return;
     }
 
+    // Turno confirmado activo en el servidor → abrir pantalla de cobro
     final success = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
