@@ -607,7 +607,7 @@ class _PosScreenState extends State<PosScreen> {
       );
       if (mounted) {
         posProvider.clearCart();
-        Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+        Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false);
       }
       return;
     }
@@ -696,7 +696,7 @@ class _PosScreenState extends State<PosScreen> {
       // Limpiar estado del provider y navegar al inicio eliminando toda la pila
       if (mounted) {
         posProvider.clearCart();
-        Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+        Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false);
       }
     }
     
@@ -772,7 +772,7 @@ class _PosScreenState extends State<PosScreen> {
       );
       if (mounted) {
         posProvider.clearCart();
-        Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+        Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false);
       }
     } else if (!success && mounted) {
       SnackBarService.error(context, posProvider.errorMessage ?? 'No se pudo guardar la orden.');
