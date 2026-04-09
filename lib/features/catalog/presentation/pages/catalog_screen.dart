@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:frontend_desktop/features/catalog/presentation/providers/catalog_provider.dart';
@@ -234,8 +234,8 @@ class _CatalogScreenState extends State<CatalogScreen> {
                       )
                     : LayoutBuilder(
                         builder: (context, constraints) {
-                          final isHardwareStore = context.watch<SettingsProvider>().isHardwareStore;
-                          final minW = isHardwareStore ? 1150.0 : 950.0;
+                          final hasMultiplePrices = context.watch<SettingsProvider>().hasFeature('multiple_prices');
+                          final minW = hasMultiplePrices ? 1150.0 : 950.0;
                           return SingleChildScrollView(
                             scrollDirection: Axis.horizontal,
                             child: ConstrainedBox(
@@ -243,7 +243,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                                 minWidth: minW,
                                 maxWidth: constraints.maxWidth > minW ? constraints.maxWidth : minW,
                               ),
-                              child: _buildProductsTable(provider.products, provider, isHardwareStore),
+                              child: _buildProductsTable(provider.products, provider, hasMultiplePrices),
                             ),
                           );
                         },
@@ -286,7 +286,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
     );
   }
 
-  Widget _buildProductsTable(List<Product> products, CatalogProvider provider, bool isHardwareStore) {
+  Widget _buildProductsTable(List<Product> products, CatalogProvider provider, bool hasMultiplePrices) {
     // Responsive flex values para que quepan en pantalla chica
     const int fCheck = 1;
     const int fId = 1;
@@ -383,7 +383,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
               sortHeader(fCosto, 'Costo', 'cost_price'),
               sortHeader(fVenta, 'Venta', 'selling_price'),
               // [hardware_store] columnas visibles solo en modo Ferretería
-              if (isHardwareStore) ...[
+              if (hasMultiplePrices) ...[
                 cell(fMayorista, Text('Mayorista', style: headerStyle().copyWith(color: Colors.indigo.shade700), overflow: TextOverflow.ellipsis)),
                 cell(fTarjeta, Text('Tarjeta', style: headerStyle().copyWith(color: Colors.teal.shade700), overflow: TextOverflow.ellipsis)),
               ],
@@ -423,7 +423,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
               cell(fCosto, Text('\$${p.costPrice.toStringAsFixed(2)}', overflow: TextOverflow.ellipsis)),
               cell(fVenta, Text('\$${p.sellingPrice.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis)),
               // [hardware_store] celdas de precios alternativos
-              if (isHardwareStore) ...[
+              if (hasMultiplePrices) ...[
                 cell(fMayorista,
                   p.priceWholesale != null
                     ? Text('\$${p.priceWholesale!.toStringAsFixed(2)}',
@@ -958,7 +958,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                 // [hardware_store] Listas de Precio — invisibles en modo retail
                 Consumer<SettingsProvider>(
                   builder: (ctx2, settings, _) {
-                    if (!settings.isHardwareStore) return const SizedBox.shrink();
+                    if (!settings.hasFeature('multiple_prices')) return const SizedBox.shrink();
                     return Column(
                       children: [
                         Container(

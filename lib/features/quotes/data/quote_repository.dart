@@ -1,6 +1,7 @@
 import 'dart:convert';
-import 'package:http/http.dart' as http;
 import 'package:frontend_desktop/core/network/api_client.dart';
+import '../../catalog/domain/entities/product.dart';
+import '../../catalog/data/models/product_model.dart';
 
 /// Entidad liviana para usar en la pantalla de presupuestos.
 class QuoteItem {
@@ -9,6 +10,7 @@ class QuoteItem {
   final double unitPrice;
   final double quantity;
   final double subtotal;
+  final Product? product;
 
   QuoteItem({
     this.productId,
@@ -16,14 +18,16 @@ class QuoteItem {
     required this.unitPrice,
     required this.quantity,
     required this.subtotal,
+    this.product,
   });
 
   Map<String, dynamic> toJson() => {
-        if (productId != null) 'product_id': productId,
-        'product_name': productName,
-        'unit_price': unitPrice,
-        'quantity': quantity,
-      };
+    if (productId != null) 'product_id': productId,
+    'product_name': productName,
+    'unit_price': unitPrice,
+    'quantity': quantity,
+    'subtotal': subtotal,
+  };
 }
 
 class Quote {
@@ -66,13 +70,19 @@ class Quote {
       notes: json['notes']?.toString(),
       validUntil: json['valid_until']?.toString(),
       createdAt: json['created_at']?.toString(),
-      items: rawItems.map((i) => QuoteItem(
-        productId: i['product_id'] as int?,
-        productName: i['product_name']?.toString() ?? '',
-        unitPrice: double.tryParse(i['unit_price']?.toString() ?? '0') ?? 0,
-        quantity: double.tryParse(i['quantity']?.toString() ?? '1') ?? 1,
-        subtotal: double.tryParse(i['subtotal']?.toString() ?? '0') ?? 0,
-      )).toList(),
+      items: rawItems
+          .map(
+            (i) => QuoteItem(
+              productId: i['product_id'] as int?,
+              productName: i['product_name']?.toString() ?? '',
+              unitPrice:
+                  double.tryParse(i['unit_price']?.toString() ?? '0') ?? 0,
+              quantity: double.tryParse(i['quantity']?.toString() ?? '1') ?? 1,
+              subtotal: double.tryParse(i['subtotal']?.toString() ?? '0') ?? 0,
+              product: i['product'] != null ? ProductModel.fromJson(i['product'] as Map<String, dynamic>) : null,
+            ),
+          )
+          .toList(),
     );
   }
 }
@@ -84,7 +94,7 @@ class QuoteRepository {
 
   QuoteRepository({required this.baseUrl, required this.client});
 
-  String get _base => '$baseUrl/api/quotes';
+  String get _base => '$baseUrl/quotes';
 
   Future<Quote> createQuote({
     required List<QuoteItem> items,
@@ -105,7 +115,10 @@ class QuoteRepository {
 
     final response = await client.post(
       Uri.parse(_base),
-      headers: {'Content-Type': 'application/json'},
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
       body: body,
     );
 
@@ -120,14 +133,40 @@ class QuoteRepository {
     if (search != null && search.isNotEmpty) params['search'] = search;
     if (status != null && status.isNotEmpty) params['status'] = status;
 
-    final uri = Uri.parse(_base).replace(queryParameters: params.isEmpty ? null : params);
-    final response = await client.get(uri);
+    final uri = Uri.parse(
+      _base,
+    ).replace(queryParameters: params.isEmpty ? null : params);
+    
+    final response = await client.get(
+      uri,
+      headers: {'Accept': 'application/json'},
+    );
 
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body);
       final rawList = data['data'] as List? ?? [];
-      return rawList.map((j) => Quote.fromJson(j as Map<String, dynamic>)).toList();
+      return rawList
+          .map((j) => Quote.fromJson(j as Map<String, dynamic>))
+          .toList();
     }
     throw Exception('Error al cargar presupuestos');
+  }
+
+  /// Recupera un presupuesto específico por su número (ej. PRES-0001) para cargarlo en caja
+  Future<Quote?> getQuoteByNumber(String quoteNumber) async {
+    final uri = Uri.parse('$_base/number/$quoteNumber');
+    
+    final response = await client.get(
+      uri,
+      headers: {'Accept': 'application/json'},
+    );
+
+    if (response.statusCode == 200) {
+      return Quote.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+    } else if (response.statusCode == 404) {
+      return null;
+    }
+    
+    throw Exception('Error al recuperar el presupuesto');
   }
 }

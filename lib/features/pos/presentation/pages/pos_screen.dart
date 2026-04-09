@@ -11,6 +11,7 @@ import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import 'package:flutter_libserialport/flutter_libserialport.dart';
+import 'package:frontend_desktop/features/quotes/presentation/providers/quote_provider.dart';
 
 class PosScreen extends StatefulWidget {
   const PosScreen({Key? key}) : super(key: key);
@@ -95,9 +96,59 @@ class _PosScreenState extends State<PosScreen> {
 
   void _onProductScannedOrSearched(String query) async {
     if (query.trim().isEmpty) return;
-    String cleanQuery = query.trim();
+    String cleanQuery = query.trim().toUpperCase();
     
     final posProvider = Provider.of<PosProvider>(context, listen: false);
+
+    // 0. Interceptar Presupuestos (Código de barras PRES-)
+    if (cleanQuery.startsWith('PRES-')) {
+      setState(() => _isSearching = true);
+      
+      try {
+        final repo = Provider.of<QuoteProvider>(context, listen: false).repository;
+        final quote = await repo.getQuoteByNumber(cleanQuery);
+        
+        setState(() => _isSearching = false);
+        
+        if (quote != null) {
+          // Mostrar diálogo de confirmación
+          if (mounted) {
+            final confirm = await showDialog<bool>(
+              context: context,
+              builder: (ctx) => AlertDialog(
+                title: Text('Cargar Presupuesto: $cleanQuery'),
+                content: Text('¿Desea limpiar la caja actual y cargar los ${quote.items.length} productos de este presupuesto?'),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx, false),
+                    child: const Text('Cancelar'),
+                  ),
+                  FilledButton(
+                    onPressed: () => Navigator.pop(ctx, true),
+                    child: const Text('Cargar'),
+                  ),
+                ],
+              ),
+            );
+            
+            if (confirm == true) {
+              posProvider.loadQuoteToCart(quote);
+              SnackBarService.success(context, 'Presupuesto cargado listo para facturar.');
+            }
+          }
+        } else {
+          SnackBarService.error(context, 'Presupuesto no encontrado: "$cleanQuery"');
+        }
+      } catch (e) {
+        setState(() => _isSearching = false);
+        SnackBarService.error(context, 'Error al recuperar presupuesto: $e');
+      }
+      
+      _searchController.clear();
+      setState(() => _searchQuery = '');
+      _searchFocusNode.requestFocus();
+      return;
+    }
     
     // 1. Intentamos buscar el código exactamente como se escaneó primero.
     // Esto es crucial por si el producto es unitario y su código EAN normal comienza con '2'.
@@ -121,14 +172,19 @@ class _PosScreenState extends State<PosScreen> {
         if (results.first.isSoldByWeight) {
           appliedScaleLogic = true;
         } else {
-          // El código parece de balanza, pero el producto en la DB es por unidad (ej: Aceitunas).
-          if (mounted) {
-            SnackBarService.error(context, 'El producto "${results.first.name}" no se vende por peso. Revise la etiqueta.');
+          if (embeddedPrice == 0) {
+            // Es un ticket interno estándar (Ean13Generator sin balanza)
+            appliedScaleLogic = false;
+          } else {
+            // El código tiene importe incrustado pero el producto no es pesado
+            if (mounted) {
+              SnackBarService.error(context, 'El producto "${results.first.name}" no se vende por peso. Revise la etiqueta.');
+            }
+            _searchController.clear();
+            setState(() => _searchQuery = '');
+            _searchFocusNode.requestFocus();
+            return;
           }
-          _searchController.clear();
-          setState(() => _searchQuery = '');
-          _searchFocusNode.requestFocus();
-          return;
         }
       }
     }

@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/auth_provider.dart';
 import '../../../../core/utils/snack_bar_service.dart';
+import '../../../settings/presentation/providers/settings_provider.dart';
+import '../../../cash_register/presentation/providers/cash_register_provider.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({Key? key}) : super(key: key);
@@ -118,6 +120,17 @@ class _LoginScreenState extends State<LoginScreen> {
     
     if (mounted) {
       if (success) {
+        // [Bugfix] Evitar flashes visuales de "Pantalla Bloqueo" y "Turno de caja"
+        // si la app arrancó sin red y se reconectó justo en este momento.
+        // Forzamos la actualización del estado global ANTES de navegar al home.
+        final settingsProv = context.read<SettingsProvider>();
+        final cashProv = context.read<CashRegisterProvider>();
+        
+        await settingsProv.loadSettings();
+        
+        final assignedId = settingsProv.assignedRegisterId;
+        await cashProv.checkCurrentShift(registerId: assignedId > 0 ? assignedId : null);
+
         // Encolamos la navegación al final del frame para que el Navigator 
         // no colapse ni arroje !_debugLocked si hay builds en curso o si 
         // el LicenseGuard recién reconstruyó la vista.

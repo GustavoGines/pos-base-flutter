@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
@@ -291,7 +291,7 @@ class _QuoteScreenState extends State<QuoteScreen> {
   }
 
   Widget _buildProductCard(Product p) {
-    final isHardwareStore = context.watch<SettingsProvider>().isHardwareStore;
+    final hasMultiplePrices = context.watch<SettingsProvider>().hasFeature('multiple_prices');
     return InkWell(
       onTap: () => _addProduct(p),
       borderRadius: BorderRadius.circular(10),
@@ -314,7 +314,7 @@ class _QuoteScreenState extends State<QuoteScreen> {
             const SizedBox(height: 4),
             Text('\$${p.sellingPrice.toStringAsFixed(2)}',
                 style: TextStyle(fontSize: 11, color: Colors.green.shade700, fontWeight: FontWeight.bold)),
-            if (isHardwareStore && (p.priceWholesale != null || p.priceCard != null))
+            if (hasMultiplePrices && (p.priceWholesale != null || p.priceCard != null))
               TextButton(
                 style: TextButton.styleFrom(
                   padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -331,7 +331,7 @@ class _QuoteScreenState extends State<QuoteScreen> {
   }
 
   Widget _buildProductTile(Product p) {
-    final isHardwareStore = context.watch<SettingsProvider>().isHardwareStore;
+    final hasMultiplePrices = context.watch<SettingsProvider>().hasFeature('multiple_prices');
     return ListTile(
       dense: true,
       leading: CircleAvatar(
@@ -343,7 +343,7 @@ class _QuoteScreenState extends State<QuoteScreen> {
       title: Text(p.name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
       subtitle: Text('\$${p.sellingPrice.toStringAsFixed(2)}',
           style: TextStyle(color: Colors.green.shade700, fontSize: 12)),
-      trailing: isHardwareStore && (p.priceWholesale != null || p.priceCard != null)
+      trailing: hasMultiplePrices && (p.priceWholesale != null || p.priceCard != null)
           ? TextButton(
               onPressed: () => _showPriceSelector(p),
               child: const Text('Precios'),
@@ -763,13 +763,20 @@ class _QuoteSuccessDialogState extends State<_QuoteSuccessDialog> {
 
   Future<void> _generateAndSave() async {
     setState(() => _generatingPdf = true);
-    final path = await QuotePdfService.generateAndShare(
-      quote: widget.quote,
-      businessName: widget.businessName,
-      businessAddress: widget.businessAddress,
-      businessPhone: widget.businessPhone,
-    );
-    if (mounted) setState(() { _generatingPdf = false; _savedPath = path; });
+    try {
+      final path = await QuotePdfService.generateAndShare(
+        quote: widget.quote,
+        businessName: widget.businessName,
+        businessAddress: widget.businessAddress,
+        businessPhone: widget.businessPhone,
+      );
+      if (mounted) setState(() { _generatingPdf = false; _savedPath = path; });
+    } catch (e) {
+      if (mounted) {
+        setState(() => _generatingPdf = false);
+        SnackBarService.error(context, e.toString());
+      }
+    }
   }
 
   Future<void> _preview() async {
@@ -787,6 +794,7 @@ class _QuoteSuccessDialogState extends State<_QuoteSuccessDialog> {
       quote: widget.quote,
       businessName: widget.businessName,
       phone: widget.customerPhone,
+      savedPdfPath: _savedPath,
     );
   }
 

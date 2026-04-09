@@ -13,7 +13,7 @@ import '../data/quote_repository.dart';
 /// No depende de Flutter widgets — puede llamarse desde cualquier contexto.
 class QuotePdfService {
   static final _currencyFmt = NumberFormat.currency(locale: 'es_AR', symbol: '\$', decimalDigits: 2);
-  static final _dateFmt = DateFormat('dd/MM/yyyy', 'es_AR');
+  static final _dateFmt = DateFormat('dd/MM/yyyy');
 
   /// Genera el PDF, lo guarda en el directorio de descargas, lo muestra al
   /// usuario (preview) y luego abre WhatsApp con un mensaje prearmado.
@@ -23,28 +23,34 @@ class QuotePdfService {
     String? businessAddress,
     String? businessPhone,
   }) async {
-    try {
-      final pdfBytes = await _buildPdf(
-        quote: quote,
-        businessName: businessName,
-        businessAddress: businessAddress,
-        businessPhone: businessPhone,
-      );
+    final pdfBytes = await _buildPdf(
+      quote: quote,
+      businessName: businessName,
+      businessAddress: businessAddress,
+      businessPhone: businessPhone,
+    );
 
-      // ── Guardar archivo ──────────────────────────────────────────────────
-      final dir = await getDownloadsDirectory() ?? await getTemporaryDirectory();
-      final filename = '${quote.quoteNumber}.pdf';
-      final file = File('${dir.path}${Platform.pathSeparator}$filename');
-      await file.writeAsBytes(pdfBytes);
-
-      return file.path;
-    } catch (e) {
-      debugPrint('QuotePdfService error: $e');
-      return null;
+    // ── Guardar archivo ──────────────────────────────────────────────────
+    final docsDir = await getApplicationDocumentsDirectory();
+    final presupuestosDir = Directory('${docsDir.path}${Platform.pathSeparator}Sistema_POS${Platform.pathSeparator}Presupuestos');
+    
+    if (!await presupuestosDir.exists()) {
+      await presupuestosDir.create(recursive: true);
     }
+    
+    final filename = '${quote.quoteNumber}.pdf';
+    final file = File('${presupuestosDir.path}${Platform.pathSeparator}$filename');
+    
+    try {
+      await file.writeAsBytes(pdfBytes);
+    } catch (e) {
+      throw Exception('Permiso denegado o error de disco al guardar: \$e');
+    }
+
+    return file.path;
   }
 
-  /// Solo preview en pantalla (usa printing).
+  /// Muestra el PDF en una ventana flotante dentro de la app (Vista Previa real).
   static Future<void> preview({
     required BuildContext context,
     required Quote quote,
@@ -52,14 +58,63 @@ class QuotePdfService {
     String? businessAddress,
     String? businessPhone,
   }) async {
-    await Printing.layoutPdf(
-      onLayout: (_) async => _buildPdf(
-        quote: quote,
-        businessName: businessName,
-        businessAddress: businessAddress,
-        businessPhone: businessPhone,
-      ),
-      name: quote.quoteNumber,
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Cerrar',
+      pageBuilder: (context, _, __) {
+        return Material(
+          color: Colors.black45,
+          child: Center(
+            child: Container(
+              width: 850,
+              height: MediaQuery.of(context).size.height * 0.9,
+              margin: const EdgeInsets.all(32),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Padding(
+                        padding: EdgeInsets.all(16.0),
+                        child: Text(
+                          'Vista Previa del Presupuesto', 
+                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close, color: Colors.grey),
+                        onPressed: () => Navigator.pop(context),
+                      )
+                    ],
+                  ),
+                  const Divider(height: 1),
+                  Expanded(
+                    child: PdfPreview(
+                      allowPrinting: true,
+                      allowSharing: true,
+                      canChangeOrientation: false,
+                      canChangePageFormat: false,
+                      pdfFileName: '\${quote.quoteNumber}.pdf',
+                      build: (format) async => _buildPdf(
+                        quote: quote,
+                        businessName: businessName,
+                        businessAddress: businessAddress,
+                        businessPhone: businessPhone,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -68,12 +123,31 @@ class QuotePdfService {
     required Quote quote,
     required String businessName,
     String? phone,
+    String? savedPdfPath,
   }) async {
+    if (savedPdfPath != null && Platform.isWindows) {
+      try {
+        // Abre el explorador de Windows y resalta exactamente el archivo que se guardó
+        await Process.run('explorer.exe', ['/select,', savedPdfPath]);
+      } catch (e) {
+        debugPrint('Error abriendo directorio nativo: $e');
+      }
+    } else if (savedPdfPath != null) {
+      try {
+        final parentDir = File(savedPdfPath).parent.path.replaceAll('\\', '/');
+        final folderUri = Uri.parse('file:///$parentDir');
+        if (await canLaunchUrl(folderUri)) {
+          await launchUrl(folderUri);
+        }
+      } catch (e) {
+        debugPrint('Error abriendo directorio fallback: $e');
+      }
+    }
     final total = _currencyFmt.format(quote.total);
     final msg = Uri.encodeComponent(
       '¡Hola! Te escribo de $businessName. '
       'Te adjunto el presupuesto **${quote.quoteNumber}** por un total de $total. '
-      '(Adjuntá el PDF que se acaba de generar y guardar en tu carpeta de Descargas) '
+      'Acabo de abrir la carpeta donde se guardó el PDF para que me lo puedas enviar por acá. '
       '${quote.notes != null && quote.notes!.isNotEmpty ? "\n\nCondiciones: ${quote.notes}" : ""}'
       '\n\n¡Quedamos a tu disposición!',
     );
@@ -150,11 +224,26 @@ class QuotePdfService {
                         pw.Text('PRESUPUESTO',
                             style: pw.TextStyle(
                               color: PdfColors.white,
-                              fontSize: 22,
+                              fontSize: 36, // Tamaño aumentado drásticamente
                               fontWeight: pw.FontWeight.bold,
+                              letterSpacing: 1.2,
                             )),
                         pw.Text(quote.quoteNumber,
                             style: const pw.TextStyle(color: PdfColors.grey300, fontSize: 13)),
+                        pw.SizedBox(height: 6),
+                        pw.Container(
+                          color: PdfColors.white,
+                          padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          height: 35,
+                          width: 130,
+                          child: pw.BarcodeWidget(
+                            barcode: pw.Barcode.code128(),
+                            data: quote.quoteNumber,
+                            drawText: false,
+                            color: PdfColors.black,
+                          ),
+                        ),
+                        pw.SizedBox(height: 6),
                         pw.Text(
                           'Fecha: ${_dateFmt.format(DateTime.now())}',
                           style: const pw.TextStyle(color: PdfColors.grey300, fontSize: 10),
@@ -284,6 +373,21 @@ class QuotePdfService {
               ],
 
               pw.Spacer(),
+
+              // ── TERMINOS Y CONDICIONES GLOBALES ──────────────────────────
+              pw.Center(
+                child: pw.Text(
+                  quote.validUntil != null
+                    ? 'Validez del presupuesto: hasta el ${_dateFmt.format(DateTime.parse(quote.validUntil!))}. Los precios pueden variar sin previo aviso.'
+                    : 'Validez del presupuesto: 15 días. Los precios pueden variar sin previo aviso.',
+                  style: pw.TextStyle(
+                    fontSize: 10,
+                    color: primary,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+              ),
+              pw.SizedBox(height: 16),
 
               // ── FOOTER ───────────────────────────────────────────────────
               pw.Divider(color: PdfColors.grey300),

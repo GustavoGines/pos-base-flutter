@@ -115,6 +115,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  String _translateFeature(String featureCode) {
+    const dictionary = {
+      'fast_pos': 'Caja Rápida',
+      'z_reports': 'Reportes Z',
+      'quotes': 'Presupuestos (PDF/WA)',
+      'current_accounts': 'Cuentas Corrientes',
+      'multiple_prices': 'Listas de Precios',
+      'multi_caja': 'Múltiples Cajas',
+    };
+    return dictionary[featureCode] ?? featureCode.toUpperCase();
+  }
+
   Future<void> _activateLicense() async {
     final key = _licenseKeyCtrl.text.trim();
     if (key.isEmpty) {
@@ -461,9 +473,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
             children: (provider.allowedAddons.isEmpty) 
               ? [const Text('No hay addons específicos activos.', style: TextStyle(color: Colors.grey))]
               : provider.allowedAddons.map((addon) => Chip(
-                  label: Text(addon.toUpperCase()),
+                  label: Text(
+                    _translateFeature(addon),
+                    style: const TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF424242)),
+                  ),
                   backgroundColor: Colors.white,
-                  side: BorderSide(color: Colors.grey.shade200),
+                  side: BorderSide(color: Colors.grey.shade300),
                 )).toList(),
           ),
           const SizedBox(height: 32),

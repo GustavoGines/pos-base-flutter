@@ -7,6 +7,7 @@ import '../../domain/repositories/pos_repository.dart';
 import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
 import 'package:frontend_desktop/features/settings/domain/entities/business_settings.dart';
 import 'package:frontend_desktop/core/utils/receipt_printer_service.dart';
+import 'package:frontend_desktop/features/quotes/data/quote_repository.dart';
 
 class PosProvider with ChangeNotifier {
   final ProcessSaleUseCase processSaleUseCase;
@@ -41,6 +42,10 @@ class PosProvider with ChangeNotifier {
 
   int? _activePendingSaleId;
   int? get activePendingSaleId => _activePendingSaleId;
+
+  // Si el carrito actual proviene de recuperar un presupuesto
+  int? _activeQuoteId;
+  int? get activeQuoteId => _activeQuoteId;
 
   String? _recalledUserName;
   String? get recalledUserName => _recalledUserName;
@@ -112,7 +117,21 @@ class PosProvider with ChangeNotifier {
   void clearCart() {
     _cart.clear();
     _activePendingSaleId = null;
+    _activeQuoteId = null;
     _recalledUserName = null;
+    _errorMessage = null;
+    notifyListeners();
+  }
+
+  /// Carga un presupuesto en el carrito. Asume que Items ya vienen hidratados.
+  void loadQuoteToCart(Quote quote) {
+    clearCart();
+    _activeQuoteId = quote.id;
+    for (var item in quote.items) {
+      if (item.product != null) {
+        _cart.add(CartItem(product: item.product!, quantity: item.quantity));
+      }
+    }
     notifyListeners();
   }
 
@@ -255,6 +274,7 @@ class PosProvider with ChangeNotifier {
           items: cartSnapshot,
           userId: userId,
           customerId: customerId,
+          quoteId: _activeQuoteId,
           status: 'completed',
         );
 
