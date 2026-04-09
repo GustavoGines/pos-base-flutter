@@ -98,7 +98,7 @@ class _CashRegisterScreenState extends State<CashRegisterScreen> {
           constraints: const BoxConstraints(maxWidth: 400),
           child: Card(
             elevation: 4,
-            child: Padding(
+            child: SingleChildScrollView(
               padding: const EdgeInsets.all(32.0),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
