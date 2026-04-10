@@ -252,12 +252,61 @@ class _MainAppState extends State<MainApp> {
   int _retryCount = 0;
   static const int _maxRetries = 5;
 
+  bool _isShowingSessionDialog = false;
+
   @override
   void initState() {
     super.initState();
     Future.microtask(() {
       _initializeApp();
+      
+      // ── GANCHOS DE SEGURIDAD GLOBAL (Single Active Session) ──
+      // Atrapa cualquier Error 401 (SESSION_EXPIRED) del ApiClient de manera centralizada.
+      // Así se protege automáticamente toda la aplicación sin tocar pantalla por pantalla.
+      final authProv = context.read<AuthProvider>();
+      authProv.apiClient?.onSessionExpired = () {
+        final ctx = navigatorKey.currentContext;
+        if (ctx != null && ctx.mounted && !_isShowingSessionDialog) {
+          _handleGlobalSessionExpired(ctx, authProv);
+        }
+      };
     });
+  }
+
+  Future<void> _handleGlobalSessionExpired(BuildContext ctx, AuthProvider authProv) async {
+    _isShowingSessionDialog = true;
+
+    await showDialog(
+      context: ctx,
+      barrierDismissible: false,
+      builder: (dCtx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        backgroundColor: Colors.orange.shade50,
+        title: Row(children: [
+          Icon(Icons.phonelink_off, color: Colors.orange.shade800, size: 28),
+          const SizedBox(width: 12),
+          const Expanded(
+              child: Text('Sesión Cerrada',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18))),
+        ]),
+        content: const Text(
+            'Tu sesión fue cerrada porque otro dispositivo inició sesión con tu usuario.\n\n'
+            'Por seguridad, solo se permite una sesión activa por usuario a la vez.'),
+        actions: [
+          FilledButton.icon(
+            style: FilledButton.styleFrom(backgroundColor: Colors.orange.shade700),
+            onPressed: () => Navigator.pop(dCtx),
+            icon: const Icon(Icons.login),
+            label: const Text('Volver al Login'),
+          ),
+        ],
+      ),
+    );
+
+    // Aniquilar sesión localmente y redirigir
+    await authProv.forceLogout();
+    navigatorKey.currentState?.pushNamedAndRemoveUntil('/login', (r) => false);
+    _isShowingSessionDialog = false;
   }
 
   Future<void> _initializeApp() async {
@@ -467,57 +516,20 @@ class _MainAppState extends State<MainApp> {
                 errorMessage: cashProv.errorMessage,
                 onOpenShift: (amount, registerId) async {
                   final userId = ctx.read<AuthProvider>().currentUser?['id'] ?? 1;
-                  final authProvider = ctx.read<AuthProvider>();
 
                   final success = await cashProv.openShift(amount, userId, registerId);
                   if (success) {
                     navigatorKey.currentState?.pushReplacementNamed('/pos');
                   } else {
                     final rawError = cashProv.errorMessage ?? '';
+                    final msg = rawError.replaceAll('Exception: ', '');
 
-                    // ── Sesión Única: turno no puede abrirse porque la sesión murió ────
-                    if ((rawError.contains('SESSION_EXPIRED') ||
-                            rawError.contains('otro dispositivo') ||
-                            rawError.contains('No autenticado')) &&
-                        ctx.mounted) {
-                      await showDialog(
-                        context: ctx,
-                        barrierDismissible: false,
-                        builder: (dCtx) => AlertDialog(
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16)),
-                          backgroundColor: Colors.orange.shade50,
-                          title: Row(children: [
-                            Icon(Icons.phonelink_off,
-                                color: Colors.orange.shade800, size: 28),
-                            const SizedBox(width: 12),
-                            const Expanded(
-                                child: Text('Sesión Cerrada',
-                                    style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 18))),
-                          ]),
-                          content: const Text(
-                              'Tu sesión fue cerrada porque otro dispositivo inició sesión con tu usuario.\n\n'
-                              'Por seguridad, solo se permite una sesión activa por usuario a la vez.'),
-                          actions: [
-                            FilledButton.icon(
-                              style: FilledButton.styleFrom(
-                                  backgroundColor: Colors.orange.shade700),
-                              onPressed: () => Navigator.pop(dCtx),
-                              icon: const Icon(Icons.login),
-                              label: const Text('Volver al Login'),
-                            ),
-                          ],
-                        ),
-                      );
-                      await authProvider.forceLogout();
-                      navigatorKey.currentState
-                          ?.pushNamedAndRemoveUntil('/login', (r) => false);
+                    // Error SESSION_EXPIRED es manejado globalmente por ApiClient.
+                    // Evitamos mostrar un snackbar redundante si ya se mostró el popup naranja.
+                    if (rawError.contains('SESSION_EXPIRED') ||
+                        rawError.contains('otro dispositivo')) {
                       return;
                     }
-
-                    final msg = rawError.replaceAll('Exception: ', '');
 
                     // Detectar error de límite de plan → mostrar modal de upselling
                     final isPlanLimitError = rawError.contains('Límite de cajas') ||

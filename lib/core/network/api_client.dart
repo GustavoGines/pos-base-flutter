@@ -37,6 +37,9 @@ class ApiClient extends http.BaseClient {
   /// y se limpia al hacer logout. El setter es thread-safe para Dart.
   String? sessionToken;
 
+  /// Callback global para manejar el error 401 de forma centralizada.
+  void Function()? onSessionExpired;
+
   static const String _friendlyErrorMessage =
       'No se pudo conectar con el servidor principal. Verifique su conexión a red o si el servidor está encendido.';
 
@@ -61,6 +64,7 @@ class ApiClient extends http.BaseClient {
       // En ambos casos forzamos re-login, pero SESSION_EXPIRED es el caso crítico
       // de seguridad de la Vulnerabilidad #3.
       if (response.statusCode == 401) {
+        onSessionExpired?.call();
         throw const SessionExpiredException();
       }
 

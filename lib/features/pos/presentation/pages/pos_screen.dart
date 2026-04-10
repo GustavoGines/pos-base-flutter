@@ -699,70 +699,12 @@ class _PosScreenState extends State<PosScreen> {
         Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false);
       }
     } else if (posProvider.errorMessage?.contains('SESSION_EXPIRED') == true ||
-        posProvider.errorMessage?.contains('otro dispositivo') == true) {
-      // ── SEGURIDAD: Sesión única — otro dispositivo inició sesión ──────
-      await _showSessionExpiredDialog();
+               posProvider.errorMessage?.contains('otro dispositivo') == true) {
+      // ── SEGURIDAD: Sesión única — manejado por el Global Interceptor en main.dart
+      return;
     }
 
     _searchFocusNode.requestFocus();
-  }
-
-  // ────────────────────────────────────────────────────────────────
-  // Helper: Dialog de sesión expirada por login dual
-  // ────────────────────────────────────────────────────────────────
-  Future<void> _showSessionExpiredDialog() async {
-    if (!mounted) return;
-    await showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        backgroundColor: Colors.orange.shade50,
-        title: Row(
-          children: [
-            Icon(Icons.phonelink_off, color: Colors.orange.shade800, size: 28),
-            const SizedBox(width: 12),
-            const Expanded(
-              child: Text(
-                'Sesión Cerrada',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-              ),
-            ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Tu sesión fue cerrada porque otro dispositivo inició sesión con tu usuario.',
-              style: TextStyle(fontSize: 15),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'Por seguridad, solo se permite una sesión activa por usuario a la vez.',
-              style: TextStyle(fontSize: 13, color: Colors.orange.shade800),
-            ),
-          ],
-        ),
-        actions: [
-          FilledButton.icon(
-            style: FilledButton.styleFrom(
-                backgroundColor: Colors.orange.shade700),
-            onPressed: () => Navigator.pop(ctx),
-            icon: const Icon(Icons.login),
-            label: const Text('Volver al Login'),
-          ),
-        ],
-      ),
-    );
-
-    if (mounted) {
-      // Limpiar estado local: carrito + sesión en AuthProvider
-      Provider.of<PosProvider>(context, listen: false).clearCart();
-      await Provider.of<AuthProvider>(context, listen: false).forceLogout();
-      Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
-    }
   }
 
   // ────────────────────────────────────────────────────────────────
@@ -840,7 +782,8 @@ class _PosScreenState extends State<PosScreen> {
         (posProvider.errorMessage?.contains('SESSION_EXPIRED') == true ||
             posProvider.errorMessage?.contains('otro dispositivo') == true) &&
         mounted) {
-      await _showSessionExpiredDialog();
+      // ── SEGURIDAD: Sesión única — manejado por el Global Interceptor en main.dart
+      return;
     } else if (!success && mounted) {
       SnackBarService.error(context, posProvider.errorMessage ?? 'No se pudo guardar la orden.');
     }
