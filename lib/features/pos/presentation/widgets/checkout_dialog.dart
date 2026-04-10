@@ -347,7 +347,18 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
 
         Navigator.of(context).pop(true);
       } else {
-        SnackBarService.error(context, posProvider.errorMessage ?? 'Error al procesar el pago');
+        final errMsg = posProvider.errorMessage ?? '';
+
+        // ── Sesión Única: el error viene del ValidateSessionToken middleware ──
+        // El dialog se cierra con false para devolver el control a _handleCheckout
+        // en pos_screen, que es quien muestra el dialog de seguridad naranja y
+        // fuerza el logout + navegación a /login.
+        if (errMsg.contains('SESSION_EXPIRED') || errMsg.contains('otro dispositivo')) {
+          Navigator.of(context).pop(false);
+          return;
+        }
+
+        SnackBarService.error(context, errMsg.isNotEmpty ? errMsg : 'Error al procesar el pago');
       }
     }
   }
