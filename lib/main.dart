@@ -182,7 +182,6 @@ void main() async {
       providers: [
         ChangeNotifierProvider.value(
           value: authProvider, // Reusar la instancia creada antes de runApp
-          lazy: false,
         ),
         ChangeNotifierProvider(
           create: (_) => SettingsProvider(
