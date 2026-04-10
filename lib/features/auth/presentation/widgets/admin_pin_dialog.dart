@@ -128,35 +128,36 @@ class _AdminPinDialogState extends State<AdminPinDialog> {
 
   Future<void> _verifyAdminPin() async {
     setState(() => _isLoading = true);
-    
+
     final provider = context.read<AuthProvider>();
-    
-    // Guardamos el usuario actual (cajero) para restaurarlo luego
-    final currentUserSnapshot = provider.currentUser;
-    
-    final success = await provider.verifyPin(_pin);
+
+    // ── IMPORTANTE: Usar authorizePin, NO verifyPin ──────────────────────────
+    // verifyPin emite un session_token nuevo e invalida la sesión del admin
+    // en su terminal principal. authorizePin solo valida el PIN sin tocar tokens.
+    final adminUser = await provider.authorizePin(_pin);
 
     bool isAuthorized = false;
 
-    if (success) {
-      if (provider.isAdmin) {
+    if (adminUser != null) {
+      final role = adminUser['role'] as String? ?? '';
+      if (role == 'admin') {
         isAuthorized = true;
       } else {
-        SnackBarService.error(context, 'El PIN introducido no pertenece a un Administrador.');
+        if (mounted) {
+          SnackBarService.error(context, 'El PIN introducido no pertenece a un Administrador.');
+        }
       }
     } else {
-      SnackBarService.error(context, provider.errorMessage ?? 'PIN incorrecto');
+      if (mounted) {
+        SnackBarService.error(context, 'PIN incorrecto o error de conexión.');
+      }
     }
 
-    // IMPORTANTE: Restauramos siempre al usuario original (cajero) para no mutar la sesión activa
-    provider.restoreUser(currentUserSnapshot);
-    
     if (mounted) {
       setState(() {
         _isLoading = false;
         _pin = '';
       });
-      // Devolver foco al diálogo tras cerrar snackbars etc
       _focusNode.requestFocus();
 
       if (isAuthorized) {

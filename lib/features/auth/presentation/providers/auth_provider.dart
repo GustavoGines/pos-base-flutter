@@ -125,6 +125,21 @@ class AuthProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  // ──────────────────────────────────────────────────────────────────────────
+  // AUTORIZACIÓN PUNTUAL — Usado exclusivamente por AdminPinDialog
+  // NO genera token. NO toca session_token en BD. NO invalida ninguna sesión.
+  // Solo verifica: "¿Existe un admin con este PIN?"
+  // Retorna el Map del usuario si es correcto, null si falla.
+  // ──────────────────────────────────────────────────────────────────────────
+  Future<Map<String, dynamic>?> authorizePin(String pin) async {
+    try {
+      final user = await repository.authorizePin(pin);
+      return user;
+    } catch (e) {
+      return null;
+    }
+  }
+
   // ── Helpers privados ──────────────────────────────────────────────────────
 
   Future<void> _persistToken(String token) async {

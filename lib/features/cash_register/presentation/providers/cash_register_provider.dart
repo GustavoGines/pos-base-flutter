@@ -7,6 +7,7 @@ import '../../domain/usecases/close_shift_usecase.dart';
 import '../../domain/usecases/get_registers_usecase.dart';
 import '../../domain/entities/cash_register.dart';
 import 'package:frontend_desktop/core/utils/receipt_printer_service.dart';
+import 'package:frontend_desktop/core/network/api_client.dart' show SessionExpiredException;
 
 class CashRegisterProvider with ChangeNotifier {
   final GetCurrentShiftUseCase getCurrentShiftUseCase;
@@ -87,6 +88,11 @@ class CashRegisterProvider with ChangeNotifier {
     try {
       _currentShift = await openShiftUseCase(openingBalance, userId, registerId);
       return true;
+    } on SessionExpiredException catch (e) {
+      // Sesión única: otro dispositivo inició sesión con este usuario.
+      // Tag explícito para que main.dart pueda detectarlo y mostrar el dialog correcto.
+      _errorMessage = 'SESSION_EXPIRED: ${e.message}';
+      return false;
     } catch (e) {
       _errorMessage = e.toString();
       return false;
