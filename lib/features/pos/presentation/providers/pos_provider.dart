@@ -5,6 +5,7 @@ import '../../domain/usecases/process_sale_usecase.dart';
 import '../../domain/usecases/search_products_usecase.dart';
 import '../../domain/repositories/pos_repository.dart';
 import '../../data/datasources/pos_remote_datasource.dart' show ClosedShiftException;
+import 'package:frontend_desktop/core/network/api_client.dart' show SessionExpiredException;
 import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
 import 'package:frontend_desktop/features/settings/domain/entities/business_settings.dart';
 import 'package:frontend_desktop/core/utils/receipt_printer_service.dart';
@@ -349,10 +350,13 @@ class PosProvider with ChangeNotifier {
 
       return true;
     } on ClosedShiftException catch (e) {
-      // Error crítico de seguridad: el turno fue cerrado desde otra terminal.
-      // Activamos el flag para que la UI muestre el diálogo y fuerce la recarga.
       _isShiftClosed = true;
       _errorMessage = e.message;
+      return false;
+    } on SessionExpiredException catch (e) {
+      // Sesión única: otro dispositivo inició sesión con este usuario.
+      // Guardamos el mensaje con la key SESSION_EXPIRED para que la UI lo detecte.
+      _errorMessage = 'SESSION_EXPIRED: ${e.message}';
       return false;
     } catch (e) {
       _errorMessage = e.toString();
@@ -400,6 +404,9 @@ class PosProvider with ChangeNotifier {
     } on ClosedShiftException catch (e) {
       _isShiftClosed = true;
       _errorMessage = e.message;
+      return false;
+    } on SessionExpiredException catch (e) {
+      _errorMessage = 'SESSION_EXPIRED: ${e.message}';
       return false;
     } catch (e) {
       _errorMessage = e.toString();

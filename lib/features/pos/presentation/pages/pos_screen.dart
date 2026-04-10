@@ -12,6 +12,10 @@ import '../../../auth/presentation/providers/auth_provider.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import 'package:flutter_libserialport/flutter_libserialport.dart';
 import 'package:frontend_desktop/features/quotes/presentation/providers/quote_provider.dart';
+import 'package:frontend_desktop/features/pos/data/datasources/pos_remote_datasource.dart'
+    show ClosedShiftException;
+import 'package:frontend_desktop/core/network/api_client.dart'
+    show SessionExpiredException;
 
 class PosScreen extends StatefulWidget {
   const PosScreen({Key? key}) : super(key: key);
@@ -698,9 +702,72 @@ class _PosScreenState extends State<PosScreen> {
         posProvider.clearCart();
         Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false);
       }
+      }
+    } else if (posProvider.errorMessage?.contains('SESSION_EXPIRED') == true ||
+        posProvider.errorMessage?.contains('otro dispositivo') == true) {
+      // ── SEGURIDAD: Sesión única — otro dispositivo inició sesión ──────
+      await _showSessionExpiredDialog();
     }
-    
+
     _searchFocusNode.requestFocus();
+  }
+
+  // ────────────────────────────────────────────────────────────────
+  // Helper: Dialog de sesión expirada por login dual
+  // ────────────────────────────────────────────────────────────────
+  Future<void> _showSessionExpiredDialog() async {
+    if (!mounted) return;
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        backgroundColor: Colors.orange.shade50,
+        title: Row(
+          children: [
+            Icon(Icons.phonelink_off, color: Colors.orange.shade800, size: 28),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                'Sesión Cerrada',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Tu sesión fue cerrada porque otro dispositivo inició sesión con tu usuario.',
+              style: TextStyle(fontSize: 15),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Por seguridad, solo se permite una sesión activa por usuario a la vez.',
+              style: TextStyle(fontSize: 13, color: Colors.orange.shade800),
+            ),
+          ],
+        ),
+        actions: [
+          FilledButton.icon(
+            style: FilledButton.styleFrom(
+                backgroundColor: Colors.orange.shade700),
+            onPressed: () => Navigator.pop(ctx),
+            icon: const Icon(Icons.login),
+            label: const Text('Volver al Login'),
+          ),
+        ],
+      ),
+    );
+
+    if (mounted) {
+      // Limpiar estado local: carrito + sesión en AuthProvider
+      Provider.of<PosProvider>(context, listen: false).clearCart();
+      await Provider.of<AuthProvider>(context, listen: false).forceLogout();
+      Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
+    }
   }
 
   // ────────────────────────────────────────────────────────────────
@@ -774,6 +841,11 @@ class _PosScreenState extends State<PosScreen> {
         posProvider.clearCart();
         Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false);
       }
+    } else if (!success &&
+        (posProvider.errorMessage?.contains('SESSION_EXPIRED') == true ||
+            posProvider.errorMessage?.contains('otro dispositivo') == true) &&
+        mounted) {
+      await _showSessionExpiredDialog();
     } else if (!success && mounted) {
       SnackBarService.error(context, posProvider.errorMessage ?? 'No se pudo guardar la orden.');
     }

@@ -140,6 +140,14 @@ void main() async {
   final String apiUrl = savedApiUrl;
   final httpClient = ApiClient(http.Client());
 
+  // Auth — creado ANTES de runApp para poder restaurar el token de sesión
+  // antes del primer request HTTP (Crash Recovery de la Vulnerabilidad #3)
+  final authRepo = AuthRepository(
+      remoteDataSource: AuthRemoteDataSource(baseUrl: apiUrl, client: httpClient));
+  final authProvider = AuthProvider(repository: authRepo)
+    ..apiClient = httpClient; // Inyección sin dependencia circular
+  await authProvider.restoreSessionFromPrefs();
+
    // Settings
   final settingsRepo = SettingsRepositoryImpl(
       remoteDataSource: SettingsRemoteDataSourceImpl(baseUrl: apiUrl, client: httpClient));
@@ -163,9 +171,7 @@ void main() async {
   final salesHistoryDataSource = SalesHistoryRemoteDataSource(
       baseUrl: apiUrl, client: httpClient);
 
-  // Auth
-  final authRepo = AuthRepository(
-      remoteDataSource: AuthRemoteDataSource(baseUrl: apiUrl, client: httpClient));
+  // Auth — ya instanciado antes de runApp (ver arriba con restoreSessionFromPrefs)
 
   // Users
   final usersRepo = UsersRepository(
@@ -174,8 +180,8 @@ void main() async {
   runApp(
     MultiProvider(
       providers: [
-        ChangeNotifierProvider(
-          create: (_) => AuthProvider(repository: authRepo),
+        ChangeNotifierProvider.value(
+          value: authProvider, // Reusar la instancia creada antes de runApp
           lazy: false,
         ),
         ChangeNotifierProvider(
