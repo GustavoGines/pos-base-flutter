@@ -40,10 +40,8 @@ class SettingsProvider with ChangeNotifier {
   List<String> get configuredFeatures => _settings?.licenseFeatures ?? [];
 
   /// Retorna true si la licencia activa incluye el módulo solicitado.
-  /// Fuente de verdad: el array `licenseFeatures` recibido del servidor.
-  /// Retrocompatibilidad: planes pro/enterprise tienen acceso a todos los módulos.
+  /// Fuente de verdad única: el array `licenseFeatures` recibido del servidor.
   bool hasFeature(String featureName) {
-    if (currentPlan == 'pro' || currentPlan == 'enterprise') return true;
     return configuredFeatures.contains(featureName);
   }
 

@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import '../../domain/repositories/pos_repository.dart';
 import '../datasources/pos_remote_datasource.dart';
 import '../../domain/entities/sale.dart';
@@ -101,5 +102,10 @@ class PosRepositoryImpl implements PosRepository {
   @override
   Future<void> updatePaymentMethodSurcharge(int id, double surchargeValue) async {
     await remoteDataSource.updatePaymentMethodSurcharge(id, surchargeValue);
+  }
+
+  @override
+  Future<Uint8List> downloadTicketPdf(int saleId) async {
+    return await remoteDataSource.downloadTicketPdf(saleId);
   }
 }

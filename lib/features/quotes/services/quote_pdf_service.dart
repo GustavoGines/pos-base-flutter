@@ -184,220 +184,228 @@ class QuotePdfService {
     final currFmt = NumberFormat.currency(locale: 'es_AR', symbol: '\$', decimalDigits: 2);
 
     doc.addPage(
-      pw.Page(
+      pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.all(32),
-        build: (pw.Context ctx) {
+        footer: (pw.Context ctx) {
           return pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            mainAxisSize: pw.MainAxisSize.min,
             children: [
-              // ── HEADER ──────────────────────────────────────────────────
-              pw.Container(
-                decoration: const pw.BoxDecoration(
-                  color: primary,
-                  borderRadius: pw.BorderRadius.all(pw.Radius.circular(8)),
-                ),
-                padding: const pw.EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                child: pw.Row(
-                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                  children: [
-                    pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.start,
-                      children: [
-                        pw.Text(businessName,
-                            style: pw.TextStyle(
-                              color: PdfColors.white,
-                              fontSize: 20,
-                              fontWeight: pw.FontWeight.bold,
-                            )),
-                        if (businessAddress != null)
-                          pw.Text(businessAddress,
-                              style: const pw.TextStyle(color: PdfColors.grey300, fontSize: 10)),
-                        if (businessPhone != null)
-                          pw.Text('Tel: $businessPhone',
-                              style: const pw.TextStyle(color: PdfColors.grey300, fontSize: 10)),
-                      ],
-                    ),
-                    pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.end,
-                      children: [
-                        pw.Text('PRESUPUESTO',
-                            style: pw.TextStyle(
-                              color: PdfColors.white,
-                              fontSize: 36, // Tamaño aumentado drásticamente
-                              fontWeight: pw.FontWeight.bold,
-                              letterSpacing: 1.2,
-                            )),
-                        pw.Text(quote.quoteNumber,
-                            style: const pw.TextStyle(color: PdfColors.grey300, fontSize: 13)),
-                        pw.SizedBox(height: 6),
-                        pw.Container(
-                          color: PdfColors.white,
-                          padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          height: 35,
-                          width: 130,
-                          child: pw.BarcodeWidget(
-                            barcode: pw.Barcode.code128(),
-                            data: quote.quoteNumber,
-                            drawText: false,
-                            color: PdfColors.black,
-                          ),
-                        ),
-                        pw.SizedBox(height: 6),
-                        pw.Text(
-                          'Fecha: ${_dateFmt.format(DateTime.now())}',
-                          style: const pw.TextStyle(color: PdfColors.grey300, fontSize: 10),
-                        ),
-                        if (quote.validUntil != null)
-                          pw.Text(
-                            'Válido hasta: ${_dateFmt.format(DateTime.parse(quote.validUntil!))}',
-                            style: const pw.TextStyle(color: PdfColors.grey300, fontSize: 10),
-                          ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              pw.SizedBox(height: 20),
-
-              // ── DATOS CLIENTE ────────────────────────────────────────────
-              if (quote.customerName != null || quote.customerPhone != null) ...[
-                pw.Container(
-                  decoration: const pw.BoxDecoration(
-                    color: bgLight,
-                    borderRadius: pw.BorderRadius.all(pw.Radius.circular(6)),
-                  ),
-                  padding: const pw.EdgeInsets.all(12),
-                  child: pw.Row(
-                    children: [
-                      pw.Expanded(
-                        child: pw.Column(
-                          crossAxisAlignment: pw.CrossAxisAlignment.start,
-                          children: [
-                            pw.Text('CLIENTE', style: pw.TextStyle(fontSize: 9, color: textGrey, fontWeight: pw.FontWeight.bold)),
-                            pw.SizedBox(height: 4),
-                            if (quote.customerName != null)
-                              pw.Text(quote.customerName!, style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold)),
-                            if (quote.customerPhone != null)
-                              pw.Text('Tel: ${quote.customerPhone}', style: const pw.TextStyle(fontSize: 11)),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                pw.SizedBox(height: 16),
-              ],
-
-              // ── TABLA DE ÍTEMS ───────────────────────────────────────────
-              pw.Table(
-                border: pw.TableBorder(
-                  bottom: const pw.BorderSide(color: PdfColors.grey300, width: 0.5),
-                  horizontalInside: const pw.BorderSide(color: PdfColors.grey200, width: 0.5),
-                ),
-                columnWidths: {
-                  0: const pw.FlexColumnWidth(5),
-                  1: const pw.FlexColumnWidth(1.5),
-                  2: const pw.FlexColumnWidth(2),
-                  3: const pw.FlexColumnWidth(2),
-                },
-                children: [
-                  // Header row
-                  pw.TableRow(
-                    decoration: const pw.BoxDecoration(color: primary),
-                    children: [
-                      _th('DESCRIPCIÓN'),
-                      _th('CANT.', align: pw.TextAlign.center),
-                      _th('PRECIO UNIT.', align: pw.TextAlign.right),
-                      _th('SUBTOTAL', align: pw.TextAlign.right),
-                    ],
-                  ),
-                  // Items
-                  ...quote.items.asMap().entries.map((e) {
-                    final i = e.key;
-                    final item = e.value;
-                    final isEven = i % 2 == 0;
-                    return pw.TableRow(
-                      decoration: pw.BoxDecoration(color: isEven ? PdfColors.white : bgLight),
-                      children: [
-                        _td(item.productName),
-                        _td(
-                          item.quantity % 1 == 0
-                              ? item.quantity.toInt().toString()
-                              : item.quantity.toStringAsFixed(3),
-                          align: pw.TextAlign.center,
-                        ),
-                        _td(currFmt.format(item.unitPrice), align: pw.TextAlign.right),
-                        _td(currFmt.format(item.subtotal), align: pw.TextAlign.right),
-                      ],
-                    );
-                  }),
-                ],
-              ),
-
-              pw.SizedBox(height: 16),
-
-              // ── TOTALES ──────────────────────────────────────────────────
-              pw.Align(
-                alignment: pw.Alignment.centerRight,
-                child: pw.Container(
-                  width: 240,
-                  decoration: const pw.BoxDecoration(
-                    color: bgLight,
-                    borderRadius: pw.BorderRadius.all(pw.Radius.circular(6)),
-                  ),
-                  padding: const pw.EdgeInsets.all(12),
-                  child: pw.Column(
-                    children: [
-                      _totalRow('Subtotal', currFmt.format(quote.subtotal)),
-                      pw.Divider(color: PdfColors.grey300, thickness: 0.5),
-                      _totalRow(
-                        'TOTAL',
-                        currFmt.format(quote.total),
-                        bold: true,
-                        valueColor: accent,
-                        labelColor: primary,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-              // ── NOTAS ────────────────────────────────────────────────────
-              if (quote.notes != null && quote.notes!.isNotEmpty) ...[
-                pw.SizedBox(height: 20),
-                pw.Text('Condiciones y Observaciones',
-                    style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: textGrey)),
-                pw.SizedBox(height: 4),
-                pw.Text(quote.notes!, style: const pw.TextStyle(fontSize: 10)),
-              ],
-
-              pw.Spacer(),
-
-              // ── TERMINOS Y CONDICIONES GLOBALES ──────────────────────────
+              pw.SizedBox(height: 10),
               pw.Center(
                 child: pw.Text(
                   quote.validUntil != null
                     ? 'Validez del presupuesto: hasta el ${_dateFmt.format(DateTime.parse(quote.validUntil!))}. Los precios pueden variar sin previo aviso.'
                     : 'Validez del presupuesto: 15 días. Los precios pueden variar sin previo aviso.',
                   style: pw.TextStyle(
-                    fontSize: 10,
+                    fontSize: 9,
                     color: primary,
                     fontWeight: pw.FontWeight.bold,
                   ),
                 ),
               ),
-              pw.SizedBox(height: 16),
-
-              // ── FOOTER ───────────────────────────────────────────────────
+              pw.SizedBox(height: 8),
               pw.Divider(color: PdfColors.grey300),
-              pw.Text(
-                'Presupuesto generado por $businessName · ${_dateFmt.format(DateTime.now())} · Los precios pueden estar sujetos a cambios.',
-                style: const pw.TextStyle(fontSize: 8, color: textGrey),
-                textAlign: pw.TextAlign.center,
+              pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Text(
+                    'Presupuesto generado por $businessName · ${_dateFmt.format(DateTime.now())}',
+                    style: const pw.TextStyle(fontSize: 8, color: textGrey),
+                  ),
+                  pw.Text(
+                    'Página ${ctx.pageNumber} de ${ctx.pagesCount}',
+                    style: pw.TextStyle(fontSize: 8, color: textGrey, fontWeight: pw.FontWeight.bold),
+                  ),
+                ],
               ),
             ],
           );
+        },
+        build: (pw.Context ctx) {
+          return [
+            // ── HEADER ──────────────────────────────────────────────────
+            pw.Container(
+              decoration: const pw.BoxDecoration(
+                color: primary,
+                borderRadius: pw.BorderRadius.all(pw.Radius.circular(8)),
+              ),
+              padding: const pw.EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+              child: pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Text(businessName,
+                          style: pw.TextStyle(
+                            color: PdfColors.white,
+                            fontSize: 20,
+                            fontWeight: pw.FontWeight.bold,
+                          )),
+                      if (businessAddress != null)
+                        pw.Text(businessAddress,
+                            style: const pw.TextStyle(color: PdfColors.grey300, fontSize: 10)),
+                      if (businessPhone != null)
+                        pw.Text('Tel: $businessPhone',
+                            style: const pw.TextStyle(color: PdfColors.grey300, fontSize: 10)),
+                    ],
+                  ),
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.end,
+                    children: [
+                      pw.Text('PRESUPUESTO',
+                          style: pw.TextStyle(
+                            color: PdfColors.white,
+                            fontSize: 36, // Tamaño aumentado drásticamente
+                            fontWeight: pw.FontWeight.bold,
+                            letterSpacing: 1.2,
+                          )),
+                      pw.Text(quote.quoteNumber,
+                          style: const pw.TextStyle(color: PdfColors.grey300, fontSize: 13)),
+                      pw.SizedBox(height: 6),
+                      pw.Container(
+                        color: PdfColors.white,
+                        padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        height: 35,
+                        width: 130,
+                        child: pw.BarcodeWidget(
+                          barcode: pw.Barcode.code128(),
+                          data: quote.quoteNumber,
+                          drawText: false,
+                          color: PdfColors.black,
+                        ),
+                      ),
+                      pw.SizedBox(height: 6),
+                      pw.Text(
+                        'Fecha: ${_dateFmt.format(DateTime.now())}',
+                        style: const pw.TextStyle(color: PdfColors.grey300, fontSize: 10),
+                      ),
+                      if (quote.validUntil != null)
+                        pw.Text(
+                          'Válido hasta: ${_dateFmt.format(DateTime.parse(quote.validUntil!))}',
+                          style: const pw.TextStyle(color: PdfColors.grey300, fontSize: 10),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            pw.SizedBox(height: 20),
+
+            // ── DATOS CLIENTE ────────────────────────────────────────────
+            if (quote.customerName != null || quote.customerPhone != null) ...[
+              pw.Container(
+                decoration: const pw.BoxDecoration(
+                  color: bgLight,
+                  borderRadius: pw.BorderRadius.all(pw.Radius.circular(6)),
+                ),
+                padding: const pw.EdgeInsets.all(12),
+                child: pw.Row(
+                  children: [
+                    pw.Expanded(
+                      child: pw.Column(
+                        crossAxisAlignment: pw.CrossAxisAlignment.start,
+                        children: [
+                          pw.Text('CLIENTE', style: pw.TextStyle(fontSize: 9, color: textGrey, fontWeight: pw.FontWeight.bold)),
+                          pw.SizedBox(height: 4),
+                          if (quote.customerName != null)
+                            pw.Text(quote.customerName!, style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold)),
+                          if (quote.customerPhone != null)
+                            pw.Text('Tel: ${quote.customerPhone}', style: const pw.TextStyle(fontSize: 11)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              pw.SizedBox(height: 16),
+            ],
+
+            // ── TABLA DE ÍTEMS ───────────────────────────────────────────
+            pw.Table(
+              border: pw.TableBorder(
+                bottom: const pw.BorderSide(color: PdfColors.grey300, width: 0.5),
+                horizontalInside: const pw.BorderSide(color: PdfColors.grey200, width: 0.5),
+              ),
+              columnWidths: {
+                0: const pw.FlexColumnWidth(5),
+                1: const pw.FlexColumnWidth(1.5),
+                2: const pw.FlexColumnWidth(2),
+                3: const pw.FlexColumnWidth(2),
+              },
+              children: [
+                // Header row
+                pw.TableRow(
+                  decoration: const pw.BoxDecoration(color: primary),
+                  repeat: true, // Repite la cabecera de la tabla si salta de hoja
+                  children: [
+                    _th('DESCRIPCIÓN'),
+                    _th('CANT.', align: pw.TextAlign.center),
+                    _th('PRECIO UNIT.', align: pw.TextAlign.right),
+                    _th('SUBTOTAL', align: pw.TextAlign.right),
+                  ],
+                ),
+                // Items
+                ...quote.items.asMap().entries.map((e) {
+                  final i = e.key;
+                  final item = e.value;
+                  final isEven = i % 2 == 0;
+                  return pw.TableRow(
+                    decoration: pw.BoxDecoration(color: isEven ? PdfColors.white : bgLight),
+                    children: [
+                      _td(item.productName),
+                      _td(
+                        item.quantity % 1 == 0
+                            ? item.quantity.toInt().toString()
+                            : item.quantity.toStringAsFixed(3),
+                        align: pw.TextAlign.center,
+                      ),
+                      _td(currFmt.format(item.unitPrice), align: pw.TextAlign.right),
+                      _td(currFmt.format(item.subtotal), align: pw.TextAlign.right),
+                    ],
+                  );
+                }),
+              ],
+            ),
+
+            pw.SizedBox(height: 16),
+
+            // ── TOTALES ──────────────────────────────────────────────────
+            pw.Align(
+              alignment: pw.Alignment.centerRight,
+              child: pw.Container(
+                width: 240,
+                decoration: const pw.BoxDecoration(
+                  color: bgLight,
+                  borderRadius: pw.BorderRadius.all(pw.Radius.circular(6)),
+                ),
+                padding: const pw.EdgeInsets.all(12),
+                child: pw.Column(
+                  children: [
+                    _totalRow('Subtotal', currFmt.format(quote.subtotal)),
+                    pw.Divider(color: PdfColors.grey300, thickness: 0.5),
+                    _totalRow(
+                      'TOTAL',
+                      currFmt.format(quote.total),
+                      bold: true,
+                      valueColor: accent,
+                      labelColor: primary,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // ── NOTAS ────────────────────────────────────────────────────
+            if (quote.notes != null && quote.notes!.isNotEmpty) ...[
+              pw.SizedBox(height: 20),
+              pw.Text('Condiciones y Observaciones',
+                  style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: textGrey)),
+              pw.SizedBox(height: 4),
+              pw.Text(quote.notes!, style: const pw.TextStyle(fontSize: 10)),
+            ],
+          ];
         },
       ),
     );

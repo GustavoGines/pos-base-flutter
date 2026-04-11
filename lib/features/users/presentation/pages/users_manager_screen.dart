@@ -40,6 +40,12 @@ class _UsersManagerScreenState extends State<UsersManagerScreen> {
 
     if (!mounted) return;
     if (success) {
+      if (employee != null) {
+        final auth = context.read<AuthProvider>();
+        if (auth.currentUser?['id'] == employee['id']) {
+          auth.patchCurrentUser(result);
+        }
+      }
       SnackBarService.success(context, employee == null ? 'Empleado creado correctamente' : 'Empleado actualizado');
     } else {
       SnackBarService.error(context, provider.errorMessage ?? 'Error al guardar');

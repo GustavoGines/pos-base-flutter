@@ -140,6 +140,22 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
+  // ──────────────────────────────────────────────────────────────────────────
+  // PARCHE EN MEMORIA — Sincroniza la UI si el usuario edita su propio perfil
+  // ──────────────────────────────────────────────────────────────────────────
+  void patchCurrentUser(Map<String, dynamic> patch) {
+    if (_currentUser == null) return;
+    final Map<String, dynamic> updated = Map.from(_currentUser!);
+    patch.forEach((key, value) {
+      // Ignorar campos sensibles o irrelevantes del payload
+      if (key != 'pin') {
+        updated[key] = value;
+      }
+    });
+    _currentUser = updated;
+    notifyListeners();
+  }
+
   // ── Helpers privados ──────────────────────────────────────────────────────
 
   Future<void> _persistToken(String token) async {

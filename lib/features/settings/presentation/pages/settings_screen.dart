@@ -350,10 +350,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
         const SizedBox(height: 16),
         DropdownButtonFormField<String>(
           value: _printerPaperWidth,
-          decoration: _inputDecoration('Ancho del Rollo térmico', Icons.straighten_outlined),
+          decoration: _inputDecoration('Formato de Impresión', Icons.straighten_outlined),
           items: const [
             DropdownMenuItem(value: '58', child: Text('Rollos Chicos (58mm) / Económico')),
             DropdownMenuItem(value: '80', child: Text('Rollos Estándar (80mm) / Premium')),
+            DropdownMenuItem(value: 'a4', child: Text('Impresora Estándar (A4) / Láser')),
           ],
           onChanged: (val) => setState(() => _printerPaperWidth = val!),
         ),

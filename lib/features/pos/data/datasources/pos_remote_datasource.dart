@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:frontend_desktop/features/pos/domain/entities/cart_item.dart';
 import 'package:http/http.dart' as http;
 import 'package:frontend_desktop/features/catalog/data/models/product_model.dart';
@@ -42,6 +43,7 @@ abstract class PosRemoteDataSource {
   });
   Future<dynamic> voidPendingSale(int saleId);
   Future<void> updatePaymentMethodSurcharge(int id, double surchargeValue);
+  Future<Uint8List> downloadTicketPdf(int saleId);
 }
 
 class PosRemoteDataSourceImpl implements PosRemoteDataSource {
@@ -49,6 +51,24 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
   final http.Client client;
 
   PosRemoteDataSourceImpl({required this.baseUrl, required this.client});
+
+  @override
+  Future<Uint8List> downloadTicketPdf(int saleId) async {
+    try {
+      final response = await client.get(
+        Uri.parse('$baseUrl/sales/$saleId/ticket-pdf'),
+        headers: {'Accept': 'application/pdf'},
+      );
+      if (response.statusCode == 200) {
+        return response.bodyBytes;
+      } else {
+        throw Exception('Error al descargar PDF (HTTP ${response.statusCode})');
+      }
+    } catch (e) {
+      print('=== API Error en downloadTicketPdf: $e ===');
+      rethrow;
+    }
+  }
 
   @override
   Future<List<ProductModel>> searchProducts(String query) async {

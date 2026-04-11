@@ -369,7 +369,7 @@ class _MainAppState extends State<MainApp> {
     }
   }
 
-  final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+  final GlobalKey<NavigatorState> navigatorKey = AppConfig.navigatorKey;
   final ValueNotifier<String?> _currentRoute = ValueNotifier<String?>(null);
 
   Widget _buildLoadingOrErrorScreen() {

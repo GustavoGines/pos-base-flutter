@@ -1,3 +1,6 @@
+import 'dart:typed_data';
+import 'package:printing/printing.dart';
+import 'package:pdf/pdf.dart';
 import 'package:flutter/material.dart';
 import '../../domain/entities/cart_item.dart';
 import '../../domain/entities/payment_method.dart';
@@ -10,6 +13,7 @@ import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
 import 'package:frontend_desktop/features/settings/domain/entities/business_settings.dart';
 import 'package:frontend_desktop/core/utils/receipt_printer_service.dart';
 import 'package:frontend_desktop/features/quotes/data/quote_repository.dart';
+import 'package:frontend_desktop/core/config/app_config.dart';
 
 class PosProvider with ChangeNotifier {
   final ProcessSaleUseCase processSaleUseCase;
@@ -330,18 +334,40 @@ class PosProvider with ChangeNotifier {
               .map((p) => {'name': p['name'], 'amount': p['amount']})
               .toList();
 
-          await _activePrinter.printSaleTicket(
-            items: cartSnapshot,
-            total: totalSnapshot,
-            settings: settings,
-            paymentDetails: resolvedPayments,
-            receiptNumber: extractedSaleId,
-            userName: _recalledUserName ?? userName,
-            cashierName: userName,
-            surchargeAmount: totalSurcharge,
-            tenderedAmount: tenderedAmount,
-            changeAmount: changeAmount,
-          );
+          if (settings.printerPaperWidth == 'a4' && extractedSaleId != null) {
+            final pdfBytes = await repository.downloadTicketPdf(int.parse(extractedSaleId));
+            final ctx = AppConfig.navigatorKey.currentContext;
+            if (ctx != null && ctx.mounted) {
+              await showDialog(
+                context: ctx,
+                builder: (context) => Dialog(
+                  child: SizedBox(
+                    width: 800,
+                    height: 600,
+                    child: PdfPreview(
+                      build: (format) async => pdfBytes,
+                      canChangePageFormat: false,
+                      canChangeOrientation: false,
+                      pdfFileName: 'Comprobante_$extractedSaleId.pdf',
+                    ),
+                  ),
+                ),
+              );
+            }
+          } else {
+            await _activePrinter.printSaleTicket(
+              items: cartSnapshot,
+              total: totalSnapshot,
+              settings: settings,
+              paymentDetails: resolvedPayments,
+              receiptNumber: extractedSaleId,
+              userName: _recalledUserName ?? userName,
+              cashierName: userName,
+              surchargeAmount: totalSurcharge,
+              tenderedAmount: tenderedAmount,
+              changeAmount: changeAmount,
+            );
+          }
         } catch (e) {
           _printerWarning = 'Venta exitosa, pero la impresora no responde: ${e.toString()}';
           debugPrint('=== Printer Error: $e ===');
@@ -549,17 +575,39 @@ class PosProvider with ChangeNotifier {
                 .map((p) => {'name': p['name'], 'amount': p['amount']})
                 .toList();
 
-            await printerService!.printSaleTicket(
-              items: ticketItems,
-              total: saleTotal,
-              settings: settings,
-              paymentDetails: resolvedPayments,
-              userName: pendingEntry['user']?['name'] as String? ?? userName,
-              cashierName: userName,
-              surchargeAmount: totalSurcharge,
-              tenderedAmount: tenderedAmount,
-              changeAmount: changeAmount,
-            );
+            if (settings.printerPaperWidth == 'a4') {
+              final pdfBytes = await repository.downloadTicketPdf(saleId);
+              final ctx = AppConfig.navigatorKey.currentContext;
+              if (ctx != null && ctx.mounted) {
+                await showDialog(
+                  context: ctx,
+                  builder: (context) => Dialog(
+                    child: SizedBox(
+                      width: 800,
+                      height: 600,
+                      child: PdfPreview(
+                        build: (format) async => pdfBytes,
+                        canChangePageFormat: false,
+                        canChangeOrientation: false,
+                        pdfFileName: 'Comprobante_$saleId.pdf',
+                      ),
+                    ),
+                  ),
+                );
+              }
+            } else {
+              await printerService!.printSaleTicket(
+                items: ticketItems,
+                total: saleTotal,
+                settings: settings,
+                paymentDetails: resolvedPayments,
+                userName: pendingEntry['user']?['name'] as String? ?? userName,
+                cashierName: userName,
+                surchargeAmount: totalSurcharge,
+                tenderedAmount: tenderedAmount,
+                changeAmount: changeAmount,
+              );
+            }
           } catch (e) {
             _printerWarning = 'Cobro exitoso, pero la impresora no responde: ${e.toString()}';
             debugPrint('=== Printer Error (pending): $e ===');

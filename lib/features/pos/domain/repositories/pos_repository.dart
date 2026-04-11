@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'package:frontend_desktop/features/pos/domain/entities/cart_item.dart';
 import 'package:frontend_desktop/features/pos/domain/entities/sale.dart';
 import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
@@ -31,4 +32,5 @@ abstract class PosRepository {
   });
   Future<Map<String, dynamic>> voidPendingSale(int saleId);
   Future<void> updatePaymentMethodSurcharge(int id, double surchargeValue);
+  Future<Uint8List> downloadTicketPdf(int saleId);
 }
