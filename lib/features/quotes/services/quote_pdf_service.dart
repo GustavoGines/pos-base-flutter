@@ -1,3 +1,4 @@
+import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
@@ -358,7 +359,7 @@ class QuotePdfService {
                       _td(
                         item.quantity % 1 == 0
                             ? item.quantity.toInt().toString()
-                            : item.quantity.toStringAsFixed(3),
+                            : item.quantity.toQty(),
                         align: pw.TextAlign.center,
                       ),
                       _td(currFmt.format(item.unitPrice), align: pw.TextAlign.right),

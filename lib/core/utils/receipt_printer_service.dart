@@ -1,3 +1,4 @@
+import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
@@ -241,7 +242,7 @@ class ReceiptPrinterService {
     for (final item in items) {
       final isWeight = item.product.isSoldByWeight;
       final cantStr = isWeight
-          ? '${item.quantity.toStringAsFixed(3)} kg'
+          ? '${item.quantity.toQty()} kg'
           : '${item.quantity.toInt()} un';
 
       if (!isWeight) totalItemsQty += item.quantity.toInt();
@@ -453,34 +454,34 @@ class ReceiptPrinterService {
     bytes += _labelValue(
       generator,
       'Saldo inicial:',
-      '$currency${shift.openingBalance.toStringAsFixed(2)}',
+      '$currency${shift.openingBalance.toCurrency()}',
     );
     bytes += _labelValue(
       generator,
       'Ventas del turno:',
-      '$currency${(shift.totalSales ?? 0.0).toStringAsFixed(2)}',
+      '$currency${(shift.totalSales ?? 0.0).toCurrency()}',
     );
     bytes += _labelValue(
       generator,
       'Total Recargos:',
-      '$currency${(shift.totalSurcharge ?? 0.0).toStringAsFixed(2)}',
+      '$currency${(shift.totalSurcharge ?? 0.0).toCurrency()}',
     );
     bytes += _labelValue(
       generator,
       'Efectivo esperado:',
-      '$currency${((shift.openingBalance) + (shift.cashSales ?? 0.0)).toStringAsFixed(2)}',
+      '$currency${((shift.openingBalance) + (shift.cashSales ?? 0.0)).toCurrency()}',
     );
     bytes += generator.hr(ch: '=');
     bytes += _labelValue(
       generator,
       'Efectivo contado:',
-      '$currency${(shift.closingBalance ?? 0.0).toStringAsFixed(2)}',
+      '$currency${(shift.closingBalance ?? 0.0).toCurrency()}',
     );
 
     final diff = shift.difference ?? 0.0;
     final diffStr = diff >= 0
-        ? '+$currency${diff.toStringAsFixed(2)} (SOBRANTE)'
-        : '-$currency${diff.abs().toStringAsFixed(2)} (FALTANTE)';
+        ? '+$currency${diff.toCurrency()} (SOBRANTE)'
+        : '-$currency${diff.abs().toCurrency()} (FALTANTE)';
     bytes += generator.row([
       PosColumn(
         text: 'Diferencia:',
@@ -557,7 +558,7 @@ class ReceiptPrinterService {
     if (value == value.truncate()) {
       return value.toInt().toString();
     }
-    return value.toStringAsFixed(2);
+    return value.toCurrency();
   }
 
   String _formatDate(DateTime dt) {

@@ -1,3 +1,4 @@
+import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
@@ -480,7 +481,7 @@ class _MethodChip extends StatelessWidget {
                 ),
                 // Total cobrado al cliente (grande y prominente)
                 Text(
-                  '\$${amount.toStringAsFixed(2)}',
+                  '\$${amount.toCurrency()}',
                   style: TextStyle(
                     fontSize: isTotal ? 18 : 16,
                     fontWeight: FontWeight.bold,
@@ -490,7 +491,7 @@ class _MethodChip extends StatelessWidget {
                 // Desglose neto + recargo bancario (Opción B)
                 if (hasSurcharge) ...[
                   Text(
-                    'Neto: \$${netAmount!.toStringAsFixed(2)}',
+                    'Neto: \$${netAmount!.toCurrency()}',
                     style: TextStyle(
                       fontSize: 12,
                       color: isSelected
@@ -499,7 +500,7 @@ class _MethodChip extends StatelessWidget {
                     ),
                   ),
                   Text(
-                    'Rec: +\$${surchargeAmount!.toStringAsFixed(2)}',
+                    'Rec: +\$${surchargeAmount!.toCurrency()}',
                     style: TextStyle(
                       fontSize: 12,
                       color: isSelected
@@ -552,7 +553,7 @@ class _SaleListTile extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(
-            '\$${sale.total.toStringAsFixed(2)}',
+            '\$${sale.total.toCurrency()}',
             style: TextStyle(
               fontSize: 17,
               fontWeight: FontWeight.bold,
@@ -735,7 +736,7 @@ class _TicketDetailPanel extends StatelessWidget {
                   style: const TextStyle(fontWeight: FontWeight.bold)),
               const TextSpan(text: ' por un total de '),
               TextSpan(
-                  text: '\$${sale.total.toStringAsFixed(2)}',
+                  text: '\$${sale.total.toCurrency()}',
                   style: const TextStyle(
                       fontWeight: FontWeight.bold, color: Colors.red)),
               const TextSpan(text: '?\n\nEsta acción es irreversible. '),
@@ -858,7 +859,7 @@ class _TicketDetailPanel extends StatelessWidget {
                 children: [
                   // Total cobrado al cliente (prominente)
                   Text(
-                    '\$${sale.grandTotal.toStringAsFixed(2)}',
+                    '\$${sale.grandTotal.toCurrency()}',
                     style: TextStyle(
                       fontSize: 28,
                       fontWeight: FontWeight.bold,
@@ -872,7 +873,7 @@ class _TicketDetailPanel extends StatelessWidget {
                   // Desglose neto vs recargo bancario (Opción B)
                   if (hasSurcharge) ...[
                     Text(
-                      'Neto: \$${sale.netTotal.toStringAsFixed(2)}',
+                      'Neto: \$${sale.netTotal.toCurrency()}',
                       style: TextStyle(
                         fontSize: 11,
                         color: Colors.grey.shade600,
@@ -885,7 +886,7 @@ class _TicketDetailPanel extends StatelessWidget {
                             size: 11, color: Colors.orange.shade700),
                         const SizedBox(width: 3),
                         Text(
-                          'Rec: +\$${sale.surchargeTotal.toStringAsFixed(2)}',
+                          'Rec: +\$${sale.surchargeTotal.toCurrency()}',
                           style: TextStyle(
                             fontSize: 11,
                             color: Colors.orange.shade700,
@@ -961,13 +962,13 @@ class _TicketDetailPanel extends StatelessWidget {
                           style: textStyle.copyWith(fontWeight: FontWeight.w500))),
                       DataCell(Text(
                           item.isSoldByWeight
-                              ? '${item.quantity.toStringAsFixed(3)} Kg'
+                              ? '${item.quantity.toQty()} Kg'
                               : '${item.quantity.toStringAsFixed(0)} u',
                           style: textStyle)),
                       DataCell(Text(
-                          '\$${item.unitPrice.toStringAsFixed(2)}',
+                          '\$${item.unitPrice.toCurrency()}',
                           style: textStyle)),
-                      DataCell(Text('\$${item.subtotal.toStringAsFixed(2)}',
+                      DataCell(Text('\$${item.subtotal.toCurrency()}',
                           style: textStyle.copyWith(
                               fontSize: 18,
                               fontWeight: FontWeight.bold))),
@@ -1141,7 +1142,7 @@ class _PaymentBadge extends StatelessWidget {
                       color: color,
                       fontWeight: FontWeight.w600)),
               Text(
-                '\$${payment.totalAmount.toStringAsFixed(2)}',
+                '\$${payment.totalAmount.toCurrency()}',
                 style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
@@ -1149,7 +1150,7 @@ class _PaymentBadge extends StatelessWidget {
               ),
               if (hasSurcharge)
                 Text(
-                  'base \$${payment.baseAmount.toStringAsFixed(2)} + recargo \$${payment.surchargeAmount.toStringAsFixed(2)}',
+                  'base \$${payment.baseAmount.toCurrency()} + recargo \$${payment.surchargeAmount.toCurrency()}',
                   style: TextStyle(
                       fontSize: 12,
                       color: Colors.orange.shade700,

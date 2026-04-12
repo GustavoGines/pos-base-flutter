@@ -1,3 +1,4 @@
+import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -250,7 +251,7 @@ class _StockAlertItem extends StatelessWidget {
                 ),
               ),
               Text(
-                product.isSoldByWeight ? '${stock.toStringAsFixed(3)} Kg' : '${stock.toInt()} u',
+                product.isSoldByWeight ? '${stock.toQty()} Kg' : '${stock.toInt()} u',
                 style: TextStyle(fontWeight: FontWeight.bold, color: isCritical ? Colors.red : Colors.orange.shade800),
               ),
             ],

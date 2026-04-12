@@ -1,3 +1,4 @@
+import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:frontend_desktop/features/catalog/presentation/providers/catalog_provider.dart';
@@ -18,7 +19,7 @@ class PaymentLine {
   FocusNode percentageFocus;
 
   PaymentLine({this.method, double initialAmount = 0.0})
-      : controller = TextEditingController(text: initialAmount > 0 ? initialAmount.toStringAsFixed(2) : ''),
+      : controller = TextEditingController(text: initialAmount > 0 ? initialAmount.toCurrency() : ''),
         percentageController = TextEditingController(text: method?.surchargeValue.toStringAsFixed(1) ?? '0.0'),
         percentageFocus = FocusNode();
 
@@ -115,7 +116,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
 
     // Actualizar el texto solo si el valor difiere (evita recursión del listener)
     final currentText = _cashTenderedCtrl.text;
-    final newText = req > 0 ? req.toStringAsFixed(2) : '';
+    final newText = req > 0 ? req.toCurrency() : '';
     if (currentText != newText) {
       _cashTenderedCtrl.text = newText;
       // Mover cursor al final del texto
@@ -277,7 +278,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       if (ccNeed > _availableCredit) {
         SnackBarService.error(context,
           'El cliente no tiene límite de crédito suficiente. '
-          'Disponible: \$${_availableCredit.toStringAsFixed(2)}');
+          'Disponible: \$${_availableCredit.toCurrency()}');
         return;
       }
     }
@@ -438,14 +439,14 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                           Column(
                             children: [
                               const Text('Total Base', style: TextStyle(fontSize: 14, color: Colors.black54)),
-                              Text('\$${widget.total.toStringAsFixed(2)}', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+                              Text('\$${widget.total.toCurrency()}', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
                             ],
                           ),
                           Text('+', style: TextStyle(fontSize: 24, color: Colors.black26)),
                           Column(
                             children: [
                               Text('Recargos', style: TextStyle(fontSize: 14, color: Colors.orange.shade700, fontWeight: FontWeight.bold)),
-                              Text('\$${_totalSurcharge.toStringAsFixed(2)}',
+                              Text('\$${_totalSurcharge.toCurrency()}',
                                   style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.orange.shade700)),
                             ],
                           ),
@@ -453,7 +454,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                           Column(
                             children: [
                               const Text('Gran Total', style: TextStyle(fontSize: 14, color: Colors.black54, fontWeight: FontWeight.bold)),
-                              Text('\$${_grandTotal.toStringAsFixed(2)}',
+                              Text('\$${_grandTotal.toCurrency()}',
                                   style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.blue.shade800)),
                             ],
                           ),
@@ -465,7 +466,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                           Column(
                             children: [
                               const Text('Total a Cobrar', style: TextStyle(fontSize: 14, color: Colors.black54, fontWeight: FontWeight.bold)),
-                              Text('\$${_grandTotal.toStringAsFixed(2)}',
+                              Text('\$${_grandTotal.toCurrency()}',
                                   style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.blue.shade800)),
                             ],
                           ),
@@ -648,7 +649,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                               crossAxisAlignment: CrossAxisAlignment.end,
                               children: [
                                 const Text('Extra', style: TextStyle(fontSize: 10, color: Colors.orange)),
-                                Text('\$${line.surcharge.toStringAsFixed(2)}', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.orange.shade800)),
+                                Text('\$${line.surcharge.toCurrency()}', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.orange.shade800)),
                               ],
                             ),
                           ),
@@ -680,7 +681,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                 children: [
                   const Text('Saldo Pendiente a Cubrir:', style: TextStyle(fontSize: 16)),
                   Text(
-                    _pendingBalance > 0 ? '\$${_pendingBalance.toStringAsFixed(2)}' : '\$0.00',
+                    _pendingBalance > 0 ? '\$${_pendingBalance.toCurrency()}' : '\$0.00',
                     style: TextStyle(
                       fontSize: 20, 
                       fontWeight: FontWeight.bold, 
@@ -714,7 +715,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(_selectedCustomer!.name, style: TextStyle(color: Colors.purple.shade700, fontWeight: FontWeight.bold)),
-                                    Text('Crédito disp: \$${_availableCredit.toStringAsFixed(2)}', style: TextStyle(fontSize: 12)),
+                                    Text('Crédito disp: \$${_availableCredit.toCurrency()}', style: TextStyle(fontSize: 12)),
                                   ],
                                 ),
                         ),
@@ -772,7 +773,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                           children: [
                             Text('Vuelto', style: TextStyle(fontSize: 12, color: _change >= 0 ? Colors.green.shade700 : Colors.red.shade700)),
                             Text(
-                              _change >= 0 ? '\$${_change.toStringAsFixed(2)}' : '-\$${_change.abs().toStringAsFixed(2)}',
+                              _change >= 0 ? '\$${_change.toCurrency()}' : '-\$${_change.abs().toCurrency()}',
                               style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: _change >= 0 ? Colors.green.shade700 : Colors.red.shade700),
                             ),
                           ],

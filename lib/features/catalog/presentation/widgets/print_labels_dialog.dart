@@ -1,3 +1,4 @@
+import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
@@ -734,7 +735,7 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
                     Row(
                       children: [
                         Text(
-                          '\$${p.sellingPrice.toStringAsFixed(2)}',
+                          '\$${p.sellingPrice.toCurrency()}',
                           style: const TextStyle(
                               fontSize: 11,
                               color: Colors.green,

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import '../providers/pos_provider.dart';
 import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
 import 'package:frontend_desktop/features/catalog/presentation/providers/catalog_provider.dart';
@@ -252,7 +253,7 @@ class _PosScreenState extends State<PosScreen> {
                 ),
                 title: Text(p.name, style: const TextStyle(fontWeight: FontWeight.bold)),
                 subtitle: Text(
-                  p.isSoldByWeight ? 'Por Kg · \$${p.sellingPrice.toStringAsFixed(2)}/Kg' : '\$${p.sellingPrice.toStringAsFixed(2)}',
+                  p.isSoldByWeight ? 'Por Kg · \$${p.sellingPrice.toCurrency()}/Kg' : '\$${p.sellingPrice.toCurrency()}',
                 ),
                 trailing: const Icon(Icons.add_circle_outline, color: Colors.green),
                 onTap: () {
@@ -450,7 +451,7 @@ class _PosScreenState extends State<PosScreen> {
   void _showEditCartItemModal(dynamic cartItem, PosProvider provider) {
     final qtyController = TextEditingController(
       text: cartItem.product.isSoldByWeight 
-        ? cartItem.quantity.toStringAsFixed(3) 
+        ? cartItem.quantity.toQty() 
         : cartItem.quantity.toInt().toString()
     );
 
@@ -1002,7 +1003,7 @@ class _PosScreenState extends State<PosScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('\$${total.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                          Text('\$${total.toCurrency()}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                           Row(
                             children: [
                               Icon(Icons.access_time, size: 10, color: Colors.grey.shade500),
@@ -1269,10 +1270,10 @@ class _PosScreenState extends State<PosScreen> {
                         final item = pos.cart[index];
                         final bool exceedsStock = item.quantity > item.product.stock;
                         final String qtyDisplay = item.product.isSoldByWeight 
-                            ? item.quantity.toStringAsFixed(3) 
+                            ? item.quantity.toQty() 
                             : item.quantity.toInt().toString();
                         final String stockDisplay = item.product.isSoldByWeight
-                            ? item.product.stock.toStringAsFixed(3)
+                            ? item.product.stock.toQty()
                             : item.product.stock.toInt().toString();
 
                         return ListTile(
@@ -1287,17 +1288,36 @@ class _PosScreenState extends State<PosScreen> {
                                 ),
                             ],
                           ),
-                          subtitle: Text(
-                            '$qtyDisplay x \$${item.product.sellingPrice.toStringAsFixed(2)}',
-                            style: TextStyle(
-                              color: exceedsStock ? Colors.red.shade600 : null,
-                              fontWeight: exceedsStock ? FontWeight.bold : null,
-                            ),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '$qtyDisplay x \$${item.unitPrice.toCurrency()}',
+                                style: TextStyle(
+                                  color: exceedsStock ? Colors.red.shade600 : null,
+                                  fontWeight: exceedsStock ? FontWeight.bold : null,
+                                ),
+                              ),
+                              if (item.product.getApplicableTier(item.quantity) != null && item.unitPrice < item.product.sellingPrice)
+                                Container(
+                                  margin: const EdgeInsets.only(top: 4),
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.green.shade50,
+                                    border: Border.all(color: Colors.green.shade300),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    '🏷️ Precio mayorista (x${(item.product.getApplicableTier(item.quantity)!['min_quantity'] as num).toQty()})',
+                                    style: TextStyle(fontSize: 10, color: Colors.green.shade800, fontWeight: FontWeight.bold),
+                                  ),
+                                ),
+                            ],
                           ),
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Text('\$${item.subtotal.toStringAsFixed(2)}', style: const TextStyle(fontSize: 16)),
+                              Text('\$${item.subtotal.toCurrency()}', style: const TextStyle(fontSize: 16)),
                               IconButton(
                                 icon: const Icon(Icons.delete, color: Colors.red),
                                 onPressed: () => pos.removeFromCart(item),
@@ -1334,7 +1354,7 @@ class _PosScreenState extends State<PosScreen> {
                       const SizedBox(width: 4),
                       Expanded(
                         child: Text(
-                          '\$${pos.cartTotal.toStringAsFixed(2)}',
+                          '\$${pos.cartTotal.toCurrency()}',
                           style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.green),
                           textAlign: TextAlign.right,
                           maxLines: 1,
@@ -1593,8 +1613,8 @@ class _PosScreenState extends State<PosScreen> {
                                   ),
                                   child: Text(
                                     isByWeight
-                                        ? '\$${product.sellingPrice.toStringAsFixed(2)}/Kg'
-                                        : '\$${product.sellingPrice.toStringAsFixed(2)}',
+                                        ? '\$${product.sellingPrice.toCurrency()}/Kg'
+                                        : '\$${product.sellingPrice.toCurrency()}',
                                     style: TextStyle(
                                       color: isByWeight ? Colors.orange.shade800 : Colors.green.shade700,
                                       fontWeight: FontWeight.bold,

@@ -15,6 +15,9 @@ class ProductModel extends Product {
     double? minStock,
     required bool active,
     required bool isSoldByWeight,
+    bool isCombo = false,
+    List<Map<String, dynamic>>? comboIngredients,
+    List<Map<String, dynamic>>? priceTiers,
     int salesCount = 0,
     int? vencimientoDias,
     String unitType = 'un',
@@ -32,6 +35,9 @@ class ProductModel extends Product {
           minStock: minStock,
           active: active,
           isSoldByWeight: isSoldByWeight,
+          isCombo: isCombo,
+          comboIngredients: comboIngredients,
+          priceTiers: priceTiers,
           salesCount: salesCount,
           vencimientoDias: vencimientoDias,
           unitType: unitType,
@@ -52,6 +58,9 @@ class ProductModel extends Product {
     double? minStock,
     bool? active,
     bool? isSoldByWeight,
+    bool? isCombo,
+    List<Map<String, dynamic>>? comboIngredients,
+    List<Map<String, dynamic>>? priceTiers,
     int? salesCount,
     int? vencimientoDias,
     String? unitType,
@@ -70,6 +79,9 @@ class ProductModel extends Product {
       minStock: minStock ?? this.minStock,
       active: active ?? this.active,
       isSoldByWeight: isSoldByWeight ?? this.isSoldByWeight,
+      isCombo: isCombo ?? this.isCombo,
+      comboIngredients: comboIngredients ?? this.comboIngredients,
+      priceTiers: priceTiers ?? this.priceTiers,
       salesCount: salesCount ?? this.salesCount,
       vencimientoDias: vencimientoDias ?? this.vencimientoDias,
       unitType: unitType ?? this.unitType,
@@ -78,6 +90,29 @@ class ProductModel extends Product {
   }
 
   factory ProductModel.fromJson(Map<String, dynamic> json) {
+    List<Map<String, dynamic>>? parsedCombo;
+    if (json['children'] != null && json['children'] is List) {
+      parsedCombo = (json['children'] as List).map((child) {
+        return {
+          'id': child['id'],
+          'name': child['name'],
+          'quantity': child['pivot']?['quantity'] != null 
+              ? double.tryParse(child['pivot']['quantity'].toString()) ?? 1.0 
+              : 1.0,
+        };
+      }).toList();
+    }
+
+    List<Map<String, dynamic>>? parsedPriceTiers;
+    if (json['price_tiers'] != null && json['price_tiers'] is List) {
+      parsedPriceTiers = (json['price_tiers'] as List).map((tier) {
+        return {
+          'min_quantity': double.tryParse(tier['min_quantity'].toString()) ?? 1.0,
+          'unit_price': double.tryParse(tier['unit_price'].toString()) ?? 0.0,
+        };
+      }).toList();
+    }
+
     return ProductModel(
       id: json['id'] is int ? json['id'] : int.tryParse(json['id']?.toString() ?? '0') ?? 0,
       name: json['name']?.toString() ?? 'Sin nombre',
@@ -98,6 +133,9 @@ class ProductModel extends Product {
           : null,
       active: json['active'] == 1 || json['active'] == true || json['active'] == '1' || json['active'] == 'true',
       isSoldByWeight: json['is_sold_by_weight'] == 1 || json['is_sold_by_weight'] == true || json['is_sold_by_weight'] == '1' || json['is_sold_by_weight'] == 'true',
+      isCombo: json['is_combo'] == 1 || json['is_combo'] == true || json['is_combo'] == '1' || json['is_combo'] == 'true',
+      comboIngredients: parsedCombo,
+      priceTiers: parsedPriceTiers,
       salesCount: json['sales_count'] != null 
           ? (int.tryParse(json['sales_count'].toString()) ?? 0) 
           : 0,

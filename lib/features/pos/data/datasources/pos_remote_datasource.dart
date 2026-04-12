@@ -160,7 +160,7 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
         'items': items.map((item) => {
           'product_id': item.product.id,
           'quantity': item.quantity,
-          'unit_price': item.product.sellingPrice,
+          'unit_price': item.unitPrice,
           'subtotal': item.subtotal,
         }).toList(),
       };
@@ -251,7 +251,7 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
         payload['items'] = items.map((item) => {
           'product_id': item.product.id,
           'quantity': item.quantity,
-          'unit_price': item.product.sellingPrice,
+          'unit_price': item.unitPrice,
           'subtotal': item.subtotal,
         }).toList();
       }

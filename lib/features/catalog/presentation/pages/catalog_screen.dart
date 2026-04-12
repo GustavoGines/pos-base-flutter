@@ -1,4 +1,5 @@
-﻿import 'dart:async';
+import 'package:frontend_desktop/core/utils/currency_formatter.dart';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:frontend_desktop/features/catalog/presentation/providers/catalog_provider.dart';
@@ -420,26 +421,26 @@ class _CatalogScreenState extends State<CatalogScreen> {
               cell(fBarcode, Text(p.barcode ?? '—', style: TextStyle(fontSize: 12, color: Colors.grey.shade700), overflow: TextOverflow.ellipsis)),
               cell(fInterno, Text(p.internalCode, style: TextStyle(fontFamily: 'monospace', fontSize: 12, color: Colors.grey.shade600), overflow: TextOverflow.ellipsis)),
               cell(fCat, Text(p.category?.name ?? '—', overflow: TextOverflow.ellipsis)),
-              cell(fCosto, Text('\$${p.costPrice.toStringAsFixed(2)}', overflow: TextOverflow.ellipsis)),
-              cell(fVenta, Text('\$${p.sellingPrice.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis)),
+              cell(fCosto, Text('\$${p.costPrice.toCurrency()}', overflow: TextOverflow.ellipsis)),
+              cell(fVenta, Text('\$${p.sellingPrice.toCurrency()}', style: const TextStyle(fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis)),
               // [hardware_store] celdas de precios alternativos
               if (hasMultiplePrices) ...[
                 cell(fMayorista,
                   p.priceWholesale != null
-                    ? Text('\$${p.priceWholesale!.toStringAsFixed(2)}',
+                    ? Text('\$${p.priceWholesale!.toCurrency()}',
                         style: TextStyle(color: Colors.indigo.shade700, fontWeight: FontWeight.w600),
                         overflow: TextOverflow.ellipsis)
                     : Text('—', style: TextStyle(color: Colors.grey.shade400, fontSize: 13))
                 ),
                 cell(fTarjeta,
                   p.priceCard != null
-                    ? Text('\$${p.priceCard!.toStringAsFixed(2)}',
+                    ? Text('\$${p.priceCard!.toCurrency()}',
                         style: TextStyle(color: Colors.teal.shade700, fontWeight: FontWeight.w600),
                         overflow: TextOverflow.ellipsis)
                     : Text('—', style: TextStyle(color: Colors.grey.shade400, fontSize: 13))
                 ),
               ],
-              cell(fStock, Text(p.isSoldByWeight ? '${p.stock.toStringAsFixed(2)} kg' : p.stock.toStringAsFixed(0), overflow: TextOverflow.ellipsis)),
+              cell(fStock, Text(p.isSoldByWeight ? '${p.stock.toCurrency()} kg' : p.stock.toStringAsFixed(0), overflow: TextOverflow.ellipsis)),
               cell(fBal, Align(alignment: Alignment.centerLeft, child: Icon(p.isSoldByWeight ? Icons.scale : Icons.inventory_2, size: 18, color: p.isSoldByWeight ? Colors.deepPurple : Colors.blueGrey))),
               cell(fActivo, Align(alignment: Alignment.centerLeft, child: Icon(p.active ? Icons.check_circle : Icons.cancel, color: p.active ? Colors.green : Colors.red, size: 20))),
               // Columna VTO: muestra los días o un dash si no aplica
@@ -720,6 +721,9 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
   late TextEditingController _minStockCtrl;
   bool _isSoldByWeight = false;
   bool _active = true;
+  bool _isCombo = false;
+  List<Map<String, dynamic>> _comboIngredients = [];
+  List<Map<String, dynamic>> _priceTiers = [];
   String _unitType = 'un';
   int? _categoryId;
   late TextEditingController _expiryCtrl;
@@ -733,15 +737,22 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     _nameCtrl = TextEditingController(text: p?.name ?? '');
     _barcodeCtrl = TextEditingController(text: p?.barcode ?? '');
     _internalCodeCtrl = TextEditingController(text: p?.internalCode ?? '');
-    _costCtrl = TextEditingController(text: p != null ? p.costPrice.toStringAsFixed(2) : '');
-    _priceCtrl = TextEditingController(text: p != null ? p.sellingPrice.toStringAsFixed(2) : '');
+    _costCtrl = TextEditingController(text: p != null ? p.costPrice.toCurrency() : '');
+    _priceCtrl = TextEditingController(text: p != null ? p.sellingPrice.toCurrency() : '');
     // [hardware_store] inicializar desde el producto existente o vacío
-    _wholesaleCtrl = TextEditingController(text: p?.priceWholesale != null ? p!.priceWholesale!.toStringAsFixed(2) : '');
-    _cardCtrl = TextEditingController(text: p?.priceCard != null ? p!.priceCard!.toStringAsFixed(2) : '');
+    _wholesaleCtrl = TextEditingController(text: p?.priceWholesale != null ? p!.priceWholesale!.toCurrency() : '');
+    _cardCtrl = TextEditingController(text: p?.priceCard != null ? p!.priceCard!.toCurrency() : '');
     _stockCtrl = TextEditingController(text: p != null ? p.stock.toStringAsFixed(p.isSoldByWeight ? 3 : 0) : '0');
     _minStockCtrl = TextEditingController(text: (p?.minStock != null) ? p!.minStock!.toStringAsFixed(0) : '');
     _isSoldByWeight = p?.isSoldByWeight ?? false;
     _active = p?.active ?? true;
+    _isCombo = p?.isCombo ?? false;
+    if (_isCombo && p?.comboIngredients != null) {
+      _comboIngredients = List<Map<String, dynamic>>.from(p!.comboIngredients!);
+    }
+    if (p?.priceTiers != null) {
+      _priceTiers = List<Map<String, dynamic>>.from(p!.priceTiers!);
+    }
     _unitType = p?.unitType ?? 'un';
     _categoryId = p?.category?.id;
     _expiryCtrl = TextEditingController(
@@ -780,6 +791,9 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
       'stock': double.parse(_stockCtrl.text.replaceAll(',', '.')),
       'min_stock': _minStockCtrl.text.trim().isNotEmpty ? double.parse(_minStockCtrl.text.replaceAll(',', '.')) : null,
       'is_sold_by_weight': _isSoldByWeight,
+      'is_combo': _isCombo,
+      if (_isCombo) 'combo_ingredients': _comboIngredients,
+      if (_priceTiers.isNotEmpty) 'price_tiers': _priceTiers,
       'unit_type': _unitType,
       'active': _active,
       if (_categoryId != null) 'category_id': _categoryId,
@@ -928,15 +942,18 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                 const SizedBox(height: 12),
                 Row(
                   children: [
-                    Expanded(
-                      child: TextFormField(
-                        controller: _costCtrl,
-                        decoration: const InputDecoration(labelText: 'Precio Costo', prefixText: '\$ '),
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                        validator: (v) => (v == null || double.tryParse(v.replaceAll(',', '.')) == null) ? 'Ingrese un monto válido' : null,
+                    // Precio Costo — oculto en Combos (el costo se deriva de sus componentes)
+                    if (!_isCombo) ...[
+                      Expanded(
+                        child: TextFormField(
+                          controller: _costCtrl,
+                          decoration: const InputDecoration(labelText: 'Precio Costo', prefixText: '\$ '),
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          validator: (v) => (v == null || double.tryParse(v.replaceAll(',', '.')) == null) ? 'Ingrese un monto válido' : null,
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 12),
+                      const SizedBox(width: 12),
+                    ],
                     Expanded(
                       child: TextFormField(
                         controller: _priceCtrl,
@@ -944,10 +961,13 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                         keyboardType: const TextInputType.numberWithOptions(decimal: true),
                         validator: (v) {
                           if (v == null || double.tryParse(v.replaceAll(',', '.')) == null) return 'Ingrese un precio válido';
-                          final costStr = _costCtrl.text.replaceAll(',', '.');
-                          final cost = double.tryParse(costStr) ?? 0;
-                          final price = double.parse(v.replaceAll(',', '.'));
-                          if (price < cost) return 'El precio de venta debe ser mayor o igual al costo';
+                          // Solo validar costo vs precio si no es un combo
+                          if (!_isCombo) {
+                            final costStr = _costCtrl.text.replaceAll(',', '.');
+                            final cost = double.tryParse(costStr) ?? 0;
+                            final price = double.parse(v.replaceAll(',', '.'));
+                            if (price < cost) return 'El precio de venta debe ser mayor o igual al costo';
+                          }
                           return null;
                         },
                       ),
@@ -1026,36 +1046,42 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                         const SizedBox(height: 12),
                       ],
                     );
-                  },
+                },
                 ),
-                Row(
-                  children: [
-                    Expanded(
-                      flex: 4,
-                      child: TextFormField(
-                        controller: _stockCtrl,
-                        decoration: InputDecoration(
-                          labelText: 'Stock inicial',
-                          suffixText: _unitType,
-                          prefixIcon: const Icon(Icons.inventory_2_outlined),
+                // --- SECCIÓN: PRECIOS POR VOLUMEN / MAYORISTAS ---
+                _buildPriceTiersSection(),
+                
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 300),
+                  child: _isCombo ? const SizedBox.shrink() : Row(
+                    children: [
+                      Expanded(
+                        flex: 4,
+                        child: TextFormField(
+                          controller: _stockCtrl,
+                          decoration: InputDecoration(
+                            labelText: 'Stock inicial',
+                            suffixText: _unitType,
+                            prefixIcon: const Icon(Icons.inventory_2_outlined),
+                          ),
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
                         ),
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
                       ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      flex: 6,
-                      child: TextFormField(
-                        controller: _minStockCtrl,
-                        decoration: const InputDecoration(
-                          labelText: 'Stock Mínimo (Alerta)',
-                          prefixIcon: Icon(Icons.notification_important_outlined),
-                          helperText: 'Opcional: Dejar vacío para no alertar',
+                      const SizedBox(width: 12),
+                      Expanded(
+                        flex: 6,
+                        child: TextFormField(
+                          controller: _minStockCtrl,
+                          decoration: const InputDecoration(
+                            labelText: 'Stock Mínimo (Alerta)',
+                            prefixIcon: Icon(Icons.notification_important_outlined),
+                            helperText: 'Opcional: Dejar vacío para no alertar',
+                          ),
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
                         ),
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 12),
                 Row(
@@ -1106,6 +1132,77 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                   value: _active,
                   onChanged: (v) => setState(() => _active = v),
                 ),
+                SwitchListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Es un Combo / Receta (Armado dinámico)'),
+                  subtitle: const Text('No maneja stock activo propio, descuenta de sus ingredientes.'),
+                  value: _isCombo,
+                  onChanged: (v) => setState(() => _isCombo = v),
+                ),
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 300),
+                  child: !_isCombo ? const SizedBox.shrink() : Container(
+                    margin: const EdgeInsets.symmetric(vertical: 8),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.shade50,
+                      border: Border.all(color: Colors.amber.shade200),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text('Productos incluidos en el Combo', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.amber.shade900)),
+                            TextButton.icon(
+                              icon: const Icon(Icons.add, size: 18),
+                              label: const Text('Añadir Producto'),
+                              onPressed: () async {
+                                await _showIngredientSearchDialog(context, widget.provider);
+                              },
+                            ),
+                          ],
+                        ),
+                        if (_comboIngredients.isEmpty)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 8.0),
+                            child: Text('Agregá los productos individuales y la cantidad que se descontará del stock al vender este combo.', style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
+                          ),
+                        ..._comboIngredients.map((ing) {
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 8.0),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(ing['name'], overflow: TextOverflow.ellipsis),
+                                ),
+                                const SizedBox(width: 8),
+                                SizedBox(
+                                  width: 100,
+                                  child: TextFormField(
+                                    initialValue: (ing['quantity'] as num).toQty(),
+                                    decoration: const InputDecoration(labelText: 'Cant.', isDense: true),
+                                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                    onChanged: (v) {
+                                      ing['quantity'] = double.tryParse(v.replaceAll(',', '.')) ?? 1.0;
+                                    },
+                                  ),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.delete, color: Colors.red),
+                                  onPressed: () => setState(() => _comboIngredients.remove(ing)),
+                                ),
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                      ],
+                    ),
+                  ),
+                ),
                 const SizedBox(height: 12),
                 TextFormField(
                   controller: _expiryCtrl,
@@ -1145,6 +1242,187 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
           ),
         ),
       ],
+    );
+  }
+
+  // --- SECCIÓN PRECIOS POR VOLUMEN ---
+  Widget _buildPriceTiersSection() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.blue.shade50,
+        border: Border.all(color: Colors.blue.shade200),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Precios Mayoristas / Por Volumen', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue.shade900)),
+              TextButton.icon(
+                onPressed: () {
+                  setState(() {
+                    _priceTiers.add({
+                      // Sugerimos x10 para agilizar
+                      'min_quantity': 10,
+                      'unit_price': double.tryParse(_priceCtrl.text.replaceAll(',', '.')) ?? 0.0,
+                    });
+                  });
+                },
+                icon: const Icon(Icons.add),
+                label: const Text('Añadir escala', style: TextStyle(fontSize: 12)),
+              ),
+            ],
+          ),
+          if (_priceTiers.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            ..._priceTiers.asMap().entries.map((entry) {
+              int idx = entry.key;
+              Map<String, dynamic> tier = entry.value;
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 8.0),
+                child: Row(
+                  children: [
+                    Expanded(
+                      flex: 4,
+                      child: TextFormField(
+                        initialValue: (tier['min_quantity'] as num).toQty(),
+                        decoration: const InputDecoration(labelText: 'A partir de X cant.', isDense: true, border: OutlineInputBorder()),
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        onChanged: (v) => _priceTiers[idx]['min_quantity'] = double.tryParse(v.replaceAll(',', '.')) ?? 1.0,
+                        validator: (v) {
+                          if (v == null || v.isEmpty) return 'Requerido';
+                          final val = double.tryParse(v.replaceAll(',', '.'));
+                          if (val == null || val <= 1) return 'Debe ser > 1';
+                          // Verificar repetidos
+                          int count = _priceTiers.where((t) => t['min_quantity'] == val).length;
+                          if (count > 1) return 'Ya existe un tramo para esta cantidad';
+                          return null;
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      flex: 4,
+                      child: TextFormField(
+                        initialValue: (tier['unit_price'] as num).toCurrency(),
+                        decoration: const InputDecoration(labelText: 'Precio Unitario (\$)', isDense: true, prefixText: '\$ ', border: OutlineInputBorder()),
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        onChanged: (v) => _priceTiers[idx]['unit_price'] = double.tryParse(v.replaceAll(',', '.')) ?? 0.0,
+                        validator: (v) {
+                          if (v == null || v.isEmpty) return 'Requerido';
+                          if (double.tryParse(v.replaceAll(',', '.')) == null) return 'Precio inválido';
+                          return null;
+                        },
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.delete_outline, color: Colors.deepOrange),
+                      tooltip: 'Eliminar escala',
+                      onPressed: () => setState(() => _priceTiers.removeAt(idx)),
+                    ),
+                  ],
+                ),
+              );
+            }).toList(),
+            const Text(
+              'Nota: Si vende unidades fraccionadas, puede usar decimales (Ej: 5.5).',
+              style: TextStyle(fontSize: 11, color: Colors.black54),
+            ),
+          ] else
+            const Text(
+              'No hay escalas de precio configuradas. El producto usará su Precio Base de Venta en cualquier cantidad.',
+              style: TextStyle(fontSize: 12, color: Colors.black54),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showIngredientSearchDialog(BuildContext context, CatalogProvider provider) async {
+    // El dialog retorna void — los cambios se aplican directamente sobre _comboIngredients
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        String query = '';
+        return StatefulBuilder(
+          builder: (stCtx, setSt) {
+            final filtered = provider.products.where((p) {
+              if (p.isCombo) return false; // Bloqueo recursivo
+              if (widget.product != null && p.id == widget.product!.id) return false;
+              if (query.isEmpty) return true;
+              return p.name.toLowerCase().contains(query.toLowerCase()) ||
+                  (p.barcode ?? '').toLowerCase().contains(query.toLowerCase()) ||
+                  p.internalCode.contains(query);
+            }).take(20).toList();
+
+            return AlertDialog(
+              title: const Text('Buscar Producto para el Combo'),
+              content: SizedBox(
+                width: double.maxFinite,
+                height: 380,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      autofocus: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Nombre, código de barras o PLU...',
+                        prefixIcon: Icon(Icons.search),
+                        border: OutlineInputBorder(),
+                      ),
+                      onChanged: (v) => setSt(() => query = v),
+                    ),
+                    const SizedBox(height: 10),
+                    Expanded(
+                      child: filtered.isEmpty
+                          ? const Center(child: Text('No hay resultados'))
+                          : ListView.builder(
+                              itemCount: filtered.length,
+                              itemBuilder: (context, i) {
+                                final p = filtered[i];
+                                final alreadyAdded = _comboIngredients.any((ing) => ing['id'] == p.id);
+                                return ListTile(
+                                  title: Text(p.name), onTap: alreadyAdded ? null : () { setSt(() {}); setState(() { _comboIngredients.add({ 'id': p.id, 'name': p.name, 'quantity': 1 }); }); },
+                                  subtitle: Text('Stock: ${p.stock} ${p.unitType} | \$${p.sellingPrice.toCurrency()}'),
+                                  trailing: alreadyAdded
+                                      ? const Icon(Icons.check_circle, color: Colors.green)
+                                      : IconButton(
+                                          icon: const Icon(Icons.add_circle_outline, color: Colors.deepOrange),
+                                          tooltip: 'Agregar al Combo',
+                                          onPressed: () {
+                                            // Actualizar estado del dialog Y del formulario padre
+                                            setSt(() {}); // Rebuild del dialog
+                                            setState(() { // Rebuild del formulario
+                                              _comboIngredients.add({
+                                                'id': p.id,
+                                                'name': p.name,
+                                                'quantity': 1,
+                                              });
+                                            });
+                                          },
+                                        ),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                FilledButton.icon(
+                  icon: const Icon(Icons.check),
+                  label: Text('Listo (${_comboIngredients.length} producto${_comboIngredients.length == 1 ? '' : 's'})'),
+                  onPressed: () => Navigator.pop(ctx),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 }

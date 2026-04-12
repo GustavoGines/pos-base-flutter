@@ -1,3 +1,4 @@
+import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'package:flutter/material.dart';
 import '../../domain/entities/cash_register_shift.dart';
 import 'package:provider/provider.dart';
@@ -114,14 +115,14 @@ class CashShiftSummaryScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 24),
                   const Divider(),
-                  _buildRow('Fondo Inicial', '\$${closedShift.openingBalance.toStringAsFixed(2)}'),
-                  _buildRow('Ventas en Efectivo', '\$${(closedShift.cashSales ?? 0).toStringAsFixed(2)}'),
-                  _buildRow('Ventas con Tarjeta', '\$${(closedShift.cardSales ?? 0).toStringAsFixed(2)}'),
-                  _buildRow('Ventas por Transf.', '\$${(closedShift.transferSales ?? 0).toStringAsFixed(2)}'),
-                  _buildRow('Total Recargos (Tarj/Billeteras)', '\$${(closedShift.totalSurcharge ?? 0).toStringAsFixed(2)}'),
+                  _buildRow('Fondo Inicial', '\$${closedShift.openingBalance.toCurrency()}'),
+                  _buildRow('Ventas en Efectivo', '\$${(closedShift.cashSales ?? 0).toCurrency()}'),
+                  _buildRow('Ventas con Tarjeta', '\$${(closedShift.cardSales ?? 0).toCurrency()}'),
+                  _buildRow('Ventas por Transf.', '\$${(closedShift.transferSales ?? 0).toCurrency()}'),
+                  _buildRow('Total Recargos (Tarj/Billeteras)', '\$${(closedShift.totalSurcharge ?? 0).toCurrency()}'),
                   const Divider(),
-                  _buildRow('Efectivo Esperado', '\$${(closedShift.expectedBalance ?? 0).toStringAsFixed(2)}', bold: true),
-                  _buildRow('Efectivo Físico', '\$${(closedShift.actualBalance ?? 0).toStringAsFixed(2)}', bold: true),
+                  _buildRow('Efectivo Esperado', '\$${(closedShift.expectedBalance ?? 0).toCurrency()}', bold: true),
+                  _buildRow('Efectivo Físico', '\$${(closedShift.actualBalance ?? 0).toCurrency()}', bold: true),
                   const SizedBox(height: 16),
                   Container(
                     padding: const EdgeInsets.all(16),
@@ -141,7 +142,7 @@ class CashShiftSummaryScreen extends StatelessWidget {
                           ),
                         ),
                         Text(
-                          '\$${diff.abs().toStringAsFixed(2)}',
+                          '\$${diff.abs().toCurrency()}',
                           style: TextStyle(
                             fontSize: 24,
                             fontWeight: FontWeight.bold,

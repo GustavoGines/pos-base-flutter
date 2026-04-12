@@ -1,3 +1,4 @@
+import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../models/customer_model.dart';
@@ -175,7 +176,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
                                         ),
                                       ),
                                       Text(
-                                        '\$${customer.balance.toStringAsFixed(2)}',
+                                        '\$${customer.balance.toCurrency()}',
                                         style: TextStyle(
                                           fontWeight: FontWeight.bold,
                                           color: isDebtor ? Colors.red.shade700 : Colors.green.shade700,
@@ -329,7 +330,7 @@ class _CustomerDetailPanel extends StatelessWidget {
                         const SizedBox(width: 16),
                         Icon(Icons.credit_score_outlined, size: 14, color: Colors.blueGrey.shade600),
                         const SizedBox(width: 4),
-                        Text('Límite de Crédito: \$${customer.creditLimit.toStringAsFixed(2)}', style: TextStyle(color: Colors.blueGrey.shade800, fontWeight: FontWeight.w500)),
+                        Text('Límite de Crédito: \$${customer.creditLimit.toCurrency()}', style: TextStyle(color: Colors.blueGrey.shade800, fontWeight: FontWeight.w500)),
                       ]
                     ],
                   ),
@@ -340,7 +341,7 @@ class _CustomerDetailPanel extends StatelessWidget {
                 children: [
                   Text('Saldo Actual', style: TextStyle(fontSize: 14, color: Colors.grey.shade500, fontWeight: FontWeight.w600)),
                   Text(
-                    '\$${customer.balance.toStringAsFixed(2)}',
+                    '\$${customer.balance.toCurrency()}',
                     style: TextStyle(
                       fontSize: 32,
                       fontWeight: FontWeight.bold,
@@ -421,7 +422,7 @@ class _CustomerDetailPanel extends StatelessWidget {
                                   crossAxisAlignment: CrossAxisAlignment.end,
                                   children: [
                                     Text(
-                                      '${isPayment ? '+' : '-'}\$${trx.amount.toStringAsFixed(2)}',
+                                      '${isPayment ? '+' : '-'}\$${trx.amount.toCurrency()}',
                                       style: TextStyle(
                                         color: isPayment ? Colors.green.shade700 : Colors.red.shade700,
                                         fontWeight: FontWeight.bold,
@@ -430,7 +431,7 @@ class _CustomerDetailPanel extends StatelessWidget {
                                     ),
                                     const SizedBox(height: 4),
                                     Text(
-                                      'Acumulado: \$${trx.balanceAfter.toStringAsFixed(2)}',
+                                      'Acumulado: \$${trx.balanceAfter.toCurrency()}',
                                       style: TextStyle(fontSize: 12, color: Colors.blueGrey.shade500, fontWeight: FontWeight.normal),
                                     ),
                                   ],

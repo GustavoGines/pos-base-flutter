@@ -1,3 +1,4 @@
+import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/cash_register_provider.dart';
@@ -39,7 +40,7 @@ class _CloseShiftScreenState extends State<CloseShiftScreen> {
             const Text('¿Está seguro de que desea cerrar el turno actual?'),
             const SizedBox(height: 12),
             Text(
-              'Efectivo contado: \$${countedCash.toStringAsFixed(2)}',
+              'Efectivo contado: \$${countedCash.toCurrency()}',
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
           ],
@@ -163,7 +164,7 @@ class _CloseShiftScreenState extends State<CloseShiftScreen> {
                         _summaryRow(
                           icon: Icons.open_in_new,
                           label: 'Saldo inicial de caja:',
-                          value: '\$${shift.openingBalance.toStringAsFixed(2)}',
+                          value: '\$${shift.openingBalance.toCurrency()}',
                           color: Colors.blueGrey,
                         ),
 

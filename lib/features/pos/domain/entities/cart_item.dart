@@ -9,5 +9,8 @@ class CartItem {
     this.quantity = 1.0,
   });
 
-  double get subtotal => product.sellingPrice * quantity;
+  /// El precio unitario se calcula dinámicamente según la cantidad (Tramos de Precio)
+  double get unitPrice => product.getBestPrice(quantity);
+
+  double get subtotal => unitPrice * quantity;
 }

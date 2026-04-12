@@ -1,6 +1,4 @@
-import 'dart:typed_data';
 import 'package:printing/printing.dart';
-import 'package:pdf/pdf.dart';
 import 'package:flutter/material.dart';
 import '../../domain/entities/cart_item.dart';
 import '../../domain/entities/payment_method.dart';
@@ -334,7 +332,7 @@ class PosProvider with ChangeNotifier {
               .map((p) => {'name': p['name'], 'amount': p['amount']})
               .toList();
 
-          if (settings.printerPaperWidth == 'a4' && extractedSaleId != null) {
+          if (settings.printerPaperWidth == 'a4') {
             final pdfBytes = await repository.downloadTicketPdf(int.parse(extractedSaleId));
             final ctx = AppConfig.navigatorKey.currentContext;
             if (ctx != null && ctx.mounted) {

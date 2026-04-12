@@ -103,6 +103,13 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                             activeColor: Colors.deepPurple,
                             permissionKey: 'manage_catalog',
                           ),
+                          _buildNavTab(
+                            context: context,
+                            label: 'Reportes Gerenciales',
+                            icon: Icons.bar_chart,
+                            route: '/reports',
+                            activeColor: Colors.purple.shade700,
+                          ),
                           // Tab de Presupuestos — controlado por Feature Flag 'quotes'
                           if (canAccessQuotes)
                             _buildNavTab(

@@ -1,3 +1,4 @@
+import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../models/customer_model.dart';
@@ -48,7 +49,7 @@ class _PaymentDialogState extends State<PaymentDialog> {
       }
     }
     if (total > 0) {
-      _amountController.text = total.toStringAsFixed(2);
+      _amountController.text = total.toCurrency();
     } else {
       _amountController.text = '';
     }
@@ -130,7 +131,7 @@ class _PaymentDialogState extends State<PaymentDialog> {
                       const Text('Deuda Actual', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
                       const SizedBox(height: 4),
                       Text(
-                        '\$ ${widget.customer.balance.toStringAsFixed(2)}', 
+                        '\$ ${widget.customer.balance.toCurrency()}', 
                         style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.red.shade700)
                       ),
                     ],
@@ -186,7 +187,7 @@ class _PaymentDialogState extends State<PaymentDialog> {
                               return CheckboxListTile(
                                 title: Text('Ticket #$saleId'),
                                 subtitle: Text('Fecha: $date'),
-                                secondary: Text('\$${amountDue.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.redAccent)),
+                                secondary: Text('\$${amountDue.toCurrency()}', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.redAccent)),
                                 value: isSelected,
                                 onChanged: (bool? val) {
                                   setState(() {

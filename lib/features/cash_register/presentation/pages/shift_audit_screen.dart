@@ -1,3 +1,4 @@
+import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/cash_register_provider.dart';
@@ -165,8 +166,8 @@ class _ShiftAuditScreenState extends State<ShiftAuditScreen> {
         ),
         DataCell(Text(_formatDate(shift.openedAt))),
         DataCell(Text(shift.closedAt != null ? _formatDate(shift.closedAt!) : '---')),
-        DataCell(Text('\$${shift.openingBalance.toStringAsFixed(2)}')),
-        DataCell(Text('\$${((shift.cashSales ?? 0) + (shift.cardSales ?? 0) + (shift.transferSales ?? 0)).toStringAsFixed(2)}', style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold))),
+        DataCell(Text('\$${shift.openingBalance.toCurrency()}')),
+        DataCell(Text('\$${((shift.cashSales ?? 0) + (shift.cardSales ?? 0) + (shift.transferSales ?? 0)).toCurrency()}', style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold))),
         DataCell(_buildDifferenceBadge(diff, shift.status)),
         DataCell(_buildStatusBadge(shift.status)),
       ],
@@ -221,21 +222,21 @@ class _ShiftAuditScreenState extends State<ShiftAuditScreen> {
                 _buildDetailRow('Apertura:', _formatDate(shift.openedAt)),
                 _buildDetailRow('Cierre:', shift.closedAt != null ? _formatDate(shift.closedAt!) : 'En curso'),
                 const Divider(height: 32),
-                _buildDetailRow('Fondo Inicial (Apertura):', '\$${shift.openingBalance.toStringAsFixed(2)}', isBold: true),
-                _buildDetailRow('Ventas Netas Totales:', '\$${((shift.cashSales ?? 0) + (shift.cardSales ?? 0) + (shift.transferSales ?? 0)).toStringAsFixed(2)}'),
+                _buildDetailRow('Fondo Inicial (Apertura):', '\$${shift.openingBalance.toCurrency()}', isBold: true),
+                _buildDetailRow('Ventas Netas Totales:', '\$${((shift.cashSales ?? 0) + (shift.cardSales ?? 0) + (shift.transferSales ?? 0)).toCurrency()}'),
                 Padding(
                   padding: const EdgeInsets.only(left: 16.0),
                   child: Column(
                     children: [
-                      _buildDetailRow('• En Efectivo', '\$${(shift.cashSales ?? 0).toStringAsFixed(2)}'),
-                      _buildDetailRow('• Con Tarjeta', '\$${(shift.cardSales ?? 0).toStringAsFixed(2)}'),
-                      _buildDetailRow('• Transf.', '\$${(shift.transferSales ?? 0).toStringAsFixed(2)}'),
+                      _buildDetailRow('• En Efectivo', '\$${(shift.cashSales ?? 0).toCurrency()}'),
+                      _buildDetailRow('• Con Tarjeta', '\$${(shift.cardSales ?? 0).toCurrency()}'),
+                      _buildDetailRow('• Transf.', '\$${(shift.transferSales ?? 0).toCurrency()}'),
                     ],
                   ),
                 ),
                 const Divider(height: 32),
-                _buildDetailRow('Efectivo Esperado Múltiple:', '\$${(shift.expectedBalance ?? (shift.openingBalance + (shift.cashSales ?? 0))).toStringAsFixed(2)}', isBold: true),
-                _buildDetailRow('Dinero Físico Contado:', '\$${(shift.actualBalance ?? 0.0).toStringAsFixed(2)}', isBold: true),
+                _buildDetailRow('Efectivo Esperado Múltiple:', '\$${(shift.expectedBalance ?? (shift.openingBalance + (shift.cashSales ?? 0))).toCurrency()}', isBold: true),
+                _buildDetailRow('Dinero Físico Contado:', '\$${(shift.actualBalance ?? 0.0).toCurrency()}', isBold: true),
                 const SizedBox(height: 16),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -292,11 +293,11 @@ class _ShiftAuditScreenState extends State<ShiftAuditScreen> {
     } else if (diff > 0) {
       bgColor = Colors.teal.shade100;
       textColor = Colors.teal.shade800;
-      prefix = '+ \$${diff.toStringAsFixed(2)} (Sobrante)';
+      prefix = '+ \$${diff.toCurrency()} (Sobrante)';
     } else {
       bgColor = Colors.red.shade100;
       textColor = Colors.red.shade800;
-      prefix = '- \$${diff.abs().toStringAsFixed(2)} (Faltante)';
+      prefix = '- \$${diff.abs().toCurrency()} (Faltante)';
     }
 
     return Container(

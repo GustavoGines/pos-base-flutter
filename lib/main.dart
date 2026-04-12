@@ -12,6 +12,7 @@ import 'features/sales_history/presentation/providers/sales_history_provider.dar
 import 'features/auth/presentation/providers/auth_provider.dart';
 import 'features/customers/providers/customer_provider.dart';
 import 'features/trash/providers/trash_provider.dart';
+import 'features/reports/presentation/providers/reports_provider.dart';
 import 'core/config/app_config.dart';
 
 import 'core/presentation/widgets/license_guard.dart';
@@ -31,12 +32,13 @@ import 'features/auth/presentation/pages/login_screen.dart';
 import 'features/cash_register/presentation/pages/shift_audit_screen.dart';
 import 'features/customers/presentation/screens/customers_screen.dart';
 import 'features/trash/presentation/screens/trash_screen.dart';
-// [hardware_store] Módulo Presupuestos
+import 'features/reports/presentation/pages/reports_screen.dart';
 import 'features/quotes/presentation/pages/quote_screen.dart';
 import 'features/quotes/presentation/providers/quote_provider.dart';
 import 'features/quotes/data/quote_repository.dart';
 
 // Repositories & DataSources
+import 'features/reports/data/datasources/reports_remote_datasource.dart';
 import 'features/settings/data/datasources/settings_remote_datasource.dart';
 import 'features/settings/data/repositories/settings_repository_impl.dart';
 import 'features/settings/domain/usecases/get_settings_usecase.dart';
@@ -171,6 +173,10 @@ void main() async {
   final salesHistoryDataSource = SalesHistoryRemoteDataSource(
       baseUrl: apiUrl, client: httpClient);
 
+  // Reports
+  final reportsDataSource = ReportsRemoteDataSource(
+      baseUrl: apiUrl, client: httpClient);
+
   // Auth — ya instanciado antes de runApp (ver arriba con restoreSessionFromPrefs)
 
   // Users
@@ -195,6 +201,7 @@ void main() async {
           getProductsUseCase: getProductsUseCase,
           repository: catalogRepo,
         ), lazy: false),
+        ChangeNotifierProvider(create: (_) => ReportsProvider(dataSource: reportsDataSource), lazy: false),
         ChangeNotifierProvider(
           create: (_) => CashRegisterProvider(
             getCurrentShiftUseCase: GetCurrentShiftUseCase(cashRegisterRepo),
@@ -574,6 +581,7 @@ class _MainAppState extends State<MainApp> {
         '/trash': (context) => const TrashScreen(),
         // [hardware_store]
         '/quotes': (context) => const QuoteScreen(),
+        '/reports': (context) => const ReportsScreen(),
       },
     );
   }
