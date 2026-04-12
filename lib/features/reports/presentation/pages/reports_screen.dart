@@ -144,6 +144,18 @@ class _FiltersBar extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
+          FilledButton.icon(
+            onPressed: provider.isExportingPdf ? null : () => provider.exportToPdf(),
+            icon: provider.isExportingPdf
+                ? const SizedBox(width: 15, height: 15, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                : const Icon(Icons.picture_as_pdf, size: 15),
+            label: const Text('Generar PDF'),
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.red.shade600,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            ),
+          ),
+          const SizedBox(width: 8),
           IconButton(
             onPressed: onRefresh,
             icon: const Icon(Icons.refresh),

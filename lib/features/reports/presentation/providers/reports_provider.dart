@@ -19,6 +19,9 @@ class ReportsProvider extends ChangeNotifier {
   bool _isExporting = false;
   bool get isExporting => _isExporting;
 
+  bool _isExportingPdf = false;
+  bool get isExportingPdf => _isExportingPdf;
+
   DateTime _startDate = DateTime.now().copyWith(day: 1);
   DateTime _endDate = DateTime.now();
 
@@ -130,5 +133,47 @@ class ReportsProvider extends ChangeNotifier {
       notifyListeners();
     }
   }
-}
 
+  Future<void> exportToPdf() async {
+    _isExportingPdf = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      final df = DateFormat('yyyy-MM-dd');
+      final bytes = await dataSource.downloadPdf(df.format(_startDate), df.format(_endDate));
+
+      final docsDir = await getApplicationDocumentsDirectory();
+      final reportesDir = Directory('${docsDir.path}${Platform.pathSeparator}Sistema_POS${Platform.pathSeparator}Reportes');
+
+      if (!await reportesDir.exists()) {
+        await reportesDir.create(recursive: true);
+      }
+
+      final cleanStart = DateFormat('dd-MM-yyyy').format(_startDate);
+      final cleanEnd   = DateFormat('dd-MM-yyyy').format(_endDate);
+      final filename = 'Ganancias_${cleanStart}_al_${cleanEnd}.pdf';
+      final file = File('${reportesDir.path}${Platform.pathSeparator}$filename');
+
+      await file.writeAsBytes(bytes);
+
+      if (Platform.isWindows) {
+        try {
+          await Process.run('explorer.exe', ['/select,', file.path]);
+        } catch (e) {
+          debugPrint('Error abriendo explorer: $e');
+        }
+      } else {
+        final folderUri = Uri.parse('file:///${reportesDir.path.replaceAll('\\', '/')}');
+        if (await canLaunchUrl(folderUri)) {
+          await launchUrl(folderUri);
+        }
+      }
+    } catch (e) {
+      _error = 'Error al exportar PDF: $e';
+    } finally {
+      _isExportingPdf = false;
+      notifyListeners();
+    }
+  }
+}

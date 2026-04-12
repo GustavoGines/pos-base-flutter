@@ -20,15 +20,26 @@ class ReportsRemoteDataSource {
       throw Exception('Error al obtener reporte de rentabilidad: ${response.statusCode}');
     }
   }
+
   Future<List<int>> downloadExcel(String startDate, String endDate) async {
     final uri = Uri.parse('$baseUrl/reports/profit-by-category/export?start_date=$startDate&end_date=$endDate');
-    
     final response = await client.get(uri);
-
     if (response.statusCode == 200) {
       return response.bodyBytes;
     } else {
-      throw Exception('Error al descargar el reporte: ${response.statusCode}');
+      throw Exception('Error al descargar el reporte Excel: ${response.statusCode}');
+    }
+  }
+
+  Future<List<int>> downloadPdf(String startDate, String endDate) async {
+    final uri = Uri.parse('$baseUrl/reports/profit-by-category/pdf?start_date=$startDate&end_date=$endDate');
+    final response = await client.get(uri, headers: {
+      'Accept': 'application/pdf',
+    });
+    if (response.statusCode == 200) {
+      return response.bodyBytes;
+    } else {
+      throw Exception('Error al descargar el reporte PDF: ${response.statusCode}');
     }
   }
 }
