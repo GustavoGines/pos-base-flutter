@@ -1,14 +1,16 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import '../../data/datasources/reports_remote_datasource.dart';
+import '../../data/datasources/inventory_alerts_datasource.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class ReportsProvider extends ChangeNotifier {
   final ReportsRemoteDataSource dataSource;
+  final InventoryAlertsDataSource? balanceDataSource;
 
-  ReportsProvider({required this.dataSource});
+  ReportsProvider({required this.dataSource, this.balanceDataSource});
 
   bool _isLoading = false;
   bool get isLoading => _isLoading;
@@ -63,6 +65,39 @@ class ReportsProvider extends ChangeNotifier {
     return (totalProfit / totalRevenueWithCost) * 100;
   }
 
+  // ─── Balance Mensual ───────────────────────────────────────────────
+  bool _isLoadingBalance = false;
+  bool get isLoadingBalance => _isLoadingBalance;
+
+  /// Mes inicial para el Balance (por defecto: hace 5 meses)
+  DateTime _balanceStartMonth = DateTime(DateTime.now().year, DateTime.now().month - 5);
+  DateTime _balanceEndMonth = DateTime.now();
+
+  DateTime get balanceStartMonth => _balanceStartMonth;
+  DateTime get balanceEndMonth   => _balanceEndMonth;
+
+  List<dynamic> _balanceMonths = [];
+  List<dynamic> get balanceMonths => _balanceMonths;
+
+  Map<String, dynamic> _balanceTotals = {};
+  Map<String, dynamic> get balanceTotals => _balanceTotals;
+
+  double get balanceTotalRevenue  => double.tryParse(_balanceTotals['total_revenue']?.toString() ?? '0') ?? 0;
+  double get balanceTotalProfit   => double.tryParse(_balanceTotals['total_profit']?.toString() ?? '0') ?? 0;
+  double get balanceAvgMargin     => double.tryParse(_balanceTotals['avg_margin_pct']?.toString() ?? '0') ?? 0;
+  double get balanceTotalCost     => double.tryParse(_balanceTotals['total_cost']?.toString() ?? '0') ?? 0;
+
+  double get balanceMaxRevenue {
+    if (_balanceMonths.isEmpty) return 1;
+    return _balanceMonths.map((m) => double.tryParse(m['total_revenue'].toString()) ?? 0).reduce((a, b) => a > b ? a : b);
+  }
+
+  void setBalanceRange(DateTime start, DateTime end) {
+    _balanceStartMonth = DateTime(start.year, start.month);
+    _balanceEndMonth   = DateTime(end.year, end.month);
+    notifyListeners();
+  }
+
   void setDateRange(DateTime start, DateTime end) {
     _startDate = start;
     _endDate = end;
@@ -87,6 +122,26 @@ class ReportsProvider extends ChangeNotifier {
       _error = e.toString();
     } finally {
       _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> fetchMonthlyBalance() async {
+    _isLoadingBalance = true;
+    notifyListeners();
+
+    try {
+      final mf = DateFormat('yyyy-MM');
+      final result = await balanceDataSource!.getMonthlyBalance(
+        mf.format(_balanceStartMonth),
+        mf.format(_balanceEndMonth),
+      );
+      _balanceMonths  = result['months'] ?? [];
+      _balanceTotals  = Map<String, dynamic>.from(result['totals'] ?? {});
+    } catch (e) {
+      _error = e.toString();
+    } finally {
+      _isLoadingBalance = false;
       notifyListeners();
     }
   }

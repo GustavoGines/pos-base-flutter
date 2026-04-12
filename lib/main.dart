@@ -13,6 +13,8 @@ import 'features/auth/presentation/providers/auth_provider.dart';
 import 'features/customers/providers/customer_provider.dart';
 import 'features/trash/providers/trash_provider.dart';
 import 'features/reports/presentation/providers/reports_provider.dart';
+import 'features/reports/presentation/providers/inventory_alerts_provider.dart';
+import 'features/reports/data/datasources/inventory_alerts_datasource.dart';
 import 'core/config/app_config.dart';
 
 import 'core/presentation/widgets/license_guard.dart';
@@ -177,6 +179,10 @@ void main() async {
   final reportsDataSource = ReportsRemoteDataSource(
       baseUrl: apiUrl, client: httpClient);
 
+  // Inventory Alerts & Monthly Balance
+  final inventoryAlertsDataSource = InventoryAlertsDataSource(
+      baseUrl: apiUrl, client: httpClient);
+
   // Auth — ya instanciado antes de runApp (ver arriba con restoreSessionFromPrefs)
 
   // Users
@@ -201,7 +207,11 @@ void main() async {
           getProductsUseCase: getProductsUseCase,
           repository: catalogRepo,
         ), lazy: false),
-        ChangeNotifierProvider(create: (_) => ReportsProvider(dataSource: reportsDataSource), lazy: false),
+        ChangeNotifierProvider(create: (_) => ReportsProvider(dataSource: reportsDataSource, balanceDataSource: inventoryAlertsDataSource), lazy: false),
+        ChangeNotifierProvider(
+          create: (_) => InventoryAlertsProvider(dataSource: inventoryAlertsDataSource),
+          lazy: false,
+        ),
         ChangeNotifierProvider(
           create: (_) => CashRegisterProvider(
             getCurrentShiftUseCase: GetCurrentShiftUseCase(cashRegisterRepo),

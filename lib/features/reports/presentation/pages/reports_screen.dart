@@ -13,13 +13,23 @@ class ReportsScreen extends StatefulWidget {
   State<ReportsScreen> createState() => _ReportsScreenState();
 }
 
-class _ReportsScreenState extends State<ReportsScreen> {
+class _ReportsScreenState extends State<ReportsScreen>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tabController;
+
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 2, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<ReportsProvider>().fetchProfitByCategory();
     });
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
   }
 
   Future<void> _selectDateRange(BuildContext context) async {
@@ -54,21 +64,58 @@ class _ReportsScreenState extends State<ReportsScreen> {
         builder: (context, provider, _) {
           return Column(
             children: [
-              // ── Barra de filtros ─────────────────────────────────────────────
-              _FiltersBar(
-                provider: provider,
-                onDateTap: () => _selectDateRange(context),
-                onRefresh: () => provider.fetchProfitByCategory(),
+              // ── Tab Bar ─────────────────────────────────────────────────────
+              Container(
+                color: Colors.white,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TabBar(
+                      controller: _tabController,
+                      labelColor: Colors.indigo.shade800,
+                      unselectedLabelColor: Colors.blueGrey,
+                      indicatorColor: Colors.indigo.shade700,
+                      indicatorWeight: 3,
+                      labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                      tabs: const [
+                        Tab(icon: Icon(Icons.bar_chart, size: 18), text: 'Por Categoría'),
+                        Tab(icon: Icon(Icons.calendar_month, size: 18), text: 'Balance Mensual'),
+                      ],
+                    ),
+                    // Filtros solo en pestaña 1 (Por Categoría)
+                    AnimatedBuilder(
+                      animation: _tabController,
+                      builder: (_, __) {
+                        if (_tabController.index == 0) {
+                          return _FiltersBar(
+                            provider: provider,
+                            onDateTap: () => _selectDateRange(context),
+                            onRefresh: () => provider.fetchProfitByCategory(),
+                          );
+                        }
+                        return const SizedBox.shrink();
+                      },
+                    ),
+                  ],
+                ),
               ),
-              // ── Contenido ────────────────────────────────────────────────────
+              // ── Contenido de pestañas ────────────────────────────────────────
               Expanded(
-                child: provider.isLoading
-                    ? const Center(child: CircularProgressIndicator())
-                    : provider.error != null
-                        ? _ErrorState(message: provider.error!)
-                        : provider.reportData.isEmpty
-                            ? const _EmptyState()
-                            : _DashboardContent(provider: provider),
+                child: TabBarView(
+                  controller: _tabController,
+                  children: [
+                    // Tab 0: Por Categoría (dashboard existente)
+                    provider.isLoading
+                        ? const Center(child: CircularProgressIndicator())
+                        : provider.error != null
+                            ? _ErrorState(message: provider.error!)
+                            : provider.reportData.isEmpty
+                                ? const _EmptyState()
+                                : _DashboardContent(provider: provider),
+                    // Tab 1: Balance Mensual
+                    _MonthlyBalanceTab(provider: provider),
+                  ],
+                ),
               ),
             ],
           );
@@ -858,6 +905,367 @@ class _TimeSeriesChartCard extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+// ─── Pestaña Balance Mensual ──────────────────────────────────────────────────
+
+class _MonthlyBalanceTab extends StatefulWidget {
+  final ReportsProvider provider;
+  const _MonthlyBalanceTab({required this.provider});
+
+  @override
+  State<_MonthlyBalanceTab> createState() => _MonthlyBalanceTabState();
+}
+
+class _MonthlyBalanceTabState extends State<_MonthlyBalanceTab> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (widget.provider.balanceMonths.isEmpty) {
+        widget.provider.fetchMonthlyBalance();
+      }
+    });
+  }
+
+  Future<void> _pickMonth(BuildContext ctx, bool isStart) async {
+    final provider = widget.provider;
+    final initial = isStart ? provider.balanceStartMonth : provider.balanceEndMonth;
+    DateTime picked = initial;
+
+    await showDialog(
+      context: ctx,
+      builder: (dCtx) => AlertDialog(
+        title: Text(isStart ? 'Mes de inicio' : 'Mes de fin'),
+        content: SizedBox(
+          width: 320,
+          child: CalendarDatePicker(
+            initialDate: initial,
+            firstDate: DateTime(2023),
+            lastDate: DateTime.now(),
+            initialCalendarMode: DatePickerMode.year,
+            onDateChanged: (d) => picked = d,
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dCtx), child: const Text('Cancelar')),
+          FilledButton(
+            onPressed: () => Navigator.pop(dCtx, true),
+            child: const Text('Aplicar'),
+          ),
+        ],
+      ),
+    );
+
+    if (!ctx.mounted) return;
+    if (isStart) {
+      provider.setBalanceRange(
+        DateTime(picked.year, picked.month),
+        provider.balanceEndMonth,
+      );
+    } else {
+      provider.setBalanceRange(
+        provider.balanceStartMonth,
+        DateTime(picked.year, picked.month),
+      );
+    }
+    provider.fetchMonthlyBalance();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final provider = widget.provider;
+    final mf = DateFormat('MMM yyyy', 'es');
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── Selectores de mes ─────────────────────────────────────────────
+          Card(
+            elevation: 0,
+            color: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: Colors.grey.shade200),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              child: Row(
+                children: [
+                  const Icon(Icons.calendar_month, color: Colors.indigo, size: 20),
+                  const SizedBox(width: 10),
+                  const Text('Período:',
+                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                  const SizedBox(width: 12),
+                  OutlinedButton.icon(
+                    onPressed: () => _pickMonth(context, true),
+                    icon: const Icon(Icons.arrow_drop_down, size: 16),
+                    label: Text('Desde: ${mf.format(provider.balanceStartMonth)}'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.indigo.shade800,
+                      side: BorderSide(color: Colors.indigo.shade200),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  OutlinedButton.icon(
+                    onPressed: () => _pickMonth(context, false),
+                    icon: const Icon(Icons.arrow_drop_down, size: 16),
+                    label: Text('Hasta: ${mf.format(provider.balanceEndMonth)}'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.indigo.shade800,
+                      side: BorderSide(color: Colors.indigo.shade200),
+                    ),
+                  ),
+                  const Spacer(),
+                  if (provider.isLoadingBalance)
+                    const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2))
+                  else
+                    IconButton(
+                      onPressed: () => provider.fetchMonthlyBalance(),
+                      icon: const Icon(Icons.refresh, size: 18),
+                      tooltip: 'Actualizar',
+                      color: Colors.blueGrey.shade600,
+                    ),
+                ],
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          if (provider.isLoadingBalance)
+            const Center(
+                child: Padding(
+                    padding: EdgeInsets.all(48),
+                    child: CircularProgressIndicator()))
+          else if (provider.balanceMonths.isEmpty)
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.all(48),
+                child: Column(
+                  children: [
+                    Icon(Icons.bar_chart_outlined, size: 64, color: Colors.grey.shade300),
+                    const SizedBox(height: 16),
+                    Text('Sin datos en el período seleccionado.',
+                        style: TextStyle(color: Colors.grey.shade500, fontSize: 15)),
+                  ],
+                ),
+              ),
+            )
+          else ...[
+            // ── BarChart panorámico ─────────────────────────────────────────
+            Card(
+              elevation: 0,
+              color: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(color: Colors.grey.shade200),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text('Facturación vs Ganancia por Mes',
+                            style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.blueGrey.shade800)),
+                        const Spacer(),
+                        _BarLegend(color: Colors.indigo.shade400, label: 'Facturación'),
+                        const SizedBox(width: 12),
+                        _BarLegend(color: Colors.green.shade500, label: 'Ganancia'),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
+                    SizedBox(
+                      height: 280,
+                      child: BarChart(
+                        BarChartData(
+                          maxY: provider.balanceMaxRevenue * 1.15,
+                          gridData: FlGridData(
+                            show: true,
+                            drawVerticalLine: false,
+                            horizontalInterval: provider.balanceMaxRevenue / 4 == 0
+                                ? 1
+                                : provider.balanceMaxRevenue / 4,
+                            getDrawingHorizontalLine: (v) =>
+                                FlLine(color: Colors.grey.shade100, strokeWidth: 1),
+                          ),
+                          borderData: FlBorderData(show: false),
+                          titlesData: FlTitlesData(
+                            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                            bottomTitles: AxisTitles(
+                              sideTitles: SideTitles(
+                                showTitles: true,
+                                reservedSize: 32,
+                                getTitlesWidget: (value, meta) {
+                                  final idx = value.toInt();
+                                  if (idx < 0 || idx >= provider.balanceMonths.length) {
+                                    return const SizedBox.shrink();
+                                  }
+                                  final label = provider.balanceMonths[idx]['label'].toString();
+                                  // Abreviamos: "Ene 2026" → "Ene"
+                                  final short = label.split(' ').first;
+                                  return Padding(
+                                    padding: const EdgeInsets.only(top: 6),
+                                    child: Text(short,
+                                        style: TextStyle(
+                                            color: Colors.grey.shade500, fontSize: 11)),
+                                  );
+                                },
+                              ),
+                            ),
+                            leftTitles: AxisTitles(
+                              sideTitles: SideTitles(
+                                showTitles: true,
+                                reservedSize: 52,
+                                interval: provider.balanceMaxRevenue / 4 == 0
+                                    ? 1
+                                    : provider.balanceMaxRevenue / 4,
+                                getTitlesWidget: (value, meta) {
+                                  if (value == 0) return const SizedBox.shrink();
+                                  if (value >= 1000) {
+                                    return Text(
+                                        '\$${(value / 1000).toStringAsFixed(0)}k',
+                                        style: TextStyle(
+                                            color: Colors.grey.shade500, fontSize: 10));
+                                  }
+                                  return Text('\$${value.toStringAsFixed(0)}',
+                                      style: TextStyle(
+                                          color: Colors.grey.shade500, fontSize: 10));
+                                },
+                              ),
+                            ),
+                          ),
+                          barGroups: provider.balanceMonths
+                              .asMap()
+                              .entries
+                              .map((entry) {
+                                final idx = entry.key;
+                                final m = entry.value;
+                                final rev = double.tryParse(m['total_revenue'].toString()) ?? 0;
+                                final profit = double.tryParse(m['total_profit'].toString()) ?? 0;
+                                return BarChartGroupData(
+                                  x: idx,
+                                  barRods: [
+                                    BarChartRodData(
+                                      toY: rev,
+                                      color: Colors.indigo.shade400,
+                                      width: 16,
+                                      borderRadius: const BorderRadius.vertical(
+                                          top: Radius.circular(4)),
+                                    ),
+                                    BarChartRodData(
+                                      toY: profit,
+                                      color: Colors.green.shade500,
+                                      width: 16,
+                                      borderRadius: const BorderRadius.vertical(
+                                          top: Radius.circular(4)),
+                                    ),
+                                  ],
+                                  barsSpace: 4,
+                                );
+                              })
+                              .toList(),
+                          barTouchData: BarTouchData(
+                            touchTooltipData: BarTouchTooltipData(
+                              getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                                if (groupIndex >= provider.balanceMonths.length) return null;
+                                final m = provider.balanceMonths[groupIndex];
+                                final label = m['label'].toString();
+                                final isRevenue = rodIndex == 0;
+                                return BarTooltipItem(
+                                  '${isRevenue ? "Facturación" : "Ganancia"}\n$label\n\$${rod.toY.toCurrency()}',
+                                  TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                    fontWeight: isRevenue ? FontWeight.bold : FontWeight.normal,
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 16),
+
+            // ── KPI Cards del Balance ─────────────────────────────────────────
+            Row(
+              children: [
+                Expanded(
+                    child: _HeroCard(
+                  title: 'Facturación Total',
+                  value: '\$${provider.balanceTotalRevenue.toCurrency()}',
+                  icon: Icons.attach_money,
+                  color: Colors.indigo.shade600,
+                  bgColor: Colors.indigo.shade50,
+                )),
+                const SizedBox(width: 16),
+                Expanded(
+                    child: _HeroCard(
+                  title: 'Costo Total',
+                  value: '\$${provider.balanceTotalCost.toCurrency()}',
+                  icon: Icons.shopping_cart_checkout,
+                  color: Colors.red.shade600,
+                  bgColor: Colors.red.shade50,
+                )),
+                const SizedBox(width: 16),
+                Expanded(
+                    child: _HeroCard(
+                  title: 'Ganancia Neta',
+                  value: '\$${provider.balanceTotalProfit.toCurrency()}',
+                  icon: Icons.trending_up,
+                  color: Colors.green.shade600,
+                  bgColor: Colors.green.shade50,
+                )),
+                const SizedBox(width: 16),
+                Expanded(
+                    child: _HeroCard(
+                  title: 'Margen Promedio',
+                  value: '${provider.balanceAvgMargin.toStringAsFixed(1)}%',
+                  icon: Icons.pie_chart,
+                  color: Colors.purple.shade600,
+                  bgColor: Colors.purple.shade50,
+                )),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _BarLegend extends StatelessWidget {
+  final Color color;
+  final String label;
+  const _BarLegend({required this.color, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(width: 12, height: 12, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(2))),
+        const SizedBox(width: 4),
+        Text(label, style: TextStyle(fontSize: 11, color: Colors.blueGrey.shade600)),
+      ],
     );
   }
 }

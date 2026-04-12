@@ -4,6 +4,7 @@ import 'package:frontend_desktop/core/presentation/widgets/shared_user_menu.dart
 import 'package:provider/provider.dart';
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
 import 'package:frontend_desktop/features/catalog/presentation/widgets/stock_alert_bell.dart';
+import 'package:frontend_desktop/features/reports/presentation/widgets/inventory_alerts_widget.dart';
 
 class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
   final String currentRoute;
@@ -142,6 +143,8 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         const StockAlertBell(),
+                        const SizedBox(width: 4),
+                        const InventoryAlertsWidget(),
                         const SizedBox(width: 8),
                         if (extraAction != null) ...[
                           extraAction!,
