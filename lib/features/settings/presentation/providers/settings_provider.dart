@@ -29,7 +29,7 @@ class SettingsProvider with ChangeNotifier {
   
   LicenseSecurityStatus get securityStatus => LicenseHeartbeatService().securityStatus;
   String get currentPlan => _settings?.licensePlanType ?? 'basic';
-  List<String> get allowedAddons => _settings?.licenseAllowedAddons ?? [];
+  List<String> get allowedAddons => _settings?.licenseFeatures ?? [];
 
   // ─── [feature-flags] Permisos Modulares ─────────────────────────────────────
   /// True cuando la licencia remota indica business_type = 'hardware_store'.

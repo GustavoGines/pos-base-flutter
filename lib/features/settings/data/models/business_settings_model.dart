@@ -17,7 +17,6 @@ class BusinessSettingsModel extends BusinessSettings {
     String? licenseStatus,
     String? licensePlanType,
     String? licensePlanMode,
-    List<String>? licenseAllowedAddons,
     String? lastLicenseCheck,
     String? serverTime,
     DateTime? licenseExpiresAt,
@@ -41,7 +40,6 @@ class BusinessSettingsModel extends BusinessSettings {
           licenseStatus: licenseStatus,
           licensePlanType: licensePlanType,
           licensePlanMode: licensePlanMode,
-          licenseAllowedAddons: licenseAllowedAddons,
           lastLicenseCheck: lastLicenseCheck,
           serverTime: serverTime,
           licenseExpiresAt: licenseExpiresAt,
@@ -53,8 +51,17 @@ class BusinessSettingsModel extends BusinessSettings {
         );
 
   factory BusinessSettingsModel.fromJson(Map<String, dynamic> json) {
-    // Parsear el diccionario de features dinámico
-    final Map<String, dynamic> featuresMap = json['features'] ?? {};
+    // Parsear el diccionario de features desde la base de datos local (JSON string)
+    final String featuresJson = json['license_features_dict'] ?? '{}';
+    Map<String, dynamic> featuresMap = {};
+    try {
+      featuresMap = jsonDecode(featuresJson);
+    } catch (_) {
+      // Si falla, intentamos leer 'features' por si viene de una respuesta API directa no persistida
+      if (json['features'] is Map) {
+        featuresMap = json['features'];
+      }
+    }
     
     final featureFlags = FeatureFlags(
       fastPos: featuresMap['fast_pos'] ?? false,
@@ -82,7 +89,6 @@ class BusinessSettingsModel extends BusinessSettings {
       licenseStatus: json['license_key'],      // The actual license key string
       licensePlanType: json['app_plan'],        // Written by LicenseSyncService as 'app_plan'
       licensePlanMode: json['license_plan_mode'] ?? 'saas',
-      licenseAllowedAddons: _parseList(json['license_allowed_addons']),
       lastLicenseCheck: json['last_license_check'],
       serverTime: json['server_time'],
       licenseExpiresAt: json['license_expires_at'] != null ? DateTime.tryParse(json['license_expires_at']) : null,
@@ -94,25 +100,7 @@ class BusinessSettingsModel extends BusinessSettings {
     );
   }
 
-  /// Parser ultra-seguro: nunca crashea. Acepta null, String JSON o List nativa.
-  static List<String> _parseList(dynamic value) {
-    if (value == null) return [];
-    if (value is List) {
-      return value.map((e) => e.toString()).toList();
-    }
-    if (value is String) {
-      if (value.isEmpty) return [];
-      try {
-        final decoded = jsonDecode(value);
-        if (decoded is List) {
-          return decoded.map((e) => e.toString()).toList();
-        }
-      } catch (_) {
-        return [];
-      }
-    }
-    return [];
-  }
+
 
   Map<String, dynamic> toJson() {
     return {

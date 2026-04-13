@@ -49,7 +49,6 @@ class BusinessSettings extends Equatable {
   final String? licenseStatus;
   final String? licensePlanType;
   final String? licensePlanMode; // 'saas' or 'lifetime'
-  final List<String>? licenseAllowedAddons;
   final String? lastLicenseCheck;
   final String? serverTime; // Timestamp from the server
   final DateTime? licenseExpiresAt;
@@ -96,7 +95,6 @@ class BusinessSettings extends Equatable {
     this.licenseStatus,
     this.licensePlanType,
     this.licensePlanMode,
-    this.licenseAllowedAddons,
     this.lastLicenseCheck,
     this.serverTime,
     this.licenseExpiresAt,
@@ -123,7 +121,6 @@ class BusinessSettings extends Equatable {
         licenseStatus,
         licensePlanType,
         licensePlanMode,
-        licenseAllowedAddons,
         lastLicenseCheck,
         serverTime,
         licenseExpiresAt,
