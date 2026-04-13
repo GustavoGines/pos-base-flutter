@@ -33,7 +33,7 @@ jobs:
       - name: 🐦 Configurar Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.29.2'   # Ajustá a tu versión de producción
+          flutter-version: '3.41.4'   # Misma versión que el entorno de desarrollo local (Dart 3.11.1)
           channel: 'stable'
           cache: true
 
