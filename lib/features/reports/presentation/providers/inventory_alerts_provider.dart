@@ -14,15 +14,22 @@ class InventoryAlertsProvider extends ChangeNotifier {
   List<dynamic> _alerts = [];
   List<dynamic> get alerts => _alerts;
 
-  List<dynamic> get criticalAlerts =>
-      _alerts.where((a) => a['alert_level'] == 'critical').toList();
+  List<dynamic> get reactiveAlerts =>
+      _alerts.where((a) => a['alert_type'] == 'out_of_stock' || a['alert_type'] == 'low_stock').toList();
 
-  List<dynamic> get warningAlerts =>
-      _alerts.where((a) => a['alert_level'] == 'warning').toList();
+  List<dynamic> get predictiveCriticalAlerts =>
+      _alerts.where((a) => a['alert_type'] == 'predictive' && a['alert_level'] == 'critical').toList();
 
   int get totalAlertsCount => _alerts.length;
 
-  Future<void> fetchAlerts({int threshold = 7}) async {
+  /// Retorna el tipo de alerta visual para un producto específico en el POS.
+  String? getAlertStatusForProduct(int productId) {
+    if (reactiveAlerts.any((a) => (a['product_id'] as num?)?.toInt() == productId)) return 'out_of_stock';
+    if (predictiveCriticalAlerts.any((a) => (a['product_id'] as num?)?.toInt() == productId)) return 'predictive_critical';
+    return null;
+  }
+
+  Future<void> fetchAlerts({int threshold = 3}) async {
     _isLoading = true;
     _error = null;
     notifyListeners();

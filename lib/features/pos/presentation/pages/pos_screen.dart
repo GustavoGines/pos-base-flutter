@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:frontend_desktop/features/pos/domain/entities/cart_item.dart';
 import 'package:provider/provider.dart';
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import '../providers/pos_provider.dart';
@@ -13,6 +14,7 @@ import '../../../auth/presentation/providers/auth_provider.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import 'package:flutter_libserialport/flutter_libserialport.dart';
 import 'package:frontend_desktop/features/quotes/presentation/providers/quote_provider.dart';
+import 'package:frontend_desktop/features/reports/presentation/providers/inventory_alerts_provider.dart';
 
 class PosScreen extends StatefulWidget {
   const PosScreen({Key? key}) : super(key: key);
@@ -641,6 +643,12 @@ class _PosScreenState extends State<PosScreen> {
             catalogProvider.loadProducts(page: 1, search: '').catchError((e) {
               debugPrint('Refresco silencioso falló (esperado en redes inestables): $e');
             });
+            // Refrescar alertas de inventario (Stock mínimo y preventivas)
+            try {
+              Provider.of<InventoryAlertsProvider>(context, listen: false).fetchAlerts();
+            } catch (e) {
+              debugPrint('Error refrescando alertas: $e');
+            }
           }
         });
       }
@@ -1268,36 +1276,16 @@ class _PosScreenState extends State<PosScreen> {
                       separatorBuilder: (_, __) => const Divider(height: 1),
                       itemBuilder: (context, index) {
                         final item = pos.cart[index];
-                        final bool exceedsStock = item.quantity > item.product.stock;
                         final String qtyDisplay = item.product.isSoldByWeight 
                             ? item.quantity.toQty() 
                             : item.quantity.toInt().toString();
-                        final String stockDisplay = item.product.isSoldByWeight
-                            ? item.product.stock.toQty()
-                            : item.product.stock.toInt().toString();
 
                         return ListTile(
-                          title: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(item.product.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                              if (exceedsStock)
-                                Text(
-                                  'Stock disponible: $stockDisplay',
-                                  style: TextStyle(fontSize: 12, color: Colors.orange.shade800),
-                                ),
-                            ],
-                          ),
+                          title: Text(item.product.name, style: const TextStyle(fontWeight: FontWeight.bold)),
                           subtitle: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                '$qtyDisplay x \$${item.unitPrice.toCurrency()}',
-                                style: TextStyle(
-                                  color: exceedsStock ? Colors.red.shade600 : null,
-                                  fontWeight: exceedsStock ? FontWeight.bold : null,
-                                ),
-                              ),
+                              Text('$qtyDisplay x \$${item.unitPrice.toCurrency()}'),
                               if (item.product.getApplicableTier(item.quantity) != null && item.unitPrice < item.product.sellingPrice)
                                 Container(
                                   margin: const EdgeInsets.only(top: 4),
@@ -1312,6 +1300,8 @@ class _PosScreenState extends State<PosScreen> {
                                     style: TextStyle(fontSize: 10, color: Colors.green.shade800, fontWeight: FontWeight.bold),
                                   ),
                                 ),
+                              _CartItemStockIndicator(item: item),
+
                             ],
                           ),
                           trailing: Row(
@@ -1673,6 +1663,72 @@ class _PosScreenState extends State<PosScreen> {
                   },
                 );
               },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Componentes Encapsulados ──────────────────────────────────────────────
+
+class _CartItemStockIndicator extends StatelessWidget {
+  final CartItem item;
+
+  const _CartItemStockIndicator({required this.item});
+
+  @override
+  Widget build(BuildContext context) {
+    if (item.product.isCombo) return const SizedBox.shrink();
+
+    // 💡 IMPORTANTE: Todo context.select() debe estar siempre en la raíz del build, NUNCA condicionado.
+    final status = context.select<InventoryAlertsProvider, String?>((p) => p.getAlertStatusForProduct(item.product.id));
+    final hasPredictive = context.select<SettingsProvider, bool>((s) => s.hasFeature('predictive_alerts'));
+
+    // 1. Verificación en tiempo real (Proyección Local)
+    // Calcula cómo quedará el stock si aprueba esta venta
+    final projectedStock = item.product.stock - item.quantity;
+    final minStock = item.product.minStock ?? 0;
+    final bool isCriticalLocally = projectedStock <= minStock;
+
+    // 2. Estado persistente del servidor (Backend)
+    final bool isCriticalBackend = status == 'out_of_stock';
+    final bool isPredictiveBackend = status == 'predictive';
+
+    final bool isCritical = isCriticalLocally || isCriticalBackend;
+    
+    // Si no es crítico y no hay estado predictivo del server, ocultamos
+    if (!isCritical && !isPredictiveBackend) return const SizedBox.shrink();
+
+    // 🔒 CANDADO 2: La alerta predictiva naranja solo se muestra con el addon activo.
+    if (!isCritical && isPredictiveBackend && !hasPredictive) {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(top: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: isCritical ? Colors.red.shade50 : Colors.orange.shade50,
+        border: Border.all(color: isCritical ? Colors.red.shade200 : Colors.orange.shade200),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            isCritical ? Icons.error_outline : Icons.warning_amber_rounded,
+            color: isCritical ? Colors.red.shade600 : Colors.orange.shade700,
+            size: 10,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            isCritical ? '🔴 Crítico (Quedan: ${projectedStock.toInt()} u)' : '🟠 Quiebre en <3d',
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+              color: isCritical ? Colors.red.shade700 : Colors.orange.shade800,
             ),
           ),
         ],

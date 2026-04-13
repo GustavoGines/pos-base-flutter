@@ -781,15 +781,15 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
       'name': _nameCtrl.text.trim(),
       if (_barcodeCtrl.text.isNotEmpty) 'barcode': _barcodeCtrl.text.trim(),
       if (_internalCodeCtrl.text.isNotEmpty) 'internal_code': _internalCodeCtrl.text.trim(),
-      'cost_price': double.parse(_costCtrl.text.replaceAll(',', '.')),
-      'selling_price': double.parse(_priceCtrl.text.replaceAll(',', '.')),
+      'cost_price': double.tryParse(_costCtrl.text.replaceAll(',', '.')) ?? 0.0,
+      'selling_price': double.tryParse(_priceCtrl.text.replaceAll(',', '.')) ?? 0.0,
       // [hardware_store] solo se envían si tienen valor (retrocompatible con retail)
       if (_wholesaleCtrl.text.trim().isNotEmpty)
-        'price_wholesale': double.parse(_wholesaleCtrl.text.replaceAll(',', '.')),
+        'price_wholesale': double.tryParse(_wholesaleCtrl.text.replaceAll(',', '.')) ?? 0.0,
       if (_cardCtrl.text.trim().isNotEmpty)
-        'price_card': double.parse(_cardCtrl.text.replaceAll(',', '.')),
-      'stock': double.parse(_stockCtrl.text.replaceAll(',', '.')),
-      'min_stock': _minStockCtrl.text.trim().isNotEmpty ? double.parse(_minStockCtrl.text.replaceAll(',', '.')) : null,
+        'price_card': double.tryParse(_cardCtrl.text.replaceAll(',', '.')) ?? 0.0,
+      'stock': double.tryParse(_stockCtrl.text.replaceAll(',', '.')) ?? 0.0,
+      'min_stock': _minStockCtrl.text.trim().isNotEmpty ? double.tryParse(_minStockCtrl.text.replaceAll(',', '.')) : null,
       'is_sold_by_weight': _isSoldByWeight,
       'is_combo': _isCombo,
       if (_isCombo) 'combo_ingredients': _comboIngredients,

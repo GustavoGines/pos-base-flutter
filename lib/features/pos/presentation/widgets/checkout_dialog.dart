@@ -11,6 +11,7 @@ import '../../../customers/presentation/widgets/customer_form_dialog.dart';
 import '../../../customers/providers/customer_provider.dart';
 import '../../../customers/models/customer_model.dart';
 import '../../../../core/utils/snack_bar_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class PaymentLine {
   PaymentMethod? method;
@@ -72,10 +73,20 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   @override
   void initState() {
     super.initState();
+    _loadPrintPreference();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initFirstLine();
     });
     _cashTenderedCtrl.addListener(() => setState(() {}));
+  }
+
+  Future<void> _loadPrintPreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) {
+      setState(() {
+        _printReceipt = prefs.getBool('auto_print_receipt') ?? true;
+      });
+    }
   }
 
   void _initFirstLine() {
@@ -792,8 +803,12 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                 activeColor: Colors.blue.shade600,
                 contentPadding: EdgeInsets.zero,
                 controlAffinity: ListTileControlAffinity.leading,
-                onChanged: (val) {
-                  if (val != null) setState(() => _printReceipt = val);
+                onChanged: (val) async {
+                  if (val != null) {
+                    setState(() => _printReceipt = val);
+                    final prefs = await SharedPreferences.getInstance();
+                    await prefs.setBool('auto_print_receipt', val);
+                  }
                 },
               ),
               const SizedBox(height: 24),

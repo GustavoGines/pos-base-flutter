@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
 import 'package:frontend_desktop/features/catalog/presentation/providers/catalog_provider.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
+import 'package:frontend_desktop/features/reports/presentation/providers/inventory_alerts_provider.dart';
 
 class StockAdjustmentDialog extends StatefulWidget {
   final CatalogProvider provider;
@@ -114,6 +115,11 @@ class _StockAdjustmentDialogState extends State<StockAdjustmentDialog> {
         }
         
         SnackBarService.success(context, snackMsg);
+
+        // Disparar sincronización global silenciosa del Motor Cero Gravedad
+        try {
+          Provider.of<InventoryAlertsProvider>(context, listen: false).fetchAlerts();
+        } catch (_) {}
       } else {
         SnackBarService.error(context, widget.provider.errorMessage ?? 'Error al ajustar stock.');
       }

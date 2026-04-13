@@ -3,8 +3,8 @@ import 'package:frontend_desktop/features/auth/presentation/widgets/admin_pin_di
 import 'package:frontend_desktop/core/presentation/widgets/shared_user_menu.dart';
 import 'package:provider/provider.dart';
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
-import 'package:frontend_desktop/features/catalog/presentation/widgets/stock_alert_bell.dart';
 import 'package:frontend_desktop/features/reports/presentation/widgets/inventory_alerts_widget.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
   final String currentRoute;
@@ -74,6 +74,7 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                     final bool canAccessCuentasCorrientes = settings.hasFeature('current_accounts');
                     final bool canAccessQuotes = settings.hasFeature('quotes'); // [feature-flags]
                     final bool canAccessPos = settings.hasFeature('fast_pos');
+                    final bool canAccessAdvancedReports = settings.hasFeature('advanced_reports');
 
                     return SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
@@ -104,12 +105,21 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                             activeColor: Colors.deepPurple,
                             permissionKey: 'manage_catalog',
                           ),
+                          // Tab de Reportes Gerenciales — visible siempre, bloqueado sin addon
                           _buildNavTab(
                             context: context,
                             label: 'Reportes Gerenciales',
-                            icon: Icons.bar_chart,
+                            icon: canAccessAdvancedReports ? Icons.bar_chart : Icons.lock_outline,
                             route: '/reports',
                             activeColor: Colors.purple.shade700,
+                            isLocked: !canAccessAdvancedReports,
+                            lockedTitle: 'Reportes Gerenciales PRO',
+                            lockedFeatures: const [
+                              'Balance mensual con ganacias y márgenes',
+                              'Exportación a Excel y PDF gerencial',
+                              'Análisis por categoría y período',
+                              'Comparativas de rendimiento',
+                            ],
                           ),
                           // Tab de Presupuestos — controlado por Feature Flag 'quotes'
                           if (canAccessQuotes)
@@ -127,6 +137,13 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                             route: '/cuentas-corrientes',
                             activeColor: Colors.orange.shade700,
                             isLocked: !canAccessCuentasCorrientes,
+                            lockedTitle: 'Cuentas Corrientes PRO',
+                            lockedFeatures: const [
+                              'Cuentas corrientes y límites de crédito por cliente',
+                              'Pago de tickets específicos',
+                              'Historial de movimientos en tiempo real',
+                              'Alertas de crédito insuficiente',
+                            ],
                           ),
                         ],
                       ),
@@ -142,8 +159,6 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const StockAlertBell(),
-                        const SizedBox(width: 4),
                         const InventoryAlertsWidget(),
                         const SizedBox(width: 8),
                         if (extraAction != null) ...[
@@ -169,6 +184,8 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
     required Color activeColor,
     String? permissionKey,
     bool isLocked = false,
+    String lockedTitle = 'Módulo PRO',
+    List<String> lockedFeatures = const [],
   }) {
     final isActive = currentRoute == route;
     final color = isLocked ? Colors.grey.shade400 : (isActive ? activeColor : Colors.blueGrey);
@@ -228,86 +245,7 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                   ? null
                   : () async {
                       if (isLocked) {
-                        showDialog(
-                          context: context,
-                          builder: (_) => Dialog(
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                            clipBehavior: Clip.antiAlias,
-                            child: SizedBox(
-                              width: 400,
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  // Gradient header
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 24),
-                                    decoration: const BoxDecoration(
-                                      gradient: LinearGradient(
-                                        colors: [Color(0xFF7C3AED), Color(0xFF3B82F6)],
-                                        begin: Alignment.topLeft,
-                                        end: Alignment.bottomRight,
-                                      ),
-                                    ),
-                                    child: Column(
-                                      children: [
-                                        Container(
-                                          padding: const EdgeInsets.all(14),
-                                          decoration: BoxDecoration(
-                                            color: Colors.white.withValues(alpha: 0.15),
-                                            shape: BoxShape.circle,
-                                          ),
-                                          child: const Icon(Icons.workspace_premium_rounded, color: Colors.white, size: 36),
-                                        ),
-                                        const SizedBox(height: 12),
-                                        const Text('Módulo PRO Disponible',
-                                            style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
-                                        const SizedBox(height: 6),
-                                        Text('Plan Básico activo',
-                                            style: TextStyle(color: Colors.white.withValues(alpha: 0.75), fontSize: 13)),
-                                      ],
-                                    ),
-                                  ),
-                                  // Body
-                                  Padding(
-                                    padding: const EdgeInsets.all(24),
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        const Text(
-                                          'Lleva el control total de tus clientes con el módulo de Cuentas Corrientes:',
-                                          style: TextStyle(fontSize: 14, color: Colors.black87),
-                                        ),
-                                        const SizedBox(height: 16),
-                                        _proFeature('Cuentas corrientes y límites de crédito por cliente'),
-                                        _proFeature('Pago de tickets específicos'),
-                                        _proFeature('Historial de movimientos en tiempo real'),
-                                        _proFeature('Alertas de crédito insuficiente'),
-                                        const SizedBox(height: 20),
-                                        const Text(
-                                          'Contacta a soporte para activar la Fase 2 de tu Sistema POS.',
-                                          style: TextStyle(fontSize: 12, color: Colors.black54),
-                                        ),
-                                        const SizedBox(height: 20),
-                                        SizedBox(
-                                          width: double.infinity,
-                                          child: ElevatedButton(
-                                            style: ElevatedButton.styleFrom(
-                                              backgroundColor: const Color(0xFF7C3AED),
-                                              padding: const EdgeInsets.symmetric(vertical: 14),
-                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                            ),
-                                            onPressed: () => Navigator.pop(context),
-                                            child: const Text('Entendido', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        );
+                        _showUpgradeDialog(context, title: lockedTitle, features: lockedFeatures);
                         return;
                       }
                       if (permissionKey != null) {
@@ -332,7 +270,107 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
   }
 }
 
-/// Helper top-level para el diálogo de upgrade PRO
+/// Diálogo genérico de upgrade PRO con botón de contacto por WhatsApp
+void _showUpgradeDialog(
+  BuildContext context, {
+  required String title,
+  required List<String> features,
+}) {
+  showDialog(
+    context: context,
+    builder: (_) => Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      clipBehavior: Clip.antiAlias,
+      child: SizedBox(
+        width: 420,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Gradient header
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 24),
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Color(0xFF7C3AED), Color(0xFF3B82F6)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+              ),
+              child: Column(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.15),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.workspace_premium_rounded, color: Colors.white, size: 36),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(title,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 6),
+                  Text('Plan Básico activo — Mejorá tu plan para desbloquear',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.white.withOpacity(0.80), fontSize: 12)),
+                ],
+              ),
+            ),
+            // Body
+            Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Con el Plan PRO desbloqueás:',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.black87),
+                  ),
+                  const SizedBox(height: 12),
+                  ...features.map((f) => _proFeature(f)),
+                  const SizedBox(height: 20),
+                  // WhatsApp CTA
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF25D366),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      icon: const Icon(Icons.chat_rounded, color: Colors.white),
+                      label: const Text(
+                        'Contratar Plan PRO por WhatsApp',
+                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                      ),
+                      onPressed: () async {
+                        final url = Uri.parse('https://wa.me/543704787285?text=Hola,%20quiero%20contratar%20el%20Plan%20PRO%20del%20Sistema%20POS');
+                        if (await canLaunchUrl(url)) {
+                          await launchUrl(url, mode: LaunchMode.externalApplication);
+                        }
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    child: TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Cerrar', style: TextStyle(color: Colors.black54)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
 Widget _proFeature(String text) => Padding(
   padding: const EdgeInsets.only(bottom: 8),
   child: Row(

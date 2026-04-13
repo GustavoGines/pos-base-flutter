@@ -4,6 +4,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
+import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
 import '../providers/reports_provider.dart';
 
 class ReportsScreen extends StatefulWidget {
@@ -20,7 +21,9 @@ class _ReportsScreenState extends State<ReportsScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    // El length se calcula en base a los addons disponibles
+    final hasAdvancedReports = context.read<SettingsProvider>().hasFeature('advanced_reports');
+    _tabController = TabController(length: hasAdvancedReports ? 2 : 1, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<ReportsProvider>().fetchProfitByCategory();
     });
@@ -57,6 +60,8 @@ class _ReportsScreenState extends State<ReportsScreen>
 
   @override
   Widget build(BuildContext context) {
+    final hasAdvancedReports = context.watch<SettingsProvider>().hasFeature('advanced_reports');
+
     return Scaffold(
       appBar: const GlobalAppBar(currentRoute: '/reports'),
       backgroundColor: Colors.grey.shade100,
@@ -77,12 +82,14 @@ class _ReportsScreenState extends State<ReportsScreen>
                       indicatorColor: Colors.indigo.shade700,
                       indicatorWeight: 3,
                       labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                      tabs: const [
-                        Tab(icon: Icon(Icons.bar_chart, size: 18), text: 'Por Categoría'),
-                        Tab(icon: Icon(Icons.calendar_month, size: 18), text: 'Balance Mensual'),
+                      tabs: [
+                        const Tab(icon: Icon(Icons.bar_chart, size: 18), text: 'Por Categoría'),
+                        // 🔒 CANDADO 3: Balance Mensual solo para plan con advanced_reports
+                        if (hasAdvancedReports)
+                          const Tab(icon: Icon(Icons.calendar_month, size: 18), text: 'Balance Mensual'),
                       ],
                     ),
-                    // Filtros solo en pestaña 1 (Por Categoría)
+                    // Filtros solo en pestaña 0 (Por Categoría)
                     AnimatedBuilder(
                       animation: _tabController,
                       builder: (_, __) {
@@ -104,7 +111,7 @@ class _ReportsScreenState extends State<ReportsScreen>
                 child: TabBarView(
                   controller: _tabController,
                   children: [
-                    // Tab 0: Por Categoría (dashboard existente)
+                    // Tab 0: Por Categoría (siempre disponible)
                     provider.isLoading
                         ? const Center(child: CircularProgressIndicator())
                         : provider.error != null
@@ -112,8 +119,9 @@ class _ReportsScreenState extends State<ReportsScreen>
                             : provider.reportData.isEmpty
                                 ? const _EmptyState()
                                 : _DashboardContent(provider: provider),
-                    // Tab 1: Balance Mensual
-                    _MonthlyBalanceTab(provider: provider),
+                    // Tab 1: Balance Mensual (solo con advanced_reports)
+                    if (hasAdvancedReports)
+                      _MonthlyBalanceTab(provider: provider),
                   ],
                 ),
               ),
@@ -977,7 +985,7 @@ class _MonthlyBalanceTabState extends State<_MonthlyBalanceTab> {
   @override
   Widget build(BuildContext context) {
     final provider = widget.provider;
-    final mf = DateFormat('MMM yyyy', 'es');
+    final mf = DateFormat('MMM yyyy');
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
