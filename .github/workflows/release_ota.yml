@@ -1,0 +1,132 @@
+# ============================================================
+#  OTA RELEASE PIPELINE — Sistema POS
+#  Repositorio: pos-frontend (Flutter Windows)
+#  Trigger: Push de un tag con formato v*  (ej: v1.1.0)
+#  Resultado: ZIP compilado subido a Cloudflare R2 y el
+#             servidor de licencias notificado automáticamente.
+# ============================================================
+name: 🚀 OTA Release Pipeline
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-and-deploy:
+    name: Build, Package & Deploy
+    runs-on: windows-latest
+
+    env:
+      # ── El workflow corre desde la raíz del repo pos-frontend ──
+      UPDATER_DIR:  updater
+      RELEASE_DIR:  build/windows/x64/runner/Release
+      ZIP_NAME:     update_${{ github.ref_name }}.zip
+
+    steps:
+
+      # ─── 1. CHECKOUT ────────────────────────────────────
+      - name: 📥 Checkout del repositorio
+        uses: actions/checkout@v4
+
+      # ─── 2. SETUP FLUTTER ───────────────────────────────
+      - name: 🐦 Configurar Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.29.2'   # Ajustá a tu versión de producción
+          channel: 'stable'
+          cache: true
+
+      # ─── 3. DEPENDENCIAS FLUTTER ────────────────────────
+      - name: 📦 Instalar dependencias Flutter
+        run: flutter pub get
+
+      # ─── 4. COMPILAR APP FLUTTER (Release) ──────────────
+      - name: 🔨 Compilar Sistema POS (Windows Release)
+        run: flutter build windows --release
+
+      # ─── 5. COMPILAR UPDATER ────────────────────────────
+      - name: ⚙️ Compilar Updater.exe (Dart AOT)
+        working-directory: ${{ env.UPDATER_DIR }}
+        run: |
+          dart pub get
+          dart compile exe bin/updater.dart -o updater.exe
+
+      # ─── 6. COPIAR UPDATER AL DIRECTORIO DE RELEASE ─────
+      - name: 📋 Copiar updater.exe al bundle final
+        shell: pwsh
+        run: |
+          Copy-Item -Path "${{ env.UPDATER_DIR }}\updater.exe" `
+                    -Destination "${{ env.RELEASE_DIR }}\updater.exe" `
+                    -Force
+
+      # ─── 7. EMPAQUETAR EN ZIP ───────────────────────────
+      - name: 🗜️ Crear ZIP del Release
+        shell: pwsh
+        run: |
+          Compress-Archive `
+            -Path "${{ env.RELEASE_DIR }}\*" `
+            -DestinationPath "${{ env.ZIP_NAME }}" `
+            -Force
+          $size = [math]::Round((Get-Item "${{ env.ZIP_NAME }}").Length / 1MB, 2)
+          Write-Host "✅ ZIP creado: ${{ env.ZIP_NAME }} ($size MB)"
+
+      # ─── 8. SUBIR A CLOUDFLARE R2 ───────────────────────
+      #   Secrets necesarios en GitHub → Settings → Secrets:
+      #     - CLOUDFLARE_ACCOUNT_ID
+      #     - R2_ACCESS_KEY_ID
+      #     - R2_SECRET_ACCESS_KEY
+      #     - R2_BUCKET_NAME
+      #     - R2_PUBLIC_BASE_URL  (ej: https://releases.tu-dominio.com)
+      - name: ☁️ Subir ZIP a Cloudflare R2
+        shell: pwsh
+        env:
+          AWS_ACCESS_KEY_ID:     ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION:    auto
+        run: |
+          aws s3 cp `
+            "${{ env.ZIP_NAME }}" `
+            "s3://${{ secrets.R2_BUCKET_NAME }}/releases/${{ env.ZIP_NAME }}" `
+            --endpoint-url "https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com" `
+            --no-progress
+          Write-Host "✅ ZIP subido a R2 exitosamente"
+
+      # ─── 9. NOTIFICAR AL SERVIDOR DE LICENCIAS ──────────
+      #   Secrets necesarios:
+      #     - LICENSE_SERVER_URL    (ej: https://mi-app.onrender.com)
+      #     - LICENSE_SERVER_TOKEN  (mismo valor que CI_DEPLOY_TOKEN en .env de Render)
+      - name: 📡 Registrar Release en el Servidor de Licencias
+        shell: pwsh
+        run: |
+          $VERSION      = "${{ github.ref_name }}"
+          $DOWNLOAD_URL = "${{ secrets.R2_PUBLIC_BASE_URL }}/releases/${{ env.ZIP_NAME }}"
+
+          $BODY = @{
+            version      = $VERSION
+            download_url = $DOWNLOAD_URL
+            changelog    = "Release $VERSION generado automaticamente por CI/CD."
+            is_critical  = $false
+            token        = "${{ secrets.LICENSE_SERVER_TOKEN }}"
+          } | ConvertTo-Json -Compress
+
+          try {
+            $response = Invoke-RestMethod `
+              -Uri "${{ secrets.LICENSE_SERVER_URL }}/api/releases/new" `
+              -Method POST `
+              -ContentType 'application/json' `
+              -Body $BODY
+            Write-Host "✅ Servidor notificado: $($response | ConvertTo-Json)"
+          } catch {
+            Write-Host "⚠️ Advertencia al notificar el servidor: $_"
+            # No interrumpimos el pipeline si el servidor está durmiendo (Render)
+          }
+
+      # ─── 10. GITHUB RELEASE (registro histórico) ─────────
+      - name: 🏷️ Publicar GitHub Release con el artifact
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.ZIP_NAME }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
