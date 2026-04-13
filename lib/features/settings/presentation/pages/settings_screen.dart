@@ -123,6 +123,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       'current_accounts': 'Cuentas Corrientes',
       'multiple_prices': 'Listas de Precios',
       'multi_caja': 'Múltiples Cajas',
+      'advanced_reports': '📊 Reportes Gerenciales (Balances, Excel, PDF)',
+      'predictive_alerts': '🧠 Alertas Inteligentes (Logística Predictiva)',
     };
     return dictionary[featureCode] ?? featureCode.toUpperCase();
   }
@@ -547,7 +549,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           subtitle: const Text('Crea, edita o elimina las terminales físicas del sistema.'),
           trailing: const Icon(Icons.chevron_right),
           onTap: () {
-            if (provider.hasFeature('multi_caja')) {
+            if (provider.features.multiCaja) {
               Navigator.pushNamed(context, '/settings/registers');
             } else {
               PlanUpgradeDialog.show(

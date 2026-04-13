@@ -68,7 +68,7 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
           overlayChildBuilder: (context) => _buildOverlayContent(context),
           child: Consumer2<InventoryAlertsProvider, SettingsProvider>(
             builder: (context, provider, settings, _) {
-              final hasPredictive = settings.hasFeature('predictive_alerts');
+              final hasPredictive = settings.features.predictiveAlerts;
               final count = hasPredictive ? provider.totalAlertsCount : provider.reactiveAlerts.length;
               final hasCritical = provider.reactiveAlerts.isNotEmpty || (hasPredictive && provider.predictiveCriticalAlerts.isNotEmpty);
 
@@ -214,7 +214,7 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
   Widget _buildBody() {
     return Consumer2<InventoryAlertsProvider, SettingsProvider>(
       builder: (context, provider, settings, _) {
-        final hasPredictive = settings.hasFeature('predictive_alerts');
+        final hasPredictive = settings.features.predictiveAlerts;
         
         if (provider.isLoading) {
           return const Padding(

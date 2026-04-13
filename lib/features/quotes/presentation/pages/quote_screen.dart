@@ -1,4 +1,4 @@
-﻿import 'package:frontend_desktop/core/utils/currency_formatter.dart';
+import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -292,7 +292,7 @@ class _QuoteScreenState extends State<QuoteScreen> {
   }
 
   Widget _buildProductCard(Product p) {
-    final hasMultiplePrices = context.watch<SettingsProvider>().hasFeature('multiple_prices');
+    final hasMultiplePrices = context.watch<SettingsProvider>().features.multiplePrices;
     return InkWell(
       onTap: () => _addProduct(p),
       borderRadius: BorderRadius.circular(10),
@@ -332,7 +332,7 @@ class _QuoteScreenState extends State<QuoteScreen> {
   }
 
   Widget _buildProductTile(Product p) {
-    final hasMultiplePrices = context.watch<SettingsProvider>().hasFeature('multiple_prices');
+    final hasMultiplePrices = context.watch<SettingsProvider>().features.multiplePrices;
     return ListTile(
       dense: true,
       leading: CircleAvatar(

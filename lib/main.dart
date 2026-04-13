@@ -237,7 +237,7 @@ void main() async {
         ChangeNotifierProxyProvider<SettingsProvider, CustomerProvider>(
           create: (_) => CustomerProvider(baseUrl: apiUrl),
           update: (_, settingsProvider, customerProvider) {
-            customerProvider!.setAccess(settingsProvider.hasFeature('cuentas_corrientes'));
+            customerProvider!.setAccess(settingsProvider.features.currentAccounts);
             return customerProvider;
           },
           lazy: false,

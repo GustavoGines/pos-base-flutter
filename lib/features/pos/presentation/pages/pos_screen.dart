@@ -1684,7 +1684,7 @@ class _CartItemStockIndicator extends StatelessWidget {
 
     // 💡 IMPORTANTE: Todo context.select() debe estar siempre en la raíz del build, NUNCA condicionado.
     final status = context.select<InventoryAlertsProvider, String?>((p) => p.getAlertStatusForProduct(item.product.id));
-    final hasPredictive = context.select<SettingsProvider, bool>((s) => s.hasFeature('predictive_alerts'));
+    final hasPredictive = context.select<SettingsProvider, bool>((s) => s.features.predictiveAlerts);
 
     // 1. Verificación en tiempo real (Proyección Local)
     // Calcula cómo quedará el stock si aprueba esta venta

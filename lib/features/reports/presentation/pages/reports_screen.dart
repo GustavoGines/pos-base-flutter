@@ -22,7 +22,7 @@ class _ReportsScreenState extends State<ReportsScreen>
   void initState() {
     super.initState();
     // El length se calcula en base a los addons disponibles
-    final hasAdvancedReports = context.read<SettingsProvider>().hasFeature('advanced_reports');
+    final hasAdvancedReports = context.read<SettingsProvider>().features.advancedReports;
     _tabController = TabController(length: hasAdvancedReports ? 2 : 1, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<ReportsProvider>().fetchProfitByCategory();
@@ -60,7 +60,7 @@ class _ReportsScreenState extends State<ReportsScreen>
 
   @override
   Widget build(BuildContext context) {
-    final hasAdvancedReports = context.watch<SettingsProvider>().hasFeature('advanced_reports');
+    final hasAdvancedReports = context.watch<SettingsProvider>().features.advancedReports;
 
     return Scaffold(
       appBar: const GlobalAppBar(currentRoute: '/reports'),

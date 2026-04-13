@@ -3,13 +3,13 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-import '../../domain/entities/business_settings.dart';
-import '../../domain/usecases/get_settings_usecase.dart';
-import '../../domain/usecases/update_settings_usecase.dart';
-import '../../../../core/services/license_heartbeat_service.dart';
-import '../../../../core/config/app_config.dart';
-import '../../data/repositories/settings_repository_impl.dart';
-import '../../../../core/utils/receipt_printer_service.dart';
+import 'package:frontend_desktop/features/settings/domain/entities/business_settings.dart';
+import 'package:frontend_desktop/features/settings/domain/usecases/get_settings_usecase.dart';
+import 'package:frontend_desktop/features/settings/domain/usecases/update_settings_usecase.dart';
+import 'package:frontend_desktop/core/services/license_heartbeat_service.dart';
+import 'package:frontend_desktop/core/config/app_config.dart';
+import 'package:frontend_desktop/features/settings/data/repositories/settings_repository_impl.dart';
+import 'package:frontend_desktop/core/utils/receipt_printer_service.dart';
 
 class SettingsProvider with ChangeNotifier {
   final GetSettingsUseCase getSettingsUseCase;
@@ -37,10 +37,11 @@ class SettingsProvider with ChangeNotifier {
   bool get isHardwareStore => _settings?.isHardwareStore ?? false;
 
   /// Lista de features modulares activos según el Servidor de Licencias.
-  List<String> get configuredFeatures => _settings?.licenseFeatures ?? [];
+  FeatureFlags get features => _settings?.features ?? const FeatureFlags();
 
+  /// @deprecated Preferir el uso de `features.<nombre>` para mayor seguridad de tipos.
   bool hasFeature(String featureName) {
-    return configuredFeatures.contains(featureName);
+    return _settings?.hasFeature(featureName) ?? false;
   }
 
   bool _isLoading = false;

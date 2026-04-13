@@ -25,7 +25,7 @@ class BusinessSettingsModel extends BusinessSettings {
     String? licenseManageUrl,
     bool isLifetime = false,
     String businessType = 'retail',
-    List<String> licenseFeatures = const [],
+    FeatureFlags features = const FeatureFlags(),
   }) : super(
           companyName: companyName,
           address: address,
@@ -49,10 +49,24 @@ class BusinessSettingsModel extends BusinessSettings {
           licenseManageUrl: licenseManageUrl,
           isLifetime: isLifetime,
           businessType: businessType,
-          licenseFeatures: licenseFeatures,
+          features: features,
         );
 
   factory BusinessSettingsModel.fromJson(Map<String, dynamic> json) {
+    // Parsear el diccionario de features dinámico
+    final Map<String, dynamic> featuresMap = json['features'] ?? {};
+    
+    final featureFlags = FeatureFlags(
+      fastPos: featuresMap['fast_pos'] ?? false,
+      zReports: featuresMap['z_reports'] ?? false,
+      quotes: featuresMap['quotes'] ?? false,
+      currentAccounts: featuresMap['current_accounts'] ?? false,
+      multiplePrices: featuresMap['multiple_prices'] ?? false,
+      multiCaja: featuresMap['multi_caja'] ?? false,
+      advancedReports: featuresMap['advanced_reports'] ?? false,
+      predictiveAlerts: featuresMap['predictive_alerts'] ?? false,
+    );
+
     return BusinessSettingsModel(
       companyName: json['company_name'],
       address: json['address'],
@@ -76,16 +90,11 @@ class BusinessSettingsModel extends BusinessSettings {
       licenseManageUrl: json['license_manage_url'],
       isLifetime: json['license_is_lifetime'] == '1',
       businessType: json['license_business_type'] ?? 'retail',
-      // [feature-flags] Clave nueva del servidor: 'license_addons'.
-      // Retrocompatible: si no existe, intenta la key legada; si tampoco, retorna [].
-      licenseFeatures: _parseList(
-        json['license_addons'] ?? json['license_allowed_addons'],
-      ),
+      features: featureFlags,
     );
   }
 
   /// Parser ultra-seguro: nunca crashea. Acepta null, String JSON o List nativa.
-  /// Siempre devuelve un List<String> (vacío como mínimo) — nunca null.
   static List<String> _parseList(dynamic value) {
     if (value == null) return [];
     if (value is List) {

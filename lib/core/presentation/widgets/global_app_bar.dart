@@ -74,10 +74,10 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
               Expanded(
                 child: Consumer<SettingsProvider>(
                   builder: (context, settings, _) {
-                    final bool canAccessCuentasCorrientes = settings.hasFeature('current_accounts');
-                    final bool canAccessQuotes = settings.hasFeature('quotes');
-                    final bool canAccessPos = settings.hasFeature('fast_pos');
-                    final bool canAccessAdvancedReports = settings.hasFeature('advanced_reports');
+                    final bool canAccessCuentasCorrientes = settings.features.currentAccounts;
+                    final bool canAccessQuotes = settings.features.quotes;
+                    final bool canAccessPos = settings.features.fastPos;
+                    final bool canAccessAdvancedReports = settings.features.advancedReports;
 
                     return Center(
                       child: SingleChildScrollView(

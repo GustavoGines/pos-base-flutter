@@ -97,7 +97,7 @@ class SharedUserMenu extends StatelessWidget {
             },
             itemBuilder: (BuildContext context) {
               final settings = context.read<SettingsProvider>();
-              final hasZReports = settings.hasFeature('z_reports');
+              final hasZReports = settings.features.zReports;
 
               return <PopupMenuEntry<String>>[
               if (auth.isAdmin) ...<PopupMenuEntry<String>>[

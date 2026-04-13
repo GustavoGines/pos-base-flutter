@@ -235,7 +235,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                       )
                     : LayoutBuilder(
                         builder: (context, constraints) {
-                          final hasMultiplePrices = context.watch<SettingsProvider>().hasFeature('multiple_prices');
+                          final hasMultiplePrices = context.watch<SettingsProvider>().features.multiplePrices;
                           final minW = hasMultiplePrices ? 1150.0 : 950.0;
                           return SingleChildScrollView(
                             scrollDirection: Axis.horizontal,
@@ -978,7 +978,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                 // [hardware_store] Listas de Precio — invisibles en modo retail
                 Consumer<SettingsProvider>(
                   builder: (ctx2, settings, _) {
-                    if (!settings.hasFeature('multiple_prices')) return const SizedBox.shrink();
+                    if (!settings.features.multiplePrices) return const SizedBox.shrink();
                     return Column(
                       children: [
                         Container(
