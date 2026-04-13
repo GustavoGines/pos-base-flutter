@@ -39,8 +39,6 @@ class SettingsProvider with ChangeNotifier {
   /// Lista de features modulares activos según el Servidor de Licencias.
   List<String> get configuredFeatures => _settings?.licenseFeatures ?? [];
 
-  /// Retorna true si la licencia activa incluye el módulo solicitado.
-  /// Fuente de verdad única: el array `licenseFeatures` recibido del servidor.
   bool hasFeature(String featureName) {
     return configuredFeatures.contains(featureName);
   }

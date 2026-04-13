@@ -26,11 +26,14 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
 
   FlutterWindow window(project);
   Win32Window::Point origin(10, 10);
-  Win32Window::Size size(1280, 720);
+  Win32Window::Size size(1000, 680);
   if (!window.Create(L"Sistema POS", origin, size)) {
     return EXIT_FAILURE;
   }
   window.SetQuitOnClose(true);
+
+  // Maximizar la ventana al arrancar
+  ::ShowWindow(::GetActiveWindow(), SW_SHOWMAXIMIZED);
 
   ::MSG msg;
   while (::GetMessage(&msg, nullptr, 0, 0)) {
