@@ -29,6 +29,9 @@ class _QuoteScreenState extends State<QuoteScreen> {
   bool _isSearching = false;
   Timer? _debounceTimer;
 
+  /// Selector de lista de precios global: 'lista' | 'mayorista' | 'tarjeta'
+  String _selectedPriceList = 'lista';
+
   // Formulario del encabezado del presupuesto
   final _customerNameCtrl = TextEditingController();
   final _customerPhoneCtrl = TextEditingController();
@@ -72,6 +75,8 @@ class _QuoteScreenState extends State<QuoteScreen> {
   }
 
   void _addProduct(Product product, {double? overridePrice}) {
+    // Aplicar automáticamente la lista seleccionada si no hay override explícito
+    overridePrice ??= _resolvePrice(product);
     if (product.isSoldByWeight) {
       _showWeightDialog(product, overridePrice: overridePrice);
     } else {
@@ -210,32 +215,92 @@ class _QuoteScreenState extends State<QuoteScreen> {
     );
   }
 
+  // ── Helpers de lista de precios ─────────────────────────────────────────
+
+  double _resolvePrice(Product p) {
+    switch (_selectedPriceList) {
+      case 'mayorista': return p.priceWholesale ?? p.sellingPrice;
+      case 'tarjeta':   return p.priceCard ?? p.sellingPrice;
+      default:          return p.sellingPrice;
+    }
+  }
+
+  String get _priceListLabel {
+    switch (_selectedPriceList) {
+      case 'mayorista': return 'Mayorista';
+      case 'tarjeta':   return 'Tarjeta';
+      default:          return 'Lista';
+    }
+  }
+
+  Color get _priceListColor {
+    switch (_selectedPriceList) {
+      case 'mayorista': return Colors.indigo.shade600;
+      case 'tarjeta':   return Colors.teal.shade600;
+      default:          return Colors.green.shade700;
+    }
+  }
+
   Widget _buildSearchBar() {
     return Container(
       padding: const EdgeInsets.all(12),
       color: Colors.grey.shade50,
-      child: TextField(
-        controller: _searchCtrl,
-        focusNode: _searchFocus,
-        onChanged: _onSearchChanged,
-        autofocus: true,
-        decoration: InputDecoration(
-          hintText: 'Buscar producto por nombre o c�digo...',
-          prefixIcon: const Icon(Icons.search),
-          suffixIcon: _isSearching
-              ? const Padding(
-                  padding: EdgeInsets.all(12),
-                  child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)))
-              : _searchQuery.isNotEmpty
-                  ? IconButton(icon: const Icon(Icons.clear), onPressed: () {
-                      _searchCtrl.clear();
-                      setState(() { _searchQuery = ''; _searchResults = []; });
-                    })
-                  : null,
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-          filled: true,
-          fillColor: Colors.white,
-        ),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: _searchCtrl,
+              focusNode: _searchFocus,
+              onChanged: _onSearchChanged,
+              autofocus: true,
+              decoration: InputDecoration(
+                hintText: 'Buscar producto por nombre o código...',
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: _isSearching
+                    ? const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)))
+                    : _searchQuery.isNotEmpty
+                        ? IconButton(icon: const Icon(Icons.clear), onPressed: () {
+                            _searchCtrl.clear();
+                            setState(() { _searchQuery = ''; _searchResults = []; });
+                          })
+                        : null,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                filled: true,
+                fillColor: Colors.white,
+              ),
+            ),
+          ),
+          if (context.watch<SettingsProvider>().features.multiplePrices) ...[
+            const SizedBox(width: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                border: Border.all(color: _priceListColor, width: 1.5),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  value: _selectedPriceList,
+                  icon: Icon(Icons.expand_more, color: _priceListColor, size: 18),
+                  style: TextStyle(
+                    color: _priceListColor,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                  ),
+                  onChanged: (v) { if (v != null) setState(() => _selectedPriceList = v); },
+                  items: const [
+                    DropdownMenuItem(value: 'lista',     child: Text('Lista')),
+                    DropdownMenuItem(value: 'mayorista', child: Text('Mayorista')),
+                    DropdownMenuItem(value: 'tarjeta',   child: Text('Tarjeta')),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -292,13 +357,18 @@ class _QuoteScreenState extends State<QuoteScreen> {
   }
 
   Widget _buildProductCard(Product p) {
-    final hasMultiplePrices = context.watch<SettingsProvider>().features.multiplePrices;
+    final price = _resolvePrice(p);
     return InkWell(
       onTap: () => _addProduct(p),
       borderRadius: BorderRadius.circular(10),
       child: Container(
         decoration: BoxDecoration(
-          border: Border.all(color: Colors.grey.shade200),
+          border: Border.all(
+            color: _selectedPriceList != 'lista'
+                ? _priceListColor.withValues(alpha: 0.5)
+                : Colors.grey.shade200,
+            width: _selectedPriceList != 'lista' ? 1.5 : 1.0,
+          ),
           borderRadius: BorderRadius.circular(10),
           color: Colors.white,
         ),
@@ -313,17 +383,18 @@ class _QuoteScreenState extends State<QuoteScreen> {
                 textAlign: TextAlign.center,
                 style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
             const SizedBox(height: 4),
-            Text('\$${p.sellingPrice.toCurrency()}',
-                style: TextStyle(fontSize: 11, color: Colors.green.shade700, fontWeight: FontWeight.bold)),
-            if (hasMultiplePrices && (p.priceWholesale != null || p.priceCard != null))
-              TextButton(
-                style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  minimumSize: const Size(0, 24),
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            Text('$${price.toCurrency()}',
+                style: TextStyle(fontSize: 11, color: _priceListColor, fontWeight: FontWeight.bold)),
+            if (_selectedPriceList != 'lista')
+              Container(
+                margin: const EdgeInsets.only(top: 3),
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                decoration: BoxDecoration(
+                  color: _priceListColor.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(4),
                 ),
-                onPressed: () => _showPriceSelector(p),
-                child: Text('Ver precios', style: TextStyle(fontSize: 10, color: Colors.indigo.shade600)),
+                child: Text(_priceListLabel,
+                    style: TextStyle(fontSize: 9, color: _priceListColor, fontWeight: FontWeight.bold)),
               ),
           ],
         ),
@@ -332,7 +403,7 @@ class _QuoteScreenState extends State<QuoteScreen> {
   }
 
   Widget _buildProductTile(Product p) {
-    final hasMultiplePrices = context.watch<SettingsProvider>().features.multiplePrices;
+    final price = _resolvePrice(p);
     return ListTile(
       dense: true,
       leading: CircleAvatar(
@@ -342,17 +413,27 @@ class _QuoteScreenState extends State<QuoteScreen> {
             color: p.isSoldByWeight ? Colors.orange.shade700 : Colors.indigo.shade700),
       ),
       title: Text(p.name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-      subtitle: Text('\$${p.sellingPrice.toCurrency()}',
-          style: TextStyle(color: Colors.green.shade700, fontSize: 12)),
-      trailing: hasMultiplePrices && (p.priceWholesale != null || p.priceCard != null)
-          ? TextButton(
-              onPressed: () => _showPriceSelector(p),
-              child: const Text('Precios'),
-            )
-          : IconButton(
-              icon: const Icon(Icons.add_circle_outline, color: Colors.indigo),
-              onPressed: () => _addProduct(p),
+      subtitle: Row(
+        children: [
+          Text('$${price.toCurrency()}',
+              style: TextStyle(color: _priceListColor, fontSize: 12, fontWeight: FontWeight.bold)),
+          if (_selectedPriceList != 'lista')
+            Container(
+              margin: const EdgeInsets.only(left: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+              decoration: BoxDecoration(
+                color: _priceListColor.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(_priceListLabel,
+                  style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: _priceListColor)),
             ),
+        ],
+      ),
+      trailing: IconButton(
+        icon: const Icon(Icons.add_circle_outline, color: Colors.indigo),
+        onPressed: () => _addProduct(p),
+      ),
       onTap: () => _addProduct(p),
     );
   }
