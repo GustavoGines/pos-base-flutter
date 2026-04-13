@@ -25,6 +25,9 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isCompact = screenWidth < 1100;
+
     return Material(
       elevation: 2,
       color: Theme.of(context).colorScheme.surface,
@@ -32,145 +35,152 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
         bottom: false,
         child: SizedBox(
           height: kToolbarHeight,
-              child: NavigationToolbar(
-                centerMiddle: true,
-                middleSpacing: 16.0,
-                // ── LEFT BLOCK (leading) ──────────────────────────────────
-                leading: Padding(
-                  padding: const EdgeInsets.only(left: 12),
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // Back button for secondary screens
-                        if (showBackButton) ...[
-                          IconButton(
-                            icon: const Icon(Icons.arrow_back_rounded, color: Colors.blueGrey),
-                            tooltip: 'Volver',
-                            onPressed: () => Navigator.of(context).pop(),
+          child: Row(
+            children: [
+              // ── LEFT BLOCK ────────────────────────────────────────────────
+              Padding(
+                padding: const EdgeInsets.only(left: 12),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (showBackButton) ...[
+                      IconButton(
+                        icon: const Icon(Icons.arrow_back_rounded, color: Colors.blueGrey),
+                        tooltip: 'Volver',
+                        onPressed: () => Navigator.of(context).pop(),
+                      ),
+                      const SizedBox(width: 4),
+                    ],
+                    const Icon(Icons.point_of_sale_rounded, color: Colors.blueAccent, size: 26),
+                    const SizedBox(width: 8),
+                    Consumer<SettingsProvider>(
+                      builder: (context, settings, _) {
+                        final name = settings.settings?.companyName ?? title;
+                        return Text(
+                          name.isNotEmpty ? name : title,
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: isCompact ? 15 : 18,
                           ),
-                          const SizedBox(width: 8),
-                        ],
-                        const Icon(Icons.point_of_sale_rounded, color: Colors.blueAccent, size: 28),
-                        const SizedBox(width: 8),
-                        Consumer<SettingsProvider>(
-                          builder: (context, settings, _) {
-                            final name = settings.settings?.companyName ?? title;
-                            return Text(
-                              name.isNotEmpty ? name : title,
-                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-                            );
-                          },
-                        ),
-                      ],
+                          overflow: TextOverflow.ellipsis,
+                        );
+                      },
                     ),
-                  ),
+                  ],
                 ),
+              ),
 
-                // ─── CENTER BLOCK (middle) ──────────────────────────────────────────
-                middle: Consumer<SettingsProvider>(
+              // ─── CENTER BLOCK ─────────────────────────────────────────────
+              Expanded(
+                child: Consumer<SettingsProvider>(
                   builder: (context, settings, _) {
                     final bool canAccessCuentasCorrientes = settings.hasFeature('current_accounts');
-                    final bool canAccessQuotes = settings.hasFeature('quotes'); // [feature-flags]
+                    final bool canAccessQuotes = settings.hasFeature('quotes');
                     final bool canAccessPos = settings.hasFeature('fast_pos');
                     final bool canAccessAdvancedReports = settings.hasFeature('advanced_reports');
 
-                    return SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (canAccessPos)
+                    return Center(
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (canAccessPos)
+                              _buildNavTab(
+                                context: context,
+                                label: 'Terminal POS',
+                                icon: Icons.point_of_sale,
+                                route: '/pos',
+                                activeColor: Colors.teal.shade700,
+                                isCompact: isCompact,
+                              ),
                             _buildNavTab(
                               context: context,
-                              label: 'Terminal POS',
-                              icon: Icons.point_of_sale,
-                              route: '/pos',
-                              activeColor: Colors.teal.shade700,
+                              label: 'Registro de Ventas',
+                              icon: Icons.receipt_long_outlined,
+                              route: '/sales-history',
+                              activeColor: Colors.blueAccent,
+                              permissionKey: 'view_global_history',
+                              isCompact: isCompact,
                             ),
-                          _buildNavTab(
-                            context: context,
-                            label: 'Registro de Ventas',
-                            icon: Icons.receipt_long_outlined,
-                            route: '/sales-history',
-                            activeColor: Colors.blueAccent,
-                            permissionKey: 'view_global_history',
-                          ),
-                          _buildNavTab(
-                            context: context,
-                            label: 'Catálogo',
-                            icon: Icons.inventory_2_outlined,
-                            route: '/catalog',
-                            activeColor: Colors.deepPurple,
-                            permissionKey: 'manage_catalog',
-                          ),
-                          // Tab de Reportes Gerenciales — visible siempre, bloqueado sin addon
-                          _buildNavTab(
-                            context: context,
-                            label: 'Reportes Gerenciales',
-                            icon: canAccessAdvancedReports ? Icons.bar_chart : Icons.lock_outline,
-                            route: '/reports',
-                            activeColor: Colors.purple.shade700,
-                            isLocked: !canAccessAdvancedReports,
-                            lockedTitle: 'Reportes Gerenciales PRO',
-                            lockedFeatures: const [
-                              'Balance mensual con ganacias y márgenes',
-                              'Exportación a Excel y PDF gerencial',
-                              'Análisis por categoría y período',
-                              'Comparativas de rendimiento',
-                            ],
-                          ),
-                          // Tab de Presupuestos — controlado por Feature Flag 'quotes'
-                          if (canAccessQuotes)
                             _buildNavTab(
                               context: context,
-                              label: 'Presupuestos',
-                              icon: Icons.description_outlined,
-                              route: '/quotes',
-                              activeColor: Colors.indigo.shade700,
+                              label: 'Catálogo',
+                              icon: Icons.inventory_2_outlined,
+                              route: '/catalog',
+                              activeColor: Colors.deepPurple,
+                              permissionKey: 'manage_catalog',
+                              isCompact: isCompact,
                             ),
-                          _buildNavTab(
-                            context: context,
-                            label: 'Cuentas Corrientes',
-                            icon: canAccessCuentasCorrientes ? Icons.account_balance_wallet_outlined : Icons.lock_outline,
-                            route: '/cuentas-corrientes',
-                            activeColor: Colors.orange.shade700,
-                            isLocked: !canAccessCuentasCorrientes,
-                            lockedTitle: 'Cuentas Corrientes PRO',
-                            lockedFeatures: const [
-                              'Cuentas corrientes y límites de crédito por cliente',
-                              'Pago de tickets específicos',
-                              'Historial de movimientos en tiempo real',
-                              'Alertas de crédito insuficiente',
-                            ],
-                          ),
-                        ],
+                            _buildNavTab(
+                              context: context,
+                              label: 'Reportes Gerenciales',
+                              icon: canAccessAdvancedReports ? Icons.bar_chart : Icons.lock_outline,
+                              route: '/reports',
+                              activeColor: Colors.purple.shade700,
+                              isLocked: !canAccessAdvancedReports,
+                              lockedTitle: 'Reportes Gerenciales PRO',
+                              lockedFeatures: const [
+                                'Balance mensual con ganancias y márgenes',
+                                'Exportación a Excel y PDF gerencial',
+                                'Análisis por categoría y período',
+                                'Comparativas de rendimiento',
+                              ],
+                              isCompact: isCompact,
+                            ),
+                            if (canAccessQuotes)
+                              _buildNavTab(
+                                context: context,
+                                label: 'Presupuestos',
+                                icon: Icons.description_outlined,
+                                route: '/quotes',
+                                activeColor: Colors.indigo.shade700,
+                                isCompact: isCompact,
+                              ),
+                            _buildNavTab(
+                              context: context,
+                              label: 'Cuentas Corrientes',
+                              icon: canAccessCuentasCorrientes
+                                  ? Icons.account_balance_wallet_outlined
+                                  : Icons.lock_outline,
+                              route: '/cuentas-corrientes',
+                              activeColor: Colors.orange.shade700,
+                              isLocked: !canAccessCuentasCorrientes,
+                              lockedTitle: 'Cuentas Corrientes PRO',
+                              lockedFeatures: const [
+                                'Cuentas corrientes y límites de crédito por cliente',
+                                'Pago de tickets específicos',
+                                'Historial de movimientos en tiempo real',
+                                'Alertas de crédito insuficiente',
+                              ],
+                              isCompact: isCompact,
+                            ),
+                          ],
+                        ),
                       ),
                     );
                   },
                 ),
+              ),
 
-                // ── RIGHT BLOCK (trailing) ────────────────────────────────
-                trailing: Padding(
-                  padding: const EdgeInsets.only(right: 12),
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const InventoryAlertsWidget(),
-                        const SizedBox(width: 8),
-                        if (extraAction != null) ...[
-                          extraAction!,
-                          const SizedBox(width: 8),
-                        ],
-                        const SharedUserMenu(),
-                      ],
-                    ),
-                  ),
+              // ── RIGHT BLOCK ───────────────────────────────────────────────
+              Padding(
+                padding: const EdgeInsets.only(right: 12),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const InventoryAlertsWidget(),
+                    const SizedBox(width: 8),
+                    if (extraAction != null) ...[
+                      extraAction!,
+                      const SizedBox(width: 8),
+                    ],
+                    const SharedUserMenu(),
+                  ],
                 ),
               ),
+            ],
+          ),
         ),
       ),
     );
@@ -182,88 +192,78 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
     required IconData icon,
     required String route,
     required Color activeColor,
+    required bool isCompact,
     String? permissionKey,
     bool isLocked = false,
     String lockedTitle = 'Módulo PRO',
     List<String> lockedFeatures = const [],
   }) {
     final isActive = currentRoute == route;
-    final color = isLocked ? Colors.grey.shade400 : (isActive ? activeColor : Colors.blueGrey);
+    final color = isLocked
+        ? Colors.grey.shade400
+        : (isActive ? activeColor : Colors.blueGrey);
+
+    final Widget content = isCompact
+        ? Icon(icon, color: color, size: 22)
+        : Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, color: color, size: isActive ? 20 : 18),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  color: color,
+                  fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+                  fontSize: isActive ? 15 : 14,
+                ),
+              ),
+            ],
+          );
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 2.0),
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 250),
+        duration: const Duration(milliseconds: 200),
         curve: Curves.easeInOut,
         decoration: BoxDecoration(
           border: isActive
               ? Border(bottom: BorderSide(color: activeColor, width: 3))
-              : const Border(
-                  bottom: BorderSide(color: Colors.transparent, width: 3)),
+              : const Border(bottom: BorderSide(color: Colors.transparent, width: 3)),
         ),
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            // Hidden bold text to pre-reserve max width so tab never shifts
-            Visibility(
-              visible: false,
-              maintainSize: true,
-              maintainAnimation: true,
-              maintainState: true,
-              child: TextButton.icon(
-                icon: Icon(icon, size: 20),
-                label: Text(
-                  label,
-                  style: const TextStyle(
-                      fontWeight: FontWeight.bold, fontSize: 15),
-                ),
-                style: TextButton.styleFrom(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                ),
-                onPressed: null,
+        child: Tooltip(
+          message: label,
+          child: TextButton(
+            style: TextButton.styleFrom(
+              padding: EdgeInsets.symmetric(
+                horizontal: isCompact ? 14 : 16,
+                vertical: 12,
               ),
+              shape: const ContinuousRectangleBorder(),
             ),
-            // Real interactive button
-            TextButton.icon(
-              icon: Icon(icon, color: color, size: isActive ? 20 : 18),
-              label: Text(
-                label,
-                style: TextStyle(
-                  color: color,
-                  fontWeight:
-                      isActive ? FontWeight.bold : FontWeight.normal,
-                  fontSize: isActive ? 15 : 14,
-                ),
-              ),
-              style: TextButton.styleFrom(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                shape: const ContinuousRectangleBorder(),
-              ),
-              onPressed: isActive
-                  ? null
-                  : () async {
-                      if (isLocked) {
-                        _showUpgradeDialog(context, title: lockedTitle, features: lockedFeatures);
-                        return;
-                      }
-                      if (permissionKey != null) {
-                        final authorized = await AdminPinDialog.verify(
-                            context,
-                            action: label,
-                            permissionKey: permissionKey);
-                        if (!authorized || !context.mounted) return;
-                      }
-                      if (route == '/pos') {
-                        Navigator.of(context).pushNamedAndRemoveUntil(
-                            '/pos', (r) => false);
-                      } else {
-                        Navigator.of(context).pushReplacementNamed(route);
-                      }
-                    },
-            ),
-          ],
+            onPressed: isActive
+                ? null
+                : () async {
+                    if (isLocked) {
+                      _showUpgradeDialog(context, title: lockedTitle, features: lockedFeatures);
+                      return;
+                    }
+                    if (permissionKey != null) {
+                      final authorized = await AdminPinDialog.verify(
+                        context,
+                        action: label,
+                        permissionKey: permissionKey,
+                      );
+                      if (!authorized || !context.mounted) return;
+                    }
+                    if (route == '/pos') {
+                      Navigator.of(context).pushNamedAndRemoveUntil('/pos', (r) => false);
+                    } else {
+                      Navigator.of(context).pushReplacementNamed(route);
+                    }
+                  },
+            child: content,
+          ),
         ),
       ),
     );
@@ -302,7 +302,7 @@ void _showUpgradeDialog(
                   Container(
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.15),
+                      color: Colors.white.withValues(alpha: 0.15),
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(Icons.workspace_premium_rounded, color: Colors.white, size: 36),
@@ -314,7 +314,7 @@ void _showUpgradeDialog(
                   const SizedBox(height: 6),
                   Text('Plan Básico activo — Mejorá tu plan para desbloquear',
                       textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.white.withOpacity(0.80), fontSize: 12)),
+                      style: TextStyle(color: Colors.white.withValues(alpha: 0.80), fontSize: 12)),
                 ],
               ),
             ),
@@ -331,7 +331,6 @@ void _showUpgradeDialog(
                   const SizedBox(height: 12),
                   ...features.map((f) => _proFeature(f)),
                   const SizedBox(height: 20),
-                  // WhatsApp CTA
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton.icon(
@@ -346,7 +345,8 @@ void _showUpgradeDialog(
                         style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
                       ),
                       onPressed: () async {
-                        final url = Uri.parse('https://wa.me/543704787285?text=Hola,%20quiero%20contratar%20el%20Plan%20PRO%20del%20Sistema%20POS');
+                        final url = Uri.parse(
+                            'https://wa.me/543704787285?text=Hola,%20quiero%20contratar%20el%20Plan%20PRO%20del%20Sistema%20POS');
                         if (await canLaunchUrl(url)) {
                           await launchUrl(url, mode: LaunchMode.externalApplication);
                         }
@@ -372,12 +372,12 @@ void _showUpgradeDialog(
 }
 
 Widget _proFeature(String text) => Padding(
-  padding: const EdgeInsets.only(bottom: 8),
-  child: Row(
-    children: [
-      const Icon(Icons.check_circle_rounded, color: Color(0xFF7C3AED), size: 18),
-      const SizedBox(width: 10),
-      Expanded(child: Text(text, style: const TextStyle(fontSize: 13, color: Colors.black87))),
-    ],
-  ),
-);
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          const Icon(Icons.check_circle_rounded, color: Color(0xFF7C3AED), size: 18),
+          const SizedBox(width: 10),
+          Expanded(child: Text(text, style: const TextStyle(fontSize: 13, color: Colors.black87))),
+        ],
+      ),
+    );

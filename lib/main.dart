@@ -271,6 +271,16 @@ class _MainAppState extends State<MainApp> {
 
   bool _isShowingSessionDialog = false;
 
+  final ScrollController _hScroll = ScrollController();
+  final ScrollController _vScroll = ScrollController();
+
+  @override
+  void dispose() {
+    _hScroll.dispose();
+    _vScroll.dispose();
+    super.dispose();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -474,30 +484,42 @@ class _MainAppState extends State<MainApp> {
             const double minAppWidth = 1024.0;
             const double minAppHeight = 550.0;
 
-            final bool needsHorizontalScroll = constraints.maxWidth < minAppWidth;
-            final bool needsVerticalScroll = constraints.maxHeight < minAppHeight;
+            final bool needsH = constraints.maxWidth < minAppWidth;
+            final bool needsV = constraints.maxHeight < minAppHeight;
 
-            if (!needsHorizontalScroll && !needsVerticalScroll) {
-              return guardedChild;
-            }
+            if (!needsH && !needsV) return guardedChild;
 
             Widget content = SizedBox(
-              width: needsHorizontalScroll ? minAppWidth : constraints.maxWidth,
-              height: needsVerticalScroll ? minAppHeight : constraints.maxHeight,
+              width: needsH ? minAppWidth : constraints.maxWidth,
+              height: needsV ? minAppHeight : constraints.maxHeight,
               child: guardedChild,
             );
 
-            if (needsVerticalScroll) {
-              content = SingleChildScrollView(
-                scrollDirection: Axis.vertical,
-                child: content,
+            if (needsV) {
+              content = Scrollbar(
+                controller: _vScroll,
+                thumbVisibility: true,
+                thickness: 8,
+                radius: const Radius.circular(4),
+                child: SingleChildScrollView(
+                  controller: _vScroll,
+                  scrollDirection: Axis.vertical,
+                  child: content,
+                ),
               );
             }
 
-            if (needsHorizontalScroll) {
-              content = SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: content,
+            if (needsH) {
+              content = Scrollbar(
+                controller: _hScroll,
+                thumbVisibility: true,
+                thickness: 8,
+                radius: const Radius.circular(4),
+                child: SingleChildScrollView(
+                  controller: _hScroll,
+                  scrollDirection: Axis.horizontal,
+                  child: content,
+                ),
               );
             }
 
