@@ -94,6 +94,15 @@ class SettingsProvider with ChangeNotifier {
     try {
       _settings = await getSettingsUseCase();
       
+      // DEBUG: Inspección de permisos PRO
+      if (_settings != null) {
+        print('=== DEBUG LICENCIA ===');
+        print('Plan: ${_settings!.licensePlanType}');
+        print('Features Dictionary Loaded: ${_settings!.features}');
+        print('Advanced Reports: ${_settings!.features.advancedReports}');
+        print('=======================');
+      }
+      
       // Iniciar el sistema de seguridad DRM
       await LicenseHeartbeatService().initialize(
         _settings,
@@ -106,7 +115,10 @@ class SettingsProvider with ChangeNotifier {
       }
       
       _checkAndSyncSilentlyOnStartup();
-    } catch (e) {
+    } catch (e, stack) {
+      print('=== ERROR CRITICO CARGANDO SETTINGS ===');
+      print('Error: $e');
+      print('Stack: $stack');
       _errorMessage = e.toString().replaceAll('Exception: ', '');
     } finally {
       _isLoading = false;

@@ -51,27 +51,40 @@ class BusinessSettingsModel extends BusinessSettings {
         );
 
   factory BusinessSettingsModel.fromJson(Map<String, dynamic> json) {
-    // Parsear el diccionario de features desde la base de datos local (JSON string)
-    final String featuresJson = json['license_features_dict'] ?? '{}';
+    // Parser ultra-robusto para el diccionario de features
     Map<String, dynamic> featuresMap = {};
-    try {
-      featuresMap = jsonDecode(featuresJson);
-    } catch (_) {
-      // Si falla, intentamos leer 'features' por si viene de una respuesta API directa no persistida
-      if (json['features'] is Map) {
-        featuresMap = json['features'];
+    final rawFeatures = json['license_features_dict'];
+    
+    if (rawFeatures != null) {
+      if (rawFeatures is Map<String, dynamic>) {
+        featuresMap = rawFeatures;
+      } else if (rawFeatures is String && rawFeatures.isNotEmpty) {
+        try {
+          final decoded = jsonDecode(rawFeatures);
+          if (decoded is Map<String, dynamic>) {
+            featuresMap = decoded;
+          }
+        } catch (e) {
+          // Log silencioso si falla la decodificación del string
+          print('Error decodificando license_features_dict: $e');
+        }
       }
     }
     
+    // Fallback: Si no hay dict, intentamos leer 'features' (para respuestas directas de API)
+    if (featuresMap.isEmpty && json['features'] is Map<String, dynamic>) {
+      featuresMap = json['features'];
+    }
+    
     final featureFlags = FeatureFlags(
-      fastPos: featuresMap['fast_pos'] ?? false,
-      zReports: featuresMap['z_reports'] ?? false,
-      quotes: featuresMap['quotes'] ?? false,
-      currentAccounts: featuresMap['current_accounts'] ?? false,
-      multiplePrices: featuresMap['multiple_prices'] ?? false,
-      multiCaja: featuresMap['multi_caja'] ?? false,
-      advancedReports: featuresMap['advanced_reports'] ?? false,
-      predictiveAlerts: featuresMap['predictive_alerts'] ?? false,
+      fastPos: featuresMap['fast_pos'] == true || featuresMap['fast_pos'] == 1,
+      zReports: featuresMap['z_reports'] == true || featuresMap['z_reports'] == 1,
+      quotes: featuresMap['quotes'] == true || featuresMap['quotes'] == 1,
+      currentAccounts: featuresMap['current_accounts'] == true || featuresMap['current_accounts'] == 1,
+      multiplePrices: featuresMap['multiple_prices'] == true || featuresMap['multiple_prices'] == 1,
+      multiCaja: featuresMap['multi_caja'] == true || featuresMap['multi_caja'] == 1,
+      advancedReports: featuresMap['advanced_reports'] == true || featuresMap['advanced_reports'] == 1,
+      predictiveAlerts: featuresMap['predictive_alerts'] == true || featuresMap['predictive_alerts'] == 1,
     );
 
     return BusinessSettingsModel(
