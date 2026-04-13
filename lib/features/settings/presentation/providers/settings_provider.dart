@@ -86,11 +86,12 @@ class SettingsProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> loadSettings() async {
-    _isLoading = true;
-    _errorMessage = null;
-    notifyListeners();
-
+  Future<void> loadSettings({bool isSilent = false}) async {
+    if (!isSilent) {
+      _isLoading = true;
+      notifyListeners();
+    }
+    
     try {
       _settings = await getSettingsUseCase();
       
@@ -106,7 +107,7 @@ class SettingsProvider with ChangeNotifier {
       // Iniciar el sistema de seguridad DRM
       await LicenseHeartbeatService().initialize(
         _settings,
-        onSyncRequested: () => syncLicenseWithServer(AppConfig.kApiBaseUrl),
+        onSyncRequested: () => syncLicenseWithServer(AppConfig.kApiBaseUrl, isSilent: true),
       );
 
       // Reconfigurar la impresora con los ajustes guardados en la DB
@@ -116,13 +117,20 @@ class SettingsProvider with ChangeNotifier {
       
       _checkAndSyncSilentlyOnStartup();
     } catch (e, stack) {
-      print('=== ERROR CRITICO CARGANDO SETTINGS ===');
-      print('Error: $e');
-      print('Stack: $stack');
+      if (!isSilent) {
+        print('=== ERROR CRITICO CARGANDO SETTINGS ===');
+        print('Error: $e');
+        print('Stack: $stack');
+      }
       _errorMessage = e.toString().replaceAll('Exception: ', '');
     } finally {
-      _isLoading = false;
-      notifyListeners();
+      if (!isSilent) {
+        _isLoading = false;
+        notifyListeners();
+      } else {
+        // Solo notificar si cambió el config subyacente sin bloquear UI
+        notifyListeners();
+      }
     }
   }
 
@@ -191,7 +199,7 @@ class SettingsProvider with ChangeNotifier {
       if (response.statusCode == 200) {
         final plan = data['plan'] as String? ?? 'basic';
         // Refresh local settings so Feature Gating reacts immediately
-        await loadSettings();
+        await loadSettings(isSilent: true);
         
         // Notificar al sistema de seguridad que sincronizamos con el server
         if (_settings != null) {
@@ -205,7 +213,7 @@ class SettingsProvider with ChangeNotifier {
         throw Exception('Error interno del servidor. Contacte a soporte técnico.');
       } else {
         // En caso de error, recargamos por si el backend mandó la app a 'blocked'
-        await loadSettings();
+        await loadSettings(isSilent: true);
         throw Exception(data['error'] ?? 'Error al validar la licencia.');
       }
     } on FormatException catch (e) {
@@ -225,9 +233,11 @@ class SettingsProvider with ChangeNotifier {
   }
 
   /// Sync: POSTs to /api/settings/license/sync to force update permissions
-  Future<void> syncLicenseWithServer(String baseUrl) async {
-    _isLoading = true;
-    notifyListeners();
+  Future<void> syncLicenseWithServer(String baseUrl, {bool isSilent = false}) async {
+    if (!isSilent) {
+      _isLoading = true;
+      notifyListeners();
+    }
     try {
       final response = await http.post(
         Uri.parse('$baseUrl/settings/license/sync'),
@@ -242,7 +252,7 @@ class SettingsProvider with ChangeNotifier {
       }
 
       if (response.statusCode == 200) {
-        await loadSettings();
+        await loadSettings(isSilent: true);
         // Notificar al sistema de seguridad que sincronizamos con el server
         if (_settings != null) {
           await LicenseHeartbeatService().updateLastSync(_settings!);
@@ -254,7 +264,7 @@ class SettingsProvider with ChangeNotifier {
       } else {
         // Si el sync detectó revocación, el backend guardó el plan como 'blocked'.
         // Recargamos settings para forzar al "LicenseGuard" a mostrar la pantalla de bloqueo.
-        await loadSettings();
+        await loadSettings(isSilent: true);
         throw Exception(data['error'] ?? 'Error al sincronizar permisos.');
       }
     } on FormatException catch (e) {
@@ -268,10 +278,12 @@ class SettingsProvider with ChangeNotifier {
           errStr.contains('ClientException')) {
         throw Exception('Error de conexión: No se encontró el servidor. Verifica la URL configurada.');
       }
-      rethrow;
+      if (!isSilent) rethrow; // Consumimos el error si es un chequeo silencioso (heartbeat)
     } finally {
-      _isLoading = false;
-      notifyListeners();
+      if (!isSilent) {
+        _isLoading = false;
+        notifyListeners();
+      }
     }
   }
 

@@ -10,6 +10,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../cash_register/presentation/providers/cash_register_provider.dart';
 import '../../../../core/config/app_config.dart';
 import 'package:intl/intl.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+import '../../../updater/data/services/update_service.dart';
+import '../../../updater/presentation/widgets/update_dialog.dart';
 
 enum SettingsSection { general, hardware, subscription, network }
 
@@ -45,10 +48,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _licenseKeyCtrl = TextEditingController();
   bool _isActivatingLicense = false;
   bool _isSyncingLicense = false;
+  bool _isCheckingUpdate = false;
+  String _appVersion = '';
 
   @override
   void initState() {
     super.initState();
+    _loadVersion();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final provider = context.read<SettingsProvider>();
       final settings = provider.settings;
@@ -162,6 +168,56 @@ class _SettingsScreenState extends State<SettingsScreen> {
       SnackBarService.error(context, e.toString().replaceAll('Exception: ', ''));
     } finally {
       if (mounted) setState(() => _isSyncingLicense = false);
+    }
+  }
+
+  Future<void> _loadVersion() async {
+    final packageInfo = await PackageInfo.fromPlatform();
+    if (mounted) setState(() => _appVersion = packageInfo.version);
+  }
+
+  Future<void> _checkForUpdate() async {
+    setState(() => _isCheckingUpdate = true);
+    try {
+      final info = await UpdateService().checkUpdate(throwErrors: true);
+      if (!mounted) return;
+      
+      if (info != null) {
+        final packageInfo = await PackageInfo.fromPlatform();
+        final currentVersion = packageInfo.version;
+        
+        if (_isNewerVersion(currentVersion, info.version)) {
+          showDialog(
+            context: context,
+            barrierDismissible: !info.isCritical,
+            builder: (_) => UpdateDialog(updateInfo: info),
+          );
+        } else {
+          SnackBarService.success(context, 'Tu sistema está actualizado (v$currentVersion)');
+        }
+      } else {
+        // Al usar throwErrors: true, si es null significa genuinamente "No hay releases en BD (404)"
+        SnackBarService.success(context, 'Tu sistema está actualizado (v$_appVersion)');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      SnackBarService.error(context, 'Error chequeando actualizaciones: $e');
+    } finally {
+      if (mounted) setState(() => _isCheckingUpdate = false);
+    }
+  }
+
+  bool _isNewerVersion(String current, String remote) {
+    try {
+      final v1 = current.split('.').map(int.parse).toList();
+      final v2 = remote.split('.').map(int.parse).toList();
+      for (var i = 0; i < 3; i++) {
+        if (v2[i] > v1[i]) return true;
+        if (v2[i] < v1[i]) return false;
+      }
+      return false;
+    } catch (_) {
+      return current != remote;
     }
   }
 
@@ -485,15 +541,43 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 )).toList(),
           ),
           const SizedBox(height: 32),
-          OutlinedButton.icon(
-            onPressed: _isSyncingLicense ? null : _syncLicense,
-            icon: _isSyncingLicense ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.sync),
-            label: const Text('FORZAR SINCRONIZACIÓN'),
-            style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-              side: BorderSide(color: Colors.grey.shade300),
-            ),
+          const SizedBox(height: 32),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _isSyncingLicense ? null : _syncLicense,
+                  icon: _isSyncingLicense ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.sync),
+                  label: const Text('FORZAR SINCRONIZACIÓN'),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                    side: BorderSide(color: Colors.grey.shade300),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: _isCheckingUpdate ? null : _checkForUpdate,
+                  icon: _isCheckingUpdate ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Icon(Icons.system_update_alt),
+                  label: const Text('BUSCAR ACTUALIZACIONES'),
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                    backgroundColor: const Color(0xFF3F51B5),
+                  ),
+                ),
+              ),
+            ],
           ),
+          if (_appVersion.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Center(
+              child: Text(
+                'Versión actual del sistema: v$_appVersion',
+                style: TextStyle(color: Colors.grey.shade500, fontSize: 13, fontWeight: FontWeight.w500),
+              ),
+            ),
+          ],
         ] else ...[
           // --- ESTADO SIN LICENCIA ---
           _buildTextField('Clave de Licencia', _licenseKeyCtrl, icon: Icons.vpn_key_outlined, hint: 'XXXX-XXXX-XXXX-XXXX'),

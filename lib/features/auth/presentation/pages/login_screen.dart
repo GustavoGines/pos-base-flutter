@@ -6,6 +6,10 @@ import '../providers/auth_provider.dart';
 import '../../../../core/utils/snack_bar_service.dart';
 import '../../../settings/presentation/providers/settings_provider.dart';
 import '../../../cash_register/presentation/providers/cash_register_provider.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+import '../../../updater/data/services/update_service.dart';
+import '../../../updater/presentation/widgets/update_dialog.dart';
+import '../../../updater/data/models/update_info.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({Key? key}) : super(key: key);
@@ -21,6 +25,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
   // ── FocusNode dedicado al listener del teclado físico ────────────
   late final FocusNode _keyboardFocus;
+  
+  UpdateInfo? _updateAvailable;
+  String _appVersion = '';
 
   @override
   void initState() {
@@ -33,7 +40,48 @@ class _LoginScreenState extends State<LoginScreen> {
     // del SO en el primer build tick.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _keyboardFocus.requestFocus();
+      _checkForUpdates(); // Chequeo pasivo OTA
     });
+  }
+
+  Future<void> _checkForUpdates() async {
+    final packageInfo = await PackageInfo.fromPlatform();
+    if (mounted) {
+      setState(() => _appVersion = packageInfo.version);
+    }
+    
+    final info = await UpdateService().checkUpdate();
+    if (info != null && mounted) {
+      final currentVersion = packageInfo.version;
+      
+      if (_isNewerVersion(currentVersion, info.version)) {
+        if (info.isCritical) {
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (_) => UpdateDialog(updateInfo: info),
+          );
+        } else {
+          setState(() {
+            _updateAvailable = info;
+          });
+        }
+      }
+    }
+  }
+
+  bool _isNewerVersion(String current, String remote) {
+    try {
+      final v1 = current.split('.').map(int.parse).toList();
+      final v2 = remote.split('.').map(int.parse).toList();
+      for (var i = 0; i < 3; i++) {
+        if (v2[i] > v1[i]) return true;
+        if (v2[i] < v1[i]) return false;
+      }
+      return false;
+    } catch (_) {
+      return current != remote;
+    }
   }
 
   @override
@@ -126,7 +174,7 @@ class _LoginScreenState extends State<LoginScreen> {
         final settingsProv = context.read<SettingsProvider>();
         final cashProv = context.read<CashRegisterProvider>();
         
-        await settingsProv.loadSettings();
+        await settingsProv.loadSettings(isSilent: true);
         
         final assignedId = settingsProv.assignedRegisterId;
         await cashProv.checkCurrentShift(registerId: assignedId > 0 ? assignedId : null);
@@ -241,14 +289,34 @@ class _LoginScreenState extends State<LoginScreen> {
           backgroundColor: const Color(0xFF1E2D45),
           body: Stack(
             children: [
-              // ── Botón de configuración de red ─────────────────────
               Positioned(
                 top: 24,
                 right: 24,
-                child: IconButton(
-                  icon: const Icon(Icons.settings_ethernet, color: Colors.white54, size: 28),
-                  tooltip: 'Configurar Servidor',
-                  onPressed: _showServerConfigDialog,
+                child: Row(
+                  children: [
+                    if (_updateAvailable != null)
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.amber.shade700,
+                          foregroundColor: Colors.white,
+                        ),
+                        onPressed: () {
+                           showDialog(
+                             context: context,
+                             builder: (_) => UpdateDialog(updateInfo: _updateAvailable!),
+                           );
+                        },
+                        icon: const Icon(Icons.system_update_alt, size: 18),
+                        label: const Text('Actualización Disponible', style: TextStyle(fontWeight: FontWeight.bold)),
+                      ),
+                    if (_updateAvailable != null)
+                      const SizedBox(width: 16),
+                    IconButton(
+                      icon: const Icon(Icons.settings_ethernet, color: Colors.white54, size: 28),
+                      tooltip: 'Configurar Servidor',
+                      onPressed: _showServerConfigDialog,
+                    ),
+                  ],
                 ),
               ),
 
@@ -264,10 +332,13 @@ class _LoginScreenState extends State<LoginScreen> {
                         BoxShadow(color: Colors.black26, blurRadius: 20, offset: Offset(0, 10)),
                       ],
                     ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
+                    child: Stack(
+                      clipBehavior: Clip.none,
                       children: [
-                        const Icon(Icons.point_of_sale_rounded, size: 64, color: Color(0xFF3B82F6)),
+                        Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.point_of_sale_rounded, size: 64, color: Color(0xFF3B82F6)),
                         const SizedBox(height: 16),
                         const Text('Sistema POS',
                             style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.black87)),
@@ -356,8 +427,30 @@ class _LoginScreenState extends State<LoginScreen> {
                           ],
                         ),
                       ],
-                    ),
-                  ),
+                    ), // Cierre de la Column
+                    if (_appVersion.isNotEmpty)
+                      Positioned(
+                        top: -30,
+                        left: 0,
+                        right: 0,
+                        child: Center(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade100,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: Colors.grey.shade300),
+                            ),
+                            child: Text(
+                              'v$_appVersion',
+                              style: TextStyle(color: Colors.grey.shade600, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.0),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ), // Cierre del Stack
+              ),
                 ),
               ),
             ],
