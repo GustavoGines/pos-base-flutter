@@ -55,7 +55,13 @@ class _UpdateDialogState extends State<UpdateDialog> {
       final installPath = File(Platform.resolvedExecutable).parent.path;
       final updaterPath = p.join(installPath, 'updater.exe');
       
-      final targetDir = _isFrontend ? installPath : p.join(installPath, 'pos-backend');
+      final prefs = await SharedPreferences.getInstance();
+      final defaultBackendPath = r'C:\laragon\www\Sistema_POS\pos-backend';
+      final configuredBackendPath = prefs.getString('backend_install_path');
+      
+      final targetDir = _isFrontend 
+         ? installPath 
+         : (configuredBackendPath ?? defaultBackendPath);
       final componentArg = _isFrontend ? 'frontend' : 'backend';
 
       // Validar si el updater existe (en desarrollo o 'flutter run' no existe)
