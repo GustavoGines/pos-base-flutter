@@ -12,7 +12,7 @@ class AppConfig {
   /// URL de la API del Servidor de Licencias Central (Render)
   /// Utilizado para consultar check-update (OTA) de manera directa.
   static const String kLicenseServerUrl =
-      'https://pos-license-server.onrender.com'; // ¡Ajustar según donde esté subido tu License Server!
+      'https://pos-license-server-2jma.onrender.com'; // Actualizado con tu instancia real
 
   /// Navigation key global para poder mostrar dialogos/rutas desde Providers sin contexto explícito
   static final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();

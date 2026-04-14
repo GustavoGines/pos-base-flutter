@@ -245,14 +245,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     key: _formKey,
                     child: AnimatedSwitcher(
                       duration: const Duration(milliseconds: 300),
-                      child: Padding(
+                      child: SingleChildScrollView(
                         key: ValueKey(_activeSection),
-                        padding: const EdgeInsets.symmetric(horizontal: 64, vertical: 48),
-                        child: Align(
-                          alignment: Alignment.topCenter,
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 900),
-                            child: _buildActiveSection(provider),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 64, vertical: 48),
+                          child: Align(
+                            alignment: Alignment.topCenter,
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 900),
+                              child: _buildActiveSection(provider),
+                            ),
                           ),
                         ),
                       ),
