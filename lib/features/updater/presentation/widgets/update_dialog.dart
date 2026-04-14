@@ -17,6 +17,7 @@ class UpdateDialog extends StatefulWidget {
 
 class _UpdateDialogState extends State<UpdateDialog> {
   bool _isDownloading = false;
+  bool _isComplete = false;
   double _progress = 0.0;
   String _status = 'Listo para actualizar';
 
@@ -69,10 +70,12 @@ class _UpdateDialogState extends State<UpdateDialog> {
       }
 
       // Invocar al Updater.exe pidiendo permisos de administrador a Windows mediante PowerShell
+      // Invocar al Updater.exe pidiendo permisos de administrador a Windows mediante PowerShell
+      final argList = '--component=$componentArg --target-dir="$targetDir" --zip-path="$zipPath"';
       final processArgs = [
         'Start-Process',
         '-FilePath', '"$updaterPath"',
-        '-ArgumentList', '"--component=$componentArg", "--target-dir=\\"$targetDir\\"", "--zip-path=\\"$zipPath\\""',
+        '-ArgumentList', '\'$argList\'',
         '-Verb', 'RunAs'
       ];
       
@@ -93,6 +96,7 @@ class _UpdateDialogState extends State<UpdateDialog> {
         if (mounted) {
           setState(() {
             _isDownloading = false;
+            _isComplete = true; // Flag for UI
             _progress = 1.0;
             _status = '✅ Servidor actualizado exitosamente.';
           });
@@ -208,12 +212,12 @@ class _UpdateDialogState extends State<UpdateDialog> {
           ],
         ),
         actions: [
-          if (!widget.updateInfo.isCritical && !_isDownloading)
+          if (!_isDownloading)
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
-              child: const Text('MÁS TARDE', style: TextStyle(color: Colors.grey)),
+              child: Text(_isComplete ? 'FINALIZAR' : 'Cerrar', style: TextStyle(color: _isComplete ? componentColor : Colors.grey.shade600, fontWeight: _isComplete ? FontWeight.bold : FontWeight.normal)),
             ),
-          if (!_isDownloading)
+          if (!_isDownloading && !_isComplete)
             ElevatedButton(
               onPressed: _startUpdate,
               style: ElevatedButton.styleFrom(

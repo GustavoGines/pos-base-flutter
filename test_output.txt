@@ -1,0 +1,1 @@
+--component=backend --target-dir="C:\pos\pos-backend" --zip-path="C:\pos\temp.zip"  
