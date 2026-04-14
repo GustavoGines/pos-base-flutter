@@ -179,24 +179,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _checkForUpdate() async {
     setState(() => _isCheckingUpdate = true);
     try {
-      final info = await UpdateService().checkUpdate(throwErrors: true);
+      final result = await UpdateService().checkUpdate(throwErrors: true);
       if (!mounted) return;
-      
-      if (info != null) {
-        final packageInfo = await PackageInfo.fromPlatform();
-        final currentVersion = packageInfo.version;
-        
-        if (_isNewerVersion(currentVersion, info.version)) {
-          showDialog(
-            context: context,
-            barrierDismissible: !info.isCritical,
-            builder: (_) => UpdateDialog(updateInfo: info),
-          );
-        } else {
-          SnackBarService.success(context, 'Tu sistema está actualizado (v$currentVersion)');
-        }
+
+      final frontendUpdate = result.frontendUpdate;
+      final backendUpdate = result.backendUpdate;
+
+      if (frontendUpdate != null) {
+        showDialog(
+          context: context,
+          barrierDismissible: !frontendUpdate.isCritical,
+          builder: (_) => UpdateDialog(updateInfo: frontendUpdate),
+        );
+      } else if (backendUpdate != null) {
+        // El backend ya se actualiza automáticamente, solo informamos
+        showDialog(
+          context: context,
+          barrierDismissible: true,
+          builder: (_) => UpdateDialog(updateInfo: backendUpdate),
+        );
       } else {
-        // Al usar throwErrors: true, si es null significa genuinamente "No hay releases en BD (404)"
         SnackBarService.success(context, 'Tu sistema está actualizado (v$_appVersion)');
       }
     } catch (e) {
@@ -207,19 +209,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  bool _isNewerVersion(String current, String remote) {
-    try {
-      final v1 = current.split('.').map(int.parse).toList();
-      final v2 = remote.split('.').map(int.parse).toList();
-      for (var i = 0; i < 3; i++) {
-        if (v2[i] > v1[i]) return true;
-        if (v2[i] < v1[i]) return false;
-      }
-      return false;
-    } catch (_) {
-      return current != remote;
-    }
-  }
+
 
   @override
   Widget build(BuildContext context) {

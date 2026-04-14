@@ -71,19 +71,7 @@ class _LoginScreenState extends State<LoginScreen> {
     });
   }
 
-  bool _isNewerVersion(String current, String remote) {
-    try {
-      final v1 = current.split('.').map(int.parse).toList();
-      final v2 = remote.split('.').map(int.parse).toList();
-      for (var i = 0; i < 3; i++) {
-        if (v2[i] > v1[i]) return true;
-        if (v2[i] < v1[i]) return false;
-      }
-      return false;
-    } catch (_) {
-      return current != remote;
-    }
-  }
+
 
   @override
   void dispose() {
