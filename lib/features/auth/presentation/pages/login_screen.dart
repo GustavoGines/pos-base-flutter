@@ -278,54 +278,7 @@ class _LoginScreenState extends State<LoginScreen> {
           backgroundColor: const Color(0xFF1E2D45),
           body: Stack(
             children: [
-              Positioned(
-                top: 24,
-                right: 24,
-                child: Row(
-                  children: [
-                    // Badge de update de Frontend (App)
-                    if (_frontendUpdate != null)
-                      ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF673AB7),
-                          foregroundColor: Colors.white,
-                        ),
-                        onPressed: () {
-                          showDialog(
-                            context: context,
-                            builder: (_) => UpdateDialog(updateInfo: _frontendUpdate!),
-                          );
-                        },
-                        icon: const Icon(Icons.monitor, size: 18),
-                        label: const Text('Actualiz. App', style: TextStyle(fontWeight: FontWeight.bold)),
-                      ),
-                    if (_frontendUpdate != null) const SizedBox(width: 10),
-
-                    // Badge de update de Backend (Servidor) — informativo, se aplica solo
-                    if (_backendUpdate != null)
-                      ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF0D9488),
-                          foregroundColor: Colors.white,
-                        ),
-                        onPressed: () {
-                          showDialog(
-                            context: context,
-                            builder: (_) => UpdateDialog(updateInfo: _backendUpdate!),
-                          );
-                        },
-                        icon: const Icon(Icons.dns_rounded, size: 18),
-                        label: const Text('Actualiz. Servidor', style: TextStyle(fontWeight: FontWeight.bold)),
-                      ),
-                    if (_backendUpdate != null) const SizedBox(width: 10),
-                    IconButton(
-                      icon: const Icon(Icons.settings_ethernet, color: Colors.white54, size: 28),
-                      tooltip: 'Configurar Servidor',
-                      onPressed: _showServerConfigDialog,
-                    ),
-                  ],
-                ),
-              ),
+// Remove this Positioned block entirely from here, it will be placed at the end of the Stack
 
               Center(
                 child: SingleChildScrollView(
@@ -458,6 +411,56 @@ class _LoginScreenState extends State<LoginScreen> {
                   ],
                 ), // Cierre del Stack
               ),
+                ),
+              ),
+              Positioned(
+                top: 24,
+                right: 24,
+                child: Row(
+                  children: [
+                    // Badge de update de Frontend (App)
+                    if (_frontendUpdate != null)
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF673AB7),
+                          foregroundColor: Colors.white,
+                        ),
+                        onPressed: () async {
+                          final result = await showDialog<bool>(
+                            context: context,
+                            builder: (_) => UpdateDialog(updateInfo: _frontendUpdate!),
+                          );
+                          if (result == true) _checkForUpdates();
+                        },
+                        icon: const Icon(Icons.monitor, size: 18),
+                        label: const Text('Actualiz. App', style: TextStyle(fontWeight: FontWeight.bold)),
+                      ),
+                    if (_frontendUpdate != null) const SizedBox(width: 10),
+
+                    // Badge de update de Backend (Servidor) — informativo, se aplica solo
+                    if (_backendUpdate != null)
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF0D9488),
+                          foregroundColor: Colors.white,
+                        ),
+                        onPressed: () async {
+                          final result = await showDialog<bool>(
+                            context: context,
+                            builder: (_) => UpdateDialog(updateInfo: _backendUpdate!),
+                          );
+                          if (result == true) _checkForUpdates();
+                        },
+                        icon: const Icon(Icons.dns_rounded, size: 18),
+                        label: const Text('Actualiz. Servidor', style: TextStyle(fontWeight: FontWeight.bold)),
+                      ),
+                    if (_backendUpdate != null) const SizedBox(width: 10),
+                    IconButton(
+                      icon: const Icon(Icons.settings_ethernet, color: Colors.white54, size: 28),
+                      tooltip: 'Configurar Servidor',
+                      onPressed: _showServerConfigDialog,
+                    ),
+                  ],
                 ),
               ),
             ],

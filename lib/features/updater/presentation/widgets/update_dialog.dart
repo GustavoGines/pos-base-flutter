@@ -220,7 +220,7 @@ class _UpdateDialogState extends State<UpdateDialog> {
         actions: [
           if (!_isDownloading)
             TextButton(
-              onPressed: () => Navigator.of(context).pop(),
+              onPressed: () => Navigator.of(context).pop(_isComplete),
               child: Text(_isComplete ? 'FINALIZAR' : 'Cerrar', style: TextStyle(color: _isComplete ? componentColor : Colors.grey.shade600, fontWeight: _isComplete ? FontWeight.bold : FontWeight.normal)),
             ),
           if (!_isDownloading && !_isComplete)
