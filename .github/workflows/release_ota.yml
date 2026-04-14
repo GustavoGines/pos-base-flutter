@@ -101,8 +101,8 @@ jobs:
         run: |
           $VERSION      = "${{ github.ref_name }}"
           $DOWNLOAD_URL = "${{ secrets.R2_PUBLIC_BASE_URL }}/releases/${{ env.ZIP_NAME }}"
-          # Extraer el mensaje del último commit
-          $MSG = git log -1 --pretty=format:"%B"
+          # Extraer el mensaje del último commit excluyendo merges
+          $MSG = git log -1 --no-merges --pretty=format:"%B"
           if (-not $MSG) { $MSG = "Release $VERSION generado automaticamente por CI/CD." }
 
           $BODY = @{

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:window_manager/window_manager.dart';
 
 // Providers
 import 'features/settings/presentation/providers/settings_provider.dart';
@@ -132,6 +133,20 @@ class LicenseRefreshObserver extends NavigatorObserver {
 void main() async {
   // CRÍTICO: Inicialización obligatoria para assets y plugins en desktop
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Hacer que la app inicie en pantalla completa (maximizada) pero no Kiosk puro,
+  // permitiendo que el usuario la achique o minimice si lo requiere.
+  await windowManager.ensureInitialized();
+  WindowOptions windowOptions = const WindowOptions(
+    size: Size(1280, 720),
+    center: true,
+    titleBarStyle: TitleBarStyle.normal,
+  );
+  windowManager.waitUntilReadyToShow(windowOptions, () async {
+    await windowManager.show();
+    await windowManager.focus();
+    await windowManager.maximize();
+  });
   
   // Pre-cargar perfil de impresora para evitar crashes de AssetManifest en Windows
   await ReceiptPrinterService.instance.initialize();
