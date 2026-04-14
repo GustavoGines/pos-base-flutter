@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../data/models/update_info.dart';
 
 class UpdateDialog extends StatefulWidget {
@@ -30,7 +31,8 @@ class _UpdateDialogState extends State<UpdateDialog> {
     try {
       final dio = Dio();
       final tempDir = await getTemporaryDirectory();
-      final zipPath = p.join(tempDir.path, 'update_v${widget.updateInfo.version}.zip');
+      final zipName = _isFrontend ? 'update_v${widget.updateInfo.version}.zip' : 'update_backend_v${widget.updateInfo.version}.zip';
+      final zipPath = p.join(tempDir.path, zipName);
 
       await dio.download(
         widget.updateInfo.downloadUrl,
@@ -51,31 +53,51 @@ class _UpdateDialogState extends State<UpdateDialog> {
       // Calcular ruta de instalación (donde está el .exe de esta aplicación)
       final installPath = File(Platform.resolvedExecutable).parent.path;
       final updaterPath = p.join(installPath, 'updater.exe');
+      
+      final targetDir = _isFrontend ? installPath : p.join(installPath, 'pos-backend');
+      final componentArg = _isFrontend ? 'frontend' : 'backend';
 
       // Validar si el updater existe (en desarrollo o 'flutter run' no existe)
       if (!File(updaterPath).existsSync()) {
         if (mounted) {
           setState(() {
             _isDownloading = false;
-            _status = '✅ ¡Test Exitoso! (ZIP descargado de R2.\nActualizador ignorado en modo Debug para proteger tu entorno local)';
+            _status = '✅ ¡Test Exitoso! (Updater ignorado en modo Debug)';
           });
         }
         return;
       }
 
       // Invocar al Updater.exe pidiendo permisos de administrador a Windows mediante PowerShell
-      await Process.run(
-        'powershell',
-        [
-          'Start-Process',
-          '-FilePath', '"$updaterPath"',
-          '-ArgumentList', '"--component=frontend", "--target-dir=\\"$installPath\\"", "--zip-path=\\"$zipPath\\""',
-          '-Verb', 'RunAs'
-        ],
-      );
+      final processArgs = [
+        'Start-Process',
+        '-FilePath', '"$updaterPath"',
+        '-ArgumentList', '"--component=$componentArg", "--target-dir=\\"$targetDir\\"", "--zip-path=\\"$zipPath\\""',
+        '-Verb', 'RunAs'
+      ];
+      
+      if (!_isFrontend) {
+        processArgs.add('-Wait'); // Para backend, esperamos que termine silenciosamente
+      }
 
-      // Inmediatamente después, salir para liberar los archivos
-      exit(0);
+      await Process.run('powershell', processArgs);
+
+      if (_isFrontend) {
+        // En frontend, nos salimos para dejar que reemplace los archivos en uso
+        exit(0);
+      } else {
+        // En backend, actualizamos las preferencias para no volver a pedirlo
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('backend_version', widget.updateInfo.version);
+        
+        if (mounted) {
+          setState(() {
+            _isDownloading = false;
+            _progress = 1.0;
+            _status = '✅ Servidor actualizado exitosamente.';
+          });
+        }
+      }
     } catch (e) {
       if (mounted) {
         setState(() {

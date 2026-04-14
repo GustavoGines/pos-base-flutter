@@ -1,10 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 import 'package:http/http.dart' as http;
-import 'package:dio/dio.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:path/path.dart' as p;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/config/app_config.dart';
@@ -46,8 +42,6 @@ class UpdateService {
         final data = json.decode(backendResponse.body);
         if (data['success'] == true && data['update_available'] == true && data['data'] != null) {
           backendUpdate = UpdateInfo.fromJson(data['data'], component: 'backend');
-          // Descarga e instala el backend silenciosamente en segundo plano
-          unawaited(_performBackendUpdate(backendUpdate, prefs));
         }
       }
 
@@ -73,36 +67,5 @@ class UpdateService {
 
     return UpdateCheckResult(frontendUpdate: frontendUpdate, backendUpdate: backendUpdate);
   }
-
-  Future<void> _performBackendUpdate(UpdateInfo update, SharedPreferences prefs) async {
-    try {
-      final dio = Dio();
-      final tempDir = await getTemporaryDirectory();
-      final zipPath = p.join(tempDir.path, 'update_backend_v${update.version}.zip');
-
-      await dio.download(update.downloadUrl, zipPath);
-
-      final installPath = File(Platform.resolvedExecutable).parent.path;
-      final targetDir = p.join(installPath, 'pos-backend');
-      final updaterPath = p.join(installPath, 'updater.exe');
-
-      if (!File(updaterPath).existsSync()) return;
-
-      await Process.run(
-        'powershell',
-        [
-          'Start-Process',
-          '-FilePath', '"$updaterPath"',
-          '-ArgumentList', '"--component=backend", "--target-dir=\\"$targetDir\\"", "--zip-path=\\"$zipPath\\""',
-          '-Verb', 'RunAs',
-          '-Wait'
-        ],
-      );
-
-      await prefs.setString('backend_version', update.version);
-    } catch (e) {
-      // Falla silenciosa: no interrumpir la sesión del usuario
-      print('Error en backend update: $e');
-    }
-  }
 }
+
