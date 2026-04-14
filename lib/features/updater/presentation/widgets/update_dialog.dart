@@ -67,7 +67,7 @@ class _UpdateDialogState extends State<UpdateDialog> {
         [
           'Start-Process',
           '-FilePath', '"$updaterPath"',
-          '-ArgumentList', '"$zipPath", "$installPath"',
+          '-ArgumentList', '"--component=frontend", "--target-dir=\\"$installPath\\"", "--zip-path=\\"$zipPath\\""',
           '-Verb', 'RunAs'
         ],
       );

@@ -3,39 +3,56 @@ import 'package:archive/archive_io.dart';
 import 'package:path/path.dart' as p;
 
 void main(List<String> args) async {
-  if (args.length < 2) {
-    print('Uso: updater.exe <ruta_zip> <ruta_instalacion>');
+  String? component;
+  String? targetDir;
+  String? zipPath;
+
+  // Parser básico de argumentos
+  for (final arg in args) {
+    if (arg.startsWith('--component=')) {
+      component = arg.split('=')[1];
+    } else if (arg.startsWith('--target-dir=')) {
+      targetDir = arg.substring('--target-dir='.length).replaceAll('"', '');
+    } else if (arg.startsWith('--zip-path=')) {
+      zipPath = arg.substring('--zip-path='.length).replaceAll('"', '');
+    }
+  }
+
+  // Fallback (versiones antiguas)
+  if (component == null && args.length >= 2 && !args[0].startsWith('--')) {
+    component = 'frontend';
+    zipPath = args[0].replaceAll('"', '');
+    targetDir = args[1].replaceAll('"', '');
+  }
+
+  if (component == null || targetDir == null || zipPath == null) {
+    print('Uso: updater.exe --component=<frontend/backend> --target-dir=<ruta> --zip-path=<ruta>');
     exit(1);
   }
 
-  final zipPath = args[0];
-  final installPath = args[1];
-
   print('Updater Iniciado.');
+  print('Componente: $component');
   print('Ruta ZIP: $zipPath');
-  print('Ruta Destino: $installPath');
+  print('Ruta Destino: $targetDir');
 
-  // 1. Esperar 3 segundos para que la aplicación principal se cierre
-  print('Esperando 3 segundos a que la aplicación principal libere los archivos...');
+  print('Esperando 3 segundos a que los procesos liberen los archivos...');
   await Future.delayed(const Duration(seconds: 3));
 
-  // 2. Extraer el ZIP
   print('Extrayendo actualizaciones en el directorio...');
   try {
     final bytes = File(zipPath).readAsBytesSync();
-    // decodeBytes se usa de archive
     final archive = ZipDecoder().decodeBytes(bytes);
 
     for (final file in archive) {
       final filename = file.name;
       if (file.isFile) {
         final data = file.content as List<int>;
-        final filePath = p.join(installPath, filename);
+        final filePath = p.join(targetDir, filename);
         final outFile = File(filePath);
         outFile.createSync(recursive: true);
         outFile.writeAsBytesSync(data);
       } else {
-        final dirPath = p.join(installPath, filename);
+        final dirPath = p.join(targetDir, filename);
         Directory(dirPath).createSync(recursive: true);
       }
     }
@@ -44,39 +61,42 @@ void main(List<String> args) async {
     print('Error extrayendo el ZIP: $e');
   }
 
-  // 3. Ejecutar migraciones de Laravel
-  final backendPath = p.join(installPath, 'pos-backend');
-  if (Directory(backendPath).existsSync()) {
+  // Lógicas por componente
+  if (component == 'backend') {
     print('Ejecutando php artisan migrate --force en backend...');
     try {
-      final result = await Process.run(
+      final result = Process.runSync(
         'php',
         ['artisan', 'migrate', '--force'],
-        workingDirectory: backendPath,
+        workingDirectory: targetDir,
       );
-      print('Migración stdout: ${result.stdout}');
+      print('Migración stdout:\n${result.stdout}');
       if (result.stderr.toString().trim().isNotEmpty) {
-        print('Migración stderr: ${result.stderr}');
+        print('Migración stderr:\n${result.stderr}');
       }
     } catch (e) {
       print('Error al intentar ejecutar la migración: $e');
     }
-  } else {
-    print('Advertencia: No se encontró la carpeta del backend en $backendPath (Se saltan migraciones).');
-  }
 
-  // 4. Volver a lanzar el Sistema
-  final exePath = p.join(installPath, 'Sistema_POS.exe');
-  if (File(exePath).existsSync()) {
-    print('Lanzando la aplicación actualizada...');
     try {
-      // Lanzamos la aplicación y nos desvinculamos del proceso para que el updater pueda morir
-      await Process.start(exePath, [], workingDirectory: installPath, mode: ProcessStartMode.detached);
+      File(zipPath).deleteSync();
+      print('Archivo ZIP $zipPath eliminado correctamente.');
     } catch (e) {
-      print('Error al abrir $exePath: $e');
+      print('No se pudo eliminar el ZIP temporal: $e');
     }
-  } else {
-    print('Advertencia: No se encontró $exePath para reabrir automáticamente.');
+    
+  } else if (component == 'frontend') {
+    final exePath = p.join(targetDir, 'Sistema_POS.exe');
+    if (File(exePath).existsSync()) {
+      print('Lanzando la aplicación actualizada...');
+      try {
+        await Process.start(exePath, [], workingDirectory: targetDir, mode: ProcessStartMode.detached);
+      } catch (e) {
+        print('Error al abrir $exePath: $e');
+      }
+    } else {
+      print('Advertencia: No se encontró $exePath para reabrir automáticamente.');
+    }
   }
 
   print('Proceso de actualización finalizado.');
