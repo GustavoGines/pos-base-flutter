@@ -26,7 +26,8 @@ class _LoginScreenState extends State<LoginScreen> {
   // ── FocusNode dedicado al listener del teclado físico ────────────
   late final FocusNode _keyboardFocus;
   
-  UpdateInfo? _updateAvailable;
+  UpdateInfo? _frontendUpdate;
+  UpdateInfo? _backendUpdate;
   String _appVersion = '';
 
   @override
@@ -49,25 +50,25 @@ class _LoginScreenState extends State<LoginScreen> {
     if (mounted) {
       setState(() => _appVersion = packageInfo.version);
     }
-    
-    final info = await UpdateService().checkUpdate();
-    if (info != null && mounted) {
-      final currentVersion = packageInfo.version;
-      
-      if (_isNewerVersion(currentVersion, info.version)) {
-        if (info.isCritical) {
-          showDialog(
-            context: context,
-            barrierDismissible: false,
-            builder: (_) => UpdateDialog(updateInfo: info),
-          );
-        } else {
-          setState(() {
-            _updateAvailable = info;
-          });
-        }
-      }
+
+    final result = await UpdateService().checkUpdate();
+    if (!mounted) return;
+
+    // Actualización crítica del frontend → diálogo bloqueante
+    if (result.frontendUpdate != null && result.frontendUpdate!.isCritical) {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => UpdateDialog(updateInfo: result.frontendUpdate!),
+      );
+      return;
     }
+
+    // Actualizaciones no críticas → badges en pantalla
+    setState(() {
+      _frontendUpdate = result.frontendUpdate;
+      _backendUpdate = result.backendUpdate;
+    });
   }
 
   bool _isNewerVersion(String current, String remote) {
@@ -294,23 +295,41 @@ class _LoginScreenState extends State<LoginScreen> {
                 right: 24,
                 child: Row(
                   children: [
-                    if (_updateAvailable != null)
+                    // Badge de update de Frontend (App)
+                    if (_frontendUpdate != null)
                       ElevatedButton.icon(
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.amber.shade700,
+                          backgroundColor: const Color(0xFF673AB7),
                           foregroundColor: Colors.white,
                         ),
                         onPressed: () {
-                           showDialog(
-                             context: context,
-                             builder: (_) => UpdateDialog(updateInfo: _updateAvailable!),
-                           );
+                          showDialog(
+                            context: context,
+                            builder: (_) => UpdateDialog(updateInfo: _frontendUpdate!),
+                          );
                         },
-                        icon: const Icon(Icons.system_update_alt, size: 18),
-                        label: const Text('Actualización Disponible', style: TextStyle(fontWeight: FontWeight.bold)),
+                        icon: const Icon(Icons.monitor, size: 18),
+                        label: const Text('Actualiz. App', style: TextStyle(fontWeight: FontWeight.bold)),
                       ),
-                    if (_updateAvailable != null)
-                      const SizedBox(width: 16),
+                    if (_frontendUpdate != null) const SizedBox(width: 10),
+
+                    // Badge de update de Backend (Servidor) — informativo, se aplica solo
+                    if (_backendUpdate != null)
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF0D9488),
+                          foregroundColor: Colors.white,
+                        ),
+                        onPressed: () {
+                          showDialog(
+                            context: context,
+                            builder: (_) => UpdateDialog(updateInfo: _backendUpdate!),
+                          );
+                        },
+                        icon: const Icon(Icons.dns_rounded, size: 18),
+                        label: const Text('Actualiz. Servidor', style: TextStyle(fontWeight: FontWeight.bold)),
+                      ),
+                    if (_backendUpdate != null) const SizedBox(width: 10),
                     IconButton(
                       icon: const Icon(Icons.settings_ethernet, color: Colors.white54, size: 28),
                       tooltip: 'Configurar Servidor',
