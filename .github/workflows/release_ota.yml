@@ -101,11 +101,14 @@ jobs:
         run: |
           $VERSION      = "${{ github.ref_name }}"
           $DOWNLOAD_URL = "${{ secrets.R2_PUBLIC_BASE_URL }}/releases/${{ env.ZIP_NAME }}"
+          # Extraer el mensaje del último commit
+          $MSG = git log -1 --pretty=format:"%B"
+          if (-not $MSG) { $MSG = "Release $VERSION generado automaticamente por CI/CD." }
 
           $BODY = @{
             version      = $VERSION
             download_url = $DOWNLOAD_URL
-            changelog    = "Release $VERSION generado automaticamente por CI/CD."
+            changelog    = $MSG
             is_critical  = $false
             token        = "${{ secrets.LICENSE_SERVER_TOKEN }}"
           } | ConvertTo-Json -Compress
