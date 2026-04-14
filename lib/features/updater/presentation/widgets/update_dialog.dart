@@ -19,6 +19,8 @@ class _UpdateDialogState extends State<UpdateDialog> {
   double _progress = 0.0;
   String _status = 'Listo para actualizar';
 
+  bool get _isFrontend => widget.updateInfo.component == 'frontend';
+
   Future<void> _startUpdate() async {
     setState(() {
       _isDownloading = true;
@@ -86,15 +88,51 @@ class _UpdateDialogState extends State<UpdateDialog> {
 
   @override
   Widget build(BuildContext context) {
+    // Configuración visual por componente
+    final Color componentColor = _isFrontend ? const Color(0xFF673AB7) : const Color(0xFF0D9488);
+    final IconData componentIcon = _isFrontend ? Icons.monitor : Icons.dns_rounded;
+    final String componentLabel = _isFrontend ? 'App (Frontend)' : 'Servidor (Backend)';
+    final String componentDescription = _isFrontend
+        ? 'Esta actualización reemplaza la aplicación y requiere reinicio.'
+        : 'Esta actualización se aplica en segundo plano al servidor local.';
+
     return WillPopScope(
       onWillPop: () async => !widget.updateInfo.isCritical && !_isDownloading,
       child: AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Row(
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.system_update_alt, color: Color(0xFF673AB7)),
-            const SizedBox(width: 12),
-            const Text('Actualización Disponible', style: TextStyle(fontWeight: FontWeight.bold)),
+            // Badge del componente
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: componentColor.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: componentColor.withOpacity(0.4)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(componentIcon, size: 14, color: componentColor),
+                  const SizedBox(width: 6),
+                  Text(
+                    componentLabel,
+                    style: TextStyle(fontSize: 12, color: componentColor, fontWeight: FontWeight.w700, letterSpacing: 0.3),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+            // Título principal
+            Row(
+              children: [
+                Icon(Icons.system_update_alt, color: componentColor),
+                const SizedBox(width: 10),
+                const Text('Actualización Disponible', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              ],
+            ),
           ],
         ),
         content: Column(
@@ -103,7 +141,12 @@ class _UpdateDialogState extends State<UpdateDialog> {
           children: [
             Text(
               'Versión ${widget.updateInfo.version}',
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.indigo),
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: componentColor),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              componentDescription,
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
             ),
             const SizedBox(height: 12),
             const Text('Novedades:', style: TextStyle(fontWeight: FontWeight.w600)),
@@ -119,7 +162,7 @@ class _UpdateDialogState extends State<UpdateDialog> {
               LinearProgressIndicator(
                 value: _progress,
                 backgroundColor: Colors.grey.shade200,
-                color: const Color(0xFF673AB7),
+                color: componentColor,
                 minHeight: 8,
                 borderRadius: BorderRadius.circular(4),
               ),
@@ -130,9 +173,15 @@ class _UpdateDialogState extends State<UpdateDialog> {
                   style: const TextStyle(fontSize: 13, color: Colors.grey),
                 ),
               ),
-            ] else if (_status.startsWith('Error')) ...[
+            ] else if (_status.startsWith('Error') || _status.startsWith('✅')) ...[
               const SizedBox(height: 16),
-              Text(_status, style: const TextStyle(color: Colors.red, fontSize: 13)),
+              Text(
+                _status,
+                style: TextStyle(
+                  color: _status.startsWith('Error') ? Colors.red : Colors.green.shade700,
+                  fontSize: 13,
+                ),
+              ),
             ],
           ],
         ),
@@ -146,7 +195,7 @@ class _UpdateDialogState extends State<UpdateDialog> {
             ElevatedButton(
               onPressed: _startUpdate,
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF673AB7),
+                backgroundColor: componentColor,
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
               ),

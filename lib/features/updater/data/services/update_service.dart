@@ -10,10 +10,23 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/config/app_config.dart';
 import '../models/update_info.dart';
 
+class UpdateCheckResult {
+  final UpdateInfo? frontendUpdate;
+  final UpdateInfo? backendUpdate;
+
+  UpdateCheckResult({this.frontendUpdate, this.backendUpdate});
+
+  bool get hasAny => frontendUpdate != null || backendUpdate != null;
+}
+
 class UpdateService {
-  /// Consulta al servidor si hay una versión más nueva disponible.
+  /// Consulta al servidor si hay versiones nuevas disponibles.
   /// Chequea backend y frontend de forma separada.
-  Future<UpdateInfo?> checkUpdate({bool throwErrors = false}) async {
+  /// Retorna [UpdateCheckResult] con ambos componentes (si hay actualizaciones).
+  Future<UpdateCheckResult> checkUpdate({bool throwErrors = false}) async {
+    UpdateInfo? frontendUpdate;
+    UpdateInfo? backendUpdate;
+
     try {
       final packageInfo = await PackageInfo.fromPlatform();
       final currentFrontendVersion = packageInfo.version;
@@ -21,42 +34,44 @@ class UpdateService {
       final prefs = await SharedPreferences.getInstance();
       final currentBackendVersion = prefs.getString('backend_version') ?? '0.0.0';
 
-      // 1. Chequeo y descarga automática de Backend
+      // 1. Chequeo de Backend
       final backendUri = Uri.parse('${AppConfig.kLicenseServerUrl}/api/check-update')
           .replace(queryParameters: {'component': 'backend', 'current_version': currentBackendVersion});
-          
-      final backendResponse = await http.get(backendUri, headers: {'Accept': 'application/json'}).timeout(const Duration(minutes: 4));
+
+      final backendResponse = await http
+          .get(backendUri, headers: {'Accept': 'application/json'})
+          .timeout(const Duration(minutes: 4));
 
       if (backendResponse.statusCode == 200) {
         final data = json.decode(backendResponse.body);
         if (data['success'] == true && data['update_available'] == true && data['data'] != null) {
-          final backendUpdate = UpdateInfo.fromJson(data['data'], component: 'backend');
-          // Iniciamos la actualización del backend silenciosamente de fondo
+          backendUpdate = UpdateInfo.fromJson(data['data'], component: 'backend');
+          // Descarga e instala el backend silenciosamente en segundo plano
           unawaited(_performBackendUpdate(backendUpdate, prefs));
         }
       }
 
-      // 2. Chequeo de Frontend (retorna UI dialog si es necesario)
+      // 2. Chequeo de Frontend
       final frontendUri = Uri.parse('${AppConfig.kLicenseServerUrl}/api/check-update')
           .replace(queryParameters: {'component': 'frontend', 'current_version': currentFrontendVersion});
 
-      final frontendResponse = await http.get(frontendUri, headers: {'Accept': 'application/json'}).timeout(const Duration(minutes: 4));
+      final frontendResponse = await http
+          .get(frontendUri, headers: {'Accept': 'application/json'})
+          .timeout(const Duration(minutes: 4));
 
       if (frontendResponse.statusCode == 200) {
         final data = json.decode(frontendResponse.body);
         if (data['success'] == true && data['update_available'] == true && data['data'] != null) {
-          return UpdateInfo.fromJson(data['data'], component: 'frontend');
+          frontendUpdate = UpdateInfo.fromJson(data['data'], component: 'frontend');
         }
       }
-
-      return null;
     } on TimeoutException {
       if (throwErrors) throw Exception('Timeout esperando al servidor (posible arranque en Render).');
-      return null;
     } catch (e) {
       if (throwErrors) rethrow;
-      return null;
     }
+
+    return UpdateCheckResult(frontendUpdate: frontendUpdate, backendUpdate: backendUpdate);
   }
 
   Future<void> _performBackendUpdate(UpdateInfo update, SharedPreferences prefs) async {
@@ -83,10 +98,10 @@ class UpdateService {
           '-Wait'
         ],
       );
-      
-      // Actualizamos la preferencia tras lanzar la actualización
+
       await prefs.setString('backend_version', update.version);
     } catch (e) {
+      // Falla silenciosa: no interrumpir la sesión del usuario
       print('Error en backend update: $e');
     }
   }
