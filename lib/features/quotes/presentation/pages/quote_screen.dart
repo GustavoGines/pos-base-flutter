@@ -77,17 +77,18 @@ class _QuoteScreenState extends State<QuoteScreen> {
   void _addProduct(Product product, {double? overridePrice}) {
     // Aplicar automáticamente la lista seleccionada si no hay override explícito
     overridePrice ??= _resolvePrice(product);
+    String currentType = _selectedPriceList;
     if (product.isSoldByWeight) {
-      _showWeightDialog(product, overridePrice: overridePrice);
+      _showWeightDialog(product, overridePrice: overridePrice, priceType: currentType);
     } else {
-      context.read<QuoteProvider>().addToCart(product, overridePrice: overridePrice);
+      context.read<QuoteProvider>().addToCart(product, overridePrice: overridePrice, priceType: currentType);
       _searchCtrl.clear();
       setState(() { _searchQuery = ''; _searchResults = []; });
       _searchFocus.requestFocus();
     }
   }
 
-  void _showWeightDialog(Product product, {double? overridePrice}) {
+  void _showWeightDialog(Product product, {double? overridePrice, String priceType = 'lista'}) {
     final ctrl = TextEditingController();
     showDialog(
       context: context,
@@ -97,7 +98,7 @@ class _QuoteScreenState extends State<QuoteScreen> {
           final valid = double.tryParse(val.text.replaceAll(',', '.')) != null &&
               double.parse(val.text.replaceAll(',', '.')) > 0;
           return AlertDialog(
-            title: Text('Peso (Kg) � ${product.name}'),
+            title: Text('Peso (Kg) - ${product.name}'),
             content: TextField(
               controller: ctrl,
               autofocus: true,
@@ -109,7 +110,7 @@ class _QuoteScreenState extends State<QuoteScreen> {
               FilledButton(
                 onPressed: valid ? () {
                   final kg = double.parse(ctrl.text.replaceAll(',', '.'));
-                  context.read<QuoteProvider>().addToCart(product, quantity: kg, overridePrice: overridePrice);
+                  context.read<QuoteProvider>().addToCart(product, quantity: kg, overridePrice: overridePrice, priceType: priceType);
                   Navigator.pop(ctx);
                   _searchCtrl.clear();
                   setState(() { _searchQuery = ''; _searchResults = []; });
@@ -132,7 +133,7 @@ class _QuoteScreenState extends State<QuoteScreen> {
       return;
     }
 
-    // -- Di�logo de confirmaci�n con datos del cliente ---------------------
+    // -- Diálogo de confirmación con datos del cliente ---------------------
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => _QuoteHeaderDialog(
@@ -216,6 +217,12 @@ class _QuoteScreenState extends State<QuoteScreen> {
   }
 
   // ── Helpers de lista de precios ─────────────────────────────────────────
+
+  bool _hasPriceForCurrentList(Product p) {
+    if (_selectedPriceList == 'mayorista' && p.priceWholesale == null) return false;
+    if (_selectedPriceList == 'tarjeta' && p.priceCard == null) return false;
+    return true;
+  }
 
   double _resolvePrice(Product p) {
     switch (_selectedPriceList) {
@@ -309,7 +316,8 @@ class _QuoteScreenState extends State<QuoteScreen> {
     if (_searchQuery.isEmpty) {
       return _buildQuickAccessGrid();
     }
-    if (_searchResults.isEmpty && !_isSearching) {
+    final displayedResults = _searchResults.where(_hasPriceForCurrentList).toList();
+    if (displayedResults.isEmpty && !_isSearching) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -323,14 +331,14 @@ class _QuoteScreenState extends State<QuoteScreen> {
     }
     return ListView.separated(
       padding: const EdgeInsets.all(8),
-      itemCount: _searchResults.length,
+      itemCount: displayedResults.length,
       separatorBuilder: (_, __) => const Divider(height: 1),
-      itemBuilder: (_, i) => _buildProductTile(_searchResults[i]),
+      itemBuilder: (_, i) => _buildProductTile(displayedResults[i]),
     );
   }
 
   Widget _buildQuickAccessGrid() {
-    final products = context.watch<CatalogProvider>().products;
+    final products = context.watch<CatalogProvider>().products.where(_hasPriceForCurrentList).toList();
     if (products.isEmpty) {
       return Center(
         child: Column(
@@ -468,8 +476,8 @@ class _QuoteScreenState extends State<QuoteScreen> {
                       onPressed: () => showDialog(
                         context: context,
                         builder: (_) => AlertDialog(
-                          title: const Text('�Limpiar presupuesto?'),
-                          content: const Text('Se borrar�n todos los �tems agregados.'),
+                          title: const Text('¿Limpiar presupuesto?'),
+                          content: const Text('Se borrarán todos los ítems agregados.'),
                           actions: [
                             TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
                             FilledButton(
@@ -487,7 +495,7 @@ class _QuoteScreenState extends State<QuoteScreen> {
               ),
             ),
 
-            // Lista de �tems
+            // Lista de ítems
             Expanded(
               child: cart.isEmpty
                   ? Center(
@@ -496,7 +504,7 @@ class _QuoteScreenState extends State<QuoteScreen> {
                         children: [
                           Icon(Icons.receipt_long_outlined, size: 64, color: Colors.grey.shade300),
                           const SizedBox(height: 12),
-                          Text('Agreg� productos para\ngenerar el presupuesto',
+                          Text('Agregá productos para\ngenerar el presupuesto',
                               textAlign: TextAlign.center,
                               style: TextStyle(color: Colors.grey.shade500, fontSize: 13)),
                         ],
@@ -510,7 +518,7 @@ class _QuoteScreenState extends State<QuoteScreen> {
                     ),
             ),
 
-            // Total + Bot�n
+            // Total + Botón
             if (cart.isNotEmpty)
               Container(
                 padding: const EdgeInsets.all(16),
@@ -566,8 +574,32 @@ class _QuoteScreenState extends State<QuoteScreen> {
       title: Text(item.product.name,
           style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
           overflow: TextOverflow.ellipsis),
-      subtitle: Text('${fmt.format(item.unitPrice)} � ${item.product.isSoldByWeight ? "${item.quantity.toQty()} kg" : item.quantity.toInt()}',
-          style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+      subtitle: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text('${fmt.format(item.unitPrice)} x ${item.product.isSoldByWeight ? "${item.quantity.toQty()} kg" : item.quantity.toInt()}',
+              style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+          if (item.priceType != 'lista') ...[
+            const SizedBox(width: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+              decoration: BoxDecoration(
+                color: item.priceType == 'mayorista' ? Colors.indigo.shade50 : Colors.teal.shade50,
+                border: Border.all(color: item.priceType == 'mayorista' ? Colors.indigo.shade200 : Colors.teal.shade200),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                item.priceType == 'mayorista' ? 'Mayorista' : 'Tarjeta',
+                style: TextStyle(
+                  fontSize: 9,
+                  fontWeight: FontWeight.bold,
+                  color: item.priceType == 'mayorista' ? Colors.indigo.shade700 : Colors.teal.shade700,
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -590,7 +622,7 @@ class _QuoteScreenState extends State<QuoteScreen> {
         showDialog(
           context: context,
           builder: (ctx) => AlertDialog(
-            title: Text('Editar cantidad � ${item.product.name}'),
+            title: Text('Editar cantidad - ${item.product.name}'),
             content: TextField(
               controller: ctrl,
               autofocus: true,
@@ -622,7 +654,7 @@ class _QuoteScreenState extends State<QuoteScreen> {
 // -- Typedef alias para evitar conflicto de nombres ----------------------------
 typedef quote_repository_Quote = Quote;
 
-// -- Di�logo de cabecera del presupuesto --------------------------------------
+// -- Diálogo de cabecera del presupuesto --------------------------------------
 
 class _QuoteHeaderDialog extends StatefulWidget {
   final TextEditingController nameCtrl;
@@ -708,10 +740,10 @@ class _QuoteHeaderDialogState extends State<_QuoteHeaderDialog> {
                 controller: widget.phoneCtrl,
                 keyboardType: TextInputType.phone,
                 decoration: const InputDecoration(
-                  labelText: 'Tel�fono (para WhatsApp)',
+                  labelText: 'Teléfono (para WhatsApp)',
                   prefixIcon: Icon(Icons.phone_outlined),
                   border: OutlineInputBorder(),
-                  helperText: 'Ej: 5491123456789 (con c�digo de pa�s)',
+                  helperText: 'Ej: 5491123456789 (con código de país)',
                 ),
               ),
               const SizedBox(height: 8),
@@ -719,7 +751,7 @@ class _QuoteHeaderDialogState extends State<_QuoteHeaderDialog> {
                 children: [
                   const Icon(Icons.calendar_today_outlined, size: 18, color: Colors.grey),
                   const SizedBox(width: 8),
-                  const Text('V�lido hasta:', style: TextStyle(fontSize: 13)),
+                  const Text('Válido hasta:', style: TextStyle(fontSize: 13)),
                   const SizedBox(width: 8),
                   TextButton(
                     onPressed: () async {
@@ -728,6 +760,24 @@ class _QuoteHeaderDialogState extends State<_QuoteHeaderDialog> {
                         initialDate: DateTime.now().add(const Duration(days: 7)),
                         firstDate: DateTime.now(),
                         lastDate: DateTime.now().add(const Duration(days: 365)),
+                        locale: const Locale('es', 'AR'),
+                        builder: (context, child) {
+                          return Theme(
+                            data: Theme.of(context).copyWith(
+                              colorScheme: ColorScheme.light(
+                                primary: Colors.indigo.shade700, // Header bg color
+                                onPrimary: Colors.white, // Header text color
+                                onSurface: Colors.indigo.shade900, // Body text color
+                              ),
+                              textButtonTheme: TextButtonThemeData(
+                                style: TextButton.styleFrom(
+                                  foregroundColor: Colors.indigo.shade700, // button text color
+                                ),
+                              ),
+                            ),
+                            child: child!,
+                          );
+                        },
                       );
                       if (picked != null) {
                         setState(() => _validUntil = picked);
@@ -774,7 +824,7 @@ class _QuoteHeaderDialogState extends State<_QuoteHeaderDialog> {
   }
 }
 
-// -- Di�logo post-generaci�n: PDF + WhatsApp -----------------------------------
+// -- Diálogo post-generación: PDF + WhatsApp -----------------------------------
 
 class _QuoteSuccessDialog extends StatefulWidget {
   final Quote quote;
@@ -858,7 +908,7 @@ class _QuoteSuccessDialogState extends State<_QuoteSuccessDialog> {
                 children: [
                   const Icon(Icons.check_circle_rounded, color: Colors.white, size: 48),
                   const SizedBox(height: 8),
-                  const Text('�Presupuesto Generado!',
+                  const Text('¡Presupuesto Generado!',
                       style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
                   const SizedBox(height: 4),
                   Text(widget.quote.quoteNumber,
@@ -895,8 +945,8 @@ class _QuoteSuccessDialogState extends State<_QuoteSuccessDialog> {
                     step: '?',
                     icon: Icons.preview_outlined,
                     color: Colors.blueGrey,
-                    title: 'Ver preview (impresi�n)',
-                    subtitle: 'Abre el visor de impresi�n del sistema',
+                    title: 'Ver preview (impresión)',
+                    subtitle: 'Abre el visor de impresión del sistema',
                     action: OutlinedButton.icon(
                       onPressed: _preview,
                       icon: const Icon(Icons.open_in_new, size: 16),
@@ -911,8 +961,8 @@ class _QuoteSuccessDialogState extends State<_QuoteSuccessDialog> {
                     color: const Color(0xFF25D366),
                     title: 'Compartir por WhatsApp',
                     subtitle: _savedPath != null
-                        ? 'Abre WhatsApp con mensaje prearmado.\nArrastr� el PDF guardado al chat.'
-                        : 'Primero guard� el PDF (Paso 1)',
+                        ? 'Abre WhatsApp con mensaje prearmado.\nArrastrá el PDF guardado al chat.'
+                        : 'Primero guardá el PDF (Paso 1)',
                     action: FilledButton.icon(
                       onPressed: _savedPath != null ? _openWhatsApp : null,
                       style: FilledButton.styleFrom(backgroundColor: const Color(0xFF25D366)),

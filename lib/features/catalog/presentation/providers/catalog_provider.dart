@@ -94,6 +94,25 @@ class CatalogProvider with ChangeNotifier {
     if (hasPrevPage) await loadProducts(page: _currentPage - 1);
   }
 
+  /// Búsqueda dedicada para el picker de ingredientes de combos.
+  /// NO toca el estado de paginación de la pantalla de catálogo.
+  /// Trae hasta 500 productos del backend filtrando por [query].
+  Future<List<Product>> searchProductsForCombo(String query) async {
+    try {
+      final result = await getProductsUseCase(
+        page: 1,
+        search: query.isNotEmpty ? query : null,
+        sortBy: 'name',
+        sortDirection: 'asc',
+        perPage: 500,
+      );
+      return List<Product>.from(result['data'] as List);
+    } catch (e) {
+      debugPrint('Error en searchProductsForCombo: $e');
+      return [];
+    }
+  }
+
   /// Refuerzo Senior: Actualiza los contadores de ventas en memoria para que la UI 
   /// se reordene al instante sin necesidad de una petición de red.
   void updateProductSalesCountLocally(Map<int, int> productSales) {
