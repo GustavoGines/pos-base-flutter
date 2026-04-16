@@ -1343,86 +1343,163 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
   }
 
   Future<void> _showIngredientSearchDialog(BuildContext context, CatalogProvider provider) async {
-    // El dialog retorna void — los cambios se aplican directamente sobre _comboIngredients
     await showDialog<void>(
       context: context,
-      builder: (ctx) {
-        String query = '';
-        return StatefulBuilder(
-          builder: (stCtx, setSt) {
-            final filtered = provider.products.where((p) {
-              if (p.isCombo) return false; // Bloqueo recursivo
-              if (widget.product != null && p.id == widget.product!.id) return false;
-              if (query.isEmpty) return true;
-              return p.name.toLowerCase().contains(query.toLowerCase()) ||
-                  (p.barcode ?? '').toLowerCase().contains(query.toLowerCase()) ||
-                  p.internalCode.contains(query);
-            }).take(20).toList();
+      builder: (ctx) => _ComboIngredientPickerDialog(
+        provider: provider,
+        excludeProductId: widget.product?.id,
+        comboIngredients: _comboIngredients,
+        onChanged: () => setState(() {}),
+      ),
+    );
+  }
+}
 
-            return AlertDialog(
-              title: const Text('Buscar Producto para el Combo'),
-              content: SizedBox(
-                width: double.maxFinite,
-                height: 380,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextField(
-                      autofocus: true,
-                      decoration: const InputDecoration(
-                        labelText: 'Nombre, código de barras o PLU...',
-                        prefixIcon: Icon(Icons.search),
-                        border: OutlineInputBorder(),
-                      ),
-                      onChanged: (v) => setSt(() => query = v),
-                    ),
-                    const SizedBox(height: 10),
-                    Expanded(
-                      child: filtered.isEmpty
-                          ? const Center(child: Text('No hay resultados'))
-                          : ListView.builder(
-                              itemCount: filtered.length,
-                              itemBuilder: (context, i) {
-                                final p = filtered[i];
-                                final alreadyAdded = _comboIngredients.any((ing) => ing['id'] == p.id);
-                                return ListTile(
-                                  title: Text(p.name), onTap: alreadyAdded ? null : () { setSt(() {}); setState(() { _comboIngredients.add({ 'id': p.id, 'name': p.name, 'quantity': 1 }); }); },
-                                  subtitle: Text('Stock: ${p.stock} ${p.unitType} | \$${p.sellingPrice.toCurrency()}'),
-                                  trailing: alreadyAdded
-                                      ? const Icon(Icons.check_circle, color: Colors.green)
-                                      : IconButton(
-                                          icon: const Icon(Icons.add_circle_outline, color: Colors.deepOrange),
-                                          tooltip: 'Agregar al Combo',
-                                          onPressed: () {
-                                            // Actualizar estado del dialog Y del formulario padre
-                                            setSt(() {}); // Rebuild del dialog
-                                            setState(() { // Rebuild del formulario
-                                              _comboIngredients.add({
-                                                'id': p.id,
-                                                'name': p.name,
-                                                'quantity': 1,
-                                              });
-                                            });
-                                          },
-                                        ),
-                                );
-                              },
+// ─────────────────────────────────────────────────────────────────────────────
+// PICKER DE INGREDIENTES PARA COMBO — busca en el backend, no en memoria local
+// ─────────────────────────────────────────────────────────────────────────────
+class _ComboIngredientPickerDialog extends StatefulWidget {
+  final CatalogProvider provider;
+  final int? excludeProductId;       // El producto que se está editando (para excluirlo)
+  final List<Map<String, dynamic>> comboIngredients;
+  final VoidCallback onChanged;      // Notifica al formulario padre para rebuild
+
+  const _ComboIngredientPickerDialog({
+    required this.provider,
+    required this.comboIngredients,
+    required this.onChanged,
+    this.excludeProductId,
+  });
+
+  @override
+  State<_ComboIngredientPickerDialog> createState() => _ComboIngredientPickerDialogState();
+}
+
+class _ComboIngredientPickerDialogState extends State<_ComboIngredientPickerDialog> {
+  final _searchCtrl = TextEditingController();
+  Timer? _debounce;
+  List<Product> _results = [];
+  bool _loading = false;
+  bool _firstLoad = true;
+
+  @override
+  void initState() {
+    super.initState();
+    // Carga inicial: trae todos los productos (sin filtro de búsqueda)
+    _doSearch('');
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  void _onQueryChanged(String query) {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 400), () => _doSearch(query));
+  }
+
+  Future<void> _doSearch(String query) async {
+    if (!mounted) return;
+    setState(() => _loading = true);
+    final results = await widget.provider.searchProductsForCombo(query);
+    if (!mounted) return;
+    setState(() {
+      _firstLoad = false;
+      _loading = false;
+      // Filtrar: excluir combos (anti-recursividad) y el producto que se está editando
+      _results = results.where((p) {
+        if (p.isCombo) return false;
+        if (widget.excludeProductId != null && p.id == widget.excludeProductId) return false;
+        return true;
+      }).cast<Product>().toList();
+    });
+  }
+
+  void _addIngredient(dynamic p) {
+    final alreadyAdded = widget.comboIngredients.any((ing) => ing['id'] == p.id);
+    if (alreadyAdded) return;
+    setState(() {
+      widget.comboIngredients.add({'id': p.id, 'name': p.name, 'quantity': 1});
+    });
+    widget.onChanged();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Buscar Producto para el Combo'),
+      content: SizedBox(
+        width: 440,
+        height: 320,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _searchCtrl,
+              autofocus: true,
+              decoration: InputDecoration(
+                labelText: 'Nombre, código de barras o PLU...',
+                prefixIcon: const Icon(Icons.search),
+                border: const OutlineInputBorder(),
+                suffixIcon: _loading
+                    ? const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                      )
+                    : (_searchCtrl.text.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear),
+                            onPressed: () {
+                              _searchCtrl.clear();
+                              _doSearch('');
+                            },
+                          )
+                        : null),
+              ),
+              onChanged: _onQueryChanged,
+            ),
+            const SizedBox(height: 10),
+            if (_firstLoad)
+              const Expanded(child: Center(child: CircularProgressIndicator()))
+            else if (_results.isEmpty)
+              const Expanded(child: Center(child: Text('No hay resultados')))
+            else
+              Expanded(
+                child: ListView.builder(
+                  itemCount: _results.length,
+                  itemBuilder: (_, i) {
+                    final p = _results[i];
+                    final alreadyAdded = widget.comboIngredients.any((ing) => ing['id'] == p.id);
+                    return ListTile(
+                      title: Text(p.name),
+                      subtitle: Text('Stock: ${p.stock} ${p.unitType} | \$${p.sellingPrice.toCurrency()}'),
+                      onTap: alreadyAdded ? null : () => _addIngredient(p),
+                      trailing: alreadyAdded
+                          ? const Icon(Icons.check_circle, color: Colors.green)
+                          : IconButton(
+                              icon: const Icon(Icons.add_circle_outline, color: Colors.deepOrange),
+                              tooltip: 'Agregar al Combo',
+                              onPressed: () => _addIngredient(p),
                             ),
-                    ),
-                  ],
+                    );
+                  },
                 ),
               ),
-              actions: [
-                FilledButton.icon(
-                  icon: const Icon(Icons.check),
-                  label: Text('Listo (${_comboIngredients.length} producto${_comboIngredients.length == 1 ? '' : 's'})'),
-                  onPressed: () => Navigator.pop(ctx),
-                ),
-              ],
-            );
-          },
-        );
-      },
+          ],
+        ),
+      ),
+      actions: [
+        FilledButton.icon(
+          icon: const Icon(Icons.check),
+          label: Text(
+            'Listo (${widget.comboIngredients.length} producto${widget.comboIngredients.length == 1 ? '' : 's'})',
+          ),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ],
     );
   }
 }
@@ -1431,6 +1508,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
 // MODAL DE AUMENTO MASIVO DE PRECIOS
 // ─────────────────────────────────────────────────────────────────────────────
 class BulkPriceUpdateDialog extends StatefulWidget {
+
   final CatalogProvider provider;
   final List<int>? targetProductIds;
 

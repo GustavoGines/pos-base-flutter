@@ -7,11 +7,13 @@ class QuoteCartItem {
   final Product product;
   double quantity;
   double unitPrice; // precio seleccionado (venta, mayorista, tarjeta)
+  final String priceType; // 'lista', 'mayorista', 'tarjeta'
 
   QuoteCartItem({
     required this.product,
     required this.quantity,
     required this.unitPrice,
+    this.priceType = 'lista',
   });
 
   double get subtotal => unitPrice * quantity;
@@ -28,13 +30,13 @@ class QuoteProvider extends ChangeNotifier {
 
   double get cartTotal => _cart.fold(0, (s, i) => s + i.subtotal);
 
-  void addToCart(Product product, {double quantity = 1, double? overridePrice}) {
+  void addToCart(Product product, {double quantity = 1, double? overridePrice, String priceType = 'lista'}) {
     final price = overridePrice ?? product.sellingPrice;
-    final idx = _cart.indexWhere((i) => i.product.id == product.id && i.unitPrice == price);
+    final idx = _cart.indexWhere((i) => i.product.id == product.id && i.unitPrice == price && i.priceType == priceType);
     if (idx >= 0) {
       _cart[idx].quantity += quantity;
     } else {
-      _cart.add(QuoteCartItem(product: product, quantity: quantity, unitPrice: price));
+      _cart.add(QuoteCartItem(product: product, quantity: quantity, unitPrice: price, priceType: priceType));
     }
     notifyListeners();
   }

@@ -5,7 +5,7 @@ import '../models/category_model.dart';
 
 abstract class CatalogRemoteDataSource {
   /// Returns a map with 'data' (List<ProductModel>), 'current_page', 'last_page'.
-  Future<Map<String, dynamic>> fetchProducts({int page = 1, String? search, String? sortBy, String? sortDirection});
+  Future<Map<String, dynamic>> fetchProducts({int page = 1, String? search, String? sortBy, String? sortDirection, int? perPage});
   Future<List<CategoryModel>> fetchCategories();
   // Category CRUD
   Future<CategoryModel> createCategory(String name, {String? description});
@@ -40,12 +40,13 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
   CatalogRemoteDataSourceImpl({required this.baseUrl, required this.client});
 
   @override
-  Future<Map<String, dynamic>> fetchProducts({int page = 1, String? search, String? sortBy, String? sortDirection}) async {
+  Future<Map<String, dynamic>> fetchProducts({int page = 1, String? search, String? sortBy, String? sortDirection, int? perPage}) async {
     try {
       final queryParams = <String, String>{'page': page.toString()};
       if (search != null && search.isNotEmpty) queryParams['search'] = search;
       if (sortBy != null) queryParams['sort_by'] = sortBy;
       if (sortDirection != null) queryParams['sort_direction'] = sortDirection;
+      if (perPage != null) queryParams['per_page'] = perPage.toString();
 
       final uri = Uri.parse('$baseUrl/catalog/products').replace(queryParameters: queryParams);
       final response = await client.get(uri, headers: {'Accept': 'application/json'});

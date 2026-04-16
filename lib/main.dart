@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:window_manager/window_manager.dart';
-
+import 'package:flutter_localizations/flutter_localizations.dart';
 // Providers
 import 'features/settings/presentation/providers/settings_provider.dart';
 import 'features/catalog/presentation/providers/catalog_provider.dart';
@@ -544,6 +544,16 @@ class _MainAppState extends State<MainApp> {
       },
       debugShowCheckedModeBanner: false,
       title: 'Sistema POS',
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: const [
+        Locale('es', 'AR'),
+        Locale('es', 'ES'),
+        Locale('en', 'US'),
+      ],
       theme: ThemeData(
         primarySwatch: Colors.blue,
         useMaterial3: true,
