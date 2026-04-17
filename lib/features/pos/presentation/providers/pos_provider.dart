@@ -19,7 +19,7 @@ class PosProvider with ChangeNotifier {
   final PosRepository repository;
   final ReceiptPrinterService? printerService;
 
-  List<CartItem> _cart = [];
+  final List<CartItem> _cart = [];
   List<CartItem> get cart => _cart;
 
   bool _isLoading = false;
@@ -50,6 +50,14 @@ class PosProvider with ChangeNotifier {
   // ── Órdenes Pendientes ──────────────────────────────────────────
   List<Map<String, dynamic>> _pendingSales = [];
   List<Map<String, dynamic>> get pendingSales => _pendingSales;
+
+  // Seguimiento de ID de venta (útil para Corralón/Remitos post-checkout)
+  int? _lastSaleId;
+  int? get lastSaleId => _lastSaleId;
+
+  // Snapshot del carrito de la última venta (disponible incluso después de clearCart)
+  List<CartItem> _lastSaleCart = [];
+  List<CartItem> get lastSaleCart => _lastSaleCart;
 
   bool _isPendingLoading = false;
   bool get isPendingLoading => _isPendingLoading;
@@ -248,6 +256,7 @@ class PosProvider with ChangeNotifier {
     int? customerId,
     String? userName,
     BusinessSettings? settings,
+    bool showPreview = true,
   }) async {
     if (_cart.isEmpty) return false;
 
@@ -299,6 +308,10 @@ class PosProvider with ChangeNotifier {
         extractedSaleId = result.id.toString();
       }
 
+      _lastSaleId = int.tryParse(extractedSaleId);
+
+      // Guardar snapshot del carrito ANTES de limpiarlo (lo necesita el dialog de Remito)
+      _lastSaleCart = List<CartItem>.from(_cart);
       clearCart();
 
       if (settings != null) {
@@ -336,21 +349,30 @@ class PosProvider with ChangeNotifier {
             final pdfBytes = await repository.downloadTicketPdf(int.parse(extractedSaleId));
             final ctx = AppConfig.navigatorKey.currentContext;
             if (ctx != null && ctx.mounted) {
-              await showDialog(
-                context: ctx,
-                builder: (context) => Dialog(
-                  child: SizedBox(
-                    width: 800,
-                    height: 600,
-                    child: PdfPreview(
-                      build: (format) async => pdfBytes,
-                      canChangePageFormat: false,
-                      canChangeOrientation: false,
-                      pdfFileName: 'Comprobante_$extractedSaleId.pdf',
+              if (showPreview) {
+                // Mostrar el visor PDF integrado (el usuario lo imprime desde ahí)
+                await showDialog(
+                  context: ctx,
+                  builder: (context) => Dialog(
+                    child: SizedBox(
+                      width: 800,
+                      height: 600,
+                      child: PdfPreview(
+                        build: (format) async => pdfBytes,
+                        canChangePageFormat: false,
+                        canChangeOrientation: false,
+                        pdfFileName: 'Comprobante_$extractedSaleId.pdf',
+                      ),
                     ),
                   ),
-                ),
-              );
+                );
+              } else {
+                // Sin vista previa: enviar directo al diálogo de impresión del SO
+                await Printing.layoutPdf(
+                  onLayout: (_) async => pdfBytes,
+                  name: 'Comprobante_$extractedSaleId',
+                );
+              }
             }
           } else {
             await _activePrinter.printSaleTicket(
@@ -498,6 +520,7 @@ class PosProvider with ChangeNotifier {
     BusinessSettings? settings,
     int? userId,
     List<CartItem>? items,
+    bool showPreview = true,
   }) async {
     _isLoading = true;
     _errorMessage = null;
@@ -577,21 +600,29 @@ class PosProvider with ChangeNotifier {
               final pdfBytes = await repository.downloadTicketPdf(saleId);
               final ctx = AppConfig.navigatorKey.currentContext;
               if (ctx != null && ctx.mounted) {
-                await showDialog(
-                  context: ctx,
-                  builder: (context) => Dialog(
-                    child: SizedBox(
-                      width: 800,
-                      height: 600,
-                      child: PdfPreview(
-                        build: (format) async => pdfBytes,
-                        canChangePageFormat: false,
-                        canChangeOrientation: false,
-                        pdfFileName: 'Comprobante_$saleId.pdf',
+                if (showPreview) {
+                  await showDialog(
+                    context: ctx,
+                    builder: (context) => Dialog(
+                      child: SizedBox(
+                        width: 800,
+                        height: 600,
+                        child: PdfPreview(
+                          build: (format) async => pdfBytes,
+                          canChangePageFormat: false,
+                          canChangeOrientation: false,
+                          pdfFileName: 'Comprobante_$saleId.pdf',
+                        ),
                       ),
                     ),
-                  ),
-                );
+                  );
+                } else {
+                  // Sin vista previa: enviar directo al diálogo de impresión del SO
+                  await Printing.layoutPdf(
+                    onLayout: (_) async => pdfBytes,
+                    name: 'Comprobante_$saleId',
+                  );
+                }
               }
             } else {
               await printerService!.printSaleTicket(

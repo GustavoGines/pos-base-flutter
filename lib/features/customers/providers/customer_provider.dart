@@ -42,7 +42,7 @@ class CustomerProvider extends ChangeNotifier {
 
   Future<void> fetchCustomers({String? search}) async {
     if (_accessConfirmed && !_hasAccessToModule) {
-      throw Exception('El módulo de Cuentas Corrientes requiere el Plan PRO o el módulo adicional habilitado.');
+      throw Exception('El módulo de Cuentas Corrientes requiere el Plan Premium o el módulo adicional habilitado.');
     }
     _isLoading = true;
     notifyListeners();
@@ -71,7 +71,7 @@ class CustomerProvider extends ChangeNotifier {
 
   Future<bool> createCustomer(Map<String, dynamic> data) async {
     if (_accessConfirmed && !_hasAccessToModule) {
-      throw Exception('El módulo de Cuentas Corrientes requiere el Plan PRO o el módulo adicional habilitado.');
+      throw Exception('El módulo de Cuentas Corrientes requiere el Plan Premium o el módulo adicional habilitado.');
     }
     try {
       if (!data.containsKey('balance') || data['balance'].toString().isEmpty) {

@@ -9,6 +9,7 @@ class FeatureFlags extends Equatable {
   final bool multiCaja;
   final bool advancedReports;
   final bool predictiveAlerts;
+  final bool logistics;
 
   const FeatureFlags({
     this.fastPos = false,
@@ -19,6 +20,7 @@ class FeatureFlags extends Equatable {
     this.multiCaja = false,
     this.advancedReports = false,
     this.predictiveAlerts = false,
+    this.logistics = false,
   });
 
   @override
@@ -31,6 +33,7 @@ class FeatureFlags extends Equatable {
         multiCaja,
         advancedReports,
         predictiveAlerts,
+        logistics,
       ];
 }
 

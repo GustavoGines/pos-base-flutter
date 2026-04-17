@@ -30,6 +30,7 @@ import 'features/pos/presentation/pages/pos_screen.dart';
 import 'features/catalog/presentation/pages/catalog_screen.dart';
 import 'features/cash_register/presentation/pages/cash_register_screen.dart';
 import 'features/cash_register/presentation/pages/close_shift_screen.dart';
+import 'package:frontend_desktop/features/logistics/presentation/screens/delivery_notes_screen.dart';
 import 'features/sales_history/presentation/pages/sales_history_screen.dart';
 import 'features/auth/presentation/pages/login_screen.dart';
 import 'features/cash_register/presentation/pages/shift_audit_screen.dart';
@@ -598,6 +599,7 @@ class _MainAppState extends State<MainApp> {
                     // Detectar error de límite de plan → mostrar modal de upselling
                     final isPlanLimitError = rawError.contains('Límite de cajas') ||
                         rawError.contains('plan a PRO') ||
+                        rawError.contains('plan a PREMIUM') ||
                         rawError.contains('Actualice su plan');
 
                     if (isPlanLimitError && ctx.mounted) {
@@ -607,7 +609,7 @@ class _MainAppState extends State<MainApp> {
                         description:
                             'Su plan actual permite 1 caja activa a la vez. '
                             'Para operar con varias terminales simultáneamente '
-                            'es necesario el Plan PRO o Enterprise.\n\n'
+                            'es necesario el Plan Premium.\n\n'
                             'Comuníquese con soporte para ampliar su licencia.',
                         onNavigateToSettings: () =>
                             navigatorKey.currentState?.pushNamed('/settings'),
@@ -639,6 +641,8 @@ class _MainAppState extends State<MainApp> {
         // [hardware_store]
         '/quotes': (context) => const QuoteScreen(),
         '/reports': (context) => const ReportsScreen(),
+        // [logistics]
+        '/delivery-notes': (context) => const DeliveryNotesScreen(),
       },
     );
   }
