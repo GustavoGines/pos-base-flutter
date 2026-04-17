@@ -16,4 +16,7 @@ class AppConfig {
 
   /// Navigation key global para poder mostrar dialogos/rutas desde Providers sin contexto explícito
   static final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
+  /// Bandera híbrida para Corralones y Madereras
+  static const bool isCorralonMode = true;
 }

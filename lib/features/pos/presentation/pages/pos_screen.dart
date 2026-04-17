@@ -15,6 +15,12 @@ import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import 'package:flutter_libserialport/flutter_libserialport.dart';
 import 'package:frontend_desktop/features/quotes/presentation/providers/quote_provider.dart';
 import 'package:frontend_desktop/features/reports/presentation/providers/inventory_alerts_provider.dart';
+import 'package:frontend_desktop/core/config/app_config.dart';
+import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:frontend_desktop/core/utils/receipt_printer_service.dart';
+import 'package:frontend_desktop/core/presentation/widgets/ticket_preview_dialog.dart';
+import 'package:frontend_desktop/features/logistics/services/delivery_note_pdf_service.dart';
 
 class PosScreen extends StatefulWidget {
   const PosScreen({Key? key}) : super(key: key);
@@ -551,6 +557,90 @@ class _PosScreenState extends State<PosScreen> {
   double _toDouble(dynamic value) =>
       value == null ? 0.0 : double.tryParse(value.toString()) ?? 0.0;
 
+  Future<void> _generarRemito(int saleId) async {
+    try {
+      final authProvider = context.read<AuthProvider>();
+      final client = authProvider.apiClient;
+      if (client == null) return;
+
+      final prefs = await SharedPreferences.getInstance();
+      final baseUrl = prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
+      final printRemito = prefs.getBool('print_remito_on_generate') ?? true;
+      
+      final response = await client.post(
+        Uri.parse('$baseUrl/delivery-notes/from-sale/$saleId'),
+        headers: {'Accept': 'application/json'},
+      );
+      
+      if (!mounted) return;
+
+      if (response.statusCode == 201) {
+        SnackBarService.success(context, printRemito ? '📦 Remito creado. Imprimiendo comprobante...' : '📦 Remito creado correctamente.');
+
+        if (printRemito) {
+          try {
+            final settings = context.read<SettingsProvider>().settings;
+            final note = jsonDecode(response.body) as Map<String, dynamic>;
+
+            if (settings != null && note['items'] != null) {
+              final List<Map<String, dynamic>> initialDeliveryData = (note['items'] as List).map<Map<String, dynamic>>((item) {
+                return {
+                  'id': item['id'],
+                  'delivered_now': 0.0,
+                };
+              }).toList();
+
+              await ReceiptPrinterService.instance.printDeliveryNoteTicket(
+                note: note,
+                deliveredItemsData: initialDeliveryData,
+                settings: settings,
+                customerName: null,
+              );
+            }
+          } catch (printError) {
+            debugPrint('Error imprimiendo remito desde checkout: $printError');
+          }
+        }
+
+        final printA4 = prefs.getBool('print_a4_remito_generate') ?? false;
+        final showA4Preview = prefs.getBool('show_a4_preview_remito_generate') ?? true;
+
+        if (printA4) {
+          try {
+            final settings = context.read<SettingsProvider>().settings;
+            final note = jsonDecode(response.body) as Map<String, dynamic>;
+            if (settings != null) {
+              if (showA4Preview) {
+                DeliveryNotePdfService.preview(
+                  context: context,
+                  note: note,
+                  businessName: settings.companyName ?? 'Empresa Local',
+                  businessAddress: settings.address,
+                  businessPhone: settings.phone,
+                );
+              } else {
+                DeliveryNotePdfService.printDirect(
+                  note: note,
+                  businessName: settings.companyName ?? 'Empresa Local',
+                  businessAddress: settings.address,
+                  businessPhone: settings.phone,
+                );
+              }
+            }
+          } catch (printA4Error) {
+            debugPrint('Error imprimiendo A4 remito en checkout: $printA4Error');
+          }
+        }
+
+      } else {
+        final body = jsonDecode(response.body);
+        SnackBarService.error(context, 'Error generando remito: ${body["message"] ?? response.body}');
+      }
+    } catch (e) {
+      if (mounted) SnackBarService.error(context, 'Excepción de red aislando remito: $e');
+    }
+  }
+
   void _handleCheckout() async {
     final posProvider = Provider.of<PosProvider>(context, listen: false);
     final cashRegisterProvider = Provider.of<CashRegisterProvider>(context, listen: false);
@@ -626,6 +716,19 @@ class _PosScreenState extends State<PosScreen> {
       if (mounted) {
         // 1. PRIORIDAD ABSOLUTA: Mostrar confirmación visual de inmediato
         SnackBarService.success(context, '¡Venta registrada con éxito!');
+        
+          final settingsProvider = Provider.of<SettingsProvider>(context, listen: false);
+          if (settingsProvider.features.logistics && posProvider.lastSaleId != null) {
+            final int sid = posProvider.lastSaleId!;
+            await showDialog(
+              context: context,
+              barrierDismissible: false,
+              builder: (ctx) => _CorralonPostSaleDialog(
+                saleId: sid,
+                onGenerarRemito: _generarRemito,
+              ),
+            );
+          }
         
         // 2. ACTUALIZACIÓN LOCAL (IN-MEMORY):
         // Reordenamos el "Acceso Rápido" al instante sin depender de la red.
@@ -1733,6 +1836,194 @@ class _CartItemStockIndicator extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Dialog post-venta para modo Corralón: elegir remito + control de impresión
+// ─────────────────────────────────────────────────────────────────────────────
+class _CorralonPostSaleDialog extends StatefulWidget {
+  final int saleId;
+  final Future<void> Function(int saleId) onGenerarRemito;
+
+  const _CorralonPostSaleDialog({
+    required this.saleId,
+    required this.onGenerarRemito,
+  });
+
+  @override
+  State<_CorralonPostSaleDialog> createState() => _CorralonPostSaleDialogState();
+}
+
+class _CorralonPostSaleDialogState extends State<_CorralonPostSaleDialog> {
+  bool _printRemito = true;
+  bool _showPreview = false;
+  bool _printA4 = false;
+  bool _showA4Preview = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPrefs();
+  }
+
+  Future<void> _loadPrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) {
+      setState(() {
+        _printRemito = prefs.getBool('print_remito_on_generate') ?? true;
+        _showPreview = prefs.getBool('show_preview_remito_generate') ?? false;
+        _printA4 = prefs.getBool('print_a4_remito_generate') ?? false;
+        _showA4Preview = prefs.getBool('show_a4_preview_remito_generate') ?? true;
+      });
+    }
+  }
+
+  Future<void> _savePrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('print_remito_on_generate', _printRemito);
+    await prefs.setBool('show_preview_remito_generate', _showPreview);
+    await prefs.setBool('print_a4_remito_generate', _printA4);
+    await prefs.setBool('show_a4_preview_remito_generate', _showA4Preview);
+  }
+
+  Future<void> _handleGenerarRemito() async {
+    await _savePrefs();
+
+    // Si se quiere vista previa, mostrar ticket simulado antes de confirmar
+    if (_printRemito && _showPreview) {
+      // Usar lastSaleCart: snapshot del carrito guardado ANTES de que se limpiara
+      final cartItems = Provider.of<PosProvider>(context, listen: false).lastSaleCart;
+      final previewLines = <TicketLine>[
+        const TicketLine('ORDEN DE RETIRO EN DEPÓSITO', align: TicketAlign.center, isBold: true, isLarge: true),
+        const TicketLine.hr(bold: true),
+        TicketLine('VENTA N°: ${widget.saleId.toString().padLeft(6, '0')}', isBold: true),
+        const TicketLine('Presentar para retirar mercadería', align: TicketAlign.center),
+        const TicketLine.hr(),
+        if (cartItems.isEmpty)
+          const TicketLine('(No se pudieron cargar los ítems)', align: TicketAlign.center)
+        else
+          ...cartItems.map((item) => [
+            TicketLine(item.product.name.toUpperCase(), isBold: true),
+            TicketLine(
+              'Cantidad: ${item.quantity.toStringAsFixed(item.product.isSoldByWeight ? 3 : 0)}',
+              rightText: 'SALDO TOTAL',
+            ),
+            const TicketLine.space(),
+          ]).expand((l) => l),
+        const TicketLine.hr(bold: true),
+        const TicketLine('Retirar en Depósito presentando este comprobante', align: TicketAlign.center),
+      ];
+
+      if (!mounted) return;
+      final confirmed = await TicketPreviewDialog.show(
+        context,
+        title: 'Vista Previa — Orden de Retiro',
+        lines: previewLines,
+      );
+      if (!mounted || !confirmed) return;
+    }
+
+    if (!mounted) return;
+    Navigator.pop(context);
+    await widget.onGenerarRemito(widget.saleId);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      title: Row(
+        children: [
+          Icon(Icons.warehouse, color: Colors.blue.shade700, size: 28),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Text('¿Qué hacer con la mercadería?', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
+          ),
+        ],
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Venta registrada con éxito. Podés cerrar la venta o generar un remito para el depósito.'),
+          const SizedBox(height: 20),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.blue.shade50,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.blue.shade200),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Opciones del Remito', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                const SizedBox(height: 12),
+                
+                // --- Térmico ---
+                Row(
+                  children: [
+                    Checkbox(
+                      value: _printRemito,
+                      activeColor: Colors.blue.shade700,
+                      onChanged: (val) => setState(() => _printRemito = val ?? true),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    const Text('Remito Térmico', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                    if (_printRemito) ...[
+                      const SizedBox(width: 8),
+                      Checkbox(
+                        value: _showPreview,
+                        activeColor: Colors.orange,
+                        onChanged: (val) => setState(() => _showPreview = val ?? false),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      const Text('Vista Previa', style: TextStyle(fontSize: 12)),
+                    ],
+                  ],
+                ),
+                
+                // --- A4 ---
+                Row(
+                  children: [
+                    Checkbox(
+                      value: _printA4,
+                      activeColor: Colors.green.shade700,
+                      onChanged: (val) => setState(() => _printA4 = val ?? false),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    const Text('Remito A4 (PDF)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                    if (_printA4) ...[
+                      const SizedBox(width: 8),
+                      Checkbox(
+                        value: _showA4Preview,
+                        activeColor: Colors.orange,
+                        onChanged: (val) => setState(() => _showA4Preview = val ?? true),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      const Text('Vista Previa', style: TextStyle(fontSize: 12)),
+                    ],
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cerrar Venta', style: TextStyle(color: Colors.grey)),
+        ),
+        FilledButton.icon(
+          onPressed: _handleGenerarRemito,
+          icon: const Icon(Icons.inventory_2),
+          label: const Text('Generar y Aislar Remito'),
+          style: FilledButton.styleFrom(backgroundColor: Colors.blue.shade700),
+        ),
+      ],
     );
   }
 }

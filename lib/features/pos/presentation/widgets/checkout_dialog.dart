@@ -12,6 +12,7 @@ import '../../../customers/providers/customer_provider.dart';
 import '../../../customers/models/customer_model.dart';
 import '../../../../core/utils/snack_bar_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:frontend_desktop/core/presentation/widgets/ticket_preview_dialog.dart';
 
 class PaymentLine {
   PaymentMethod? method;
@@ -62,6 +63,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   // intenta seleccionar una opción bloqueada (ej: cuenta_corriente en plan Basic)
   final List<PaymentMethod?> _previousValidMethods = [];
   bool _printReceipt = true;
+  bool _showPreview = false;
 
   // Global cash tendered
   final _cashTenderedCtrl = TextEditingController();
@@ -85,6 +87,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     if (mounted) {
       setState(() {
         _printReceipt = prefs.getBool('auto_print_receipt') ?? true;
+        _showPreview = prefs.getBool('show_preview_receipt') ?? false;
       });
     }
   }
@@ -232,16 +235,16 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
           children: [
             Icon(Icons.workspace_premium, color: Colors.orange.shade700, size: 28),
             const SizedBox(width: 8),
-            const Text('Actualizá a Pro'),
+            const Text('Actualizá a Premium'),
           ],
         ),
         content: const Text(
-            'El módulo de Cuentas Corrientes es exclusivo para licencias Pro y Enterprise.\n\n'
+            'El módulo de Cuentas Corrientes es exclusivo para el Plan Premium.\n\n'
             '¿Qué te permite?\n'
             '• Fiar a tus clientes de confianza.\n'
             '• Controlar saldos deudores.\n'
             '• Armar estados de cuenta fiables.\n\n'
-            'Contactate para subir de nivel y desbloquearlo de por vida.'),
+            'Contatáte para subir al Plan Premium y desbloquearlo.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
@@ -308,6 +311,87 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       'total_amount': l.total,
     }).toList();
 
+    // Vista Previa: solo aplica para impresoras térmicas (58mm / 80mm).
+    // Para A4, el provider maneja el visor PDF directamente según showPreview.
+    final isA4 = settings?.printerPaperWidth == 'a4';
+
+    if (_printReceipt && _showPreview && !isA4) {
+      final cart = posProvider.cart;
+      final isNarrow = settings?.printerPaperWidth == '58';
+
+      // ── Replicar EXACTAMENTE la lógica de printSaleTicket ──
+      final bool isComplexPayment = _lines.length > 1 || _totalSurcharge > 0.01;
+      final bool hasTendered = _actualTendered > 0.01;
+      final bool hasChange = _change > 0.01;
+
+      final lines = <TicketLine>[
+        // Encabezado
+        if (settings?.companyName != null)
+          TicketLine(settings!.companyName!.toUpperCase(), align: TicketAlign.center, isBold: true, isLarge: true),
+        if (settings?.address != null && settings!.address!.isNotEmpty)
+          TicketLine(settings.address!, align: TicketAlign.center),
+        if (settings?.taxId != null && settings!.taxId!.isNotEmpty)
+          TicketLine('CUIT: ${settings.taxId}', align: TicketAlign.center, isBold: true),
+        const TicketLine.hr(bold: true),
+        TicketLine('COMPROBANTE DE VENTA', align: TicketAlign.center, isBold: true),
+        const TicketLine.hr(),
+        TicketLine('FECHA: ${DateTime.now().day.toString().padLeft(2,'0')}/${DateTime.now().month.toString().padLeft(2,'0')}/${DateTime.now().year}'),
+        const TicketLine.hr(),
+
+        // Ítems del carrito
+        ...cart.map((item) => [
+          TicketLine(
+            '${item.product.isSoldByWeight ? item.quantity.toStringAsFixed(3) + " kg" : item.quantity.toInt().toString() + " un"} x \$${item.product.sellingPrice.toStringAsFixed(2)}',
+            rightText: '\$${item.subtotal.toStringAsFixed(2)}',
+          ),
+          TicketLine(item.product.name.toUpperCase(), isBold: true),
+        ]).expand((l) => l),
+        const TicketLine.hr(bold: true),
+
+        // ── Sección de pago (igual que el ticket real) ──
+        if (isComplexPayment) ...[
+          TicketLine('SUBTOTAL:', rightText: '\$${widget.total.toStringAsFixed(2)}', isBold: true),
+          const TicketLine.hr(),
+          // Un renglón por cada método de pago
+          ..._lines.map((l) => TicketLine(
+            (l.method?.name ?? 'PAGO').toUpperCase(),
+            rightText: '\$${l.amount.toStringAsFixed(2)}',
+            isBold: true,
+          )),
+          if (_totalSurcharge > 0.01)
+            TicketLine('RECARGO BANCARIO:', rightText: '\$${_totalSurcharge.toStringAsFixed(2)}'),
+          const TicketLine.hr(),
+          TicketLine('TOTAL COBRADO:', rightText: '\$${_grandTotal.toStringAsFixed(2)}', isBold: true, isLarge: true),
+          if (hasTendered)
+            TicketLine('EFECTIVO RECIBIDO:', rightText: '\$${_actualTendered.toStringAsFixed(2)}'),
+          if (hasChange)
+            TicketLine('SU VUELTO:', rightText: '\$${_change.toStringAsFixed(2)}', isBold: true),
+        ] else ...[
+          // Venta simple: un pago, sin recargos
+          TicketLine('TOTAL GENERAL:', rightText: '\$${_grandTotal.toStringAsFixed(2)}', isBold: true, isLarge: true),
+          const TicketLine.hr(),
+          TicketLine('PAGO EN:', rightText: (_lines.isNotEmpty ? _lines.first.method?.name ?? 'EFECTIVO' : 'EFECTIVO').toUpperCase()),
+          if (hasTendered && (_actualTendered - _grandTotal).abs() > 0.01)
+            TicketLine('EFECTIVO RECIBIDO:', rightText: '\$${_actualTendered.toStringAsFixed(2)}'),
+          if (hasChange)
+            TicketLine('SU VUELTO:', rightText: '\$${_change.toStringAsFixed(2)}', isBold: true),
+        ],
+        const TicketLine.space(),
+        TicketLine(
+          isNarrow ? '**NO VALIDO COMO FACTURA**' : '*** NO VALIDO COMO FACTURA ***',
+          align: TicketAlign.center,
+        ),
+      ];
+
+      if (!mounted) return;
+      final confirmed = await TicketPreviewDialog.show(
+        context,
+        title: 'Vista Previa — Ticket ${isNarrow ? "58mm" : "80mm"}',
+        lines: lines,
+      );
+      if (!mounted || !confirmed) return;
+    }
+
     bool success;
 
     if (isPending) {
@@ -321,6 +405,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         userName: userName,
         settings: _printReceipt ? settings : null,
         userId: currentUser?['id'] as int?,
+        showPreview: _showPreview,
       );
     } else {
       final shiftId = context.read<CashRegisterProvider>().currentShift?.id;
@@ -341,6 +426,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         customerId: _selectedCustomer?.id,
         userName: userName,
         settings: _printReceipt ? settings : null,
+        showPreview: _showPreview,
       );
     }
 
@@ -796,20 +882,48 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                 const SizedBox(height: 24),
               ],
 
-              // Options
-              CheckboxListTile(
-                title: const Text('Imprimir Comprobante', style: TextStyle(fontWeight: FontWeight.bold)),
-                value: _printReceipt,
-                activeColor: Colors.blue.shade600,
-                contentPadding: EdgeInsets.zero,
-                controlAffinity: ListTileControlAffinity.leading,
-                onChanged: (val) async {
-                  if (val != null) {
-                    setState(() => _printReceipt = val);
-                    final prefs = await SharedPreferences.getInstance();
-                    await prefs.setBool('auto_print_receipt', val);
-                  }
-                },
+              // Options: Imprimir + Vista Previa
+              Row(
+                children: [
+                  Expanded(
+                    child: CheckboxListTile(
+                      title: const Text('Imprimir Comprobante', style: TextStyle(fontWeight: FontWeight.bold)),
+                      value: _printReceipt,
+                      activeColor: Colors.blue.shade600,
+                      contentPadding: EdgeInsets.zero,
+                      controlAffinity: ListTileControlAffinity.leading,
+                      onChanged: (val) async {
+                        if (val != null) {
+                          setState(() => _printReceipt = val);
+                          final prefs = await SharedPreferences.getInstance();
+                          await prefs.setBool('auto_print_receipt', val);
+                        }
+                      },
+                    ),
+                  ),
+                  if (_printReceipt)
+                    Tooltip(
+                      message: 'Ver previa antes de imprimir',
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Checkbox(
+                            value: _showPreview,
+                            activeColor: Colors.orange,
+                            onChanged: (val) async {
+                              if (val != null) {
+                                setState(() => _showPreview = val);
+                                final prefs = await SharedPreferences.getInstance();
+                                await prefs.setBool('show_preview_receipt', val);
+                              }
+                            },
+                          ),
+                          const Text('Vista Previa', style: TextStyle(fontSize: 13)),
+                          const SizedBox(width: 8),
+                        ],
+                      ),
+                    ),
+                ],
               ),
               const SizedBox(height: 24),
 

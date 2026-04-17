@@ -13,12 +13,14 @@ import 'package:url_launcher/url_launcher.dart';
 /// );
 /// ```
 class PlanUpgradeDialog extends StatelessWidget {
+  final String title;
   final String featureName;
   final String description;
   final VoidCallback? onNavigateToSettings;
 
   const PlanUpgradeDialog({
     Key? key,
+    this.title = 'Plan Premium Requerido',
     required this.featureName,
     required this.description,
     this.onNavigateToSettings,
@@ -33,6 +35,7 @@ class PlanUpgradeDialog extends StatelessWidget {
   // ───── API estática para mostrar el diálogo ────────────────────────────────
   static Future<void> show(
     BuildContext context, {
+    String title = 'Plan Premium Requerido',
     required String featureName,
     required String description,
     VoidCallback? onNavigateToSettings,
@@ -41,6 +44,7 @@ class PlanUpgradeDialog extends StatelessWidget {
       context: context,
       barrierDismissible: true,
       builder: (ctx) => PlanUpgradeDialog(
+        title: title,
         featureName: featureName,
         description: description,
         onNavigateToSettings: onNavigateToSettings != null
@@ -103,9 +107,9 @@ class PlanUpgradeDialog extends StatelessWidget {
               const SizedBox(height: 28),
 
               // ── Título ──
-              const Text(
-                'Plan Premium Requerido',
-                style: TextStyle(
+              Text(
+                title,
+                style: const TextStyle(
                   fontSize: 22,
                   fontWeight: FontWeight.bold,
                   color: Color(0xFF1A1A2E),

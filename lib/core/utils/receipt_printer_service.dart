@@ -401,6 +401,94 @@ class ReceiptPrinterService {
     await _send(Uint8List.fromList(bytes));
   }
 
+  /// Imprime el ticket de entrega / Remito para acopio logístico
+  Future<void> printDeliveryNoteTicket({
+    required Map<String, dynamic> note,
+    required List<Map<String, dynamic>> deliveredItemsData,
+    required BusinessSettings settings,
+    String? customerName,
+  }) async {
+    if (settings.printerType.toLowerCase() == 'none') return;
+    if (config.connectionType == PrinterConnectionType.usb && (config.comPort == null || config.comPort!.trim().isEmpty)) return;
+
+    final profile = await _getProfile();
+    final generator = Generator(config.paperSize, profile);
+    List<int> bytes = [];
+
+    bytes += generator.reset();
+    bytes += generator.text(
+      _cleanText(settings.companyName?.toUpperCase() ?? 'MI NEGOCIO'),
+      styles: const PosStyles(bold: true, align: PosAlign.center, height: PosTextSize.size2, width: PosTextSize.size2),
+    );
+    bytes += generator.feed(1);
+
+    bytes += generator.hr(ch: '=');
+    final double totalDeliveredNow = deliveredItemsData.fold(0.0, (sum, item) {
+      final val = item['delivered_now'];
+      return sum + (val is double ? val : (val as num?)?.toDouble() ?? 0.0);
+    });
+    final String docTitle = totalDeliveredNow > 0 ? 'REMITO DE DESPACHO' : 'ORDEN DE RETIRO EN DEPÓSITO';
+
+    bytes += generator.text(
+      _cleanText(docTitle),
+      styles: const PosStyles(align: PosAlign.center, bold: true),
+    );
+    bytes += generator.hr(ch: '-');
+
+    final docCode = totalDeliveredNow > 0 ? 'REM' : 'ORD';
+    bytes += generator.text('$docCode N°: ${note['id'].toString().padLeft(6, '0')}', styles: const PosStyles(bold: true));
+    bytes += generator.text('FECHA: ${_formatDate(DateTime.now())}');
+    if (customerName != null) {
+      bytes += generator.text('CLIENTE: ${_cleanText(customerName)}');
+    }
+    bytes += generator.hr(ch: '-');
+
+    for (final deliveredData in deliveredItemsData) {
+      final item = note['items'].firstWhere((i) => i['id'] == deliveredData['id'], orElse: () => null);
+      if (item == null) continue;
+
+      final productName = _cleanText((item['product']?['name'] ?? 'Producto Desconocido').toUpperCase());
+      final purchased = double.parse(item['quantity_purchased'].toString());
+      final deliveredBefore = double.parse(item['quantity_delivered'].toString());
+      final deliveredNow = deliveredData['delivered_now'] as double;
+      final remaining = purchased - (deliveredBefore + deliveredNow);
+
+      bytes += generator.text(productName, styles: const PosStyles(bold: true));
+      bytes += generator.text('Comprado: ${purchased.toStringAsFixed(1)} | Entregando hoy: ${deliveredNow.toStringAsFixed(1)}');
+      bytes += generator.text('SALDO PENDIENTE A RETIRAR: ${remaining.toStringAsFixed(1)}', styles: const PosStyles(bold: true));
+      bytes += generator.feed(1);
+    }
+
+    bytes += generator.hr(ch: '=');
+
+    // ── Código de barras (para que el operario escanee en el galpón) ──
+    final barcodeData = 'REM${note['id'].toString().padLeft(6, '0')}';
+    try {
+      bytes += generator.barcode(
+        Barcode.code39(barcodeData.split('')),
+        width: 2,
+        height: 70,
+        textPos: BarcodeText.none,
+      );
+      bytes += generator.text(
+        barcodeData,
+        styles: const PosStyles(align: PosAlign.center, bold: true),
+      );
+    } catch (e) {
+      debugPrint('Error imprimiendo barcode remito: $e');
+    }
+
+    bytes += generator.feed(1);
+    bytes += generator.text('FIRMA CONFORMIDAD:', styles: const PosStyles(align: PosAlign.center));
+    bytes += generator.feed(3);
+    bytes += generator.text('_________________________', styles: const PosStyles(align: PosAlign.center));
+    
+    bytes += generator.feed(3);
+    bytes += generator.cut();
+    
+    await _send(Uint8List.fromList(bytes));
+  }
+
   /// Imprime el comprobante de Cierre Z (Auditoría del turno).
   Future<void> printZCloseTicket({
     required CashRegisterShift shift,

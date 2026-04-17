@@ -332,7 +332,7 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
         child: InkWell(
           borderRadius: BorderRadius.circular(12),
           onTap: () async {
-            final url = Uri.parse('https://wa.me/543704787285?text=Hola,%20quiero%20contratar%20el%20Plan%20PRO%20para%20activar%20las%20Alertas%20Predictivas');
+            final url = Uri.parse('https://wa.me/543704787285?text=Hola,%20quiero%20contratar%20el%20Plan%20Premium%20para%20activar%20las%20Alertas%20Predictivas');
             if (await canLaunchUrl(url)) {
               await launchUrl(url, mode: LaunchMode.externalApplication);
             }
@@ -360,7 +360,7 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
                       ),
                       SizedBox(height: 2),
                       Text(
-                        'Anticipate a los quiebres de stock — Plan PRO',
+                        'Anticipáte a los quiebres de stock — Plan Premium',
                         style: TextStyle(color: Colors.white70, fontSize: 11),
                       ),
                     ],

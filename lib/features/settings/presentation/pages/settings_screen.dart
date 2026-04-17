@@ -439,11 +439,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     // --- COLORES POR PLAN ---
     List<Color> gradientColors;
     switch (provider.currentPlan.toLowerCase()) {
-      case 'pro':
-        gradientColors = [const Color(0xFF673AB7), const Color(0xFF512DA8)]; // Púrpura Premium
-        break;
-      case 'enterprise':
-        gradientColors = [const Color(0xFF1A237E), const Color(0xFF0D47A1)]; // Azul Real / Deep Sea
+      case 'premium':
+        gradientColors = [const Color(0xFF673AB7), const Color(0xFF512DA8)]; // Púrpura Premium / Dorado
         break;
       default:
         gradientColors = [const Color(0xFF455A64), const Color(0xFF263238)]; // Slate / Gray (Basic)
@@ -630,11 +627,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
             } else {
               PlanUpgradeDialog.show(
                 context,
+                title: 'Plan Premium Requerido',
                 featureName: 'Gestión Multi-Caja',
                 description:
                     'La administración de múltiples terminales físicas es '
-                    'una función exclusiva de los planes PRO y ENTERPRISE.\n\n'
-                    'Comuníquese con soporte para ampliar su licencia.',
+                    'una función exclusiva del plan PREMIUM.\n\n'
+                    'Actualizá para organizar tu negocio y sincronizar las cajas.',
                 onNavigateToSettings: () =>
                     setState(() => _activeSection = SettingsSection.subscription),
               );
