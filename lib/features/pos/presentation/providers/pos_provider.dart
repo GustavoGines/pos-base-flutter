@@ -5,13 +5,19 @@ import '../../domain/entities/payment_method.dart';
 import '../../domain/usecases/process_sale_usecase.dart';
 import '../../domain/usecases/search_products_usecase.dart';
 import '../../domain/repositories/pos_repository.dart';
-import '../../data/datasources/pos_remote_datasource.dart' show ClosedShiftException;
-import 'package:frontend_desktop/core/network/api_client.dart' show SessionExpiredException;
+import '../../data/datasources/pos_remote_datasource.dart'
+    show ClosedShiftException;
+import 'package:frontend_desktop/core/network/api_client.dart'
+    show SessionExpiredException;
 import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
 import 'package:frontend_desktop/features/settings/domain/entities/business_settings.dart';
 import 'package:frontend_desktop/core/utils/receipt_printer_service.dart';
+import 'package:frontend_desktop/core/providers/local_terminal_provider.dart';
 import 'package:frontend_desktop/features/quotes/data/quote_repository.dart';
 import 'package:frontend_desktop/core/config/app_config.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:frontend_desktop/core/utils/a4_split_pdf_service.dart';
+import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 
 class PosProvider with ChangeNotifier {
   final ProcessSaleUseCase processSaleUseCase;
@@ -53,7 +59,26 @@ class PosProvider with ChangeNotifier {
 
   // Seguimiento de ID de venta (útil para Corralón/Remitos post-checkout)
   int? _lastSaleId;
-  int? get lastSaleId => _lastSaleId;
+  double? _lastSaleTotal;
+  double? _lastSaleShippingCost;
+  double? _lastTenderedAmount;
+  double? _lastChangeAmount;
+  List<Map<String, dynamic>> _lastSalePayments = [];
+
+  int get lastSaleId => _lastSaleId ?? 0;
+  double get lastSaleTotal => _lastSaleTotal ?? 0.0;
+  double get lastSaleShippingCost => _lastSaleShippingCost ?? 0.0;
+  double get lastTenderedAmount => _lastTenderedAmount ?? 0.0;
+  double get lastChangeAmount => _lastChangeAmount ?? 0.0;
+  List<Map<String, dynamic>> get lastSalePayments => _lastSalePayments;
+
+  // Rastrea si la última venta disparó un remito automático desde el checkout
+  // (true = cajero activó el toggle "Enviar a Logística" y el remito ya fue creado)
+  bool _wasLastSaleDispatched = false;
+  bool get wasLastSaleDispatched => _wasLastSaleDispatched;
+
+  Map<String, dynamic>? _lastDeliveryNote;
+  Map<String, dynamic>? get lastDeliveryNote => _lastDeliveryNote;
 
   // Snapshot del carrito de la última venta (disponible incluso después de clearCart)
   List<CartItem> _lastSaleCart = [];
@@ -61,6 +86,45 @@ class PosProvider with ChangeNotifier {
 
   bool _isPendingLoading = false;
   bool get isPendingLoading => _isPendingLoading;
+
+  // [multiple-prices] Gestión del Nivel de Precio Activo
+  PriceTier _activeTier = PriceTier.base;
+  PriceTier get activeTier => _activeTier;
+
+  String? _customTierLabel;
+  String? get customTierLabel => _customTierLabel;
+
+  double _currentWholesaleFactor = 0.85;
+  double _currentCardFactor = 1.15;
+  double _currentCustomFactor = 1.0;
+  double get currentCustomFactor => _currentCustomFactor;
+
+  void setPriceTier(
+    PriceTier tier, {
+    double? wholesaleFactor,
+    double? cardFactor,
+    double? customFactor,
+    String? customLabel,
+  }) {
+    if (wholesaleFactor != null) _currentWholesaleFactor = wholesaleFactor;
+    if (cardFactor != null) _currentCardFactor = cardFactor;
+    if (customFactor != null) _currentCustomFactor = customFactor;
+    if (customLabel != null) _customTierLabel = customLabel;
+    if (tier != PriceTier.custom) _customTierLabel = null;
+    _activeTier = tier;
+
+    // Propagar a todos los ítems del carrito
+    for (var item in _cart) {
+      item.activeTier = _activeTier;
+      item.wholesaleFactor = _currentWholesaleFactor;
+      item.cardFactor = _currentCardFactor;
+      item.customFactor = _currentCustomFactor;
+      item.customTierLabel = _customTierLabel;
+    }
+    notifyListeners();
+  }
+
+  void resetPriceTier() => setPriceTier(PriceTier.base);
 
   int get pendingCount => _pendingSales.length;
 
@@ -77,6 +141,20 @@ class PosProvider with ChangeNotifier {
   List<PaymentMethod> _paymentMethods = [];
   List<PaymentMethod> get paymentMethods => _paymentMethods;
 
+  // ── Persistencia de Estado de Logística (UI) ──
+  // Estos campos mantienen el estado del CheckoutDialog durante la misma venta
+  bool _currentRequiresDispatch = false;
+  bool get currentRequiresDispatch => _currentRequiresDispatch;
+
+  String _currentFulfillmentStatus = 'pending';
+  String get currentFulfillmentStatus => _currentFulfillmentStatus;
+
+  void setCurrentLogistics(bool requires, String status) {
+    _currentRequiresDispatch = requires;
+    _currentFulfillmentStatus = status;
+    notifyListeners();
+  }
+
   PosProvider({
     required this.processSaleUseCase,
     required this.searchProductsUseCase,
@@ -84,14 +162,45 @@ class PosProvider with ChangeNotifier {
     this.printerService,
   }) {
     loadPaymentMethods();
+    _loadLastShippingCost();
   }
 
-  double get cartTotal {
+  Future<void> _loadLastShippingCost() async {
+    final prefs = await SharedPreferences.getInstance();
+    _shippingCost = 0.0; // Empieza en 0 cada sesión
+    _lastUsedShippingCost = prefs.getDouble('last_shipping_cost') ?? 0.0;
+    notifyListeners();
+  }
+
+  double _shippingCost = 0.0;
+  double get shippingCost => _shippingCost;
+  
+  // Memoria del último flete para sugerirlo en la siguiente venta
+  double _lastUsedShippingCost = 0.0;
+  double get lastUsedShippingCost => _lastUsedShippingCost;
+
+  void setShippingCost(double cost) async {
+    _shippingCost = cost;
+    if (cost > 0) {
+      _lastUsedShippingCost = cost;
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setDouble('last_shipping_cost', cost);
+    }
+    notifyListeners();
+  }
+
+  double get cartSubtotal {
     return _cart.fold(0.0, (total, item) => total + item.subtotal);
   }
 
+  double get cartTotal {
+    // Solo sumamos el flete al total general si la logística está activa
+    return cartSubtotal + (_currentRequiresDispatch ? _shippingCost : 0.0);
+  }
+
   // Garantiza que siempre tengamos un printerService, incluso si no se inyecta
-  ReceiptPrinterService get _activePrinter => printerService ?? ReceiptPrinterService.instance;
+  ReceiptPrinterService get _activePrinter =>
+      printerService ?? ReceiptPrinterService.instance;
 
   bool requestAddToCart(Product product) {
     if (product.isSoldByWeight) {
@@ -111,15 +220,30 @@ class PosProvider with ChangeNotifier {
 
   void _addToCartDirectly(Product product, double quantity) {
     if (product.isSoldByWeight) {
-      _cart.add(CartItem(product: product, quantity: quantity));
+      _cart.add(CartItem(
+        product: product,
+        quantity: quantity,
+        activeTier: _activeTier,
+        wholesaleFactor: _currentWholesaleFactor,
+        cardFactor: _currentCardFactor,
+      ));
     } else {
       final index = _cart.indexWhere(
         (item) => item.product.id == product.id && !item.product.isSoldByWeight,
       );
       if (index >= 0) {
+        _cart[index].product = product; // Actualizar con el stock más reciente
         _cart[index].quantity += quantity;
       } else {
-        _cart.add(CartItem(product: product, quantity: quantity));
+        _cart.add(CartItem(
+          product: product,
+          quantity: quantity,
+          activeTier: _activeTier,
+          wholesaleFactor: _currentWholesaleFactor,
+          cardFactor: _currentCardFactor,
+          customFactor: _currentCustomFactor,
+          customTierLabel: _customTierLabel,
+        ));
       }
     }
     notifyListeners();
@@ -145,6 +269,20 @@ class PosProvider with ChangeNotifier {
     _recalledUserName = null;
     _errorMessage = null;
     _isShiftClosed = false;
+    // No reseteamos estas variables aquí porque la UI las necesita
+    // inmediatamente después de la venta para mostrar el PDF Split.
+    // _wasLastSaleDispatched = false;
+    // _lastDeliveryNote = null;
+    // Reseteamos el flete a 0.0 para que el carrito vacío muestre $0
+    _shippingCost = 0.0;
+    
+    // Reseteamos el estado de logística para la próxima venta
+    _currentRequiresDispatch = false;
+    _currentFulfillmentStatus = 'pending';
+
+    // Reset price tier a base al iniciar una nueva venta
+    _activeTier = PriceTier.base;
+    _customTierLabel = null;
     notifyListeners();
   }
 
@@ -165,24 +303,36 @@ class PosProvider with ChangeNotifier {
     clearCart();
   }
 
+  /// Restaura el carrito al estado de la última venta procesada.
+  /// Usado por el flujo de anulación en la vista previa del comprobante.
+  void restoreLastSaleCart() {
+    _cart.clear();
+    _cart.addAll(_lastSaleCart);
+    _shippingCost = _lastSaleShippingCost ?? 0.0;
+    notifyListeners();
+  }
+
   void recallOrderToCart(Map<String, dynamic> sale) {
     clearCart();
     // Use un temporizador mínimo o asegure que se haya limpiado el carrito (ya es sincrónico).
-    
+
     final saleId = (sale['id'] as num).toInt();
     final rawItems = (sale['items'] as List?) ?? [];
-    
+
     final List<CartItem> recalledItems = rawItems.map<CartItem>((itemMap) {
       final prod = itemMap['product'] as Map<String, dynamic>? ?? {};
       final product = Product(
         id: (prod['id'] as num?)?.toInt() ?? 0,
-        name: itemMap['product_name']?.toString() ?? prod['name']?.toString() ?? 'Producto',
+        name: itemMap['product_name']?.toString() ??
+            prod['name']?.toString() ??
+            'Producto',
         internalCode: prod['internal_code']?.toString() ?? '',
         costPrice: 0,
         sellingPrice: double.tryParse(itemMap['unit_price'].toString()) ?? 0.0,
         stock: double.tryParse(prod['stock']?.toString() ?? '0') ?? 0.0,
         active: true,
-        isSoldByWeight: prod['is_sold_by_weight'] == true || prod['is_sold_by_weight'] == 1,
+        isSoldByWeight:
+            prod['is_sold_by_weight'] == true || prod['is_sold_by_weight'] == 1,
       );
       return CartItem(
         product: product,
@@ -192,7 +342,14 @@ class PosProvider with ChangeNotifier {
 
     _cart.addAll(recalledItems);
     _activePendingSaleId = saleId;
-    _recalledUserName = sale['user']?['name'] as String?;
+    _shippingCost = double.tryParse(sale['shipping_cost']?.toString() ?? '0') ?? 0.0;
+    _recalledUserName = sale['user']?['name']?.toString();
+    
+    // Al recuperar, mantenemos el despacho desactivado por defecto para que el cajero
+    // lo active manualmente si corresponde, evitando cobros automáticos inesperados.
+    _currentRequiresDispatch = false;
+    _currentFulfillmentStatus = 'pending';
+    
     notifyListeners();
   }
 
@@ -219,7 +376,7 @@ class PosProvider with ChangeNotifier {
   Future<bool> updatePaymentMethodSurcharge(int id, double newSurcharge) async {
     try {
       await repository.updatePaymentMethodSurcharge(id, newSurcharge);
-      
+
       // Update local memory without refreshing the entire list to avoid UI flicker
       final idx = _paymentMethods.indexWhere((m) => m.id == id);
       if (idx != -1) {
@@ -252,21 +409,29 @@ class PosProvider with ChangeNotifier {
     required List<Map<String, dynamic>> payments,
     required double tenderedAmount,
     required double changeAmount,
+    required String printerFormat,
+    required LocalTerminalProvider localTerminal,
     int? userId,
     int? customerId,
     String? userName,
     BusinessSettings? settings,
     bool showPreview = true,
+    bool requiresDispatch = false,
+    String fulfillmentStatus = 'pending',
   }) async {
     if (_cart.isEmpty) return false;
 
     _isLoading = true;
     _errorMessage = null;
     _printerWarning = null;
+    _wasLastSaleDispatched = false;
+    _lastDeliveryNote = null;
     notifyListeners();
 
     final cartSnapshot = List<CartItem>.from(_cart);
     final totalSnapshot = cartTotal;
+    // Solo aplicamos flete al comprobante si se requiere despacho y no es entrega inmediata
+    final shippingCostSnapshot = (requiresDispatch && fulfillmentStatus == 'pending') ? _shippingCost : 0.0;
 
     try {
       String? extractedSaleId;
@@ -279,10 +444,12 @@ class PosProvider with ChangeNotifier {
           payments: payments,
           tenderedAmount: tenderedAmount,
           changeAmount: changeAmount,
+          localTerminal: localTerminal,
           userName: userName,
           settings: settings,
           userId: userId,
           items: cartSnapshot,
+          shippingCost: shippingCostSnapshot,
         );
         if (!success) {
           // El error se seteó dentro de payPendingSale
@@ -302,83 +469,247 @@ class PosProvider with ChangeNotifier {
           customerId: customerId,
           quoteId: _activeQuoteId,
           status: 'completed',
+          shippingCost: (requiresDispatch && fulfillmentStatus == 'pending') ? _shippingCost : 0.0,
+          requiresDispatch: requiresDispatch,
+          fulfillmentStatus: fulfillmentStatus,
         );
 
         // processSaleUseCase retorna entidad Sale
         extractedSaleId = result.id.toString();
+        _lastDeliveryNote = result.deliveryNote;
       }
 
+      // ── Lógica de Resolución de Pagos ──
+      // Resolvemos los nombres de los métodos de pago para los comprobantes
+      final resolvedPayments = (payments.map((p) {
+        final id = (p['payment_method_id'] as num?)?.toInt();
+        final method = _paymentMethods.firstWhere(
+          (m) => m.id == id,
+          orElse: () => PaymentMethod(
+            id: id ?? 0,
+            name: p['method_name']?.toString() ?? 'PAGO',
+            code: '',
+            surchargeType: 'none',
+            surchargeValue: 0,
+            isCash: false,
+            isActive: true,
+            sortOrder: 0,
+          ),
+        );
+        final amount = (p['total_amount'] as num?)?.toDouble() ??
+            (p['base_amount'] as num?)?.toDouble() ??
+            0.0;
+
+        return {
+          'name': method.name, // Para la impresora térmica (pd['name'])
+          'payment_method': {
+            'name': method.name
+          }, // Para el PDF A4 (p['payment_method']['name'])
+          'amount': amount,
+          '_isCash': method.isCash,
+        };
+      }).toList()
+        ..sort((a, b) {
+          final aCash = (a['_isCash'] as bool?) ?? false;
+          final bCash = (b['_isCash'] as bool?) ?? false;
+          if (aCash == bCash) return 0;
+          return aCash ? -1 : 1; // efectivo primero
+        }));
+
       _lastSaleId = int.tryParse(extractedSaleId);
+      _lastSaleTotal = totalSnapshot;
+      _lastSaleShippingCost = shippingCostSnapshot;
+      _lastTenderedAmount = tenderedAmount;
+      _lastChangeAmount = changeAmount;
+      _lastSalePayments =
+          resolvedPayments; // Guardamos la versión resuelta con nombres
+      _wasLastSaleDispatched = requiresDispatch;
 
       // Guardar snapshot del carrito ANTES de limpiarlo (lo necesita el dialog de Remito)
       _lastSaleCart = List<CartItem>.from(_cart);
       clearCart();
 
-      if (settings != null) {
-        try {
-          // Resolver nombres y ordenar: efectivo primero
-          final resolvedPayments = (payments.map((p) {
-            final id = (p['payment_method_id'] as num?)?.toInt();
-            final method = _paymentMethods.firstWhere(
-              (m) => m.id == id,
-              orElse: () => PaymentMethod(
-                id: id ?? 0,
-                name: p['method_name']?.toString() ?? 'PAGO',
-                code: '',
-                surchargeType: 'none',
-                surchargeValue: 0,
-                isCash: false,
-                isActive: true,
-                sortOrder: 0,
-              ),
+      // ── Lógica de Impresión (A4 o Térmica) ──
+      try {
+        if (localTerminal.printerFormat.startsWith('a4')) {
+          final isDeliveredNow = fulfillmentStatus == 'delivered';
+          
+          // Si es a4_split + se entrega AHORA, pos_screen intercepta para armar el PDF combinado.
+          // De lo contrario, usamos nuestro propio generador local de A4 para mantener el diseño
+          // en lugar de bajar el PDF del backend que tiene diseño viejo/redundante.
+          if (!(requiresDispatch && isDeliveredNow) || localTerminal.printerFormat != 'a4_split') {
+            final businessSettings = settings ?? const BusinessSettings();
+            
+            // Si requiere despacho pero NO es entrega inmediata, generamos el A4 normal de venta
+            // pero el remito se generará después desde Logística.
+            final pdfBytes = await A4SplitPdfService.generateA4SingleReceipt(
+              sale: {
+                'id': extractedSaleId,
+                'items': cartSnapshot.map((i) => {
+                  'product_name': i.product.name,
+                  'quantity': i.quantity,
+                  'unit_price': i.unitPrice,
+                  'subtotal': i.subtotal,
+                  'product': {
+                    'is_sold_by_weight': i.product.isSoldByWeight,
+                  }
+                }).toList(),
+                'total': totalSnapshot,
+                'shipping_cost': shippingCostSnapshot,
+                'payments': resolvedPayments,
+                'customer': {'name': 'Consumidor Final'}, 
+                'customer_name': 'Consumidor Final',
+              },
+              businessName: businessSettings.companyName ?? 'Mi Negocio',
+              businessAddress: businessSettings.address,
+              phone: businessSettings.phone ?? '',
+              cuit: businessSettings.taxId ?? '',
+              vendorName: userName,
             );
-            final amount = (p['base_amount'] as num?)?.toDouble() ??
-                (p['total_amount'] as num?)?.toDouble() ?? 0.0;
-            return {'name': method.name, 'amount': amount, '_isCash': method.isCash};
-          }).toList()
-            ..sort((a, b) {
-              final aCash = (a['_isCash'] as bool?) ?? false;
-              final bCash = (b['_isCash'] as bool?) ?? false;
-              if (aCash == bCash) return 0;
-              return aCash ? -1 : 1; // efectivo primero
-            }))
-              .map((p) => {'name': p['name'], 'amount': p['amount']})
-              .toList();
 
-          if (settings.printerPaperWidth == 'a4') {
-            final pdfBytes = await repository.downloadTicketPdf(int.parse(extractedSaleId));
             final ctx = AppConfig.navigatorKey.currentContext;
             if (ctx != null && ctx.mounted) {
               if (showPreview) {
-                // Mostrar el visor PDF integrado (el usuario lo imprime desde ahí)
-                await showDialog(
+                final result = await showDialog<String>(
                   context: ctx,
-                  builder: (context) => Dialog(
-                    child: SizedBox(
-                      width: 800,
-                      height: 600,
-                      child: PdfPreview(
-                        build: (format) async => pdfBytes,
-                        canChangePageFormat: false,
-                        canChangeOrientation: false,
-                        pdfFileName: 'Comprobante_$extractedSaleId.pdf',
-                      ),
-                    ),
-                  ),
+                  barrierDismissible: false,
+                  builder: (dialogCtx) {
+                    bool isVoiding = false;
+                    return StatefulBuilder(
+                      builder: (context, setState) {
+                        return Dialog(
+                          child: SizedBox(
+                            width: 900,
+                            height: 800,
+                            child: Scaffold(
+                              appBar: AppBar(
+                                title: Text('Vista Previa - Venta #$extractedSaleId'),
+                                automaticallyImplyLeading: false,
+                                actions: [
+                                  if (isVoiding)
+                                    Center(
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                                        child: SizedBox(
+                                          width: 24,
+                                          height: 24,
+                                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.red),
+                                        ),
+                                      ),
+                                    )
+                                  else
+                                    TextButton.icon(
+                                      onPressed: () async {
+                                        final confirm = await showDialog<bool>(
+                                          context: dialogCtx,
+                                          builder: (c) => AlertDialog(
+                                            title: const Text('¿Anular Venta?'),
+                                            content: const Text('Esta acción cancelará el cobro en el sistema y devolverá los productos al carrito.'),
+                                            actions: [
+                                              TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('NO, VOLVER')),
+                                              ElevatedButton(
+                                                style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+                                                onPressed: () => Navigator.pop(c, true), 
+                                                child: const Text('SÍ, ANULAR')
+                                              ),
+                                            ],
+                                          ),
+                                        );
+
+                                        if (confirm == true) {
+                                          setState(() { isVoiding = true; });
+                                          try {
+                                            // 1. Anular en el servidor
+                                            await voidPendingOrder(int.parse(extractedSaleId!));
+                                            // 2. Restaurar carrito localmente
+                                            _cart.clear();
+                                            _cart.addAll(_lastSaleCart);
+                                            _shippingCost = _lastSaleShippingCost ?? 0.0;
+                                            notifyListeners();
+                                            // 3. Salir de la vista previa indicando anulación
+                                            if (dialogCtx.mounted) {
+                                              SnackBarService.warning(dialogCtx, 'Venta anulada. Los productos han vuelto al carrito.');
+                                              Navigator.pop(dialogCtx, 'annulled');
+                                            }
+                                          } catch (e) {
+                                            if (dialogCtx.mounted) {
+                                              SnackBarService.error(dialogCtx, 'Error al anular: $e');
+                                            }
+                                            setState(() { isVoiding = false; });
+                                          }
+                                        }
+                                      },
+                                      icon: const Icon(Icons.delete_forever, color: Colors.red),
+                                      label: const Text('ANULAR COBRO Y VOLVER', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+                                    ),
+                                  const SizedBox(width: 16),
+                                  IconButton(
+                                    icon: const Icon(Icons.close),
+                                    onPressed: isVoiding ? null : () => Navigator.pop(dialogCtx),
+                                  ),
+                                ],
+                              ),
+                              body: PdfPreview(
+                                build: (format) async => pdfBytes,
+                                canChangePageFormat: false,
+                                canChangeOrientation: false,
+                                pdfFileName: 'Comprobante_$extractedSaleId.pdf',
+                                canDebug: false,
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    );
+                  },
                 );
+
+
+                if (result == 'annulled') {
+                  _errorMessage = 'ANNULLED';
+                  return false;
+                }
               } else {
-                // Sin vista previa: enviar directo al diálogo de impresión del SO
                 await Printing.layoutPdf(
                   onLayout: (_) async => pdfBytes,
                   name: 'Comprobante_$extractedSaleId',
                 );
               }
             }
+          }
+        } else {
+          // Ruta Térmica: leer hardware 100% del LocalTerminalProvider
+          if (requiresDispatch && _lastDeliveryNote != null) {
+            // SPLIT TICKET: Venta + Orden de Retiro en el mismo rollo
+            await _activePrinter.printSplitTicket(
+              items: cartSnapshot,
+              total: totalSnapshot,
+              shippingCost: shippingCostSnapshot,
+              settings: settings ?? const BusinessSettings(),
+              localTerminal: localTerminal,
+              deliveryNote: _lastDeliveryNote!,
+              paymentDetails: resolvedPayments,
+              receiptNumber: extractedSaleId,
+              deliveryNoteNumber: _lastDeliveryNote!['id']?.toString(),
+              userName: _recalledUserName ?? userName,
+              cashierName: userName,
+              surchargeAmount: totalSurcharge,
+              tenderedAmount: tenderedAmount,
+              changeAmount: changeAmount,
+              customerName: _lastDeliveryNote!['sale']?['customer']?['name']
+                      ?.toString() ??
+                  _lastDeliveryNote!['sale']?['customer_name']?.toString(),
+              paperSizeOverride:
+                  localTerminal.printerFormat == 'thermal_58' ? '58mm' : '80mm',
+            );
           } else {
             await _activePrinter.printSaleTicket(
               items: cartSnapshot,
               total: totalSnapshot,
-              settings: settings,
+              settings: settings ?? const BusinessSettings(),
+              localTerminal: localTerminal,
+              paperSizeOverride:
+                  localTerminal.printerFormat == 'thermal_58' ? '58mm' : '80mm',
               paymentDetails: resolvedPayments,
               receiptNumber: extractedSaleId,
               userName: _recalledUserName ?? userName,
@@ -386,13 +717,20 @@ class PosProvider with ChangeNotifier {
               surchargeAmount: totalSurcharge,
               tenderedAmount: tenderedAmount,
               changeAmount: changeAmount,
+              shippingCost: shippingCostSnapshot,
             );
           }
-        } catch (e) {
-          _printerWarning = 'Venta exitosa, pero la impresora no responde: ${e.toString()}';
-          debugPrint('=== Printer Error: $e ===');
         }
+      } catch (e) {
+        _printerWarning =
+            'Venta exitosa, pero la impresora no responde: ${e.toString()}';
+        debugPrint('=== Printer Error: $e ===');
       }
+
+      // ── El Remito de Logística (Fricción Cero) ──
+      // El backend PosController ya se encargó de crearlo atómicamente y retornarlo.
+      // Si el backend no pudo crearlo o hubo un problema, ya lo capturaremos.
+      // Ya extrajimos _lastDeliveryNote de la respuesta al inicio de esta función.
 
       return true;
     } on ClosedShiftException catch (e) {
@@ -442,6 +780,7 @@ class PosProvider with ChangeNotifier {
         items: cartSnapshot,
         userId: userId,
         status: 'pending',
+        shippingCost: (_currentRequiresDispatch && _currentFulfillmentStatus == 'pending') ? _shippingCost : 0.0,
       );
 
       clearCart();
@@ -490,7 +829,7 @@ class PosProvider with ChangeNotifier {
 
     try {
       await repository.voidPendingSale(saleId);
-      
+
       if (_activePendingSaleId == saleId) {
         clearRecall();
       }
@@ -516,11 +855,13 @@ class PosProvider with ChangeNotifier {
     required List<Map<String, dynamic>> payments,
     required double tenderedAmount,
     required double changeAmount,
+    required LocalTerminalProvider localTerminal,
     String? userName,
     BusinessSettings? settings,
     int? userId,
     List<CartItem>? items,
     bool showPreview = true,
+    double shippingCost = 0.0,
   }) async {
     _isLoading = true;
     _errorMessage = null;
@@ -536,11 +877,14 @@ class PosProvider with ChangeNotifier {
         changeAmount: changeAmount,
         userId: userId,
         items: items,
+        shippingCost: shippingCost,
       );
 
-      // Imprimir ticket si hay impresora configurada. 
+      // Imprimir ticket si hay impresora configurada.
       // (Si items != null, significa que venimos desde processCheckout, que YA imprime el ticket)
       if (printerService != null && settings != null && items == null) {
+        final safeSettings =
+            settings; // non-nullable alias for Dart type promotion
         // Reconstruir CartItems desde el mapa en memoria para el ticket
         final pendingEntry = _pendingSales.firstWhere(
           (s) => s['id'] == saleId,
@@ -551,13 +895,17 @@ class PosProvider with ChangeNotifier {
           final prod = itemMap['product'] as Map<String, dynamic>? ?? {};
           final product = Product(
             id: (prod['id'] as num?)?.toInt() ?? 0,
-            name: itemMap['product_name']?.toString() ?? prod['name']?.toString() ?? 'Producto',
+            name: itemMap['product_name']?.toString() ??
+                prod['name']?.toString() ??
+                'Producto',
             internalCode: '',
             costPrice: 0,
-            sellingPrice: double.tryParse(itemMap['unit_price'].toString()) ?? 0.0,
+            sellingPrice:
+                double.tryParse(itemMap['unit_price'].toString()) ?? 0.0,
             stock: 0,
             active: true,
-            isSoldByWeight: prod['is_sold_by_weight'] == true || prod['is_sold_by_weight'] == 1,
+            isSoldByWeight: prod['is_sold_by_weight'] == true ||
+                prod['is_sold_by_weight'] == 1,
           );
           return CartItem(
             product: product,
@@ -584,19 +932,24 @@ class PosProvider with ChangeNotifier {
                 ),
               );
               final amount = (p['base_amount'] as num?)?.toDouble() ??
-                  (p['total_amount'] as num?)?.toDouble() ?? 0.0;
-              return {'name': method.name, 'amount': amount, '_isCash': method.isCash};
+                  (p['total_amount'] as num?)?.toDouble() ??
+                  0.0;
+              return {
+                'name': method.name,
+                'amount': amount,
+                '_isCash': method.isCash
+              };
             }).toList()
-              ..sort((a, b) {
-                final aCash = (a['_isCash'] as bool?) ?? false;
-                final bCash = (b['_isCash'] as bool?) ?? false;
-                if (aCash == bCash) return 0;
-                return aCash ? -1 : 1;
-              }))
+                  ..sort((a, b) {
+                    final aCash = (a['_isCash'] as bool?) ?? false;
+                    final bCash = (b['_isCash'] as bool?) ?? false;
+                    if (aCash == bCash) return 0;
+                    return aCash ? -1 : 1;
+                  }))
                 .map((p) => {'name': p['name'], 'amount': p['amount']})
                 .toList();
 
-            if (settings.printerPaperWidth == 'a4') {
+            if (localTerminal.printerFormat.startsWith('a4')) {
               final pdfBytes = await repository.downloadTicketPdf(saleId);
               final ctx = AppConfig.navigatorKey.currentContext;
               if (ctx != null && ctx.mounted) {
@@ -617,7 +970,6 @@ class PosProvider with ChangeNotifier {
                     ),
                   );
                 } else {
-                  // Sin vista previa: enviar directo al diálogo de impresión del SO
                   await Printing.layoutPdf(
                     onLayout: (_) async => pdfBytes,
                     name: 'Comprobante_$saleId',
@@ -628,7 +980,8 @@ class PosProvider with ChangeNotifier {
               await printerService!.printSaleTicket(
                 items: ticketItems,
                 total: saleTotal,
-                settings: settings,
+                settings: safeSettings,
+                localTerminal: localTerminal,
                 paymentDetails: resolvedPayments,
                 userName: pendingEntry['user']?['name'] as String? ?? userName,
                 cashierName: userName,
@@ -638,7 +991,8 @@ class PosProvider with ChangeNotifier {
               );
             }
           } catch (e) {
-            _printerWarning = 'Cobro exitoso, pero la impresora no responde: ${e.toString()}';
+            _printerWarning =
+                'Cobro exitoso, pero la impresora no responde: ${e.toString()}';
             debugPrint('=== Printer Error (pending): $e ===');
           }
         }

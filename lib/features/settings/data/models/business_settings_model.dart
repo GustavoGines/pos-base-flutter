@@ -8,12 +8,6 @@ class BusinessSettingsModel extends BusinessSettings {
     String? phone,
     String? taxId,
     String? receiptFooterMessage,
-    String printerType = 'none',
-    String printerPaperWidth = '58',
-    String? printerComPort,
-    String? printerIpAddress,
-    String? printerIpPort,
-    String? comPortScale,
     String? licenseStatus,
     String? licensePlanType,
     String? licensePlanMode,
@@ -23,6 +17,9 @@ class BusinessSettingsModel extends BusinessSettings {
     DateTime? licenseNextPaymentAt,
     String? licenseManageUrl,
     bool isLifetime = false,
+    double globalWholesalePercentage = -15.0,
+    double globalCardPercentage = 15.0,
+    List<Map<String, dynamic>> customPriceTiers = const [],
     String businessType = 'retail',
     FeatureFlags features = const FeatureFlags(),
   }) : super(
@@ -31,12 +28,6 @@ class BusinessSettingsModel extends BusinessSettings {
           phone: phone,
           taxId: taxId,
           receiptFooterMessage: receiptFooterMessage,
-          printerType: printerType,
-          printerPaperWidth: printerPaperWidth,
-          printerComPort: printerComPort,
-          printerIpAddress: printerIpAddress,
-          printerIpPort: printerIpPort,
-          comPortScale: comPortScale,
           licenseStatus: licenseStatus,
           licensePlanType: licensePlanType,
           licensePlanMode: licensePlanMode,
@@ -46,6 +37,9 @@ class BusinessSettingsModel extends BusinessSettings {
           licenseNextPaymentAt: licenseNextPaymentAt,
           licenseManageUrl: licenseManageUrl,
           isLifetime: isLifetime,
+          globalWholesalePercentage: globalWholesalePercentage,
+          globalCardPercentage: globalCardPercentage,
+          customPriceTiers: customPriceTiers,
           businessType: businessType,
           features: features,
         );
@@ -94,12 +88,6 @@ class BusinessSettingsModel extends BusinessSettings {
       phone: json['phone'],
       taxId: json['tax_id'],
       receiptFooterMessage: json['receipt_footer_message'],
-      printerType: json['printer_type'] ?? 'none',
-      printerPaperWidth: json['printer_paper_width'] ?? '58',
-      printerComPort: json['printer_com_port'],
-      printerIpAddress: json['printer_ip_address'],
-      printerIpPort: json['printer_ip_port'],
-      comPortScale: json['com_port_scale'],
       licenseStatus: json['license_key'],      // The actual license key string
       licensePlanType: json['app_plan'],        // Written by LicenseSyncService as 'app_plan'
       licensePlanMode: json['license_plan_mode'] ?? 'saas',
@@ -109,9 +97,35 @@ class BusinessSettingsModel extends BusinessSettings {
       licenseNextPaymentAt: json['license_next_payment_at'] != null ? DateTime.tryParse(json['license_next_payment_at']) : null,
       licenseManageUrl: json['license_manage_url'],
       isLifetime: json['license_is_lifetime'] == '1',
+      globalWholesalePercentage: double.tryParse(json['wholesale_percentage']?.toString() ?? '-15.0') ?? -15.0,
+      globalCardPercentage: double.tryParse(json['card_percentage']?.toString() ?? '15.0') ?? 15.0,
+      customPriceTiers: _parseCustomTiers(json['custom_price_tiers']),
       businessType: json['license_business_type'] ?? 'retail',
       features: featureFlags,
     );
+  }
+
+  /// Parsea el campo custom_price_tiers de forma segura (acepta JSON string o lista directa)
+  static List<Map<String, dynamic>> _parseCustomTiers(dynamic raw) {
+    if (raw == null) return const [];
+    try {
+      List<dynamic> list;
+      if (raw is String && raw.isNotEmpty) {
+        final decoded = jsonDecode(raw);
+        if (decoded is! List) return const [];
+        list = decoded;
+      } else if (raw is List) {
+        list = raw;
+      } else {
+        return const [];
+      }
+      return list
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+    } catch (e) {
+      return const [];
+    }
   }
 
 

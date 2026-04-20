@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
+import 'package:frontend_desktop/core/config/app_config.dart';
 
 /// Servicio global de notificaciones visuales tipo Toast (Overlay).
 ///
@@ -55,7 +56,14 @@ class SnackBarService {
     required IconData icon,
     required Duration duration,
   }) {
-    final overlay = Overlay.of(context);
+    // Intentamos obtener el overlay del contexto, si no, usamos el del navegador global.
+    final overlay = Overlay.maybeOf(context) ?? AppConfig.navigatorKey.currentState?.overlay;
+    
+    if (overlay == null) {
+      debugPrint('SnackBarService: No se encontró Overlay. El mensaje no se mostrará: $message');
+      return;
+    }
+
     late OverlayEntry overlayEntry;
 
     overlayEntry = OverlayEntry(

@@ -18,7 +18,10 @@ abstract class PosRepository {
     int? userId,
     int? customerId,
     int? quoteId,
-    String status,
+    String status = 'completed',
+    double shippingCost = 0.0,
+    bool requiresDispatch = false,
+    String fulfillmentStatus = 'pending',
   });
   Future<List<Map<String, dynamic>>> fetchPendingSales();
   Future<Map<String, dynamic>> payPendingSale({
@@ -29,8 +32,12 @@ abstract class PosRepository {
     required double changeAmount,
     int? userId,
     List<CartItem>? items,
+    double shippingCost = 0.0,
   });
   Future<Map<String, dynamic>> voidPendingSale(int saleId);
   Future<void> updatePaymentMethodSurcharge(int id, double surchargeValue);
   Future<Uint8List> downloadTicketPdf(int saleId);
+  /// Crea automáticamente un Remito de Logística a partir de una venta ya procesada.
+  /// Se llama como side-effect silencioso cuando el cajero activa "Enviar a Logística".
+  Future<Map<String, dynamic>> createDeliveryNoteFromSale(int saleId, {String fulfillmentStatus = 'pending'});
 }

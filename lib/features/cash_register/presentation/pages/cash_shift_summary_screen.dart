@@ -2,6 +2,7 @@ import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'package:flutter/material.dart';
 import '../../domain/entities/cash_register_shift.dart';
 import 'package:provider/provider.dart';
+import 'package:frontend_desktop/core/providers/local_terminal_provider.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
 import '../../../settings/presentation/providers/settings_provider.dart';
 import '../providers/cash_register_provider.dart';
@@ -23,7 +24,12 @@ class CashShiftSummaryScreen extends StatelessWidget {
     final printer = context.read<CashRegisterProvider>().printerService;
     
     if (settings != null && printer != null) {
-      await printer.printZCloseTicket(shift: closedShift, settings: settings).catchError((e) {
+      final localTerminal = context.read<LocalTerminalProvider>();
+      await printer.printZCloseTicket(
+        shift: closedShift,
+        settings: settings,
+        localTerminal: localTerminal,
+      ).catchError((e) {
         debugPrint('Error printing summary: $e');
       });
     }

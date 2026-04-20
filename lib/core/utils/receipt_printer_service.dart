@@ -1,17 +1,19 @@
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
+import 'package:frontend_desktop/core/providers/local_terminal_provider.dart';
 import 'package:flutter_pos_printer_platform_image_3/flutter_pos_printer_platform_image_3.dart';
 import '../../../features/cash_register/domain/entities/cash_register_shift.dart';
 import '../../../features/pos/domain/entities/cart_item.dart';
 import '../../../features/settings/domain/entities/business_settings.dart';
+import '../../../features/quotes/data/quote_repository.dart';
 
 /// Tipo de conexión con la impresora térmica
 enum PrinterConnectionType {
   tcp, // Red (IP + Puerto) — la mayoría de impresoras WiFi y LAN
   usb, // Puerto COM/USB vía libserialport (Windows/Linux)
+  none,
 }
 
 /// Configuración de la impresora
@@ -95,15 +97,15 @@ class ReceiptPrinterService {
     }
   }
 
-  /// Permite reconfigurar el hardware en caliente (desde SettingsScreen)
-  Future<void> reconfigureFromSettings(BusinessSettings settings) async {
-    debugPrint('=== PrinterService: reconfigureFromSettings() ===');
-    debugPrint('  printerType: ${settings.printerType}');
-    debugPrint('  comPort: ${settings.printerComPort}');
-    debugPrint('  tcpHost: ${settings.printerIpAddress}');
+  /// Permite reconfigurar el hardware en caliente
+  Future<void> reconfigure(LocalTerminalProvider localTerminal) async {
+    debugPrint('=== PrinterService: reconfigure() ===');
+    debugPrint('  printerConnection: ${localTerminal.printerConnection}');
+    debugPrint('  printerNameOrIp: ${localTerminal.printerNameOrIp}');
+    debugPrint('  printerFormat: ${localTerminal.printerFormat}');
 
     PrinterConnectionType type;
-    switch (settings.printerType.toLowerCase()) {
+    switch (localTerminal.printerConnection.toLowerCase()) {
       case 'network':
         type = PrinterConnectionType.tcp;
         break;
@@ -111,24 +113,122 @@ class ReceiptPrinterService {
         type = PrinterConnectionType.usb;
         break;
       default:
-        type = PrinterConnectionType.usb;
+        type = PrinterConnectionType.none;
     }
 
-    final paperSize = (settings.printerPaperWidth == '80') ? PaperSize.mm80 : PaperSize.mm58;
+    // El formato 'a4_split' o 'a4_standard' no usa este servicio, pero por defecto
+    // dejamos el parser en 58mm si no es térmica.
+    final paperSize = (localTerminal.printerFormat == 'thermal_80') ? PaperSize.mm80 : PaperSize.mm58;
 
     config = PrinterConfig(
       connectionType: type,
-      tcpHost: settings.printerIpAddress,
-      tcpPort: int.tryParse(settings.printerIpPort ?? '9100') ?? 9100,
-      comPort: settings.printerComPort,
+      tcpHost: localTerminal.printerNameOrIp,
+      tcpPort: 9100, // Hardcoded standard ESC/POS port
+      comPort: localTerminal.printerNameOrIp, // En USB, el nombre de la impresora o COM
       paperSize: paperSize,
     );
-    debugPrint('  -> Config aplicada: type=$type, comPort=${config.comPort}, paper=${config.paperSize}');
+  }
+
+  Future<void> openCashDrawer(LocalTerminalProvider localTerminal) async {
+    if (localTerminal.printerConnection.toLowerCase() == 'none') return;
+    if (config.connectionType == PrinterConnectionType.usb && (config.comPort == null || config.comPort!.trim().isEmpty)) return;
+
+    final profile = await _getProfile();
+    final generator = Generator(config.paperSize, profile);
+    List<int> bytes = [];
+
+    bytes += generator.drawer();
+    await _send(Uint8List.fromList(bytes));
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
   // API PÚBLICA
   // ─────────────────────────────────────────────────────────────────────────────
+
+  /// Imprime el ticket de un presupuesto (NO VÁLIDO COMO FACTURA).
+  Future<void> printQuoteTicket({
+    required Quote quote,
+    required BusinessSettings settings, // Solo para header/footer
+    required LocalTerminalProvider localTerminal,
+    required String vendorName,
+  }) async {
+    if (localTerminal.printerConnection.toLowerCase() == 'none') return;
+    if (config.connectionType == PrinterConnectionType.usb && (config.comPort == null || config.comPort!.trim().isEmpty)) return;
+
+    final profile = await _getProfile();
+    final generator = Generator(config.paperSize, profile);
+    List<int> bytes = [];
+
+    bytes += generator.reset();
+    bytes += generator.text(
+      _cleanText(settings.companyName?.toUpperCase() ?? 'MI NEGOCIO'),
+      styles: const PosStyles(bold: true, align: PosAlign.center, height: PosTextSize.size2, width: PosTextSize.size2),
+    );
+    bytes += generator.feed(1);
+
+    bytes += generator.text('*** NO VALIDO COMO FACTURA ***', styles: const PosStyles(align: PosAlign.center, bold: true));
+    bytes += generator.hr(ch: '=');
+
+    bytes += generator.text('PRESUPUESTO', styles: const PosStyles(align: PosAlign.center, bold: true, height: PosTextSize.size2));
+    bytes += generator.text(quote.quoteNumber, styles: const PosStyles(align: PosAlign.center));
+    bytes += generator.hr(ch: '-');
+
+    bytes += generator.text('FECHA: ${_formatDate(DateTime.parse(quote.createdAt ?? DateTime.now().toIso8601String()))}', styles: const PosStyles(bold: true));
+    if (quote.validUntil != null) {
+      final v = DateTime.parse(quote.validUntil!);
+      bytes += generator.text('VALIDO HASTA: ${v.day.toString().padLeft(2, '0')}/${v.month.toString().padLeft(2, '0')}/${v.year}');
+    }
+    bytes += generator.text('VENDEDOR: ${_cleanText(vendorName).toUpperCase()}');
+    
+    if (quote.customerName != null && quote.customerName!.isNotEmpty) {
+      bytes += generator.text('CLIENTE: ${_cleanText(quote.customerName!).toUpperCase()}');
+    }
+    if (quote.priceList != 'base') {
+      bytes += generator.text('COND. VENTA: ${_cleanText(quote.priceListLabel).toUpperCase()}', styles: const PosStyles(bold: true));
+    }
+    
+    bytes += generator.hr(ch: '-');
+
+    // Ítems
+    for (final item in quote.items) {
+      final isWeight = item.quantity % 1 != 0;
+      final cantStr = isWeight ? '${item.quantity.toStringAsFixed(3)} kg' : '${item.quantity.toInt()} un';
+
+      final productName = _cleanText(item.productName.toUpperCase());
+      bytes += generator.row([
+        PosColumn(text: '$cantStr x \$${_formatPrice(item.unitPrice)}', width: 8, styles: const PosStyles(align: PosAlign.left)),
+        PosColumn(text: '\$${_formatPrice(item.subtotal)}', width: 4, styles: const PosStyles(align: PosAlign.right, bold: true)),
+      ]);
+      bytes += generator.text(productName, styles: const PosStyles(bold: true));
+    }
+    
+    bytes += generator.hr(ch: '=');
+    
+    bytes += _labelValue(generator, 'SUBTOTAL:', '\$${_formatPrice(quote.subtotal)}');
+    bytes += generator.hr(ch: '-');
+    bytes += _labelValue(generator, 'TOTAL PRESUPUESTO:', '\$${_formatPrice(quote.total)}');
+    
+    bytes += generator.feed(1);
+    bytes += generator.text('*** NO VALIDO COMO FACTURA ***', styles: const PosStyles(align: PosAlign.center, bold: true));
+    bytes += generator.feed(1);
+    
+    // Nro presup en barcode Code 39
+    final cleanStringForBarcode = quote.quoteNumber.replaceAll(RegExp(r'[^A-Z0-9\-\.\ \$\/\+\%]'), '');
+    if (cleanStringForBarcode.isNotEmpty) {
+      try {
+        bytes += generator.barcode(Barcode.code39(cleanStringForBarcode.split('')), width: 2, height: 60, textPos: BarcodeText.none);
+        bytes += generator.text(cleanStringForBarcode, styles: const PosStyles(align: PosAlign.center));
+      } catch (e) {
+        debugPrint("Error generando barcode para Quote: $e");
+      }
+    }
+    
+    bytes += generator.feed(4);
+    bytes += generator.cut();
+
+    await _send(Uint8List.fromList(bytes));
+  }
+
 
   /// Imprime el ticket de una venta.
   ///
@@ -137,7 +237,8 @@ class ReceiptPrinterService {
   Future<void> printSaleTicket({
     required List<CartItem> items,
     required double total,
-    required BusinessSettings settings,
+    required BusinessSettings settings, // Solo para nombre empresa, etc.
+    required LocalTerminalProvider localTerminal,
     String paymentMethod = 'EFECTIVO',
     List<Map<String, dynamic>> paymentDetails = const [], // [{name, amount}]
     String? receiptNumber,
@@ -146,10 +247,12 @@ class ReceiptPrinterService {
     double surchargeAmount = 0.0,
     double tenderedAmount = 0.0,
     double changeAmount = 0.0,
+    double shippingCost = 0.0,
+    String? paperSizeOverride,
   }) async {
     // Guardia: si la impresora está desactivada, no hacer nada
-    if (settings.printerType.toLowerCase() == 'none') {
-      debugPrint('=== PrinterService: printerType=none, saltando impresión ===');
+    if (localTerminal.printerConnection.toLowerCase() == 'none') {
+      debugPrint('=== PrinterService: connection=none, saltando impresión ===');
       return;
     }
     // Guardia: si el comPort está vacío en modo USB, no hacer nada
@@ -164,7 +267,18 @@ class ReceiptPrinterService {
     debugPrint('  receiptNumber: $receiptNumber  items: ${items.length}');
 
     final profile = await _getProfile();
-    final generator = Generator(config.paperSize, profile);
+    
+    // Calcular el tamaño de papel final
+    PaperSize targetPaperSize = config.paperSize;
+    if (paperSizeOverride != null) {
+      if (paperSizeOverride == '80' || paperSizeOverride == '80mm') {
+        targetPaperSize = PaperSize.mm80;
+      } else if (paperSizeOverride == '58' || paperSizeOverride == '58mm') {
+        targetPaperSize = PaperSize.mm58;
+      }
+    }
+
+    final generator = Generator(targetPaperSize, profile);
     List<int> bytes = [];
 
 
@@ -279,15 +393,20 @@ class ReceiptPrinterService {
 
     // ── Resumen de Pago (Anti-Redundancia) ──────────────────────────
     final hasSurcharge = surchargeAmount > 0.01;
+    final hasShipping = shippingCost > 0.01;
     final grandTotal = total + surchargeAmount;
     final hasChange = changeAmount > 0.01;
     final hasTendered = tenderedAmount > 0.01;
 
-    final bool isComplexPayment = paymentDetails.length > 1 || hasSurcharge;
+    final bool isComplexPayment = paymentDetails.length > 1 || hasSurcharge || hasShipping;
 
     if (isComplexPayment) {
-      // Caso 3: Venta Compleja (Múltiples métodos o Recargos)
-      bytes += _labelValue(generator, 'SUBTOTAL:', '\$${_formatPrice(total)}');
+      // Caso 3: Venta Compleja (Múltiples métodos, Envío o Recargos)
+      bytes += _labelValue(generator, 'SUBTOTAL:', '\$${_formatPrice(total - shippingCost)}');
+      
+      if (hasShipping) {
+        bytes += _labelValue(generator, 'FLETE / ENVIO:', '\$${_formatPrice(shippingCost)}');
+      }
 
       if (paymentDetails.isNotEmpty) {
         bytes += generator.hr(ch: '-');
@@ -401,99 +520,305 @@ class ReceiptPrinterService {
     await _send(Uint8List.fromList(bytes));
   }
 
-  /// Imprime el ticket de entrega / Remito para acopio logístico
-  Future<void> printDeliveryNoteTicket({
-    required Map<String, dynamic> note,
-    required List<Map<String, dynamic>> deliveredItemsData,
+  /// Imprime el SPLIT TICKET completo en el rollo térmico:
+  /// Parte 1 → Comprobante de Venta (con flete)
+  /// [corte parcial]
+  /// Parte 2 → Orden de Retiro (lista de ítems sin precios + firmas)
+  ///
+  /// Equivalente térmico del "A4 Split" para usarse cuando
+  /// el formato de impresora es 58mm o 80mm y se envía a logística.
+  Future<void> printSplitTicket({
+    required List<CartItem> items,
+    required double total,
+    required double shippingCost,
     required BusinessSettings settings,
+    required LocalTerminalProvider localTerminal,
+    required Map<String, dynamic> deliveryNote,
+    List<Map<String, dynamic>> paymentDetails = const [],
+    String? receiptNumber,
+    String? deliveryNoteNumber,
+    String? userName,
+    String? cashierName,
+    double surchargeAmount = 0.0,
+    double tenderedAmount = 0.0,
+    double changeAmount = 0.0,
     String? customerName,
+    String? paperSizeOverride,
   }) async {
-    if (settings.printerType.toLowerCase() == 'none') return;
-    if (config.connectionType == PrinterConnectionType.usb && (config.comPort == null || config.comPort!.trim().isEmpty)) return;
+    if (localTerminal.printerConnection.toLowerCase() == 'none') return;
+    if (config.connectionType == PrinterConnectionType.usb &&
+        (config.comPort == null || config.comPort!.trim().isEmpty)) return;
 
     final profile = await _getProfile();
-    final generator = Generator(config.paperSize, profile);
+    PaperSize targetPaperSize = config.paperSize;
+    if (paperSizeOverride != null) {
+      if (paperSizeOverride == '80' || paperSizeOverride == '80mm') targetPaperSize = PaperSize.mm80;
+      if (paperSizeOverride == '58' || paperSizeOverride == '58mm') targetPaperSize = PaperSize.mm58;
+    }
+    final generator = Generator(targetPaperSize, profile);
     List<int> bytes = [];
 
+    // ═══════════════════════════════════════════════════════
+    // PARTE 1: COMPROBANTE DE VENTA
+    // ═══════════════════════════════════════════════════════
     bytes += generator.reset();
     bytes += generator.text(
       _cleanText(settings.companyName?.toUpperCase() ?? 'MI NEGOCIO'),
       styles: const PosStyles(bold: true, align: PosAlign.center, height: PosTextSize.size2, width: PosTextSize.size2),
     );
     bytes += generator.feed(1);
+    if (settings.address != null && settings.address!.isNotEmpty) {
+      bytes += generator.text(_cleanText(settings.address!), styles: const PosStyles(align: PosAlign.center));
+    }
+    if (settings.taxId != null && settings.taxId!.isNotEmpty) {
+      bytes += generator.text('CUIT: ${settings.taxId}', styles: const PosStyles(align: PosAlign.center, bold: true));
+    }
+    bytes += generator.hr(ch: '=');
+    bytes += generator.text('COMPROBANTE DE VENTA', styles: const PosStyles(align: PosAlign.center, bold: true));
+    bytes += generator.hr(ch: '-');
+
+    final now = DateTime.now();
+    bytes += generator.text('FECHA: ${_formatDate(now)}', styles: const PosStyles(bold: true));
+    if (receiptNumber != null) {
+      bytes += generator.text('TICKET N°: ${receiptNumber.padLeft(6, '0')}', styles: const PosStyles(bold: true, align: PosAlign.right));
+    }
+    if (userName != null) {
+      bytes += generator.text('CAJERO: ${_cleanText(userName).toUpperCase()}');
+    }
+    if (customerName != null && customerName.isNotEmpty && customerName != 'Consumidor Final') {
+      bytes += generator.text('CLIENTE: ${_cleanText(customerName).toUpperCase()}', styles: const PosStyles(bold: true));
+    }
+    bytes += generator.hr(ch: '-');
+
+    int totalItemsQty = 0;
+    for (final item in items) {
+      final isWeight = item.product.isSoldByWeight;
+      final cantStr = isWeight ? '${item.quantity.toQty()} kg' : '${item.quantity.toInt()} un';
+      if (!isWeight) totalItemsQty += item.quantity.toInt();
+
+      bytes += generator.row([
+        PosColumn(text: '$cantStr x \$${_formatPrice(item.product.sellingPrice)}', width: 8),
+        PosColumn(text: '\$${_formatPrice(item.subtotal)}', width: 4, styles: const PosStyles(align: PosAlign.right, bold: true)),
+      ]);
+      bytes += generator.text(_cleanText(item.product.name.toUpperCase()), styles: const PosStyles(bold: true));
+    }
+    bytes += generator.hr(ch: '=');
+
+    final hasSurcharge = surchargeAmount > 0.01;
+    final hasShipping = shippingCost > 0.01;
+    final grandTotal = total + surchargeAmount;
+
+    if (paymentDetails.length > 1 || hasSurcharge || hasShipping) {
+      bytes += _labelValue(generator, 'SUBTOTAL:', '\$${_formatPrice(total - shippingCost)}');
+      if (hasShipping) bytes += _labelValue(generator, 'FLETE / ENVIO:', '\$${_formatPrice(shippingCost)}');
+      if (paymentDetails.isNotEmpty) {
+        bytes += generator.hr(ch: '-');
+        for (final pd in paymentDetails) {
+          bytes += _labelValue(generator, _cleanText((pd['name'] as String? ?? 'PAGO').toUpperCase()), '\$${_formatPrice((pd['amount'] as num?)?.toDouble() ?? 0.0)}');
+        }
+      }
+      if (hasSurcharge) bytes += _labelValue(generator, 'RECARGO:', '\$${_formatPrice(surchargeAmount)}');
+      bytes += generator.hr(ch: '-');
+      bytes += _labelValue(generator, 'TOTAL COBRADO:', '\$${_formatPrice(grandTotal)}');
+    } else {
+      bytes += _labelValue(generator, 'TOTAL GENERAL:', '\$${_formatPrice(grandTotal)}');
+      bytes += generator.hr(ch: '-');
+      if (paymentDetails.isNotEmpty) {
+        bytes += _labelValue(generator, 'PAGO EN:', _cleanText((paymentDetails.first['name'] as String? ?? 'PAGO').toUpperCase()));
+      }
+    }
+    if (tenderedAmount > 0.01) bytes += _labelValue(generator, 'EFECTIVO RECIBIDO:', '\$${_formatPrice(tenderedAmount)}');
+    if (changeAmount > 0.01) bytes += _labelValue(generator, 'SU VUELTO:', '\$${_formatPrice(changeAmount)}');
+
+    bytes += generator.feed(1);
+    bytes += generator.text('UNIDADES VENDIDAS: $totalItemsQty', styles: const PosStyles(bold: true));
+    bytes += generator.hr(ch: '-');
+    bytes += generator.text('*** NO VALIDO COMO FACTURA ***', styles: const PosStyles(align: PosAlign.center, bold: true));
+    bytes += generator.feed(3);
+    // Corte parcial entre los dos comprobantes
+    bytes += generator.cut(mode: PosCutMode.partial);
+
+    // ═══════════════════════════════════════════════════════
+    // PARTE 2: ORDEN DE RETIRO / REMITO
+    // ═══════════════════════════════════════════════════════
+    bytes += generator.text(
+      _cleanText(settings.companyName?.toUpperCase() ?? 'MI NEGOCIO'),
+      styles: const PosStyles(bold: true, align: PosAlign.center, height: PosTextSize.size2, width: PosTextSize.size2),
+    );
+    bytes += generator.feed(1);
+    bytes += generator.hr(ch: '=');
+    bytes += generator.text('ORDEN DE RETIRO / REMITO', styles: const PosStyles(align: PosAlign.center, bold: true));
+    bytes += generator.hr(ch: '-');
+
+    if (deliveryNoteNumber != null) {
+      bytes += generator.text('REMITO N°: ${deliveryNoteNumber.padLeft(6, '0')}', styles: const PosStyles(bold: true));
+    }
+    if (receiptNumber != null) {
+      bytes += generator.text('VENTA ASOC: ${receiptNumber.padLeft(6, '0')}');
+    }
+    bytes += generator.text('FECHA: ${_formatDate(now)}');
+    if (customerName != null && customerName.isNotEmpty) {
+      bytes += generator.text('CLIENTE: ${_cleanText(customerName).toUpperCase()}', styles: const PosStyles(bold: true));
+    }
+    if (userName != null) {
+      bytes += generator.text('VENDIO: ${_cleanText(userName).toUpperCase()}');
+    }
+    bytes += generator.hr(ch: '-');
+    bytes += generator.text('ARTICULOS A RETIRAR:', styles: const PosStyles(bold: true));
+    bytes += generator.hr(ch: '-');
+
+    for (final item in items) {
+      final isWeight = item.product.isSoldByWeight;
+      final qtyStr = isWeight ? '${item.quantity.toQty()} kg' : '${item.quantity.toInt()} un';
+      bytes += generator.row([
+        PosColumn(text: _cleanText(item.product.name.toUpperCase()), width: 10, styles: const PosStyles(bold: true)),
+        PosColumn(text: qtyStr, width: 2, styles: const PosStyles(align: PosAlign.right)),
+      ]);
+    }
 
     bytes += generator.hr(ch: '=');
+    bytes += generator.feed(1);
+    bytes += generator.text('FIRMA DESPACHANTE:', styles: const PosStyles(align: PosAlign.left));
+    bytes += generator.feed(3);
+    bytes += generator.text('____________________________', styles: const PosStyles(align: PosAlign.center));
+    bytes += generator.feed(2);
+    bytes += generator.text('FIRMA CLIENTE / RETIRA:', styles: const PosStyles(align: PosAlign.left));
+    bytes += generator.feed(3);
+    bytes += generator.text('____________________________', styles: const PosStyles(align: PosAlign.center));
+    bytes += generator.feed(3);
+    bytes += generator.cut();
+
+    bytes += _drawerKickBytes(generator);
+
+    await _send(Uint8List.fromList(bytes));
+  }
+
+
+  Future<void> printDeliveryNoteTicket({
+    required Map<String, dynamic> note,
+    required List<Map<String, dynamic>> deliveredItemsData,
+    required BusinessSettings settings,
+    required LocalTerminalProvider localTerminal,
+    String? customerName,
+    String? vendorName,
+    String? dispatcherName,
+  }) async {
+    if (localTerminal.printerConnection.toLowerCase() == 'none') return;
+    if (config.connectionType == PrinterConnectionType.usb && (config.comPort == null || config.comPort!.trim().isEmpty)) return;
+
+    final profile = await _getProfile();
+    final generator = Generator(config.paperSize, profile);
+    List<int> bytes = [];
+
+    final now = DateTime.now().toLocal();
     final double totalDeliveredNow = deliveredItemsData.fold(0.0, (sum, item) {
       final val = item['delivered_now'];
       return sum + (val is double ? val : (val as num?)?.toDouble() ?? 0.0);
     });
-    final String docTitle = totalDeliveredNow > 0 ? 'REMITO DE DESPACHO' : 'ORDEN DE RETIRO EN DEPÓSITO';
+    final String docTitle = totalDeliveredNow > 0 ? 'REMITO DE DESPACHO' : 'ORDEN DE RETIRO';
+    final String docCode = totalDeliveredNow > 0 ? 'REM' : 'ORD';
+    final String remNum = note['id'].toString().padLeft(6, '0');
 
-    bytes += generator.text(
-      _cleanText(docTitle),
-      styles: const PosStyles(align: PosAlign.center, bold: true),
-    );
-    bytes += generator.hr(ch: '-');
-
-    final docCode = totalDeliveredNow > 0 ? 'REM' : 'ORD';
-    bytes += generator.text('$docCode N°: ${note['id'].toString().padLeft(6, '0')}', styles: const PosStyles(bold: true));
-    bytes += generator.text('FECHA: ${_formatDate(DateTime.now())}');
-    if (customerName != null) {
-      bytes += generator.text('CLIENTE: ${_cleanText(customerName)}');
-    }
-    bytes += generator.hr(ch: '-');
-
-    for (final deliveredData in deliveredItemsData) {
-      final item = note['items'].firstWhere((i) => i['id'] == deliveredData['id'], orElse: () => null);
-      if (item == null) continue;
-
-      final productName = _cleanText((item['product']?['name'] ?? 'Producto Desconocido').toUpperCase());
-      final purchased = double.parse(item['quantity_purchased'].toString());
-      final deliveredBefore = double.parse(item['quantity_delivered'].toString());
-      final deliveredNow = deliveredData['delivered_now'] as double;
-      final remaining = purchased - (deliveredBefore + deliveredNow);
-
-      bytes += generator.text(productName, styles: const PosStyles(bold: true));
-      bytes += generator.text('Comprado: ${purchased.toStringAsFixed(1)} | Entregando hoy: ${deliveredNow.toStringAsFixed(1)}');
-      bytes += generator.text('SALDO PENDIENTE A RETIRAR: ${remaining.toStringAsFixed(1)}', styles: const PosStyles(bold: true));
-      bytes += generator.feed(1);
-    }
-
-    bytes += generator.hr(ch: '=');
-
-    // ── Código de barras (para que el operario escanee en el galpón) ──
-    final barcodeData = 'REM${note['id'].toString().padLeft(6, '0')}';
-    try {
-      bytes += generator.barcode(
-        Barcode.code39(barcodeData.split('')),
-        width: 2,
-        height: 70,
-        textPos: BarcodeText.none,
+    // ── Función local para construir el cuerpo del remito (reutilizable en ambas copias) ──
+    List<int> buildRemitoBody(Generator gen, {required String copyLabel}) {
+      List<int> b = [];
+      b += gen.reset();
+      b += gen.text(
+        _cleanText(settings.companyName?.toUpperCase() ?? 'MI NEGOCIO'),
+        styles: const PosStyles(bold: true, align: PosAlign.center, height: PosTextSize.size2, width: PosTextSize.size2),
       );
-      bytes += generator.text(
-        barcodeData,
-        styles: const PosStyles(align: PosAlign.center, bold: true),
-      );
-    } catch (e) {
-      debugPrint('Error imprimiendo barcode remito: $e');
+      b += gen.feed(1);
+      if (settings.address != null && settings.address!.isNotEmpty) {
+        b += gen.text(_cleanText(settings.address!), styles: const PosStyles(align: PosAlign.center));
+      }
+      if (settings.taxId != null && settings.taxId!.isNotEmpty) {
+        b += gen.text('CUIT: ${settings.taxId}', styles: const PosStyles(align: PosAlign.center, bold: true));
+      }
+      b += gen.hr(ch: '=');
+      b += gen.text(_cleanText(docTitle), styles: const PosStyles(align: PosAlign.center, bold: true));
+      b += gen.text('[ $copyLabel ]', styles: const PosStyles(align: PosAlign.center));
+      b += gen.hr(ch: '-');
+
+      b += gen.text('$docCode N°: $remNum', styles: const PosStyles(bold: true));
+      b += gen.text('FECHA: ${_formatDate(now)}');
+      if (customerName != null && customerName.isNotEmpty) {
+        b += gen.text('CLIENTE: ${_cleanText(customerName).toUpperCase()}', styles: const PosStyles(bold: true));
+      }
+      b += gen.hr(ch: '-');
+
+      if (vendorName != null) b += gen.text('VENDIO: ${_cleanText(vendorName).toUpperCase()}');
+      if (dispatcherName != null) b += gen.text('DESPACHO: ${_cleanText(dispatcherName).toUpperCase()}');
+      b += gen.hr(ch: '-');
+
+      for (final deliveredData in deliveredItemsData) {
+        final item = (note['items'] as List).firstWhere((i) => i['id'] == deliveredData['id'], orElse: () => null);
+        if (item == null) continue;
+
+        final productName = _cleanText((item['product']?['name'] ?? 'Producto').toUpperCase());
+        final purchased = double.parse(item['quantity_purchased'].toString());
+        final deliveredBefore = double.parse(item['quantity_delivered'].toString());
+        final deliveredNow = (deliveredData['delivered_now'] as num).toDouble();
+        final remaining = purchased - (deliveredBefore + deliveredNow);
+
+        b += gen.text(productName, styles: const PosStyles(bold: true));
+        b += gen.row([
+          PosColumn(text: 'Entregando: ${deliveredNow.toStringAsFixed(1)}', width: 6),
+          PosColumn(text: 'Saldo: ${remaining.toStringAsFixed(1)}', width: 6, styles: const PosStyles(align: PosAlign.right, bold: true)),
+        ]);
+        b += gen.feed(1);
+      }
+
+      b += gen.hr(ch: '=');
+
+      // Código de barras para escanear en el galpón
+      final barcodeData = '$docCode$remNum';
+      try {
+        b += gen.barcode(
+          Barcode.code39(barcodeData.split('')),
+          width: 2, height: 70, textPos: BarcodeText.none,
+        );
+        b += gen.text(barcodeData, styles: const PosStyles(align: PosAlign.center, bold: true));
+      } catch (e) {
+        debugPrint('Error imprimiendo barcode remito: $e');
+      }
+
+      return b;
     }
 
-    bytes += generator.feed(1);
-    bytes += generator.text('FIRMA CONFORMIDAD:', styles: const PosStyles(align: PosAlign.center));
+    // ═══════════════════════════════════════════════
+    // COPIA 1: PARA EL CLIENTE (sin firma)
+    // ═══════════════════════════════════════════════
+    bytes += buildRemitoBody(generator, copyLabel: 'COPIA CLIENTE');
     bytes += generator.feed(3);
-    bytes += generator.text('_________________________', styles: const PosStyles(align: PosAlign.center));
-    
+    bytes += generator.cut(mode: PosCutMode.partial); // Corte parcial entre copias
+
+    // ═══════════════════════════════════════════════
+    // COPIA 2: PARA EL DESPACHANTE (con firma del cliente)
+    // ═══════════════════════════════════════════════
+    bytes += buildRemitoBody(generator, copyLabel: 'COPIA DESPACHANTE - ORIGINAL');
+    bytes += generator.feed(1);
+    bytes += generator.text('FIRMA CONFORMIDAD DEL CLIENTE:', styles: const PosStyles(align: PosAlign.left));
+    bytes += generator.feed(3);
+    bytes += generator.text('_________________________________', styles: const PosStyles(align: PosAlign.center));
+    bytes += generator.feed(1);
+    bytes += generator.text('Aclaración: _____________________', styles: const PosStyles(align: PosAlign.center));
+    bytes += generator.feed(1);
+    bytes += generator.text('DNI / CUIT: _____________________', styles: const PosStyles(align: PosAlign.center));
     bytes += generator.feed(3);
     bytes += generator.cut();
-    
+
     await _send(Uint8List.fromList(bytes));
   }
+
 
   /// Imprime el comprobante de Cierre Z (Auditoría del turno).
   Future<void> printZCloseTicket({
     required CashRegisterShift shift,
-    required BusinessSettings settings,
+    required BusinessSettings settings, // Info visual
+    required LocalTerminalProvider localTerminal,
   }) async {
+    if (localTerminal.printerConnection.toLowerCase() == 'none') return;
+    
     final profile = await _getProfile();
     final generator = Generator(config.paperSize, profile);
     List<int> bytes = [];
@@ -662,6 +987,9 @@ class ReceiptPrinterService {
         break;
       case PrinterConnectionType.usb:
         await _sendViaSerialPort(data);
+        break;
+      case PrinterConnectionType.none:
+        debugPrint('=== PrinterService: connectionType=none, skip send ===');
         break;
     }
   }

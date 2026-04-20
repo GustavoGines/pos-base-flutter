@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/settings_provider.dart';
 import '../../../../core/utils/snack_bar_service.dart';
-import '../../../../core/utils/receipt_printer_service.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
 import 'package:frontend_desktop/core/presentation/widgets/plan_upgrade_dialog.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -34,15 +33,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _taxIdCtrl = TextEditingController();
   final _footerCtrl = TextEditingController();
 
-  // Impresora
-  String _printerType = 'none'; // 'none', 'usb', 'network'
-  String _printerPaperWidth = '58'; // '58', '80'
-  final _comPortCtrl = TextEditingController();
-  final _ipAddressCtrl = TextEditingController();
-  final _ipPortCtrl = TextEditingController();
-
-  // Balanza
-  final _comPortScaleCtrl = TextEditingController();
+  // Listas de Precios Personalizadas
+  List<Map<String, dynamic>> _customTiers = [];
+  final _tierNameCtrl = TextEditingController();
+  final _tierModCtrl = TextEditingController();
 
   // Licencia
   final _licenseKeyCtrl = TextEditingController();
@@ -65,13 +59,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _taxIdCtrl.text = settings.taxId ?? '';
         _footerCtrl.text = settings.receiptFooterMessage ?? '';
         
-        _printerType = settings.printerType;
-        _printerPaperWidth = settings.printerPaperWidth;
-        _comPortCtrl.text = settings.printerComPort ?? '';
-        _ipAddressCtrl.text = settings.printerIpAddress ?? '';
-        _ipPortCtrl.text = settings.printerIpPort ?? '';
+        _customTiers = List<Map<String, dynamic>>.from(settings.customPriceTiers.map((e) => Map<String, dynamic>.from(e)));
         
-        _comPortScaleCtrl.text = settings.comPortScale ?? '';
         if (mounted) setState(() {}); 
       }
     });
@@ -84,11 +73,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _phoneCtrl.dispose();
     _taxIdCtrl.dispose();
     _footerCtrl.dispose();
-    _comPortCtrl.dispose();
-    _ipAddressCtrl.dispose();
-    _ipPortCtrl.dispose();
-    _comPortScaleCtrl.dispose();
     _licenseKeyCtrl.dispose();
+    _tierNameCtrl.dispose();
+    _tierModCtrl.dispose();
     super.dispose();
   }
 
@@ -102,19 +89,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
       'phone': _phoneCtrl.text.trim(),
       'tax_id': _taxIdCtrl.text.trim(),
       'receipt_footer_message': _footerCtrl.text.trim(),
-      'printer_type': _printerType,
-      'printer_paper_width': _printerPaperWidth,
-      'printer_com_port': _comPortCtrl.text.trim(),
-      'printer_ip_address': _ipAddressCtrl.text.trim(),
-      'printer_ip_port': _ipPortCtrl.text.trim(),
-      'com_port_scale': _comPortScaleCtrl.text.trim(),
+      'custom_price_tiers': _customTiers,
     };
 
     final success = await provider.saveSettings(data);
     if (!mounted) return;
 
     if (success) {
-      await ReceiptPrinterService.instance.reconfigureFromSettings(provider.settings!);
+      // Hardware config ya no se reconfigura desde settings globales.
+      // Cada terminal usa su LocalTerminalProvider local (SharedPreferences).
       SnackBarService.success(context, 'Configuración guardada correctamente');
     } else {
       SnackBarService.error(context, provider.errorMessage ?? 'Error al guardar');
@@ -123,14 +106,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   String _translateFeature(String featureCode) {
     const dictionary = {
-      'fast_pos': 'Caja Rápida',
-      'z_reports': 'Reportes Z',
-      'quotes': 'Presupuestos (PDF/WA)',
-      'current_accounts': 'Cuentas Corrientes',
-      'multiple_prices': 'Listas de Precios',
-      'multi_caja': 'Múltiples Cajas',
+      'fast_pos': '⚡ Caja Rápida',
+      'z_reports': '🧾 Reportes Z',
+      'quotes': '📝 Presupuestos (PDF/WA)',
+      'current_accounts': '💳 Cuentas Corrientes (Fiado)',
+      'multiple_prices': '🏷️ Listas de Precios (Mayorista/Tarjeta)',
+      'multi_caja': '💻 Múltiples Cajas / Terminales',
       'advanced_reports': '📊 Reportes Gerenciales (Balances, Excel, PDF)',
       'predictive_alerts': '🧠 Alertas Inteligentes (Logística Predictiva)',
+      'logistics': '🚚 Logística y Remitos',
     };
     return dictionary[featureCode] ?? featureCode.toUpperCase();
   }
@@ -346,7 +330,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget _buildActiveSection(SettingsProvider provider) {
     switch (_activeSection) {
       case SettingsSection.general:
-        return _buildGeneralSection();
+        return _buildGeneralSection(provider);
       case SettingsSection.hardware:
         return _buildHardwareSection();
       case SettingsSection.subscription:
@@ -356,7 +340,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  Widget _buildGeneralSection() {
+  Widget _buildGeneralSection(SettingsProvider provider) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -375,6 +359,95 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         const SizedBox(height: 24),
         _buildTextField('Mensaje Pie de Ticket', _footerCtrl, icon: Icons.message_outlined, maxLines: 3),
+        if (provider.settings?.features.multiplePrices == true) ...[
+          const SizedBox(height: 48),
+          _buildCustomTiersSection(),
+        ]
+      ],
+    );
+  }
+
+  Widget _buildCustomTiersSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionHeader('Listas de Precios Especiales', 'Creá modificadores dinámicos para clientes (Ej: "Gremio" con -10%).'),
+        const SizedBox(height: 24),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Expanded(
+              flex: 3,
+              child: _buildTextField('Nombre de la Lista', _tierNameCtrl, hint: 'Ej: Gremio', icon: Icons.label_outline),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              flex: 2,
+              child: _buildTextField('Modificador (%)', _tierModCtrl, hint: 'Ej: -10', icon: Icons.percent),
+            ),
+            const SizedBox(width: 16),
+            SizedBox(
+              height: 52,
+              child: FilledButton.icon(
+                onPressed: () {
+                  final name = _tierNameCtrl.text.trim();
+                  final modStr = _tierModCtrl.text.trim();
+                  final mod = double.tryParse(modStr);
+                  if (name.isNotEmpty && mod != null) {
+                    setState(() {
+                      _customTiers.add({'name': name, 'modifier': mod});
+                      _tierNameCtrl.clear();
+                      _tierModCtrl.clear();
+                    });
+                  } else {
+                    SnackBarService.warning(context, 'Ingresá un nombre y un porcentaje válido numérico.');
+                  }
+                },
+                icon: const Icon(Icons.add),
+                label: const Text('AÑADIR LISTA'),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        if (_customTiers.isEmpty)
+          const Text('No hay listas de precios activas.', style: TextStyle(color: Colors.grey, fontStyle: FontStyle.italic))
+        else
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: _customTiers.asMap().entries.map((entry) {
+              final idx = entry.key;
+              final tier = entry.value;
+              final name = tier['name'];
+              final mod = (tier['modifier'] as num).toDouble();
+              final sign = mod >= 0 ? '+' : '';
+              return Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.purple.shade50,
+                  border: Border.all(color: Colors.purple.shade200),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.sell_outlined, size: 16, color: Colors.purple),
+                    const SizedBox(width: 8),
+                    Text(
+                      '$name ($sign${mod.toStringAsFixed(0)}%)',
+                      style: TextStyle(fontWeight: FontWeight.bold, color: Colors.purple.shade900),
+                    ),
+                    const SizedBox(width: 8),
+                    InkWell(
+                      onTap: () => setState(() => _customTiers.removeAt(idx)),
+                      child: const Icon(Icons.cancel, size: 18, color: Colors.redAccent),
+                    )
+                  ],
+                ),
+              );
+            }).toList(),
+          ),
       ],
     );
   }
@@ -383,48 +456,118 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildSectionHeader('Hardware y Periféricos', 'Impresoras térmicas y balanzas de mostrador.'),
+        _buildSectionHeader(
+          'Hardware Migrado a Local',
+          'La configuración de impresoras y balanzas es ahora independiente por caja.',
+        ),
         const SizedBox(height: 32),
-        _buildSectionTitle('Impresora Térmica'),
-        const SizedBox(height: 16),
-        DropdownButtonFormField<String>(
-          value: _printerType,
-          decoration: _inputDecoration('Tipo de Conexión', Icons.cable_outlined),
-          items: const [
-            DropdownMenuItem(value: 'none', child: Text('Desactivada')),
-            DropdownMenuItem(value: 'usb', child: Text('USB / Puerto Serial (Windows)')),
-            DropdownMenuItem(value: 'network', child: Text('Red (TCP/IP)')),
-          ],
-          onChanged: (val) => setState(() => _printerType = val!),
-        ),
-        const SizedBox(height: 16),
-        DropdownButtonFormField<String>(
-          value: _printerPaperWidth,
-          decoration: _inputDecoration('Formato de Impresión', Icons.straighten_outlined),
-          items: const [
-            DropdownMenuItem(value: '58', child: Text('Rollos Chicos (58mm) / Económico')),
-            DropdownMenuItem(value: '80', child: Text('Rollos Estándar (80mm) / Premium')),
-            DropdownMenuItem(value: 'a4', child: Text('Impresora Estándar (A4) / Láser')),
-          ],
-          onChanged: (val) => setState(() => _printerPaperWidth = val!),
-        ),
-        if (_printerType != 'none') ...[
-          const SizedBox(height: 24),
-          if (_printerType == 'usb')
-            _buildTextField('Nombre de Impresora (Windows)', _comPortCtrl, hint: 'Ej: POS-58', icon: Icons.print_outlined)
-          else
-            Row(
-              children: [
-                Expanded(flex: 2, child: _buildTextField('Dirección IP', _ipAddressCtrl, hint: '192.168.1.100', icon: Icons.wifi)),
-                const SizedBox(width: 16),
-                Expanded(child: _buildTextField('Puerto', _ipPortCtrl, hint: '9100')),
-              ],
+        Container(
+          padding: const EdgeInsets.all(28),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Color(0xFF673AB7).withOpacity(0.08), Color(0xFF3F51B5).withOpacity(0.06)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
             ),
-        ],
-        const SizedBox(height: 48),
-        _buildSectionTitle('Balanza'),
-        const SizedBox(height: 16),
-        _buildTextField('Puerto COM Balanza', _comPortScaleCtrl, hint: 'Ej: COM4', icon: Icons.scale_outlined),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Color(0xFF673AB7).withOpacity(0.2)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Color(0xFF673AB7).withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(Icons.computer_outlined, color: Color(0xFF673AB7), size: 28),
+                  ),
+                  const SizedBox(width: 16),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Arquitectura Multi-Caja Activa',
+                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF311B92)),
+                        ),
+                        SizedBox(height: 4),
+                        Text(
+                          'Cada terminal configura su propio hardware de forma independiente.',
+                          style: TextStyle(fontSize: 13, color: Color(0xFF4527A0)),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
+              const Divider(color: Color(0xFFD1C4E9)),
+              const SizedBox(height: 16),
+              _buildMigrationInfoRow(
+                Icons.print_outlined,
+                'Impresora Térmica',
+                'Configurá la conexión (USB/Red) desde el ícono ⚙️ en la pantalla del POS.',
+              ),
+              const SizedBox(height: 12),
+              _buildMigrationInfoRow(
+                Icons.scale_outlined,
+                'Balanza (Puerto COM)',
+                'El puerto COM de la balanza se asigna desde el mismo modal de ajustes del POS.',
+              ),
+              const SizedBox(height: 12),
+              _buildMigrationInfoRow(
+                Icons.straighten_outlined,
+                'Formato de Papel',
+                'Seleccioná entre 58mm, 80mm o A4 individualmente para cada caja física.',
+              ),
+              const SizedBox(height: 24),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Color(0xFF673AB7).withOpacity(0.3)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline_rounded, color: Color(0xFF673AB7), size: 20),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Text(
+                        'Estos ajustes se guardan en esta PC únicamente (SharedPreferences) y no se sincronizan con la nube.',
+                        style: TextStyle(fontSize: 12, color: Color(0xFF4527A0)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMigrationInfoRow(IconData icon, String title, String subtitle) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 20, color: const Color(0xFF7E57C2)),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF311B92))),
+              const SizedBox(height: 2),
+              Text(subtitle, style: const TextStyle(fontSize: 12, color: Color(0xFF5E35B1))),
+            ],
+          ),
+        ),
       ],
     );
   }
@@ -432,85 +575,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget _buildSubscriptionSection(SettingsProvider provider) {
     final settings = provider.settings;
     final isLifetime = settings?.isLifetime ?? false;
-    final plan = provider.currentPlan.toUpperCase();
     final expiresAt = settings?.licenseExpiresAt;
     final manageUrl = settings?.licenseManageUrl;
-
-    // --- COLORES POR PLAN ---
-    List<Color> gradientColors;
-    switch (provider.currentPlan.toLowerCase()) {
-      case 'premium':
-        gradientColors = [const Color(0xFF673AB7), const Color(0xFF512DA8)]; // Púrpura Premium / Dorado
-        break;
-      default:
-        gradientColors = [const Color(0xFF455A64), const Color(0xFF263238)]; // Slate / Gray (Basic)
-    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildSectionHeader('Suscripción y Licencia', 'Gestioná tu acceso pro, addons y facturación.'),
+        _buildSectionHeader('Suscripción y Licencia', 'Gestioná tu acceso Premium, Módulos y facturación.'),
         const SizedBox(height: 32),
         
         if (provider.isLicenseActive) ...[
-          // --- TARJETA PREMIUM ---
-          Container(
-            padding: const EdgeInsets.all(32),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: gradientColors,
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(24),
-              boxShadow: [
-                BoxShadow(color: gradientColors[0].withOpacity(0.3), blurRadius: 20, offset: const Offset(0, 10))
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(30)),
-                      child: Text('PLAN $plan', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
-                    ),
-                    const Icon(Icons.verified, color: Colors.white, size: 28),
-                  ],
-                ),
-                const SizedBox(height: 24),
-                Text(
-                  isLifetime ? 'Acceso Vitalicio (LifeTime)' : 'Suscripción Activa',
-                  style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  isLifetime 
-                    ? 'Disfrutás de todas las funciones PRO sin límites de tiempo.'
-                    : (expiresAt != null 
-                        ? 'Expira el: ${DateFormat('dd MMMM, yyyy').format(expiresAt)}' 
-                        : (settings?.lastLicenseCheck != null 
-                            ? 'Sincronizado el: ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.parse(settings!.lastLicenseCheck!))}'
-                            : 'Estado: Activo y Protegido')),
-                  style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 15),
-                ),
-                const SizedBox(height: 32),
-                if (!isLifetime && manageUrl != null)
-                  ElevatedButton(
-                    onPressed: () => launchUrl(Uri.parse(manageUrl)),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.white,
-                      foregroundColor: const Color(0xFF673AB7),
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                    child: const Text('GESTIONAR SUSCRIPCIÓN', style: TextStyle(fontWeight: FontWeight.bold)),
-                  ),
-              ],
-            ),
+          AnimatedSubscriptionCard(
+            isPremium: provider.currentPlan.toLowerCase() == 'premium' || provider.currentPlan.toLowerCase() == 'pro',
+            isLifetime: isLifetime,
+            expiresAt: expiresAt,
+            lastSync: settings?.lastLicenseCheck,
+            manageUrl: manageUrl,
           ),
           const SizedBox(height: 32),
           _buildSectionTitle('Módulos Adicionales'),
@@ -732,6 +812,164 @@ class _SettingsScreenState extends State<SettingsScreen> {
             }
           },
         ),
+      ),
+    );
+  }
+}
+
+class AnimatedSubscriptionCard extends StatefulWidget {
+  final bool isPremium;
+  final bool isLifetime;
+  final DateTime? expiresAt;
+  final String? lastSync;
+  final String? manageUrl;
+
+  const AnimatedSubscriptionCard({
+    super.key,
+    required this.isPremium,
+    required this.isLifetime,
+    this.expiresAt,
+    this.lastSync,
+    this.manageUrl,
+  });
+
+  @override
+  State<AnimatedSubscriptionCard> createState() => _AnimatedSubscriptionCardState();
+}
+
+class _AnimatedSubscriptionCardState extends State<AnimatedSubscriptionCard> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _glowAnimation;
+  bool _isHovered = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 3),
+    )..repeat(reverse: true);
+    
+    _glowAnimation = Tween<double>(begin: 0.7, end: 1.3).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final title = widget.isPremium ? 'PLAN PREMIUM' : 'PLAN BÁSICO';
+    
+    final gradientColors = widget.isPremium
+        ? [const Color(0xFF7C3AED), const Color(0xFF3B82F6), const Color(0xFF9333EA)] // Vibrant purple -> blue -> violet
+        : [const Color(0xFF1E293B), const Color(0xFF334155), const Color(0xFF0F172A)]; // Sleek dark slate
+        
+    final shadowColor = widget.isPremium ? const Color(0xFF7C3AED) : const Color(0xFF000000);
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      child: AnimatedScale(
+        scale: _isHovered ? 1.015 : 1.0,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOutCubic,
+        child: AnimatedBuilder(
+          animation: _glowAnimation,
+          builder: (context, child) {
+            return Container(
+          padding: const EdgeInsets.all(32),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: gradientColors,
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [
+              BoxShadow(
+                color: shadowColor.withValues(alpha: 0.3 * _glowAnimation.value),
+                blurRadius: 30 * _glowAnimation.value,
+                offset: const Offset(0, 15),
+              ),
+            ],
+            border: Border.all(color: Colors.white.withValues(alpha: 0.1), width: 1.5),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: widget.isPremium ? Colors.amber.shade400.withValues(alpha: 0.9) : Colors.white.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(30),
+                      boxShadow: widget.isPremium ? [BoxShadow(color: Colors.amber.withValues(alpha: 0.5), blurRadius: 10)] : [],
+                    ),
+                    child: Text(
+                      title,
+                      style: TextStyle(
+                        color: widget.isPremium ? Colors.black87 : Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                  ),
+                  Icon(
+                    widget.isPremium ? Icons.workspace_premium : Icons.verified_user,
+                    color: widget.isPremium ? Colors.amber.shade300 : Colors.blue.shade300,
+                    size: 36,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
+              Text(
+                widget.isLifetime ? 'Acceso Vitalicio (LifeTime)' : 'Suscripción Activa',
+                style: const TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.w900, letterSpacing: -0.5),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                widget.isLifetime
+                    ? 'Disfrutás de todas las funciones Premium sin límites de tiempo.'
+                    : (widget.expiresAt != null
+                        ? 'Expira el: ${DateFormat('dd MMMM, yyyy').format(widget.expiresAt!)}'
+                        : (widget.lastSync != null
+                            ? 'Sincronizado el: ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.parse(widget.lastSync!))}'
+                            : 'Estado: Activo y Protegido')),
+                style: TextStyle(color: Colors.white.withValues(alpha: 0.85), fontSize: 16),
+              ),
+              const SizedBox(height: 36),
+              if (!widget.isLifetime && widget.manageUrl != null)
+                MouseRegion(
+                  cursor: SystemMouseCursors.click,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    child: ElevatedButton.icon(
+                      onPressed: () => launchUrl(Uri.parse(widget.manageUrl!)),
+                      icon: Icon(Icons.manage_accounts, color: widget.isPremium ? const Color(0xFF7C3AED) : Colors.white, size: 20),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: widget.isPremium ? Colors.white : Colors.blue.shade600,
+                        foregroundColor: widget.isPremium ? const Color(0xFF7C3AED) : Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 16),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        elevation: 8,
+                      ),
+                      label: const Text('GESTIONAR SUSCRIPCIÓN', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+    ),
       ),
     );
   }

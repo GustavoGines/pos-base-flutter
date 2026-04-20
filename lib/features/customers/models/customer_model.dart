@@ -44,6 +44,7 @@ class Customer {
   final double creditLimit;
   final double balance;
   final bool isActive;
+  final String? defaultPriceTier; // 'base', 'wholesale', 'card'
   final List<CustomerTransaction> transactions;
 
   Customer({
@@ -54,6 +55,7 @@ class Customer {
     required this.creditLimit,
     required this.balance,
     required this.isActive,
+    this.defaultPriceTier,
     this.transactions = const [],
   });
 
@@ -66,6 +68,7 @@ class Customer {
       creditLimit: double.tryParse(json['credit_limit']?.toString() ?? '0') ?? 0.0,
       balance: double.tryParse(json['balance']?.toString() ?? '0') ?? 0.0,
       isActive: json['is_active'] == 1 || json['is_active'] == true,
+      defaultPriceTier: json['default_price_tier'],
       transactions: json['transactions'] != null 
           ? (json['transactions'] as List).map((t) => CustomerTransaction.fromJson(t)).toList()
           : [],

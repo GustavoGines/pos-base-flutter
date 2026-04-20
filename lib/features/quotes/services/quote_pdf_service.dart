@@ -23,12 +23,14 @@ class QuotePdfService {
     required String businessName,
     String? businessAddress,
     String? businessPhone,
+    String? vendorName,
   }) async {
     final pdfBytes = await _buildPdf(
       quote: quote,
       businessName: businessName,
       businessAddress: businessAddress,
       businessPhone: businessPhone,
+      vendorName: vendorName,
     );
 
     // ── Guardar archivo ──────────────────────────────────────────────────
@@ -51,13 +53,13 @@ class QuotePdfService {
     return file.path;
   }
 
-  /// Muestra el PDF en una ventana flotante dentro de la app (Vista Previa real).
   static Future<void> preview({
     required BuildContext context,
     required Quote quote,
     required String businessName,
     String? businessAddress,
     String? businessPhone,
+    String? vendorName,
   }) async {
     showGeneralDialog(
       context: context,
@@ -107,6 +109,7 @@ class QuotePdfService {
                         businessName: businessName,
                         businessAddress: businessAddress,
                         businessPhone: businessPhone,
+                        vendorName: vendorName,
                       ),
                     ),
                   ),
@@ -146,11 +149,11 @@ class QuotePdfService {
     }
     final total = _currencyFmt.format(quote.total);
     final msg = Uri.encodeComponent(
-      '¡Hola! Te escribo de $businessName. '
-      'Te adjunto el presupuesto **${quote.quoteNumber}** por un total de $total. '
-      'Acabo de abrir la carpeta donde se guardó el PDF para que me lo puedas enviar por acá. '
-      '${quote.notes != null && quote.notes!.isNotEmpty ? "\n\nCondiciones: ${quote.notes}" : ""}'
-      '\n\n¡Quedamos a tu disposición!',
+      '¡Hola! Te enviamos el presupuesto *${quote.quoteNumber}* de $businessName.\n\n'
+      'Total: $total\n'
+      'Adjuntamos el documento PDF con el detalle de los artículos y condiciones.'
+      '${quote.notes != null && quote.notes!.isNotEmpty ? "\n\nNotas adicionales: ${quote.notes}" : ""}'
+      '\n\n¡Quedamos a tu entera disposición por cualquier consulta!',
     );
 
     // Si se conoce el teléfono del cliente, enviamos al contacto directo.
@@ -173,6 +176,7 @@ class QuotePdfService {
     required String businessName,
     String? businessAddress,
     String? businessPhone,
+    String? vendorName,
   }) async {
     final doc = pw.Document();
 
@@ -279,14 +283,31 @@ class QuotePdfService {
                       ),
                       pw.SizedBox(height: 6),
                       pw.Text(
-                        'Fecha: ${_dateFmt.format(DateTime.now())}',
+                          'Fecha: ${_dateFmt.format(DateTime.now())}',
                         style: const pw.TextStyle(color: PdfColors.grey300, fontSize: 10),
                       ),
                       if (quote.validUntil != null)
                         pw.Text(
-                          'Válido hasta: ${_dateFmt.format(DateTime.parse(quote.validUntil!))}',
+                         'Válido hasta: ${_dateFmt.format(DateTime.parse(quote.validUntil!))}',
                           style: const pw.TextStyle(color: PdfColors.grey300, fontSize: 10),
                         ),
+                      // ── Condición de venta (badge en el header) ──
+                      pw.SizedBox(height: 4),
+                      pw.Container(
+                        padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: pw.BoxDecoration(
+                          color: PdfColor.fromInt(0xFF2E7D32), // verde
+                          borderRadius: pw.BorderRadius.all(pw.Radius.circular(4)),
+                        ),
+                        child: pw.Text(
+                          'Cond. de Venta: ${quote.priceListLabel}',
+                          style: pw.TextStyle(
+                            color: PdfColors.white,
+                            fontSize: 9,
+                            fontWeight: pw.FontWeight.bold,
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ],
@@ -321,6 +342,54 @@ class QuotePdfService {
                 ),
               ),
               pw.SizedBox(height: 16),
+            ],
+            
+            if (vendorName != null) ...[
+              pw.Container(
+                decoration: const pw.BoxDecoration(
+                  color: bgLight,
+                  borderRadius: pw.BorderRadius.all(pw.Radius.circular(6)),
+                ),
+                padding: const pw.EdgeInsets.all(12),
+                child: pw.Row(
+                  children: [
+                    pw.Expanded(
+                      child: pw.Column(
+                        crossAxisAlignment: pw.CrossAxisAlignment.start,
+                        children: [
+                          pw.Text('VENDEDOR', style: pw.TextStyle(fontSize: 9, color: textGrey, fontWeight: pw.FontWeight.bold)),
+                          pw.SizedBox(height: 4),
+                          pw.Text(vendorName.toUpperCase(), style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              pw.SizedBox(height: 16),
+            ],
+
+            // ── CONDICIÓN DE VENTA (bloque propio si hay lista activa) ────────
+            if (quote.priceList != 'base') ...[
+              pw.Container(
+                decoration: pw.BoxDecoration(
+                  color: PdfColor.fromInt(0xFFE8F5E9),
+                  borderRadius: pw.BorderRadius.all(pw.Radius.circular(6)),
+                  border: pw.Border.all(color: PdfColor.fromInt(0xFF2E7D32), width: 0.5),
+                ),
+                padding: const pw.EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                child: pw.Row(
+                  children: [
+                    pw.Text('Condición de Venta: ',
+                        style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold,
+                            color: PdfColor.fromInt(0xFF1B5E20))),
+                    pw.Text(quote.priceListLabel,
+                        style: pw.TextStyle(fontSize: 10,
+                            color: PdfColor.fromInt(0xFF2E7D32), fontWeight: pw.FontWeight.bold)),
+                  ],
+                ),
+              ),
+              pw.SizedBox(height: 12),
             ],
 
             // ── TABLA DE ÍTEMS ───────────────────────────────────────────
