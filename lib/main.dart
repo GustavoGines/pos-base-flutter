@@ -31,7 +31,9 @@ import 'features/pos/presentation/pages/pos_screen.dart';
 import 'features/catalog/presentation/pages/catalog_screen.dart';
 import 'features/cash_register/presentation/pages/cash_register_screen.dart';
 import 'features/cash_register/presentation/pages/close_shift_screen.dart';
-import 'package:frontend_desktop/features/logistics/presentation/screens/delivery_notes_screen.dart';
+import 'package:frontend_desktop/features/logistics/presentation/screens/logistics_dashboard_screen.dart';
+import 'features/logistics/data/delivery_note_repository.dart';
+import 'features/logistics/presentation/providers/logistics_provider.dart';
 import 'features/sales_history/presentation/pages/sales_history_screen.dart';
 import 'features/auth/presentation/pages/login_screen.dart';
 import 'features/cash_register/presentation/pages/shift_audit_screen.dart';
@@ -200,6 +202,10 @@ void main() async {
   final inventoryAlertsDataSource = InventoryAlertsDataSource(
       baseUrl: apiUrl, client: httpClient);
 
+  // Logistics
+  final deliveryNoteRepo = DeliveryNoteRepository(
+      baseUrl: apiUrl, client: httpClient);
+
   // Auth — ya instanciado antes de runApp (ver arriba con restoreSessionFromPrefs)
 
   // Users
@@ -266,6 +272,11 @@ void main() async {
           create: (_) => QuoteProvider(
             repository: QuoteRepository(baseUrl: apiUrl, client: httpClient),
           ),
+          lazy: true,
+        ),
+        // [logistics] Dashboard
+        ChangeNotifierProvider(
+          create: (_) => LogisticsProvider(repository: deliveryNoteRepo),
           lazy: true,
         ),
       ],
@@ -644,7 +655,7 @@ class _MainAppState extends State<MainApp> {
         '/quotes': (context) => const QuoteScreen(),
         '/reports': (context) => const ReportsScreen(),
         // [logistics]
-        '/delivery-notes': (context) => const DeliveryNotesScreen(),
+        '/delivery-notes': (context) => const LogisticsDashboardScreen(),
       },
     );
   }

@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:intl/intl.dart';
+import 'package:printing/printing.dart';
 
 class A4SplitPdfService {
   static final _currencyFmt = NumberFormat.currency(locale: 'es_AR', symbol: '\$', decimalDigits: 2);
@@ -22,7 +23,16 @@ class A4SplitPdfService {
     String? businessAddress,
     String? vendorName,
   }) async {
-    final pdf = pw.Document();
+    pw.ThemeData? theme;
+    try {
+      final font = await PdfGoogleFonts.robotoRegular();
+      final fontBold = await PdfGoogleFonts.robotoBold();
+      theme = pw.ThemeData.withFont(base: font, bold: fontBold);
+    } catch (_) {
+      // Fallback a las fuentes por defecto si no hay internet
+    }
+
+    final pdf = pw.Document(theme: theme);
 
     // Extraer datos comunes
     final phone = ''; // Agregar si tienes el teléfono en settings
@@ -33,15 +43,18 @@ class A4SplitPdfService {
 
     // buildWatermark pinta la marca de agua detrás de cada sección
     pw.Widget _buildWatermark(String text, bool isSmall) => pw.Center(
-      child: pw.Transform.rotateBox(
-        angle: 0.6,
-        child: pw.Text(
-          text,
-          textAlign: pw.TextAlign.center,
-          style: pw.TextStyle(
-            fontSize: isSmall ? 40 : 65,
-            fontWeight: pw.FontWeight.bold,
-            color: const PdfColor.fromInt(0xFFE5E5E5), // Gris muy claro sólido (sin opacidad)
+      child: pw.Opacity(
+        opacity: 0.1, // 10% de negro = gris muy sutil
+        child: pw.Transform.rotateBox(
+          angle: 0.6,
+          child: pw.Text(
+            text,
+            textAlign: pw.TextAlign.center,
+            style: pw.TextStyle(
+              fontSize: isSmall ? 40 : 65,
+              fontWeight: pw.FontWeight.bold,
+              color: PdfColors.black,
+            ),
           ),
         ),
       ),
@@ -169,7 +182,14 @@ class A4SplitPdfService {
     String cuit = '',
     String? vendorName,
   }) async {
-    final pdf = pw.Document();
+    pw.ThemeData? theme;
+    try {
+      final font = await PdfGoogleFonts.robotoRegular();
+      final fontBold = await PdfGoogleFonts.robotoBold();
+      theme = pw.ThemeData.withFont(base: font, bold: fontBold);
+    } catch (_) {}
+
+    final pdf = pw.Document(theme: theme);
     
 
     pdf.addPage(
@@ -179,33 +199,49 @@ class A4SplitPdfService {
           margin: const pw.EdgeInsets.all(30),
         ),
         build: (pw.Context context) {
-          return pw.Stack(
+          // Outer column shrinks to content — no fullpage stretch
+          return pw.Column(
+            mainAxisSize: pw.MainAxisSize.min,
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
             children: [
-              // Marca de agua (Fondo)
-              pw.Positioned.fill(
-                child: pw.Center(
-                  child: pw.Transform.rotateBox(
-                    angle: 0.6,
-                    child: pw.Text(
-                      'COMPROBANTE NO FISCAL',
-                      textAlign: pw.TextAlign.center,
-                      style: pw.TextStyle(
-                        fontSize: 90,
-                        fontWeight: pw.FontWeight.bold,
-                        color: const PdfColor.fromInt(0xFFE5E5E5),
+              pw.Align(
+                alignment: pw.Alignment.topRight,
+                child: pw.Text('ORIGINAL',
+                    style: pw.TextStyle(
+                        fontSize: 8,
+                        color: PdfColors.grey500,
+                        fontWeight: pw.FontWeight.bold)),
+              ),
+              // Stack sized by inner Column content — watermark stays within
+              pw.Stack(
+                children: [
+                  // 1° Contenido debajo
+                  pw.Column(
+                    mainAxisSize: pw.MainAxisSize.min,
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: _buildSaleReceiptList(
+                        sale, businessName, businessAddress, phone, cuit, vendorName),
+                  ),
+                  // 2° Watermark superpuesta con transparencia
+                  pw.Positioned.fill(
+                    child: pw.Center(
+                      child: pw.Opacity(
+                        opacity: 0.1,
+                        child: pw.Transform.rotateBox(
+                          angle: 0.6,
+                          child: pw.Text(
+                            'COMPROBANTE NO FISCAL',
+                            textAlign: pw.TextAlign.center,
+                            style: pw.TextStyle(
+                              fontSize: 45,
+                              fontWeight: pw.FontWeight.bold,
+                              color: PdfColors.black,
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ),
-              pw.Column(
-                crossAxisAlignment: pw.CrossAxisAlignment.start,
-                children: [
-                  pw.Align(
-                    alignment: pw.Alignment.topRight,
-                    child: pw.Text('ORIGINAL', style: pw.TextStyle(fontSize: 8, color: PdfColors.grey500, fontWeight: pw.FontWeight.bold)),
-                  ),
-                  ..._buildSaleReceiptList(sale, businessName, businessAddress, phone, cuit, vendorName),
                 ],
               ),
             ],
@@ -477,8 +513,8 @@ class A4SplitPdfService {
           ]
         ),
         
-        pw.Spacer(), // Empujar las firmas al final
-        // FIRMAS
+        pw.SizedBox(height: 20),
+        // FIRMAS — justo debajo del total, sin malgastar hoja
         pw.Row(
           mainAxisAlignment: pw.MainAxisAlignment.spaceAround,
           children: [
@@ -630,9 +666,8 @@ class A4SplitPdfService {
         ]
       ),
         
-        pw.Spacer(),
-        
-        // FIRMAS (Con espacio real)
+        pw.SizedBox(height: 20),
+        // FIRMAS — justo debajo de los items
         pw.Row(
           mainAxisAlignment: pw.MainAxisAlignment.spaceAround,
           children: [

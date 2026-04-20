@@ -173,7 +173,14 @@ class DeliveryNotePdfService {
     String? vendorName,
     String? dispatcherName,
   }) async {
-    final doc = pw.Document();
+    pw.ThemeData? theme;
+    try {
+      final font = await PdfGoogleFonts.robotoRegular();
+      final fontBold = await PdfGoogleFonts.robotoBold();
+      theme = pw.ThemeData.withFont(base: font, bold: fontBold);
+    } catch (_) {}
+
+    final doc = pw.Document(theme: theme);
 
     final noteId  = note['id']?.toString().padLeft(6, '0') ?? '000000';
     final items   = (note['items'] as List?) ?? [];
@@ -225,13 +232,14 @@ class DeliveryNotePdfService {
           pageFormat: PdfPageFormat.a4,
           margin: const pw.EdgeInsets.all(24),
           build: (pw.Context ctx) {
+            final copyLabelTop = isDispatch ? 'COPIA CLIENTE' : 'ORIGINAL';
+            final copyLabelBot = isDispatch ? 'COPIA DESPACHANTE' : 'DUPLICADO';
             return pw.Column(
               children: [
-                // MITAD SUPERIOR: ORIGINAL
+                // MITAD SUPERIOR
                 pw.Expanded(
                   child: pw.Stack(
                     children: [
-                      _buildWatermark('ORIGINAL', true),
                       pw.Column(
                         crossAxisAlignment: pw.CrossAxisAlignment.start,
                         children: _buildContentList(
@@ -239,12 +247,14 @@ class DeliveryNotePdfService {
                           documentTitle: documentTitle, noteId: noteId, documentCode: documentCode, createdDate: createdDate, customerName: customerName,
                           sale: sale, vendorName: vendorName, dispatcherName: dispatcherName, effectiveDocStatus: effectiveDocStatus,
                           isDispatch: isDispatch, items: items, deliveredNow: deliveredNow, totalUnits: totalUnits, isCompact: true,
+                          copyLabel: copyLabelTop,
                         ),
                       ),
+                      _buildWatermark(copyLabelTop, true),
                     ],
                   ),
                 ),
-                
+
                 // DIVISOR
                 pw.Padding(
                   padding: const pw.EdgeInsets.symmetric(vertical: 5),
@@ -257,11 +267,10 @@ class DeliveryNotePdfService {
                   ),
                 ),
 
-                // MITAD INFERIOR: DUPLICADO
+                // MITAD INFERIOR
                 pw.Expanded(
                   child: pw.Stack(
                     children: [
-                      _buildWatermark('DUPLICADO', true),
                       pw.Column(
                         crossAxisAlignment: pw.CrossAxisAlignment.start,
                         children: _buildContentList(
@@ -269,8 +278,10 @@ class DeliveryNotePdfService {
                           documentTitle: documentTitle, noteId: noteId, documentCode: documentCode, createdDate: createdDate, customerName: customerName,
                           sale: sale, vendorName: vendorName, dispatcherName: dispatcherName, effectiveDocStatus: effectiveDocStatus,
                           isDispatch: isDispatch, items: items, deliveredNow: deliveredNow, totalUnits: totalUnits, isCompact: true,
+                          copyLabel: copyLabelBot,
                         ),
                       ),
+                      _buildWatermark(copyLabelBot, true),
                     ],
                   ),
                 ),
@@ -281,13 +292,15 @@ class DeliveryNotePdfService {
       );
     } else {
       // ── RUTA B: PEDIDO MAYORISTA (PÁGINAS COMPLETAS) ──
-      // ORIGINAL
+      final copyLabelFull1 = isDispatch ? 'COPIA CLIENTE' : 'ORIGINAL';
+      final copyLabelFull2 = isDispatch ? 'COPIA DESPACHANTE' : 'DUPLICADO';
+      // Página 1
       doc.addPage(
         pw.MultiPage(
           pageFormat: PdfPageFormat.a4,
           margin: const pw.EdgeInsets.fromLTRB(32, 32, 32, 48),
           pageTheme: pw.PageTheme(
-            buildBackground: (ctx) => _buildWatermark('ORIGINAL', false),
+            buildForeground: (ctx) => _buildWatermark(copyLabelFull1, false),
           ),
           footer: (pw.Context ctx) => _buildFooter(ctx, businessName),
           build: (pw.Context ctx) => _buildContentList(
@@ -295,17 +308,17 @@ class DeliveryNotePdfService {
             documentTitle: documentTitle, noteId: noteId, documentCode: documentCode, createdDate: createdDate, customerName: customerName,
             sale: sale, vendorName: vendorName, dispatcherName: dispatcherName, effectiveDocStatus: effectiveDocStatus,
             isDispatch: isDispatch, items: items, deliveredNow: deliveredNow, totalUnits: totalUnits, isCompact: false,
+            copyLabel: copyLabelFull1,
           ),
         ),
       );
-      
-      // DUPLICADO
+      // Página 2
       doc.addPage(
         pw.MultiPage(
           pageFormat: PdfPageFormat.a4,
           margin: const pw.EdgeInsets.fromLTRB(32, 32, 32, 48),
           pageTheme: pw.PageTheme(
-            buildBackground: (ctx) => _buildWatermark('DUPLICADO', false),
+            buildForeground: (ctx) => _buildWatermark(copyLabelFull2, false),
           ),
           footer: (pw.Context ctx) => _buildFooter(ctx, businessName),
           build: (pw.Context ctx) => _buildContentList(
@@ -313,6 +326,7 @@ class DeliveryNotePdfService {
             documentTitle: documentTitle, noteId: noteId, documentCode: documentCode, createdDate: createdDate, customerName: customerName,
             sale: sale, vendorName: vendorName, dispatcherName: dispatcherName, effectiveDocStatus: effectiveDocStatus,
             isDispatch: isDispatch, items: items, deliveredNow: deliveredNow, totalUnits: totalUnits, isCompact: false,
+            copyLabel: copyLabelFull2,
           ),
         ),
       );
@@ -326,14 +340,17 @@ class DeliveryNotePdfService {
   static pw.Widget _buildWatermark(String text, bool isCompact) {
     return pw.Positioned.fill(
       child: pw.Center(
-        child: pw.Transform.rotateBox(
-          angle: 0.6,
-          child: pw.Text(
-            text,
-            style: pw.TextStyle(
-              fontSize: isCompact ? 40 : 65,
-              fontWeight: pw.FontWeight.bold,
-              color: const PdfColor.fromInt(0xFFE5E5E5),
+        child: pw.Opacity(
+          opacity: 0.1, // 10% negro = gris sutil
+          child: pw.Transform.rotateBox(
+            angle: 0.6,
+            child: pw.Text(
+              text,
+              style: pw.TextStyle(
+                fontSize: isCompact ? 36 : 60,
+                fontWeight: pw.FontWeight.bold,
+                color: PdfColors.black,
+              ),
             ),
           ),
         ),
@@ -371,6 +388,7 @@ class DeliveryNotePdfService {
     required String? customerName, required Map<String, dynamic> sale, String? vendorName, String? dispatcherName,
     required String effectiveDocStatus, required bool isDispatch, required List<dynamic> items,
     required Map<int, double> deliveredNow, required int totalUnits, required bool isCompact,
+    String copyLabel = 'ORIGINAL',
   }) {
     return [
       // ══ ENCABEZADO ══════════════════════════════════════════════════

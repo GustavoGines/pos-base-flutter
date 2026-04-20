@@ -697,7 +697,7 @@ class ReceiptPrinterService {
   Future<void> printDeliveryNoteTicket({
     required Map<String, dynamic> note,
     required List<Map<String, dynamic>> deliveredItemsData,
-    required BusinessSettings settings, // Solo info visual
+    required BusinessSettings settings,
     required LocalTerminalProvider localTerminal,
     String? customerName,
     String? vendorName,
@@ -710,83 +710,103 @@ class ReceiptPrinterService {
     final generator = Generator(config.paperSize, profile);
     List<int> bytes = [];
 
-    bytes += generator.reset();
-    bytes += generator.text(
-      _cleanText(settings.companyName?.toUpperCase() ?? 'MI NEGOCIO'),
-      styles: const PosStyles(bold: true, align: PosAlign.center, height: PosTextSize.size2, width: PosTextSize.size2),
-    );
-    bytes += generator.feed(1);
-
-    bytes += generator.hr(ch: '=');
+    final now = DateTime.now().toLocal();
     final double totalDeliveredNow = deliveredItemsData.fold(0.0, (sum, item) {
       final val = item['delivered_now'];
       return sum + (val is double ? val : (val as num?)?.toDouble() ?? 0.0);
     });
-    final String docTitle = totalDeliveredNow > 0 ? 'REMITO DE DESPACHO' : 'ORDEN DE RETIRO EN DEPÓSITO';
+    final String docTitle = totalDeliveredNow > 0 ? 'REMITO DE DESPACHO' : 'ORDEN DE RETIRO';
+    final String docCode = totalDeliveredNow > 0 ? 'REM' : 'ORD';
+    final String remNum = note['id'].toString().padLeft(6, '0');
 
-    bytes += generator.text(
-      _cleanText(docTitle),
-      styles: const PosStyles(align: PosAlign.center, bold: true),
-    );
-    bytes += generator.hr(ch: '-');
-
-    final docCode = totalDeliveredNow > 0 ? 'REM' : 'ORD';
-    bytes += generator.text('$docCode N°: ${note['id'].toString().padLeft(6, '0')}', styles: const PosStyles(bold: true));
-    bytes += generator.text('FECHA: ${_formatDate(DateTime.now())}');
-    if (customerName != null) {
-      bytes += generator.text('CLIENTE: ${_cleanText(customerName)}', styles: const PosStyles(bold: true));
-    }
-    bytes += generator.hr(ch: '-');
-    
-    if (vendorName != null || dispatcherName != null) {
-      if (vendorName != null) bytes += generator.text('VENDIÓ: ${_cleanText(vendorName).toUpperCase()}');
-      if (dispatcherName != null) bytes += generator.text('DESPACHÓ: ${_cleanText(dispatcherName).toUpperCase()}');
-      bytes += generator.hr(ch: '-');
-    }
-
-    for (final deliveredData in deliveredItemsData) {
-      final item = note['items'].firstWhere((i) => i['id'] == deliveredData['id'], orElse: () => null);
-      if (item == null) continue;
-
-      final productName = _cleanText((item['product']?['name'] ?? 'Producto Desconocido').toUpperCase());
-      final purchased = double.parse(item['quantity_purchased'].toString());
-      final deliveredBefore = double.parse(item['quantity_delivered'].toString());
-      final deliveredNow = deliveredData['delivered_now'] as double;
-      final remaining = purchased - (deliveredBefore + deliveredNow);
-
-      bytes += generator.text(productName, styles: const PosStyles(bold: true));
-      bytes += generator.text('Comprado: ${purchased.toStringAsFixed(1)} | Entregando hoy: ${deliveredNow.toStringAsFixed(1)}');
-      bytes += generator.text('SALDO PENDIENTE A RETIRAR: ${remaining.toStringAsFixed(1)}', styles: const PosStyles(bold: true));
-      bytes += generator.feed(1);
-    }
-
-    bytes += generator.hr(ch: '=');
-
-    // ── Código de barras (para que el operario escanee en el galpón) ──
-    final barcodeData = 'REM${note['id'].toString().padLeft(6, '0')}';
-    try {
-      bytes += generator.barcode(
-        Barcode.code39(barcodeData.split('')),
-        width: 2,
-        height: 70,
-        textPos: BarcodeText.none,
+    // ── Función local para construir el cuerpo del remito (reutilizable en ambas copias) ──
+    List<int> buildRemitoBody(Generator gen, {required String copyLabel}) {
+      List<int> b = [];
+      b += gen.reset();
+      b += gen.text(
+        _cleanText(settings.companyName?.toUpperCase() ?? 'MI NEGOCIO'),
+        styles: const PosStyles(bold: true, align: PosAlign.center, height: PosTextSize.size2, width: PosTextSize.size2),
       );
-      bytes += generator.text(
-        barcodeData,
-        styles: const PosStyles(align: PosAlign.center, bold: true),
-      );
-    } catch (e) {
-      debugPrint('Error imprimiendo barcode remito: $e');
+      b += gen.feed(1);
+      if (settings.address != null && settings.address!.isNotEmpty) {
+        b += gen.text(_cleanText(settings.address!), styles: const PosStyles(align: PosAlign.center));
+      }
+      if (settings.taxId != null && settings.taxId!.isNotEmpty) {
+        b += gen.text('CUIT: ${settings.taxId}', styles: const PosStyles(align: PosAlign.center, bold: true));
+      }
+      b += gen.hr(ch: '=');
+      b += gen.text(_cleanText(docTitle), styles: const PosStyles(align: PosAlign.center, bold: true));
+      b += gen.text('[ $copyLabel ]', styles: const PosStyles(align: PosAlign.center));
+      b += gen.hr(ch: '-');
+
+      b += gen.text('$docCode N°: $remNum', styles: const PosStyles(bold: true));
+      b += gen.text('FECHA: ${_formatDate(now)}');
+      if (customerName != null && customerName.isNotEmpty) {
+        b += gen.text('CLIENTE: ${_cleanText(customerName).toUpperCase()}', styles: const PosStyles(bold: true));
+      }
+      b += gen.hr(ch: '-');
+
+      if (vendorName != null) b += gen.text('VENDIO: ${_cleanText(vendorName).toUpperCase()}');
+      if (dispatcherName != null) b += gen.text('DESPACHO: ${_cleanText(dispatcherName).toUpperCase()}');
+      b += gen.hr(ch: '-');
+
+      for (final deliveredData in deliveredItemsData) {
+        final item = (note['items'] as List).firstWhere((i) => i['id'] == deliveredData['id'], orElse: () => null);
+        if (item == null) continue;
+
+        final productName = _cleanText((item['product']?['name'] ?? 'Producto').toUpperCase());
+        final purchased = double.parse(item['quantity_purchased'].toString());
+        final deliveredBefore = double.parse(item['quantity_delivered'].toString());
+        final deliveredNow = (deliveredData['delivered_now'] as num).toDouble();
+        final remaining = purchased - (deliveredBefore + deliveredNow);
+
+        b += gen.text(productName, styles: const PosStyles(bold: true));
+        b += gen.row([
+          PosColumn(text: 'Entregando: ${deliveredNow.toStringAsFixed(1)}', width: 6),
+          PosColumn(text: 'Saldo: ${remaining.toStringAsFixed(1)}', width: 6, styles: const PosStyles(align: PosAlign.right, bold: true)),
+        ]);
+        b += gen.feed(1);
+      }
+
+      b += gen.hr(ch: '=');
+
+      // Código de barras para escanear en el galpón
+      final barcodeData = '$docCode$remNum';
+      try {
+        b += gen.barcode(
+          Barcode.code39(barcodeData.split('')),
+          width: 2, height: 70, textPos: BarcodeText.none,
+        );
+        b += gen.text(barcodeData, styles: const PosStyles(align: PosAlign.center, bold: true));
+      } catch (e) {
+        debugPrint('Error imprimiendo barcode remito: $e');
+      }
+
+      return b;
     }
 
-    bytes += generator.feed(1);
-    bytes += generator.text('FIRMA CONFORMIDAD:', styles: const PosStyles(align: PosAlign.center));
+    // ═══════════════════════════════════════════════
+    // COPIA 1: PARA EL CLIENTE (sin firma)
+    // ═══════════════════════════════════════════════
+    bytes += buildRemitoBody(generator, copyLabel: 'COPIA CLIENTE');
     bytes += generator.feed(3);
-    bytes += generator.text('_________________________', styles: const PosStyles(align: PosAlign.center));
-    
+    bytes += generator.cut(mode: PosCutMode.partial); // Corte parcial entre copias
+
+    // ═══════════════════════════════════════════════
+    // COPIA 2: PARA EL DESPACHANTE (con firma del cliente)
+    // ═══════════════════════════════════════════════
+    bytes += buildRemitoBody(generator, copyLabel: 'COPIA DESPACHANTE - ORIGINAL');
+    bytes += generator.feed(1);
+    bytes += generator.text('FIRMA CONFORMIDAD DEL CLIENTE:', styles: const PosStyles(align: PosAlign.left));
+    bytes += generator.feed(3);
+    bytes += generator.text('_________________________________', styles: const PosStyles(align: PosAlign.center));
+    bytes += generator.feed(1);
+    bytes += generator.text('Aclaración: _____________________', styles: const PosStyles(align: PosAlign.center));
+    bytes += generator.feed(1);
+    bytes += generator.text('DNI / CUIT: _____________________', styles: const PosStyles(align: PosAlign.center));
     bytes += generator.feed(3);
     bytes += generator.cut();
-    
+
     await _send(Uint8List.fromList(bytes));
   }
 
