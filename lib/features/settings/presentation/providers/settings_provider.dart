@@ -9,7 +9,6 @@ import 'package:frontend_desktop/features/settings/domain/usecases/update_settin
 import 'package:frontend_desktop/core/services/license_heartbeat_service.dart';
 import 'package:frontend_desktop/core/config/app_config.dart';
 import 'package:frontend_desktop/features/settings/data/repositories/settings_repository_impl.dart';
-import 'package:frontend_desktop/core/utils/receipt_printer_service.dart';
 
 class SettingsProvider with ChangeNotifier {
   final GetSettingsUseCase getSettingsUseCase;
@@ -110,10 +109,8 @@ class SettingsProvider with ChangeNotifier {
         onSyncRequested: () => syncLicenseWithServer(AppConfig.kApiBaseUrl, isSilent: true),
       );
 
-      // Reconfigurar la impresora con los ajustes guardados en la DB
-      if (_settings != null) {
-        await ReceiptPrinterService.instance.reconfigureFromSettings(_settings!);
-      }
+      // Hardware config migrado a LocalTerminalProvider (SharedPreferences por caja).
+      // Ya no se reconfigura la impresora desde los ajustes globales de la nube.
       
       _checkAndSyncSilentlyOnStartup();
     } catch (e, stack) {

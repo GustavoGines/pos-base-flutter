@@ -15,12 +15,10 @@ import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import 'package:flutter_libserialport/flutter_libserialport.dart';
 import 'package:frontend_desktop/features/quotes/presentation/providers/quote_provider.dart';
 import 'package:frontend_desktop/features/reports/presentation/providers/inventory_alerts_provider.dart';
-import 'package:frontend_desktop/core/config/app_config.dart';
-import 'dart:convert';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:frontend_desktop/core/utils/receipt_printer_service.dart';
-import 'package:frontend_desktop/core/presentation/widgets/ticket_preview_dialog.dart';
+import 'package:frontend_desktop/core/providers/local_terminal_provider.dart';
+import 'package:frontend_desktop/core/utils/a4_split_pdf_service.dart';
 import 'package:frontend_desktop/features/logistics/services/delivery_note_pdf_service.dart';
+import 'package:printing/printing.dart';
 
 class PosScreen extends StatefulWidget {
   const PosScreen({Key? key}) : super(key: key);
@@ -38,9 +36,9 @@ class _PosScreenState extends State<PosScreen> {
   List<Product> _searchResults = [];
   bool _isSearching = false;
   Timer? _debounceSearchTimer;
-  
+
   Timer? _pendingOrdersTimer;
-  
+
   // Controladores para el Popover de Órdenes en Espera
   final _pendingOrdersPortalController = OverlayPortalController();
   final _pendingOrdersLayerLink = LayerLink();
@@ -53,10 +51,11 @@ class _PosScreenState extends State<PosScreen> {
       _searchFocusNode.requestFocus();
       // Siempre cargar la lista COMPLETA al entrar a POS, ignorando cualquier
       // búsqueda que el módulo de Catálogo haya dejado activa en el provider.
-      Provider.of<CatalogProvider>(context, listen: false).loadProducts(page: 1, search: '');
+      Provider.of<CatalogProvider>(context, listen: false)
+          .loadProducts(page: 1, search: '');
       // Cargar el contador de órdenes pendientes al abrir el POS
       Provider.of<PosProvider>(context, listen: false).loadPendingSales();
-      
+
       // Polling veloz (5 seg) para recepción casi-inmediata de órdenes en red local/multicaja
       _pendingOrdersTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
         if (mounted) {
@@ -94,7 +93,8 @@ class _PosScreenState extends State<PosScreen> {
     _debounceSearchTimer = Timer(const Duration(milliseconds: 400), () async {
       if (!mounted || _searchQuery.isEmpty) return;
       setState(() => _isSearching = true);
-      final results = await Provider.of<PosProvider>(context, listen: false).search(query);
+      final results =
+          await Provider.of<PosProvider>(context, listen: false).search(query);
       if (!mounted) return;
       setState(() {
         _searchResults = results;
@@ -106,19 +106,20 @@ class _PosScreenState extends State<PosScreen> {
   void _onProductScannedOrSearched(String query) async {
     if (query.trim().isEmpty) return;
     String cleanQuery = query.trim().toUpperCase();
-    
+
     final posProvider = Provider.of<PosProvider>(context, listen: false);
 
     // 0. Interceptar Presupuestos (Código de barras PRES-)
     if (cleanQuery.startsWith('PRES-')) {
       setState(() => _isSearching = true);
-      
+
       try {
-        final repo = Provider.of<QuoteProvider>(context, listen: false).repository;
+        final repo =
+            Provider.of<QuoteProvider>(context, listen: false).repository;
         final quote = await repo.getQuoteByNumber(cleanQuery);
-        
+
         setState(() => _isSearching = false);
-        
+
         if (quote != null) {
           // Mostrar diálogo de confirmación
           if (mounted) {
@@ -126,7 +127,8 @@ class _PosScreenState extends State<PosScreen> {
               context: context,
               builder: (ctx) => AlertDialog(
                 title: Text('Cargar Presupuesto: $cleanQuery'),
-                content: Text('¿Desea limpiar la caja actual y cargar los ${quote.items.length} productos de este presupuesto?'),
+                content: Text(
+                    '¿Desea limpiar la caja actual y cargar los ${quote.items.length} productos de este presupuesto?'),
                 actions: [
                   TextButton(
                     onPressed: () => Navigator.pop(ctx, false),
@@ -139,44 +141,48 @@ class _PosScreenState extends State<PosScreen> {
                 ],
               ),
             );
-            
+
             if (confirm == true) {
               posProvider.loadQuoteToCart(quote);
-              SnackBarService.success(context, 'Presupuesto cargado listo para facturar.');
+              SnackBarService.success(
+                  context, 'Presupuesto cargado listo para facturar.');
             }
           }
         } else {
-          SnackBarService.error(context, 'Presupuesto no encontrado: "$cleanQuery"');
+          SnackBarService.error(
+              context, 'Presupuesto no encontrado: "$cleanQuery"');
         }
       } catch (e) {
         setState(() => _isSearching = false);
         SnackBarService.error(context, 'Error al recuperar presupuesto: $e');
       }
-      
+
       _searchController.clear();
       setState(() => _searchQuery = '');
       _searchFocusNode.requestFocus();
       return;
     }
-    
+
     // 1. Intentamos buscar el código exactamente como se escaneó primero.
     // Esto es crucial por si el producto es unitario y su código EAN normal comienza con '2'.
     List<Product> results = await posProvider.search(cleanQuery);
-    
+
     bool appliedScaleLogic = false;
     double embeddedPrice = 0.0;
-    
+
     // 2. Si no hubo coincidencias exactas, verificamos si es una etiqueta de balanza (13 dígitos, empieza en '2')
-    if (results.isEmpty && cleanQuery.length == 13 && cleanQuery.startsWith('2')) {
+    if (results.isEmpty &&
+        cleanQuery.length == 13 &&
+        cleanQuery.startsWith('2')) {
       // Formato típico local: 1 (Prefijo) + 5 (PLU) + 6 (Precio Entero) + 1 (Dígito Verificador)
       final itemCodeStr = cleanQuery.substring(1, 6);
       final priceStr = cleanQuery.substring(6, 12);
-      final pluQuery = int.parse(itemCodeStr).toString(); 
+      final pluQuery = int.parse(itemCodeStr).toString();
       embeddedPrice = double.parse(priceStr);
-      
+
       // Hacemos una segunda búsqueda usando solamente el PLU extraído
       results = await posProvider.search(pluQuery);
-      
+
       if (results.isNotEmpty) {
         if (results.first.isSoldByWeight) {
           appliedScaleLogic = true;
@@ -187,7 +193,8 @@ class _PosScreenState extends State<PosScreen> {
           } else {
             // El código tiene importe incrustado pero el producto no es pesado
             if (mounted) {
-              SnackBarService.error(context, 'El producto "${results.first.name}" no se vende por peso. Revise la etiqueta.');
+              SnackBarService.error(context,
+                  'El producto "${results.first.name}" no se vende por peso. Revise la etiqueta.');
             }
             _searchController.clear();
             setState(() => _searchQuery = '');
@@ -197,7 +204,7 @@ class _PosScreenState extends State<PosScreen> {
         }
       }
     }
-    
+
     if (!mounted) return;
 
     if (results.isEmpty) {
@@ -205,13 +212,13 @@ class _PosScreenState extends State<PosScreen> {
     } else if (appliedScaleLogic) {
       final product = results.first;
       double calcWeight = 0.0;
-      
+
       if (product.sellingPrice > 0) {
         calcWeight = embeddedPrice / product.sellingPrice;
       } else {
         calcWeight = 1.0; // Fallback de seguridad
       }
-      
+
       posProvider.submitWeighedProduct(product, calcWeight);
     } else if (results.length == 1) {
       _handleProductSelection(results.first);
@@ -225,7 +232,8 @@ class _PosScreenState extends State<PosScreen> {
   }
 
   /// Diálogo para seleccionar entre múltiples resultados de búsqueda
-  Future<void> _showProductPickerDialog(List<Product> results, String query) async {
+  Future<void> _showProductPickerDialog(
+      List<Product> results, String query) async {
     await showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -236,7 +244,8 @@ class _PosScreenState extends State<PosScreen> {
             const SizedBox(width: 8),
             Expanded(
               child: Text('Resultados para "$query"',
-                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  style: const TextStyle(
+                      fontSize: 18, fontWeight: FontWeight.bold),
                   overflow: TextOverflow.ellipsis),
             ),
           ],
@@ -252,18 +261,28 @@ class _PosScreenState extends State<PosScreen> {
               final p = results[i];
               return ListTile(
                 leading: CircleAvatar(
-                  backgroundColor: p.isSoldByWeight ? Colors.orange.shade100 : Colors.blue.shade50,
+                  backgroundColor: p.isSoldByWeight
+                      ? Colors.orange.shade100
+                      : Colors.blue.shade50,
                   child: Icon(
-                    p.isSoldByWeight ? Icons.scale_rounded : Icons.inventory_2_outlined,
-                    color: p.isSoldByWeight ? Colors.orange.shade700 : Colors.blue.shade700,
+                    p.isSoldByWeight
+                        ? Icons.scale_rounded
+                        : Icons.inventory_2_outlined,
+                    color: p.isSoldByWeight
+                        ? Colors.orange.shade700
+                        : Colors.blue.shade700,
                     size: 20,
                   ),
                 ),
-                title: Text(p.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                title: Text(p.name,
+                    style: const TextStyle(fontWeight: FontWeight.bold)),
                 subtitle: Text(
-                  p.isSoldByWeight ? 'Por Kg · \$${p.sellingPrice.toCurrency()}/Kg' : '\$${p.sellingPrice.toCurrency()}',
+                  p.isSoldByWeight
+                      ? 'Por Kg · \$${p.sellingPrice.toCurrency()}/Kg'
+                      : '\$${p.sellingPrice.toCurrency()}',
                 ),
-                trailing: const Icon(Icons.add_circle_outline, color: Colors.green),
+                trailing:
+                    const Icon(Icons.add_circle_outline, color: Colors.green),
                 onTap: () {
                   Navigator.pop(ctx);
                   _handleProductSelection(p);
@@ -284,7 +303,7 @@ class _PosScreenState extends State<PosScreen> {
 
   void _handleProductSelection(Product product) {
     final posProvider = Provider.of<PosProvider>(context, listen: false);
-    
+
     final success = posProvider.requestAddToCart(product);
     if (!success) {
       // Es producto por peso, pedir peso por Modal
@@ -294,80 +313,96 @@ class _PosScreenState extends State<PosScreen> {
 
   void _showWeightModal(Product product, PosProvider provider) {
     final weightController = TextEditingController();
-    
+
     showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) {
-        return ValueListenableBuilder<TextEditingValue>(
-          valueListenable: weightController,
-          builder: (context, value, child) {
-            final isValid = value.text.trim().isNotEmpty && double.tryParse(value.text.replaceAll(',', '.')) != null && double.parse(value.text.replaceAll(',', '.')) > 0;
-            return AlertDialog(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-              title: Text('Ingresar Peso (Kg) - ${product.name}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-              content: Padding(
-                padding: const EdgeInsets.only(top: 8.0),
-                child: TextField(
-                  controller: weightController,
-                  autofocus: true,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  decoration: InputDecoration(
-                    labelText: 'Peso Exacto (Ej: 1.500)',
-                    hintText: '0.000',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                    suffixText: 'KG',
-                    helperText: 'Ejemplo: 0.5 = 500 gramos',
-                  ),
-                  onSubmitted: (val) {
-                    if (isValid) _processWeight(val, product, provider, context);
-                  },
-                ),
-              ),
-              actionsPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-              actions: [
-                Consumer<SettingsProvider>(
-                  builder: (ctx, settingsProvider, _) {
-                    final comPort = settingsProvider.settings?.comPortScale;
-                    if (comPort == null || comPort.isEmpty) {
-                      return const SizedBox.shrink(); // Sin balanza local
-                    }
-                    return OutlinedButton.icon(
-                      onPressed: () => _readWeightFromScale(comPort, weightController),
-                      icon: const Icon(Icons.scale_rounded, color: Colors.blueGrey),
-                      label: const Text('Leer Balanza'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.blueGrey,
-                        side: const BorderSide(color: Colors.blueGrey),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        context: context,
+        barrierDismissible: false,
+        builder: (context) {
+          return ValueListenableBuilder<TextEditingValue>(
+              valueListenable: weightController,
+              builder: (context, value, child) {
+                final isValid = value.text.trim().isNotEmpty &&
+                    double.tryParse(value.text.replaceAll(',', '.')) != null &&
+                    double.parse(value.text.replaceAll(',', '.')) > 0;
+                return AlertDialog(
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20)),
+                  title: Text('Ingresar Peso (Kg) - ${product.name}',
+                      style: const TextStyle(
+                          fontWeight: FontWeight.bold, fontSize: 18)),
+                  content: Padding(
+                    padding: const EdgeInsets.only(top: 8.0),
+                    child: TextField(
+                      controller: weightController,
+                      autofocus: true,
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
+                      decoration: InputDecoration(
+                        labelText: 'Peso Exacto (Ej: 1.500)',
+                        hintText: '0.000',
+                        border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                        suffixText: 'KG',
+                        helperText: 'Ejemplo: 0.5 = 500 gramos',
                       ),
-                    );
-                  },
-                ),
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
-                ),
-                FilledButton(
-                  onPressed: isValid ? () {
-                    _processWeight(weightController.text, product, provider, context);
-                  } : null,
-                  style: FilledButton.styleFrom(
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      onSubmitted: (val) {
+                        if (isValid)
+                          _processWeight(val, product, provider, context);
+                      },
+                    ),
                   ),
-                  child: const Text('Agregar'),
-                )
-              ],
-            );
-          }
-        );
-      }
-    ).then((_) {
+                  actionsPadding:
+                      const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                  actions: [
+                    Consumer<LocalTerminalProvider>(
+                      builder: (ctx, localTerminal, _) {
+                        final comPort = localTerminal.scaleComPort;
+                        if (comPort.isEmpty) {
+                          return const SizedBox.shrink(); // Sin balanza local
+                        }
+                        return OutlinedButton.icon(
+                          onPressed: () =>
+                              _readWeightFromScale(comPort, weightController),
+                          icon: const Icon(Icons.scale_rounded,
+                              color: Colors.blueGrey),
+                          label: const Text('Leer Balanza'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.blueGrey,
+                            side: const BorderSide(color: Colors.blueGrey),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8)),
+                          ),
+                        );
+                      },
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Cancelar',
+                          style: TextStyle(color: Colors.grey)),
+                    ),
+                    FilledButton(
+                      onPressed: isValid
+                          ? () {
+                              _processWeight(weightController.text, product,
+                                  provider, context);
+                            }
+                          : null,
+                      style: FilledButton.styleFrom(
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8)),
+                      ),
+                      child: const Text('Agregar'),
+                    )
+                  ],
+                );
+              });
+        }).then((_) {
       _searchFocusNode.requestFocus();
     });
   }
 
-  void _readWeightFromScale(String comPort, TextEditingController controller) async {
+  void _readWeightFromScale(
+      String comPort, TextEditingController controller) async {
     if (comPort.isEmpty) return;
 
     if (mounted) {
@@ -380,7 +415,9 @@ class _PosScreenState extends State<PosScreen> {
       final port = SerialPort(comPort);
       if (!port.openReadWrite()) {
         final err = SerialPort.lastError;
-        if (mounted) SnackBarService.error(context, 'No se pudo abrir el puerto $comPort. ${err != null ? err.message : ""}');
+        if (mounted)
+          SnackBarService.error(context,
+              'No se pudo abrir el puerto $comPort. ${err != null ? err.message : ""}');
         return;
       }
 
@@ -397,7 +434,9 @@ class _PosScreenState extends State<PosScreen> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Esperando peso estable... (1.5 seg)'), duration: Duration(milliseconds: 1500)),
+          const SnackBar(
+              content: Text('Esperando peso estable... (1.5 seg)'),
+              duration: Duration(milliseconds: 1500)),
         );
       }
 
@@ -416,23 +455,25 @@ class _PosScreenState extends State<PosScreen> {
       if (accumulatedData.isNotEmpty) {
         final RegExp weightRegex = RegExp(r'(\d+[\.,]\d+)');
         final matches = weightRegex.allMatches(accumulatedData);
-        
+
         if (matches.isNotEmpty) {
           String weightStr = matches.last.group(0)!;
           weightStr = weightStr.replaceAll(',', '.');
-          
+
           if (mounted) {
             controller.text = weightStr;
             SnackBarService.success(context, 'Lectura exitosa: $weightStr Kg');
           }
         } else {
           if (mounted) {
-            SnackBarService.error(context, 'No se detectó un peso numérico. Datos: "$accumulatedData"');
+            SnackBarService.error(context,
+                'No se detectó un peso numérico. Datos: "$accumulatedData"');
           }
         }
       } else {
         if (mounted) {
-          SnackBarService.error(context, 'No se recibieron datos. Revise la conexión de la balanza en $comPort.');
+          SnackBarService.error(context,
+              'No se recibieron datos. Revise la conexión de la balanza en $comPort.');
         }
       }
     } catch (e) {
@@ -442,114 +483,140 @@ class _PosScreenState extends State<PosScreen> {
     }
   }
 
-  void _processWeight(String value, Product product, PosProvider provider, BuildContext dialogContext) {
+  void _processWeight(String value, Product product, PosProvider provider,
+      BuildContext dialogContext) {
     // Reemplaza comas por puntos en caso de que teclados latinos obligen coma
     String sanitizedValue = value.replaceAll(',', '.');
     final weight = double.tryParse(sanitizedValue);
-    
+
     // Validación básica: El peso debe ser positivo y menor a una exageración (Ej: >1000Kg es raro en POS base)
     if (weight != null && weight > 0 && weight < 1000) {
       provider.submitWeighedProduct(product, weight);
       Navigator.pop(dialogContext);
     } else {
-      SnackBarService.error(dialogContext, 'Por favor, ingrese un peso válido en Kg.');
+      SnackBarService.error(
+          dialogContext, 'Por favor, ingrese un peso válido en Kg.');
     }
   }
 
   void _showEditCartItemModal(dynamic cartItem, PosProvider provider) {
     final qtyController = TextEditingController(
-      text: cartItem.product.isSoldByWeight 
-        ? cartItem.quantity.toQty() 
-        : cartItem.quantity.toInt().toString()
-    );
+        text: cartItem.product.isSoldByWeight
+            ? cartItem.quantity.toQty()
+            : cartItem.quantity.toInt().toString());
 
     showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) {
-        return ValueListenableBuilder<TextEditingValue>(
-          valueListenable: qtyController,
-          builder: (context, value, child) {
-            final isValid = value.text.trim().isNotEmpty && double.tryParse(value.text.replaceAll(',', '.')) != null && double.parse(value.text.replaceAll(',', '.')) > 0;
-            return AlertDialog(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-              title: Text('Editar Cantidad - ${cartItem.product.name}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-              content: Padding(
-                padding: const EdgeInsets.only(top: 8.0),
-                child: TextField(
-                  controller: qtyController,
-                  autofocus: true,
-                  keyboardType: cartItem.product.isSoldByWeight 
-                      ? const TextInputType.numberWithOptions(decimal: true)
-                      : TextInputType.number,
-                  decoration: InputDecoration(
-                    labelText: cartItem.product.isSoldByWeight ? 'Peso Exacto (Ej: 1.500)' : 'Cantidad (Unidades)',
-                    hintText: cartItem.product.isSoldByWeight ? '0.000' : '1',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                    suffixText: cartItem.product.isSoldByWeight ? 'KG' : 'UN',
-                    helperText: cartItem.product.isSoldByWeight ? 'Ejemplo: 0.5 = 500 gramos' : null,
+        context: context,
+        barrierDismissible: false,
+        builder: (context) {
+          return ValueListenableBuilder<TextEditingValue>(
+              valueListenable: qtyController,
+              builder: (context, value, child) {
+                final isValid = value.text.trim().isNotEmpty &&
+                    double.tryParse(value.text.replaceAll(',', '.')) != null &&
+                    double.parse(value.text.replaceAll(',', '.')) > 0;
+                return AlertDialog(
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20)),
+                  title: Text('Editar Cantidad - ${cartItem.product.name}',
+                      style: const TextStyle(
+                          fontWeight: FontWeight.bold, fontSize: 18)),
+                  content: Padding(
+                    padding: const EdgeInsets.only(top: 8.0),
+                    child: TextField(
+                      controller: qtyController,
+                      autofocus: true,
+                      keyboardType: cartItem.product.isSoldByWeight
+                          ? const TextInputType.numberWithOptions(decimal: true)
+                          : TextInputType.number,
+                      decoration: InputDecoration(
+                        labelText: cartItem.product.isSoldByWeight
+                            ? 'Peso Exacto (Ej: 1.500)'
+                            : 'Cantidad (Unidades)',
+                        hintText:
+                            cartItem.product.isSoldByWeight ? '0.000' : '1',
+                        border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                        suffixText:
+                            cartItem.product.isSoldByWeight ? 'KG' : 'UN',
+                        helperText: cartItem.product.isSoldByWeight
+                            ? 'Ejemplo: 0.5 = 500 gramos'
+                            : null,
+                      ),
+                      onSubmitted: (val) {
+                        if (isValid)
+                          _processCartItemEdit(
+                              val, cartItem, provider, context);
+                      },
+                    ),
                   ),
-                  onSubmitted: (val) {
-                    if (isValid) _processCartItemEdit(val, cartItem, provider, context);
-                  },
-                ),
-              ),
-              actionsPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-              actions: [
-                if (cartItem.product.isSoldByWeight)
-                  Consumer<SettingsProvider>(
-                    builder: (ctx, settingsProvider, _) {
-                      final comPort = settingsProvider.settings?.comPortScale;
-                      if (comPort == null || comPort.isEmpty) {
-                        return const SizedBox.shrink(); // Sin balanza local
-                      }
-                      return OutlinedButton.icon(
-                        onPressed: () => _readWeightFromScale(comPort, qtyController),
-                        icon: const Icon(Icons.scale_rounded, color: Colors.blueGrey),
-                        label: const Text('Leer Balanza'),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.blueGrey,
-                          side: const BorderSide(color: Colors.blueGrey),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                        ),
-                      );
-                    },
-                  ),
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
-                ),
-                FilledButton(
-                  onPressed: isValid ? () {
-                    _processCartItemEdit(qtyController.text, cartItem, provider, context);
-                  } : null,
-                  style: FilledButton.styleFrom(
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
-                  child: const Text('Actualizar'),
-                )
-              ],
-            );
-          }
-        );
-      }
-    ).then((_) {
+                  actionsPadding:
+                      const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                  actions: [
+                    if (cartItem.product.isSoldByWeight)
+                      Consumer<LocalTerminalProvider>(
+                        builder: (ctx, localTerminal, _) {
+                          final comPort = localTerminal.scaleComPort;
+                          if (comPort.isEmpty) {
+                            return const SizedBox.shrink(); // Sin balanza local
+                          }
+                          return OutlinedButton.icon(
+                            onPressed: () =>
+                                _readWeightFromScale(comPort, qtyController),
+                            icon: const Icon(Icons.scale_rounded,
+                                color: Colors.blueGrey),
+                            label: const Text('Leer Balanza'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.blueGrey,
+                              side: const BorderSide(color: Colors.blueGrey),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8)),
+                            ),
+                          );
+                        },
+                      ),
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Cancelar',
+                          style: TextStyle(color: Colors.grey)),
+                    ),
+                    FilledButton(
+                      onPressed: isValid
+                          ? () {
+                              _processCartItemEdit(qtyController.text, cartItem,
+                                  provider, context);
+                            }
+                          : null,
+                      style: FilledButton.styleFrom(
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8)),
+                      ),
+                      child: const Text('Actualizar'),
+                    )
+                  ],
+                );
+              });
+        }).then((_) {
       _searchFocusNode.requestFocus();
     });
   }
 
-  void _processCartItemEdit(String value, dynamic cartItem, PosProvider provider, BuildContext dialogContext) {
+  void _processCartItemEdit(String value, dynamic cartItem,
+      PosProvider provider, BuildContext dialogContext) {
     String sanitizedValue = value.replaceAll(',', '.');
     final newQuantity = double.tryParse(sanitizedValue);
 
     if (newQuantity != null && newQuantity > 0) {
       // Si el producto NO es pesado, forzar entero por si acaso.
-      final finalQuantity = cartItem.product.isSoldByWeight ? newQuantity : newQuantity.toInt().toDouble();
-      
+      final finalQuantity = cartItem.product.isSoldByWeight
+          ? newQuantity
+          : newQuantity.toInt().toDouble();
+
       provider.updateQuantity(cartItem, finalQuantity);
       Navigator.pop(dialogContext);
     } else {
-      SnackBarService.error(dialogContext, 'Por favor, ingrese una cantidad válida mayor a 0.');
+      SnackBarService.error(
+          dialogContext, 'Por favor, ingrese una cantidad válida mayor a 0.');
     }
   }
 
@@ -557,93 +624,10 @@ class _PosScreenState extends State<PosScreen> {
   double _toDouble(dynamic value) =>
       value == null ? 0.0 : double.tryParse(value.toString()) ?? 0.0;
 
-  Future<void> _generarRemito(int saleId) async {
-    try {
-      final authProvider = context.read<AuthProvider>();
-      final client = authProvider.apiClient;
-      if (client == null) return;
-
-      final prefs = await SharedPreferences.getInstance();
-      final baseUrl = prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
-      final printRemito = prefs.getBool('print_remito_on_generate') ?? true;
-      
-      final response = await client.post(
-        Uri.parse('$baseUrl/delivery-notes/from-sale/$saleId'),
-        headers: {'Accept': 'application/json'},
-      );
-      
-      if (!mounted) return;
-
-      if (response.statusCode == 201) {
-        SnackBarService.success(context, printRemito ? '📦 Remito creado. Imprimiendo comprobante...' : '📦 Remito creado correctamente.');
-
-        if (printRemito) {
-          try {
-            final settings = context.read<SettingsProvider>().settings;
-            final note = jsonDecode(response.body) as Map<String, dynamic>;
-
-            if (settings != null && note['items'] != null) {
-              final List<Map<String, dynamic>> initialDeliveryData = (note['items'] as List).map<Map<String, dynamic>>((item) {
-                return {
-                  'id': item['id'],
-                  'delivered_now': 0.0,
-                };
-              }).toList();
-
-              await ReceiptPrinterService.instance.printDeliveryNoteTicket(
-                note: note,
-                deliveredItemsData: initialDeliveryData,
-                settings: settings,
-                customerName: null,
-              );
-            }
-          } catch (printError) {
-            debugPrint('Error imprimiendo remito desde checkout: $printError');
-          }
-        }
-
-        final printA4 = prefs.getBool('print_a4_remito_generate') ?? false;
-        final showA4Preview = prefs.getBool('show_a4_preview_remito_generate') ?? true;
-
-        if (printA4) {
-          try {
-            final settings = context.read<SettingsProvider>().settings;
-            final note = jsonDecode(response.body) as Map<String, dynamic>;
-            if (settings != null) {
-              if (showA4Preview) {
-                DeliveryNotePdfService.preview(
-                  context: context,
-                  note: note,
-                  businessName: settings.companyName ?? 'Empresa Local',
-                  businessAddress: settings.address,
-                  businessPhone: settings.phone,
-                );
-              } else {
-                DeliveryNotePdfService.printDirect(
-                  note: note,
-                  businessName: settings.companyName ?? 'Empresa Local',
-                  businessAddress: settings.address,
-                  businessPhone: settings.phone,
-                );
-              }
-            }
-          } catch (printA4Error) {
-            debugPrint('Error imprimiendo A4 remito en checkout: $printA4Error');
-          }
-        }
-
-      } else {
-        final body = jsonDecode(response.body);
-        SnackBarService.error(context, 'Error generando remito: ${body["message"] ?? response.body}');
-      }
-    } catch (e) {
-      if (mounted) SnackBarService.error(context, 'Excepción de red aislando remito: $e');
-    }
-  }
-
   void _handleCheckout() async {
     final posProvider = Provider.of<PosProvider>(context, listen: false);
-    final cashRegisterProvider = Provider.of<CashRegisterProvider>(context, listen: false);
+    final cashRegisterProvider =
+        Provider.of<CashRegisterProvider>(context, listen: false);
 
     // ── VALIDACIÓN PROACTIVA: Verificar el turno en el servidor ANTES de abrir
     // la pantalla de cobro. Esto intercepta el caso donde el turno fue cerrado
@@ -659,7 +643,8 @@ class _PosScreenState extends State<PosScreen> {
         context: context,
         barrierDismissible: false,
         builder: (ctx) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           backgroundColor: Colors.red.shade50,
           title: Row(
             children: [
@@ -690,7 +675,8 @@ class _PosScreenState extends State<PosScreen> {
           ),
           actions: [
             FilledButton.icon(
-              style: FilledButton.styleFrom(backgroundColor: Colors.red.shade600),
+              style:
+                  FilledButton.styleFrom(backgroundColor: Colors.red.shade600),
               onPressed: () => Navigator.pop(ctx),
               icon: const Icon(Icons.refresh),
               label: const Text('Recargar sesión'),
@@ -700,39 +686,227 @@ class _PosScreenState extends State<PosScreen> {
       );
       if (mounted) {
         posProvider.clearCart();
-        Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false);
+        Navigator.of(context)
+            .pushNamedAndRemoveUntil('/home', (route) => false);
       }
       return;
     }
 
     // Turno confirmado activo en el servidor → abrir pantalla de cobro
+    // Garantizar que los métodos de pago estén cargados ANTES de abrir el diálogo.
+    // En el primer inicio después de compilar, el fetch puede haber fallado silenciosamente
+    // (token de auth no listo), dejando la lista vacía y el diálogo colgado sin retry.
+    if (posProvider.paymentMethods.isEmpty) {
+      await posProvider.loadPaymentMethods();
+      if (!mounted) return;
+      if (posProvider.paymentMethods.isEmpty) {
+        SnackBarService.error(
+          context,
+          'No se pudieron cargar los métodos de pago. Intente nuevamente.',
+        );
+        return;
+      }
+    }
+
     final success = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
-      builder: (_) => CheckoutDialog(total: posProvider.cartTotal),
+      builder: (_) => CheckoutDialog(total: posProvider.cartSubtotal),
     );
-    
+
     if (success == true) {
       if (mounted) {
         // 1. PRIORIDAD ABSOLUTA: Mostrar confirmación visual de inmediato
         SnackBarService.success(context, '¡Venta registrada con éxito!');
-        
-          final settingsProvider = Provider.of<SettingsProvider>(context, listen: false);
-          if (settingsProvider.features.logistics && posProvider.lastSaleId != null) {
-            final int sid = posProvider.lastSaleId!;
-            await showDialog(
-              context: context,
-              barrierDismissible: false,
-              builder: (ctx) => _CorralonPostSaleDialog(
-                saleId: sid,
-                onGenerarRemito: _generarRemito,
-              ),
-            );
+
+        final settingsProvider =
+            Provider.of<SettingsProvider>(context, listen: false);
+        final localTerminalProvider =
+            Provider.of<LocalTerminalProvider>(context, listen: false);
+        final localFormat = localTerminalProvider.printerFormat;
+
+        // ── Post-venta Logística (Fricción Cero) ──────────────────────────
+        // El remito ya fue creado en processCheckout(). Aquí decidimos cómo mostrarlo.
+        if (posProvider.wasLastSaleDispatched) {
+          final deliveryNote = posProvider.lastDeliveryNote;
+          final isDeliveredNow = deliveryNote?['status'] == 'delivered';
+
+          // SOLO mostramos el Remito (Split o Separado) si el remito se entrega AHORA.
+          // Si quedó pendiente, el comprobante de venta simple ya se imprimió en processCheckout,
+          // y el remito lo imprimirá Logística mañana.
+          debugPrint('DEBUG: Dispatch detected. isDeliveredNow=$isDeliveredNow, note=$deliveryNote');
+          
+          if (isDeliveredNow && deliveryNote != null && (deliveryNote.containsKey('sale') || posProvider.lastSaleCart.isNotEmpty)) {
+            try {
+              final sale = (deliveryNote['sale'] as Map<String, dynamic>?) ?? {};
+              
+              // Si el remito no trajo la venta hidratada, usamos el snapshot de seguridad del provider
+              if (sale.isEmpty || sale['items'] == null) {
+                sale['id'] = deliveryNote['sale_id'];
+                sale['total'] = posProvider.lastSaleTotal;
+                sale['shipping_cost'] = posProvider.lastSaleShippingCost;
+                sale['payments'] = posProvider.lastSalePayments;
+                sale['tendered_amount'] = posProvider.lastTenderedAmount;
+                sale['change_amount'] = posProvider.lastChangeAmount;
+                sale['items'] = posProvider.lastSaleCart
+                    .map((item) => {
+                          'product_id': item.product.id,
+                          'quantity': item.quantity,
+                          'product_name': item.product.name,
+                          'unit_price': item.unitPrice,
+                          'subtotal': item.subtotal,
+                          'product': {
+                            'is_sold_by_weight': item.product.isSoldByWeight,
+                          }
+                        })
+                    .toList();
+                sale['customer'] = deliveryNote['customer'] ?? deliveryNote['sale']?['customer'];
+              }
+
+              final authProvider = Provider.of<AuthProvider>(context, listen: false);
+              final vendorName = authProvider.currentUser?['name']?.toString() ?? 'CAJERO';
+              final businessName = settingsProvider.settings?.companyName ?? 'MI NEGOCIO';
+
+              if (localFormat == 'a4_split') {
+                // 1. A4 SPLIT (Mitad y Mitad)
+                final pdfBytes = await A4SplitPdfService.generateA4SplitReceiptAndDispatch(
+                  sale: sale,
+                  deliveryNote: deliveryNote,
+                  businessName: businessName,
+                  businessAddress: settingsProvider.settings?.address,
+                  vendorName: vendorName,
+                );
+
+                if (mounted) {
+                  final result = await showDialog<String>(
+                    context: context,
+                    barrierDismissible: false,
+                    builder: (dialogCtx) {
+                      bool isVoiding = false;
+                      return StatefulBuilder(
+                        builder: (context, setState) {
+                          return Dialog(
+                          child: Container(
+                            width: 900,
+                            height: 800,
+                            child: Scaffold(
+                              appBar: AppBar(
+                                title: Text('Vista Previa Split - Venta #${sale['id']}'),
+                                automaticallyImplyLeading: false,
+                                actions: [
+                                  if (isVoiding)
+                                    Center(
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                                        child: SizedBox(
+                                          width: 24,
+                                          height: 24,
+                                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.red),
+                                        ),
+                                      ),
+                                    )
+                                  else
+                                    TextButton.icon(
+                                      onPressed: () async {
+                                        final confirm = await showDialog<bool>(
+                                          context: context,
+                                          builder: (c) => AlertDialog(
+                                            title: const Text('¿Anular Venta?'),
+                                            content: const Text('Esta acción cancelará el cobro en el sistema y devolverá los productos al carrito.'),
+                                            actions: [
+                                              TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('NO, VOLVER')),
+                                              ElevatedButton(
+                                                style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+                                                onPressed: () => Navigator.pop(c, true), 
+                                                child: const Text('SÍ, ANULAR')
+                                              ),
+                                            ],
+                                          ),
+                                        );
+
+                                        if (confirm == true) {
+                                          setState(() { isVoiding = true; });
+                                          try {
+                                            await posProvider.voidPendingOrder(int.parse(sale['id'].toString()));
+                                            // Restaurar carrito al estado previo a la venta
+                                            posProvider.restoreLastSaleCart();
+                                            
+                                            if (dialogCtx.mounted) {
+                                              SnackBarService.warning(dialogCtx, 'Venta anulada. Los productos han vuelto al carrito.');
+                                              Navigator.pop(dialogCtx, 'annulled');
+                                            }
+                                          } catch (e) {
+                                            if (dialogCtx.mounted) {
+                                              SnackBarService.error(dialogCtx, 'Error al anular: $e');
+                                              setState(() { isVoiding = false; });
+                                            }
+                                          }
+                                        }
+                                      },
+                                      icon: const Icon(Icons.delete_forever, color: Colors.red),
+                                      label: const Text('ANULAR COBRO Y VOLVER', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+                                    ),
+                                  const SizedBox(width: 16),
+                                  IconButton(
+                                    icon: const Icon(Icons.close),
+                                    onPressed: isVoiding ? null : () => Navigator.pop(dialogCtx),
+                                  ),
+                                ],
+                              ),
+                              body: PdfPreview(
+                                build: (format) async => pdfBytes,
+                                canChangePageFormat: false,
+                                canChangeOrientation: false,
+                                pdfFileName: 'Comprobante_Split_${sale['id']}.pdf',
+                                canDebug: false,
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    );
+                  },
+                );
+
+                  if (result == 'annulled') return;
+                }
+              } else if (localFormat == 'a4_normal' || localFormat == 'a4') {
+                // 2. A4 NORMAL (Dos hojas separadas)
+                // El comprobante de venta YA se mostró dentro de processCheckout.
+                // Ahora mostramos SOLO el remito en pantalla completa A4.
+                if (mounted) {
+                  await DeliveryNotePdfService.preview(
+                    context: context,
+                    note: deliveryNote,
+                    businessName: businessName,
+                    businessAddress: settingsProvider.settings?.address,
+                    vendorName: vendorName,
+                  );
+                }
+              }
+            } catch (e) {
+              debugPrint('Error crítico generando PDF Split: $e');
+              // FALLBACK: Si falló el split, intentamos al menos mostrar la venta simple de Laravel
+              // para que el cajero no se quede sin nada.
+              if (localFormat.startsWith('a4')) {
+                await _showFallbackA4Pdf(posProvider);
+              }
+            }
+          } else if (isDeliveredNow && deliveryNote == null) {
+             // Caso borde: requiere despacho inmediato pero falló la creación del remito
+             // Mostramos al menos la venta simple
+             if (localFormat.startsWith('a4')) await _showFallbackA4Pdf(posProvider);
+          } else {
+             // Estado 'pending': el PDF de venta simple ya fue mostrado por pos_provider (Laravel PDF)
+             // No se muestra nada extra aqui: el galpón imprimirá el remito desde el módulo de Logística
           }
-        
+        }
+
         // 2. ACTUALIZACIÓN LOCAL (IN-MEMORY):
         // Reordenamos el "Acceso Rápido" al instante sin depender de la red.
-        final catalogProvider = Provider.of<CatalogProvider>(context, listen: false);
+        if (!mounted) return;
+        final catalogProvider =
+            Provider.of<CatalogProvider>(context, listen: false);
         final Map<int, int> soldItems = {};
         for (var item in posProvider.cart) {
           soldItems[item.product.id] = (soldItems[item.product.id] ?? 0) + 1;
@@ -744,11 +918,13 @@ class _PosScreenState extends State<PosScreen> {
         Future.delayed(const Duration(seconds: 1), () {
           if (mounted) {
             catalogProvider.loadProducts(page: 1, search: '').catchError((e) {
-              debugPrint('Refresco silencioso falló (esperado en redes inestables): $e');
+              debugPrint(
+                  'Refresco silencioso falló (esperado en redes inestables): $e');
             });
             // Refrescar alertas de inventario (Stock mínimo y preventivas)
             try {
-              Provider.of<InventoryAlertsProvider>(context, listen: false).fetchAlerts();
+              Provider.of<InventoryAlertsProvider>(context, listen: false)
+                  .fetchAlerts();
             } catch (e) {
               debugPrint('Error refrescando alertas: $e');
             }
@@ -764,7 +940,8 @@ class _PosScreenState extends State<PosScreen> {
         context: context,
         barrierDismissible: false,
         builder: (ctx) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           backgroundColor: Colors.red.shade50,
           title: Row(
             children: [
@@ -796,7 +973,8 @@ class _PosScreenState extends State<PosScreen> {
           ),
           actions: [
             FilledButton.icon(
-              style: FilledButton.styleFrom(backgroundColor: Colors.red.shade600),
+              style:
+                  FilledButton.styleFrom(backgroundColor: Colors.red.shade600),
               onPressed: () => Navigator.pop(ctx),
               icon: const Icon(Icons.refresh),
               label: const Text('Recargar sesión'),
@@ -808,10 +986,11 @@ class _PosScreenState extends State<PosScreen> {
       // Limpiar estado del provider y navegar al inicio eliminando toda la pila
       if (mounted) {
         posProvider.clearCart();
-        Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false);
+        Navigator.of(context)
+            .pushNamedAndRemoveUntil('/home', (route) => false);
       }
     } else if (posProvider.errorMessage?.contains('SESSION_EXPIRED') == true ||
-               posProvider.errorMessage?.contains('otro dispositivo') == true) {
+        posProvider.errorMessage?.contains('otro dispositivo') == true) {
       // ── SEGURIDAD: Sesión única — manejado por el Global Interceptor en main.dart
       return;
     }
@@ -824,7 +1003,8 @@ class _PosScreenState extends State<PosScreen> {
   // ────────────────────────────────────────────────────────────────
   void _handleHoldOrder() async {
     final posProvider = Provider.of<PosProvider>(context, listen: false);
-    final cashRegisterProvider = Provider.of<CashRegisterProvider>(context, listen: false);
+    final cashRegisterProvider =
+        Provider.of<CashRegisterProvider>(context, listen: false);
     final currentUser = context.read<AuthProvider>().currentUser;
 
     final currentShift = cashRegisterProvider.currentShift;
@@ -846,7 +1026,8 @@ class _PosScreenState extends State<PosScreen> {
         context: context,
         barrierDismissible: false,
         builder: (ctx) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           backgroundColor: Colors.red.shade50,
           title: Row(
             children: [
@@ -878,7 +1059,8 @@ class _PosScreenState extends State<PosScreen> {
           ),
           actions: [
             FilledButton.icon(
-              style: FilledButton.styleFrom(backgroundColor: Colors.red.shade600),
+              style:
+                  FilledButton.styleFrom(backgroundColor: Colors.red.shade600),
               onPressed: () => Navigator.pop(ctx),
               icon: const Icon(Icons.refresh),
               label: const Text('Recargar sesión'),
@@ -888,7 +1070,8 @@ class _PosScreenState extends State<PosScreen> {
       );
       if (mounted) {
         posProvider.clearCart();
-        Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false);
+        Navigator.of(context)
+            .pushNamedAndRemoveUntil('/home', (route) => false);
       }
     } else if (!success &&
         (posProvider.errorMessage?.contains('SESSION_EXPIRED') == true ||
@@ -897,7 +1080,8 @@ class _PosScreenState extends State<PosScreen> {
       // ── SEGURIDAD: Sesión única — manejado por el Global Interceptor en main.dart
       return;
     } else if (!success && mounted) {
-      SnackBarService.error(context, posProvider.errorMessage ?? 'No se pudo guardar la orden.');
+      SnackBarService.error(
+          context, posProvider.errorMessage ?? 'No se pudo guardar la orden.');
     }
     _searchFocusNode.requestFocus();
   }
@@ -905,14 +1089,19 @@ class _PosScreenState extends State<PosScreen> {
   // ────────────────────────────────────────────────────────────────
   // MODAL DE ÓRDENES PENDIENTES
   // ────────────────────────────────────────────────────────────────
-  Future<void> _handleDeletePendingOrder(int saleId, PosProvider posProvider, {StateSetter? setStateDialog}) async {
+  Future<void> _handleDeletePendingOrder(int saleId, PosProvider posProvider,
+      {StateSetter? setStateDialog}) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Anular Orden en Espera', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-        content: Text('¿Desea anular la orden #$saleId?\nEsta acción devolverá los productos al stock físico y no se puede deshacer.'),
+        title: const Text('Anular Orden en Espera',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+        content: Text(
+            '¿Desea anular la orden #$saleId?\nEsta acción devolverá los productos al stock físico y no se puede deshacer.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancelar')),
           FilledButton.icon(
             style: FilledButton.styleFrom(backgroundColor: Colors.red.shade600),
             onPressed: () => Navigator.pop(ctx, true),
@@ -927,14 +1116,16 @@ class _PosScreenState extends State<PosScreen> {
       final success = await posProvider.voidPendingOrder(saleId);
       if (mounted) {
         if (success) {
-          SnackBarService.success(context, 'Orden #$saleId anulada. El stock fue restaurado.');
+          SnackBarService.success(
+              context, 'Orden #$saleId anulada. El stock fue restaurado.');
           if (setStateDialog != null) {
             setStateDialog(() {});
           } else {
             _searchFocusNode.requestFocus();
           }
         } else {
-          SnackBarService.error(context, posProvider.errorMessage ?? 'Error al anular orden');
+          SnackBarService.error(
+              context, posProvider.errorMessage ?? 'Error al anular orden');
         }
       }
     }
@@ -964,16 +1155,25 @@ class _PosScreenState extends State<PosScreen> {
               borderRadius: BorderRadius.circular(10),
               border: Border.all(color: Colors.white, width: 1.5),
               boxShadow: [
-                BoxShadow(color: Colors.redAccent.withOpacity(0.4), blurRadius: 4, spreadRadius: 1),
+                BoxShadow(
+                    color: Colors.redAccent.withValues(alpha: 0.4),
+                    blurRadius: 4,
+                    spreadRadius: 1),
               ],
             ),
             constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
-            child: Text('$count', style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold), textAlign: TextAlign.center),
+            child: Text('$count',
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold),
+                textAlign: TextAlign.center),
           ),
         );
       },
     );
   }
+
   Widget _buildPendingOrdersOverlay(PosProvider posProvider) {
     return StatefulBuilder(
       builder: (context, setOverlayState) {
@@ -994,7 +1194,7 @@ class _PosScreenState extends State<PosScreen> {
                 elevation: 16,
                 borderRadius: BorderRadius.circular(20),
                 clipBehavior: Clip.antiAlias,
-                shadowColor: Colors.black.withOpacity(0.3),
+                shadowColor: Colors.black.withValues(alpha: 0.3),
                 child: Container(
                   decoration: BoxDecoration(
                     color: Colors.white,
@@ -1005,32 +1205,44 @@ class _PosScreenState extends State<PosScreen> {
                     children: [
                       // Header con controles internos
                       Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 20, vertical: 16),
                         child: Row(
                           children: [
-                            Icon(Icons.pending_actions_rounded, color: Colors.orange.shade700, size: 24),
+                            Icon(Icons.pending_actions_rounded,
+                                color: Colors.orange.shade700, size: 24),
                             const SizedBox(width: 12),
                             const Expanded(
-                              child: Text('Órdenes en Espera', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                              child: Text('Órdenes en Espera',
+                                  style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 18)),
                             ),
                             // PIN con setOverlayState para no romper el layout global
                             IconButton(
                               icon: Icon(
-                                _isPendingPinned ? Icons.push_pin : Icons.push_pin_outlined,
+                                _isPendingPinned
+                                    ? Icons.push_pin
+                                    : Icons.push_pin_outlined,
                                 size: 20,
-                                color: _isPendingPinned ? Colors.blueAccent : Colors.grey,
+                                color: _isPendingPinned
+                                    ? Colors.blueAccent
+                                    : Colors.grey,
                               ),
-                              tooltip: null, // Parche: eliminamos el tooltip que causa el crash
+                              tooltip:
+                                  null, // Parche: eliminamos el tooltip que causa el crash
                               onPressed: () {
                                 setOverlayState(() {
                                   _isPendingPinned = !_isPendingPinned;
                                 });
-                                setState(() {}); 
+                                setState(() {});
                               },
                             ),
                             IconButton(
-                              icon: const Icon(Icons.refresh, size: 20, color: Colors.blueGrey),
-                              tooltip: null, // Parche: eliminamos el tooltip que causa el crash
+                              icon: const Icon(Icons.refresh,
+                                  size: 20, color: Colors.blueGrey),
+                              tooltip:
+                                  null, // Parche: eliminamos el tooltip que causa el crash
                               onPressed: () async {
                                 await posProvider.loadPendingSales();
                                 if (context.mounted) setOverlayState(() {});
@@ -1039,7 +1251,8 @@ class _PosScreenState extends State<PosScreen> {
                             IconButton(
                               icon: const Icon(Icons.close, size: 20),
                               tooltip: null,
-                              onPressed: () => _pendingOrdersPortalController.hide(),
+                              onPressed: () =>
+                                  _pendingOrdersPortalController.hide(),
                             ),
                           ],
                         ),
@@ -1048,7 +1261,8 @@ class _PosScreenState extends State<PosScreen> {
                       Flexible(
                         child: pendingSales.isEmpty
                             ? _buildEmptyPendingState()
-                            : _buildPendingOrdersList(pendingSales, posProvider),
+                            : _buildPendingOrdersList(
+                                pendingSales, posProvider),
                       ),
                     ],
                   ),
@@ -1077,13 +1291,15 @@ class _PosScreenState extends State<PosScreen> {
         children: [
           Icon(Icons.check_circle_outline, size: 56, color: Colors.green),
           SizedBox(height: 12),
-          Text('¡No hay órdenes!', style: TextStyle(fontSize: 16, color: Colors.grey)),
+          Text('¡No hay órdenes!',
+              style: TextStyle(fontSize: 16, color: Colors.grey)),
         ],
       ),
     );
   }
 
-  Widget _buildPendingOrdersList(List<dynamic> pendingSales, PosProvider posProvider) {
+  Widget _buildPendingOrdersList(
+      List<dynamic> pendingSales, PosProvider posProvider) {
     return ListView.separated(
       padding: const EdgeInsets.all(12),
       itemCount: pendingSales.length,
@@ -1097,7 +1313,9 @@ class _PosScreenState extends State<PosScreen> {
         return Card(
           elevation: 0,
           color: Colors.grey.shade50,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: Colors.grey.shade100)),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: Colors.grey.shade100)),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             child: Column(
@@ -1107,40 +1325,66 @@ class _PosScreenState extends State<PosScreen> {
                     CircleAvatar(
                       radius: 14,
                       backgroundColor: Colors.orange.shade100,
-                      child: Text('#$saleId', style: TextStyle(color: Colors.orange.shade800, fontWeight: FontWeight.bold, fontSize: 10)),
+                      child: Text('#$saleId',
+                          style: TextStyle(
+                              color: Colors.orange.shade800,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 10)),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('\$${total.toCurrency()}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                          Text('\$${total.toCurrency()}',
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.bold, fontSize: 16)),
                           Row(
                             children: [
-                              Icon(Icons.access_time, size: 10, color: Colors.grey.shade500),
+                              Icon(Icons.access_time,
+                                  size: 10, color: Colors.grey.shade500),
                               const SizedBox(width: 4),
                               Builder(
                                 builder: (context) {
-                                  final createdAt = sale['created_at'] as String?;
-                                  if (createdAt == null) return const Text('--:--', style: TextStyle(fontSize: 11));
-                                  
+                                  final createdAt =
+                                      sale['created_at'] as String?;
+                                  if (createdAt == null) {
+                                    return const Text('--:--',
+                                        style: TextStyle(fontSize: 11));
+                                  }
+
                                   // Forzamos formato ISO UTC (YYYY-MM-DDTHH:mm:ssZ) para que .toLocal() funcione
-                                  final isoStr = createdAt.contains('T') ? createdAt : createdAt.replaceFirst(' ', 'T');
-                                  final utcStr = isoStr.endsWith('Z') ? isoStr : '${isoStr}Z';
-                                  
-                                  final dt = DateTime.tryParse(utcStr)?.toLocal();
-                                  if (dt == null) return Text(createdAt.substring(11, 16), style: const TextStyle(fontSize: 11));
-                                  
+                                  final isoStr = createdAt.contains('T')
+                                      ? createdAt
+                                      : createdAt.replaceFirst(' ', 'T');
+                                  final utcStr = isoStr.endsWith('Z')
+                                      ? isoStr
+                                      : '${isoStr}Z';
+
+                                  final dt =
+                                      DateTime.tryParse(utcStr)?.toLocal();
+                                  if (dt == null) {
+                                    return Text(createdAt.substring(11, 16),
+                                        style: const TextStyle(fontSize: 11));
+                                  }
+
                                   return Text(
                                     "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}",
-                                    style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                                    style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.grey.shade600),
                                   );
                                 },
                               ),
                               const SizedBox(width: 8),
-                              const Text('•', style: TextStyle(color: Colors.grey, fontSize: 10)),
+                              const Text('•',
+                                  style: TextStyle(
+                                      color: Colors.grey, fontSize: 10)),
                               const SizedBox(width: 8),
-                              Text('$itemCount ítem(s)', style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+                              Text('$itemCount ítem(s)',
+                                  style: TextStyle(
+                                      fontSize: 11,
+                                      color: Colors.grey.shade600)),
                             ],
                           ),
                         ],
@@ -1153,8 +1397,10 @@ class _PosScreenState extends State<PosScreen> {
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
                     TextButton(
-                      child: const Text('Anular', style: TextStyle(color: Colors.red, fontSize: 12)),
-                      onPressed: () => _handleDeletePendingOrder(saleId, posProvider),
+                      child: const Text('Anular',
+                          style: TextStyle(color: Colors.red, fontSize: 12)),
+                      onPressed: () =>
+                          _handleDeletePendingOrder(saleId, posProvider),
                     ),
                     const SizedBox(width: 8),
                     ElevatedButton(
@@ -1162,15 +1408,19 @@ class _PosScreenState extends State<PosScreen> {
                         backgroundColor: Colors.orange.shade50,
                         foregroundColor: Colors.orange.shade900,
                         elevation: 0,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8)),
                       ),
                       onPressed: () {
                         _pendingOrdersPortalController.hide();
                         posProvider.recallOrderToCart(sale);
-                        SnackBarService.success(context, '📥 Orden #$saleId cargada al carrito.');
+                        SnackBarService.success(
+                            context, '📥 Orden #$saleId cargada al carrito.');
                         _searchFocusNode.requestFocus();
                       },
-                      child: const Text('RECUPERAR', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                      child: const Text('RECUPERAR',
+                          style: TextStyle(
+                              fontSize: 12, fontWeight: FontWeight.bold)),
                     ),
                   ],
                 ),
@@ -1187,16 +1437,25 @@ class _PosScreenState extends State<PosScreen> {
     return Scaffold(
       appBar: GlobalAppBar(
         currentRoute: '/pos',
-        extraAction: Consumer<PosProvider>(
-          builder: (ctx, pos, _) {
-            final count = pos.pendingCount;
+        extraAction: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.print, color: Colors.blueGrey),
+              tooltip: 'Ajustes de Impresión Local',
+              onPressed: () => _showTerminalSettings(context),
+            ),
+            Consumer<PosProvider>(
+              builder: (ctx, pos, _) {
+                final count = pos.pendingCount;
             return TapRegion(
               groupId: 'pending_orders_overlay',
               child: CompositedTransformTarget(
                 link: _pendingOrdersLayerLink,
                 child: OverlayPortal(
                   controller: _pendingOrdersPortalController,
-                  overlayChildBuilder: (context) => _buildPendingOrdersOverlay(pos),
+                  overlayChildBuilder: (context) =>
+                      _buildPendingOrdersOverlay(pos),
                   child: Padding(
                     padding: const EdgeInsets.only(right: 4),
                     child: TweenAnimationBuilder<double>(
@@ -1209,15 +1468,22 @@ class _PosScreenState extends State<PosScreen> {
                           alignment: Alignment.center,
                           children: [
                             Transform.rotate(
-                              angle: count > 0 ? (0.15 * (1.0 - value) * (DateTime.now().second % 5 == 0 ? 1 : 0)) : 0,
+                              angle: count > 0
+                                  ? (0.15 *
+                                      (1.0 - value) *
+                                      (DateTime.now().second % 5 == 0 ? 1 : 0))
+                                  : 0,
                               child: IconButton(
                                 tooltip: 'Órdenes en Espera',
                                 icon: Icon(
                                   Icons.pending_actions_rounded,
-                                  color: count > 0 ? Colors.orange.shade700 : Colors.blueGrey,
+                                  color: count > 0
+                                      ? Colors.orange.shade700
+                                      : Colors.blueGrey,
                                   size: 28,
                                 ),
-                                onPressed: () => _pendingOrdersPortalController.toggle(),
+                                onPressed: () =>
+                                    _pendingOrdersPortalController.toggle(),
                               ),
                             ),
                             if (count > 0)
@@ -1238,9 +1504,11 @@ class _PosScreenState extends State<PosScreen> {
             );
           },
         ),
-      ),
-      body: Consumer<CashRegisterProvider>(
-        builder: (ctx, cashProv, _) {
+      ],
+    ),
+  ),
+  body: Consumer<CashRegisterProvider>(
+    builder: (ctx, cashProv, _) {
           // ── EmptyState: Admin entró sin turno ────────────────────
           if (cashProv.currentShift == null || !cashProv.currentShift!.isOpen) {
             return Center(
@@ -1254,18 +1522,23 @@ class _PosScreenState extends State<PosScreen> {
                       color: Colors.orange.shade50,
                       shape: BoxShape.circle,
                     ),
-                    child: Icon(Icons.point_of_sale_rounded, size: 52, color: Colors.orange.shade400),
+                    child: Icon(Icons.point_of_sale_rounded,
+                        size: 52, color: Colors.orange.shade400),
                   ),
                   const SizedBox(height: 24),
                   const Text(
                     'Caja sin turno activo',
-                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.black87),
+                    style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black87),
                   ),
                   const SizedBox(height: 8),
                   Text(
                     'Para registrar ventas, necesitás abrir\nla caja en esta terminal.',
                     textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 15, color: Colors.grey.shade600, height: 1.5),
+                    style: TextStyle(
+                        fontSize: 15, color: Colors.grey.shade600, height: 1.5),
                   ),
                   const SizedBox(height: 32),
                   FilledButton.icon(
@@ -1273,11 +1546,15 @@ class _PosScreenState extends State<PosScreen> {
                       Navigator.of(context).pushReplacementNamed('/home');
                     },
                     icon: const Icon(Icons.lock_open_rounded),
-                    label: const Text('Abrir Caja Ahora', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                    label: const Text('Abrir Caja Ahora',
+                        style: TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.w600)),
                     style: FilledButton.styleFrom(
                       backgroundColor: Colors.green.shade600,
-                      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 32, vertical: 14),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -1291,22 +1568,20 @@ class _PosScreenState extends State<PosScreen> {
           }
           // ── POS Normal ──────────────────────────────────
           return SafeArea(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                return Row(
-                  children: [
-                    SizedBox(
-                      width: constraints.maxWidth * 0.35,
-                      child: _buildCartPanel(),
-                    ),
-                    const VerticalDivider(width: 1, thickness: 1),
-                    Expanded(
-                      child: _buildRightPanel(),
-                    )
-                  ],
-                );
-              }
-            ),
+            child: LayoutBuilder(builder: (context, constraints) {
+              return Row(
+                children: [
+                  SizedBox(
+                    width: constraints.maxWidth * 0.35,
+                    child: _buildCartPanel(),
+                  ),
+                  const VerticalDivider(width: 1, thickness: 1),
+                  Expanded(
+                    child: _buildRightPanel(),
+                  )
+                ],
+              );
+            }),
           );
         },
       ),
@@ -1314,210 +1589,481 @@ class _PosScreenState extends State<PosScreen> {
   }
 
   Widget _buildCartPanel() {
-    return Consumer<PosProvider>(
-      builder: (context, pos, child) {
-        final isRecall = pos.activePendingSaleId != null;
+    return Consumer<PosProvider>(builder: (context, pos, child) {
+      final isRecall = pos.activePendingSaleId != null;
 
-        return Column(
-          children: [
-            // Banner de Recuperación de Orden
-            if (isRecall)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                color: Colors.orange.shade50,
-                child: Row(
+      return Column(
+        children: [
+          // Banner de Recuperación de Orden
+          if (isRecall)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              color: Colors.orange.shade50,
+              child: Row(
+                children: [
+                  Icon(Icons.sync_rounded,
+                      color: Colors.orange.shade800, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Editando Orden #${pos.activePendingSaleId}',
+                      style: TextStyle(
+                          color: Colors.orange.shade900,
+                          fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.delete_outline,
+                        color: Colors.red.shade700, size: 18),
+                    tooltip: 'Anular Orden',
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    onPressed: () => _handleDeletePendingOrder(
+                        pos.activePendingSaleId!, pos),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    icon: Icon(Icons.close,
+                        color: Colors.orange.shade900, size: 18),
+                    tooltip: 'Cancelar Edición',
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    onPressed: () {
+                      pos.clearRecall();
+                      _searchFocusNode.requestFocus();
+                    },
+                  ),
+                ],
+              ),
+            ),
+
+          // Header del carrito
+          Container(
+            padding: const EdgeInsets.all(16),
+            color: Colors.blue.shade50,
+            child: const Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Ticket Actual',
+                    style:
+                        TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                Icon(Icons.shopping_cart),
+              ],
+            ),
+          ),
+
+          // Lista de ítems
+          Expanded(
+            child: pos.cart.isEmpty
+                ? const Center(
+                    child: Text('El carrito está vacío',
+                        style: TextStyle(color: Colors.grey)))
+                : ListView.separated(
+                    itemCount: pos.cart.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    itemBuilder: (context, index) {
+                      final item = pos.cart[index];
+                      final String qtyDisplay = item.product.isSoldByWeight
+                          ? item.quantity.toQty()
+                          : item.quantity.toInt().toString();
+
+                      return ListTile(
+                        title: Text(item.product.name,
+                            style:
+                                const TextStyle(fontWeight: FontWeight.bold)),
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                if (item.unitPrice != item.product.sellingPrice)
+                                  Padding(
+                                    padding: const EdgeInsets.only(right: 6.0),
+                                    child: Text(
+                                      '\$${item.product.sellingPrice.toCurrency()}',
+                                      style: const TextStyle(
+                                        decoration: TextDecoration.lineThrough,
+                                        color: Colors.grey,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ),
+                                Text(
+                                  '$qtyDisplay x \$${item.unitPrice.toCurrency()}',
+                                  style: TextStyle(
+                                    fontWeight: item.unitPrice !=
+                                            item.product.sellingPrice
+                                        ? FontWeight.bold
+                                        : FontWeight.normal,
+                                    color: item.unitPrice >
+                                            item.product.sellingPrice
+                                        ? Colors.red.shade700
+                                        : (item.unitPrice <
+                                                item.product.sellingPrice
+                                            ? Colors.green.shade700
+                                            : Colors.black87),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            if (item.activeTier == PriceTier.wholesale)
+                              Container(
+                                margin: const EdgeInsets.only(top: 4),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                    color: Colors.blue.shade50,
+                                    border:
+                                        Border.all(color: Colors.blue.shade300),
+                                    borderRadius: BorderRadius.circular(4)),
+                                child: Text('🏷️ Lista Mayorista Aplicada',
+                                    style: TextStyle(
+                                        fontSize: 10,
+                                        color: Colors.blue.shade800,
+                                        fontWeight: FontWeight.bold)),
+                              )
+                            else if (item.activeTier == PriceTier.card)
+                              Container(
+                                margin: const EdgeInsets.only(top: 4),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                    color: Colors.orange.shade50,
+                                    border: Border.all(
+                                        color: Colors.orange.shade300),
+                                    borderRadius: BorderRadius.circular(4)),
+                                child: Text('💳 Recargo Tarjeta / Crédito',
+                                    style: TextStyle(
+                                        fontSize: 10,
+                                        color: Colors.orange.shade800,
+                                        fontWeight: FontWeight.bold)),
+                              )
+                            else if (item.activeTier == PriceTier.custom)
+                              Container(
+                                margin: const EdgeInsets.only(top: 4),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                    color: Colors.purple.shade50,
+                                    border: Border.all(
+                                        color: Colors.purple.shade300),
+                                    borderRadius: BorderRadius.circular(4)),
+                                child: Text(
+                                    '🏷️ Lista: ${item.customTierLabel ?? 'Personalizada'}',
+                                    style: TextStyle(
+                                        fontSize: 10,
+                                        color: Colors.purple.shade800,
+                                        fontWeight: FontWeight.bold)),
+                              )
+                            else if (item.product
+                                        .getApplicableTier(item.quantity) !=
+                                    null &&
+                                item.unitPrice < item.product.sellingPrice)
+                              Container(
+                                margin: const EdgeInsets.only(top: 4),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                    color: Colors.green.shade50,
+                                    border: Border.all(
+                                        color: Colors.green.shade300),
+                                    borderRadius: BorderRadius.circular(4)),
+                                child: Text(
+                                  '📦 Desc. Volumétrico (x${(item.product.getApplicableTier(item.quantity)!['min_quantity'] as num).toQty()})',
+                                  style: TextStyle(
+                                      fontSize: 10,
+                                      color: Colors.green.shade800,
+                                      fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                            _CartItemStockIndicator(item: item),
+                          ],
+                        ),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.remove_circle_outline,
+                                  color: Colors.grey),
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(),
+                              onPressed: () {
+                                if (item.quantity > 1) {
+                                  pos.updateQuantity(item, item.quantity - 1);
+                                } else {
+                                  pos.removeFromCart(item);
+                                }
+                              },
+                            ),
+                            const SizedBox(width: 8),
+                            IconButton(
+                              icon: const Icon(Icons.add_circle_outline,
+                                  color: Colors.blue),
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(),
+                              onPressed: () {
+                                pos.updateQuantity(item, item.quantity + 1);
+                              },
+                            ),
+                            const SizedBox(width: 16),
+                            Text('\$${item.subtotal.toCurrency()}',
+                                style: const TextStyle(fontSize: 16)),
+                            IconButton(
+                              icon: const Icon(Icons.delete, color: Colors.red),
+                              onPressed: () => pos.removeFromCart(item),
+                            )
+                          ],
+                        ),
+                        onTap: () {
+                          _showEditCartItemModal(item, pos);
+                        },
+                      );
+                    },
+                  ),
+          ),
+
+          // Footer (Total + Doble Botón)
+          Container(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              boxShadow: [
+                BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.05),
+                    blurRadius: 10,
+                    offset: const Offset(0, -5))
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // ── Lista de Precios [Premium Feature] ────────────────
+                if (context
+                        .read<SettingsProvider>()
+                        .settings
+                        ?.features
+                        .multiplePrices ==
+                    true)
+                  Builder(builder: (_) {
+                    final settings = context.read<SettingsProvider>().settings;
+                    final customTiers = settings?.customPriceTiers ?? [];
+
+                    // Valor a mostrar en el dropdown: si es custom, usamos el label
+                    // Si es custom pero sin label (inconsistencia), caemos a base
+                    final currentValue = pos.activeTier == PriceTier.custom
+                        ? (pos.customTierLabel != null
+                            ? 'custom_${pos.customTierLabel}'
+                            : 'base')
+                        : pos.activeTier.name;
+
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 8.0),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('Lista de Precio:',
+                              style: TextStyle(
+                                  color: Colors.grey,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold)),
+                          SizedBox(
+                            height: 30,
+                            child: DropdownButton<String>(
+                              value: currentValue,
+                              isDense: true,
+                              underline: const SizedBox(),
+                              icon: const Icon(Icons.keyboard_arrow_down,
+                                  size: 16),
+                              style: const TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.black87,
+                                  fontWeight: FontWeight.bold),
+                              items: [
+                                const DropdownMenuItem(
+                                    value: 'base',
+                                    child: Text('🏪 Minorista (Base)')),
+                                const DropdownMenuItem(
+                                    value: 'wholesale',
+                                    child: Text('🏭 Mayorista')),
+                                const DropdownMenuItem(
+                                    value: 'card', child: Text('💳 Tarjeta')),
+                                // Listas personalizadas dinámicas del backend
+                                ...customTiers.map((t) {
+                                  final name =
+                                      t['name']?.toString() ?? 'Custom';
+                                  final mod =
+                                      (t['modifier'] as num?)?.toDouble() ??
+                                          0.0;
+                                  final sign = mod >= 0 ? '+' : '';
+                                  return DropdownMenuItem(
+                                    value: 'custom_$name',
+                                    child: Text(
+                                        '🏷️ $name ($sign${mod.toStringAsFixed(0)}%)'),
+                                  );
+                                }),
+                              ],
+                              onChanged: (String? val) {
+                                if (val == null) return;
+                                if (val == 'base') {
+                                  pos.setPriceTier(PriceTier.base);
+                                } else if (val == 'wholesale') {
+                                  pos.setPriceTier(
+                                    PriceTier.wholesale,
+                                    wholesaleFactor: settings != null
+                                        ? 1 +
+                                            (settings
+                                                    .globalWholesalePercentage /
+                                                100)
+                                        : null,
+                                    cardFactor: settings != null
+                                        ? 1 +
+                                            (settings.globalCardPercentage /
+                                                100)
+                                        : null,
+                                  );
+                                } else if (val == 'card') {
+                                  pos.setPriceTier(
+                                    PriceTier.card,
+                                    wholesaleFactor: settings != null
+                                        ? 1 +
+                                            (settings
+                                                    .globalWholesalePercentage /
+                                                100)
+                                        : null,
+                                    cardFactor: settings != null
+                                        ? 1 +
+                                            (settings.globalCardPercentage /
+                                                100)
+                                        : null,
+                                  );
+                                } else if (val.startsWith('custom_')) {
+                                  final label =
+                                      val.substring(7); // strip 'custom_'
+                                  final tier = customTiers.firstWhere(
+                                      (t) => t['name'] == label,
+                                      orElse: () => {});
+                                  final mod =
+                                      (tier['modifier'] as num?)?.toDouble() ??
+                                          0.0;
+                                  pos.setPriceTier(
+                                    PriceTier.custom,
+                                    customFactor: 1 + (mod / 100),
+                                    customLabel: label,
+                                  );
+                                }
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.baseline,
+                  textBaseline: TextBaseline.alphabetic,
                   children: [
-                    Icon(Icons.sync_rounded, color: Colors.orange.shade800, size: 20),
-                    const SizedBox(width: 8),
+                    const Text('TOTAL:',
+                        style: TextStyle(
+                            fontSize: 20, fontWeight: FontWeight.bold)),
+                    const SizedBox(width: 4),
                     Expanded(
                       child: Text(
-                        'Editando Orden #${pos.activePendingSaleId}',
-                        style: TextStyle(color: Colors.orange.shade900, fontWeight: FontWeight.bold),
+                        '\$${pos.cartSubtotal.toCurrency()}',
+                        style: const TextStyle(
+                            fontSize: 28,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.green),
+                        textAlign: TextAlign.right,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                    ),
-                    IconButton(
-                      icon: Icon(Icons.delete_outline, color: Colors.red.shade700, size: 18),
-                      tooltip: 'Anular Orden',
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                      onPressed: () => _handleDeletePendingOrder(pos.activePendingSaleId!, pos),
-                    ),
-                    const SizedBox(width: 8),
-                    IconButton(
-                      icon: Icon(Icons.close, color: Colors.orange.shade900, size: 18),
-                      tooltip: 'Cancelar Edición',
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                      onPressed: () {
-                        pos.clearRecall();
-                        _searchFocusNode.requestFocus();
-                      },
                     ),
                   ],
                 ),
-              ),
+                const SizedBox(height: 10),
 
-            // Header del carrito
-            Container(
-              padding: const EdgeInsets.all(16),
-              color: Colors.blue.shade50,
-              child: const Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text('Ticket Actual', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                  Icon(Icons.shopping_cart),
-                ],
-              ),
-            ),
-            
-            // Lista de ítems
-            Expanded(
-              child: pos.cart.isEmpty
-                  ? const Center(child: Text('El carrito está vacío', style: TextStyle(color: Colors.grey)))
-                  : ListView.separated(
-                      itemCount: pos.cart.length,
-                      separatorBuilder: (_, __) => const Divider(height: 1),
-                      itemBuilder: (context, index) {
-                        final item = pos.cart[index];
-                        final String qtyDisplay = item.product.isSoldByWeight 
-                            ? item.quantity.toQty() 
-                            : item.quantity.toInt().toString();
+                // ── Botón: Dejar en Espera ────────────────────────────
+                SizedBox(
+                  width: double.infinity,
+                  height: 44,
+                  child: OutlinedButton.icon(
+                    onPressed: pos.cart.isEmpty || pos.isLoading || isRecall
+                        ? null
+                        : _handleHoldOrder,
+                    icon: const Icon(Icons.pending_actions_rounded, size: 18),
+                    label: const Text('Dejar en Espera',
+                        style: TextStyle(
+                            fontSize: 15, fontWeight: FontWeight.w600)),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.blueGrey.shade700,
+                      side: BorderSide(
+                          color: pos.cart.isEmpty
+                              ? Colors.grey.shade300
+                              : Colors.blueGrey.shade400),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10)),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
 
-                        return ListTile(
-                          title: Text(item.product.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                          subtitle: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                // ── Botón Principal: Cobrar ───────────────────────────
+                SizedBox(
+                  width: double.infinity,
+                  height: 54,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: pos.cart.isEmpty
+                          ? Colors.grey.shade400
+                          : pos.isLoading
+                              ? Colors.green.shade300
+                              : Colors.green.shade600,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10)),
+                      elevation: pos.isLoading ? 0 : 4,
+                    ),
+                    onPressed: pos.cart.isEmpty || pos.isLoading
+                        ? null
+                        : _handleCheckout,
+                    child: pos.isLoading
+                        ? const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Text('$qtyDisplay x \$${item.unitPrice.toCurrency()}'),
-                              if (item.product.getApplicableTier(item.quantity) != null && item.unitPrice < item.product.sellingPrice)
-                                Container(
-                                  margin: const EdgeInsets.only(top: 4),
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: Colors.green.shade50,
-                                    border: Border.all(color: Colors.green.shade300),
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  child: Text(
-                                    '🏷️ Precio mayorista (x${(item.product.getApplicableTier(item.quantity)!['min_quantity'] as num).toQty()})',
-                                    style: TextStyle(fontSize: 10, color: Colors.green.shade800, fontWeight: FontWeight.bold),
-                                  ),
-                                ),
-                              _CartItemStockIndicator(item: item),
-
+                              SizedBox(
+                                  width: 22,
+                                  height: 22,
+                                  child: CircularProgressIndicator(
+                                      color: Colors.white, strokeWidth: 2.5)),
+                              SizedBox(width: 10),
+                              Text('Procesando...',
+                                  style: TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold)),
+                            ],
+                          )
+                        : const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.point_of_sale_rounded, size: 22),
+                              SizedBox(width: 8),
+                              Text('💵 COBRAR',
+                                  style: TextStyle(
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.bold,
+                                      letterSpacing: 1.2)),
                             ],
                           ),
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text('\$${item.subtotal.toCurrency()}', style: const TextStyle(fontSize: 16)),
-                              IconButton(
-                                icon: const Icon(Icons.delete, color: Colors.red),
-                                onPressed: () => pos.removeFromCart(item),
-                              )
-                            ],
-                          ),
-                          onTap: () {
-                            _showEditCartItemModal(item, pos);
-                          },
-                        );
-                      },
-                    ),
+                  ),
+                ),
+              ],
             ),
-
-            // Footer (Total + Doble Botón)
-            Container(
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                boxShadow: [
-                  BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, -5))
-                ],
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // ── Total ────────────────────────────────────────────
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    crossAxisAlignment: CrossAxisAlignment.baseline,
-                    textBaseline: TextBaseline.alphabetic,
-                    children: [
-                      const Text('TOTAL:', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: Text(
-                          '\$${pos.cartTotal.toCurrency()}',
-                          style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.green),
-                          textAlign: TextAlign.right,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-
-                  // ── Botón: Dejar en Espera ────────────────────────────
-                  SizedBox(
-                    width: double.infinity,
-                    height: 44,
-                    child: OutlinedButton.icon(
-                      onPressed: pos.cart.isEmpty || pos.isLoading || isRecall ? null : _handleHoldOrder,
-                      icon: const Icon(Icons.pending_actions_rounded, size: 18),
-                      label: const Text('Dejar en Espera', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.blueGrey.shade700,
-                        side: BorderSide(color: pos.cart.isEmpty ? Colors.grey.shade300 : Colors.blueGrey.shade400),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-
-                  // ── Botón Principal: Cobrar ───────────────────────────
-                  SizedBox(
-                    width: double.infinity,
-                    height: 54,
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: pos.cart.isEmpty
-                            ? Colors.grey.shade400
-                            : pos.isLoading
-                                ? Colors.green.shade300
-                                : Colors.green.shade600,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                        elevation: pos.isLoading ? 0 : 4,
-                      ),
-                      onPressed: pos.cart.isEmpty || pos.isLoading ? null : _handleCheckout,
-                      child: pos.isLoading
-                          ? const Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                SizedBox(width: 22, height: 22,
-                                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5)),
-                                SizedBox(width: 10),
-                                Text('Procesando...', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                              ],
-                            )
-                          : const Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.point_of_sale_rounded, size: 22),
-                                SizedBox(width: 8),
-                                Text('💵 COBRAR', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
-                              ],
-                            ),
-                    ),
-                  ),
-                ],
-              ),
-            )
-          ],
-        );
-      }
-    );
+          )
+        ],
+      );
+    });
   }
 
   Widget _buildRightPanel() {
@@ -1535,7 +2081,10 @@ class _PosScreenState extends State<PosScreen> {
               prefixIcon: _isSearching
                   ? const Padding(
                       padding: EdgeInsets.all(12),
-                      child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+                      child: SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2)),
                     )
                   : const Icon(Icons.search),
               suffixIcon: _searchQuery.isNotEmpty
@@ -1548,7 +2097,8 @@ class _PosScreenState extends State<PosScreen> {
                       },
                     )
                   : null,
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              border:
+                  OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
               filled: true,
               fillColor: Colors.grey.shade100,
             ),
@@ -1557,32 +2107,38 @@ class _PosScreenState extends State<PosScreen> {
             // Enter: para códigos de barras (API call + agregar al carrito)
             onSubmitted: _onProductScannedOrSearched,
           ),
-          
+
           const SizedBox(height: 16),
 
           // ── Header dinámico ────────────────────────────────────────────
-          if (_searchQuery.isEmpty) ...[  
+          if (_searchQuery.isEmpty) ...[
             const Row(
               children: [
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Acceso Rápido', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                      Text('Productos por peso · Sin código de barras · Más vendidos',
+                      Text('Acceso Rápido',
+                          style: TextStyle(
+                              fontSize: 18, fontWeight: FontWeight.bold)),
+                      Text(
+                          'Productos por peso · Sin código de barras · Más vendidos',
                           style: TextStyle(fontSize: 12, color: Colors.grey)),
                     ],
                   ),
                 ),
               ],
             ),
-          ] else ...[  
+          ] else ...[
             Row(
               children: [
                 const Icon(Icons.filter_list_rounded, color: Colors.blueAccent),
                 const SizedBox(width: 6),
                 Text('Resultados para "${_searchController.text}"',
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.blueAccent)),
+                    style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blueAccent)),
               ],
             ),
           ],
@@ -1602,13 +2158,17 @@ class _PosScreenState extends State<PosScreen> {
                   // Acceso Rápido Inteligente:
                   // Nivel 1: Por peso o sin código de barras (siempre arriba)
                   // Nivel 2: Más vendidos primero
-                  final level1 = catalog.products.where((p) => 
-                    p.isSoldByWeight || (p.barcode == null || p.barcode!.isEmpty)
-                  ).toList();
-                  
-                  final others = catalog.products.where((p) => 
-                    !p.isSoldByWeight && (p.barcode != null && p.barcode!.isNotEmpty)
-                  ).toList();
+                  final level1 = catalog.products
+                      .where((p) =>
+                          p.isSoldByWeight ||
+                          (p.barcode == null || p.barcode!.isEmpty))
+                      .toList();
+
+                  final others = catalog.products
+                      .where((p) =>
+                          !p.isSoldByWeight &&
+                          (p.barcode != null && p.barcode!.isNotEmpty))
+                      .toList();
 
                   // Ordenar ambos grupos por ventas descendente
                   level1.sort((a, b) => b.salesCount.compareTo(a.salesCount));
@@ -1625,19 +2185,22 @@ class _PosScreenState extends State<PosScreen> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.search_off, size: 56, color: Colors.grey),
+                        const Icon(Icons.search_off,
+                            size: 56, color: Colors.grey),
                         const SizedBox(height: 12),
                         Text(
                           _searchQuery.isEmpty
                               ? 'No hay productos en el catálogo.'
                               : 'No se encontraron productos para "${_searchController.text}"',
-                          style: const TextStyle(color: Colors.grey, fontSize: 15),
+                          style:
+                              const TextStyle(color: Colors.grey, fontSize: 15),
                           textAlign: TextAlign.center,
                         ),
-                        if (_searchQuery.isNotEmpty) ...[  
+                        if (_searchQuery.isNotEmpty) ...[
                           const SizedBox(height: 8),
                           const Text('Presá Enter para buscar en el servidor',
-                              style: TextStyle(color: Colors.blueGrey, fontSize: 13)),
+                              style: TextStyle(
+                                  color: Colors.blueGrey, fontSize: 13)),
                         ],
                       ],
                     ),
@@ -1661,37 +2224,51 @@ class _PosScreenState extends State<PosScreen> {
                       onTap: () => _handleProductSelection(product),
                       child: Card(
                         elevation: 2,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10)),
                         child: Container(
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(10),
                             gradient: LinearGradient(
                               colors: isByWeight
-                                  ? [Colors.orange.shade50, Colors.white]   // naranja para granel
-                                  : [Colors.blue.shade50, Colors.white],    // azul para unitarios
+                                  ? [
+                                      Colors.orange.shade50,
+                                      Colors.white
+                                    ] // naranja para granel
+                                  : [
+                                      Colors.blue.shade50,
+                                      Colors.white
+                                    ], // azul para unitarios
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
                             ),
                           ),
                           child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 8.0),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8.0, vertical: 8.0),
                             child: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
                               crossAxisAlignment: CrossAxisAlignment.center,
                               children: [
                                 // Ícono diferenciador
                                 Icon(
-                                  isByWeight ? Icons.scale_rounded : Icons.inventory_2_outlined,
-                                  color: isByWeight ? Colors.orange.shade600 : Colors.blue.shade600,
+                                  isByWeight
+                                      ? Icons.scale_rounded
+                                      : Icons.inventory_2_outlined,
+                                  color: isByWeight
+                                      ? Colors.orange.shade600
+                                      : Colors.blue.shade600,
                                   size: 24,
                                 ),
                                 const SizedBox(height: 4),
                                 Expanded(
                                   child: Center(
                                     child: Text(
-                                      product.name, 
+                                      product.name,
                                       textAlign: TextAlign.center,
-                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                      style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 13),
                                       maxLines: 3,
                                       overflow: TextOverflow.ellipsis,
                                     ),
@@ -1699,9 +2276,12 @@ class _PosScreenState extends State<PosScreen> {
                                 ),
                                 const SizedBox(height: 4),
                                 Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 6, vertical: 2),
                                   decoration: BoxDecoration(
-                                    color: isByWeight ? Colors.orange.shade100 : Colors.green.shade50,
+                                    color: isByWeight
+                                        ? Colors.orange.shade100
+                                        : Colors.green.shade50,
                                     borderRadius: BorderRadius.circular(8),
                                   ),
                                   child: Text(
@@ -1709,7 +2289,9 @@ class _PosScreenState extends State<PosScreen> {
                                         ? '\$${product.sellingPrice.toCurrency()}/Kg'
                                         : '\$${product.sellingPrice.toCurrency()}',
                                     style: TextStyle(
-                                      color: isByWeight ? Colors.orange.shade800 : Colors.green.shade700,
+                                      color: isByWeight
+                                          ? Colors.orange.shade800
+                                          : Colors.green.shade700,
                                       fontWeight: FontWeight.bold,
                                       fontSize: 13,
                                     ),
@@ -1718,40 +2300,47 @@ class _PosScreenState extends State<PosScreen> {
                                   ),
                                 ),
                                 // Badge "Por Peso" para los productos de granel
-                                if (isByWeight) ...[  
+                                if (isByWeight) ...[
                                   const SizedBox(height: 3),
                                   Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 6, vertical: 1),
                                     decoration: BoxDecoration(
                                       color: Colors.orange.shade200,
                                       borderRadius: BorderRadius.circular(4),
                                     ),
                                     child: Text('⚖️ Por Kg',
-                                      style: TextStyle(fontSize: 10, color: Colors.orange.shade900, fontWeight: FontWeight.w600)),
+                                        style: TextStyle(
+                                            fontSize: 10,
+                                            color: Colors.orange.shade900,
+                                            fontWeight: FontWeight.w600)),
                                   ),
                                 ],
                                 // Badge de Popularidad (Nivel Senior UX)
                                 if (product.salesCount > 0) ...[
                                   const SizedBox(height: 4),
                                   Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 6, vertical: 1),
                                     decoration: BoxDecoration(
                                       color: Colors.blue.withValues(alpha: 0.1),
                                       borderRadius: BorderRadius.circular(4),
-                                      border: Border.all(color: Colors.blue.withValues(alpha: 0.2)),
+                                      border: Border.all(
+                                          color: Colors.blue
+                                              .withValues(alpha: 0.2)),
                                     ),
                                     child: Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        const Icon(Icons.flash_on_rounded, size: 10, color: Colors.blueAccent),
+                                        const Icon(Icons.flash_on_rounded,
+                                            size: 10, color: Colors.blueAccent),
                                         const SizedBox(width: 2),
                                         Text(
                                           '${product.salesCount} vendidos',
                                           style: const TextStyle(
-                                            fontSize: 9, 
-                                            color: Colors.blueAccent, 
-                                            fontWeight: FontWeight.bold
-                                          ),
+                                              fontSize: 9,
+                                              color: Colors.blueAccent,
+                                              fontWeight: FontWeight.bold),
                                         ),
                                       ],
                                     ),
@@ -1772,6 +2361,212 @@ class _PosScreenState extends State<PosScreen> {
       ),
     );
   }
+
+  // Fallback Helper para imprimir el ticket normal si falla el A4 Split
+  Future<void> _showFallbackA4Pdf(PosProvider posProvider) async {
+    try {
+      final pdfBytes = await posProvider.repository
+          .downloadTicketPdf(posProvider.lastSaleId);
+      if (!mounted) return;
+      await showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogCtx) {
+          bool isVoiding = false;
+          return StatefulBuilder(
+            builder: (context, setState) {
+              return Dialog(
+              child: SizedBox(
+                width: 900,
+                height: 800,
+                child: Scaffold(
+                  appBar: AppBar(
+                    title: Text('Vista Previa Backoffice - Venta #${posProvider.lastSaleId}'),
+                    automaticallyImplyLeading: false,
+                    actions: [
+                      if (isVoiding)
+                        Center(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                            child: SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.red),
+                            ),
+                          ),
+                        )
+                      else
+                        TextButton.icon(
+                          onPressed: () async {
+                            final confirm = await showDialog<bool>(
+                              context: dialogCtx,
+                              builder: (c) => AlertDialog(
+                                title: const Text('¿Anular Venta?'),
+                                content: const Text('Esta acción cancelará el cobro en el sistema y devolverá los productos al carrito.'),
+                                actions: [
+                                  TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('NO, VOLVER')),
+                                  ElevatedButton(
+                                    style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+                                    onPressed: () => Navigator.pop(c, true), 
+                                    child: const Text('SÍ, ANULAR')
+                                  ),
+                                ],
+                              ),
+                            );
+
+                            if (confirm == true) {
+                              setState(() { isVoiding = true; });
+                              try {
+                                await posProvider.voidPendingOrder(posProvider.lastSaleId);
+                                // Restaurar carrito al estado previo a la venta
+                                posProvider.restoreLastSaleCart();
+                                
+                                if (dialogCtx.mounted) {
+                                  SnackBarService.warning(dialogCtx, 'Venta anulada. Los productos han vuelto al carrito.');
+                                  Navigator.pop(dialogCtx, 'annulled');
+                                }
+                              } catch (e) {
+                                if (dialogCtx.mounted) {
+                                  SnackBarService.error(dialogCtx, 'Error al anular: $e');
+                                  setState(() { isVoiding = false; });
+                                }
+                              }
+                            }
+                          },
+                          icon: const Icon(Icons.delete_forever, color: Colors.red),
+                          label: const Text('ANULAR COBRO Y VOLVER', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+                        ),
+                      const SizedBox(width: 16),
+                      IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: isVoiding ? null : () => Navigator.pop(dialogCtx),
+                      ),
+                    ],
+                  ),
+                  body: PdfPreview(
+                    build: (format) async => pdfBytes,
+                    canChangePageFormat: false,
+                    canChangeOrientation: false,
+                    pdfFileName: 'Comprobante_${posProvider.lastSaleId}.pdf',
+                    canDebug: false,
+                  ),
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      );
+    } catch (e) {
+      debugPrint('Fallback PDF Error: $e');
+    }
+  }
+
+  void _showTerminalSettings(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.print, color: Colors.blue),
+              SizedBox(width: 8),
+              Text('Ajustes de esta Caja'),
+            ],
+          ),
+          content: Consumer<LocalTerminalProvider>(
+            builder: (context, provider, child) {
+              return SizedBox(
+                width: 400,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Formato de Impresión:', style: TextStyle(fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 8),
+                      DropdownButtonFormField<String>(
+                        initialValue: provider.printerFormat,
+                        decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
+                        items: const [
+                          DropdownMenuItem(value: 'thermal_80', child: Text('Térmica 80mm')),
+                          DropdownMenuItem(value: 'thermal_58', child: Text('Térmica 58mm')),
+                          DropdownMenuItem(value: 'a4_standard', child: Text('Hoja A4 (Normal)')),
+                          DropdownMenuItem(value: 'a4_split', child: Text('Hoja A4 Compartida (Venta + Remito)')),
+                        ],
+                        onChanged: (value) {
+                          if (value != null) provider.setPrinterFormat(value);
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      const Text('Tipo de Conexión:', style: TextStyle(fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 8),
+                      DropdownButtonFormField<String>(
+                        initialValue: provider.printerConnection,
+                        decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
+                        items: const [
+                          DropdownMenuItem(value: 'none', child: Text('Desactivada')),
+                          DropdownMenuItem(value: 'usb', child: Text('USB / Serial')),
+                          DropdownMenuItem(value: 'network', child: Text('Red LAN / WiFi')),
+                        ],
+                        onChanged: (value) {
+                          if (value != null) provider.setPrinterConnection(value);
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      const Text('Nombre de Impresora o IP:', style: TextStyle(fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 8),
+                      TextFormField(
+                        initialValue: provider.printerNameOrIp,
+                        decoration: const InputDecoration(
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                          hintText: 'Ej: POS-58 o 192.168.1.100',
+                        ),
+                        onChanged: (value) => provider.setPrinterNameOrIp(value),
+                      ),
+                      const SizedBox(height: 16),
+                      const Text('Puerto COM Balanza:', style: TextStyle(fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 8),
+                      TextFormField(
+                        initialValue: provider.scaleComPort,
+                        decoration: const InputDecoration(
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                          hintText: 'Ej: COM3',
+                        ),
+                        onChanged: (value) => provider.setScaleComPort(value),
+                      ),
+                      const SizedBox(height: 24),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(8)),
+                        child: const Row(
+                          children: [
+                            Icon(Icons.info_outline, color: Colors.blue),
+                            SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Estos ajustes se guardan automáticamente y aplican solo a esta caja física.',
+                                style: TextStyle(fontSize: 12, color: Colors.blue),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cerrar')),
+          ],
+        );
+      },
+    );
+  }
 }
 
 // ── Componentes Encapsulados ──────────────────────────────────────────────
@@ -1786,8 +2581,10 @@ class _CartItemStockIndicator extends StatelessWidget {
     if (item.product.isCombo) return const SizedBox.shrink();
 
     // 💡 IMPORTANTE: Todo context.select() debe estar siempre en la raíz del build, NUNCA condicionado.
-    final status = context.select<InventoryAlertsProvider, String?>((p) => p.getAlertStatusForProduct(item.product.id));
-    final hasPredictive = context.select<SettingsProvider, bool>((s) => s.features.predictiveAlerts);
+    final status = context.select<InventoryAlertsProvider, String?>(
+        (p) => p.getAlertStatusForProduct(item.product.id));
+    final hasPredictive = context
+        .select<SettingsProvider, bool>((s) => s.features.predictiveAlerts);
 
     // 1. Verificación en tiempo real (Proyección Local)
     // Calcula cómo quedará el stock si aprueba esta venta
@@ -1800,7 +2597,7 @@ class _CartItemStockIndicator extends StatelessWidget {
     final bool isPredictiveBackend = status == 'predictive';
 
     final bool isCritical = isCriticalLocally || isCriticalBackend;
-    
+
     // Si no es crítico y no hay estado predictivo del server, ocultamos
     if (!isCritical && !isPredictiveBackend) return const SizedBox.shrink();
 
@@ -1814,7 +2611,8 @@ class _CartItemStockIndicator extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
         color: isCritical ? Colors.red.shade50 : Colors.orange.shade50,
-        border: Border.all(color: isCritical ? Colors.red.shade200 : Colors.orange.shade200),
+        border: Border.all(
+            color: isCritical ? Colors.red.shade200 : Colors.orange.shade200),
         borderRadius: BorderRadius.circular(4),
       ),
       child: Row(
@@ -1827,7 +2625,9 @@ class _CartItemStockIndicator extends StatelessWidget {
           ),
           const SizedBox(width: 4),
           Text(
-            isCritical ? '🔴 Crítico (Quedan: ${projectedStock.toInt()} u)' : '🟠 Quiebre en <3d',
+            isCritical
+                ? '🔴 Crítico (Quedan: ${projectedStock.toInt()} u)'
+                : '🟠 Quiebre en <3d',
             style: TextStyle(
               fontSize: 10,
               fontWeight: FontWeight.bold,
@@ -1836,194 +2636,6 @@ class _CartItemStockIndicator extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Dialog post-venta para modo Corralón: elegir remito + control de impresión
-// ─────────────────────────────────────────────────────────────────────────────
-class _CorralonPostSaleDialog extends StatefulWidget {
-  final int saleId;
-  final Future<void> Function(int saleId) onGenerarRemito;
-
-  const _CorralonPostSaleDialog({
-    required this.saleId,
-    required this.onGenerarRemito,
-  });
-
-  @override
-  State<_CorralonPostSaleDialog> createState() => _CorralonPostSaleDialogState();
-}
-
-class _CorralonPostSaleDialogState extends State<_CorralonPostSaleDialog> {
-  bool _printRemito = true;
-  bool _showPreview = false;
-  bool _printA4 = false;
-  bool _showA4Preview = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadPrefs();
-  }
-
-  Future<void> _loadPrefs() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (mounted) {
-      setState(() {
-        _printRemito = prefs.getBool('print_remito_on_generate') ?? true;
-        _showPreview = prefs.getBool('show_preview_remito_generate') ?? false;
-        _printA4 = prefs.getBool('print_a4_remito_generate') ?? false;
-        _showA4Preview = prefs.getBool('show_a4_preview_remito_generate') ?? true;
-      });
-    }
-  }
-
-  Future<void> _savePrefs() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('print_remito_on_generate', _printRemito);
-    await prefs.setBool('show_preview_remito_generate', _showPreview);
-    await prefs.setBool('print_a4_remito_generate', _printA4);
-    await prefs.setBool('show_a4_preview_remito_generate', _showA4Preview);
-  }
-
-  Future<void> _handleGenerarRemito() async {
-    await _savePrefs();
-
-    // Si se quiere vista previa, mostrar ticket simulado antes de confirmar
-    if (_printRemito && _showPreview) {
-      // Usar lastSaleCart: snapshot del carrito guardado ANTES de que se limpiara
-      final cartItems = Provider.of<PosProvider>(context, listen: false).lastSaleCart;
-      final previewLines = <TicketLine>[
-        const TicketLine('ORDEN DE RETIRO EN DEPÓSITO', align: TicketAlign.center, isBold: true, isLarge: true),
-        const TicketLine.hr(bold: true),
-        TicketLine('VENTA N°: ${widget.saleId.toString().padLeft(6, '0')}', isBold: true),
-        const TicketLine('Presentar para retirar mercadería', align: TicketAlign.center),
-        const TicketLine.hr(),
-        if (cartItems.isEmpty)
-          const TicketLine('(No se pudieron cargar los ítems)', align: TicketAlign.center)
-        else
-          ...cartItems.map((item) => [
-            TicketLine(item.product.name.toUpperCase(), isBold: true),
-            TicketLine(
-              'Cantidad: ${item.quantity.toStringAsFixed(item.product.isSoldByWeight ? 3 : 0)}',
-              rightText: 'SALDO TOTAL',
-            ),
-            const TicketLine.space(),
-          ]).expand((l) => l),
-        const TicketLine.hr(bold: true),
-        const TicketLine('Retirar en Depósito presentando este comprobante', align: TicketAlign.center),
-      ];
-
-      if (!mounted) return;
-      final confirmed = await TicketPreviewDialog.show(
-        context,
-        title: 'Vista Previa — Orden de Retiro',
-        lines: previewLines,
-      );
-      if (!mounted || !confirmed) return;
-    }
-
-    if (!mounted) return;
-    Navigator.pop(context);
-    await widget.onGenerarRemito(widget.saleId);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      title: Row(
-        children: [
-          Icon(Icons.warehouse, color: Colors.blue.shade700, size: 28),
-          const SizedBox(width: 12),
-          const Expanded(
-            child: Text('¿Qué hacer con la mercadería?', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
-          ),
-        ],
-      ),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text('Venta registrada con éxito. Podés cerrar la venta o generar un remito para el depósito.'),
-          const SizedBox(height: 20),
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.blue.shade50,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: Colors.blue.shade200),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('Opciones del Remito', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                const SizedBox(height: 12),
-                
-                // --- Térmico ---
-                Row(
-                  children: [
-                    Checkbox(
-                      value: _printRemito,
-                      activeColor: Colors.blue.shade700,
-                      onChanged: (val) => setState(() => _printRemito = val ?? true),
-                      visualDensity: VisualDensity.compact,
-                    ),
-                    const Text('Remito Térmico', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                    if (_printRemito) ...[
-                      const SizedBox(width: 8),
-                      Checkbox(
-                        value: _showPreview,
-                        activeColor: Colors.orange,
-                        onChanged: (val) => setState(() => _showPreview = val ?? false),
-                        visualDensity: VisualDensity.compact,
-                      ),
-                      const Text('Vista Previa', style: TextStyle(fontSize: 12)),
-                    ],
-                  ],
-                ),
-                
-                // --- A4 ---
-                Row(
-                  children: [
-                    Checkbox(
-                      value: _printA4,
-                      activeColor: Colors.green.shade700,
-                      onChanged: (val) => setState(() => _printA4 = val ?? false),
-                      visualDensity: VisualDensity.compact,
-                    ),
-                    const Text('Remito A4 (PDF)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                    if (_printA4) ...[
-                      const SizedBox(width: 8),
-                      Checkbox(
-                        value: _showA4Preview,
-                        activeColor: Colors.orange,
-                        onChanged: (val) => setState(() => _showA4Preview = val ?? true),
-                        visualDensity: VisualDensity.compact,
-                      ),
-                      const Text('Vista Previa', style: TextStyle(fontSize: 12)),
-                    ],
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cerrar Venta', style: TextStyle(color: Colors.grey)),
-        ),
-        FilledButton.icon(
-          onPressed: _handleGenerarRemito,
-          icon: const Icon(Icons.inventory_2),
-          label: const Text('Generar y Aislar Remito'),
-          style: FilledButton.styleFrom(backgroundColor: Colors.blue.shade700),
-        ),
-      ],
     );
   }
 }

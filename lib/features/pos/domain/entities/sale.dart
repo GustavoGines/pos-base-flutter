@@ -5,12 +5,14 @@ class Sale {
   final double total;
   final String paymentMethod;
   final CashRegisterShift shift;
+  final Map<String, dynamic>? deliveryNote;
 
   Sale({
     this.id,
     required this.total,
     required this.paymentMethod,
     required this.shift,
+    this.deliveryNote,
   });
 }
   

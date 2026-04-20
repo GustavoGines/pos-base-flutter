@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:frontend_desktop/features/catalog/presentation/providers/catalog_provider.dart';
 import '../providers/pos_provider.dart';
+import '../../domain/entities/cart_item.dart';
 import '../../domain/entities/payment_method.dart';
 import '../../../cash_register/presentation/providers/cash_register_provider.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
@@ -13,6 +14,7 @@ import '../../../customers/models/customer_model.dart';
 import '../../../../core/utils/snack_bar_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:frontend_desktop/core/presentation/widgets/ticket_preview_dialog.dart';
+import 'package:frontend_desktop/core/providers/local_terminal_provider.dart';
 
 class PaymentLine {
   PaymentMethod? method;
@@ -20,10 +22,12 @@ class PaymentLine {
   TextEditingController percentageController;
   FocusNode percentageFocus;
 
-  PaymentLine({this.method, double initialAmount = 0.0})
+  PaymentLine({this.method, double initialAmount = 0.0, double? defaultCardSurcharge, bool disableSurcharge = false})
       : controller = TextEditingController(text: initialAmount > 0 ? initialAmount.toCurrency() : ''),
-        percentageController = TextEditingController(text: method?.surchargeValue.toStringAsFixed(1) ?? '0.0'),
-        percentageFocus = FocusNode();
+        percentageController = TextEditingController(),
+        percentageFocus = FocusNode() {
+    updateMethod(method, defaultCardSurcharge: defaultCardSurcharge, disableSurcharge: disableSurcharge);
+  }
 
   double get amount => double.tryParse(controller.text) ?? 0.0;
   double get currentPercentage => double.tryParse(percentageController.text) ?? 0.0;
@@ -35,9 +39,23 @@ class PaymentLine {
   
   double get total => amount + surcharge;
 
-  void updateMethod(PaymentMethod? m) {
+  void updateMethod(PaymentMethod? m, {double? defaultCardSurcharge, bool disableSurcharge = false}) {
     method = m;
-    percentageController.text = m?.surchargeValue.toStringAsFixed(1) ?? '0.0';
+    if (disableSurcharge) {
+      percentageController.text = '0.0';
+      return;
+    }
+    double val = m?.surchargeValue ?? 0.0;
+    
+    // Si el cajero selecciona tarjeta de crédito/débito y la BD local no tiene un recargo específico,
+    // inyectamos automáticamente el recargo global de configuraciones (ej: 15%).
+    if (m != null && val == 0.0 && defaultCardSurcharge != null && defaultCardSurcharge > 0) {
+      if (m.code.contains('credito') || m.code.contains('tarjeta')) {
+        val = defaultCardSurcharge;
+      }
+    }
+    
+    percentageController.text = val.toStringAsFixed(1);
   }
 
   void dispose() {
@@ -64,17 +82,48 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   final List<PaymentMethod?> _previousValidMethods = [];
   bool _printReceipt = true;
   bool _showPreview = false;
+  bool _requiresDispatch = false; 
+  String _fulfillmentStatus = 'pending'; 
 
   // Global cash tendered
   final _cashTenderedCtrl = TextEditingController();
   // FocusNode dedicado para poder enfocar el campo por código
   final _cashTenderedFocus = FocusNode();
+  
+  late TextEditingController _shippingCostCtrl;
 
   Customer? _selectedCustomer;
+  
+  bool get _isCartAlreadySurcharged {
+    final pos = context.read<PosProvider>();
+    return pos.activeTier == PriceTier.card || (pos.activeTier == PriceTier.custom && pos.currentCustomFactor > 1.0);
+  }
 
   @override
   void initState() {
     super.initState();
+    final posProvider = context.read<PosProvider>();
+    
+    // Recuperar estado persistente si existe, o usar la memoria del último flete
+    _requiresDispatch = posProvider.currentRequiresDispatch;
+    _fulfillmentStatus = posProvider.currentFulfillmentStatus;
+    
+    // Si la venta actual tiene 0 (porque acabamos de empezar o limpiar), sugerimos el último usado
+    final initialShipping = posProvider.shippingCost > 0 
+        ? posProvider.shippingCost 
+        : posProvider.lastUsedShippingCost;
+
+    _shippingCostCtrl = TextEditingController(
+      text: initialShipping > 0 
+          ? initialShipping.toCurrency() 
+          : ''
+    );
+    // Sincronizar la memoria local del diálogo con el último flete usado
+    // (No llamamos a setShippingCost del provider para no alterar el total del fondo prematuramente)
+    _shippingCostCtrl.addListener(() {
+      setState(() {});
+      _syncPaymentsWithShipping();
+    });
     _loadPrintPreference();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initFirstLine();
@@ -94,9 +143,15 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
 
   void _initFirstLine() {
     final provider = context.read<PosProvider>();
+    final settings = context.read<SettingsProvider>().settings;
     if (provider.paymentMethods.isNotEmpty) {
       final defaultCash = provider.paymentMethods.firstWhere((p) => p.isCash, orElse: () => provider.paymentMethods.first);
-      final line = PaymentLine(method: defaultCash, initialAmount: widget.total);
+      final line = PaymentLine(
+        method: defaultCash, 
+        initialAmount: widget.total + (_requiresDispatch ? _shippingCostToApply : 0.0),
+        defaultCardSurcharge: settings?.globalCardPercentage,
+        disableSurcharge: _isCartAlreadySurcharged,
+      );
       line.controller.addListener(_onAmountChanged);
       line.percentageController.addListener(_onAmountChanged);
       setState(() {
@@ -114,6 +169,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       line.dispose();
     }
     _cashTenderedCtrl.dispose();
+    _shippingCostCtrl.dispose();
     _cashTenderedFocus.dispose();
     super.dispose();
   }
@@ -152,8 +208,27 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     }
   }
 
+  /// Cuando el flete cambia y hay UNA SOLA línea de pago, actualiza el
+  /// monto automáticamente para que el Saldo Pendiente quede en $0.
+  void _syncPaymentsWithShipping() {
+    if (_lines.length != 1) return; // Solo auto-sync con pago único
+    final newTotal = widget.total + _shippingCostToApply;
+    final line = _lines[0];
+    // Actualizar el amount de la línea
+    final newText = newTotal.toCurrency();
+    if (line.controller.text != newText) {
+      line.controller.text = newText;
+      line.controller.selection = TextSelection.fromPosition(
+        TextPosition(offset: line.controller.text.length),
+      );
+    }
+    // Sincronizar el campo de efectivo recibido
+    _syncCashField();
+  }
+
   void _addLine() {
     final provider = context.read<PosProvider>();
+    final settings = context.read<SettingsProvider>().settings;
     if (provider.paymentMethods.isEmpty) return;
     
     // Auto-fill available balance
@@ -165,7 +240,12 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       orElse: () => provider.paymentMethods.first,
     );
 
-    final line = PaymentLine(method: defaultMethod, initialAmount: left);
+    final line = PaymentLine(
+      method: defaultMethod, 
+      initialAmount: left,
+      defaultCardSurcharge: settings?.globalCardPercentage,
+      disableSurcharge: _isCartAlreadySurcharged,
+    );
     line.controller.addListener(_onAmountChanged);
     line.percentageController.addListener(_onAmountChanged);
     setState(() {
@@ -195,8 +275,16 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
 
   double get _totalBaseAmount => _lines.fold(0, (sum, line) => sum + line.amount);
   double get _totalSurcharge => _lines.fold(0, (sum, line) => sum + line.surcharge);
-  double get _grandTotal => widget.total + _totalSurcharge;
-  double get _pendingBalance => widget.total - _totalBaseAmount;
+  
+  double get _shippingCostToApply {
+    if (_requiresDispatch && _fulfillmentStatus == 'pending') {
+      return double.tryParse(_shippingCostCtrl.text.replaceAll(',', '.')) ?? 0.0;
+    }
+    return 0.0;
+  }
+
+  double get _grandTotal => widget.total + _totalSurcharge + _shippingCostToApply;
+  double get _pendingBalance => widget.total + _shippingCostToApply - _totalBaseAmount;
 
   double get _cashRequired {
     return _lines.where((l) => l.method?.isCash == true).fold(0.0, (sum, l) => sum + l.total);
@@ -276,6 +364,26 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       builder: (ctx) => _CustomerPickerDialog(
         onSelected: (c) {
           setState(() => _selectedCustomer = c);
+          if (c.defaultPriceTier != null && c.defaultPriceTier!.isNotEmpty) {
+            final appSettings = context.read<SettingsProvider>();
+            if (appSettings.settings?.features.multiplePrices == true) {
+              PriceTier tier;
+              switch (c.defaultPriceTier) {
+                case 'wholesale': tier = PriceTier.wholesale; break;
+                case 'card': tier = PriceTier.card; break;
+                default: tier = PriceTier.base;
+              }
+              final settings = appSettings.settings;
+              context.read<PosProvider>().setPriceTier(
+                tier,
+                wholesaleFactor: settings != null ? 1 + (settings.globalWholesalePercentage / 100) : null,
+                cardFactor: settings != null ? 1 + (settings.globalCardPercentage / 100) : null,
+              );
+              // Como CheckoutDialog tiene copia estática del 'total', si el tier bajó los precios el total debe recalcularse.
+              // Para no complicar la caja con saldos saltando de golpe, le avisamos al Provider que ya recalculó en background.
+              // El cajero verá el nuevo total en la barra superior del diálogo si lo cerramos.
+            }
+          }
           Navigator.pop(ctx);
         },
       ),
@@ -311,15 +419,16 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       'total_amount': l.total,
     }).toList();
 
-    // Vista Previa: solo aplica para impresoras térmicas (58mm / 80mm).
+    // Vista Previa: solo aplica para impresoras térmicas.
     // Para A4, el provider maneja el visor PDF directamente según showPreview.
-    final isA4 = settings?.printerPaperWidth == 'a4';
+    final localTerminal = Provider.of<LocalTerminalProvider>(context, listen: false);
+    final isA4 = localTerminal.printerFormat.startsWith('a4');
 
     if (_printReceipt && _showPreview && !isA4) {
       final cart = posProvider.cart;
-      final isNarrow = settings?.printerPaperWidth == '58';
+      final isNarrow = localTerminal.printerFormat == 'thermal_58';
 
-      // ── Replicar EXACTAMENTE la lógica de printSaleTicket ──
+      // ──── Replicar EXACTAMENTE la lógica de printSaleTicket ────
       final bool isComplexPayment = _lines.length > 1 || _totalSurcharge > 0.01;
       final bool hasTendered = _actualTendered > 0.01;
       final bool hasChange = _change > 0.01;
@@ -336,6 +445,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         TicketLine('COMPROBANTE DE VENTA', align: TicketAlign.center, isBold: true),
         const TicketLine.hr(),
         TicketLine('FECHA: ${DateTime.now().day.toString().padLeft(2,'0')}/${DateTime.now().month.toString().padLeft(2,'0')}/${DateTime.now().year}'),
+        if (userName != null) TicketLine('CAJERO: ${userName.toUpperCase()}'),
         const TicketLine.hr(),
 
         // Ítems del carrito
@@ -348,7 +458,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         ]).expand((l) => l),
         const TicketLine.hr(bold: true),
 
-        // ── Sección de pago (igual que el ticket real) ──
+        // ──── Sección de pago (igual que el ticket real) ────
         if (isComplexPayment) ...[
           TicketLine('SUBTOTAL:', rightText: '\$${widget.total.toStringAsFixed(2)}', isBold: true),
           const TicketLine.hr(),
@@ -361,6 +471,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
           if (_totalSurcharge > 0.01)
             TicketLine('RECARGO BANCARIO:', rightText: '\$${_totalSurcharge.toStringAsFixed(2)}'),
           const TicketLine.hr(),
+          if (_shippingCostToApply > 0.01)
+            TicketLine('FLETE / ENVÍO:', rightText: '\$${_shippingCostToApply.toStringAsFixed(2)}'),
           TicketLine('TOTAL COBRADO:', rightText: '\$${_grandTotal.toStringAsFixed(2)}', isBold: true, isLarge: true),
           if (hasTendered)
             TicketLine('EFECTIVO RECIBIDO:', rightText: '\$${_actualTendered.toStringAsFixed(2)}'),
@@ -368,6 +480,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
             TicketLine('SU VUELTO:', rightText: '\$${_change.toStringAsFixed(2)}', isBold: true),
         ] else ...[
           // Venta simple: un pago, sin recargos
+          if (_shippingCostToApply > 0.01)
+            TicketLine('FLETE / ENVÍO:', rightText: '\$${_shippingCostToApply.toStringAsFixed(2)}'),
           TicketLine('TOTAL GENERAL:', rightText: '\$${_grandTotal.toStringAsFixed(2)}', isBold: true, isLarge: true),
           const TicketLine.hr(),
           TicketLine('PAGO EN:', rightText: (_lines.isNotEmpty ? _lines.first.method?.name ?? 'EFECTIVO' : 'EFECTIVO').toUpperCase()),
@@ -383,6 +497,43 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         ),
       ];
 
+      // AGREGADO: Si es split ticket (Retira ya), mostrar también el remito en la vista previa
+      if (_requiresDispatch && _fulfillmentStatus == 'delivered') {
+        lines.add(const TicketLine.space());
+        lines.add(const TicketLine.hr(bold: true)); // Simular corte
+        lines.add(const TicketLine.space());
+        lines.add(const TicketLine('ORDEN DE RETIRO / REMITO', align: TicketAlign.center, isBold: true));
+        lines.add(const TicketLine.hr());
+        lines.add(const TicketLine('REMITO N°: (PROXIMO)'));
+        lines.add(const TicketLine('VENTA ASOC: (PROXIMA)'));
+        lines.add(TicketLine('FECHA: ${DateTime.now().day.toString().padLeft(2,"0")}/${DateTime.now().month.toString().padLeft(2,"0")}/${DateTime.now().year}'));
+        if (_selectedCustomer != null) {
+          lines.add(TicketLine('CLIENTE: ${_selectedCustomer!.name.toUpperCase()}', isBold: true));
+        }
+        if (userName != null) {
+          lines.add(TicketLine('VENDIÓ: ${userName.toUpperCase()}'));
+        }
+        lines.add(const TicketLine.hr());
+        lines.add(const TicketLine('ARTICULOS A RETIRAR:', isBold: true));
+        lines.add(const TicketLine.hr());
+        
+        for (final item in cart) {
+          final qtyStr = item.product.isSoldByWeight ? '${item.quantity.toStringAsFixed(3)} kg' : '${item.quantity.toInt()} un';
+          lines.add(TicketLine(item.product.name.toUpperCase(), rightText: qtyStr, isBold: true));
+        }
+        
+        lines.add(const TicketLine.hr(bold: true));
+        lines.add(const TicketLine.space());
+        lines.add(const TicketLine('FIRMA DESPACHANTE:'));
+        lines.add(const TicketLine.space());
+        lines.add(const TicketLine('__________________________', align: TicketAlign.center));
+        lines.add(const TicketLine.space());
+        lines.add(const TicketLine('FIRMA CLIENTE / RETIRA:'));
+        lines.add(const TicketLine.space());
+        lines.add(const TicketLine('__________________________', align: TicketAlign.center));
+        lines.add(const TicketLine.space());
+      }
+
       if (!mounted) return;
       final confirmed = await TicketPreviewDialog.show(
         context,
@@ -391,6 +542,10 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       );
       if (!mounted || !confirmed) return;
     }
+
+    context.read<PosProvider>().setShippingCost(
+      double.tryParse(_shippingCostCtrl.text.replaceAll(',', '.')) ?? 0.0
+    );
 
     bool success;
 
@@ -402,6 +557,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         payments: paymentsPayload,
         tenderedAmount: _actualTendered,
         changeAmount: _change,
+        localTerminal: localTerminal,
         userName: userName,
         settings: _printReceipt ? settings : null,
         userId: currentUser?['id'] as int?,
@@ -422,11 +578,15 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         payments: paymentsPayload,
         tenderedAmount: _actualTendered,
         changeAmount: _change,
+        printerFormat: localTerminal.printerFormat,
+        localTerminal: localTerminal,
         userId: userId,
         customerId: _selectedCustomer?.id,
         userName: userName,
         settings: _printReceipt ? settings : null,
         showPreview: _showPreview,
+        requiresDispatch: _requiresDispatch,
+        fulfillmentStatus: _fulfillmentStatus,
       );
     }
 
@@ -447,7 +607,12 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       } else {
         final errMsg = posProvider.errorMessage ?? '';
 
-        // ── Sesión Única: el error viene del ValidateSessionToken middleware ──
+        if (errMsg == 'ANNULLED') {
+          Navigator.of(context).pop(false);
+          return;
+        }
+
+        // ──── Sesión Única: el error viene del ValidateSessionToken middleware ────
         // El dialog se cierra con false para devolver el control a _handleCheckout
         // en pos_screen, que es quien muestra el dialog de seguridad naranja y
         // fuerza el logout + navegación a /login.
@@ -457,6 +622,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         }
 
         SnackBarService.error(context, errMsg.isNotEmpty ? errMsg : 'Error al procesar el pago');
+
       }
     }
   }
@@ -503,7 +669,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // ── Header
+              // ──── Header
               if (isPending) ...[
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -516,7 +682,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                 ),
                 const SizedBox(height: 8),
               ] else
-                const Text('Desglose de Pago (Split Tender)', style: TextStyle(fontSize: 18, color: Colors.black54, fontWeight: FontWeight.bold)),
+                const Text('Desglose de Pago', style: TextStyle(fontSize: 18, color: Colors.black54, fontWeight: FontWeight.bold)),
               
               const SizedBox(height: 16),
               
@@ -573,7 +739,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
 
               const SizedBox(height: 24),
 
-              // ── Líneas de Pago
+              // ──── Líneas de Pago
               Column(
                 children: _lines.asMap().entries.map((entry) {
                   int idx = entry.key;
@@ -617,7 +783,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                               
                               return DropdownMenuItem<PaymentMethod>(
                                 value: m,
-                                // enabled: true — el item es clickeable aunque sea Premium.
+                                // enabled: true —  el item es clickeable aunque sea Premium.
                                 // Al hacer click → onChanged muestra el upsell y revierte.
                                 enabled: true,
                                 child: Row(
@@ -638,11 +804,11 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                                         overflow: TextOverflow.ellipsis,
                                       ),
                                     ),
-                                    // Hint sutil de que es premium — no deshabilita ni grisea
+                                    // Hint sutil de que es premium —  no deshabilita ni grisea
                                     if (isLocked) ...[
                                       const SizedBox(width: 6),
                                       Tooltip(
-                                        message: 'Función Pro — Hacé clic para conocer más',
+                                        message: 'Función Pro —  Hacé clic para conocer más',
                                         child: Icon(
                                           Icons.workspace_premium,
                                           size: 15,
@@ -667,13 +833,13 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                                     
                                 // Truco Flutter: Primero aceptamos el valor bloqueado para forzar a 
                                 // que cambie la `ValueKey` y elimine el estado interno bugeado.
-                                setState(() => line.updateMethod(val));
+                                setState(() => line.updateMethod(val, defaultCardSurcharge: settings?.globalCardPercentage, disableSurcharge: _isCartAlreadySurcharged));
                                 
                                 // En el microsegundo siguiente, restauramos el método verdadero
                                 // Así Flutter se ve forzado a renderizar desde cero con la opción original.
                                 WidgetsBinding.instance.addPostFrameCallback((_) {
                                   if (mounted) {
-                                    setState(() => line.updateMethod(prev));
+                                    setState(() => line.updateMethod(prev, defaultCardSurcharge: settings?.globalCardPercentage, disableSurcharge: _isCartAlreadySurcharged));
                                   }
                                 });
                                 return;
@@ -683,7 +849,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                                 if (idx < _previousValidMethods.length) {
                                   _previousValidMethods[idx] = val;
                                 }
-                                line.updateMethod(val);
+                                line.updateMethod(val, defaultCardSurcharge: settings?.globalCardPercentage, disableSurcharge: _isCartAlreadySurcharged);
                               });
                               // Sincronizar el campo de efectivo recibido.
                               // Si el método elegido es efectivo → auto-foco para que
@@ -721,6 +887,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                               },
                               child: TextFormField(
                                 controller: line.percentageController,
+                                readOnly: _isCartAlreadySurcharged,
                                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
                                 decoration: InputDecoration(
                                   labelText: '% Int.',
@@ -925,6 +1092,202 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                     ),
                 ],
               ),
+              const SizedBox(height: 24),
+
+              // ── Toggle Logística a Demanda ──────────────────────────
+              // Solo visible si el plan tiene la feature 'logistics' habilitada
+              if (settings?.features.logistics == true && !isPending) ...[
+                const Divider(),
+                Material(
+                  color: _requiresDispatch
+                      ? Colors.orange.shade50
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(10),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(10),
+                    onTap: () {
+                      setState(() {
+                        _requiresDispatch = !_requiresDispatch;
+                        context.read<PosProvider>().setCurrentLogistics(_requiresDispatch, _fulfillmentStatus);
+                      });
+                      // Sincronizar montos de pago inmediatamente al alternar logística
+                      WidgetsBinding.instance.addPostFrameCallback((_) => _syncPaymentsWithShipping());
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                      child: Row(
+                        children: [
+                          AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            width: 44,
+                            height: 24,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(12),
+                              color: _requiresDispatch
+                                  ? Colors.orange.shade600
+                                  : Colors.grey.shade300,
+                            ),
+                            child: AnimatedAlign(
+                              duration: const Duration(milliseconds: 200),
+                              alignment: _requiresDispatch
+                                  ? Alignment.centerRight
+                                  : Alignment.centerLeft,
+                              child: Container(
+                                margin: const EdgeInsets.all(3),
+                                width: 18,
+                                height: 18,
+                                decoration: const BoxDecoration(
+                                  color: Colors.white,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          const Icon(Icons.local_shipping_outlined, size: 18, color: Colors.black54),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Enviar a Logística (Armar Pedido)',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 13,
+                                    color: _requiresDispatch
+                                        ? Colors.orange.shade800
+                                        : Colors.black87,
+                                  ),
+                                ),
+                                Text(
+                                  _requiresDispatch
+                                      ? 'Se creará un remito automáticamente al confirmar'
+                                      : 'Se entrega en el momento (sin remito)',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: _requiresDispatch
+                                        ? Colors.orange.shade600
+                                        : Colors.grey.shade500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                
+                if (_requiresDispatch) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    margin: const EdgeInsets.only(left: 48), // Indentar a la altura del texto
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.orange.shade200),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Estado de Entrega:',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: RadioListTile<String>(
+                                title: const Text('A Preparar (Pendiente)', style: TextStyle(fontSize: 12)),
+                                value: 'pending',
+                                groupValue: _fulfillmentStatus,
+                                activeColor: Colors.orange.shade700,
+                                contentPadding: EdgeInsets.zero,
+                                dense: true,
+                                visualDensity: VisualDensity.compact,
+                                                                onChanged: (val) {
+                                  setState(() {
+                                    _fulfillmentStatus = val!;
+                                    context.read<PosProvider>().setCurrentLogistics(_requiresDispatch, _fulfillmentStatus);
+                                  });
+                                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                                    _syncPaymentsWithShipping();
+                                  });
+                                },
+
+                              ),
+                            ),
+                            Expanded(
+                              child: RadioListTile<String>(
+                                title: const Text('Se lo lleva AHORA', style: TextStyle(fontSize: 12, color: Colors.green, fontWeight: FontWeight.bold)),
+                                value: 'delivered',
+                                groupValue: _fulfillmentStatus,
+                                activeColor: Colors.green,
+                                contentPadding: EdgeInsets.zero,
+                                dense: true,
+                                visualDensity: VisualDensity.compact,
+                                                                onChanged: (val) {
+                                  setState(() {
+                                    _fulfillmentStatus = val!;
+                                    context.read<PosProvider>().setCurrentLogistics(_requiresDispatch, _fulfillmentStatus);
+                                  });
+                                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                                    _syncPaymentsWithShipping();
+                                  });
+                                },
+
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (_requiresDispatch && _fulfillmentStatus == 'pending') ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      margin: const EdgeInsets.only(left: 48),
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.blueGrey.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.local_shipping_outlined, size: 18, color: Colors.blueGrey),
+                          const SizedBox(width: 8),
+                          const Text('Flete / Envío:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                          const Spacer(),
+                          SizedBox(
+                            width: 120,
+                            height: 36,
+                            child: TextField(
+                              controller: _shippingCostCtrl,
+                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                              textAlign: TextAlign.right,
+                              decoration: const InputDecoration(
+                                prefixText: '\$ ',
+                                isDense: true,
+                                contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                                border: OutlineInputBorder(),
+                              ),
+                              onChanged: (val) {
+                                // El listener de _shippingCostCtrl ya dispara setState() y _syncPaymentsWithShipping()
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+                const SizedBox(height: 8),
+              ],
+
               const SizedBox(height: 24),
 
               // Actions

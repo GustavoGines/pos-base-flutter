@@ -30,6 +30,9 @@ abstract class PosRemoteDataSource {
     int? customerId,
     int? quoteId,
     String status,
+    double shippingCost = 0.0,
+    bool requiresDispatch = false,
+    String fulfillmentStatus = 'pending',
   });
   Future<List<dynamic>> fetchPendingSales();
   Future<dynamic> payPendingSale({
@@ -40,10 +43,13 @@ abstract class PosRemoteDataSource {
     required double changeAmount,
     int? userId,
     List<CartItem>? items,
+    double shippingCost = 0.0,
   });
   Future<dynamic> voidPendingSale(int saleId);
   Future<void> updatePaymentMethodSurcharge(int id, double surchargeValue);
   Future<Uint8List> downloadTicketPdf(int saleId);
+  /// Crea un Remito de Logística a partir de una venta procesada.
+  Future<Map<String, dynamic>> createDeliveryNoteFromSale(int saleId, {String fulfillmentStatus = 'pending'});
 }
 
 class PosRemoteDataSourceImpl implements PosRemoteDataSource {
@@ -144,11 +150,17 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
     int? customerId,
     int? quoteId,
     String status = 'completed',
+    double shippingCost = 0.0,
+    bool requiresDispatch = false,
+    String fulfillmentStatus = 'pending',
   }) async {
     try {
       final payload = {
         'total': total,
         'total_surcharge': totalSurcharge,
+        'shipping_cost': shippingCost,
+        'requires_dispatch': requiresDispatch,
+        'fulfillment_status': fulfillmentStatus,
         if (payments != null) 'payments': payments,
         'status': status,
         if (tenderedAmount != null) 'tendered_amount': tenderedAmount,
@@ -238,6 +250,7 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
     required double changeAmount,
     int? userId,
     List<CartItem>? items,
+    double shippingCost = 0.0,
   }) async {
     try {
       final payload = {
@@ -245,6 +258,7 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
         'payments': payments,
         'tendered_amount': tenderedAmount,
         'change_amount': changeAmount,
+        'shipping_cost': shippingCost,
         if (userId != null) 'user_id': userId,
       };
       if (items != null) {
@@ -293,10 +307,39 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
       if (response.statusCode == 200 || response.statusCode == 201) {
         return json.decode(response.body);
       } else {
-        throw Exception('Error al anular orden pendiente (HTTP ${response.statusCode})');
+        String detail = '';
+        try {
+          final errBody = json.decode(response.body);
+          detail = errBody['message'] ?? response.body;
+        } catch (_) {
+          detail = response.body;
+        }
+        throw Exception('Error al anular orden pendiente (HTTP ${response.statusCode}): $detail');
       }
     } catch (e) {
       print('=== API Error en voidPendingSale: $e ===');
+      rethrow;
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> createDeliveryNoteFromSale(int saleId, {String fulfillmentStatus = 'pending'}) async {
+    try {
+      final response = await client.post(
+        Uri.parse('$baseUrl/delivery-notes/from-sale/$saleId'),
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: json.encode({'status': fulfillmentStatus}),
+      );
+      // 201 = creado correctamente, 400 = ya existía un remito (idempotente, no es error fatal)
+      if (response.statusCode != 201 && response.statusCode != 400) {
+        throw Exception('Error al crear remito automático (HTTP ${response.statusCode})');
+      }
+      return json.decode(response.body);
+    } catch (e) {
+      print('=== API Error en createDeliveryNoteFromSale: $e ===');
       rethrow;
     }
   }

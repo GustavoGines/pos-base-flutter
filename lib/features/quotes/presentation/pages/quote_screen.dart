@@ -6,8 +6,12 @@ import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
 import 'package:frontend_desktop/features/catalog/presentation/providers/catalog_provider.dart';
+import 'package:frontend_desktop/features/pos/domain/entities/cart_item.dart';
 import 'package:frontend_desktop/features/pos/presentation/providers/pos_provider.dart';
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
+import 'package:frontend_desktop/features/auth/presentation/providers/auth_provider.dart';
+import 'package:frontend_desktop/core/utils/receipt_printer_service.dart';
+import 'package:frontend_desktop/core/providers/local_terminal_provider.dart';
 import '../providers/quote_provider.dart';
 import '../../data/quote_repository.dart';
 import '../../services/quote_pdf_service.dart';
@@ -29,9 +33,6 @@ class _QuoteScreenState extends State<QuoteScreen> {
   bool _isSearching = false;
   Timer? _debounceTimer;
 
-  /// Selector de lista de precios global: 'lista' | 'mayorista' | 'tarjeta'
-  String _selectedPriceList = 'lista';
-
   // Formulario del encabezado del presupuesto
   final _customerNameCtrl = TextEditingController();
   final _customerPhoneCtrl = TextEditingController();
@@ -43,6 +44,15 @@ class _QuoteScreenState extends State<QuoteScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _searchFocus.requestFocus();
+      // Inyectar los factores globales de precios al provider de presupuestos
+      final settings = context.read<SettingsProvider>().settings;
+      if (settings != null) {
+        final ws = settings.globalCardPercentage > 0
+            ? 1.0 - (settings.globalCardPercentage / 100)
+            : 0.85;
+        final card = 1.0 + (settings.globalCardPercentage / 100);
+        context.read<QuoteProvider>().setGlobalFactors(wholesale: ws, card: card);
+      }
     });
   }
 
@@ -74,21 +84,18 @@ class _QuoteScreenState extends State<QuoteScreen> {
     });
   }
 
-  void _addProduct(Product product, {double? overridePrice}) {
-    // Aplicar automáticamente la lista seleccionada si no hay override explícito
-    overridePrice ??= _resolvePrice(product);
-    String currentType = _selectedPriceList;
+  void _addProduct(Product product) {
     if (product.isSoldByWeight) {
-      _showWeightDialog(product, overridePrice: overridePrice, priceType: currentType);
+      _showWeightDialog(product);
     } else {
-      context.read<QuoteProvider>().addToCart(product, overridePrice: overridePrice, priceType: currentType);
+      context.read<QuoteProvider>().addToCart(product);
       _searchCtrl.clear();
       setState(() { _searchQuery = ''; _searchResults = []; });
       _searchFocus.requestFocus();
     }
   }
 
-  void _showWeightDialog(Product product, {double? overridePrice, String priceType = 'lista'}) {
+  void _showWeightDialog(Product product) {
     final ctrl = TextEditingController();
     showDialog(
       context: context,
@@ -110,7 +117,7 @@ class _QuoteScreenState extends State<QuoteScreen> {
               FilledButton(
                 onPressed: valid ? () {
                   final kg = double.parse(ctrl.text.replaceAll(',', '.'));
-                  context.read<QuoteProvider>().addToCart(product, quantity: kg, overridePrice: overridePrice, priceType: priceType);
+                  context.read<QuoteProvider>().addToCart(product, quantity: kg);
                   Navigator.pop(ctx);
                   _searchCtrl.clear();
                   setState(() { _searchQuery = ''; _searchResults = []; });
@@ -149,7 +156,9 @@ class _QuoteScreenState extends State<QuoteScreen> {
     if (confirmed != true || !mounted) return;
 
     final settings = context.read<SettingsProvider>().settings;
-    final userId = null; // TODO: pasar el userId real cuando se integre AuthProvider
+    final currentUser = context.read<AuthProvider>().currentUser;
+    final userId = currentUser?['id'] != null ? int.tryParse(currentUser!['id'].toString()) : null;
+    final vendorName = currentUser?['name'] ?? 'VENDEDOR';
 
     final quote = await provider.generateQuote(
       customerName: _customerNameCtrl.text.trim().isEmpty ? null : _customerNameCtrl.text.trim(),
@@ -167,13 +176,14 @@ class _QuoteScreenState extends State<QuoteScreen> {
     }
 
     // -- PDF + WhatsApp -----------------------------------------------------
-    await _showQuoteSuccessDialog(quote, settings?.companyName ?? 'Mi Negocio', settings);
+    await _showQuoteSuccessDialog(quote, settings?.companyName ?? 'Mi Negocio', settings, vendorName);
   }
 
   Future<void> _showQuoteSuccessDialog(
-    quote_repository_Quote quote,
+    Quote quote,
     String businessName,
     dynamic settings,
+    String vendorName,
   ) async {
     if (!mounted) return;
     await showDialog(
@@ -185,6 +195,7 @@ class _QuoteScreenState extends State<QuoteScreen> {
         businessAddress: settings?.address,
         businessPhone: settings?.phone,
         customerPhone: quote.customerPhone,
+        vendorName: vendorName,
       ),
     );
   }
@@ -216,108 +227,142 @@ class _QuoteScreenState extends State<QuoteScreen> {
     );
   }
 
-  // ── Helpers de lista de precios ─────────────────────────────────────────
+  // ── Helpers de lista de precios (delegado al QuoteProvider) ─────────────────
 
-  bool _hasPriceForCurrentList(Product p) {
-    if (_selectedPriceList == 'mayorista' && p.priceWholesale == null) return false;
-    if (_selectedPriceList == 'tarjeta' && p.priceCard == null) return false;
-    return true;
-  }
-
-  double _resolvePrice(Product p) {
-    switch (_selectedPriceList) {
-      case 'mayorista': return p.priceWholesale ?? p.sellingPrice;
-      case 'tarjeta':   return p.priceCard ?? p.sellingPrice;
-      default:          return p.sellingPrice;
-    }
-  }
-
-  String get _priceListLabel {
-    switch (_selectedPriceList) {
-      case 'mayorista': return 'Mayorista';
-      case 'tarjeta':   return 'Tarjeta';
-      default:          return 'Lista';
-    }
-  }
-
-  Color get _priceListColor {
-    switch (_selectedPriceList) {
-      case 'mayorista': return Colors.indigo.shade600;
-      case 'tarjeta':   return Colors.teal.shade600;
-      default:          return Colors.green.shade700;
+  /// Para precios de preview en la grilla — lee el motor CartItem
+  double _resolvePreviewPrice(Product p) {
+    final qProvider = context.read<QuoteProvider>();
+    switch (qProvider.activeTier) {
+      case PriceTier.wholesale:
+        if (p.priceWholesale != null && p.priceWholesale! > 0) return p.priceWholesale!;
+        return p.sellingPrice * qProvider.wholesaleFactor;
+      case PriceTier.card:
+        if (p.priceCard != null && p.priceCard! > 0) return p.priceCard!;
+        return p.sellingPrice * qProvider.cardFactor;
+      case PriceTier.custom:
+        return p.sellingPrice * qProvider.customFactor;
+      case PriceTier.base:
+        return p.sellingPrice;
     }
   }
 
   Widget _buildSearchBar() {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      color: Colors.grey.shade50,
-      child: Row(
-        children: [
-          Expanded(
-            child: TextField(
-              controller: _searchCtrl,
-              focusNode: _searchFocus,
-              onChanged: _onSearchChanged,
-              autofocus: true,
-              decoration: InputDecoration(
-                hintText: 'Buscar producto por nombre o código...',
-                prefixIcon: const Icon(Icons.search),
-                suffixIcon: _isSearching
-                    ? const Padding(
-                        padding: EdgeInsets.all(12),
-                        child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)))
-                    : _searchQuery.isNotEmpty
-                        ? IconButton(icon: const Icon(Icons.clear), onPressed: () {
-                            _searchCtrl.clear();
-                            setState(() { _searchQuery = ''; _searchResults = []; });
-                          })
-                        : null,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                filled: true,
-                fillColor: Colors.white,
-              ),
-            ),
-          ),
-          if (context.watch<SettingsProvider>().features.multiplePrices) ...[
-            const SizedBox(width: 10),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                border: Border.all(color: _priceListColor, width: 1.5),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<String>(
-                  value: _selectedPriceList,
-                  icon: Icon(Icons.expand_more, color: _priceListColor, size: 18),
-                  style: TextStyle(
-                    color: _priceListColor,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13,
+    return Consumer<QuoteProvider>(
+      builder: (_, qProvider, __) {
+        final settings = context.watch<SettingsProvider>();
+        final hasMultiPrice = settings.features.multiplePrices;
+        final tierColor = qProvider.activePriceListColor;
+        final customTiers = settings.settings?.customPriceTiers ?? [];
+
+        return Container(
+          padding: const EdgeInsets.all(12),
+          color: Colors.grey.shade50,
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _searchCtrl,
+                  focusNode: _searchFocus,
+                  onChanged: _onSearchChanged,
+                  autofocus: true,
+                  decoration: InputDecoration(
+                    hintText: 'Buscar producto por nombre o código...',
+                    prefixIcon: const Icon(Icons.search),
+                    suffixIcon: _isSearching
+                        ? const Padding(
+                            padding: EdgeInsets.all(12),
+                            child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)))
+                        : _searchQuery.isNotEmpty
+                            ? IconButton(icon: const Icon(Icons.clear), onPressed: () {
+                                _searchCtrl.clear();
+                                setState(() { _searchQuery = ''; _searchResults = []; });
+                              })
+                            : null,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    filled: true,
+                    fillColor: Colors.white,
                   ),
-                  onChanged: (v) { if (v != null) setState(() => _selectedPriceList = v); },
-                  items: const [
-                    DropdownMenuItem(value: 'lista',     child: Text('Lista')),
-                    DropdownMenuItem(value: 'mayorista', child: Text('Mayorista')),
-                    DropdownMenuItem(value: 'tarjeta',   child: Text('Tarjeta')),
-                  ],
                 ),
               ),
-            ),
-          ],
-        ],
-      ),
+              if (hasMultiPrice) ...[
+                const SizedBox(width: 10),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    border: Border.all(color: tierColor, width: 1.5),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      value: _tierToKey(qProvider.activeTier, qProvider.customTierLabel),
+                      icon: Icon(Icons.expand_more, color: tierColor, size: 18),
+                      style: TextStyle(
+                        color: tierColor,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
+                      onChanged: (v) {
+                        if (v == null) return;
+                        switch (v) {
+                          case 'base':
+                            qProvider.setPriceTier(PriceTier.base);
+                            break;
+                          case 'wholesale':
+                            qProvider.setPriceTier(PriceTier.wholesale);
+                            break;
+                          case 'card':
+                            qProvider.setPriceTier(PriceTier.card);
+                            break;
+                          default:
+                            // Lista custom del JSON
+                            final t = customTiers.firstWhere(
+                              (ct) => ct['name'] == v,
+                              orElse: () => {'modifier': 0.0},
+                            );
+                            final mod = (t['modifier'] as num?)?.toDouble() ?? 0.0;
+                            qProvider.setPriceTier(
+                              PriceTier.custom,
+                              customFactor: 1.0 + (mod / 100),
+                              customLabel: v,
+                            );
+                        }
+                      },
+                      items: [
+                        const DropdownMenuItem(value: 'base',      child: Text('Precio Base')),
+                        const DropdownMenuItem(value: 'wholesale', child: Text('Mayorista')),
+                        const DropdownMenuItem(value: 'card',      child: Text('Tarjeta')),
+                        ...customTiers.map((ct) => DropdownMenuItem(
+                          value: ct['name']?.toString() ?? '',
+                          child: Text(ct['name']?.toString() ?? ''),
+                        )),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        );
+      },
     );
   }
 
+  String _tierToKey(PriceTier tier, String? label) {
+    switch (tier) {
+      case PriceTier.wholesale: return 'wholesale';
+      case PriceTier.card:      return 'card';
+      case PriceTier.custom:    return label ?? 'base';
+      case PriceTier.base:      return 'base';
+    }
+  }
+
   Widget _buildSearchResults() {
+    final qProvider = context.watch<QuoteProvider>();
     if (_searchQuery.isEmpty) {
       return _buildQuickAccessGrid();
     }
-    final displayedResults = _searchResults.where(_hasPriceForCurrentList).toList();
-    if (displayedResults.isEmpty && !_isSearching) {
+    if (_searchResults.isEmpty && !_isSearching) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -331,14 +376,15 @@ class _QuoteScreenState extends State<QuoteScreen> {
     }
     return ListView.separated(
       padding: const EdgeInsets.all(8),
-      itemCount: displayedResults.length,
+      itemCount: _searchResults.length,
       separatorBuilder: (_, __) => const Divider(height: 1),
-      itemBuilder: (_, i) => _buildProductTile(displayedResults[i]),
+      itemBuilder: (_, i) => _buildProductTile(_searchResults[i], qProvider),
     );
   }
 
   Widget _buildQuickAccessGrid() {
-    final products = context.watch<CatalogProvider>().products.where(_hasPriceForCurrentList).toList();
+    final qProvider = context.watch<QuoteProvider>();
+    final products = context.watch<CatalogProvider>().products;
     if (products.isEmpty) {
       return Center(
         child: Column(
@@ -360,22 +406,23 @@ class _QuoteScreenState extends State<QuoteScreen> {
         mainAxisSpacing: 8,
       ),
       itemCount: products.length,
-      itemBuilder: (_, i) => _buildProductCard(products[i]),
+      itemBuilder: (_, i) => _buildProductCard(products[i], qProvider),
     );
   }
 
-  Widget _buildProductCard(Product p) {
-    final price = _resolvePrice(p);
+  Widget _buildProductCard(Product p, QuoteProvider qProvider) {
+    final tierColor = qProvider.activePriceListColor;
+    final tierLabel = qProvider.activePriceListLabel;
+    final price = _resolvePreviewPrice(p);
+    final isBase = qProvider.activeTier == PriceTier.base;
     return InkWell(
       onTap: () => _addProduct(p),
       borderRadius: BorderRadius.circular(10),
       child: Container(
         decoration: BoxDecoration(
           border: Border.all(
-            color: _selectedPriceList != 'lista'
-                ? _priceListColor.withValues(alpha: 0.5)
-                : Colors.grey.shade200,
-            width: _selectedPriceList != 'lista' ? 1.5 : 1.0,
+            color: !isBase ? tierColor.withValues(alpha: 0.5) : Colors.grey.shade200,
+            width: !isBase ? 1.5 : 1.0,
           ),
           borderRadius: BorderRadius.circular(10),
           color: Colors.white,
@@ -392,17 +439,17 @@ class _QuoteScreenState extends State<QuoteScreen> {
                 style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
             const SizedBox(height: 4),
             Text('\$${price.toCurrency()}',
-                style: TextStyle(fontSize: 11, color: _priceListColor, fontWeight: FontWeight.bold)),
-            if (_selectedPriceList != 'lista')
+                style: TextStyle(fontSize: 11, color: tierColor, fontWeight: FontWeight.bold)),
+            if (!isBase)
               Container(
                 margin: const EdgeInsets.only(top: 3),
                 padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                 decoration: BoxDecoration(
-                  color: _priceListColor.withValues(alpha: 0.1),
+                  color: tierColor.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(4),
                 ),
-                child: Text(_priceListLabel,
-                    style: TextStyle(fontSize: 9, color: _priceListColor, fontWeight: FontWeight.bold)),
+                child: Text(tierLabel,
+                    style: TextStyle(fontSize: 9, color: tierColor, fontWeight: FontWeight.bold)),
               ),
           ],
         ),
@@ -410,8 +457,11 @@ class _QuoteScreenState extends State<QuoteScreen> {
     );
   }
 
-  Widget _buildProductTile(Product p) {
-    final price = _resolvePrice(p);
+  Widget _buildProductTile(Product p, QuoteProvider qProvider) {
+    final tierColor = qProvider.activePriceListColor;
+    final tierLabel = qProvider.activePriceListLabel;
+    final price = _resolvePreviewPrice(p);
+    final isBase = qProvider.activeTier == PriceTier.base;
     return ListTile(
       dense: true,
       leading: CircleAvatar(
@@ -424,17 +474,17 @@ class _QuoteScreenState extends State<QuoteScreen> {
       subtitle: Row(
         children: [
           Text('\$${price.toCurrency()}',
-              style: TextStyle(color: _priceListColor, fontSize: 12, fontWeight: FontWeight.bold)),
-          if (_selectedPriceList != 'lista')
+              style: TextStyle(color: tierColor, fontSize: 12, fontWeight: FontWeight.bold)),
+          if (!isBase)
             Container(
               margin: const EdgeInsets.only(left: 6),
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
               decoration: BoxDecoration(
-                color: _priceListColor.withValues(alpha: 0.12),
+                color: tierColor.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(4),
               ),
-              child: Text(_priceListLabel,
-                  style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: _priceListColor)),
+              child: Text(tierLabel,
+                  style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: tierColor)),
             ),
         ],
       ),
@@ -567,8 +617,11 @@ class _QuoteScreenState extends State<QuoteScreen> {
     );
   }
 
-  Widget _buildCartItem(QuoteCartItem item, QuoteProvider provider) {
+  Widget _buildCartItem(CartItem item, QuoteProvider provider) {
     final fmt = NumberFormat.currency(locale: 'es_AR', symbol: '\$', decimalDigits: 2);
+    final tierColor = provider.activePriceListColor;
+    final tierLabel = provider.activePriceListLabel;
+    final isBase = item.activeTier == PriceTier.base;
     return ListTile(
       dense: true,
       title: Text(item.product.name,
@@ -579,21 +632,21 @@ class _QuoteScreenState extends State<QuoteScreen> {
         children: [
           Text('${fmt.format(item.unitPrice)} x ${item.product.isSoldByWeight ? "${item.quantity.toQty()} kg" : item.quantity.toInt()}',
               style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
-          if (item.priceType != 'lista') ...[
+          if (!isBase) ...[
             const SizedBox(width: 6),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
               decoration: BoxDecoration(
-                color: item.priceType == 'mayorista' ? Colors.indigo.shade50 : Colors.teal.shade50,
-                border: Border.all(color: item.priceType == 'mayorista' ? Colors.indigo.shade200 : Colors.teal.shade200),
+                color: tierColor.withValues(alpha: 0.1),
+                border: Border.all(color: tierColor.withValues(alpha: 0.3)),
                 borderRadius: BorderRadius.circular(4),
               ),
               child: Text(
-                item.priceType == 'mayorista' ? 'Mayorista' : 'Tarjeta',
+                item.customTierLabel ?? tierLabel,
                 style: TextStyle(
                   fontSize: 9,
                   fontWeight: FontWeight.bold,
-                  color: item.priceType == 'mayorista' ? Colors.indigo.shade700 : Colors.teal.shade700,
+                  color: tierColor,
                 ),
               ),
             ),
@@ -613,7 +666,6 @@ class _QuoteScreenState extends State<QuoteScreen> {
         ],
       ),
       onTap: () {
-        // Editar cantidad
         final ctrl = TextEditingController(
           text: item.product.isSoldByWeight
               ? item.quantity.toQty()
@@ -650,9 +702,6 @@ class _QuoteScreenState extends State<QuoteScreen> {
     );
   }
 }
-
-// -- Typedef alias para evitar conflicto de nombres ----------------------------
-typedef quote_repository_Quote = Quote;
 
 // -- Diálogo de cabecera del presupuesto --------------------------------------
 
@@ -832,6 +881,7 @@ class _QuoteSuccessDialog extends StatefulWidget {
   final String? businessAddress;
   final String? businessPhone;
   final String? customerPhone;
+  final String vendorName;
 
   const _QuoteSuccessDialog({
     required this.quote,
@@ -839,6 +889,7 @@ class _QuoteSuccessDialog extends StatefulWidget {
     this.businessAddress,
     this.businessPhone,
     this.customerPhone,
+    required this.vendorName,
   });
 
   @override
@@ -850,6 +901,23 @@ class _QuoteSuccessDialogState extends State<_QuoteSuccessDialog> {
   String? _savedPath;
   final fmt = NumberFormat.currency(locale: 'es_AR', symbol: '\$', decimalDigits: 2);
 
+  Future<void> _printTicket() async {
+    try {
+      final settings = context.read<SettingsProvider>().settings;
+      if (settings != null) {
+        await ReceiptPrinterService.instance.printQuoteTicket(
+          quote: widget.quote,
+          settings: settings,
+          localTerminal: context.read<LocalTerminalProvider>(),
+          vendorName: widget.vendorName,
+        );
+      }
+      if (mounted) Navigator.pop(context); // Cierra el modal exitosamente al imprimir el ticket
+    } catch (e) {
+      if (mounted) SnackBarService.error(context, e.toString());
+    }
+  }
+
   Future<void> _generateAndSave() async {
     setState(() => _generatingPdf = true);
     try {
@@ -858,6 +926,7 @@ class _QuoteSuccessDialogState extends State<_QuoteSuccessDialog> {
         businessName: widget.businessName,
         businessAddress: widget.businessAddress,
         businessPhone: widget.businessPhone,
+        vendorName: widget.vendorName,
       );
       if (mounted) setState(() { _generatingPdf = false; _savedPath = path; });
     } catch (e) {
@@ -875,6 +944,7 @@ class _QuoteSuccessDialogState extends State<_QuoteSuccessDialog> {
       businessName: widget.businessName,
       businessAddress: widget.businessAddress,
       businessPhone: widget.businessPhone,
+      vendorName: widget.vendorName,
     );
   }
 
@@ -897,7 +967,7 @@ class _QuoteSuccessDialogState extends State<_QuoteSuccessDialog> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Header verde
+            // Header verde/indigo
             Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
@@ -919,56 +989,58 @@ class _QuoteSuccessDialogState extends State<_QuoteSuccessDialog> {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.all(24),
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // Paso 1: PDF
-                  _stepCard(
-                    step: '1',
-                    icon: Icons.picture_as_pdf_outlined,
-                    color: Colors.red,
-                    title: 'Generar y guardar PDF',
-                    subtitle: _savedPath != null ? 'Guardado en: ${_savedPath!.split(RegExp(r'[/\\]')).last}' : 'Clic para generar el comprobante',
-                    action: _generatingPdf
-                        ? const SizedBox(width: 24, height: 24,
-                            child: CircularProgressIndicator(strokeWidth: 2))
-                        : FilledButton.icon(
-                            onPressed: _generateAndSave,
-                            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade600),
-                            icon: const Icon(Icons.download_rounded, size: 18),
-                            label: Text(_savedPath != null ? 'Guardar de nuevo' : 'Guardar PDF'),
+                  // 🖨️ Botón Primario: Imprimir Ticket (Térmica)
+                  FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFF2E7D32),
+                      padding: const EdgeInsets.symmetric(vertical: 20),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onPressed: _printTicket,
+                    icon: const Icon(Icons.print_rounded, size: 28),
+                    label: const Text('Imprimir Ticket (Térmica)', style: TextStyle(fontSize: 16)),
+                  ),
+                  
+                  const SizedBox(height: 16),
+                  const Divider(),
+                  const SizedBox(height: 16),
+                  
+                  // Botones Secundarios
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            foregroundColor: Colors.indigo.shade700,
                           ),
-                  ),
-                  const SizedBox(height: 12),
-                  // Paso 1b: Preview
-                  _stepCard(
-                    step: '?',
-                    icon: Icons.preview_outlined,
-                    color: Colors.blueGrey,
-                    title: 'Ver preview (impresión)',
-                    subtitle: 'Abre el visor de impresión del sistema',
-                    action: OutlinedButton.icon(
-                      onPressed: _preview,
-                      icon: const Icon(Icons.open_in_new, size: 16),
-                      label: const Text('Ver / Imprimir'),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  // Paso 2: WhatsApp
-                  _stepCard(
-                    step: '2',
-                    icon: Icons.chat_outlined,
-                    color: const Color(0xFF25D366),
-                    title: 'Compartir por WhatsApp',
-                    subtitle: _savedPath != null
-                        ? 'Abre WhatsApp con mensaje prearmado.\nArrastrá el PDF guardado al chat.'
-                        : 'Primero guardá el PDF (Paso 1)',
-                    action: FilledButton.icon(
-                      onPressed: _savedPath != null ? _openWhatsApp : null,
-                      style: FilledButton.styleFrom(backgroundColor: const Color(0xFF25D366)),
-                      icon: const Icon(Icons.send_rounded, size: 18),
-                      label: const Text('Abrir WhatsApp'),
-                    ),
+                          onPressed: _preview,
+                          icon: const Icon(Icons.picture_as_pdf_rounded),
+                          label: const Text('Ver PDF (A4)'),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _generatingPdf 
+                          ? const Center(child: CircularProgressIndicator()) 
+                          : OutlinedButton.icon(
+                              style: OutlinedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                foregroundColor: const Color(0xFF25D366),
+                              ),
+                              onPressed: () async {
+                                if (_savedPath == null) await _generateAndSave();
+                                await _openWhatsApp();
+                              },
+                              icon: const Icon(Icons.rocket_launch_rounded),
+                              label: const Text('WhatsApp'),
+                            ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -985,43 +1057,6 @@ class _QuoteSuccessDialogState extends State<_QuoteSuccessDialog> {
     );
   }
 
-  Widget _stepCard({
-    required String step,
-    required IconData icon,
-    required Color color,
-    required String title,
-    required String subtitle,
-    required Widget action,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: color.withValues(alpha: 0.2)),
-      ),
-      child: Row(
-        children: [
-          CircleAvatar(
-            backgroundColor: color.withValues(alpha: 0.15),
-            radius: 18,
-            child: Text(step, style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 13)),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                Text(subtitle, style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          action,
-        ],
-      ),
-    );
-  }
+  // Ya no usamos el método _stepCard, al rediseñar la vista
 }
 

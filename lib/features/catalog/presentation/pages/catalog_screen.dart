@@ -1008,7 +1008,8 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                                       focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.indigo.shade400)),
                                       enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.indigo.shade200)),
                                       border: const OutlineInputBorder(),
-                                      helperText: 'Vacío = no aplica',
+                                      helperText: 'Vacío o 0 = Ignora y aplica cálculo global',
+                                      helperMaxLines: 2,
                                     ),
                                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
                                     validator: (v) {
@@ -1023,13 +1024,14 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                                   child: TextFormField(
                                     controller: _cardCtrl,
                                     decoration: InputDecoration(
-                                      labelText: 'Precio Tarjeta',
+                                      labelText: 'Precio Tarjeta (Fijo)',
                                       prefixText: '\$ ',
                                       labelStyle: TextStyle(color: Colors.teal.shade700),
                                       focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.teal.shade400)),
                                       enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.teal.shade200)),
                                       border: const OutlineInputBorder(),
-                                      helperText: 'Vacío = no aplica',
+                                      helperText: 'Vacío o 0 = Ignora y aplica % global automático',
+                                      helperMaxLines: 2,
                                     ),
                                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
                                     validator: (v) {

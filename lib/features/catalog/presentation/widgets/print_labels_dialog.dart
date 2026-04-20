@@ -8,9 +8,10 @@ import 'package:printing/printing.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../../domain/entities/product.dart';
+import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
+import 'package:frontend_desktop/core/providers/local_terminal_provider.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import 'package:frontend_desktop/core/utils/ean13_generator.dart';
-import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PRINT LABELS DIALOG — Split View con Vista Previa en tiempo real
@@ -612,8 +613,8 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
                         subtitle: 'Punto de Venta',
                         onTap: () {
                           setState(() {
-                            final s = context.read<SettingsProvider>().settings;
-                            _paperFormat = s?.printerPaperWidth == '80' ? 'thermal' : 'thermal_58';
+                            final localTerminal = context.read<LocalTerminalProvider>();
+                            _paperFormat = localTerminal.printerFormat == 'thermal_80' ? 'thermal' : 'thermal_58';
                             _schedulePreviewRebuild();
                           });
                         },

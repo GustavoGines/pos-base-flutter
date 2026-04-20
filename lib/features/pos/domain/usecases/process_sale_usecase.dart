@@ -19,6 +19,9 @@ class ProcessSaleUseCase {
     int? customerId,
     int? quoteId,
     String status = 'completed',
+    double shippingCost = 0.0,
+    bool requiresDispatch = false,
+    String fulfillmentStatus = 'pending',
   }) async {
     if (items.isEmpty) throw Exception('El carrito está vacío');
     return await repository.processSale(
@@ -33,6 +36,9 @@ class ProcessSaleUseCase {
       customerId: customerId,
       quoteId: quoteId,
       status: status,
+      shippingCost: shippingCost,
+      requiresDispatch: requiresDispatch,
+      fulfillmentStatus: fulfillmentStatus,
     );
   }
 }

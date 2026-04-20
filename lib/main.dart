@@ -14,6 +14,7 @@ import 'features/auth/presentation/providers/auth_provider.dart';
 import 'features/customers/providers/customer_provider.dart';
 import 'features/trash/providers/trash_provider.dart';
 import 'features/reports/presentation/providers/reports_provider.dart';
+import 'core/providers/local_terminal_provider.dart';
 import 'features/reports/presentation/providers/inventory_alerts_provider.dart';
 import 'features/reports/data/datasources/inventory_alerts_datasource.dart';
 import 'core/config/app_config.dart';
@@ -208,6 +209,7 @@ void main() async {
   runApp(
     MultiProvider(
       providers: [
+        ChangeNotifierProvider(create: (_) => LocalTerminalProvider(), lazy: false),
         ChangeNotifierProvider.value(
           value: authProvider, // Reusar la instancia creada antes de runApp
         ),

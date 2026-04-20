@@ -35,6 +35,9 @@ class PosRepositoryImpl implements PosRepository {
     int? customerId,
     int? quoteId,
     String status = 'completed',
+    double shippingCost = 0.0,
+    bool requiresDispatch = false,
+    String fulfillmentStatus = 'pending',
   }) async {
     final response = await remoteDataSource.processSale(
       total: total,
@@ -48,6 +51,9 @@ class PosRepositoryImpl implements PosRepository {
       customerId: customerId,
       quoteId: quoteId,
       status: status,
+      shippingCost: shippingCost,
+      requiresDispatch: requiresDispatch,
+      fulfillmentStatus: fulfillmentStatus,
     );
 
     return Sale(
@@ -62,6 +68,7 @@ class PosRepositoryImpl implements PosRepository {
         openingBalance: 0,
         status: 'open',
       ),
+      deliveryNote: response['sale']['delivery_note'],
     );
   }
 
@@ -80,6 +87,7 @@ class PosRepositoryImpl implements PosRepository {
     required double changeAmount,
     int? userId,
     List<CartItem>? items,
+    double shippingCost = 0.0,
   }) async {
     final response = await remoteDataSource.payPendingSale(
       saleId: saleId,
@@ -89,6 +97,7 @@ class PosRepositoryImpl implements PosRepository {
       changeAmount: changeAmount,
       userId: userId,
       items: items,
+      shippingCost: shippingCost,
     );
     return response as Map<String, dynamic>;
   }
@@ -107,5 +116,10 @@ class PosRepositoryImpl implements PosRepository {
   @override
   Future<Uint8List> downloadTicketPdf(int saleId) async {
     return await remoteDataSource.downloadTicketPdf(saleId);
+  }
+
+  @override
+  Future<Map<String, dynamic>> createDeliveryNoteFromSale(int saleId, {String fulfillmentStatus = 'pending'}) async {
+    return await remoteDataSource.createDeliveryNoteFromSale(saleId, fulfillmentStatus: fulfillmentStatus);
   }
 }

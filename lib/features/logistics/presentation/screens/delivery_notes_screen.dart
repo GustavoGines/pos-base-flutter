@@ -7,6 +7,7 @@ import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import 'package:frontend_desktop/features/auth/presentation/providers/auth_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:frontend_desktop/core/utils/receipt_printer_service.dart';
+import 'package:frontend_desktop/core/providers/local_terminal_provider.dart';
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
 import 'package:frontend_desktop/core/presentation/widgets/ticket_preview_dialog.dart';
 import 'package:frontend_desktop/features/logistics/services/delivery_note_pdf_service.dart';
@@ -268,7 +269,7 @@ class _DeliveryNotesScreenState extends State<DeliveryNotesScreen> {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          'Generado: ${note['created_at']?.split('T')[0]}',
+                          'Generado: ${(note['created_at'] != null) ? DateTime.parse(note['created_at']).toLocal().toString().split(' ')[0] : ''}',
                           style: TextStyle(color: Colors.grey.shade700, fontSize: 16),
                         ),
                       ],
@@ -390,11 +391,26 @@ class _DispatchModalState extends State<_DispatchModal> {
     if (_printOnDispatch && _showPreview) {
       final sale = widget.note['sale'] ?? {};
       final customerName = sale['customer']?['name'] ?? 'Consumidor Final';
+      final vendorName = sale['user']?['name'] ?? 'SISTEMA';
+      final currentUser = context.read<AuthProvider>().currentUser;
+      final dispatcherName = currentUser?['name'] ?? 'SISTEMA';
+      final settings = context.read<SettingsProvider>().settings;
+
       final previewLines = <TicketLine>[
-        TicketLine('COMPROBANTE DE ENTREGA / REMITO', align: TicketAlign.center, isBold: true, isLarge: true),
+        if (settings?.companyName != null)
+          TicketLine(settings!.companyName!.toUpperCase(), align: TicketAlign.center, isBold: true, isLarge: true),
+        if (settings?.address != null && settings!.address!.isNotEmpty)
+          TicketLine(settings.address!, align: TicketAlign.center),
+        if (settings?.taxId != null && settings!.taxId!.isNotEmpty)
+          TicketLine('CUIT: ${settings.taxId}', align: TicketAlign.center, isBold: true),
         const TicketLine.hr(bold: true),
-        TicketLine('REMITO N°: ${widget.note['id'].toString().padLeft(6, '0')}', isBold: true),
-        TicketLine('CLIENTE: $customerName'),
+        const TicketLine('REMITO DE DESPACHO', align: TicketAlign.center, isBold: true),
+        const TicketLine.hr(),
+        TicketLine('REM N°: ${widget.note['id'].toString().padLeft(6, '0')}', isBold: true),
+        TicketLine('FECHA: ${DateTime.now().day.toString().padLeft(2,'0')}/${DateTime.now().month.toString().padLeft(2,'0')}/${DateTime.now().year}'),
+        TicketLine('CLIENTE: $customerName', isBold: true),
+        TicketLine('VENDIÓ: ${vendorName.toUpperCase()}'),
+        TicketLine('DESPACHÓ: ${dispatcherName.toUpperCase()}'),
         const TicketLine.hr(),
         ...payload.map((d) {
           final item = (widget.note['items'] as List).firstWhere((i) => i['id'] == d['id'], orElse: () => null);
@@ -452,12 +468,18 @@ class _DispatchModalState extends State<_DispatchModal> {
           if (settings != null && _printOnDispatch) {
             final sale = widget.note['sale'] ?? {};
             final customerName = sale['customer']?['name'];
-            
+            final vendorName = sale['user']?['name'];
+            final currentUser = context.read<AuthProvider>().currentUser;
+            final dispatcherName = currentUser?['name'] ?? 'SISTEMA';
+
             await ReceiptPrinterService.instance.printDeliveryNoteTicket(
               note: widget.note,
               deliveredItemsData: payload,
               settings: settings,
+              localTerminal: context.read<LocalTerminalProvider>(),
               customerName: customerName,
+              vendorName: vendorName,
+              dispatcherName: dispatcherName,
             );
           }
         } catch (e) {
@@ -469,10 +491,15 @@ class _DispatchModalState extends State<_DispatchModal> {
           try {
             if (!mounted) return;
             final settings = context.read<SettingsProvider>().settings;
+            final sale = widget.note['sale'] ?? {};
+            final vendorName = sale['user']?['name'];
+            final currentUser = context.read<AuthProvider>().currentUser;
+            final dispatcherName = currentUser?['name'] ?? 'SISTEMA';
+
             // Construir mapa de cantidades entregadas para resaltar en el PDF
             final deliveredNowMap = <int, double>{
               for (final p in payload)
-                if (p['id'] != null) (p['id'] as int): ((p['delivered_now'] as num?)?.toDouble() ?? 0.0)
+                if (p['id'] != null) (p['id'] as int): (double.tryParse(p['delivered_now']?.toString() ?? '') ?? 0.0)
             };
             if (_showA4Preview) {
               await DeliveryNotePdfService.preview(
@@ -483,6 +510,8 @@ class _DispatchModalState extends State<_DispatchModal> {
                 businessPhone: settings?.phone,
                 businessTaxId: settings?.taxId,
                 deliveredNow: deliveredNowMap,
+                vendorName: vendorName,
+                dispatcherName: dispatcherName,
               );
             } else {
               await DeliveryNotePdfService.printDirect(
@@ -492,6 +521,8 @@ class _DispatchModalState extends State<_DispatchModal> {
                 businessPhone: settings?.phone,
                 businessTaxId: settings?.taxId,
                 deliveredNow: deliveredNowMap,
+                vendorName: vendorName,
+                dispatcherName: dispatcherName,
               );
             }
           } catch (e) {

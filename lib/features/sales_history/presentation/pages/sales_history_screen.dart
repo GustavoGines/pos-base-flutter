@@ -10,6 +10,7 @@ import '../../../users/presentation/providers/users_provider.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
 import 'package:frontend_desktop/core/utils/receipt_printer_service.dart';
+import 'package:frontend_desktop/core/providers/local_terminal_provider.dart';
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
 import 'package:frontend_desktop/features/pos/domain/entities/cart_item.dart';
 import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
@@ -1038,6 +1039,7 @@ class _TicketDetailPanel extends StatelessWidget {
                         items: itemsParaImprimir,
                         total: sale.total,
                         settings: settings,
+                        localTerminal: context.read<LocalTerminalProvider>(),
                         paymentDetails: paymentDetails,
                         receiptNumber: sale.id.toString(),
                         userName: sale.userName,

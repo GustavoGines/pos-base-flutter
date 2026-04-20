@@ -342,7 +342,7 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                   color: Colors.amber.shade100,
                   borderRadius: BorderRadius.circular(4),
                 ),
-                child: Text('PRO', style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.amber.shade900)),
+                child: Text('PREMIUM', style: TextStyle(fontSize: 8, fontWeight: FontWeight.bold, color: Colors.amber.shade900)),
               )
             ]
           ],

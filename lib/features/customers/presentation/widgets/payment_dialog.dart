@@ -180,7 +180,8 @@ class _PaymentDialogState extends State<PaymentDialog> {
                               final sale = provider.pendingSales[index];
                               final saleId = sale['id'] as int;
                               final amountDue = double.tryParse(sale['amount_due'].toString()) ?? 0.0;
-                              final date = sale['created_at'].toString().split('T')[0];
+                              final dateStr = sale['created_at']?.toString() ?? '';
+                              final date = dateStr.isNotEmpty ? DateTime.parse(dateStr).toLocal().toString().split(' ')[0] : '';
                               
                               final isSelected = _selectedSaleIds.contains(saleId);
                               

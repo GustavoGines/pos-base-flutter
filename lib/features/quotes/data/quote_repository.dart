@@ -42,6 +42,8 @@ class Quote {
   final String? validUntil;
   final List<QuoteItem> items;
   final String? createdAt;
+  // Lista de precios aplicada (base | wholesale | card | nombre custom)
+  final String priceList;
 
   Quote({
     required this.id,
@@ -55,6 +57,7 @@ class Quote {
     this.validUntil,
     required this.items,
     this.createdAt,
+    this.priceList = 'base',
   });
 
   factory Quote.fromJson(Map<String, dynamic> json) {
@@ -70,6 +73,7 @@ class Quote {
       notes: json['notes']?.toString(),
       validUntil: json['valid_until']?.toString(),
       createdAt: json['created_at']?.toString(),
+      priceList: json['price_list']?.toString() ?? 'base',
       items: rawItems
           .map(
             (i) => QuoteItem(
@@ -84,6 +88,16 @@ class Quote {
           )
           .toList(),
     );
+  }
+
+  /// Devuelve la etiqueta legible de la lista de precios para mostrar en PDF y UI.
+  String get priceListLabel {
+    switch (priceList) {
+      case 'base':       return 'Contado / Efectivo';
+      case 'wholesale':  return 'Mayorista';
+      case 'card':       return 'Tarjeta';
+      default:           return priceList; // Nombre exacto de la lista custom
+    }
   }
 }
 
@@ -103,6 +117,7 @@ class QuoteRepository {
     String? notes,
     String? validUntil,
     int? userId,
+    String? priceList,
   }) async {
     final body = jsonEncode({
       'customer_name': customerName,
@@ -110,6 +125,7 @@ class QuoteRepository {
       'notes': notes,
       'valid_until': validUntil,
       'user_id': userId,
+      'price_list': priceList ?? 'base',
       'items': items.map((i) => i.toJson()).toList(),
     });
 

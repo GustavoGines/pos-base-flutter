@@ -43,12 +43,6 @@ class BusinessSettings extends Equatable {
   final String? phone;
   final String? taxId;
   final String? receiptFooterMessage;
-  final String printerType;
-  final String printerPaperWidth;
-  final String? printerComPort;
-  final String? printerIpAddress;
-  final String? printerIpPort;
-  final String? comPortScale;
   final String? licenseStatus;
   final String? licensePlanType;
   final String? licensePlanMode; // 'saas' or 'lifetime'
@@ -58,6 +52,11 @@ class BusinessSettings extends Equatable {
   final DateTime? licenseNextPaymentAt;
   final String? licenseManageUrl;
   final bool isLifetime;
+  
+  // [multiple-prices] Modificadores Globales y Dinámicos
+  final double globalWholesalePercentage; // Ej: -15.0
+  final double globalCardPercentage;      // Ej: 15.0
+  final List<Map<String, dynamic>> customPriceTiers; // [{"name": "Jubilados", "modifier": -5}]
   // [feature-flag] Tipo de negocio recibido desde la Licencia remota — solo para uso estético/visual de la UI
   final String businessType;  // 'retail' | 'hardware_store'
   // [feature-flags] Objeto estructurado de características habilitadas
@@ -89,12 +88,6 @@ class BusinessSettings extends Equatable {
     this.phone,
     this.taxId,
     this.receiptFooterMessage,
-    this.printerType = 'none',
-    this.printerPaperWidth = '58',
-    this.printerComPort,
-    this.printerIpAddress,
-    this.printerIpPort,
-    this.comPortScale,
     this.licenseStatus,
     this.licensePlanType,
     this.licensePlanMode,
@@ -104,6 +97,9 @@ class BusinessSettings extends Equatable {
     this.licenseNextPaymentAt,
     this.licenseManageUrl,
     this.isLifetime = false,
+    this.globalWholesalePercentage = -15.0, // Hardcoded default based on common patterns
+    this.globalCardPercentage = 15.0,
+    this.customPriceTiers = const [],
     this.businessType = 'retail',
     this.features = const FeatureFlags(),
   });
@@ -115,12 +111,6 @@ class BusinessSettings extends Equatable {
         phone,
         taxId,
         receiptFooterMessage,
-        printerType,
-        printerPaperWidth,
-        printerComPort,
-        printerIpAddress,
-        printerIpPort,
-        comPortScale,
         licenseStatus,
         licensePlanType,
         licensePlanMode,
@@ -130,6 +120,9 @@ class BusinessSettings extends Equatable {
         licenseNextPaymentAt,
         licenseManageUrl,
         isLifetime,
+        globalWholesalePercentage,
+        globalCardPercentage,
+        customPriceTiers,
         businessType,
         features,
       ];
