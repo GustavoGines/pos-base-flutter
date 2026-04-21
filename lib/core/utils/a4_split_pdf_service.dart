@@ -22,6 +22,7 @@ class A4SplitPdfService {
     required String businessName,
     String? businessAddress,
     String? vendorName,
+    String paperSize = 'a4',
   }) async {
     pw.ThemeData? theme;
     try {
@@ -39,7 +40,9 @@ class A4SplitPdfService {
     final cuit = ''; // Agregar si tienes el CUIT en settings
 
     final items = sale['items'] as List<dynamic>? ?? [];
-    final bool isSmallOrder = items.length <= 4;
+    // Smart Routing: Si son <= 6 ítems, entra en media carilla. Si son más, genera 2 hojas completas.
+    final bool isSmallOrder = items.length <= 6;
+    final bool isDispatch = sale['requires_dispatch'] == 1 || sale['requires_dispatch'] == true;
 
     // buildWatermark pinta la marca de agua detrás de cada sección
     pw.Widget _buildWatermark(String text, bool isSmall) => pw.Center(
@@ -60,16 +63,22 @@ class A4SplitPdfService {
       ),
     );
 
-    pw.Widget buildWatermarkBg(pw.Context ctx) => pw.Positioned.fill(
-      child: _buildWatermark('COMPROBANTE NO FISCAL', isSmallOrder),
+    pw.Widget buildWatermarkTop(pw.Context ctx) => pw.Positioned.fill(
+      child: _buildWatermark('COMPROBANTE\nNO FISCAL', isSmallOrder),
     );
+
+    pw.Widget buildWatermarkBot(pw.Context ctx) => pw.Positioned.fill(
+      child: _buildWatermark('ORIGINAL', isSmallOrder),
+    );
+
+    final format = paperSize.toLowerCase() == 'letter' ? PdfPageFormat.letter : PdfPageFormat.a4;
 
     if (isSmallOrder) {
       // ── RUTA A: VENTA CHICA (A4 SPLIT) ──
       pdf.addPage(
         pw.Page(
           pageTheme: pw.PageTheme(
-            pageFormat: PdfPageFormat.a4,
+            pageFormat: format,
             margin: const pw.EdgeInsets.all(30),
           ),
           build: (pw.Context context) {
@@ -81,7 +90,6 @@ class A4SplitPdfService {
                 pw.Expanded(
                   child: pw.Stack(
                     children: [
-                      pw.Positioned.fill(child: _buildWatermark('COMPROBANTE NO FISCAL', true)),
                       pw.Column(
                         crossAxisAlignment: pw.CrossAxisAlignment.start,
                         children: [
@@ -89,9 +97,14 @@ class A4SplitPdfService {
                             alignment: pw.Alignment.topRight,
                             child: pw.Text('ORIGINAL', style: pw.TextStyle(fontSize: 8, color: PdfColors.grey500, fontWeight: pw.FontWeight.bold)),
                           ),
-                          ..._buildSaleReceiptList(sale, businessName, businessAddress, phone, cuit, vendorName),
+                          ..._buildSaleReceiptList(sale, businessName, businessAddress, phone, cuit, vendorName, isCompact: true),
                         ],
                       ),
+                      pw.Positioned(
+                        bottom: 0, left: 0, right: 0,
+                        child: _buildFooter(businessName, isCompact: true, isSale: true),
+                      ),
+                      _buildWatermark('COMPROBANTE\nNO FISCAL', true),
                     ],
                   ),
                 ),
@@ -123,17 +136,21 @@ class A4SplitPdfService {
                 pw.Expanded(
                   child: pw.Stack(
                     children: [
-                      pw.Positioned.fill(child: _buildWatermark('COMPROBANTE NO FISCAL', true)),
                       pw.Column(
                         crossAxisAlignment: pw.CrossAxisAlignment.start,
                         children: [
                           pw.Align(
                             alignment: pw.Alignment.topRight,
-                            child: pw.Text('DUPLICADO', style: pw.TextStyle(fontSize: 8, color: PdfColors.grey500, fontWeight: pw.FontWeight.bold)),
+                            child: pw.Text('ORIGINAL', style: pw.TextStyle(fontSize: 8, color: PdfColors.grey500, fontWeight: pw.FontWeight.bold)),
                           ),
-                          ..._buildDeliveryNoteList(deliveryNote, sale, businessName, businessAddress, vendorName),
+                          ..._buildDeliveryNoteList(deliveryNote, sale, businessName, businessAddress, vendorName, isCompact: true, isDispatch: isDispatch),
                         ],
                       ),
+                      pw.Positioned(
+                        bottom: 0, left: 0, right: 0,
+                        child: _buildFooter(businessName, isCompact: true, isSale: false),
+                      ),
+                      _buildWatermark('ORIGINAL', true),
                     ],
                   ),
                 ),
@@ -149,10 +166,11 @@ class A4SplitPdfService {
       pdf.addPage(
         pw.MultiPage(
           pageTheme: pw.PageTheme(
-            pageFormat: PdfPageFormat.a4,
+            pageFormat: format,
             margin: const pw.EdgeInsets.all(30),
-            buildBackground: buildWatermarkBg,
+            buildForeground: buildWatermarkTop,
           ),
+          footer: (pw.Context ctx) => _buildFooter(businessName, isCompact: false, ctx: ctx),
           build: (ctx) => _buildSaleReceiptList(sale, businessName, businessAddress, phone, cuit, vendorName),
         ),
       );
@@ -161,11 +179,12 @@ class A4SplitPdfService {
       pdf.addPage(
         pw.MultiPage(
           pageTheme: pw.PageTheme(
-            pageFormat: PdfPageFormat.a4,
+            pageFormat: format,
             margin: const pw.EdgeInsets.all(30),
-            buildBackground: buildWatermarkBg,
+            buildForeground: buildWatermarkBot,
           ),
-          build: (ctx) => _buildDeliveryNoteList(deliveryNote, sale, businessName, businessAddress, vendorName),
+          footer: (pw.Context ctx) => _buildFooter(businessName, isCompact: false, ctx: ctx),
+          build: (ctx) => _buildDeliveryNoteList(deliveryNote, sale, businessName, businessAddress, vendorName, isCompact: false, isDispatch: isDispatch),
         ),
       );
     }
@@ -173,7 +192,7 @@ class A4SplitPdfService {
     return pdf.save();
   }
 
-  /// Genera un documento A4 con UN SOLO comprobante de venta (útil para cuando no hay logística inmediata)
+  /// Genera un documento A4 simple (solo Comprobante de Venta). (útil para cuando no hay logística inmediata)
   static Future<Uint8List> generateA4SingleReceipt({
     required Map<String, dynamic> sale,
     required String businessName,
@@ -181,6 +200,7 @@ class A4SplitPdfService {
     String phone = '',
     String cuit = '',
     String? vendorName,
+    String paperSize = 'a4',
   }) async {
     pw.ThemeData? theme;
     try {
@@ -190,12 +210,12 @@ class A4SplitPdfService {
     } catch (_) {}
 
     final pdf = pw.Document(theme: theme);
-    
+    final format = paperSize.toLowerCase() == 'letter' ? PdfPageFormat.letter : PdfPageFormat.a4;
 
     pdf.addPage(
       pw.Page(
         pageTheme: pw.PageTheme(
-          pageFormat: PdfPageFormat.a4,
+          pageFormat: format,
           margin: const pw.EdgeInsets.all(30),
         ),
         build: (pw.Context context) {
@@ -219,8 +239,12 @@ class A4SplitPdfService {
                   pw.Column(
                     mainAxisSize: pw.MainAxisSize.min,
                     crossAxisAlignment: pw.CrossAxisAlignment.start,
-                    children: _buildSaleReceiptList(
-                        sale, businessName, businessAddress, phone, cuit, vendorName),
+                    children: [
+                      ..._buildSaleReceiptList(
+                          sale, businessName, businessAddress, phone, cuit, vendorName),
+                      pw.SizedBox(height: 20),
+                      _buildFooter(businessName, isCompact: false, isSale: true, ctx: context),
+                    ],
                   ),
                   // 2° Watermark superpuesta con transparencia
                   pw.Positioned.fill(
@@ -230,7 +254,7 @@ class A4SplitPdfService {
                         child: pw.Transform.rotateBox(
                           angle: 0.6,
                           child: pw.Text(
-                            'COMPROBANTE NO FISCAL',
+                            'COMPROBANTE\nNO FISCAL',
                             textAlign: pw.TextAlign.center,
                             style: pw.TextStyle(
                               fontSize: 45,
@@ -256,16 +280,19 @@ class A4SplitPdfService {
   // ---------------------------------------------------------------------------
   // SECCIÓN 1: VENTA (CON PRECIOS Y DISEÑO DEL BACKEND)
   // ---------------------------------------------------------------------------
-  static List<pw.Widget> _buildSaleReceiptList(Map<String, dynamic> sale, String businessName, String? businessAddress, String phone, String cuit, String? vendorName) {
+  static List<pw.Widget> _buildSaleReceiptList(Map<String, dynamic> sale, String businessName, String? businessAddress, String phone, String cuit, String? vendorName, {bool isCompact = false}) {
     final items = sale['items'] as List<dynamic>? ?? [];
     final totalStr = sale['total'] ?? sale['total_amount']?.toString() ?? '0';
     final total = double.tryParse(totalStr.toString()) ?? 0.0;
     final shippingCost = double.tryParse(sale['shipping_cost']?.toString() ?? '0') ?? 0.0;
+    final surchargeAmount = double.tryParse(sale['surcharge_amount']?.toString() ?? '0') ?? 0.0;
     
-    // Pagos (simplificado para la demo)
+    final grandTotal = total + surchargeAmount;
+    
+    // Pagos
     final payments = sale['payments'] as List<dynamic>? ?? [];
-    double tendered = total; 
-    double change = 0.0;
+    final tendered = double.tryParse(sale['tendered_amount']?.toString() ?? '0') ?? grandTotal;
+    final change = double.tryParse(sale['change_amount']?.toString() ?? '0') ?? 0.0;
 
     return [
       // ENCABEZADO VENTA (Estilo Laravel: Izquierda/Derecha)
@@ -493,6 +520,14 @@ class A4SplitPdfService {
                         pw.Text(_currencyFmt.format(shippingCost), style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey700)),
                       ]
                     ),
+                  if (surchargeAmount > 0)
+                    pw.Row(
+                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                      children: [
+                        pw.Text('Recargo Bancario:', style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey700)),
+                        pw.Text(_currencyFmt.format(surchargeAmount), style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey700)),
+                      ]
+                    ),
                   pw.Container(
                     margin: const pw.EdgeInsets.only(top: 8),
                     padding: const pw.EdgeInsets.only(top: 8),
@@ -503,7 +538,7 @@ class A4SplitPdfService {
                       mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                       children: [
                         pw.Text('TOTAL:', style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
-                        pw.Text(_currencyFmt.format(total), style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
+                        pw.Text(_currencyFmt.format(grandTotal), style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
                       ]
                     )
                   )
@@ -513,40 +548,26 @@ class A4SplitPdfService {
           ]
         ),
         
-        pw.SizedBox(height: 20),
-        // FIRMAS — justo debajo del total, sin malgastar hoja
-        pw.Row(
-          mainAxisAlignment: pw.MainAxisAlignment.spaceAround,
-          children: [
-            pw.Column(
-              children: [
-                pw.SizedBox(height: 35), // Espacio para la firma física
-                pw.Container(width: 160, height: 1, color: PdfColors.grey800),
-                pw.SizedBox(height: 5),
-                pw.Text('FIRMA CAJERO / VENDEDOR', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold, color: PdfColors.black)),
-              ]
-            ),
-            pw.Column(
-              children: [
-                pw.SizedBox(height: 35), // Espacio para la firma física
-                pw.Container(width: 160, height: 1, color: PdfColors.grey800),
-                pw.SizedBox(height: 5),
-                pw.Text('FIRMA CLIENTE', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold, color: PdfColors.black)),
-              ]
-            ),
-          ]
-        ),
-        pw.SizedBox(height: 15),
+        pw.SizedBox(height: isCompact ? 8 : 15),
     ];
   }
 
   // ---------------------------------------------------------------------------
   // SECCIÓN 2: REMITO (SIN PRECIOS, PARA LOGÍSTICA)
   // ---------------------------------------------------------------------------
-  static List<pw.Widget> _buildDeliveryNoteList(Map<String, dynamic> note, Map<String, dynamic> sale, String businessName, String? businessAddress, String? vendorName) {
+  static List<pw.Widget> _buildDeliveryNoteList(Map<String, dynamic> note, Map<String, dynamic> sale, String businessName, String? businessAddress, String? vendorName, {required bool isCompact, required bool isDispatch}) {
     final items = note['items'] as List<dynamic>? ?? [];
     final customerName = sale['customer']?['name'] ?? sale['customer_name'] ?? 'Consumidor Final';
     final noteId = note['id']?.toString().padLeft(6, '0') ?? '000000';
+    
+    int totalUnits = 0;
+    for (var item in items) {
+      final qtyStr = item['quantity_purchased']?.toString() ?? item['quantity']?.toString() ?? '1';
+      final qty = double.tryParse(qtyStr) ?? 1.0;
+      totalUnits += qty.toInt();
+    }
+
+    final documentTitle = isDispatch ? 'REMITO DE DESPACHO' : 'ORDEN DE RETIRO / REMITO';
 
     return [
       // ENCABEZADO REMITO (Estilo Laravel: Izquierda/Derecha)
@@ -558,7 +579,7 @@ class A4SplitPdfService {
             crossAxisAlignment: pw.CrossAxisAlignment.start,
             children: [
               pw.Text(businessName.toUpperCase(), style: pw.TextStyle(color: PdfColors.black, fontSize: 18, fontWeight: pw.FontWeight.bold)),
-              pw.Text('ORDEN DE RETIRO / REMITO', style: pw.TextStyle(color: _primary, fontSize: 14, fontWeight: pw.FontWeight.bold)),
+              pw.Text(documentTitle, style: pw.TextStyle(color: _primary, fontSize: 14, fontWeight: pw.FontWeight.bold)),
               if (businessAddress != null && businessAddress.isNotEmpty)
                 pw.Text(businessAddress, style: const pw.TextStyle(color: PdfColors.black, fontSize: 10)),
             ]
@@ -666,30 +687,97 @@ class A4SplitPdfService {
         ]
       ),
         
-        pw.SizedBox(height: 20),
-        // FIRMAS — justo debajo de los items
-        pw.Row(
-          mainAxisAlignment: pw.MainAxisAlignment.spaceAround,
-          children: [
-            pw.Column(
-              children: [
-                pw.SizedBox(height: 35), // Espacio para la firma física
-                pw.Container(width: 160, height: 1, color: PdfColors.grey800),
-                pw.SizedBox(height: 5),
-                pw.Text('FIRMA DESPACHANTE', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold, color: PdfColors.black)),
-              ]
+      pw.SizedBox(height: isCompact ? 10 : 20),
+      // ══ RESUMEN / FIRMA (Nuevo Diseño Inteligente) ════════════════════════════════════════════════
+      pw.Row(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          // Nota de instrucción
+          pw.Expanded(
+            child: pw.Container(
+              decoration: pw.BoxDecoration(
+                border: pw.Border.all(color: _primary, width: 1),
+                borderRadius: const pw.BorderRadius.all(pw.Radius.circular(6)),
+              ),
+              padding: pw.EdgeInsets.all(isCompact ? 8 : 12),
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Text(
+                      isDispatch ? '! INSTRUCCIONES DE RECEPCIÓN' : '! INSTRUCCIONES DE ENTREGA',
+                      style: pw.TextStyle(fontSize: isCompact ? 7.5 : 9, fontWeight: pw.FontWeight.bold, color: _primary)),
+                  pw.SizedBox(height: isCompact ? 4 : 6),
+                  pw.Text(
+                    isDispatch 
+                      ? 'Por favor verifique que los artículos recibidos coincidan con las cantidades indicadas en este comprobante antes de firmar la conformidad.'
+                      : 'Presente este comprobante al retirar la mercadería en depósito. El operador escaneará el código de barras o buscará por N° de Remito. Solo se entregarán los artículos indicados y en las cantidades autorizadas.',
+                    style: pw.TextStyle(fontSize: isCompact ? 7 : 9),
+                  ),
+                  if (totalUnits > 0) ...[
+                    pw.SizedBox(height: isCompact ? 4 : 8),
+                    pw.Text('Total de unidades: $totalUnits',
+                        style: pw.TextStyle(fontSize: isCompact ? 8 : 10, fontWeight: pw.FontWeight.bold)),
+                  ],
+                ],
+              ),
             ),
-            pw.Column(
-              children: [
-                pw.SizedBox(height: 35), // Espacio para la firma física
-                pw.Container(width: 160, height: 1, color: PdfColors.grey800),
-                pw.SizedBox(height: 5),
-                pw.Text('FIRMA CLIENTE / RETIRA', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold, color: PdfColors.black)),
-              ]
+          ),
+          pw.SizedBox(width: isCompact ? 12 : 24),
+          // Firma del receptor
+          pw.Expanded(
+            child: pw.Container(
+              decoration: const pw.BoxDecoration(
+                color: _bgLight,
+                borderRadius: pw.BorderRadius.all(pw.Radius.circular(6)),
+              ),
+              padding: pw.EdgeInsets.all(isCompact ? 8 : 12),
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Text('FIRMA Y ACLARACIÓN DEL RECEPTOR',
+                      style: pw.TextStyle(fontSize: 8, color: _textGrey, fontWeight: pw.FontWeight.bold)),
+                  pw.SizedBox(height: isCompact ? 20 : 32),
+                  pw.Divider(color: PdfColors.grey500, thickness: 0.5),
+                  pw.SizedBox(height: 4),
+                  pw.Text('DNI:', style: pw.TextStyle(fontSize: isCompact ? 8 : 9, color: _textGrey)),
+                  pw.SizedBox(height: isCompact ? 8 : 16),
+                  pw.Divider(color: PdfColors.grey500, thickness: 0.5),
+                  pw.SizedBox(height: 4),
+                  pw.Text('Fecha de retiro:', style: pw.TextStyle(fontSize: isCompact ? 8 : 9, color: _textGrey)),
+                ],
+              ),
             ),
-          ]
-        ),
-        pw.SizedBox(height: 15),
+          ),
+        ],
+      ),
+      pw.SizedBox(height: isCompact ? 8 : 15),
     ];
+  }
+
+  static pw.Widget _buildFooter(String businessName, {required bool isCompact, bool isSale = false, pw.Context? ctx}) {
+    final label = isSale
+        ? 'Comprobante generado el ${_dateFmt.format(DateTime.now())} - $businessName'
+        : 'Remito generado el ${_dateFmt.format(DateTime.now())} - $businessName';
+    return pw.Column(
+      mainAxisSize: pw.MainAxisSize.min,
+      children: [
+        pw.SizedBox(height: isCompact ? 4 : 8),
+        pw.Divider(color: PdfColors.grey300),
+        pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+          children: [
+            pw.Text(
+              label,
+              style: pw.TextStyle(fontSize: isCompact ? 6 : 7, color: PdfColors.grey),
+            ),
+            if (!isCompact && ctx != null)
+              pw.Text(
+                'Página ${ctx.pageNumber} de ${ctx.pagesCount}',
+                style: const pw.TextStyle(fontSize: 7, color: PdfColors.grey),
+              ),
+          ],
+        ),
+      ],
+    );
   }
 }

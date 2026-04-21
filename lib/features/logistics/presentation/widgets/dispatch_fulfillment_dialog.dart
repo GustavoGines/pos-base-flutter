@@ -315,6 +315,7 @@ class _PostDispatchPrintSheetState extends State<_PostDispatchPrintSheet> {
         deliveredNow: widget.deliveredNow,
         vendorName: vendorName,
         dispatcherName: dispatcherName,
+        paperSize: context.read<LocalTerminalProvider>().pdfPaperSize,
       );
 
       if (mounted) Navigator.pop(context);
@@ -362,6 +363,9 @@ class _PostDispatchPrintSheetState extends State<_PostDispatchPrintSheet> {
 
   @override
   Widget build(BuildContext context) {
+    // Etiqueta dinámica según el formato de papel de esta terminal
+    final paperLabel = context.watch<LocalTerminalProvider>().pdfPaperSize == 'letter' ? 'Carta' : 'A4';
+
     return Padding(
       padding: const EdgeInsets.all(28),
       child: Column(
@@ -397,8 +401,8 @@ class _PostDispatchPrintSheetState extends State<_PostDispatchPrintSheet> {
               decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(8)),
               child: Icon(Icons.preview, color: Colors.blue.shade700, size: 26),
             ),
-            title: const Text('Ver Remito A4 (Vista Previa)', style: TextStyle(fontWeight: FontWeight.bold)),
-            subtitle: const Text('Abre el doble Remito de Despacho en A4 — ORIGINAL y DUPLICADO'),
+            title: Text('Ver Remito $paperLabel (Vista Previa)', style: const TextStyle(fontWeight: FontWeight.bold)),
+            subtitle: Text('Abre el doble Remito de Despacho en $paperLabel — ORIGINAL y DUPLICADO'),
             trailing: _isPrinting ? const CircularProgressIndicator() : const Icon(Icons.chevron_right),
             onTap: _previewA4,
           ),

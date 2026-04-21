@@ -6,8 +6,9 @@ class LocalTerminalProvider extends ChangeNotifier {
   static const String _printerConnectionKey = 'local_printer_connection';
   static const String _printerNameOrIpKey = 'local_printer_name_or_ip';
   static const String _scaleComPortKey = 'local_scale_com_port';
+  static const String _pdfPaperSizeKey = 'local_pdf_paper_size';
 
-  // Opciones válidas: 'thermal_80', 'thermal_58', 'a4_standard', 'a4_split'
+  // Opciones válidas: 'thermal_80', 'thermal_58', 'a4'
   String _printerFormat = 'thermal_80';
   
   // Opciones válidas: 'usb', 'network', 'none'
@@ -15,6 +16,7 @@ class LocalTerminalProvider extends ChangeNotifier {
   
   String _printerNameOrIp = '';
   String _scaleComPort = '';
+  String _pdfPaperSize = 'a4'; // Opciones válidas: 'a4', 'letter'
 
   bool _isInitialized = false;
 
@@ -22,6 +24,7 @@ class LocalTerminalProvider extends ChangeNotifier {
   String get printerConnection => _printerConnection;
   String get printerNameOrIp => _printerNameOrIp;
   String get scaleComPort => _scaleComPort;
+  String get pdfPaperSize => _pdfPaperSize;
   bool get isInitialized => _isInitialized;
 
   LocalTerminalProvider() {
@@ -31,9 +34,14 @@ class LocalTerminalProvider extends ChangeNotifier {
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
     _printerFormat = prefs.getString(_printerFormatKey) ?? 'thermal_80';
+    if (_printerFormat == 'a4_split' || _printerFormat == 'a4_standard' || _printerFormat == 'a4_normal') {
+      _printerFormat = 'a4';
+      prefs.setString(_printerFormatKey, 'a4'); // Update the stored preference
+    }
     _printerConnection = prefs.getString(_printerConnectionKey) ?? 'none';
     _printerNameOrIp = prefs.getString(_printerNameOrIpKey) ?? '';
     _scaleComPort = prefs.getString(_scaleComPortKey) ?? '';
+    _pdfPaperSize = prefs.getString(_pdfPaperSizeKey) ?? 'a4';
     _isInitialized = true;
     notifyListeners();
   }
@@ -63,6 +71,13 @@ class LocalTerminalProvider extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_scaleComPortKey, port);
     _scaleComPort = port;
+    notifyListeners();
+  }
+
+  Future<void> setPdfPaperSize(String size) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_pdfPaperSizeKey, size);
+    _pdfPaperSize = size;
     notifyListeners();
   }
 }

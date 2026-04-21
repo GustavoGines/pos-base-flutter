@@ -13,10 +13,21 @@ class LogisticsDashboardScreen extends StatefulWidget {
 
 class _LogisticsDashboardScreenState extends State<LogisticsDashboardScreen> {
   final TextEditingController _searchController = TextEditingController();
+  late LogisticsProvider _logisticsProvider;
+
+  @override
+  void initState() {
+    super.initState();
+    _logisticsProvider = context.read<LogisticsProvider>();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _logisticsProvider.startPolling();
+    });
+  }
 
   @override
   void dispose() {
     _searchController.dispose();
+    _logisticsProvider.stopPolling();
     super.dispose();
   }
 
@@ -60,7 +71,7 @@ class _LogisticsDashboardScreenState extends State<LogisticsDashboardScreen> {
                         controller: _searchController,
                         onChanged: (value) {
                           context.read<LogisticsProvider>().onSearchChanged(value);
-                          setState(() {}); 
+                          setState(() {});
                         },
                         decoration: InputDecoration(
                           hintText: 'Buscar remito o cliente...',
@@ -86,7 +97,7 @@ class _LogisticsDashboardScreenState extends State<LogisticsDashboardScreen> {
                 ],
               ),
             ),
-            
+
             const Divider(height: 1, thickness: 1),
 
             // ── TabBarView ──

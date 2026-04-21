@@ -33,6 +33,7 @@ class LogisticsProvider extends ChangeNotifier {
 
   String _searchQuery = '';
   Timer? _debounceTimer;
+  Timer? _pollingTimer;
   bool _isDispatching = false;
   String? _errorMessage;
 
@@ -41,6 +42,79 @@ class LogisticsProvider extends ChangeNotifier {
   String? get errorMessage => _errorMessage;
 
   LogisticsTabState getTabState(String status) => _tabs[status]!;
+
+  /// Inicia el polling silencioso cada 15 segundos
+  void startPolling() {
+    _pollingTimer?.cancel();
+    _pollingTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      // Solo actualiza los tabs que ya están inicializados para no gastar recursos
+      if (_tabs['pending']!.isInitialized) silentFetch('pending');
+      if (_tabs['partial']!.isInitialized) silentFetch('partial');
+      if (_tabs['delivered']!.isInitialized) silentFetch('delivered');
+    });
+  }
+
+  /// Detiene el polling
+  void stopPolling() {
+    _pollingTimer?.cancel();
+    _pollingTimer = null;
+  }
+
+  /// Forza la recarga de todas las pestañas inicializadas (útil tras crear una orden desde POS).
+  Future<void> refreshAll({bool force = false}) async {
+    for (final status in _tabs.keys) {
+      if (force || _tabs[status]!.isInitialized) {
+        // Ejecutar sin await para que se actualicen en paralelo en background
+        fetchFirstPage(status);
+      }
+    }
+  }
+
+  /// Fetch silencioso: actualiza la data de fondo sin mostrar loaders ni alterar la paginación existente
+  Future<void> silentFetch(String status) async {
+    final state = _tabs[status]!;
+    if (!state.isInitialized) return;
+
+    try {
+      final result = await repository.fetchDeliveryNotes(
+        status: status,
+        search: _searchQuery,
+        page: 1, // Siempre actualiza la primera página para ver nuevos ingresos
+      );
+      
+      final rawData = result['data'] is List ? result['data'] : (result['data']?['data'] ?? []);
+      final data = List<Map<String, dynamic>>.from(rawData);
+      
+      // Actualizamos la lista silenciosamente.
+      // Si el operario scrolleó, preservamos los elementos cargados después de la página 1.
+      // Si está en la página 1, reemplazamos todo.
+      if (state.currentPage == 1) {
+        state.notes = data;
+      } else {
+        // Para no romper la vista si bajó el scroll, reemplazamos exactamente
+        // el bloque que corresponde a la página 1 (los primeros N elementos)
+        // y conservamos el resto de la lista filtrando duplicados.
+        final perPage = (result['data'] is Map && result['data']['per_page'] != null)
+            ? (result['data']['per_page'] as int)
+            : 15; // default laravel
+
+        final newIds = data.map((e) => e['id']).toSet();
+
+        // Mantenemos los elementos antiguos desde la página 2 en adelante,
+        // excluyendo aquellos que hayan subido a la página 1 (ya están en 'data').
+        final oldRemaining = state.notes.length > perPage
+            ? state.notes.skip(perPage).where((e) => !newIds.contains(e['id'])).toList()
+            : <Map<String, dynamic>>[];
+
+        state.notes = [...data, ...oldRemaining];
+      }
+
+      notifyListeners();
+    } catch (e) {
+      // Ignoramos errores en silent fetch
+      debugPrint('Error en silent fetch para $status: $e');
+    }
+  }
 
   /// Carga inicial de datos, o recarga forzada (refresca desde la página 1).
   Future<void> fetchFirstPage(String status) async {

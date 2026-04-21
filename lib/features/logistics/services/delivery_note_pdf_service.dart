@@ -33,6 +33,7 @@ class DeliveryNotePdfService {
     Map<int, double> deliveredNow = const {},
     String? vendorName,
     String? dispatcherName,
+    String paperSize = 'a4',
   }) async {
     await showGeneralDialog(
       context: context,
@@ -93,6 +94,7 @@ class DeliveryNotePdfService {
                         deliveredNow: deliveredNow,
                         vendorName: vendorName,
                         dispatcherName: dispatcherName,
+                        paperSize: paperSize,
                       ),
                     ),
                   ),
@@ -115,6 +117,7 @@ class DeliveryNotePdfService {
     Map<int, double> deliveredNow = const {},
     String? vendorName,
     String? dispatcherName,
+    String paperSize = 'a4',
   }) async {
     final bytes = await _buildPdf(
       note: note,
@@ -125,6 +128,7 @@ class DeliveryNotePdfService {
       deliveredNow: deliveredNow,
       vendorName: vendorName,
       dispatcherName: dispatcherName,
+      paperSize: paperSize,
     );
     await Printing.layoutPdf(
       onLayout: (_) async => bytes,
@@ -142,6 +146,7 @@ class DeliveryNotePdfService {
     Map<int, double> deliveredNow = const {},
     String? vendorName,
     String? dispatcherName,
+    String paperSize = 'a4',
   }) async {
     final bytes = await _buildPdf(
       note: note,
@@ -152,6 +157,7 @@ class DeliveryNotePdfService {
       deliveredNow: deliveredNow,
       vendorName: vendorName,
       dispatcherName: dispatcherName,
+      paperSize: paperSize,
     );
     final docsDir = await getApplicationDocumentsDirectory();
     final remitosDir = Directory('${docsDir.path}${Platform.pathSeparator}Sistema_POS${Platform.pathSeparator}Remitos');
@@ -172,6 +178,7 @@ class DeliveryNotePdfService {
     Map<int, double> deliveredNow = const {},
     String? vendorName,
     String? dispatcherName,
+    String paperSize = 'a4',
   }) async {
     pw.ThemeData? theme;
     try {
@@ -199,7 +206,9 @@ class DeliveryNotePdfService {
     });
 
     final deliveredNowSum = deliveredNow.values.fold(0.0, (sum, val) => sum + val);
-    final isDispatch = deliveredNowSum > 0;
+    final isAlreadyDispatched = note['status'] == 'partial' || note['status'] == 'delivered';
+    // Es remito de despacho si estamos entregando ahora o si ya se entregó mercadería en el pasado
+    final isDispatch = deliveredNowSum > 0 || isAlreadyDispatched;
     
     // Calcular estado proyectado del documento
     double totalPendingAfter = 0.0;
@@ -224,16 +233,17 @@ class DeliveryNotePdfService {
     final documentCode = isDispatch ? 'REM$noteId' : 'ORD$noteId';
 
     final bool isSmallOrder = items.length <= 5;
+    final format = paperSize.toLowerCase() == 'letter' ? PdfPageFormat.letter : PdfPageFormat.a4;
 
     if (isSmallOrder) {
       // ── RUTA A: AHORRO DE PAPEL (A4 SPLIT) ──
       doc.addPage(
         pw.Page(
-          pageFormat: PdfPageFormat.a4,
+          pageFormat: format,
           margin: const pw.EdgeInsets.all(24),
           build: (pw.Context ctx) {
-            final copyLabelTop = isDispatch ? 'COPIA CLIENTE' : 'ORIGINAL';
-            final copyLabelBot = isDispatch ? 'COPIA DESPACHANTE' : 'DUPLICADO';
+            final copyLabelTop = isDispatch ? 'COPIA\nCLIENTE' : 'ORIGINAL';
+            final copyLabelBot = isDispatch ? 'COPIA\nDESPACHANTE' : 'DUPLICADO';
             return pw.Column(
               children: [
                 // MITAD SUPERIOR
@@ -242,13 +252,19 @@ class DeliveryNotePdfService {
                     children: [
                       pw.Column(
                         crossAxisAlignment: pw.CrossAxisAlignment.start,
-                        children: _buildContentList(
-                          businessName: businessName, businessAddress: businessAddress, businessPhone: businessPhone, businessTaxId: businessTaxId,
-                          documentTitle: documentTitle, noteId: noteId, documentCode: documentCode, createdDate: createdDate, customerName: customerName,
-                          sale: sale, vendorName: vendorName, dispatcherName: dispatcherName, effectiveDocStatus: effectiveDocStatus,
-                          isDispatch: isDispatch, items: items, deliveredNow: deliveredNow, totalUnits: totalUnits, isCompact: true,
-                          copyLabel: copyLabelTop,
-                        ),
+                        children: [
+                          ..._buildContentList(
+                            businessName: businessName, businessAddress: businessAddress, businessPhone: businessPhone, businessTaxId: businessTaxId,
+                            documentTitle: documentTitle, noteId: noteId, documentCode: documentCode, createdDate: createdDate, customerName: customerName,
+                            sale: sale, vendorName: vendorName, dispatcherName: dispatcherName, effectiveDocStatus: effectiveDocStatus,
+                            isDispatch: isDispatch, items: items, deliveredNow: deliveredNow, totalUnits: totalUnits, isCompact: true,
+                            copyLabel: copyLabelTop,
+                          ),
+                        ],
+                      ),
+                      pw.Positioned(
+                        bottom: 0, left: 0, right: 0,
+                        child: _buildCompactFooter(businessName, createdDate),
                       ),
                       _buildWatermark(copyLabelTop, true),
                     ],
@@ -273,13 +289,19 @@ class DeliveryNotePdfService {
                     children: [
                       pw.Column(
                         crossAxisAlignment: pw.CrossAxisAlignment.start,
-                        children: _buildContentList(
-                          businessName: businessName, businessAddress: businessAddress, businessPhone: businessPhone, businessTaxId: businessTaxId,
-                          documentTitle: documentTitle, noteId: noteId, documentCode: documentCode, createdDate: createdDate, customerName: customerName,
-                          sale: sale, vendorName: vendorName, dispatcherName: dispatcherName, effectiveDocStatus: effectiveDocStatus,
-                          isDispatch: isDispatch, items: items, deliveredNow: deliveredNow, totalUnits: totalUnits, isCompact: true,
-                          copyLabel: copyLabelBot,
-                        ),
+                        children: [
+                          ..._buildContentList(
+                            businessName: businessName, businessAddress: businessAddress, businessPhone: businessPhone, businessTaxId: businessTaxId,
+                            documentTitle: documentTitle, noteId: noteId, documentCode: documentCode, createdDate: createdDate, customerName: customerName,
+                            sale: sale, vendorName: vendorName, dispatcherName: dispatcherName, effectiveDocStatus: effectiveDocStatus,
+                            isDispatch: isDispatch, items: items, deliveredNow: deliveredNow, totalUnits: totalUnits, isCompact: true,
+                            copyLabel: copyLabelBot,
+                          ),
+                        ],
+                      ),
+                      pw.Positioned(
+                        bottom: 0, left: 0, right: 0,
+                        child: _buildCompactFooter(businessName, createdDate),
                       ),
                       _buildWatermark(copyLabelBot, true),
                     ],
@@ -292,14 +314,14 @@ class DeliveryNotePdfService {
       );
     } else {
       // ── RUTA B: PEDIDO MAYORISTA (PÁGINAS COMPLETAS) ──
-      final copyLabelFull1 = isDispatch ? 'COPIA CLIENTE' : 'ORIGINAL';
-      final copyLabelFull2 = isDispatch ? 'COPIA DESPACHANTE' : 'DUPLICADO';
+      final copyLabelFull1 = isDispatch ? 'COPIA\nCLIENTE' : 'ORIGINAL';
+      final copyLabelFull2 = isDispatch ? 'COPIA\nDESPACHANTE' : 'DUPLICADO';
       // Página 1
       doc.addPage(
         pw.MultiPage(
-          pageFormat: PdfPageFormat.a4,
-          margin: const pw.EdgeInsets.fromLTRB(32, 32, 32, 48),
           pageTheme: pw.PageTheme(
+            pageFormat: format,
+            margin: const pw.EdgeInsets.fromLTRB(32, 32, 32, 48),
             buildForeground: (ctx) => _buildWatermark(copyLabelFull1, false),
           ),
           footer: (pw.Context ctx) => _buildFooter(ctx, businessName),
@@ -315,9 +337,9 @@ class DeliveryNotePdfService {
       // Página 2
       doc.addPage(
         pw.MultiPage(
-          pageFormat: PdfPageFormat.a4,
-          margin: const pw.EdgeInsets.fromLTRB(32, 32, 32, 48),
           pageTheme: pw.PageTheme(
+            pageFormat: format,
+            margin: const pw.EdgeInsets.fromLTRB(32, 32, 32, 48),
             buildForeground: (ctx) => _buildWatermark(copyLabelFull2, false),
           ),
           footer: (pw.Context ctx) => _buildFooter(ctx, businessName),
@@ -358,23 +380,46 @@ class DeliveryNotePdfService {
     );
   }
 
-  static pw.Widget _buildFooter(pw.Context ctx, String businessName) {
+  static pw.Widget _buildCompactFooter(String businessName, DateTime date) {
     return pw.Column(
       mainAxisSize: pw.MainAxisSize.min,
       children: [
-        pw.SizedBox(height: 8),
+        pw.Divider(color: PdfColors.grey300),
+        pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+          children: [
+            pw.Text(
+              'Remito generado el ${_dateFmt.format(date)} - $businessName',
+              style: const pw.TextStyle(fontSize: 6, color: PdfColors.grey),
+            ),
+            pw.Text(
+              'DOCUMENTO NO VALIDO COMO FACTURA',
+              style: const pw.TextStyle(fontSize: 6, color: PdfColors.grey),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  static pw.Widget _buildFooter(pw.Context ctx, String businessName, {bool isCompact = false}) {
+    return pw.Column(
+      mainAxisSize: pw.MainAxisSize.min,
+      children: [
+        pw.SizedBox(height: isCompact ? 4 : 8),
         pw.Divider(color: PdfColors.grey300),
         pw.Row(
           mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
           children: [
             pw.Text(
               'Remito generado el ${_dateFmt.format(DateTime.now())} - $businessName',
-              style: const pw.TextStyle(fontSize: 8, color: _textGrey),
+              style: pw.TextStyle(fontSize: isCompact ? 6 : 7, color: PdfColors.grey),
             ),
-            pw.Text(
-              'Página ${ctx.pageNumber} de ${ctx.pagesCount}',
-              style: pw.TextStyle(fontSize: 8, color: _textGrey, fontWeight: pw.FontWeight.bold),
-            ),
+            if (!isCompact)
+              pw.Text(
+                'Página ${ctx.pageNumber} de ${ctx.pagesCount}',
+                style: const pw.TextStyle(fontSize: 7, color: PdfColors.grey),
+              ),
           ],
         ),
       ],
@@ -391,66 +436,62 @@ class DeliveryNotePdfService {
     String copyLabel = 'ORIGINAL',
   }) {
     return [
-      // ══ ENCABEZADO ══════════════════════════════════════════════════
-          pw.Container(
-            decoration: const pw.BoxDecoration(
-              color: _primary,
-              borderRadius: pw.BorderRadius.all(pw.Radius.circular(8)),
-            ),
-            padding: const pw.EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-            child: pw.Row(
-              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-              children: [
-                // Datos de la empresa
-                pw.Column(
-                  crossAxisAlignment: pw.CrossAxisAlignment.start,
-                  children: [
-                    pw.Text(businessName,
-                        style: pw.TextStyle(color: PdfColors.white, fontSize: isCompact ? 16 : 20, fontWeight: pw.FontWeight.bold)),
-                    if (businessAddress != null && businessAddress.isNotEmpty)
-                      pw.Text(businessAddress, style: pw.TextStyle(color: PdfColors.grey300, fontSize: isCompact ? 8 : 10)),
-                    if (businessPhone != null && businessPhone.isNotEmpty)
-                      pw.Text('Tel: $businessPhone', style: pw.TextStyle(color: PdfColors.grey300, fontSize: isCompact ? 8 : 10)),
-                    if (businessTaxId != null && businessTaxId.isNotEmpty)
-                      pw.Text('CUIT: $businessTaxId', style: pw.TextStyle(color: PdfColors.grey300, fontSize: isCompact ? 8 : 10)),
-                  ],
+      // ══ ENCABEZADO (Diseño limpio - menos tinta) ═══════════════════════
+      pw.Row(
+        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Text(
+                businessName,
+                style: pw.TextStyle(
+                  fontSize: isCompact ? 16 : 20,
+                  fontWeight: pw.FontWeight.bold,
+                  color: PdfColors.black,
                 ),
-                // REMITO + código de barras
-                pw.Column(
-                  crossAxisAlignment: pw.CrossAxisAlignment.end,
-                  children: [
-                    pw.Text(documentTitle,
-                        style: pw.TextStyle(
-                          color: PdfColors.white,
-                          fontSize: isCompact ? 14 : (isDispatch ? 24 : 22),
-                          fontWeight: pw.FontWeight.bold,
-                          letterSpacing: 1.2,
-                        )),
-                    pw.Text('N° $noteId', style: pw.TextStyle(color: PdfColors.grey300, fontSize: isCompact ? 11 : 13)),
-                    pw.SizedBox(height: 6),
-                    pw.Container(
-                      color: PdfColors.white,
-                      padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      height: isCompact ? 25 : 35,
-                      width: isCompact ? 100 : 130,
-                      child: pw.BarcodeWidget(
-                        barcode: pw.Barcode.code128(),
-                        data: documentCode,
-                        drawText: false,
-                        color: PdfColors.black,
-                      ),
-                    ),
-                    pw.SizedBox(height: 4),
-                    pw.Text(documentCode, style: pw.TextStyle(color: PdfColors.grey300, fontSize: isCompact ? 8 : 9)),
-                    pw.SizedBox(height: 4),
-                    pw.Text('Fecha: ${_dateFmt.format(createdDate)}',
-                        style: pw.TextStyle(color: PdfColors.grey300, fontSize: isCompact ? 8 : 10)),
-                  ],
+              ),
+              pw.Text(
+                documentTitle,
+                style: pw.TextStyle(
+                  fontSize: isCompact ? 11 : 14,
+                  fontWeight: pw.FontWeight.bold,
+                  color: _primary,
                 ),
-              ],
-            ),
+              ),
+              if (businessAddress != null && businessAddress.isNotEmpty)
+                pw.Text(businessAddress,
+                    style: pw.TextStyle(fontSize: isCompact ? 8 : 10, color: PdfColors.grey700)),
+              if (businessPhone != null && businessPhone.isNotEmpty)
+                pw.Text('Tel: $businessPhone',
+                    style: pw.TextStyle(fontSize: isCompact ? 8 : 10, color: PdfColors.grey700)),
+              if (businessTaxId != null && businessTaxId.isNotEmpty)
+                pw.Text('CUIT: $businessTaxId',
+                    style: pw.TextStyle(fontSize: isCompact ? 8 : 10, color: PdfColors.grey700)),
+            ],
           ),
-          pw.SizedBox(height: isCompact ? 8 : 16),
+          pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.end,
+            children: [
+              pw.Text(
+                copyLabel,
+                style: pw.TextStyle(fontSize: 8, color: PdfColors.grey500, fontWeight: pw.FontWeight.bold),
+              ),
+              pw.SizedBox(height: 2),
+              pw.Text('Remito N°: $noteId',
+                  style: pw.TextStyle(fontSize: isCompact ? 10 : 12, fontWeight: pw.FontWeight.bold)),
+              pw.Text('Fecha: ${_dateFmt.format(createdDate)}',
+                  style: pw.TextStyle(fontSize: isCompact ? 9 : 10)),
+              pw.Text('Cliente: ${(customerName ?? 'Consumidor Final').toUpperCase()}',
+                  style: pw.TextStyle(fontSize: isCompact ? 9 : 10, fontWeight: pw.FontWeight.bold)),
+            ],
+          ),
+        ],
+      ),
+      pw.SizedBox(height: isCompact ? 5 : 10),
+      pw.Divider(thickness: 2, color: PdfColors.black),
+      pw.SizedBox(height: isCompact ? 6 : 12),
 
           // ══ ESTADO + DATOS CLIENTE ═══════════════════════════════════════
           pw.Container(
@@ -539,7 +580,7 @@ class DeliveryNotePdfService {
                 children: [
                   _th('DESCRIPCIÓN'),
                   _th('CANT. TOTAL', align: pw.TextAlign.center),
-                  _th('ENTREGADO HOY', align: pw.TextAlign.center),
+                  _th(deliveredNow.isNotEmpty ? 'ENTREGADO HOY' : 'ENTREGADO', align: pw.TextAlign.center),
                   _th('SALDO PEND.', align: pw.TextAlign.center),
                   _th('ESTADO', align: pw.TextAlign.center),
                 ],
@@ -566,6 +607,8 @@ class DeliveryNotePdfService {
                     ? '${v.toStringAsFixed(3)} kg'
                     : '${v.toInt()} un';
 
+                final valToShow = deliveredNow.isNotEmpty ? deliveredQtyNow : deliveredQtyDb;
+
                 return pw.TableRow(
                   decoration: pw.BoxDecoration(
                     color: idx % 2 == 0 ? PdfColors.white : _bgLight,
@@ -573,8 +616,8 @@ class DeliveryNotePdfService {
                   children: [
                     _td(product['name']?.toString().toUpperCase() ?? '-', bold: true),
                     _td(fmt(totalQty), align: pw.TextAlign.center),
-                    _td(deliveredQtyNow > 0 ? fmt(deliveredQtyNow) : '-', align: pw.TextAlign.center,
-                        color: deliveredQtyNow > 0 ? _greenOk : _textGrey),
+                    _td(valToShow > 0 ? fmt(valToShow) : '-', align: pw.TextAlign.center,
+                        color: valToShow > 0 ? _greenOk : _textGrey),
                     _td(pendingQty > 0 ? fmt(pendingQty) : '-', align: pw.TextAlign.center,
                         color: pendingQty > 0 ? _redPend : _greenOk),
                     _tdBadge(_statusLabel(effectiveItemStatus), _statusColor(effectiveItemStatus)),
@@ -589,37 +632,37 @@ class DeliveryNotePdfService {
           pw.Row(
             crossAxisAlignment: pw.CrossAxisAlignment.start,
             children: [
-              // Nota de instrucción (Oculta si es compact)
-              if (!isCompact)
-                pw.Expanded(
+              // Nota de instrucción
+              pw.Expanded(
                 child: pw.Container(
                   decoration: pw.BoxDecoration(
                     border: pw.Border.all(color: _accent, width: 1),
                     borderRadius: const pw.BorderRadius.all(pw.Radius.circular(6)),
                   ),
-                  padding: const pw.EdgeInsets.all(12),
+                  padding: pw.EdgeInsets.all(isCompact ? 8 : 12),
                   child: pw.Column(
                     crossAxisAlignment: pw.CrossAxisAlignment.start,
                     children: [
-                      pw.Text('! INSTRUCCIONES DE ENTREGA',
-                          style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold, color: _accent)),
-                      pw.SizedBox(height: 6),
                       pw.Text(
-                        'Presente este comprobante al retirar la mercadería en depósito. '
-                        'El operador escaneará el código de barras o buscará por N° de Remito. '
-                        'Solo se entregarán los artículos indicados y en las cantidades autorizadas.',
-                        style: const pw.TextStyle(fontSize: 9),
+                          isDispatch ? '! INSTRUCCIONES DE RECEPCIÓN' : '! INSTRUCCIONES DE ENTREGA',
+                          style: pw.TextStyle(fontSize: isCompact ? 7.5 : 9, fontWeight: pw.FontWeight.bold, color: _accent)),
+                      pw.SizedBox(height: isCompact ? 4 : 6),
+                      pw.Text(
+                        isDispatch 
+                          ? 'Por favor verifique que los artículos recibidos coincidan con las cantidades indicadas en este comprobante antes de firmar la conformidad.'
+                          : 'Presente este comprobante al retirar la mercadería en depósito. El operador escaneará el código de barras o buscará por N° de Remito. Solo se entregarán los artículos indicados y en las cantidades autorizadas.',
+                        style: pw.TextStyle(fontSize: isCompact ? 7 : 9),
                       ),
                       if (totalUnits > 0) ...[
-                        pw.SizedBox(height: 8),
+                        pw.SizedBox(height: isCompact ? 4 : 8),
                         pw.Text('Total de unidades: $totalUnits',
-                            style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold)),
+                            style: pw.TextStyle(fontSize: isCompact ? 8 : 10, fontWeight: pw.FontWeight.bold)),
                       ],
                     ],
                   ),
                 ),
               ),
-              if (!isCompact) pw.SizedBox(width: 24),
+              pw.SizedBox(width: isCompact ? 12 : 24),
               // Firma del receptor
               pw.Expanded(
                 child: pw.Container(
@@ -638,7 +681,7 @@ class DeliveryNotePdfService {
                       pw.SizedBox(height: 4),
                       pw.Text('DNI:', style: pw.TextStyle(fontSize: isCompact ? 8 : 9, color: _textGrey)),
                       pw.SizedBox(height: isCompact ? 8 : 16),
-                      pw.Divider(color: PdfColors.grey400, thickness: 0.5),
+                      pw.Divider(color: PdfColors.grey500, thickness: 0.5),
                       pw.SizedBox(height: 4),
                       pw.Text('Fecha de retiro:', style: pw.TextStyle(fontSize: isCompact ? 8 : 9, color: _textGrey)),
                     ],
@@ -648,14 +691,16 @@ class DeliveryNotePdfService {
             ],
           ),
 
-          pw.SizedBox(height: isCompact ? 8 : 16),
-          // ══ PIE INFORMATIVO ════════════════════════════════════════════════
-          pw.Center(
-            child: pw.Text(
-              'DOCUMENTO NO VALIDO COMO FACTURA - SOLO SIRVE COMO COMPROBANTE DE ENTREGA DE MERCADERIA',
-              style: pw.TextStyle(fontSize: isCompact ? 7 : 8, color: _textGrey, fontWeight: pw.FontWeight.bold),
+          pw.SizedBox(height: isCompact ? 6 : 16),
+          // ══ PIE / FOOTER ══════════════════════════════════════
+          if (!isCompact) ...[
+            pw.Center(
+              child: pw.Text(
+                'DOCUMENTO NO VALIDO COMO FACTURA - SOLO SIRVE COMO COMPROBANTE DE ENTREGA DE MERCADERIA',
+                style: pw.TextStyle(fontSize: 8, color: _textGrey, fontWeight: pw.FontWeight.bold),
+              ),
             ),
-          ),
+          ],
         ];
   }
 

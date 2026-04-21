@@ -959,6 +959,9 @@ class _QuoteSuccessDialogState extends State<_QuoteSuccessDialog> {
 
   @override
   Widget build(BuildContext context) {
+    // Etiqueta dinámica según el tamaño de papel configurado en esta terminal
+    final paperLabel = context.watch<LocalTerminalProvider>().pdfPaperSize == 'letter' ? 'Carta' : 'A4';
+
     return AlertDialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       contentPadding: EdgeInsets.zero,
@@ -1020,7 +1023,7 @@ class _QuoteSuccessDialogState extends State<_QuoteSuccessDialog> {
                           ),
                           onPressed: _preview,
                           icon: const Icon(Icons.picture_as_pdf_rounded),
-                          label: const Text('Ver PDF (A4)'),
+                          label: Text('Ver PDF ($paperLabel)'),
                         ),
                       ),
                       const SizedBox(width: 12),

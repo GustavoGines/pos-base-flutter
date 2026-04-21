@@ -246,6 +246,7 @@ class _ReprintSheetState extends State<_ReprintSheet> {
         customerName: customerName,
         vendorName: vendorName,
         dispatcherName: dispatcherName,
+        isReprint: true,
       );
 
       if (ctx.mounted) {
@@ -268,16 +269,7 @@ class _ReprintSheetState extends State<_ReprintSheet> {
       final currentUser = ctx.read<AuthProvider>().currentUser;
       final dispatcherName = currentUser?['name'] ?? 'SISTEMA';
 
-      // Construir el mapa deliveredNow desde el historial del remito
-      // Esto hace que el PDF muestre "REMITO DE DESPACHO" en lugar de "ORDEN DE RETIRO"
-      final deliveredNowMap = <int, double>{};
-      for (final item in (widget.note['items'] as List? ?? [])) {
-        final id = item['id'];
-        final delivered = double.tryParse(item['quantity_delivered'].toString()) ?? 0.0;
-        if (id != null && delivered > 0) {
-          deliveredNowMap[id is int ? id : int.tryParse(id.toString()) ?? 0] = delivered;
-        }
-      }
+
 
       await DeliveryNotePdfService.preview(
         context: ctx,
@@ -286,9 +278,9 @@ class _ReprintSheetState extends State<_ReprintSheet> {
         businessAddress: settings?.address,
         businessPhone: settings?.phone,
         businessTaxId: settings?.taxId,
-        deliveredNow: deliveredNowMap,
         vendorName: vendorName,
         dispatcherName: dispatcherName,
+        paperSize: ctx.read<LocalTerminalProvider>().pdfPaperSize,
       );
 
       if (ctx.mounted) Navigator.pop(ctx);
@@ -308,15 +300,7 @@ class _ReprintSheetState extends State<_ReprintSheet> {
       final currentUser = ctx.read<AuthProvider>().currentUser;
       final dispatcherName = currentUser?['name'] ?? 'SISTEMA';
 
-      // Idem: pasar deliveredNow para impresión directa A4 también
-      final deliveredNowMapDirect = <int, double>{};
-      for (final item in (widget.note['items'] as List? ?? [])) {
-        final id = item['id'];
-        final delivered = double.tryParse(item['quantity_delivered'].toString()) ?? 0.0;
-        if (id != null && delivered > 0) {
-          deliveredNowMapDirect[id is int ? id : int.tryParse(id.toString()) ?? 0] = delivered;
-        }
-      }
+
 
       await DeliveryNotePdfService.printDirect(
         note: widget.note,
@@ -324,9 +308,9 @@ class _ReprintSheetState extends State<_ReprintSheet> {
         businessAddress: settings?.address,
         businessPhone: settings?.phone,
         businessTaxId: settings?.taxId,
-        deliveredNow: deliveredNowMapDirect,
         vendorName: vendorName,
         dispatcherName: dispatcherName,
+        paperSize: ctx.read<LocalTerminalProvider>().pdfPaperSize,
       );
 
       if (ctx.mounted) {
@@ -363,7 +347,13 @@ class _ReprintSheetState extends State<_ReprintSheet> {
       if (settings?.taxId != null && settings!.taxId!.isNotEmpty)
         TicketLine('CUIT: ${settings.taxId}', align: TicketAlign.center, isBold: true),
       const TicketLine.hr(bold: true),
-      const TicketLine('REMITO DE DESPACHO', align: TicketAlign.center, isBold: true),
+      TicketLine(
+        widget.note['status']?.toString() == 'pending' 
+            ? 'ORDEN DE RETIRO' 
+            : (widget.note['status']?.toString() == 'partial' ? 'REMITO DE DESPACHO PARCIAL' : 'REMITO DE DESPACHO'), 
+        align: TicketAlign.center, 
+        isBold: true
+      ),
       TicketLine('[ $copyLabel ]', align: TicketAlign.center),
       const TicketLine.hr(),
       TicketLine('REM N°: $remNum', isBold: true),
@@ -415,6 +405,10 @@ class _ReprintSheetState extends State<_ReprintSheet> {
         : noteStatus == 'partial'
             ? 'Remito de Despacho Parcial'
             : 'Remito de Despacho';
+
+    // Etiqueta dinámica según el tamaño de papel configurado en esta terminal
+    final terminal = context.watch<LocalTerminalProvider>();
+    final paperLabel = terminal.pdfPaperSize == 'letter' ? 'Carta' : 'A4';
 
     final thermalSubtitle = noteStatus == 'pending'
         ? 'Orden para preparar mercadería en bodega/depósito'
@@ -473,7 +467,7 @@ class _ReprintSheetState extends State<_ReprintSheet> {
 
           const Divider(),
 
-          // ── Opción 2: Vista previa A4 ──
+          // ── Opción 2: Vista previa PDF (A4 o Carta) ──
           ListTile(
             enabled: !_isPrinting,
             leading: Container(
@@ -481,17 +475,17 @@ class _ReprintSheetState extends State<_ReprintSheet> {
               decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(8)),
               child: Icon(Icons.preview, color: Colors.blue.shade700, size: 28),
             ),
-            title: Text('Ver $docLabel A4 (PDF)', style: const TextStyle(fontWeight: FontWeight.bold)),
+            title: Text('Ver $docLabel $paperLabel (PDF)', style: const TextStyle(fontWeight: FontWeight.bold)),
             subtitle: Text(noteStatus == 'pending'
-                ? 'Abre la Orden de Retiro en A4 para entregar al cliente'
-                : 'Abre el doble Remito A4 — ORIGINAL (cliente) + DUPLICADO (despachante con firma)'),
+                ? 'Abre la Orden de Retiro en $paperLabel para entregar al cliente'
+                : 'Abre el doble Remito $paperLabel — ORIGINAL (cliente) + DUPLICADO (despachante con firma)'),
             trailing: _isPrinting ? const CircularProgressIndicator() : const Icon(Icons.chevron_right),
             onTap: () => _previewA4(context),
           ),
 
           const Divider(),
 
-          // ── Opción 3: Impresión directa A4 ──
+          // ── Opción 3: Impresión directa (A4 o Carta) ──
           ListTile(
             enabled: !_isPrinting,
             leading: Container(
@@ -499,8 +493,8 @@ class _ReprintSheetState extends State<_ReprintSheet> {
               decoration: BoxDecoration(color: Colors.indigo.shade50, borderRadius: BorderRadius.circular(8)),
               child: Icon(Icons.picture_as_pdf, color: Colors.indigo.shade700, size: 28),
             ),
-            title: const Text('Imprimir A4 Directo', style: TextStyle(fontWeight: FontWeight.bold)),
-            subtitle: const Text('Envía el doble remito A4 directamente a la impresora láser'),
+            title: Text('Imprimir $paperLabel Directo', style: const TextStyle(fontWeight: FontWeight.bold)),
+            subtitle: Text('Envía el doble remito $paperLabel directamente a la impresora láser'),
             trailing: _isPrinting ? const CircularProgressIndicator() : const Icon(Icons.chevron_right),
             onTap: () => _printA4Direct(context),
           ),
