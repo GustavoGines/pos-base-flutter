@@ -17,7 +17,6 @@ import 'package:frontend_desktop/features/quotes/presentation/providers/quote_pr
 import 'package:frontend_desktop/features/reports/presentation/providers/inventory_alerts_provider.dart';
 import 'package:frontend_desktop/core/providers/local_terminal_provider.dart';
 import 'package:frontend_desktop/core/utils/a4_split_pdf_service.dart';
-import 'package:frontend_desktop/features/logistics/services/delivery_note_pdf_service.dart';
 import 'package:printing/printing.dart';
 
 class PosScreen extends StatefulWidget {
@@ -745,6 +744,7 @@ class _PosScreenState extends State<PosScreen> {
                 sale['id'] = deliveryNote['sale_id'];
                 sale['total'] = posProvider.lastSaleTotal;
                 sale['shipping_cost'] = posProvider.lastSaleShippingCost;
+                sale['surcharge_amount'] = posProvider.lastSurchargeAmount;
                 sale['payments'] = posProvider.lastSalePayments;
                 sale['tendered_amount'] = posProvider.lastTenderedAmount;
                 sale['change_amount'] = posProvider.lastChangeAmount;
@@ -767,8 +767,8 @@ class _PosScreenState extends State<PosScreen> {
               final vendorName = authProvider.currentUser?['name']?.toString() ?? 'CAJERO';
               final businessName = settingsProvider.settings?.companyName ?? 'MI NEGOCIO';
 
-              if (localFormat == 'a4_split') {
-                // 1. A4 SPLIT (Mitad y Mitad)
+              if (localFormat == 'a4_split' || localFormat == 'a4_normal' || localFormat == 'a4') {
+                // 1. A4 SMART (Split si <= 6 ítems, MultiPage si > 6 ítems)
                 final pdfBytes = await A4SplitPdfService.generateA4SplitReceiptAndDispatch(
                   sale: sale,
                   deliveryNote: deliveryNote,
@@ -791,7 +791,7 @@ class _PosScreenState extends State<PosScreen> {
                             height: 800,
                             child: Scaffold(
                               appBar: AppBar(
-                                title: Text('Vista Previa Split - Venta #${sale['id']}'),
+                                title: Text('Vista Previa - Venta #${sale['id']}'),
                                 automaticallyImplyLeading: false,
                                 actions: [
                                   if (isVoiding)
@@ -827,7 +827,10 @@ class _PosScreenState extends State<PosScreen> {
                                         if (confirm == true) {
                                           setState(() { isVoiding = true; });
                                           try {
-                                            await posProvider.voidPendingOrder(int.parse(sale['id'].toString()));
+                                            final success = await posProvider.voidPendingOrder(int.parse(sale['id'].toString()));
+                                            if (!success) {
+                                              throw Exception(posProvider.errorMessage ?? 'Error desconocido');
+                                            }
                                             // Restaurar carrito al estado previo a la venta
                                             posProvider.restoreLastSaleCart();
                                             
@@ -857,7 +860,7 @@ class _PosScreenState extends State<PosScreen> {
                                 build: (format) async => pdfBytes,
                                 canChangePageFormat: false,
                                 canChangeOrientation: false,
-                                pdfFileName: 'Comprobante_Split_${sale['id']}.pdf',
+                                pdfFileName: 'Comprobante_${sale['id']}.pdf',
                                 canDebug: false,
                               ),
                             ),
@@ -869,19 +872,6 @@ class _PosScreenState extends State<PosScreen> {
                 );
 
                   if (result == 'annulled') return;
-                }
-              } else if (localFormat == 'a4_normal' || localFormat == 'a4') {
-                // 2. A4 NORMAL (Dos hojas separadas)
-                // El comprobante de venta YA se mostró dentro de processCheckout.
-                // Ahora mostramos SOLO el remito en pantalla completa A4.
-                if (mounted) {
-                  await DeliveryNotePdfService.preview(
-                    context: context,
-                    note: deliveryNote,
-                    businessName: businessName,
-                    businessAddress: settingsProvider.settings?.address,
-                    vendorName: vendorName,
-                  );
                 }
               }
             } catch (e) {
@@ -2491,8 +2481,7 @@ class _PosScreenState extends State<PosScreen> {
                         items: const [
                           DropdownMenuItem(value: 'thermal_80', child: Text('Térmica 80mm')),
                           DropdownMenuItem(value: 'thermal_58', child: Text('Térmica 58mm')),
-                          DropdownMenuItem(value: 'a4_standard', child: Text('Hoja A4 (Normal)')),
-                          DropdownMenuItem(value: 'a4_split', child: Text('Hoja A4 Compartida (Venta + Remito)')),
+                          DropdownMenuItem(value: 'a4', child: Text('Hoja A4 (Inteligente)')),
                         ],
                         onChanged: (value) {
                           if (value != null) provider.setPrinterFormat(value);

@@ -395,7 +395,6 @@ class ReceiptPrinterService {
     final hasSurcharge = surchargeAmount > 0.01;
     final hasShipping = shippingCost > 0.01;
     final grandTotal = total + surchargeAmount;
-    final hasChange = changeAmount > 0.01;
     final hasTendered = tenderedAmount > 0.01;
 
     final bool isComplexPayment = paymentDetails.length > 1 || hasSurcharge || hasShipping;
@@ -430,7 +429,7 @@ class ReceiptPrinterService {
       if (hasTendered) {
         bytes += _labelValue(generator, 'EFECTIVO RECIBIDO:', '\$${_formatPrice(tenderedAmount)}');
       }
-      if (hasChange) {
+      if (hasTendered) {
         bytes += _labelValue(generator, 'SU VUELTO:', '\$${_formatPrice(changeAmount)}');
       }
     } else {
@@ -444,14 +443,11 @@ class ReceiptPrinterService {
 
       bytes += _labelValue(generator, 'PAGO EN:', singlePaymentName);
 
-      // Si pagó con efectivo, mostramos cuánto dio sólo si hay vuelto o si abona de más/menos.
-      // Si el pago es exacto, no ensuciamos el ticket.
-      final bool isExactCash = hasTendered && (tenderedAmount - grandTotal).abs() < 0.01;
-
-      if (hasTendered && !isExactCash) {
+      // Si pagó con efectivo, mostramos siempre con cuánto abonó para control de caja.
+      if (hasTendered) {
         bytes += _labelValue(generator, 'EFECTIVO RECIBIDO:', '\$${_formatPrice(tenderedAmount)}');
       }
-      if (hasChange) {
+      if (hasTendered) {
         bytes += _labelValue(generator, 'SU VUELTO:', '\$${_formatPrice(changeAmount)}');
       }
     }
@@ -628,7 +624,7 @@ class ReceiptPrinterService {
       }
     }
     if (tenderedAmount > 0.01) bytes += _labelValue(generator, 'EFECTIVO RECIBIDO:', '\$${_formatPrice(tenderedAmount)}');
-    if (changeAmount > 0.01) bytes += _labelValue(generator, 'SU VUELTO:', '\$${_formatPrice(changeAmount)}');
+    if (tenderedAmount > 0.01) bytes += _labelValue(generator, 'SU VUELTO:', '\$${_formatPrice(changeAmount)}');
 
     bytes += generator.feed(1);
     bytes += generator.text('UNIDADES VENDIDAS: $totalItemsQty', styles: const PosStyles(bold: true));
@@ -702,6 +698,7 @@ class ReceiptPrinterService {
     String? customerName,
     String? vendorName,
     String? dispatcherName,
+    bool isReprint = false,
   }) async {
     if (localTerminal.printerConnection.toLowerCase() == 'none') return;
     if (config.connectionType == PrinterConnectionType.usb && (config.comPort == null || config.comPort!.trim().isEmpty)) return;
@@ -758,11 +755,16 @@ class ReceiptPrinterService {
         final purchased = double.parse(item['quantity_purchased'].toString());
         final deliveredBefore = double.parse(item['quantity_delivered'].toString());
         final deliveredNow = (deliveredData['delivered_now'] as num).toDouble();
-        final remaining = purchased - (deliveredBefore + deliveredNow);
+        
+        final remaining = isReprint 
+            ? purchased - deliveredNow // Si es reimpresión, deliveredNow ya contiene todo lo entregado
+            : purchased - (deliveredBefore + deliveredNow);
+
+        final actionLabel = isReprint ? 'Entregado' : 'Entregando';
 
         b += gen.text(productName, styles: const PosStyles(bold: true));
         b += gen.row([
-          PosColumn(text: 'Entregando: ${deliveredNow.toStringAsFixed(1)}', width: 6),
+          PosColumn(text: '$actionLabel: ${deliveredNow.toStringAsFixed(1)}', width: 6),
           PosColumn(text: 'Saldo: ${remaining.toStringAsFixed(1)}', width: 6, styles: const PosStyles(align: PosAlign.right, bold: true)),
         ]);
         b += gen.feed(1);
@@ -911,12 +913,7 @@ class ReceiptPrinterService {
         ),
       ),
     ]);
-    bytes += generator.hr();
-    bytes += generator.text(
-      'Firma cajero: ___________________',
-      styles: const PosStyles(align: PosAlign.center),
-    );
-    bytes += generator.feed(4);
+    bytes += generator.feed(2);
     bytes += generator.cut();
 
     await _send(Uint8List.fromList(bytes));

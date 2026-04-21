@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 /// Excepción para errores de red genéricos (servidor caído, sin conexión).
@@ -59,13 +60,30 @@ class ApiClient extends http.BaseClient {
 
       // ── Intercepción de 401: Sesión expirada ─────────────────────────────
       // El backend devuelve 401 en dos casos:
-      //   a) SESSION_MISSING: no vino header (no debería ocurrir si el token está bien inyectado)
+      //   a) PIN Incorrecto (o error de login normal)
       //   b) SESSION_EXPIRED: el token no existe en BD (fue sobrescrito por otro login)
-      // En ambos casos forzamos re-login, pero SESSION_EXPIRED es el caso crítico
-      // de seguridad de la Vulnerabilidad #3.
+      // Solo en el caso b) disparamos el SessionExpiredException.
       if (response.statusCode == 401) {
-        onSessionExpired?.call();
-        throw const SessionExpiredException();
+        final bodyBytes = await response.stream.toBytes();
+        final bodyString = utf8.decode(bodyBytes, allowMalformed: true);
+
+        if (bodyString.contains('SESSION_EXPIRED')) {
+          onSessionExpired?.call();
+          throw const SessionExpiredException();
+        }
+
+        // Si es un 401 normal (ej: PIN incorrecto), devolvemos la respuesta original
+        // recreando el stream para que el caller pueda parsearla sin problemas.
+        return http.StreamedResponse(
+          Stream.value(bodyBytes),
+          response.statusCode,
+          contentLength: bodyBytes.length,
+          request: response.request,
+          headers: response.headers,
+          isRedirect: response.isRedirect,
+          persistentConnection: response.persistentConnection,
+          reasonPhrase: response.reasonPhrase,
+        );
       }
 
       // ── Intercepción de errores del servidor (5xx) ───────────────────────

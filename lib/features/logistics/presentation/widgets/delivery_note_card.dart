@@ -246,6 +246,7 @@ class _ReprintSheetState extends State<_ReprintSheet> {
         customerName: customerName,
         vendorName: vendorName,
         dispatcherName: dispatcherName,
+        isReprint: true,
       );
 
       if (ctx.mounted) {
@@ -268,16 +269,7 @@ class _ReprintSheetState extends State<_ReprintSheet> {
       final currentUser = ctx.read<AuthProvider>().currentUser;
       final dispatcherName = currentUser?['name'] ?? 'SISTEMA';
 
-      // Construir el mapa deliveredNow desde el historial del remito
-      // Esto hace que el PDF muestre "REMITO DE DESPACHO" en lugar de "ORDEN DE RETIRO"
-      final deliveredNowMap = <int, double>{};
-      for (final item in (widget.note['items'] as List? ?? [])) {
-        final id = item['id'];
-        final delivered = double.tryParse(item['quantity_delivered'].toString()) ?? 0.0;
-        if (id != null && delivered > 0) {
-          deliveredNowMap[id is int ? id : int.tryParse(id.toString()) ?? 0] = delivered;
-        }
-      }
+
 
       await DeliveryNotePdfService.preview(
         context: ctx,
@@ -286,7 +278,6 @@ class _ReprintSheetState extends State<_ReprintSheet> {
         businessAddress: settings?.address,
         businessPhone: settings?.phone,
         businessTaxId: settings?.taxId,
-        deliveredNow: deliveredNowMap,
         vendorName: vendorName,
         dispatcherName: dispatcherName,
       );
@@ -308,15 +299,7 @@ class _ReprintSheetState extends State<_ReprintSheet> {
       final currentUser = ctx.read<AuthProvider>().currentUser;
       final dispatcherName = currentUser?['name'] ?? 'SISTEMA';
 
-      // Idem: pasar deliveredNow para impresión directa A4 también
-      final deliveredNowMapDirect = <int, double>{};
-      for (final item in (widget.note['items'] as List? ?? [])) {
-        final id = item['id'];
-        final delivered = double.tryParse(item['quantity_delivered'].toString()) ?? 0.0;
-        if (id != null && delivered > 0) {
-          deliveredNowMapDirect[id is int ? id : int.tryParse(id.toString()) ?? 0] = delivered;
-        }
-      }
+
 
       await DeliveryNotePdfService.printDirect(
         note: widget.note,
@@ -324,7 +307,6 @@ class _ReprintSheetState extends State<_ReprintSheet> {
         businessAddress: settings?.address,
         businessPhone: settings?.phone,
         businessTaxId: settings?.taxId,
-        deliveredNow: deliveredNowMapDirect,
         vendorName: vendorName,
         dispatcherName: dispatcherName,
       );

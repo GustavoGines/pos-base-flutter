@@ -63,6 +63,7 @@ class PosProvider with ChangeNotifier {
   double? _lastSaleShippingCost;
   double? _lastTenderedAmount;
   double? _lastChangeAmount;
+  double? _lastSurchargeAmount;
   List<Map<String, dynamic>> _lastSalePayments = [];
 
   int get lastSaleId => _lastSaleId ?? 0;
@@ -70,6 +71,7 @@ class PosProvider with ChangeNotifier {
   double get lastSaleShippingCost => _lastSaleShippingCost ?? 0.0;
   double get lastTenderedAmount => _lastTenderedAmount ?? 0.0;
   double get lastChangeAmount => _lastChangeAmount ?? 0.0;
+  double get lastSurchargeAmount => _lastSurchargeAmount ?? 0.0;
   List<Map<String, dynamic>> get lastSalePayments => _lastSalePayments;
 
   // Rastrea si la última venta disparó un remito automático desde el checkout
@@ -194,8 +196,9 @@ class PosProvider with ChangeNotifier {
   }
 
   double get cartTotal {
-    // Solo sumamos el flete al total general si la logística está activa
-    return cartSubtotal + (_currentRequiresDispatch ? _shippingCost : 0.0);
+    // Solo sumamos el flete al total general si la logística está activa y pendiente
+    final bool applyShipping = _currentRequiresDispatch && _currentFulfillmentStatus == 'pending';
+    return cartSubtotal + (applyShipping ? _shippingCost : 0.0);
   }
 
   // Garantiza que siempre tengamos un printerService, incluso si no se inyecta
@@ -521,6 +524,7 @@ class PosProvider with ChangeNotifier {
       _lastSaleShippingCost = shippingCostSnapshot;
       _lastTenderedAmount = tenderedAmount;
       _lastChangeAmount = changeAmount;
+      _lastSurchargeAmount = totalSurcharge;
       _lastSalePayments =
           resolvedPayments; // Guardamos la versión resuelta con nombres
       _wasLastSaleDispatched = requiresDispatch;
@@ -534,10 +538,11 @@ class PosProvider with ChangeNotifier {
         if (localTerminal.printerFormat.startsWith('a4')) {
           final isDeliveredNow = fulfillmentStatus == 'delivered';
           
-          // Si es a4_split + se entrega AHORA, pos_screen intercepta para armar el PDF combinado.
-          // De lo contrario, usamos nuestro propio generador local de A4 para mantener el diseño
-          // en lugar de bajar el PDF del backend que tiene diseño viejo/redundante.
-          if (!(requiresDispatch && isDeliveredNow) || localTerminal.printerFormat != 'a4_split') {
+          // Si se entrega AHORA y es un formato A4, pos_screen intercepta para armar el PDF combinado.
+          // De lo contrario, usamos nuestro propio generador local de A4 para la venta simple.
+          final isA4FormatForDispatch = localTerminal.printerFormat == 'a4_split' || localTerminal.printerFormat == 'a4_normal' || localTerminal.printerFormat == 'a4';
+          
+          if (!(requiresDispatch && isDeliveredNow) || !isA4FormatForDispatch) {
             final businessSettings = settings ?? const BusinessSettings();
             
             // Si requiere despacho pero NO es entrega inmediata, generamos el A4 normal de venta
@@ -556,6 +561,9 @@ class PosProvider with ChangeNotifier {
                 }).toList(),
                 'total': totalSnapshot,
                 'shipping_cost': shippingCostSnapshot,
+                'surcharge_amount': totalSurcharge,
+                'tendered_amount': tenderedAmount,
+                'change_amount': changeAmount,
                 'payments': resolvedPayments,
                 'customer': {'name': 'Consumidor Final'}, 
                 'customer_name': 'Consumidor Final',

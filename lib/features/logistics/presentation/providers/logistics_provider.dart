@@ -33,6 +33,7 @@ class LogisticsProvider extends ChangeNotifier {
 
   String _searchQuery = '';
   Timer? _debounceTimer;
+  Timer? _pollingTimer;
   bool _isDispatching = false;
   String? _errorMessage;
 
@@ -41,6 +42,69 @@ class LogisticsProvider extends ChangeNotifier {
   String? get errorMessage => _errorMessage;
 
   LogisticsTabState getTabState(String status) => _tabs[status]!;
+
+  /// Inicia el polling silencioso cada 15 segundos
+  void startPolling() {
+    _pollingTimer?.cancel();
+    _pollingTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      // Solo actualiza los tabs que ya están inicializados para no gastar recursos
+      if (_tabs['pending']!.isInitialized) silentFetch('pending');
+      if (_tabs['partial']!.isInitialized) silentFetch('partial');
+      if (_tabs['delivered']!.isInitialized) silentFetch('delivered');
+    });
+  }
+
+  /// Detiene el polling
+  void stopPolling() {
+    _pollingTimer?.cancel();
+    _pollingTimer = null;
+  }
+
+  /// Fetch silencioso: actualiza la data de fondo sin mostrar loaders ni alterar la paginación existente
+  Future<void> silentFetch(String status) async {
+    final state = _tabs[status]!;
+    if (!state.isInitialized) return;
+
+    try {
+      final result = await repository.fetchDeliveryNotes(
+        status: status,
+        search: _searchQuery,
+        page: 1, // Siempre actualiza la primera página para ver nuevos ingresos
+      );
+      
+      final rawData = result['data'] is List ? result['data'] : (result['data']?['data'] ?? []);
+      final data = List<Map<String, dynamic>>.from(rawData);
+      
+      // Actualizamos la lista silenciosamente.
+      // Si el operario scrolleó, preservamos los elementos cargados después de la página 1.
+      // Si está en la página 1, reemplazamos todo.
+      if (state.currentPage == 1) {
+        state.notes = data;
+      } else {
+        // Para no romper la vista si bajó el scroll, una opción simple es actualizar 
+        // los primeros N elementos que coincidan con la página 1.
+        // O más fácil: solo forzamos un refresh completo (vuelta a la pág 1) si hubo cambios, 
+        // pero lo más seguro sin interrumpir es reemplazar solo el inicio de la lista.
+        final mapIds = data.map((e) => e['id']).toSet();
+        for (int i = 0; i < state.notes.length; i++) {
+          final existing = state.notes[i];
+          final match = data.firstWhere((n) => n['id'] == existing['id'], orElse: () => {});
+          if (match.isNotEmpty) {
+            state.notes[i] = match;
+          }
+        }
+        // Agregamos elementos nuevos que no estén en la lista
+        final existingIds = state.notes.map((e) => e['id']).toSet();
+        final nuevos = data.where((n) => !existingIds.contains(n['id'])).toList();
+        state.notes.insertAll(0, nuevos);
+      }
+
+      notifyListeners();
+    } catch (e) {
+      // Ignoramos errores en silent fetch
+      debugPrint('Error en silent fetch para $status: $e');
+    }
+  }
 
   /// Carga inicial de datos, o recarga forzada (refresca desde la página 1).
   Future<void> fetchFirstPage(String status) async {

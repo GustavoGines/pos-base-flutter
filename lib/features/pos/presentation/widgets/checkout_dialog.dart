@@ -431,7 +431,6 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       // ──── Replicar EXACTAMENTE la lógica de printSaleTicket ────
       final bool isComplexPayment = _lines.length > 1 || _totalSurcharge > 0.01;
       final bool hasTendered = _actualTendered > 0.01;
-      final bool hasChange = _change > 0.01;
 
       final lines = <TicketLine>[
         // Encabezado
@@ -476,7 +475,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
           TicketLine('TOTAL COBRADO:', rightText: '\$${_grandTotal.toStringAsFixed(2)}', isBold: true, isLarge: true),
           if (hasTendered)
             TicketLine('EFECTIVO RECIBIDO:', rightText: '\$${_actualTendered.toStringAsFixed(2)}'),
-          if (hasChange)
+          if (hasTendered)
             TicketLine('SU VUELTO:', rightText: '\$${_change.toStringAsFixed(2)}', isBold: true),
         ] else ...[
           // Venta simple: un pago, sin recargos
@@ -485,9 +484,9 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
           TicketLine('TOTAL GENERAL:', rightText: '\$${_grandTotal.toStringAsFixed(2)}', isBold: true, isLarge: true),
           const TicketLine.hr(),
           TicketLine('PAGO EN:', rightText: (_lines.isNotEmpty ? _lines.first.method?.name ?? 'EFECTIVO' : 'EFECTIVO').toUpperCase()),
-          if (hasTendered && (_actualTendered - _grandTotal).abs() > 0.01)
+          if (hasTendered)
             TicketLine('EFECTIVO RECIBIDO:', rightText: '\$${_actualTendered.toStringAsFixed(2)}'),
-          if (hasChange)
+          if (hasTendered)
             TicketLine('SU VUELTO:', rightText: '\$${_change.toStringAsFixed(2)}', isBold: true),
         ],
         const TicketLine.space(),
@@ -1109,9 +1108,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                       setState(() {
                         _requiresDispatch = !_requiresDispatch;
                         context.read<PosProvider>().setCurrentLogistics(_requiresDispatch, _fulfillmentStatus);
+                        _syncPaymentsWithShipping();
                       });
-                      // Sincronizar montos de pago inmediatamente al alternar logística
-                      WidgetsBinding.instance.addPostFrameCallback((_) => _syncPaymentsWithShipping());
                     },
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
@@ -1209,12 +1207,10 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                                 contentPadding: EdgeInsets.zero,
                                 dense: true,
                                 visualDensity: VisualDensity.compact,
-                                                                onChanged: (val) {
+                                  onChanged: (val) {
                                   setState(() {
                                     _fulfillmentStatus = val!;
                                     context.read<PosProvider>().setCurrentLogistics(_requiresDispatch, _fulfillmentStatus);
-                                  });
-                                  WidgetsBinding.instance.addPostFrameCallback((_) {
                                     _syncPaymentsWithShipping();
                                   });
                                 },
@@ -1230,12 +1226,10 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                                 contentPadding: EdgeInsets.zero,
                                 dense: true,
                                 visualDensity: VisualDensity.compact,
-                                                                onChanged: (val) {
+                                  onChanged: (val) {
                                   setState(() {
                                     _fulfillmentStatus = val!;
                                     context.read<PosProvider>().setCurrentLogistics(_requiresDispatch, _fulfillmentStatus);
-                                  });
-                                  WidgetsBinding.instance.addPostFrameCallback((_) {
                                     _syncPaymentsWithShipping();
                                   });
                                 },

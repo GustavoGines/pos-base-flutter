@@ -13,10 +13,21 @@ class LogisticsDashboardScreen extends StatefulWidget {
 
 class _LogisticsDashboardScreenState extends State<LogisticsDashboardScreen> {
   final TextEditingController _searchController = TextEditingController();
+  late LogisticsProvider _logisticsProvider;
+
+  @override
+  void initState() {
+    super.initState();
+    _logisticsProvider = context.read<LogisticsProvider>();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _logisticsProvider.startPolling();
+    });
+  }
 
   @override
   void dispose() {
     _searchController.dispose();
+    _logisticsProvider.stopPolling();
     super.dispose();
   }
 
