@@ -712,8 +712,25 @@ class ReceiptPrinterService {
       final val = item['delivered_now'];
       return sum + (val is double ? val : (val as num?)?.toDouble() ?? 0.0);
     });
-    final String docTitle = totalDeliveredNow > 0 ? 'REMITO DE DESPACHO' : 'ORDEN DE RETIRO';
-    final String docCode = totalDeliveredNow > 0 ? 'REM' : 'ORD';
+    final noteStatus = note['status']?.toString() ?? 'pending';
+    String docTitle;
+    String docCode;
+
+    if (isReprint) {
+      if (noteStatus == 'pending') {
+        docTitle = 'ORDEN DE RETIRO';
+        docCode = 'ORD';
+      } else if (noteStatus == 'partial') {
+        docTitle = 'REMITO DE DESPACHO PARCIAL';
+        docCode = 'REM';
+      } else {
+        docTitle = 'REMITO DE DESPACHO';
+        docCode = 'REM';
+      }
+    } else {
+      docTitle = totalDeliveredNow > 0 ? 'REMITO DE DESPACHO' : 'ORDEN DE RETIRO';
+      docCode = totalDeliveredNow > 0 ? 'REM' : 'ORD';
+    }
     final String remNum = note['id'].toString().padLeft(6, '0');
 
     // ── Función local para construir el cuerpo del remito (reutilizable en ambas copias) ──

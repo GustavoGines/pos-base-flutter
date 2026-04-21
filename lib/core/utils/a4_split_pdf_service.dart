@@ -100,7 +100,11 @@ class A4SplitPdfService {
                           ..._buildSaleReceiptList(sale, businessName, businessAddress, phone, cuit, vendorName, isCompact: true),
                         ],
                       ),
-                      pw.Positioned.fill(child: _buildWatermark('COMPROBANTE\nNO FISCAL', true)),
+                      pw.Positioned(
+                        bottom: 0, left: 0, right: 0,
+                        child: _buildFooter(businessName, isCompact: true, isSale: true),
+                      ),
+                      _buildWatermark('COMPROBANTE\nNO FISCAL', true),
                     ],
                   ),
                 ),
@@ -142,7 +146,11 @@ class A4SplitPdfService {
                           ..._buildDeliveryNoteList(deliveryNote, sale, businessName, businessAddress, vendorName, isCompact: true, isDispatch: isDispatch),
                         ],
                       ),
-                      pw.Positioned.fill(child: _buildWatermark('ORIGINAL', true)),
+                      pw.Positioned(
+                        bottom: 0, left: 0, right: 0,
+                        child: _buildFooter(businessName, isCompact: true, isSale: false),
+                      ),
+                      _buildWatermark('ORIGINAL', true),
                     ],
                   ),
                 ),
@@ -231,8 +239,12 @@ class A4SplitPdfService {
                   pw.Column(
                     mainAxisSize: pw.MainAxisSize.min,
                     crossAxisAlignment: pw.CrossAxisAlignment.start,
-                    children: _buildSaleReceiptList(
-                        sale, businessName, businessAddress, phone, cuit, vendorName),
+                    children: [
+                      ..._buildSaleReceiptList(
+                          sale, businessName, businessAddress, phone, cuit, vendorName),
+                      pw.SizedBox(height: 20),
+                      _buildFooter(businessName, isCompact: false, isSale: true, ctx: context),
+                    ],
                   ),
                   // 2° Watermark superpuesta con transparencia
                   pw.Positioned.fill(
@@ -537,10 +549,6 @@ class A4SplitPdfService {
         ),
         
         pw.SizedBox(height: isCompact ? 8 : 15),
-        // PIE INTEGRADO (solo en modo compacto/split)
-        if (isCompact) ...[
-          _buildFooter(businessName, isCompact: true, isSale: true),
-        ],
     ];
   }
 
@@ -743,10 +751,6 @@ class A4SplitPdfService {
         ],
       ),
       pw.SizedBox(height: isCompact ? 8 : 15),
-      // PIE INTEGRADO (solo en modo compacto/split)
-      if (isCompact) ...[
-        _buildFooter(businessName, isCompact: true, isSale: false),
-      ],
     ];
   }
 

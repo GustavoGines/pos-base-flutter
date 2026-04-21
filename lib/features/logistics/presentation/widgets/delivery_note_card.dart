@@ -347,7 +347,13 @@ class _ReprintSheetState extends State<_ReprintSheet> {
       if (settings?.taxId != null && settings!.taxId!.isNotEmpty)
         TicketLine('CUIT: ${settings.taxId}', align: TicketAlign.center, isBold: true),
       const TicketLine.hr(bold: true),
-      const TicketLine('REMITO DE DESPACHO', align: TicketAlign.center, isBold: true),
+      TicketLine(
+        widget.note['status']?.toString() == 'pending' 
+            ? 'ORDEN DE RETIRO' 
+            : (widget.note['status']?.toString() == 'partial' ? 'REMITO DE DESPACHO PARCIAL' : 'REMITO DE DESPACHO'), 
+        align: TicketAlign.center, 
+        isBold: true
+      ),
       TicketLine('[ $copyLabel ]', align: TicketAlign.center),
       const TicketLine.hr(),
       TicketLine('REM N°: $remNum', isBold: true),

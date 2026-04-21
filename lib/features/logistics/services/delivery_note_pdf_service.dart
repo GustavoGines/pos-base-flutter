@@ -262,6 +262,10 @@ class DeliveryNotePdfService {
                           ),
                         ],
                       ),
+                      pw.Positioned(
+                        bottom: 0, left: 0, right: 0,
+                        child: _buildCompactFooter(businessName, createdDate),
+                      ),
                       _buildWatermark(copyLabelTop, true),
                     ],
                   ),
@@ -294,6 +298,10 @@ class DeliveryNotePdfService {
                             copyLabel: copyLabelBot,
                           ),
                         ],
+                      ),
+                      pw.Positioned(
+                        bottom: 0, left: 0, right: 0,
+                        child: _buildCompactFooter(businessName, createdDate),
                       ),
                       _buildWatermark(copyLabelBot, true),
                     ],
@@ -369,6 +377,28 @@ class DeliveryNotePdfService {
           ),
         ),
       ),
+    );
+  }
+
+  static pw.Widget _buildCompactFooter(String businessName, DateTime date) {
+    return pw.Column(
+      mainAxisSize: pw.MainAxisSize.min,
+      children: [
+        pw.Divider(color: PdfColors.grey300),
+        pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+          children: [
+            pw.Text(
+              'Remito generado el ${_dateFmt.format(date)} - $businessName',
+              style: const pw.TextStyle(fontSize: 6, color: PdfColors.grey),
+            ),
+            pw.Text(
+              'DOCUMENTO NO VALIDO COMO FACTURA',
+              style: const pw.TextStyle(fontSize: 6, color: PdfColors.grey),
+            ),
+          ],
+        ),
+      ],
     );
   }
 
@@ -663,22 +693,7 @@ class DeliveryNotePdfService {
 
           pw.SizedBox(height: isCompact ? 6 : 16),
           // ══ PIE / FOOTER ══════════════════════════════════════
-          if (isCompact) ...[
-            pw.Divider(color: PdfColors.grey300),
-            pw.Row(
-              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-              children: [
-                pw.Text(
-                  'Remito generado el ${_dateFmt.format(DateTime.now())} - $businessName',
-                  style: const pw.TextStyle(fontSize: 6, color: PdfColors.grey),
-                ),
-                pw.Text(
-                  'DOCUMENTO NO VALIDO COMO FACTURA',
-                  style: const pw.TextStyle(fontSize: 6, color: PdfColors.grey),
-                ),
-              ],
-            ),
-          ] else ...[
+          if (!isCompact) ...[
             pw.Center(
               child: pw.Text(
                 'DOCUMENTO NO VALIDO COMO FACTURA - SOLO SIRVE COMO COMPROBANTE DE ENTREGA DE MERCADERIA',

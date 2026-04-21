@@ -46,7 +46,7 @@ class LogisticsProvider extends ChangeNotifier {
   /// Inicia el polling silencioso cada 15 segundos
   void startPolling() {
     _pollingTimer?.cancel();
-    _pollingTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+    _pollingTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       // Solo actualiza los tabs que ya están inicializados para no gastar recursos
       if (_tabs['pending']!.isInitialized) silentFetch('pending');
       if (_tabs['partial']!.isInitialized) silentFetch('partial');
@@ -58,6 +58,16 @@ class LogisticsProvider extends ChangeNotifier {
   void stopPolling() {
     _pollingTimer?.cancel();
     _pollingTimer = null;
+  }
+
+  /// Forza la recarga de todas las pestañas inicializadas (útil tras crear una orden desde POS).
+  Future<void> refreshAll({bool force = false}) async {
+    for (final status in _tabs.keys) {
+      if (force || _tabs[status]!.isInitialized) {
+        // Ejecutar sin await para que se actualicen en paralelo en background
+        fetchFirstPage(status);
+      }
+    }
   }
 
   /// Fetch silencioso: actualiza la data de fondo sin mostrar loaders ni alterar la paginación existente

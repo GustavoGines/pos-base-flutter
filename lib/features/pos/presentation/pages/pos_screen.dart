@@ -18,6 +18,7 @@ import 'package:frontend_desktop/features/reports/presentation/providers/invento
 import 'package:frontend_desktop/core/providers/local_terminal_provider.dart';
 import 'package:frontend_desktop/core/utils/a4_split_pdf_service.dart';
 import 'package:printing/printing.dart';
+import 'package:frontend_desktop/features/logistics/presentation/providers/logistics_provider.dart';
 
 class PosScreen extends StatefulWidget {
   const PosScreen({Key? key}) : super(key: key);
@@ -718,6 +719,11 @@ class _PosScreenState extends State<PosScreen> {
         // 1. PRIORIDAD ABSOLUTA: Mostrar confirmación visual de inmediato
         SnackBarService.success(context, '¡Venta registrada con éxito!');
 
+        // 2. ACTUALIZAR LOGÍSTICA EN BACKGROUND
+        // Forzamos la actualización de Logística para que al cambiar de pestaña
+        // los remitos generados ya estén listos sin tener que esperar el timer.
+        Provider.of<LogisticsProvider>(context, listen: false).refreshAll(force: true);
+
         final settingsProvider =
             Provider.of<SettingsProvider>(context, listen: false);
         final localTerminalProvider =
@@ -733,12 +739,17 @@ class _PosScreenState extends State<PosScreen> {
           // SOLO mostramos el Remito (Split o Separado) si el remito se entrega AHORA.
           // Si quedó pendiente, el comprobante de venta simple ya se imprimió en processCheckout,
           // y el remito lo imprimirá Logística mañana.
-          debugPrint('DEBUG: Dispatch detected. isDeliveredNow=$isDeliveredNow, note=$deliveryNote');
-          
-          if (isDeliveredNow && deliveryNote != null && (deliveryNote.containsKey('sale') || posProvider.lastSaleCart.isNotEmpty)) {
+          debugPrint(
+              'DEBUG: Dispatch detected. isDeliveredNow=$isDeliveredNow, note=$deliveryNote');
+
+          if (isDeliveredNow &&
+              deliveryNote != null &&
+              (deliveryNote.containsKey('sale') ||
+                  posProvider.lastSaleCart.isNotEmpty)) {
             try {
-              final sale = (deliveryNote['sale'] as Map<String, dynamic>?) ?? {};
-              
+              final sale =
+                  (deliveryNote['sale'] as Map<String, dynamic>?) ?? {};
+
               // Si el remito no trajo la venta hidratada, usamos el snapshot de seguridad del provider
               if (sale.isEmpty || sale['items'] == null) {
                 sale['id'] = deliveryNote['sale_id'];
@@ -760,16 +771,23 @@ class _PosScreenState extends State<PosScreen> {
                           }
                         })
                     .toList();
-                sale['customer'] = deliveryNote['customer'] ?? deliveryNote['sale']?['customer'];
+                sale['customer'] = deliveryNote['customer'] ??
+                    deliveryNote['sale']?['customer'];
               }
 
-              final authProvider = Provider.of<AuthProvider>(context, listen: false);
-              final vendorName = authProvider.currentUser?['name']?.toString() ?? 'CAJERO';
-              final businessName = settingsProvider.settings?.companyName ?? 'MI NEGOCIO';
+              final authProvider =
+                  Provider.of<AuthProvider>(context, listen: false);
+              final vendorName =
+                  authProvider.currentUser?['name']?.toString() ?? 'CAJERO';
+              final businessName =
+                  settingsProvider.settings?.companyName ?? 'MI NEGOCIO';
 
-              if (localFormat == 'a4_split' || localFormat == 'a4_normal' || localFormat == 'a4') {
+              if (localFormat == 'a4_split' ||
+                  localFormat == 'a4_normal' ||
+                  localFormat == 'a4') {
                 // 1. A4 SMART (Split si <= 6 ítems, MultiPage si > 6 ítems)
-                final pdfBytes = await A4SplitPdfService.generateA4SplitReceiptAndDispatch(
+                final pdfBytes =
+                    await A4SplitPdfService.generateA4SplitReceiptAndDispatch(
                   sale: sale,
                   deliveryNote: deliveryNote,
                   businessName: businessName,
@@ -787,90 +805,126 @@ class _PosScreenState extends State<PosScreen> {
                       return StatefulBuilder(
                         builder: (context, setState) {
                           return Dialog(
-                          child: Container(
-                            width: 900,
-                            height: 800,
-                            child: Scaffold(
-                              appBar: AppBar(
-                                title: Text('Vista Previa - Venta #${sale['id']}'),
-                                automaticallyImplyLeading: false,
-                                actions: [
-                                  if (isVoiding)
-                                    Center(
-                                      child: Padding(
-                                        padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                                        child: SizedBox(
-                                          width: 24,
-                                          height: 24,
-                                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.red),
-                                        ),
-                                      ),
-                                    )
-                                  else
-                                    TextButton.icon(
-                                      onPressed: () async {
-                                        final confirm = await showDialog<bool>(
-                                          context: context,
-                                          builder: (c) => AlertDialog(
-                                            title: const Text('¿Anular Venta?'),
-                                            content: const Text('Esta acción cancelará el cobro en el sistema y devolverá los productos al carrito.'),
-                                            actions: [
-                                              TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('NO, VOLVER')),
-                                              ElevatedButton(
-                                                style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
-                                                onPressed: () => Navigator.pop(c, true), 
-                                                child: const Text('SÍ, ANULAR')
-                                              ),
-                                            ],
+                            child: Container(
+                              width: 900,
+                              height: 800,
+                              child: Scaffold(
+                                appBar: AppBar(
+                                  title: Text(
+                                      'Vista Previa - Venta #${sale['id']}'),
+                                  automaticallyImplyLeading: false,
+                                  actions: [
+                                    if (isVoiding)
+                                      Center(
+                                        child: Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 16.0),
+                                          child: SizedBox(
+                                            width: 24,
+                                            height: 24,
+                                            child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                                color: Colors.red),
                                           ),
-                                        );
+                                        ),
+                                      )
+                                    else
+                                      TextButton.icon(
+                                        onPressed: () async {
+                                          final confirm =
+                                              await showDialog<bool>(
+                                            context: context,
+                                            builder: (c) => AlertDialog(
+                                              title:
+                                                  const Text('¿Anular Venta?'),
+                                              content: const Text(
+                                                  'Esta acción cancelará el cobro en el sistema y devolverá los productos al carrito.'),
+                                              actions: [
+                                                TextButton(
+                                                    onPressed: () =>
+                                                        Navigator.pop(c, false),
+                                                    child: const Text(
+                                                        'NO, VOLVER')),
+                                                ElevatedButton(
+                                                    style: ElevatedButton
+                                                        .styleFrom(
+                                                            backgroundColor:
+                                                                Colors.red,
+                                                            foregroundColor:
+                                                                Colors.white),
+                                                    onPressed: () =>
+                                                        Navigator.pop(c, true),
+                                                    child: const Text(
+                                                        'SÍ, ANULAR')),
+                                              ],
+                                            ),
+                                          );
 
-                                        if (confirm == true) {
-                                          setState(() { isVoiding = true; });
-                                          try {
-                                            final success = await posProvider.voidPendingOrder(int.parse(sale['id'].toString()));
-                                            if (!success) {
-                                              throw Exception(posProvider.errorMessage ?? 'Error desconocido');
-                                            }
-                                            // Restaurar carrito al estado previo a la venta
-                                            posProvider.restoreLastSaleCart();
-                                            
-                                            if (dialogCtx.mounted) {
-                                              SnackBarService.warning(dialogCtx, 'Venta anulada. Los productos han vuelto al carrito.');
-                                              Navigator.pop(dialogCtx, 'annulled');
-                                            }
-                                          } catch (e) {
-                                            if (dialogCtx.mounted) {
-                                              SnackBarService.error(dialogCtx, 'Error al anular: $e');
-                                              setState(() { isVoiding = false; });
+                                          if (confirm == true) {
+                                            setState(() {
+                                              isVoiding = true;
+                                            });
+                                            try {
+                                              final success = await posProvider
+                                                  .voidPendingOrder(int.parse(
+                                                      sale['id'].toString()));
+                                              if (!success) {
+                                                throw Exception(
+                                                    posProvider.errorMessage ??
+                                                        'Error desconocido');
+                                              }
+                                              // Restaurar carrito al estado previo a la venta
+                                              posProvider.restoreLastSaleCart();
+
+                                              if (dialogCtx.mounted) {
+                                                SnackBarService.warning(
+                                                    dialogCtx,
+                                                    'Venta anulada. Los productos han vuelto al carrito.');
+                                                Navigator.pop(
+                                                    dialogCtx, 'annulled');
+                                              }
+                                            } catch (e) {
+                                              if (dialogCtx.mounted) {
+                                                SnackBarService.error(dialogCtx,
+                                                    'Error al anular: $e');
+                                                setState(() {
+                                                  isVoiding = false;
+                                                });
+                                              }
                                             }
                                           }
-                                        }
-                                      },
-                                      icon: const Icon(Icons.delete_forever, color: Colors.red),
-                                      label: const Text('ANULAR COBRO Y VOLVER', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+                                        },
+                                        icon: const Icon(Icons.delete_forever,
+                                            color: Colors.red),
+                                        label: const Text(
+                                            'ANULAR COBRO Y VOLVER',
+                                            style: TextStyle(
+                                                color: Colors.red,
+                                                fontWeight: FontWeight.bold)),
+                                      ),
+                                    const SizedBox(width: 16),
+                                    IconButton(
+                                      icon: const Icon(Icons.close),
+                                      onPressed: isVoiding
+                                          ? null
+                                          : () => Navigator.pop(dialogCtx),
                                     ),
-                                  const SizedBox(width: 16),
-                                  IconButton(
-                                    icon: const Icon(Icons.close),
-                                    onPressed: isVoiding ? null : () => Navigator.pop(dialogCtx),
-                                  ),
-                                ],
-                              ),
-                              body: PdfPreview(
-                                build: (format) async => pdfBytes,
-                                canChangePageFormat: false,
-                                canChangeOrientation: false,
-                                pdfFileName: 'Comprobante_${sale['id']}.pdf',
-                                canDebug: false,
+                                  ],
+                                ),
+                                body: PdfPreview(
+                                  build: (format) async => pdfBytes,
+                                  canChangePageFormat: false,
+                                  canChangeOrientation: false,
+                                  pdfFileName: 'Comprobante_${sale['id']}.pdf',
+                                  canDebug: false,
+                                ),
                               ),
                             ),
-                          ),
-                        );
-                      },
-                    );
-                  },
-                );
+                          );
+                        },
+                      );
+                    },
+                  );
 
                   if (result == 'annulled') return;
                 }
@@ -884,12 +938,13 @@ class _PosScreenState extends State<PosScreen> {
               }
             }
           } else if (isDeliveredNow && deliveryNote == null) {
-             // Caso borde: requiere despacho inmediato pero falló la creación del remito
-             // Mostramos al menos la venta simple
-             if (localFormat.startsWith('a4')) await _showFallbackA4Pdf(posProvider);
+            // Caso borde: requiere despacho inmediato pero falló la creación del remito
+            // Mostramos al menos la venta simple
+            if (localFormat.startsWith('a4'))
+              await _showFallbackA4Pdf(posProvider);
           } else {
-             // Estado 'pending': el PDF de venta simple ya fue mostrado por pos_provider (Laravel PDF)
-             // No se muestra nada extra aqui: el galpón imprimirá el remito desde el módulo de Logística
+            // Estado 'pending': el PDF de venta simple ya fue mostrado por pos_provider (Laravel PDF)
+            // No se muestra nada extra aqui: el galpón imprimirá el remito desde el módulo de Logística
           }
         }
 
@@ -1434,67 +1489,69 @@ class _PosScreenState extends State<PosScreen> {
             Consumer<PosProvider>(
               builder: (ctx, pos, _) {
                 final count = pos.pendingCount;
-            return TapRegion(
-              groupId: 'pending_orders_overlay',
-              child: CompositedTransformTarget(
-                link: _pendingOrdersLayerLink,
-                child: OverlayPortal(
-                  controller: _pendingOrdersPortalController,
-                  overlayChildBuilder: (context) =>
-                      _buildPendingOrdersOverlay(pos),
-                  child: Padding(
-                    padding: const EdgeInsets.only(right: 4),
-                    child: TweenAnimationBuilder<double>(
-                      key: ValueKey(count > 0),
-                      tween: Tween(begin: 0.0, end: count > 0 ? 1.0 : 0.0),
-                      duration: const Duration(milliseconds: 1500),
-                      curve: Curves.elasticOut,
-                      builder: (context, value, child) {
-                        return Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            Transform.rotate(
-                              angle: count > 0
-                                  ? (0.15 *
-                                      (1.0 - value) *
-                                      (DateTime.now().second % 5 == 0 ? 1 : 0))
-                                  : 0,
-                              child: IconButton(
-                                tooltip: 'Órdenes en Espera',
-                                icon: Icon(
-                                  Icons.pending_actions_rounded,
-                                  color: count > 0
-                                      ? Colors.orange.shade700
-                                      : Colors.blueGrey,
-                                  size: 28,
+                return TapRegion(
+                  groupId: 'pending_orders_overlay',
+                  child: CompositedTransformTarget(
+                    link: _pendingOrdersLayerLink,
+                    child: OverlayPortal(
+                      controller: _pendingOrdersPortalController,
+                      overlayChildBuilder: (context) =>
+                          _buildPendingOrdersOverlay(pos),
+                      child: Padding(
+                        padding: const EdgeInsets.only(right: 4),
+                        child: TweenAnimationBuilder<double>(
+                          key: ValueKey(count > 0),
+                          tween: Tween(begin: 0.0, end: count > 0 ? 1.0 : 0.0),
+                          duration: const Duration(milliseconds: 1500),
+                          curve: Curves.elasticOut,
+                          builder: (context, value, child) {
+                            return Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                Transform.rotate(
+                                  angle: count > 0
+                                      ? (0.15 *
+                                          (1.0 - value) *
+                                          (DateTime.now().second % 5 == 0
+                                              ? 1
+                                              : 0))
+                                      : 0,
+                                  child: IconButton(
+                                    tooltip: 'Órdenes en Espera',
+                                    icon: Icon(
+                                      Icons.pending_actions_rounded,
+                                      color: count > 0
+                                          ? Colors.orange.shade700
+                                          : Colors.blueGrey,
+                                      size: 28,
+                                    ),
+                                    onPressed: () =>
+                                        _pendingOrdersPortalController.toggle(),
+                                  ),
                                 ),
-                                onPressed: () =>
-                                    _pendingOrdersPortalController.toggle(),
-                              ),
-                            ),
-                            if (count > 0)
-                              Positioned(
-                                right: 2,
-                                top: 2,
-                                child: IgnorePointer(
-                                  child: _buildPendingBadge(count),
-                                ),
-                              ),
-                          ],
-                        );
-                      },
+                                if (count > 0)
+                                  Positioned(
+                                    right: 2,
+                                    top: 2,
+                                    child: IgnorePointer(
+                                      child: _buildPendingBadge(count),
+                                    ),
+                                  ),
+                              ],
+                            );
+                          },
+                        ),
+                      ),
                     ),
                   ),
-                ),
-              ),
-            );
-          },
+                );
+              },
+            ),
+          ],
         ),
-      ],
-    ),
-  ),
-  body: Consumer<CashRegisterProvider>(
-    builder: (ctx, cashProv, _) {
+      ),
+      body: Consumer<CashRegisterProvider>(
+        builder: (ctx, cashProv, _) {
           // ── EmptyState: Admin entró sin turno ────────────────────
           if (cashProv.currentShift == null || !cashProv.currentShift!.isOpen) {
             return Center(
@@ -2362,80 +2419,100 @@ class _PosScreenState extends State<PosScreen> {
           return StatefulBuilder(
             builder: (context, setState) {
               return Dialog(
-              child: SizedBox(
-                width: 900,
-                height: 800,
-                child: Scaffold(
-                  appBar: AppBar(
-                    title: Text('Vista Previa Backoffice - Venta #${posProvider.lastSaleId}'),
-                    automaticallyImplyLeading: false,
-                    actions: [
-                      if (isVoiding)
-                        Center(
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                            child: SizedBox(
-                              width: 24,
-                              height: 24,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.red),
-                            ),
-                          ),
-                        )
-                      else
-                        TextButton.icon(
-                          onPressed: () async {
-                            final confirm = await showDialog<bool>(
-                              context: dialogCtx,
-                              builder: (c) => AlertDialog(
-                                title: const Text('¿Anular Venta?'),
-                                content: const Text('Esta acción cancelará el cobro en el sistema y devolverá los productos al carrito.'),
-                                actions: [
-                                  TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('NO, VOLVER')),
-                                  ElevatedButton(
-                                    style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
-                                    onPressed: () => Navigator.pop(c, true), 
-                                    child: const Text('SÍ, ANULAR')
-                                  ),
-                                ],
+                child: SizedBox(
+                  width: 900,
+                  height: 800,
+                  child: Scaffold(
+                    appBar: AppBar(
+                      title: Text(
+                          'Vista Previa Backoffice - Venta #${posProvider.lastSaleId}'),
+                      automaticallyImplyLeading: false,
+                      actions: [
+                        if (isVoiding)
+                          Center(
+                            child: Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 16.0),
+                              child: SizedBox(
+                                width: 24,
+                                height: 24,
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2, color: Colors.red),
                               ),
-                            );
+                            ),
+                          )
+                        else
+                          TextButton.icon(
+                            onPressed: () async {
+                              final confirm = await showDialog<bool>(
+                                context: dialogCtx,
+                                builder: (c) => AlertDialog(
+                                  title: const Text('¿Anular Venta?'),
+                                  content: const Text(
+                                      'Esta acción cancelará el cobro en el sistema y devolverá los productos al carrito.'),
+                                  actions: [
+                                    TextButton(
+                                        onPressed: () =>
+                                            Navigator.pop(c, false),
+                                        child: const Text('NO, VOLVER')),
+                                    ElevatedButton(
+                                        style: ElevatedButton.styleFrom(
+                                            backgroundColor: Colors.red,
+                                            foregroundColor: Colors.white),
+                                        onPressed: () => Navigator.pop(c, true),
+                                        child: const Text('SÍ, ANULAR')),
+                                  ],
+                                ),
+                              );
 
-                            if (confirm == true) {
-                              setState(() { isVoiding = true; });
-                              try {
-                                await posProvider.voidPendingOrder(posProvider.lastSaleId);
-                                // Restaurar carrito al estado previo a la venta
-                                posProvider.restoreLastSaleCart();
-                                
-                                if (dialogCtx.mounted) {
-                                  SnackBarService.warning(dialogCtx, 'Venta anulada. Los productos han vuelto al carrito.');
-                                  Navigator.pop(dialogCtx, 'annulled');
-                                }
-                              } catch (e) {
-                                if (dialogCtx.mounted) {
-                                  SnackBarService.error(dialogCtx, 'Error al anular: $e');
-                                  setState(() { isVoiding = false; });
+                              if (confirm == true) {
+                                setState(() {
+                                  isVoiding = true;
+                                });
+                                try {
+                                  await posProvider
+                                      .voidPendingOrder(posProvider.lastSaleId);
+                                  // Restaurar carrito al estado previo a la venta
+                                  posProvider.restoreLastSaleCart();
+
+                                  if (dialogCtx.mounted) {
+                                    SnackBarService.warning(dialogCtx,
+                                        'Venta anulada. Los productos han vuelto al carrito.');
+                                    Navigator.pop(dialogCtx, 'annulled');
+                                  }
+                                } catch (e) {
+                                  if (dialogCtx.mounted) {
+                                    SnackBarService.error(
+                                        dialogCtx, 'Error al anular: $e');
+                                    setState(() {
+                                      isVoiding = false;
+                                    });
+                                  }
                                 }
                               }
-                            }
-                          },
-                          icon: const Icon(Icons.delete_forever, color: Colors.red),
-                          label: const Text('ANULAR COBRO Y VOLVER', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+                            },
+                            icon: const Icon(Icons.delete_forever,
+                                color: Colors.red),
+                            label: const Text('ANULAR COBRO Y VOLVER',
+                                style: TextStyle(
+                                    color: Colors.red,
+                                    fontWeight: FontWeight.bold)),
+                          ),
+                        const SizedBox(width: 16),
+                        IconButton(
+                          icon: const Icon(Icons.close),
+                          onPressed:
+                              isVoiding ? null : () => Navigator.pop(dialogCtx),
                         ),
-                      const SizedBox(width: 16),
-                      IconButton(
-                        icon: const Icon(Icons.close),
-                        onPressed: isVoiding ? null : () => Navigator.pop(dialogCtx),
-                      ),
-                    ],
-                  ),
-                  body: PdfPreview(
-                    build: (format) async => pdfBytes,
-                    canChangePageFormat: false,
-                    canChangeOrientation: false,
-                    pdfFileName: 'Comprobante_${posProvider.lastSaleId}.pdf',
-                    canDebug: false,
-                  ),
+                      ],
+                    ),
+                    body: PdfPreview(
+                      build: (format) async => pdfBytes,
+                      canChangePageFormat: false,
+                      canChangeOrientation: false,
+                      pdfFileName: 'Comprobante_${posProvider.lastSaleId}.pdf',
+                      canDebug: false,
+                    ),
                   ),
                 ),
               );
