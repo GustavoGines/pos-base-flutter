@@ -573,6 +573,7 @@ class PosProvider with ChangeNotifier {
               phone: businessSettings.phone ?? '',
               cuit: businessSettings.taxId ?? '',
               vendorName: userName,
+              paperSize: localTerminal.pdfPaperSize,
             );
 
             final ctx = AppConfig.navigatorKey.currentContext;

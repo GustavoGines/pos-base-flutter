@@ -99,7 +99,7 @@ class A4SplitPdfService {
                           ),
                           ..._buildSaleReceiptList(sale, businessName, businessAddress, phone, cuit, vendorName),
                           pw.Spacer(),
-                          _buildFooter(businessName, isCompact: true),
+                          _buildFooter(businessName, isCompact: true, isSale: true),
                         ],
                       ),
                       pw.Positioned.fill(child: _buildWatermark('COMPROBANTE\nNO FISCAL', true)),
@@ -143,7 +143,7 @@ class A4SplitPdfService {
                           ),
                           ..._buildDeliveryNoteList(deliveryNote, sale, businessName, businessAddress, vendorName, isCompact: true, isDispatch: isDispatch),
                           pw.Spacer(),
-                          _buildFooter(businessName, isCompact: true),
+                          _buildFooter(businessName, isCompact: true, isSale: false),
                         ],
                       ),
                       pw.Positioned.fill(child: _buildWatermark('ORIGINAL', true)),
@@ -196,6 +196,7 @@ class A4SplitPdfService {
     String phone = '',
     String cuit = '',
     String? vendorName,
+    String paperSize = 'a4',
   }) async {
     pw.ThemeData? theme;
     try {
@@ -205,12 +206,12 @@ class A4SplitPdfService {
     } catch (_) {}
 
     final pdf = pw.Document(theme: theme);
-    
+    final format = paperSize.toLowerCase() == 'letter' ? PdfPageFormat.letter : PdfPageFormat.a4;
 
     pdf.addPage(
       pw.Page(
         pageTheme: pw.PageTheme(
-          pageFormat: PdfPageFormat.a4,
+          pageFormat: format,
           margin: const pw.EdgeInsets.all(30),
         ),
         build: (pw.Context context) {
@@ -745,7 +746,10 @@ class A4SplitPdfService {
     ];
   }
 
-  static pw.Widget _buildFooter(String businessName, {required bool isCompact, pw.Context? ctx}) {
+  static pw.Widget _buildFooter(String businessName, {required bool isCompact, bool isSale = false, pw.Context? ctx}) {
+    final label = isSale
+        ? 'Comprobante generado el ${_dateFmt.format(DateTime.now())} - $businessName'
+        : 'Remito generado el ${_dateFmt.format(DateTime.now())} - $businessName';
     return pw.Column(
       mainAxisSize: pw.MainAxisSize.min,
       children: [
@@ -755,7 +759,7 @@ class A4SplitPdfService {
           mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
           children: [
             pw.Text(
-              'Remito generado el ${_dateFmt.format(DateTime.now())} - $businessName',
+              label,
               style: pw.TextStyle(fontSize: isCompact ? 6 : 7, color: PdfColors.grey),
             ),
             if (!isCompact && ctx != null)

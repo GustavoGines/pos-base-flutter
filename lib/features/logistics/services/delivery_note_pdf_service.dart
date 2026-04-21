@@ -410,66 +410,62 @@ class DeliveryNotePdfService {
     String copyLabel = 'ORIGINAL',
   }) {
     return [
-      // ══ ENCABEZADO ══════════════════════════════════════════════════
-          pw.Container(
-            decoration: const pw.BoxDecoration(
-              color: _primary,
-              borderRadius: pw.BorderRadius.all(pw.Radius.circular(8)),
-            ),
-            padding: const pw.EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-            child: pw.Row(
-              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-              children: [
-                // Datos de la empresa
-                pw.Column(
-                  crossAxisAlignment: pw.CrossAxisAlignment.start,
-                  children: [
-                    pw.Text(businessName,
-                        style: pw.TextStyle(color: PdfColors.white, fontSize: isCompact ? 16 : 20, fontWeight: pw.FontWeight.bold)),
-                    if (businessAddress != null && businessAddress.isNotEmpty)
-                      pw.Text(businessAddress, style: pw.TextStyle(color: PdfColors.grey300, fontSize: isCompact ? 8 : 10)),
-                    if (businessPhone != null && businessPhone.isNotEmpty)
-                      pw.Text('Tel: $businessPhone', style: pw.TextStyle(color: PdfColors.grey300, fontSize: isCompact ? 8 : 10)),
-                    if (businessTaxId != null && businessTaxId.isNotEmpty)
-                      pw.Text('CUIT: $businessTaxId', style: pw.TextStyle(color: PdfColors.grey300, fontSize: isCompact ? 8 : 10)),
-                  ],
+      // ══ ENCABEZADO (Diseño limpio - menos tinta) ═══════════════════════
+      pw.Row(
+        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Text(
+                businessName,
+                style: pw.TextStyle(
+                  fontSize: isCompact ? 16 : 20,
+                  fontWeight: pw.FontWeight.bold,
+                  color: PdfColors.black,
                 ),
-                // REMITO + código de barras
-                pw.Column(
-                  crossAxisAlignment: pw.CrossAxisAlignment.end,
-                  children: [
-                    pw.Text(documentTitle,
-                        style: pw.TextStyle(
-                          color: PdfColors.white,
-                          fontSize: isCompact ? 14 : (isDispatch ? 24 : 22),
-                          fontWeight: pw.FontWeight.bold,
-                          letterSpacing: 1.2,
-                        )),
-                    pw.Text('N° $noteId', style: pw.TextStyle(color: PdfColors.grey300, fontSize: isCompact ? 11 : 13)),
-                    pw.SizedBox(height: 6),
-                    pw.Container(
-                      color: PdfColors.white,
-                      padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      height: isCompact ? 25 : 35,
-                      width: isCompact ? 100 : 130,
-                      child: pw.BarcodeWidget(
-                        barcode: pw.Barcode.code128(),
-                        data: documentCode,
-                        drawText: false,
-                        color: PdfColors.black,
-                      ),
-                    ),
-                    pw.SizedBox(height: 4),
-                    pw.Text(documentCode, style: pw.TextStyle(color: PdfColors.grey300, fontSize: isCompact ? 8 : 9)),
-                    pw.SizedBox(height: 4),
-                    pw.Text('Fecha: ${_dateFmt.format(createdDate)}',
-                        style: pw.TextStyle(color: PdfColors.grey300, fontSize: isCompact ? 8 : 10)),
-                  ],
+              ),
+              pw.Text(
+                documentTitle,
+                style: pw.TextStyle(
+                  fontSize: isCompact ? 11 : 14,
+                  fontWeight: pw.FontWeight.bold,
+                  color: _primary,
                 ),
-              ],
-            ),
+              ),
+              if (businessAddress != null && businessAddress.isNotEmpty)
+                pw.Text(businessAddress,
+                    style: pw.TextStyle(fontSize: isCompact ? 8 : 10, color: PdfColors.grey700)),
+              if (businessPhone != null && businessPhone.isNotEmpty)
+                pw.Text('Tel: $businessPhone',
+                    style: pw.TextStyle(fontSize: isCompact ? 8 : 10, color: PdfColors.grey700)),
+              if (businessTaxId != null && businessTaxId.isNotEmpty)
+                pw.Text('CUIT: $businessTaxId',
+                    style: pw.TextStyle(fontSize: isCompact ? 8 : 10, color: PdfColors.grey700)),
+            ],
           ),
-          pw.SizedBox(height: isCompact ? 8 : 16),
+          pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.end,
+            children: [
+              pw.Text(
+                copyLabel,
+                style: pw.TextStyle(fontSize: 8, color: PdfColors.grey500, fontWeight: pw.FontWeight.bold),
+              ),
+              pw.SizedBox(height: 2),
+              pw.Text('Remito N°: $noteId',
+                  style: pw.TextStyle(fontSize: isCompact ? 10 : 12, fontWeight: pw.FontWeight.bold)),
+              pw.Text('Fecha: ${_dateFmt.format(createdDate)}',
+                  style: pw.TextStyle(fontSize: isCompact ? 9 : 10)),
+              pw.Text('Cliente: ${(customerName ?? 'Consumidor Final').toUpperCase()}',
+                  style: pw.TextStyle(fontSize: isCompact ? 9 : 10, fontWeight: pw.FontWeight.bold)),
+            ],
+          ),
+        ],
+      ),
+      pw.SizedBox(height: isCompact ? 5 : 10),
+      pw.Divider(thickness: 2, color: PdfColors.black),
+      pw.SizedBox(height: isCompact ? 6 : 12),
 
           // ══ ESTADO + DATOS CLIENTE ═══════════════════════════════════════
           pw.Container(
