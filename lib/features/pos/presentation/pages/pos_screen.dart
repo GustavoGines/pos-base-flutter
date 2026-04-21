@@ -1431,11 +1431,6 @@ class _PosScreenState extends State<PosScreen> {
         extraAction: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            IconButton(
-              icon: const Icon(Icons.print, color: Colors.blueGrey),
-              tooltip: 'Ajustes de Impresión Local',
-              onPressed: () => _showTerminalSettings(context),
-            ),
             Consumer<PosProvider>(
               builder: (ctx, pos, _) {
                 final count = pos.pendingCount;
@@ -2451,127 +2446,6 @@ class _PosScreenState extends State<PosScreen> {
     } catch (e) {
       debugPrint('Fallback PDF Error: $e');
     }
-  }
-
-  void _showTerminalSettings(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (ctx) {
-        return AlertDialog(
-          title: const Row(
-            children: [
-              Icon(Icons.print, color: Colors.blue),
-              SizedBox(width: 8),
-              Text('Ajustes de esta Caja'),
-            ],
-          ),
-          content: Consumer<LocalTerminalProvider>(
-            builder: (context, provider, child) {
-              return SizedBox(
-                width: 400,
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('Formato de Impresión:', style: TextStyle(fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 8),
-                      DropdownButtonFormField<String>(
-                        initialValue: provider.printerFormat,
-                        decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
-                        items: const [
-                          DropdownMenuItem(value: 'thermal_80', child: Text('Térmica 80mm')),
-                          DropdownMenuItem(value: 'thermal_58', child: Text('Térmica 58mm')),
-                          DropdownMenuItem(value: 'a4', child: Text('Hoja Completa (Impresora normal)')),
-                        ],
-                        onChanged: (value) {
-                          if (value != null) provider.setPrinterFormat(value);
-                        },
-                      ),
-                      if (provider.printerFormat == 'a4') ...[
-                        const SizedBox(height: 16),
-                        const Text('Tamaño de Papel (Solo A4):', style: TextStyle(fontWeight: FontWeight.bold)),
-                        const SizedBox(height: 8),
-                        DropdownButtonFormField<String>(
-                          initialValue: provider.pdfPaperSize,
-                          decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
-                          items: const [
-                            DropdownMenuItem(value: 'a4', child: Text('A4 (Predeterminado)')),
-                            DropdownMenuItem(value: 'letter', child: Text('Carta (Letter)')),
-                          ],
-                          onChanged: (value) {
-                            if (value != null) provider.setPdfPaperSize(value);
-                          },
-                        ),
-                      ],
-                      const SizedBox(height: 16),
-                      const Text('Tipo de Conexión:', style: TextStyle(fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 8),
-                      DropdownButtonFormField<String>(
-                        initialValue: provider.printerConnection,
-                        decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
-                        items: const [
-                          DropdownMenuItem(value: 'none', child: Text('Desactivada')),
-                          DropdownMenuItem(value: 'usb', child: Text('USB / Serial')),
-                          DropdownMenuItem(value: 'network', child: Text('Red LAN / WiFi')),
-                        ],
-                        onChanged: (value) {
-                          if (value != null) provider.setPrinterConnection(value);
-                        },
-                      ),
-                      const SizedBox(height: 16),
-                      const Text('Nombre de Impresora o IP:', style: TextStyle(fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 8),
-                      TextFormField(
-                        initialValue: provider.printerNameOrIp,
-                        decoration: const InputDecoration(
-                          border: OutlineInputBorder(),
-                          isDense: true,
-                          hintText: 'Ej: POS-58 o 192.168.1.100',
-                        ),
-                        onChanged: (value) => provider.setPrinterNameOrIp(value),
-                      ),
-                      const SizedBox(height: 16),
-                      const Text('Puerto COM Balanza:', style: TextStyle(fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 8),
-                      TextFormField(
-                        initialValue: provider.scaleComPort,
-                        decoration: const InputDecoration(
-                          border: OutlineInputBorder(),
-                          isDense: true,
-                          hintText: 'Ej: COM3',
-                        ),
-                        onChanged: (value) => provider.setScaleComPort(value),
-                      ),
-                      const SizedBox(height: 24),
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(8)),
-                        child: const Row(
-                          children: [
-                            Icon(Icons.info_outline, color: Colors.blue),
-                            SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                'Estos ajustes se guardan automáticamente y aplican solo a esta caja física.',
-                                style: TextStyle(fontSize: 12, color: Colors.blue),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            },
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cerrar')),
-          ],
-        );
-      },
-    );
   }
 }
 

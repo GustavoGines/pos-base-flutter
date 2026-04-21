@@ -4,6 +4,7 @@ import 'package:frontend_desktop/core/presentation/widgets/shared_user_menu.dart
 import 'package:provider/provider.dart';
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
 import 'package:frontend_desktop/features/reports/presentation/widgets/inventory_alerts_widget.dart';
+import 'package:frontend_desktop/core/providers/local_terminal_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
@@ -214,14 +215,30 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                 ),
               ),
 
-              // ── RIGHT: Alertas + Usuario ───────────────────────────────────
+              // ── RIGHT: Alertas + Impresora + Usuario ───────────────────────────────────
               Padding(
                 padding: const EdgeInsets.only(right: 12),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     const InventoryAlertsWidget(),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 2),
+                    // ─ Ícono de Ajustes de Impresión (siempre visible en todas las pantallas) ─
+                    Consumer<LocalTerminalProvider>(
+                      builder: (ctx, terminal, _) {
+                        final isA4 = terminal.printerFormat == 'a4';
+                        return Tooltip(
+                          message: 'Ajustes de Impresión\n'
+                              'Formato: ${terminal.printerFormat}'
+                              '${isA4 ? ' • Papel: ${terminal.pdfPaperSize.toUpperCase()}' : ''}',
+                          child: IconButton(
+                            icon: const Icon(Icons.print_rounded, size: 22),
+                            color: Colors.blueGrey,
+                            onPressed: () => _showPrinterSettingsDialog(ctx),
+                          ),
+                        );
+                      },
+                    ),
                     if (extraAction != null) ...[
                       extraAction!,
                       const SizedBox(width: 8),
@@ -584,6 +601,105 @@ void _showUpgradeDialog(
           ],
         ),
       ),
+    ),
+  );
+}
+
+// ── Dialog de Ajustes de Impresión (Accesible desde toda la app) ──────
+void _showPrinterSettingsDialog(BuildContext context) {
+  showDialog(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Row(
+        children: [
+          Icon(Icons.print_rounded, color: Colors.blue),
+          SizedBox(width: 8),
+          Text('Ajustes de Impresión'),
+        ],
+      ),
+      content: Consumer<LocalTerminalProvider>(
+        builder: (context, p, _) => SizedBox(
+          width: 400,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Formato de Impresión:', style: TextStyle(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<String>(
+                  initialValue: p.printerFormat,
+                  decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
+                  items: const [
+                    DropdownMenuItem(value: 'thermal_80', child: Text('Térmica 80mm')),
+                    DropdownMenuItem(value: 'thermal_58', child: Text('Térmica 58mm')),
+                    DropdownMenuItem(value: 'a4', child: Text('Hoja Completa (Impresora normal)')),
+                  ],
+                  onChanged: (v) { if (v != null) p.setPrinterFormat(v); },
+                ),
+                if (p.printerFormat == 'a4') ...[
+                  const SizedBox(height: 16),
+                  const Text('Tamaño de Papel:', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<String>(
+                    initialValue: p.pdfPaperSize,
+                    decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
+                    items: const [
+                      DropdownMenuItem(value: 'a4', child: Text('A4 (Predeterminado)')),
+                      DropdownMenuItem(value: 'letter', child: Text('Carta (Letter)')),
+                    ],
+                    onChanged: (v) { if (v != null) p.setPdfPaperSize(v); },
+                  ),
+                ],
+                const SizedBox(height: 16),
+                const Text('Tipo de Conexión:', style: TextStyle(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<String>(
+                  initialValue: p.printerConnection,
+                  decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
+                  items: const [
+                    DropdownMenuItem(value: 'none', child: Text('Desactivada')),
+                    DropdownMenuItem(value: 'usb', child: Text('USB / Serial')),
+                    DropdownMenuItem(value: 'network', child: Text('Red LAN / WiFi')),
+                  ],
+                  onChanged: (v) { if (v != null) p.setPrinterConnection(v); },
+                ),
+                const SizedBox(height: 16),
+                const Text('Nombre de Impresora o IP:', style: TextStyle(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 8),
+                TextFormField(
+                  initialValue: p.printerNameOrIp,
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(), isDense: true,
+                    hintText: 'Ej: POS-58 o 192.168.1.100',
+                  ),
+                  onChanged: (v) => p.setPrinterNameOrIp(v),
+                ),
+                const SizedBox(height: 24),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(8)),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.info_outline, color: Colors.blue),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Estos ajustes se guardan automáticamente y aplican solo a esta terminal física.',
+                          style: TextStyle(fontSize: 12, color: Colors.blue),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cerrar')),
+      ],
     ),
   );
 }

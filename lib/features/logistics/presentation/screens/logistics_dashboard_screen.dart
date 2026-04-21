@@ -1,73 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
-import 'package:frontend_desktop/core/providers/local_terminal_provider.dart';
 import '../providers/logistics_provider.dart';
 import '../views/delivery_notes_tab_view.dart';
-
-// Helper para mostrar el dialog de ajustes de terminal
-void _showTerminalSettingsDialog(BuildContext context) {
-  showDialog(
-    context: context,
-    builder: (ctx) => AlertDialog(
-      title: const Row(children: [
-        Icon(Icons.print, color: Colors.blue),
-        SizedBox(width: 8),
-        Text('Ajustes de Impresión'),
-      ]),
-      content: Consumer<LocalTerminalProvider>(
-        builder: (context, p, _) => SizedBox(
-          width: 380,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('Formato:', style: TextStyle(fontWeight: FontWeight.bold)),
-                const SizedBox(height: 8),
-                DropdownButtonFormField<String>(
-                  initialValue: p.printerFormat,
-                  decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
-                  items: const [
-                    DropdownMenuItem(value: 'thermal_80', child: Text('Térmica 80mm')),
-                    DropdownMenuItem(value: 'thermal_58', child: Text('Térmica 58mm')),
-                    DropdownMenuItem(value: 'a4', child: Text('Hoja Completa (A4/Carta)')),
-                  ],
-                  onChanged: (v) { if (v != null) p.setPrinterFormat(v); },
-                ),
-                if (p.printerFormat == 'a4') ...[
-                  const SizedBox(height: 12),
-                  const Text('Tamaño de papel:', style: TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 8),
-                  DropdownButtonFormField<String>(
-                    initialValue: p.pdfPaperSize,
-                    decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
-                    items: const [
-                      DropdownMenuItem(value: 'a4', child: Text('A4 (Predeterminado)')),
-                      DropdownMenuItem(value: 'letter', child: Text('Carta (Letter)')),
-                    ],
-                    onChanged: (v) { if (v != null) p.setPdfPaperSize(v); },
-                  ),
-                ],
-                const SizedBox(height: 16),
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(8)),
-                  child: const Row(children: [
-                    Icon(Icons.info_outline, color: Colors.blue, size: 16),
-                    SizedBox(width: 8),
-                    Expanded(child: Text('Se aplica solo a esta terminal.', style: TextStyle(fontSize: 12, color: Colors.blue))),
-                  ]),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-      actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cerrar'))],
-    ),
-  );
-}
 
 class LogisticsDashboardScreen extends StatefulWidget {
   const LogisticsDashboardScreen({Key? key}) : super(key: key);
@@ -136,7 +71,7 @@ class _LogisticsDashboardScreenState extends State<LogisticsDashboardScreen> {
                         controller: _searchController,
                         onChanged: (value) {
                           context.read<LogisticsProvider>().onSearchChanged(value);
-                          setState(() {}); 
+                          setState(() {});
                         },
                         decoration: InputDecoration(
                           hintText: 'Buscar remito o cliente...',
@@ -159,17 +94,10 @@ class _LogisticsDashboardScreenState extends State<LogisticsDashboardScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  // ── Ícono de Ajustes de Impresión ──
-                  IconButton(
-                    icon: const Icon(Icons.print, color: Colors.blueGrey),
-                    tooltip: 'Ajustes de Impresión de esta Terminal',
-                    onPressed: () => _showTerminalSettingsDialog(context),
-                  ),
                 ],
               ),
             ),
-            
+
             const Divider(height: 1, thickness: 1),
 
             // ── TabBarView ──
