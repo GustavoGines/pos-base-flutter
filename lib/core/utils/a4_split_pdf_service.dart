@@ -64,7 +64,7 @@ class A4SplitPdfService {
     );
 
     pw.Widget buildWatermarkTop(pw.Context ctx) => pw.Positioned.fill(
-      child: _buildWatermark('COMPROBANTE NO FISCAL', isSmallOrder),
+      child: _buildWatermark('COMPROBANTE\nNO FISCAL', isSmallOrder),
     );
 
     pw.Widget buildWatermarkBot(pw.Context ctx) => pw.Positioned.fill(
@@ -102,7 +102,7 @@ class A4SplitPdfService {
                           _buildFooter(businessName, isCompact: true),
                         ],
                       ),
-                      pw.Positioned.fill(child: _buildWatermark('COMPROBANTE NO FISCAL', true)),
+                      pw.Positioned.fill(child: _buildWatermark('COMPROBANTE\nNO FISCAL', true)),
                     ],
                   ),
                 ),
@@ -245,7 +245,7 @@ class A4SplitPdfService {
                         child: pw.Transform.rotateBox(
                           angle: 0.6,
                           child: pw.Text(
-                            'COMPROBANTE NO FISCAL',
+                            'COMPROBANTE\nNO FISCAL',
                             textAlign: pw.TextAlign.center,
                             style: pw.TextStyle(
                               fontSize: 45,

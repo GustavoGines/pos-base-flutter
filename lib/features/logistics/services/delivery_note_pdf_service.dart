@@ -242,8 +242,8 @@ class DeliveryNotePdfService {
           pageFormat: format,
           margin: const pw.EdgeInsets.all(24),
           build: (pw.Context ctx) {
-            final copyLabelTop = isDispatch ? 'COPIA CLIENTE' : 'ORIGINAL';
-            final copyLabelBot = isDispatch ? 'COPIA DESPACHANTE' : 'DUPLICADO';
+            final copyLabelTop = isDispatch ? 'COPIA\nCLIENTE' : 'ORIGINAL';
+            final copyLabelBot = isDispatch ? 'COPIA\nDESPACHANTE' : 'DUPLICADO';
             return pw.Column(
               children: [
                 // MITAD SUPERIOR
@@ -310,8 +310,8 @@ class DeliveryNotePdfService {
       );
     } else {
       // ── RUTA B: PEDIDO MAYORISTA (PÁGINAS COMPLETAS) ──
-      final copyLabelFull1 = isDispatch ? 'COPIA CLIENTE' : 'ORIGINAL';
-      final copyLabelFull2 = isDispatch ? 'COPIA DESPACHANTE' : 'DUPLICADO';
+      final copyLabelFull1 = isDispatch ? 'COPIA\nCLIENTE' : 'ORIGINAL';
+      final copyLabelFull2 = isDispatch ? 'COPIA\nDESPACHANTE' : 'DUPLICADO';
       // Página 1
       doc.addPage(
         pw.MultiPage(
