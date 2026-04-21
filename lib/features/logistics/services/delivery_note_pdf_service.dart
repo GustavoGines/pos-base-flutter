@@ -260,8 +260,6 @@ class DeliveryNotePdfService {
                             isDispatch: isDispatch, items: items, deliveredNow: deliveredNow, totalUnits: totalUnits, isCompact: true,
                             copyLabel: copyLabelTop,
                           ),
-                          pw.Spacer(),
-                          _buildFooter(ctx, businessName, isCompact: true),
                         ],
                       ),
                       _buildWatermark(copyLabelTop, true),
@@ -295,8 +293,6 @@ class DeliveryNotePdfService {
                             isDispatch: isDispatch, items: items, deliveredNow: deliveredNow, totalUnits: totalUnits, isCompact: true,
                             copyLabel: copyLabelBot,
                           ),
-                          pw.Spacer(),
-                          _buildFooter(ctx, businessName, isCompact: true),
                         ],
                       ),
                       _buildWatermark(copyLabelBot, true),
@@ -665,14 +661,31 @@ class DeliveryNotePdfService {
             ],
           ),
 
-          pw.SizedBox(height: isCompact ? 8 : 16),
-          // ══ PIE INFORMATIVO ════════════════════════════════════════════════
-          pw.Center(
-            child: pw.Text(
-              'DOCUMENTO NO VALIDO COMO FACTURA - SOLO SIRVE COMO COMPROBANTE DE ENTREGA DE MERCADERIA',
-              style: pw.TextStyle(fontSize: isCompact ? 7 : 8, color: _textGrey, fontWeight: pw.FontWeight.bold),
+          pw.SizedBox(height: isCompact ? 6 : 16),
+          // ══ PIE / FOOTER ══════════════════════════════════════
+          if (isCompact) ...[
+            pw.Divider(color: PdfColors.grey300),
+            pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              children: [
+                pw.Text(
+                  'Remito generado el ${_dateFmt.format(DateTime.now())} - $businessName',
+                  style: const pw.TextStyle(fontSize: 6, color: PdfColors.grey),
+                ),
+                pw.Text(
+                  'DOCUMENTO NO VALIDO COMO FACTURA',
+                  style: const pw.TextStyle(fontSize: 6, color: PdfColors.grey),
+                ),
+              ],
             ),
-          ),
+          ] else ...[
+            pw.Center(
+              child: pw.Text(
+                'DOCUMENTO NO VALIDO COMO FACTURA - SOLO SIRVE COMO COMPROBANTE DE ENTREGA DE MERCADERIA',
+                style: pw.TextStyle(fontSize: 8, color: _textGrey, fontWeight: pw.FontWeight.bold),
+              ),
+            ),
+          ],
         ];
   }
 

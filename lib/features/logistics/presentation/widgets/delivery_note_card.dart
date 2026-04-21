@@ -400,6 +400,10 @@ class _ReprintSheetState extends State<_ReprintSheet> {
             ? 'Remito de Despacho Parcial'
             : 'Remito de Despacho';
 
+    // Etiqueta dinámica según el tamaño de papel configurado en esta terminal
+    final terminal = context.watch<LocalTerminalProvider>();
+    final paperLabel = terminal.pdfPaperSize == 'letter' ? 'Carta' : 'A4';
+
     final thermalSubtitle = noteStatus == 'pending'
         ? 'Orden para preparar mercadería en bodega/depósito'
         : noteStatus == 'partial'
@@ -457,7 +461,7 @@ class _ReprintSheetState extends State<_ReprintSheet> {
 
           const Divider(),
 
-          // ── Opción 2: Vista previa A4 ──
+          // ── Opción 2: Vista previa PDF (A4 o Carta) ──
           ListTile(
             enabled: !_isPrinting,
             leading: Container(
@@ -465,17 +469,17 @@ class _ReprintSheetState extends State<_ReprintSheet> {
               decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(8)),
               child: Icon(Icons.preview, color: Colors.blue.shade700, size: 28),
             ),
-            title: Text('Ver $docLabel A4 (PDF)', style: const TextStyle(fontWeight: FontWeight.bold)),
+            title: Text('Ver $docLabel $paperLabel (PDF)', style: const TextStyle(fontWeight: FontWeight.bold)),
             subtitle: Text(noteStatus == 'pending'
-                ? 'Abre la Orden de Retiro en A4 para entregar al cliente'
-                : 'Abre el doble Remito A4 — ORIGINAL (cliente) + DUPLICADO (despachante con firma)'),
+                ? 'Abre la Orden de Retiro en $paperLabel para entregar al cliente'
+                : 'Abre el doble Remito $paperLabel — ORIGINAL (cliente) + DUPLICADO (despachante con firma)'),
             trailing: _isPrinting ? const CircularProgressIndicator() : const Icon(Icons.chevron_right),
             onTap: () => _previewA4(context),
           ),
 
           const Divider(),
 
-          // ── Opción 3: Impresión directa A4 ──
+          // ── Opción 3: Impresión directa (A4 o Carta) ──
           ListTile(
             enabled: !_isPrinting,
             leading: Container(
@@ -483,8 +487,8 @@ class _ReprintSheetState extends State<_ReprintSheet> {
               decoration: BoxDecoration(color: Colors.indigo.shade50, borderRadius: BorderRadius.circular(8)),
               child: Icon(Icons.picture_as_pdf, color: Colors.indigo.shade700, size: 28),
             ),
-            title: const Text('Imprimir A4 Directo', style: TextStyle(fontWeight: FontWeight.bold)),
-            subtitle: const Text('Envía el doble remito A4 directamente a la impresora láser'),
+            title: Text('Imprimir $paperLabel Directo', style: const TextStyle(fontWeight: FontWeight.bold)),
+            subtitle: Text('Envía el doble remito $paperLabel directamente a la impresora láser'),
             trailing: _isPrinting ? const CircularProgressIndicator() : const Icon(Icons.chevron_right),
             onTap: () => _printA4Direct(context),
           ),
