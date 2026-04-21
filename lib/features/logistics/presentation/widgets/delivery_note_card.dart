@@ -280,6 +280,7 @@ class _ReprintSheetState extends State<_ReprintSheet> {
         businessTaxId: settings?.taxId,
         vendorName: vendorName,
         dispatcherName: dispatcherName,
+        paperSize: ctx.read<LocalTerminalProvider>().pdfPaperSize,
       );
 
       if (ctx.mounted) Navigator.pop(ctx);
@@ -309,6 +310,7 @@ class _ReprintSheetState extends State<_ReprintSheet> {
         businessTaxId: settings?.taxId,
         vendorName: vendorName,
         dispatcherName: dispatcherName,
+        paperSize: ctx.read<LocalTerminalProvider>().pdfPaperSize,
       );
 
       if (ctx.mounted) {

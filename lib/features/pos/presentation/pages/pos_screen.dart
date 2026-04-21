@@ -775,6 +775,7 @@ class _PosScreenState extends State<PosScreen> {
                   businessName: businessName,
                   businessAddress: settingsProvider.settings?.address,
                   vendorName: vendorName,
+                  paperSize: localTerminalProvider.pdfPaperSize,
                 );
 
                 if (mounted) {
@@ -2481,12 +2482,28 @@ class _PosScreenState extends State<PosScreen> {
                         items: const [
                           DropdownMenuItem(value: 'thermal_80', child: Text('Térmica 80mm')),
                           DropdownMenuItem(value: 'thermal_58', child: Text('Térmica 58mm')),
-                          DropdownMenuItem(value: 'a4', child: Text('Hoja A4 (Inteligente)')),
+                          DropdownMenuItem(value: 'a4', child: Text('Hoja Completa (Impresora normal)')),
                         ],
                         onChanged: (value) {
                           if (value != null) provider.setPrinterFormat(value);
                         },
                       ),
+                      if (provider.printerFormat == 'a4') ...[
+                        const SizedBox(height: 16),
+                        const Text('Tamaño de Papel (Solo A4):', style: TextStyle(fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 8),
+                        DropdownButtonFormField<String>(
+                          initialValue: provider.pdfPaperSize,
+                          decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
+                          items: const [
+                            DropdownMenuItem(value: 'a4', child: Text('A4 (Predeterminado)')),
+                            DropdownMenuItem(value: 'letter', child: Text('Carta (Letter)')),
+                          ],
+                          onChanged: (value) {
+                            if (value != null) provider.setPdfPaperSize(value);
+                          },
+                        ),
+                      ],
                       const SizedBox(height: 16),
                       const Text('Tipo de Conexión:', style: TextStyle(fontWeight: FontWeight.bold)),
                       const SizedBox(height: 8),

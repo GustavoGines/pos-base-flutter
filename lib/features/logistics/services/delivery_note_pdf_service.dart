@@ -33,6 +33,7 @@ class DeliveryNotePdfService {
     Map<int, double> deliveredNow = const {},
     String? vendorName,
     String? dispatcherName,
+    String paperSize = 'a4',
   }) async {
     await showGeneralDialog(
       context: context,
@@ -93,6 +94,7 @@ class DeliveryNotePdfService {
                         deliveredNow: deliveredNow,
                         vendorName: vendorName,
                         dispatcherName: dispatcherName,
+                        paperSize: paperSize,
                       ),
                     ),
                   ),
@@ -115,6 +117,7 @@ class DeliveryNotePdfService {
     Map<int, double> deliveredNow = const {},
     String? vendorName,
     String? dispatcherName,
+    String paperSize = 'a4',
   }) async {
     final bytes = await _buildPdf(
       note: note,
@@ -125,6 +128,7 @@ class DeliveryNotePdfService {
       deliveredNow: deliveredNow,
       vendorName: vendorName,
       dispatcherName: dispatcherName,
+      paperSize: paperSize,
     );
     await Printing.layoutPdf(
       onLayout: (_) async => bytes,
@@ -142,6 +146,7 @@ class DeliveryNotePdfService {
     Map<int, double> deliveredNow = const {},
     String? vendorName,
     String? dispatcherName,
+    String paperSize = 'a4',
   }) async {
     final bytes = await _buildPdf(
       note: note,
@@ -152,6 +157,7 @@ class DeliveryNotePdfService {
       deliveredNow: deliveredNow,
       vendorName: vendorName,
       dispatcherName: dispatcherName,
+      paperSize: paperSize,
     );
     final docsDir = await getApplicationDocumentsDirectory();
     final remitosDir = Directory('${docsDir.path}${Platform.pathSeparator}Sistema_POS${Platform.pathSeparator}Remitos');
@@ -172,6 +178,7 @@ class DeliveryNotePdfService {
     Map<int, double> deliveredNow = const {},
     String? vendorName,
     String? dispatcherName,
+    String paperSize = 'a4',
   }) async {
     pw.ThemeData? theme;
     try {
@@ -226,12 +233,13 @@ class DeliveryNotePdfService {
     final documentCode = isDispatch ? 'REM$noteId' : 'ORD$noteId';
 
     final bool isSmallOrder = items.length <= 5;
+    final format = paperSize.toLowerCase() == 'letter' ? PdfPageFormat.letter : PdfPageFormat.a4;
 
     if (isSmallOrder) {
       // ── RUTA A: AHORRO DE PAPEL (A4 SPLIT) ──
       doc.addPage(
         pw.Page(
-          pageFormat: PdfPageFormat.a4,
+          pageFormat: format,
           margin: const pw.EdgeInsets.all(24),
           build: (pw.Context ctx) {
             final copyLabelTop = isDispatch ? 'COPIA CLIENTE' : 'ORIGINAL';
@@ -308,7 +316,7 @@ class DeliveryNotePdfService {
       doc.addPage(
         pw.MultiPage(
           pageTheme: pw.PageTheme(
-            pageFormat: PdfPageFormat.a4,
+            pageFormat: format,
             margin: const pw.EdgeInsets.fromLTRB(32, 32, 32, 48),
             buildForeground: (ctx) => _buildWatermark(copyLabelFull1, false),
           ),
@@ -326,7 +334,7 @@ class DeliveryNotePdfService {
       doc.addPage(
         pw.MultiPage(
           pageTheme: pw.PageTheme(
-            pageFormat: PdfPageFormat.a4,
+            pageFormat: format,
             margin: const pw.EdgeInsets.fromLTRB(32, 32, 32, 48),
             buildForeground: (ctx) => _buildWatermark(copyLabelFull2, false),
           ),

@@ -22,6 +22,7 @@ class A4SplitPdfService {
     required String businessName,
     String? businessAddress,
     String? vendorName,
+    String paperSize = 'a4',
   }) async {
     pw.ThemeData? theme;
     try {
@@ -70,12 +71,14 @@ class A4SplitPdfService {
       child: _buildWatermark('ORIGINAL', isSmallOrder),
     );
 
+    final format = paperSize.toLowerCase() == 'letter' ? PdfPageFormat.letter : PdfPageFormat.a4;
+
     if (isSmallOrder) {
       // ── RUTA A: VENTA CHICA (A4 SPLIT) ──
       pdf.addPage(
         pw.Page(
           pageTheme: pw.PageTheme(
-            pageFormat: PdfPageFormat.a4,
+            pageFormat: format,
             margin: const pw.EdgeInsets.all(30),
           ),
           build: (pw.Context context) {
@@ -159,7 +162,7 @@ class A4SplitPdfService {
       pdf.addPage(
         pw.MultiPage(
           pageTheme: pw.PageTheme(
-            pageFormat: PdfPageFormat.a4,
+            pageFormat: format,
             margin: const pw.EdgeInsets.all(30),
             buildForeground: buildWatermarkTop,
           ),
@@ -172,7 +175,7 @@ class A4SplitPdfService {
       pdf.addPage(
         pw.MultiPage(
           pageTheme: pw.PageTheme(
-            pageFormat: PdfPageFormat.a4,
+            pageFormat: format,
             margin: const pw.EdgeInsets.all(30),
             buildForeground: buildWatermarkBot,
           ),

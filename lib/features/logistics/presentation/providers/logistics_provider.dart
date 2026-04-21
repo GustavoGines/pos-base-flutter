@@ -81,22 +81,22 @@ class LogisticsProvider extends ChangeNotifier {
       if (state.currentPage == 1) {
         state.notes = data;
       } else {
-        // Para no romper la vista si bajó el scroll, una opción simple es actualizar 
-        // los primeros N elementos que coincidan con la página 1.
-        // O más fácil: solo forzamos un refresh completo (vuelta a la pág 1) si hubo cambios, 
-        // pero lo más seguro sin interrumpir es reemplazar solo el inicio de la lista.
-        final mapIds = data.map((e) => e['id']).toSet();
-        for (int i = 0; i < state.notes.length; i++) {
-          final existing = state.notes[i];
-          final match = data.firstWhere((n) => n['id'] == existing['id'], orElse: () => {});
-          if (match.isNotEmpty) {
-            state.notes[i] = match;
-          }
-        }
-        // Agregamos elementos nuevos que no estén en la lista
-        final existingIds = state.notes.map((e) => e['id']).toSet();
-        final nuevos = data.where((n) => !existingIds.contains(n['id'])).toList();
-        state.notes.insertAll(0, nuevos);
+        // Para no romper la vista si bajó el scroll, reemplazamos exactamente
+        // el bloque que corresponde a la página 1 (los primeros N elementos)
+        // y conservamos el resto de la lista filtrando duplicados.
+        final perPage = (result['data'] is Map && result['data']['per_page'] != null)
+            ? (result['data']['per_page'] as int)
+            : 15; // default laravel
+
+        final newIds = data.map((e) => e['id']).toSet();
+
+        // Mantenemos los elementos antiguos desde la página 2 en adelante,
+        // excluyendo aquellos que hayan subido a la página 1 (ya están en 'data').
+        final oldRemaining = state.notes.length > perPage
+            ? state.notes.skip(perPage).where((e) => !newIds.contains(e['id'])).toList()
+            : <Map<String, dynamic>>[];
+
+        state.notes = [...data, ...oldRemaining];
       }
 
       notifyListeners();

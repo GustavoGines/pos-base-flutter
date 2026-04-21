@@ -315,6 +315,7 @@ class _PostDispatchPrintSheetState extends State<_PostDispatchPrintSheet> {
         deliveredNow: widget.deliveredNow,
         vendorName: vendorName,
         dispatcherName: dispatcherName,
+        paperSize: context.read<LocalTerminalProvider>().pdfPaperSize,
       );
 
       if (mounted) Navigator.pop(context);
