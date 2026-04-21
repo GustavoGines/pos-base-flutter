@@ -97,9 +97,7 @@ class A4SplitPdfService {
                             alignment: pw.Alignment.topRight,
                             child: pw.Text('ORIGINAL', style: pw.TextStyle(fontSize: 8, color: PdfColors.grey500, fontWeight: pw.FontWeight.bold)),
                           ),
-                          ..._buildSaleReceiptList(sale, businessName, businessAddress, phone, cuit, vendorName),
-                          pw.Spacer(),
-                          _buildFooter(businessName, isCompact: true, isSale: true),
+                          ..._buildSaleReceiptList(sale, businessName, businessAddress, phone, cuit, vendorName, isCompact: true),
                         ],
                       ),
                       pw.Positioned.fill(child: _buildWatermark('COMPROBANTE\nNO FISCAL', true)),
@@ -142,8 +140,6 @@ class A4SplitPdfService {
                             child: pw.Text('ORIGINAL', style: pw.TextStyle(fontSize: 8, color: PdfColors.grey500, fontWeight: pw.FontWeight.bold)),
                           ),
                           ..._buildDeliveryNoteList(deliveryNote, sale, businessName, businessAddress, vendorName, isCompact: true, isDispatch: isDispatch),
-                          pw.Spacer(),
-                          _buildFooter(businessName, isCompact: true, isSale: false),
                         ],
                       ),
                       pw.Positioned.fill(child: _buildWatermark('ORIGINAL', true)),
@@ -272,7 +268,7 @@ class A4SplitPdfService {
   // ---------------------------------------------------------------------------
   // SECCIÓN 1: VENTA (CON PRECIOS Y DISEÑO DEL BACKEND)
   // ---------------------------------------------------------------------------
-  static List<pw.Widget> _buildSaleReceiptList(Map<String, dynamic> sale, String businessName, String? businessAddress, String phone, String cuit, String? vendorName) {
+  static List<pw.Widget> _buildSaleReceiptList(Map<String, dynamic> sale, String businessName, String? businessAddress, String phone, String cuit, String? vendorName, {bool isCompact = false}) {
     final items = sale['items'] as List<dynamic>? ?? [];
     final totalStr = sale['total'] ?? sale['total_amount']?.toString() ?? '0';
     final total = double.tryParse(totalStr.toString()) ?? 0.0;
@@ -540,7 +536,11 @@ class A4SplitPdfService {
           ]
         ),
         
-        pw.SizedBox(height: 15),
+        pw.SizedBox(height: isCompact ? 8 : 15),
+        // PIE INTEGRADO (solo en modo compacto/split)
+        if (isCompact) ...[
+          _buildFooter(businessName, isCompact: true, isSale: true),
+        ],
     ];
   }
 
@@ -742,7 +742,11 @@ class A4SplitPdfService {
           ),
         ],
       ),
-      pw.SizedBox(height: 15),
+      pw.SizedBox(height: isCompact ? 8 : 15),
+      // PIE INTEGRADO (solo en modo compacto/split)
+      if (isCompact) ...[
+        _buildFooter(businessName, isCompact: true, isSale: false),
+      ],
     ];
   }
 
