@@ -396,140 +396,147 @@ class _SettingsScreenState extends State<SettingsScreen> {
           final hasMultiPrices = provider.settings?.features.multiplePrices == true;
           final isLocked = !hasMultiPrices;
 
-          return Container(
-            decoration: BoxDecoration(
-              color: isLocked
-                  ? Colors.grey.shade50
-                  : _advancedPriceTiersEnabled
-                      ? const Color(0xFF1A237E).withOpacity(0.06)
-                      : Colors.grey.shade50,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: isLocked
-                    ? Colors.grey.shade200
-                    : _advancedPriceTiersEnabled
-                        ? const Color(0xFF3F51B5).withOpacity(0.4)
-                        : Colors.grey.shade200,
-                width: 1.5,
-              ),
-            ),
-            child: SwitchListTile(
-              contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              secondary: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
+          return Column(
+            children: [
+              Container(
+                decoration: BoxDecoration(
+                  color: isLocked
+                      ? Colors.grey.shade50
+                      : _advancedPriceTiersEnabled
+                          ? const Color(0xFF1A237E).withOpacity(0.06)
+                          : Colors.grey.shade50,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: isLocked
+                        ? Colors.grey.shade200
+                        : _advancedPriceTiersEnabled
+                            ? const Color(0xFF3F51B5).withOpacity(0.4)
+                            : Colors.grey.shade200,
+                    width: 1.5,
+                  ),
+                ),
+                child: SwitchListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  secondary: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: isLocked
+                              ? Colors.grey.shade100
+                              : _advancedPriceTiersEnabled
+                                  ? const Color(0xFF3F51B5).withOpacity(0.12)
+                                  : Colors.grey.shade100,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(
+                          isLocked
+                              ? Icons.lock_outline_rounded
+                              : _advancedPriceTiersEnabled
+                                  ? Icons.price_change_rounded
+                                  : Icons.storefront_rounded,
+                          color: isLocked
+                              ? Colors.grey.shade400
+                              : _advancedPriceTiersEnabled
+                                  ? const Color(0xFF3F51B5)
+                                  : Colors.grey.shade500,
+                          size: 26,
+                        ),
+                      ),
+                      if (isLocked)
+                        Positioned(
+                          right: -4,
+                          top: -4,
+                          child: Container(
+                            padding: const EdgeInsets.all(2),
+                            decoration: BoxDecoration(
+                              color: Colors.orange.shade600,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.workspace_premium, size: 10, color: Colors.white),
+                          ),
+                        ),
+                    ],
+                  ),
+                  title: Text(
+                    isLocked
+                        ? 'Multi-Listas de Precios (Plan Avanzado)'
+                        : _advancedPriceTiersEnabled
+                            ? 'Modo Avanzado (Multi-Listas Activo)'
+                            : 'Modo Básico (Retail / Minorista)',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15,
                       color: isLocked
-                          ? Colors.grey.shade100
+                          ? Colors.grey.shade500
                           : _advancedPriceTiersEnabled
-                              ? const Color(0xFF3F51B5).withOpacity(0.12)
-                              : Colors.grey.shade100,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Icon(
-                      isLocked
-                          ? Icons.lock_outline_rounded
-                          : _advancedPriceTiersEnabled
-                              ? Icons.price_change_rounded
-                              : Icons.storefront_rounded,
-                      color: isLocked
-                          ? Colors.grey.shade400
-                          : _advancedPriceTiersEnabled
-                              ? const Color(0xFF3F51B5)
-                              : Colors.grey.shade500,
-                      size: 26,
+                              ? const Color(0xFF1A237E)
+                              : Colors.grey.shade700,
                     ),
                   ),
-                  if (isLocked)
-                    Positioned(
-                      right: -4,
-                      top: -4,
-                      child: Container(
-                        padding: const EdgeInsets.all(2),
-                        decoration: BoxDecoration(
-                          color: Colors.orange.shade600,
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(Icons.workspace_premium, size: 10, color: Colors.white),
-                      ),
+                  subtitle: Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      isLocked
+                          ? 'Activá el Plan Avanzado para habilitar el selector de Listas de Precios (Mayorista / Tarjeta) en el POS.'
+                          : _advancedPriceTiersEnabled
+                              ? 'El POS muestra el selector de Listas (Mayorista / Tarjeta / Custom). Los recargos del método de pago se desactivan automáticamente para evitar doble cobro.'
+                              : 'El POS opera con precio único. Los recargos configurados en cada Método de Pago se aplican normalmente al momento del cobro.',
+                      style: TextStyle(fontSize: 12, color: Colors.grey.shade600, height: 1.4),
                     ),
+                  ),
+                  value: _advancedPriceTiersEnabled,
+                  // Switch visualmente desactivado si el plan no incluye el feature
+                  activeColor: isLocked ? Colors.grey.shade400 : const Color(0xFF3F51B5),
+                  onChanged: (val) {
+                    if (isLocked) {
+                      // Mostrar upsell — no cambiar el estado local
+                      PlanUpgradeDialog.show(
+                        context,
+                        title: 'Plan Avanzado Requerido',
+                        featureName: 'Múltiples Listas de Precios',
+                        description:
+                            'El modo Multi-Listas (Mayorista, Tarjeta, Listas Custom) '
+                            'es una función exclusiva del plan AVANZADO.\n\n'
+                            'Permite aplicar precios diferenciados por tipo de cliente '
+                            'directamente desde la caja, sin recargos duplicados.',
+                        onNavigateToSettings: () =>
+                            setState(() => _activeSection = SettingsSection.subscription),
+                      );
+                      return; // ← bloquea el setState
+                    }
+                    setState(() => _advancedPriceTiersEnabled = val);
+                  },
+                ),
+              ),
+              const SizedBox(height: 32),
+              Row(
+                children: [
+                  Expanded(child: _buildTextField('Recargo por Tarjeta (%)', _cardPercentageCtrl, icon: Icons.credit_card, hint: 'Ej: 15.0', enabled: !isLocked && _advancedPriceTiersEnabled)),
+                  const SizedBox(width: 24),
+                  Expanded(child: _buildTextField('Descuento Mayorista (%)', _wholesalePercentageCtrl, icon: Icons.factory_outlined, hint: 'Ej: -15.0', enabled: !isLocked && _advancedPriceTiersEnabled)),
                 ],
               ),
-              title: Text(
-                isLocked
-                    ? 'Multi-Listas de Precios (Plan Avanzado)'
-                    : _advancedPriceTiersEnabled
-                        ? 'Modo Avanzado (Multi-Listas Activo)'
-                        : 'Modo Básico (Retail / Minorista)',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 15,
-                  color: isLocked
-                      ? Colors.grey.shade500
-                      : _advancedPriceTiersEnabled
-                          ? const Color(0xFF1A237E)
-                          : Colors.grey.shade700,
-                ),
-              ),
-              subtitle: Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text(
-                  isLocked
-                      ? 'Activá el Plan Avanzado para habilitar el selector de Listas de Precios (Mayorista / Tarjeta) en el POS.'
-                      : _advancedPriceTiersEnabled
-                          ? 'El POS muestra el selector de Listas (Mayorista / Tarjeta / Custom). Los recargos del método de pago se desactivan automáticamente para evitar doble cobro.'
-                          : 'El POS opera con precio único. Los recargos configurados en cada Método de Pago se aplican normalmente al momento del cobro.',
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600, height: 1.4),
-                ),
-              ),
-              value: _advancedPriceTiersEnabled,
-              // Switch visualmente desactivado si el plan no incluye el feature
-              activeColor: isLocked ? Colors.grey.shade400 : const Color(0xFF3F51B5),
-              onChanged: (val) {
-                if (isLocked) {
-                  // Mostrar upsell — no cambiar el estado local
-                  PlanUpgradeDialog.show(
-                    context,
-                    title: 'Plan Avanzado Requerido',
-                    featureName: 'Múltiples Listas de Precios',
-                    description:
-                        'El modo Multi-Listas (Mayorista, Tarjeta, Listas Custom) '
-                        'es una función exclusiva del plan AVANZADO.\n\n'
-                        'Permite aplicar precios diferenciados por tipo de cliente '
-                        'directamente desde la caja, sin recargos duplicados.',
-                    onNavigateToSettings: () =>
-                        setState(() => _activeSection = SettingsSection.subscription),
-                  );
-                  return; // ← bloquea el setState
-                }
-                setState(() => _advancedPriceTiersEnabled = val);
-              },
-            ),
+            ],
           );
         }),
-
-        const SizedBox(height: 32),
-        Row(
-          children: [
-            Expanded(child: _buildTextField('Recargo por Tarjeta (%)', _cardPercentageCtrl, icon: Icons.credit_card, hint: 'Ej: 15.0')),
-            const SizedBox(width: 24),
-            Expanded(child: _buildTextField('Descuento Mayorista (%)', _wholesalePercentageCtrl, icon: Icons.factory_outlined, hint: 'Ej: -15.0')),
-          ],
-        ),
         if (provider.settings?.features.multiplePrices == true) ...[
           const SizedBox(height: 48),
-          _buildCustomTiersSection(),
+          _buildCustomTiersSection(enabled: _advancedPriceTiersEnabled),
         ]
       ],
     );
   }
 
-  Widget _buildCustomTiersSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _buildCustomTiersSection({bool enabled = true}) {
+    return Opacity(
+      opacity: enabled ? 1.0 : 0.5,
+      child: IgnorePointer(
+        ignoring: !enabled,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildSectionHeader('Listas de Precios Especiales', 'Creá modificadores dinámicos para clientes (Ej: "Gremio" con -10%).'),
         const SizedBox(height: 24),
@@ -608,7 +615,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
               );
             }).toList(),
           ),
-      ],
+        ],
+      ),
+      ),
     );
   }
 
@@ -899,24 +908,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF424242)));
   }
 
-  Widget _buildTextField(String label, TextEditingController controller, {IconData? icon, String? hint, int maxLines = 1}) {
+  Widget _buildTextField(String label, TextEditingController controller, {IconData? icon, String? hint, int maxLines = 1, bool enabled = true}) {
     return TextFormField(
       controller: controller,
       maxLines: maxLines,
-      decoration: _inputDecoration(label, icon, hint: hint),
+      enabled: enabled,
+      decoration: _inputDecoration(label, icon, hint: hint, enabled: enabled),
     );
   }
 
-  InputDecoration _inputDecoration(String label, IconData? icon, {String? hint}) {
+  InputDecoration _inputDecoration(String label, IconData? icon, {String? hint, bool enabled = true}) {
     return InputDecoration(
       labelText: label,
       hintText: hint,
-      prefixIcon: icon != null ? Icon(icon, size: 20) : null,
+      prefixIcon: icon != null ? Icon(icon, size: 20, color: enabled ? null : Colors.grey) : null,
       filled: true,
-      fillColor: Colors.white,
+      fillColor: enabled ? Colors.white : Colors.grey.shade50,
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade200)),
       enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade200)),
+      disabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade100)),
       contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+      labelStyle: enabled ? null : TextStyle(color: Colors.grey.shade500),
+      hintStyle: enabled ? null : TextStyle(color: Colors.grey.shade400),
     );
   }
 
