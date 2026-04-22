@@ -15,8 +15,8 @@ class CartItem {
     required this.product,
     this.quantity = 1.0,
     this.activeTier = PriceTier.base,
-    this.wholesaleFactor = 0.85, // Default -15%
-    this.cardFactor = 1.15,      // Default +15%
+    this.wholesaleFactor = 1.0, // Hardcodes limpios, dependen de setting global
+    this.cardFactor = 1.0,      // Hardcodes limpios, dependen de setting global
     this.customFactor = 1.0,
     this.customTierLabel,
   });

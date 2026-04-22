@@ -96,8 +96,8 @@ class PosProvider with ChangeNotifier {
   String? _customTierLabel;
   String? get customTierLabel => _customTierLabel;
 
-  double _currentWholesaleFactor = 0.85;
-  double _currentCardFactor = 1.15;
+  double _currentWholesaleFactor = 1.0;
+  double _currentCardFactor = 1.0;
   double _currentCustomFactor = 1.0;
   double get currentCustomFactor => _currentCustomFactor;
 

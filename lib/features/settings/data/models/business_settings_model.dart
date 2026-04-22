@@ -22,6 +22,7 @@ class BusinessSettingsModel extends BusinessSettings {
     List<Map<String, dynamic>> customPriceTiers = const [],
     String businessType = 'retail',
     FeatureFlags features = const FeatureFlags(),
+    bool enableAdvancedPriceTiers = false,
   }) : super(
           companyName: companyName,
           address: address,
@@ -42,6 +43,7 @@ class BusinessSettingsModel extends BusinessSettings {
           customPriceTiers: customPriceTiers,
           businessType: businessType,
           features: features,
+          enableAdvancedPriceTiers: enableAdvancedPriceTiers,
         );
 
   factory BusinessSettingsModel.fromJson(Map<String, dynamic> json) {
@@ -102,6 +104,7 @@ class BusinessSettingsModel extends BusinessSettings {
       customPriceTiers: _parseCustomTiers(json['custom_price_tiers']),
       businessType: json['license_business_type'] ?? 'retail',
       features: featureFlags,
+      enableAdvancedPriceTiers: json['enable_advanced_price_tiers'] == '1' || json['enable_advanced_price_tiers'] == true,
     );
   }
 
@@ -130,11 +133,24 @@ class BusinessSettingsModel extends BusinessSettings {
 
 
 
+  /// Serializa todos los campos editables por el usuario para enviar al backend.
+  /// Las keys deben coincidir con las que usa [BusinessSettingsModel.fromJson]
+  /// y con lo que persiste [SettingController::update] en la tabla business_settings.
   Map<String, dynamic> toJson() {
     return {
+      // Perfil del negocio
       'company_name': companyName,
       'address': address,
       'phone': phone,
+      'tax_id': taxId,
+      'receipt_footer_message': receiptFooterMessage,
+      // Motor de precios globales
+      'card_percentage': globalCardPercentage,
+      'wholesale_percentage': globalWholesalePercentage,
+      // Listas de precios personalizadas
+      'custom_price_tiers': customPriceTiers,
+      // Feature Toggle Multi-Tenant
+      'enable_advanced_price_tiers': enableAdvancedPriceTiers ? '1' : '0',
     };
   }
 }

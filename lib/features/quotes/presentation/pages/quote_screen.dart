@@ -47,10 +47,12 @@ class _QuoteScreenState extends State<QuoteScreen> {
       // Inyectar los factores globales de precios al provider de presupuestos
       final settings = context.read<SettingsProvider>().settings;
       if (settings != null) {
-        final ws = settings.globalCardPercentage > 0
-            ? 1.0 - (settings.globalCardPercentage / 100)
-            : 0.85;
-        final card = 1.0 + (settings.globalCardPercentage / 100);
+        final ws = settings.globalWholesalePercentage != 0
+            ? 1.0 + (settings.globalWholesalePercentage / 100)
+            : 1.0;
+        final card = settings.globalCardPercentage != 0
+            ? 1.0 + (settings.globalCardPercentage / 100)
+            : 1.0;
         context.read<QuoteProvider>().setGlobalFactors(wholesale: ws, card: card);
       }
     });
