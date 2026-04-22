@@ -714,9 +714,6 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
   late TextEditingController _internalCodeCtrl;
   late TextEditingController _costCtrl;
   late TextEditingController _priceCtrl;
-  // [hardware_store] Listas de precio
-  late TextEditingController _wholesaleCtrl;
-  late TextEditingController _cardCtrl;
   late TextEditingController _stockCtrl;
   late TextEditingController _minStockCtrl;
   bool _isSoldByWeight = false;
@@ -739,9 +736,6 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     _internalCodeCtrl = TextEditingController(text: p?.internalCode ?? '');
     _costCtrl = TextEditingController(text: p != null ? p.costPrice.toCurrency() : '');
     _priceCtrl = TextEditingController(text: p != null ? p.sellingPrice.toCurrency() : '');
-    // [hardware_store] inicializar desde el producto existente o vacío
-    _wholesaleCtrl = TextEditingController(text: p?.priceWholesale != null ? p!.priceWholesale!.toCurrency() : '');
-    _cardCtrl = TextEditingController(text: p?.priceCard != null ? p!.priceCard!.toCurrency() : '');
     _stockCtrl = TextEditingController(text: p != null ? p.stock.toStringAsFixed(p.isSoldByWeight ? 3 : 0) : '0');
     _minStockCtrl = TextEditingController(text: (p?.minStock != null) ? p!.minStock!.toStringAsFixed(0) : '');
     _isSoldByWeight = p?.isSoldByWeight ?? false;
@@ -767,8 +761,6 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     _internalCodeCtrl.dispose();
     _costCtrl.dispose();
     _priceCtrl.dispose();
-    _wholesaleCtrl.dispose(); // [hardware_store]
-    _cardCtrl.dispose();      // [hardware_store]
     _stockCtrl.dispose();
     _minStockCtrl.dispose();
     _expiryCtrl.dispose();
@@ -783,11 +775,6 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
       if (_internalCodeCtrl.text.isNotEmpty) 'internal_code': _internalCodeCtrl.text.trim(),
       'cost_price': double.tryParse(_costCtrl.text.replaceAll(',', '.')) ?? 0.0,
       'selling_price': double.tryParse(_priceCtrl.text.replaceAll(',', '.')) ?? 0.0,
-      // [hardware_store] solo se envían si tienen valor (retrocompatible con retail)
-      if (_wholesaleCtrl.text.trim().isNotEmpty)
-        'price_wholesale': double.tryParse(_wholesaleCtrl.text.replaceAll(',', '.')) ?? 0.0,
-      if (_cardCtrl.text.trim().isNotEmpty)
-        'price_card': double.tryParse(_cardCtrl.text.replaceAll(',', '.')) ?? 0.0,
       'stock': double.tryParse(_stockCtrl.text.replaceAll(',', '.')) ?? 0.0,
       'min_stock': _minStockCtrl.text.trim().isNotEmpty ? double.tryParse(_minStockCtrl.text.replaceAll(',', '.')) : null,
       'is_sold_by_weight': _isSoldByWeight,
@@ -975,81 +962,9 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                   ],
                 ),
                 const SizedBox(height: 12),
-                // [hardware_store] Listas de Precio — invisibles en modo retail
-                Consumer<SettingsProvider>(
-                  builder: (ctx2, settings, _) {
-                    if (!settings.features.multiplePrices) return const SizedBox.shrink();
-                    return Column(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: Colors.indigo.shade50,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.indigo.shade100),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(children: [
-                                Icon(Icons.price_change_outlined, size: 16, color: Colors.indigo.shade700),
-                                const SizedBox(width: 6),
-                                Text('Listas de Precio', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.indigo.shade700)),
-                              ]),
-                              const SizedBox(height: 10),
-                              Row(children: [
-                                Expanded(
-                                  child: TextFormField(
-                                    controller: _wholesaleCtrl,
-                                    decoration: InputDecoration(
-                                      labelText: 'Precio Mayorista',
-                                      prefixText: '\$ ',
-                                      labelStyle: TextStyle(color: Colors.indigo.shade700),
-                                      focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.indigo.shade400)),
-                                      enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.indigo.shade200)),
-                                      border: const OutlineInputBorder(),
-                                      helperText: 'Vacío o 0 = Ignora y aplica cálculo global',
-                                      helperMaxLines: 2,
-                                    ),
-                                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                    validator: (v) {
-                                      if (v == null || v.trim().isEmpty) return null;
-                                      if (double.tryParse(v.replaceAll(',', '.')) == null) return 'Monto inválido';
-                                      return null;
-                                    },
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: TextFormField(
-                                    controller: _cardCtrl,
-                                    decoration: InputDecoration(
-                                      labelText: 'Precio Tarjeta (Fijo)',
-                                      prefixText: '\$ ',
-                                      labelStyle: TextStyle(color: Colors.teal.shade700),
-                                      focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.teal.shade400)),
-                                      enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.teal.shade200)),
-                                      border: const OutlineInputBorder(),
-                                      helperText: 'Vacío o 0 = Ignora y aplica % global automático',
-                                      helperMaxLines: 2,
-                                    ),
-                                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                    validator: (v) {
-                                      if (v == null || v.trim().isEmpty) return null;
-                                      if (double.tryParse(v.replaceAll(',', '.')) == null) return 'Monto inválido';
-                                      return null;
-                                    },
-                                  ),
-                                ),
-                              ]),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                      ],
-                    );
-                },
-                ),
+                // [hardware_store] Listas de Precio — UI Ocultada (Fase 1 Refactorización)
+                // Se deprecó la carga manual de price_wholesale y price_card
+                const SizedBox(height: 12),
                 // --- SECCIÓN: PRECIOS POR VOLUMEN / MAYORISTAS ---
                 _buildPriceTiersSection(),
                 

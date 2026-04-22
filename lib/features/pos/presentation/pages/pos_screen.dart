@@ -1880,12 +1880,17 @@ class _PosScreenState extends State<PosScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // ── Lista de Precios [Premium Feature] ────────────────
+                // ── Lista de Precios [Premium Feature + Modo Avanzado] ────────────────
                 if (context
                         .read<SettingsProvider>()
                         .settings
                         ?.features
                         .multiplePrices ==
+                    true &&
+                    context
+                        .read<SettingsProvider>()
+                        .settings
+                        ?.enableAdvancedPriceTiers ==
                     true)
                   Builder(builder: (_) {
                     final settings = context.read<SettingsProvider>().settings;

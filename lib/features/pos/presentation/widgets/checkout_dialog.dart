@@ -95,6 +95,11 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   Customer? _selectedCustomer;
   
   bool get _isCartAlreadySurcharged {
+    // En Modo Básico (toggle off) los surcharges de métodos de pago SIEMPRE aplican.
+    final settings = context.read<SettingsProvider>().settings;
+    if (settings == null || !settings.enableAdvancedPriceTiers) return false;
+    // En Modo Avanzado: suprimimos el recargo del método si el carrito ya tiene
+    // el factor de tarjeta o un custom con recargo positivo (para evitar doble cobro).
     final pos = context.read<PosProvider>();
     return pos.activeTier == PriceTier.card || (pos.activeTier == PriceTier.custom && pos.currentCustomFactor > 1.0);
   }

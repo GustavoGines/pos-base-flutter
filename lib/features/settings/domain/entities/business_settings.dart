@@ -61,6 +61,10 @@ class BusinessSettings extends Equatable {
   final String businessType;  // 'retail' | 'hardware_store'
   // [feature-flags] Objeto estructurado de características habilitadas
   final FeatureFlags features;
+  /// Master switch del modelo Multi-Tenant:
+  /// - false (default) → Modo Retail Básico: tier dropdown oculto, surcharges de métodos de pago ACTIVOS.
+  /// - true → Modo Avanzado (Ferretería/Mayorista): tier dropdown visible, surcharges SUPRIMIDOS (el precio ya incluye el factor).
+  final bool enableAdvancedPriceTiers;
 
   /// @deprecated Use [features] instead for better type safety.
   bool hasFeature(String featureName) => licenseFeatures.contains(featureName);
@@ -102,6 +106,7 @@ class BusinessSettings extends Equatable {
     this.customPriceTiers = const [],
     this.businessType = 'retail',
     this.features = const FeatureFlags(),
+    this.enableAdvancedPriceTiers = false,
   });
 
   @override
@@ -125,5 +130,6 @@ class BusinessSettings extends Equatable {
         customPriceTiers,
         businessType,
         features,
+        enableAdvancedPriceTiers,
       ];
 }

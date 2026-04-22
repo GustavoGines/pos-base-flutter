@@ -24,8 +24,8 @@ class QuoteProvider extends ChangeNotifier {
   String? _customTierLabel;
   String? get customTierLabel => _customTierLabel;
 
-  double _wholesaleFactor = 0.85; // Default -15%
-  double _cardFactor = 1.15;      // Default +15%
+  double _wholesaleFactor = 1.0; // Hardcode removido
+  double _cardFactor = 1.0;      // Hardcode removido
   double _customFactor = 1.0;
 
   // Getters públicos para que la UI pueda leer los factores en preview
@@ -36,8 +36,8 @@ class QuoteProvider extends ChangeNotifier {
   /// Inyecta externamente los factores globales desde SettingsProvider.
   /// Llamar una vez al abrir la pantalla de presupuestos.
   void setGlobalFactors({double? wholesale, double? card}) {
-    _wholesaleFactor = wholesale ?? 0.85;
-    _cardFactor = card ?? 1.15;
+    _wholesaleFactor = wholesale ?? 1.0;
+    _cardFactor = card ?? 1.0;
     // Actualizar items ya en el carrito
     _applyTierToCart();
     notifyListeners();
