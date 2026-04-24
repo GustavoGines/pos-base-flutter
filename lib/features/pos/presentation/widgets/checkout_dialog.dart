@@ -22,10 +22,23 @@ class PaymentLine {
   TextEditingController percentageController;
   FocusNode percentageFocus;
 
+  TextEditingController checkBankController;
+  TextEditingController checkNumberController;
+  TextEditingController checkIssuerCuitController;
+  TextEditingController checkIssuerNameController;
+  TextEditingController checkIssueDateController;
+  TextEditingController checkPaymentDateController;
+
   PaymentLine({this.method, double initialAmount = 0.0, double? defaultCardSurcharge, bool disableSurcharge = false})
       : controller = TextEditingController(text: initialAmount > 0 ? initialAmount.toCurrency() : ''),
         percentageController = TextEditingController(),
-        percentageFocus = FocusNode() {
+        percentageFocus = FocusNode(),
+        checkBankController = TextEditingController(),
+        checkNumberController = TextEditingController(),
+        checkIssuerCuitController = TextEditingController(),
+        checkIssuerNameController = TextEditingController(),
+        checkIssueDateController = TextEditingController(text: DateTime.now().toString().split(' ')[0]),
+        checkPaymentDateController = TextEditingController(text: DateTime.now().add(const Duration(days: 30)).toString().split(' ')[0]) {
     updateMethod(method, defaultCardSurcharge: defaultCardSurcharge, disableSurcharge: disableSurcharge);
   }
 
@@ -62,6 +75,12 @@ class PaymentLine {
     controller.dispose();
     percentageController.dispose();
     percentageFocus.dispose();
+    checkBankController.dispose();
+    checkNumberController.dispose();
+    checkIssuerCuitController.dispose();
+    checkIssuerNameController.dispose();
+    checkIssueDateController.dispose();
+    checkPaymentDateController.dispose();
   }
 }
 
@@ -319,7 +338,13 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     return true;
   }
 
-  void _showProUpsellDialog() {
+  void _showProUpsellDialog([String? methodName]) {
+    final isCheque = methodName?.toLowerCase().contains('cheque') == true;
+    final title = isCheque ? 'Actualizá a Premium' : 'Actualizá a Premium';
+    final content = isCheque 
+        ? 'El cobro con cheques de terceros es exclusivo del Plan Premium.\n\n¿Qué te permite?\n• Registrar cheques diferidos.\n• Visualizar la cartera en el dashboard.\n• Semáforo de pagos próximos.'
+        : 'El módulo de Cuentas Corrientes es exclusivo para el Plan Premium.\n\n¿Qué te permite?\n• Fiar a tus clientes de confianza.\n• Controlar saldos deudores.\n• Armar estados de cuenta fiables.\n\nContatáte para subir al Plan Premium y desbloquearlo.';
+
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -328,16 +353,10 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
           children: [
             Icon(Icons.workspace_premium, color: Colors.orange.shade700, size: 28),
             const SizedBox(width: 8),
-            const Text('Actualizá a Premium'),
+            Text(title),
           ],
         ),
-        content: const Text(
-            'El módulo de Cuentas Corrientes es exclusivo para el Plan Premium.\n\n'
-            '¿Qué te permite?\n'
-            '• Fiar a tus clientes de confianza.\n'
-            '• Controlar saldos deudores.\n'
-            '• Armar estados de cuenta fiables.\n\n'
-            'Contatáte para subir al Plan Premium y desbloquearlo.'),
+        content: Text(content),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
@@ -415,6 +434,30 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     final currentUser = context.read<AuthProvider>().currentUser;
     final userName = currentUser?['name'] as String?;
     final settings = context.read<SettingsProvider>().settings;
+
+    // Build Check Details Payload if a cheque is used
+    Map<String, dynamic>? checkDetailsPayload;
+    try {
+      final chequeLine = _lines.firstWhere((l) => l.method?.code == 'cheque');
+      if (chequeLine.checkBankController.text.trim().isEmpty ||
+          chequeLine.checkNumberController.text.trim().isEmpty ||
+          chequeLine.checkIssuerCuitController.text.trim().isEmpty ||
+          chequeLine.checkIssuerNameController.text.trim().isEmpty) {
+        SnackBarService.error(context, 'Complete los datos obligatorios del cheque (Banco, Número, CUIT, Firmante).');
+        return;
+      }
+      checkDetailsPayload = {
+        'bank_name': chequeLine.checkBankController.text.trim(),
+        'check_number': chequeLine.checkNumberController.text.trim(),
+        'issuer_cuit': chequeLine.checkIssuerCuitController.text.trim(),
+        'issuer_name': chequeLine.checkIssuerNameController.text.trim(),
+        'issue_date': chequeLine.checkIssueDateController.text.trim(),
+        'payment_date': chequeLine.checkPaymentDateController.text.trim(),
+        'amount': chequeLine.total,
+      };
+    } catch (_) {
+      // No cheque payment line found, which is fine.
+    }
 
     // Convert lines to payload
     List<Map<String, dynamic>> paymentsPayload = _lines.map((l) => {
@@ -566,6 +609,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         settings: _printReceipt ? settings : null,
         userId: currentUser?['id'] as int?,
         showPreview: _showPreview,
+        checkDetails: checkDetailsPayload,
       );
     } else {
       final shiftId = context.read<CashRegisterProvider>().currentShift?.id;
@@ -591,6 +635,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         showPreview: _showPreview,
         requiresDispatch: _requiresDispatch,
         fulfillmentStatus: _fulfillmentStatus,
+        checkDetails: checkDetailsPayload,
       );
     }
 
@@ -644,7 +689,6 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   Widget build(BuildContext context) {
     final provider = context.watch<PosProvider>();
     final settings = context.watch<SettingsProvider>().settings;
-    final bool isBasicPlan = settings?.licensePlanType?.toLowerCase() == 'basic';
     final isPending = widget.saleId != null;
 
     if (provider.paymentMethods.isEmpty) {
@@ -751,9 +795,11 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
 
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 12.0),
-                    child: Row(
+                    child: Column(
                       children: [
-                        Expanded(
+                        Row(
+                          children: [
+                            Expanded(
                           flex: 2,
                           // Key con method.id garantiza que Flutter recree el widget
                           // si hacemos revert explícito, evitando estados visuales desincronizados
@@ -783,7 +829,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                             value: line.method,
                             items: provider.paymentMethods.map((m) {
                               final bool isCuentaCorriente = m.code == 'cuenta_corriente';
-                              final bool isLocked = isCuentaCorriente && isBasicPlan;
+                              final bool isCheque = m.code == 'cheque';
+                              final bool isLocked = (isCuentaCorriente && settings?.features.currentAccounts != true) || (isCheque && settings?.features.checks != true);
                               
                               return DropdownMenuItem<PaymentMethod>(
                                 value: m,
@@ -827,8 +874,12 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                             onChanged: (val) {
                               if (val == null) return;
                               
-                              if (val.code == 'cuenta_corriente' && isBasicPlan) {
-                                _showProUpsellDialog();
+                              final bool isCuentaCorrienteSel = val.code == 'cuenta_corriente';
+                              final bool isChequeSel = val.code == 'cheque';
+                              final bool isLockedSel = (isCuentaCorrienteSel && settings?.features.currentAccounts != true) || (isChequeSel && settings?.features.checks != true);
+
+                              if (isLockedSel) {
+                                _showProUpsellDialog(val.name);
                                 
                                 // Revertir explícitamente al último método válido
                                 final prev = (idx < _previousValidMethods.length)
@@ -927,6 +978,49 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                           icon: const Icon(Icons.remove_circle_outline, color: Colors.red),
                           onPressed: _lines.length > 1 ? () => _removeLine(idx) : null,
                         ),
+                          ],
+                        ),
+                        // ── Formulario de cheque (se despliega cuando code == 'cheque') ──
+                        if (line.method?.code == 'cheque')
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            margin: const EdgeInsets.only(top: 8),
+                            decoration: BoxDecoration(
+                              color: Colors.blue.shade50,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.blue.shade200),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('Detalles del Cheque', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.blue)),
+                                const SizedBox(height: 8),
+                                Row(
+                                  children: [
+                                    Expanded(child: TextField(controller: line.checkBankController, decoration: InputDecoration(labelText: 'Banco', isDense: true, border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)), filled: true, fillColor: Colors.white))),
+                                    const SizedBox(width: 8),
+                                    Expanded(child: TextField(controller: line.checkNumberController, decoration: InputDecoration(labelText: 'Nro Cheque', isDense: true, border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)), filled: true, fillColor: Colors.white))),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                Row(
+                                  children: [
+                                    Expanded(child: TextField(controller: line.checkIssuerCuitController, decoration: InputDecoration(labelText: 'CUIT Firmante', isDense: true, border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)), filled: true, fillColor: Colors.white))),
+                                    const SizedBox(width: 8),
+                                    Expanded(child: TextField(controller: line.checkIssuerNameController, decoration: InputDecoration(labelText: 'Nombre Firmante', isDense: true, border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)), filled: true, fillColor: Colors.white))),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                Row(
+                                  children: [
+                                    Expanded(child: TextField(controller: line.checkIssueDateController, decoration: InputDecoration(labelText: 'Emisión (YYYY-MM-DD)', isDense: true, border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)), filled: true, fillColor: Colors.white))),
+                                    const SizedBox(width: 8),
+                                    Expanded(child: TextField(controller: line.checkPaymentDateController, decoration: InputDecoration(labelText: 'Cobro (YYYY-MM-DD)', isDense: true, border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)), filled: true, fillColor: Colors.white))),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
                       ],
                     ),
                   );

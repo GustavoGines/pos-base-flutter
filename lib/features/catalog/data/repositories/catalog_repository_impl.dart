@@ -1,5 +1,6 @@
 import '../../domain/entities/product.dart';
 import '../../domain/entities/category.dart';
+import '../../domain/entities/brand.dart';
 import '../../domain/repositories/catalog_repository.dart';
 import '../datasources/catalog_remote_datasource.dart';
 
@@ -16,6 +17,26 @@ class CatalogRepositoryImpl implements CatalogRepository {
   @override
   Future<List<Category>> getCategories() async {
     return await remoteDataSource.fetchCategories();
+  }
+
+  @override
+  Future<List<Brand>> getBrands() async {
+    return await remoteDataSource.fetchBrands();
+  }
+
+  @override
+  Future<Brand> createBrand(String name, {String? description}) async {
+    return await remoteDataSource.createBrand(name, description: description);
+  }
+
+  @override
+  Future<Brand> updateBrand(int id, String name, {String? description}) async {
+    return await remoteDataSource.updateBrand(id, name, description: description);
+  }
+
+  @override
+  Future<void> deleteBrand(int id) async {
+    return await remoteDataSource.deleteBrand(id);
   }
 
   @override

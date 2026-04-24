@@ -43,6 +43,10 @@ import 'features/reports/presentation/pages/reports_screen.dart';
 import 'features/quotes/presentation/pages/quote_screen.dart';
 import 'features/quotes/presentation/providers/quote_provider.dart';
 import 'features/quotes/data/quote_repository.dart';
+import 'features/checks/presentation/providers/check_provider.dart';
+import 'features/checks/data/repositories/check_repository_impl.dart';
+import 'features/checks/data/datasources/check_remote_datasource.dart';
+import 'features/checks/presentation/screens/check_wallet_screen.dart';
 
 // Repositories & DataSources
 import 'features/reports/data/datasources/reports_remote_datasource.dart';
@@ -212,6 +216,10 @@ void main() async {
   final usersRepo = UsersRepository(
       dataSource: UsersRemoteDataSource(baseUrl: apiUrl, client: httpClient));
 
+  // Checks
+  final checkRepo = CheckRepositoryImpl(
+      remoteDataSource: CheckRemoteDataSourceImpl(baseUrl: apiUrl, client: httpClient));
+
   runApp(
     MultiProvider(
       providers: [
@@ -277,6 +285,10 @@ void main() async {
         // [logistics] Dashboard
         ChangeNotifierProvider(
           create: (_) => LogisticsProvider(repository: deliveryNoteRepo),
+          lazy: true,
+        ),
+        ChangeNotifierProvider(
+          create: (_) => CheckProvider(repository: checkRepo),
           lazy: true,
         ),
       ],
@@ -650,6 +662,26 @@ class _MainAppState extends State<MainApp> {
         '/settings': (context) => const SettingsScreen(),
         '/settings/registers': (context) => const CashRegisterManagementScreen(),
         '/cuentas-corrientes': (context) => const CustomersScreen(),
+        '/checks': (context) {
+          final settings = context.watch<SettingsProvider>().settings;
+          if (settings?.features.checks != true) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (Navigator.of(context).canPop()) {
+                Navigator.of(context).pop();
+              } else {
+                Navigator.of(context).pushReplacementNamed('/home');
+              }
+              PlanUpgradeDialog.show(
+                context,
+                featureName: 'Cartera de Cheques',
+                description: 'El módulo de Cheques de Terceros es exclusivo del Plan Premium.',
+                onNavigateToSettings: () => Navigator.of(context).pushNamed('/settings'),
+              );
+            });
+            return const Scaffold(backgroundColor: Color(0xFF1E2D45), body: Center(child: CircularProgressIndicator()));
+          }
+          return const CheckWalletScreen();
+        },
         '/trash': (context) => const TrashScreen(),
         // [hardware_store]
         '/quotes': (context) => const QuoteScreen(),

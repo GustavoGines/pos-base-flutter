@@ -129,6 +129,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       'advanced_reports': '📊 Reportes Gerenciales (Balances, Excel, PDF)',
       'predictive_alerts': '🧠 Alertas Inteligentes (Logística Predictiva)',
       'logistics': '🚚 Logística y Remitos',
+      'checks': '💵 Gestión de Cheques',
     };
     return dictionary[featureCode] ?? featureCode.toUpperCase();
   }

@@ -421,6 +421,7 @@ class PosProvider with ChangeNotifier {
     bool showPreview = true,
     bool requiresDispatch = false,
     String fulfillmentStatus = 'pending',
+    Map<String, dynamic>? checkDetails,
   }) async {
     if (_cart.isEmpty) return false;
 
@@ -453,6 +454,7 @@ class PosProvider with ChangeNotifier {
           userId: userId,
           items: cartSnapshot,
           shippingCost: shippingCostSnapshot,
+          checkDetails: checkDetails,
         );
         if (!success) {
           // El error se seteó dentro de payPendingSale
@@ -475,6 +477,7 @@ class PosProvider with ChangeNotifier {
           shippingCost: (requiresDispatch && fulfillmentStatus == 'pending') ? _shippingCost : 0.0,
           requiresDispatch: requiresDispatch,
           fulfillmentStatus: fulfillmentStatus,
+          checkDetails: checkDetails,
         );
 
         // processSaleUseCase retorna entidad Sale
@@ -871,6 +874,7 @@ class PosProvider with ChangeNotifier {
     List<CartItem>? items,
     bool showPreview = true,
     double shippingCost = 0.0,
+    Map<String, dynamic>? checkDetails,
   }) async {
     _isLoading = true;
     _errorMessage = null;
@@ -887,6 +891,7 @@ class PosProvider with ChangeNotifier {
         userId: userId,
         items: items,
         shippingCost: shippingCost,
+        checkDetails: checkDetails,
       );
 
       // Imprimir ticket si hay impresora configurada.

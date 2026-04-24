@@ -7,10 +7,10 @@ import '../widgets/stock_adjustment_dialog.dart';
 import '../../domain/entities/product.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import '../widgets/categories_manager_dialog.dart';
+import '../widgets/brands_manager_dialog.dart';
 import '../widgets/print_labels_dialog.dart';
 import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
-import '../../../settings/presentation/providers/settings_provider.dart';
 
 class CatalogScreen extends StatefulWidget {
   const CatalogScreen({Key? key}) : super(key: key);
@@ -59,6 +59,16 @@ class _CatalogScreenState extends State<CatalogScreen> {
     await showDialog<bool>(
       context: context,
       builder: (_) => const CategoriesManagerDialog(),
+    );
+    if (mounted) {
+      context.read<CatalogProvider>().loadProducts(page: 1);
+    }
+  }
+
+  Future<void> _openBrandsManager(BuildContext context) async {
+    await showDialog<void>(
+      context: context,
+      builder: (_) => const BrandsManagerDialog(),
     );
     if (mounted) {
       context.read<CatalogProvider>().loadProducts(page: 1);
@@ -166,6 +176,15 @@ class _CatalogScreenState extends State<CatalogScreen> {
                         ),
                         const SizedBox(width: 8),
                         OutlinedButton.icon(
+                          icon: const Icon(Icons.branding_watermark_outlined, size: 18),
+                          label: const Text('Marcas'),
+                          onPressed: () async {
+                            final auth = await AdminPinDialog.verify(context, action: 'Gestionar Marcas', permissionKey: 'manage_catalog');
+                            if (auth && context.mounted) _openBrandsManager(context);
+                          },
+                        ),
+                        const SizedBox(width: 8),
+                        OutlinedButton.icon(
                           icon: const Icon(Icons.trending_up, size: 18, color: Colors.deepOrange),
                           label: const Text('Aumento Masivo', style: TextStyle(color: Colors.deepOrange)),
                           style: OutlinedButton.styleFrom(side: const BorderSide(color: Colors.deepOrange)),
@@ -235,8 +254,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                       )
                     : LayoutBuilder(
                         builder: (context, constraints) {
-                          final hasMultiplePrices = context.watch<SettingsProvider>().features.multiplePrices;
-                          final minW = hasMultiplePrices ? 1150.0 : 950.0;
+                          const double minW = 950.0;
                           return SingleChildScrollView(
                             scrollDirection: Axis.horizontal,
                             child: ConstrainedBox(
@@ -244,7 +262,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                                 minWidth: minW,
                                 maxWidth: constraints.maxWidth > minW ? constraints.maxWidth : minW,
                               ),
-                              child: _buildProductsTable(provider.products, provider, hasMultiplePrices),
+                              child: _buildProductsTable(provider.products, provider),
                             ),
                           );
                         },
@@ -287,19 +305,17 @@ class _CatalogScreenState extends State<CatalogScreen> {
     );
   }
 
-  Widget _buildProductsTable(List<Product> products, CatalogProvider provider, bool hasMultiplePrices) {
+  Widget _buildProductsTable(List<Product> products, CatalogProvider provider) {
     // Responsive flex values para que quepan en pantalla chica
     const int fCheck = 1;
     const int fId = 1;
-    const int fNombre = 6;
+    const int fNombre = 5;
     const int fBarcode = 3;
     const int fInterno = 2;
     const int fCat = 3;
+    const int fBrand = 3;
     const int fCosto = 2;
     const int fVenta = 2;
-    // [hardware_store] columnas extra — flex 2 cada una
-    const int fMayorista = 2;
-    const int fTarjeta = 2;
     const int fStock = 2;
     const int fBal = 1;
     const int fActivo = 1;
@@ -381,13 +397,10 @@ class _CatalogScreenState extends State<CatalogScreen> {
               sortHeader(fBarcode, 'Cód. Barras', 'barcode'),
               sortHeader(fInterno, 'Cód. Interno', 'internal_code'),
               sortHeader(fCat, 'Categoría', 'category_id'),
+              sortHeader(fBrand, 'Marca', 'brand_id'),
               sortHeader(fCosto, 'Costo', 'cost_price'),
               sortHeader(fVenta, 'Venta', 'selling_price'),
-              // [hardware_store] columnas visibles solo en modo Ferretería
-              if (hasMultiplePrices) ...[
-                cell(fMayorista, Text('Mayorista', style: headerStyle().copyWith(color: Colors.indigo.shade700), overflow: TextOverflow.ellipsis)),
-                cell(fTarjeta, Text('Tarjeta', style: headerStyle().copyWith(color: Colors.teal.shade700), overflow: TextOverflow.ellipsis)),
-              ],
+
               sortHeader(fStock, 'Stock', 'stock'),
               sortHeader(fBal, 'Balanza', 'is_sold_by_weight'),
               sortHeader(fActivo, 'Activo', 'active'),
@@ -421,25 +434,20 @@ class _CatalogScreenState extends State<CatalogScreen> {
               cell(fBarcode, Text(p.barcode ?? '—', style: TextStyle(fontSize: 12, color: Colors.grey.shade700), overflow: TextOverflow.ellipsis)),
               cell(fInterno, Text(p.internalCode, style: TextStyle(fontFamily: 'monospace', fontSize: 12, color: Colors.grey.shade600), overflow: TextOverflow.ellipsis)),
               cell(fCat, Text(p.category?.name ?? '—', overflow: TextOverflow.ellipsis)),
+              cell(fBrand, p.brand != null
+                  ? Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.indigo.shade50,
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: Colors.indigo.shade200),
+                      ),
+                      child: Text(p.brand!.name, style: TextStyle(fontSize: 11, color: Colors.indigo.shade700, fontWeight: FontWeight.w500), overflow: TextOverflow.ellipsis),
+                    )
+                  : Text('—', style: TextStyle(color: Colors.grey.shade400, fontSize: 13))),
               cell(fCosto, Text('\$${p.costPrice.toCurrency()}', overflow: TextOverflow.ellipsis)),
               cell(fVenta, Text('\$${p.sellingPrice.toCurrency()}', style: const TextStyle(fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis)),
-              // [hardware_store] celdas de precios alternativos
-              if (hasMultiplePrices) ...[
-                cell(fMayorista,
-                  p.priceWholesale != null
-                    ? Text('\$${p.priceWholesale!.toCurrency()}',
-                        style: TextStyle(color: Colors.indigo.shade700, fontWeight: FontWeight.w600),
-                        overflow: TextOverflow.ellipsis)
-                    : Text('—', style: TextStyle(color: Colors.grey.shade400, fontSize: 13))
-                ),
-                cell(fTarjeta,
-                  p.priceCard != null
-                    ? Text('\$${p.priceCard!.toCurrency()}',
-                        style: TextStyle(color: Colors.teal.shade700, fontWeight: FontWeight.w600),
-                        overflow: TextOverflow.ellipsis)
-                    : Text('—', style: TextStyle(color: Colors.grey.shade400, fontSize: 13))
-                ),
-              ],
+
               cell(fStock, Text(p.isSoldByWeight ? '${p.stock.toCurrency()} kg' : p.stock.toStringAsFixed(0), overflow: TextOverflow.ellipsis)),
               cell(fBal, Align(alignment: Alignment.centerLeft, child: Icon(p.isSoldByWeight ? Icons.scale : Icons.inventory_2, size: 18, color: p.isSoldByWeight ? Colors.deepPurple : Colors.blueGrey))),
               cell(fActivo, Align(alignment: Alignment.centerLeft, child: Icon(p.active ? Icons.check_circle : Icons.cancel, color: p.active ? Colors.green : Colors.red, size: 20))),
@@ -723,6 +731,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
   List<Map<String, dynamic>> _priceTiers = [];
   String _unitType = 'un';
   int? _categoryId;
+  int? _brandId;
   late TextEditingController _expiryCtrl;
 
   bool get _isEditing => widget.product != null;
@@ -749,6 +758,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     }
     _unitType = p?.unitType ?? 'un';
     _categoryId = p?.category?.id;
+    _brandId = p?.brand?.id;
     _expiryCtrl = TextEditingController(
       text: p?.vencimientoDias != null ? p!.vencimientoDias.toString() : '',
     );
@@ -784,6 +794,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
       'unit_type': _unitType,
       'active': _active,
       if (_categoryId != null) 'category_id': _categoryId,
+      if (_brandId != null) 'brand_id': _brandId,
       if (_expiryCtrl.text.trim().isNotEmpty)
         'vencimiento_dias': int.parse(_expiryCtrl.text.trim()),
     };
@@ -805,6 +816,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
   @override
   Widget build(BuildContext context) {
     final categories = widget.provider.categories;
+    final brands = widget.provider.brands;
     return AlertDialog(
       title: Text(_isEditing ? 'Editar Producto' : 'Nuevo Producto'),
       contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
@@ -855,7 +867,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                   ],
                 ),
                 const SizedBox(height: 12),
-                // Categoría
+                // Categoría + quick-create
                 Row(
                   children: [
                     Expanded(
@@ -911,13 +923,83 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                             ),
                           );
                           if (created == true && mounted) {
-                            // Cargar la nueva y setearla automáticamente
                             try {
-                              final newCat = widget.provider.categories.firstWhere((c) => c.name.toLowerCase() == nameCtrl.text.trim().toLowerCase());
+                              final newCat = categories.firstWhere((c) => c.name.toLowerCase() == nameCtrl.text.trim().toLowerCase());
                               setState(() => _categoryId = newCat.id);
                             } catch (_) {
-                              if (widget.provider.categories.isNotEmpty) {
-                                setState(() => _categoryId = widget.provider.categories.last.id);
+                              if (categories.isNotEmpty) {
+                                setState(() => _categoryId = categories.last.id);
+                              }
+                            }
+                          }
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                // Marca + quick-create
+                Row(
+                  children: [
+                    Expanded(
+                      child: DropdownButtonFormField<int?>(
+                        value: _brandId,
+                        decoration: const InputDecoration(labelText: 'Marca', prefixIcon: Icon(Icons.branding_watermark_outlined)),
+                        items: [
+                          const DropdownMenuItem<int?>(value: null, child: Text('— Sin marca —')),
+                          ...brands.map((b) => DropdownMenuItem<int?>(value: b.id, child: Text(b.name))),
+                        ],
+                        onChanged: (val) => setState(() => _brandId = val),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Tooltip(
+                      message: 'Crear nueva marca rápida',
+                      child: IconButton.filledTonal(
+                        icon: const Icon(Icons.add),
+                        onPressed: () async {
+                          final nameCtrl = TextEditingController();
+                          final created = await showDialog<bool>(
+                            context: context,
+                            builder: (ctx) => AlertDialog(
+                              title: const Text('Nueva Marca'),
+                              content: TextField(
+                                controller: nameCtrl,
+                                decoration: const InputDecoration(
+                                  labelText: 'Nombre de la marca',
+                                  border: OutlineInputBorder(),
+                                  prefixIcon: Icon(Icons.branding_watermark_outlined),
+                                ),
+                                autofocus: true,
+                              ),
+                              actions: [
+                                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+                                Consumer<CatalogProvider>(
+                                  builder: (_, p, __) => FilledButton(
+                                    onPressed: p.isLoading
+                                      ? null
+                                      : () async {
+                                          if (nameCtrl.text.trim().isEmpty) return;
+                                          final ok = await p.createBrand(nameCtrl.text.trim());
+                                          if (ok && ctx.mounted) {
+                                            Navigator.pop(ctx, true);
+                                          } else if (ctx.mounted) {
+                                            SnackBarService.error(ctx, p.errorMessage ?? 'Error al crear marca');
+                                          }
+                                      },
+                                    child: const Text('Crear'),
+                                  )
+                                ),
+                              ],
+                            ),
+                          );
+                          if (created == true && mounted) {
+                            try {
+                              final newBrand = brands.firstWhere((b) => b.name.toLowerCase() == nameCtrl.text.trim().toLowerCase());
+                              setState(() => _brandId = newBrand.id);
+                            } catch (_) {
+                              if (brands.isNotEmpty) {
+                                setState(() => _brandId = brands.last.id);
                               }
                             }
                           }
@@ -1438,6 +1520,7 @@ class BulkPriceUpdateDialog extends StatefulWidget {
 class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
   final _percentCtrl = TextEditingController();
   int? _selectedCategoryId;
+  int? _selectedBrandId;
 
   @override
   void dispose() {
@@ -1454,7 +1537,11 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
 
     final String filterLabel = widget.targetProductIds != null
         ? 'los ${widget.targetProductIds!.length} productos seleccionados'
-        : (_selectedCategoryId == null ? 'todo el catálogo' : 'la categoría seleccionada');
+        : (_selectedCategoryId != null
+            ? 'la categoría seleccionada'
+            : _selectedBrandId != null
+                ? 'la marca seleccionada'
+                : 'todo el catálogo');
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -1493,6 +1580,7 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
       percentage: pct,
       productIds: widget.targetProductIds,
       categoryId: _selectedCategoryId,
+      brandId: _selectedBrandId,
     );
 
     if (mounted) {
@@ -1508,6 +1596,7 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
   @override
   Widget build(BuildContext context) {
     final categories = widget.provider.categories;
+    final brands = widget.provider.brands;
     return AlertDialog(
       title: Row(
         children: [
@@ -1558,15 +1647,29 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
               DropdownButtonFormField<int?>(
                 value: _selectedCategoryId,
                 decoration: const InputDecoration(
-                  labelText: 'Aplica a',
-                  prefixIcon: Icon(Icons.filter_alt_outlined),
+                  labelText: 'Filtrar por Categoría',
+                  prefixIcon: Icon(Icons.folder_outlined),
                   border: OutlineInputBorder(),
                 ),
                 items: [
-                  const DropdownMenuItem<int?>(value: null, child: Text('📦 Todo el catálogo')),
+                  const DropdownMenuItem<int?>(value: null, child: Text('📦 Todas las categorías')),
                   ...categories.map((c) => DropdownMenuItem<int?>(value: c.id, child: Text('📂 ${c.name}'))),
                 ],
                 onChanged: (val) => setState(() => _selectedCategoryId = val),
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<int?>(
+                value: _selectedBrandId,
+                decoration: const InputDecoration(
+                  labelText: 'Filtrar por Marca',
+                  prefixIcon: Icon(Icons.branding_watermark_outlined),
+                  border: OutlineInputBorder(),
+                ),
+                items: [
+                  const DropdownMenuItem<int?>(value: null, child: Text('🏷️ Todas las marcas')),
+                  ...brands.map((b) => DropdownMenuItem<int?>(value: b.id, child: Text('🏷️ ${b.name}'))),
+                ],
+                onChanged: (val) => setState(() => _selectedBrandId = val),
               ),
             ] else ...[
               Container(

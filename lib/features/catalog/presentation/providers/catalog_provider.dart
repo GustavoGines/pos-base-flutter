@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../domain/entities/product.dart';
 import '../../domain/entities/category.dart';
+import '../../domain/entities/brand.dart';
 import '../../domain/repositories/catalog_repository.dart';
 import '../../domain/usecases/get_products_usecase.dart';
 import '../../data/models/product_model.dart';
@@ -15,6 +16,9 @@ class CatalogProvider with ChangeNotifier {
 
   List<Category> _categories = [];
   List<Category> get categories => _categories;
+
+  List<Brand> _brands = [];
+  List<Brand> get brands => _brands;
 
   bool _isLoading = false;
   bool get isLoading => _isLoading;
@@ -64,6 +68,9 @@ class CatalogProvider with ChangeNotifier {
       if (page == 1) {
         if (_categories.isEmpty) {
           _categories = await repository.getCategories();
+        }
+        if (_brands.isEmpty) {
+          _brands = await repository.getBrands();
         }
       }
     } catch (e, stack) {
@@ -335,6 +342,66 @@ class CatalogProvider with ChangeNotifier {
     try {
       await repository.deleteCategory(id);
       _categories.removeWhere((c) => c.id == id);
+      return true;
+    } catch (e) {
+      _errorMessage = e.toString();
+      return false;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  // ───────────────────────────────────────────────────────
+  // GESTIÓN DE MARCAS
+  // ───────────────────────────────────────────────────────
+
+  Future<bool> createBrand(String name, {String? description}) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      final created = await repository.createBrand(name, description: description);
+      _brands = [..._brands, created];
+      return true;
+    } catch (e) {
+      _errorMessage = e.toString();
+      return false;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> updateBrand(int id, String name, {String? description}) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      final updated = await repository.updateBrand(id, name, description: description);
+      final idx = _brands.indexWhere((b) => b.id == id);
+      if (idx != -1) {
+        final newList = List.of(_brands);
+        newList[idx] = updated;
+        _brands = newList;
+      }
+      return true;
+    } catch (e) {
+      _errorMessage = e.toString();
+      return false;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> deleteBrand(int id) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      await repository.deleteBrand(id);
+      _brands.removeWhere((b) => b.id == id);
       return true;
     } catch (e) {
       _errorMessage = e.toString();
