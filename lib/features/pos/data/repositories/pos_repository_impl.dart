@@ -38,6 +38,7 @@ class PosRepositoryImpl implements PosRepository {
     double shippingCost = 0.0,
     bool requiresDispatch = false,
     String fulfillmentStatus = 'pending',
+    Map<String, dynamic>? checkDetails,
   }) async {
     final response = await remoteDataSource.processSale(
       total: total,
@@ -54,6 +55,7 @@ class PosRepositoryImpl implements PosRepository {
       shippingCost: shippingCost,
       requiresDispatch: requiresDispatch,
       fulfillmentStatus: fulfillmentStatus,
+      checkDetails: checkDetails,
     );
 
     return Sale(
@@ -88,6 +90,7 @@ class PosRepositoryImpl implements PosRepository {
     int? userId,
     List<CartItem>? items,
     double shippingCost = 0.0,
+    Map<String, dynamic>? checkDetails,
   }) async {
     final response = await remoteDataSource.payPendingSale(
       saleId: saleId,
@@ -98,6 +101,7 @@ class PosRepositoryImpl implements PosRepository {
       userId: userId,
       items: items,
       shippingCost: shippingCost,
+      checkDetails: checkDetails,
     );
     return response as Map<String, dynamic>;
   }

@@ -87,6 +87,7 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                         final bool canAccessAdvancedReports = settings.features.advancedReports;
                         final bool canAccessQuotes = settings.features.quotes;
                         final bool canAccessCurrentAccounts = settings.features.currentAccounts;
+                        final bool canAccessChecks = settings.features.checks;
 
                         return Center(
                           child: SingleChildScrollView(
@@ -141,7 +142,7 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                                   icon: Icons.account_balance_outlined,
                                   isCompact: isCompact,
                                   isIconOnly: isIconOnly,
-                                  isActive: ['/cuentas-corrientes', '/quotes', '/reports'].contains(currentRoute),
+                                  isActive: ['/cuentas-corrientes', '/quotes', '/reports', '/checks'].contains(currentRoute),
                                   activeColor: Colors.orange.shade700,
                                   menuChildren: [
                                     if (canAccessQuotes)
@@ -165,6 +166,20 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                                         'Pago de tickets específicos',
                                         'Historial de movimientos en tiempo real',
                                         'Alertas de crédito insuficiente',
+                                      ],
+                                    ),
+                                    _buildMenuItem(
+                                      context: context,
+                                      label: 'Cartera de Cheques',
+                                      icon: canAccessChecks ? Icons.account_balance_wallet : Icons.lock_outline,
+                                      color: Colors.green.shade700,
+                                      route: '/checks',
+                                      isLocked: !canAccessChecks,
+                                      lockedTitle: 'Cartera de Cheques PREMIUM',
+                                      lockedFeatures: [
+                                        'Recepción de cheques de terceros en POS',
+                                        'Gestión y visualización de cartera',
+                                        'Alertas de vencimiento y cobro',
                                       ],
                                     ),
                                     _buildMenuItem(

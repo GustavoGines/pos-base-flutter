@@ -82,6 +82,7 @@ class BusinessSettingsModel extends BusinessSettings {
       advancedReports: featuresMap['advanced_reports'] == true || featuresMap['advanced_reports'] == 1,
       predictiveAlerts: featuresMap['predictive_alerts'] == true || featuresMap['predictive_alerts'] == 1,
       logistics: featuresMap['logistics'] == true || featuresMap['logistics'] == 1,
+      checks: featuresMap['cheques'] == true || featuresMap['cheques'] == 1 || featuresMap['checks'] == true || featuresMap['checks'] == 1,
     );
 
     return BusinessSettingsModel(

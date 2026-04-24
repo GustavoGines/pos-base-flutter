@@ -6,6 +6,7 @@ import 'package:frontend_desktop/core/providers/local_terminal_provider.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
 import '../../../settings/presentation/providers/settings_provider.dart';
 import '../providers/cash_register_provider.dart';
+import 'package:intl/intl.dart';
 
 class CashShiftSummaryScreen extends StatelessWidget {
   final CashRegisterShift closedShift;
@@ -126,6 +127,12 @@ class CashShiftSummaryScreen extends StatelessWidget {
                   _buildRow('Ventas con Tarjeta', '\$${(closedShift.cardSales ?? 0).toCurrency()}'),
                   _buildRow('Ventas por Transf.', '\$${(closedShift.transferSales ?? 0).toCurrency()}'),
                   _buildRow('Total Recargos (Tarj/Billeteras)', '\$${(closedShift.totalSurcharge ?? 0).toCurrency()}'),
+
+                  // Cheques: Solo visible si feature habilitada
+                  if (context.read<SettingsProvider>().settings?.features.checks == true) ...[
+                    const Divider(height: 8),
+                    _buildCheckSection(closedShift),
+                  ],
                   const Divider(),
                   _buildRow('Efectivo Esperado', '\$${(closedShift.expectedBalance ?? 0).toCurrency()}', bold: true),
                   _buildRow('Efectivo Físico', '\$${(closedShift.actualBalance ?? 0).toCurrency()}', bold: true),
@@ -196,4 +203,58 @@ class CashShiftSummaryScreen extends StatelessWidget {
       ),
     );
   }
+
+  Widget _buildCheckSection(CashRegisterShift shift) {
+    final count = shift.checkCount ?? 0;
+    final total = shift.checkSales ?? 0.0;
+    final details = shift.checkDetails ?? [];
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.indigo.shade50,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.indigo.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.receipt_long, color: Colors.indigo.shade700, size: 18),
+              const SizedBox(width: 8),
+              Text('Valores en Cheques', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.indigo.shade800, fontSize: 14)),
+              const Spacer(),
+              Text('\$${total.toCurrency()}', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.indigo.shade900, fontSize: 15)),
+            ],
+          ),
+          Text('$count cheque${count != 1 ? 's' : ''} recibido${count != 1 ? 's' : ''}',
+              style: TextStyle(fontSize: 12, color: Colors.indigo.shade600)),
+          if (details.isNotEmpty) ...[ 
+            const SizedBox(height: 8),
+            const Divider(height: 4),
+            ...details.map((c) {
+              final payDate = c['payment_date'] != null
+                  ? DateFormat('dd/MM/yyyy').format(DateTime.tryParse(c['payment_date'].toString()) ?? DateTime.now())
+                  : '-';
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 3),
+                child: Row(
+                  children: [
+                    Expanded(child: Text('${c['bank_name'] ?? ''} #${c['check_number'] ?? ''}',
+                        style: const TextStyle(fontSize: 12))),
+                    Text('Cobro: $payDate', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                    const SizedBox(width: 8),
+                    Text('\$${double.tryParse(c['amount'].toString())?.toCurrency() ?? '-'}',
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+              );
+            }),
+          ],
+        ],
+      ),
+    );
+  }
 }
+

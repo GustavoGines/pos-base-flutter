@@ -22,6 +22,7 @@ abstract class PosRepository {
     double shippingCost = 0.0,
     bool requiresDispatch = false,
     String fulfillmentStatus = 'pending',
+    Map<String, dynamic>? checkDetails,
   });
   Future<List<Map<String, dynamic>>> fetchPendingSales();
   Future<Map<String, dynamic>> payPendingSale({
@@ -33,6 +34,7 @@ abstract class PosRepository {
     int? userId,
     List<CartItem>? items,
     double shippingCost = 0.0,
+    Map<String, dynamic>? checkDetails,
   });
   Future<Map<String, dynamic>> voidPendingSale(int saleId);
   Future<void> updatePaymentMethodSurcharge(int id, double surchargeValue);

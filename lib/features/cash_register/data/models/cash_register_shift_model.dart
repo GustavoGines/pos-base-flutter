@@ -17,6 +17,9 @@ class CashRegisterShiftModel extends CashRegisterShift {
     double? cardSales,
     double? transferSales,
     double? totalSurcharge,
+    double? checkSales,
+    int? checkCount,
+    List<Map<String, dynamic>>? checkDetails,
     required String status,
     String? userName,
     String? cashRegisterName,
@@ -38,6 +41,9 @@ class CashRegisterShiftModel extends CashRegisterShift {
           cardSales: cardSales,
           transferSales: transferSales,
           totalSurcharge: totalSurcharge,
+          checkSales: checkSales,
+          checkCount: checkCount,
+          checkDetails: checkDetails,
           status: status,
           userName: userName,
           cashRegisterName: cashRegisterName,
@@ -62,6 +68,15 @@ class CashRegisterShiftModel extends CashRegisterShift {
       cardSales: json['card_sales'] != null ? double.parse(json['card_sales'].toString()) : null,
       transferSales: json['transfer_sales'] != null ? double.parse(json['transfer_sales'].toString()) : null,
       totalSurcharge: json['total_surcharge'] != null ? double.parse(json['total_surcharge'].toString()) : null,
+      checkSales: json['check_sales'] != null ? double.parse(json['check_sales'].toString()) : null,
+      checkCount: json['check_count'] != null ? int.tryParse(json['check_count'].toString()) : null,
+      checkDetails: json['check_details'] != null
+          ? List<Map<String, dynamic>>.from(
+              (json['check_details'] is String
+                  ? (json['check_details'] as String).isNotEmpty ? [] : []
+                  : json['check_details'] as List)
+                  .map((e) => Map<String, dynamic>.from(e)))
+          : null,
       status: json['status'],
       userName: json['user'] != null ? json['user']['name'] : null,
       cashRegisterName: json['cash_register'] != null ? json['cash_register']['name'] : null,

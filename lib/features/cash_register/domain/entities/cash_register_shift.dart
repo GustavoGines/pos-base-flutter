@@ -14,6 +14,9 @@ class CashRegisterShift {
   final double? cardSales;
   final double? transferSales;
   final double? totalSurcharge;
+  final double? checkSales;
+  final int? checkCount;
+  final List<Map<String, dynamic>>? checkDetails;
   final String status;
 
   // Relaciones
@@ -39,6 +42,9 @@ class CashRegisterShift {
     this.cardSales,
     this.transferSales,
     this.totalSurcharge,
+    this.checkSales,
+    this.checkCount,
+    this.checkDetails,
     this.userName,
     this.cashRegisterName,
     this.closedByUserId,

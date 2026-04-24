@@ -1,5 +1,6 @@
 import '../../domain/entities/product.dart';
 import 'category_model.dart';
+import 'brand_model.dart';
 
 class ProductModel extends Product {
   ProductModel({
@@ -22,6 +23,7 @@ class ProductModel extends Product {
     int? vencimientoDias,
     String unitType = 'un',
     CategoryModel? category,
+    BrandModel? brand,
   }) : super(
           id: id,
           name: name,
@@ -42,6 +44,7 @@ class ProductModel extends Product {
           vencimientoDias: vencimientoDias,
           unitType: unitType,
           category: category,
+          brand: brand,
         );
 
   @override
@@ -65,6 +68,7 @@ class ProductModel extends Product {
     int? vencimientoDias,
     String? unitType,
     covariant CategoryModel? category,
+    covariant BrandModel? brand,
   }) {
     return ProductModel(
       id: id ?? this.id,
@@ -86,6 +90,7 @@ class ProductModel extends Product {
       vencimientoDias: vencimientoDias ?? this.vencimientoDias,
       unitType: unitType ?? this.unitType,
       category: category ?? (this.category as CategoryModel?),
+      brand: brand ?? (this.brand as BrandModel?),
     );
   }
 
@@ -143,8 +148,11 @@ class ProductModel extends Product {
           ? int.tryParse(json['vencimiento_dias'].toString())
           : null,
       unitType: json['unit_type']?.toString() ?? 'un',
-      category: json['category'] != null && json['category'] is Map<String, dynamic> 
-          ? CategoryModel.fromJson(json['category'] as Map<String, dynamic>) 
+      category: json['category'] != null && json['category'] is Map<String, dynamic>
+          ? CategoryModel.fromJson(json['category'] as Map<String, dynamic>)
+          : null,
+      brand: json['brand'] != null && json['brand'] is Map<String, dynamic>
+          ? BrandModel.fromJson(json['brand'] as Map<String, dynamic>)
           : null,
     );
   }

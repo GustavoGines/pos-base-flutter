@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../models/customer_model.dart';
 import '../../providers/customer_provider.dart';
+import '../../../settings/presentation/providers/settings_provider.dart';
 
 class PaymentDialog extends StatefulWidget {
   final Customer customer;
@@ -17,6 +18,12 @@ class _PaymentDialogState extends State<PaymentDialog> {
   final _formKey = GlobalKey<FormState>();
   final _amountController = TextEditingController();
   final _descriptionController = TextEditingController();
+  final _checkBankCtrl = TextEditingController();
+  final _checkNumberCtrl = TextEditingController();
+  final _checkIssuerCuitCtrl = TextEditingController();
+  final _checkIssuerNameCtrl = TextEditingController();
+  final _checkIssueDateCtrl = TextEditingController();
+  final _checkPaymentDateCtrl = TextEditingController();
   
   bool _isSubmitting = false;
   String _paymentType = 'general';
@@ -36,6 +43,12 @@ class _PaymentDialogState extends State<PaymentDialog> {
   void dispose() {
     _amountController.dispose();
     _descriptionController.dispose();
+    _checkBankCtrl.dispose();
+    _checkNumberCtrl.dispose();
+    _checkIssuerCuitCtrl.dispose();
+    _checkIssuerNameCtrl.dispose();
+    _checkIssueDateCtrl.dispose();
+    _checkPaymentDateCtrl.dispose();
     super.dispose();
   }
 
@@ -73,6 +86,27 @@ class _PaymentDialogState extends State<PaymentDialog> {
       return;
     }
 
+    Map<String, dynamic>? checkDetailsPayload;
+    if (_paymentMethod == 'cheque') {
+      if (_checkBankCtrl.text.trim().isEmpty ||
+          _checkNumberCtrl.text.trim().isEmpty ||
+          _checkIssuerCuitCtrl.text.trim().isEmpty ||
+          _checkIssuerNameCtrl.text.trim().isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Complete los datos obligatorios del cheque (Banco, Número, CUIT, Firmante).'), backgroundColor: Colors.red),
+        );
+        return;
+      }
+      checkDetailsPayload = {
+        'bank_name': _checkBankCtrl.text.trim(),
+        'check_number': _checkNumberCtrl.text.trim(),
+        'issuer_cuit': _checkIssuerCuitCtrl.text.trim(),
+        'issuer_name': _checkIssuerNameCtrl.text.trim(),
+        'issue_date': _checkIssueDateCtrl.text.trim().isNotEmpty ? _checkIssueDateCtrl.text.trim() : DateTime.now().toString().split(' ')[0],
+        'payment_date': _checkPaymentDateCtrl.text.trim().isNotEmpty ? _checkPaymentDateCtrl.text.trim() : DateTime.now().toString().split(' ')[0],
+      };
+    }
+
     setState(() => _isSubmitting = true);
 
     try {
@@ -82,6 +116,7 @@ class _PaymentDialogState extends State<PaymentDialog> {
         paymentMethod: _paymentMethod,
         description: _descriptionController.text.trim(),
         saleIds: _paymentType == 'specific' ? _selectedSaleIds : const [],
+        checkDetails: checkDetailsPayload,
       );
 
       if (success && mounted) {
@@ -106,6 +141,7 @@ class _PaymentDialogState extends State<PaymentDialog> {
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<CustomerProvider>();
+    final settings = context.watch<SettingsProvider>().settings;
 
     return AlertDialog(
       title: Text('Registrar Pago - ${widget.customer.name}'),
@@ -213,16 +249,59 @@ class _PaymentDialogState extends State<PaymentDialog> {
                     labelText: 'Método de Pago *',
                     border: OutlineInputBorder(),
                   ),
-                  items: const [
-                    DropdownMenuItem(value: 'cash', child: Text('Efectivo')),
-                    DropdownMenuItem(value: 'card', child: Text('Tarjeta')),
-                    DropdownMenuItem(value: 'transfer', child: Text('Transferencia')),
+                  items: [
+                    const DropdownMenuItem(value: 'cash', child: Text('Efectivo')),
+                    const DropdownMenuItem(value: 'card', child: Text('Tarjeta')),
+                    const DropdownMenuItem(value: 'transfer', child: Text('Transferencia')),
+                    if (settings?.features.checks == true)
+                      const DropdownMenuItem(value: 'cheque', child: Text('Cheque')),
                   ],
                   onChanged: (val) {
                     if (val != null) setState(() => _paymentMethod = val);
                   },
                 ),
                 const SizedBox(height: 16),
+
+                if (_paymentMethod == 'cheque')
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    margin: const EdgeInsets.only(bottom: 16),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.blue.shade200),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Detalles del Cheque', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.blue)),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Expanded(child: TextField(controller: _checkBankCtrl, decoration: InputDecoration(labelText: 'Banco', isDense: true, border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)), filled: true, fillColor: Colors.white))),
+                            const SizedBox(width: 8),
+                            Expanded(child: TextField(controller: _checkNumberCtrl, decoration: InputDecoration(labelText: 'Nro Cheque', isDense: true, border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)), filled: true, fillColor: Colors.white))),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Expanded(child: TextField(controller: _checkIssuerCuitCtrl, decoration: InputDecoration(labelText: 'CUIT Firmante', isDense: true, border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)), filled: true, fillColor: Colors.white))),
+                            const SizedBox(width: 8),
+                            Expanded(child: TextField(controller: _checkIssuerNameCtrl, decoration: InputDecoration(labelText: 'Nombre Firmante', isDense: true, border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)), filled: true, fillColor: Colors.white))),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Expanded(child: TextField(controller: _checkIssueDateCtrl, decoration: InputDecoration(labelText: 'Emisión (YYYY-MM-DD)', isDense: true, border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)), filled: true, fillColor: Colors.white))),
+                            const SizedBox(width: 8),
+                            Expanded(child: TextField(controller: _checkPaymentDateCtrl, decoration: InputDecoration(labelText: 'Cobro (YYYY-MM-DD)', isDense: true, border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)), filled: true, fillColor: Colors.white))),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
 
                 TextFormField(
                   controller: _amountController,

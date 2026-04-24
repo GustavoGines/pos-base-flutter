@@ -1,4 +1,5 @@
 import 'category.dart';
+import 'brand.dart';
 
 class Product {
   final int id;
@@ -21,6 +22,7 @@ class Product {
   final int salesCount;
   final String unitType;
   final Category? category;
+  final Brand? brand;
 
   Product({
     required this.id,
@@ -42,6 +44,7 @@ class Product {
     this.vencimientoDias,
     this.unitType = 'un',
     this.category,
+    this.brand,
   });
   Product copyWith({
     int? id,
@@ -63,6 +66,7 @@ class Product {
     int? vencimientoDias,
     String? unitType,
     Category? category,
+    Brand? brand,
   }) {
     return Product(
       id: id ?? this.id,
@@ -84,6 +88,7 @@ class Product {
       vencimientoDias: vencimientoDias ?? this.vencimientoDias,
       unitType: unitType ?? this.unitType,
       category: category ?? this.category,
+      brand: brand ?? this.brand,
     );
   }
 

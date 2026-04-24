@@ -170,6 +170,7 @@ class CustomerProvider extends ChangeNotifier {
     required String paymentMethod,
     String description = '',
     List<int> saleIds = const [],
+    Map<String, dynamic>? checkDetails,
   }) async {
     try {
       final Map<String, dynamic> bodyPayload = {
@@ -183,6 +184,10 @@ class CustomerProvider extends ChangeNotifier {
       
       if (saleIds.isNotEmpty) {
         bodyPayload['sale_ids'] = saleIds;
+      }
+
+      if (checkDetails != null) {
+        bodyPayload['check_details'] = checkDetails;
       }
 
       final response = await http.post(

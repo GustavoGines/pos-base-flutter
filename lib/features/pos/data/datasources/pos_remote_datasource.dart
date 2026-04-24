@@ -33,6 +33,7 @@ abstract class PosRemoteDataSource {
     double shippingCost = 0.0,
     bool requiresDispatch = false,
     String fulfillmentStatus = 'pending',
+    Map<String, dynamic>? checkDetails,
   });
   Future<List<dynamic>> fetchPendingSales();
   Future<dynamic> payPendingSale({
@@ -44,6 +45,7 @@ abstract class PosRemoteDataSource {
     int? userId,
     List<CartItem>? items,
     double shippingCost = 0.0,
+    Map<String, dynamic>? checkDetails,
   });
   Future<dynamic> voidPendingSale(int saleId);
   Future<void> updatePaymentMethodSurcharge(int id, double surchargeValue);
@@ -153,6 +155,7 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
     double shippingCost = 0.0,
     bool requiresDispatch = false,
     String fulfillmentStatus = 'pending',
+    Map<String, dynamic>? checkDetails,
   }) async {
     try {
       final payload = {
@@ -169,6 +172,8 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
         if (userId != null) 'user_id': userId,
         if (customerId != null) 'customer_id': customerId,
         if (quoteId != null) 'quote_id': quoteId,
+        // Bridge de Cheque: solo se incluye si el método es cheque y hay datos del cartón
+        if (checkDetails != null) 'check_details': checkDetails,
         'items': items.map((item) => {
           'product_id': item.product.id,
           'quantity': item.quantity,
@@ -251,6 +256,7 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
     int? userId,
     List<CartItem>? items,
     double shippingCost = 0.0,
+    Map<String, dynamic>? checkDetails,
   }) async {
     try {
       final payload = {
@@ -260,6 +266,7 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
         'change_amount': changeAmount,
         'shipping_cost': shippingCost,
         if (userId != null) 'user_id': userId,
+        if (checkDetails != null) 'check_details': checkDetails,
       };
       if (items != null) {
         payload['items'] = items.map((item) => {

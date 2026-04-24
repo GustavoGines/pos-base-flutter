@@ -2,11 +2,17 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/product_model.dart';
 import '../models/category_model.dart';
+import '../models/brand_model.dart';
 
 abstract class CatalogRemoteDataSource {
   /// Returns a map with 'data' (List<ProductModel>), 'current_page', 'last_page'.
   Future<Map<String, dynamic>> fetchProducts({int page = 1, String? search, String? sortBy, String? sortDirection, int? perPage});
   Future<List<CategoryModel>> fetchCategories();
+  // Brand CRUD
+  Future<List<BrandModel>> fetchBrands();
+  Future<BrandModel> createBrand(String name, {String? description});
+  Future<BrandModel> updateBrand(int id, String name, {String? description});
+  Future<void> deleteBrand(int id);
   // Category CRUD
   Future<CategoryModel> createCategory(String name, {String? description});
   Future<CategoryModel> updateCategory(int id, String name, {String? description});
@@ -82,6 +88,83 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
       }
     } catch (e) {
       print('=== API Error en fetchCategories: $e ===');
+      rethrow;
+    }
+  }
+
+  @override
+  Future<List<BrandModel>> fetchBrands() async {
+    try {
+      final response = await client.get(
+        Uri.parse('$baseUrl/catalog/brands'),
+        headers: {'Accept': 'application/json'},
+      );
+      if (response.statusCode == 200) {
+        final List<dynamic> jsonList = json.decode(response.body);
+        return jsonList.map((j) => BrandModel.fromJson(j)).toList();
+      } else {
+        throw Exception('Failed to load brands (Status: ${response.statusCode})');
+      }
+    } catch (e) {
+      print('=== API Error en fetchBrands: $e ===');
+      rethrow;
+    }
+  }
+
+  @override
+  Future<BrandModel> createBrand(String name, {String? description}) async {
+    try {
+      final response = await client.post(
+        Uri.parse('$baseUrl/catalog/brands'),
+        headers: {'Accept': 'application/json', 'Content-Type': 'application/json'},
+        body: json.encode({'name': name, if (description != null) 'description': description}),
+      );
+      if (response.statusCode == 201) {
+        return BrandModel.fromJson(json.decode(response.body));
+      } else {
+        throw Exception('Error al crear marca: ${response.body}');
+      }
+    } catch (e) {
+      print('=== API Error en createBrand: $e ===');
+      rethrow;
+    }
+  }
+
+  @override
+  Future<BrandModel> updateBrand(int id, String name, {String? description}) async {
+    try {
+      final response = await client.put(
+        Uri.parse('$baseUrl/catalog/brands/$id'),
+        headers: {'Accept': 'application/json', 'Content-Type': 'application/json'},
+        body: json.encode({'name': name, if (description != null) 'description': description}),
+      );
+      if (response.statusCode == 200) {
+        return BrandModel.fromJson(json.decode(response.body));
+      } else {
+        throw Exception('Error al actualizar marca: ${response.body}');
+      }
+    } catch (e) {
+      print('=== API Error en updateBrand: $e ===');
+      rethrow;
+    }
+  }
+
+  @override
+  Future<void> deleteBrand(int id) async {
+    try {
+      final response = await client.delete(
+        Uri.parse('$baseUrl/catalog/brands/$id'),
+        headers: {'Accept': 'application/json'},
+      );
+      if (response.statusCode == 422) {
+        final error = json.decode(response.body);
+        throw Exception(error['message'] ?? 'No se puede eliminar: tiene productos asociados.');
+      }
+      if (response.statusCode != 204) {
+        throw Exception('Error al eliminar marca (Status: ${response.statusCode})');
+      }
+    } catch (e) {
+      print('=== API Error en deleteBrand: $e ===');
       rethrow;
     }
   }

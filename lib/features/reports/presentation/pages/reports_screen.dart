@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
+import 'package:frontend_desktop/features/checks/presentation/providers/check_provider.dart';
 import '../providers/reports_provider.dart';
 
 class ReportsScreen extends StatefulWidget {
@@ -21,11 +22,15 @@ class _ReportsScreenState extends State<ReportsScreen>
   @override
   void initState() {
     super.initState();
-    // El length se calcula en base a los addons disponibles
     final hasAdvancedReports = context.read<SettingsProvider>().features.advancedReports;
     _tabController = TabController(length: hasAdvancedReports ? 2 : 1, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<ReportsProvider>().fetchProfitByCategory();
+      // Cargar cheques para el KPI de liquidez (solo si la feature está activa)
+      final checksEnabled = context.read<SettingsProvider>().settings?.features.checks == true;
+      if (checksEnabled) {
+        context.read<CheckProvider>().loadChecks();
+      }
     });
   }
 
@@ -268,6 +273,22 @@ class _HeroCardsRow extends StatelessWidget {
     final coverage = provider.totalItems > 0
         ? (provider.totalItemsWithCost / provider.totalItems * 100).toStringAsFixed(0)
         : '0';
+    final settings = context.watch<SettingsProvider>().settings;
+    final checksEnabled = settings?.features.checks == true;
+
+    // Cheques proximos a cobrar (en cartera, payment_date <= hoy + 7)
+    double checksThisWeekAmount = 0.0;
+    int checksThisWeekCount = 0;
+    if (checksEnabled) {
+      final checkProvider = context.watch<CheckProvider>();
+      final now = DateTime.now();
+      final nextWeek = now.add(const Duration(days: 7));
+      final upcoming = checkProvider.checks.where((c) =>
+          c.status == 'in_wallet' &&
+          !c.paymentDate.isAfter(nextWeek));
+      checksThisWeekAmount = upcoming.fold(0.0, (sum, c) => sum + c.amount);
+      checksThisWeekCount = upcoming.length;
+    }
 
     return Row(
       children: [
@@ -308,6 +329,19 @@ class _HeroCardsRow extends StatelessWidget {
                 : null,
           ),
         ),
+        if (checksEnabled) ...[
+          const SizedBox(width: 16),
+          Expanded(
+            child: _HeroCard(
+              title: 'Cheques a Cobrar (7 días)',
+              value: '\$${checksThisWeekAmount.toCurrency()}',
+              icon: Icons.account_balance_wallet,
+              color: Colors.indigo.shade600,
+              bgColor: Colors.indigo.shade50,
+              subtitle: '$checksThisWeekCount cheque${checksThisWeekCount != 1 ? 's' : ''} próximo${checksThisWeekCount != 1 ? 's' : ''}',
+            ),
+          ),
+        ],
       ],
     );
   }

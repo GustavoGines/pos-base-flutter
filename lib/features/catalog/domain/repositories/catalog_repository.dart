@@ -1,10 +1,16 @@
 import '../entities/product.dart';
 import '../entities/category.dart';
+import '../entities/brand.dart';
 
 abstract class CatalogRepository {
   /// Returns {data: List<Product>, current_page: int, last_page: int}
   Future<Map<String, dynamic>> getProducts({int page = 1, String? search, String? sortBy, String? sortDirection, int? perPage});
   Future<List<Category>> getCategories();
+  // Brand CRUD
+  Future<List<Brand>> getBrands();
+  Future<Brand> createBrand(String name, {String? description});
+  Future<Brand> updateBrand(int id, String name, {String? description});
+  Future<void> deleteBrand(int id);
   // Category CRUD
   Future<Category> createCategory(String name, {String? description});
   Future<Category> updateCategory(int id, String name, {String? description});
