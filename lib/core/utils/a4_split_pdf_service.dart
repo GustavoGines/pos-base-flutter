@@ -616,6 +616,10 @@ class A4SplitPdfService {
                   pw.Text('CLIENTE', style: pw.TextStyle(fontSize: 8, color: _textGrey, fontWeight: pw.FontWeight.bold)),
                   pw.SizedBox(height: 2),
                   pw.Text(customerName.toUpperCase(), style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold)),
+                  if (sale['delivery_address'] != null && sale['delivery_address'].toString().isNotEmpty) ...[
+                    pw.SizedBox(height: 2),
+                    pw.Text('Entrega: ${sale['delivery_address']}', style: pw.TextStyle(fontSize: 9, color: _primary, fontWeight: pw.FontWeight.bold)),
+                  ],
                 ],
               ),
             ),

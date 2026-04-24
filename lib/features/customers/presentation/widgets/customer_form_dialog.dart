@@ -18,6 +18,7 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
   late TextEditingController _documentController;
   late TextEditingController _phoneController;
   late TextEditingController _creditLimitController;
+  late TextEditingController _deliveryAddressController;
   
   bool _isSubmitting = false;
 
@@ -28,6 +29,7 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
     _documentController = TextEditingController(text: widget.customer?.documentNumber ?? '');
     _phoneController = TextEditingController(text: widget.customer?.phone ?? '');
     _creditLimitController = TextEditingController(text: widget.customer != null ? widget.customer!.creditLimit.toString() : '');
+    _deliveryAddressController = TextEditingController(text: widget.customer?.deliveryAddress ?? '');
   }
 
   Future<void> _submit() async {
@@ -41,6 +43,7 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
         'document_number': _documentController.text.trim(),
         'phone': _phoneController.text.trim(),
         'credit_limit': double.tryParse(_creditLimitController.text.trim()) ?? 0.0,
+        'delivery_address': _deliveryAddressController.text.trim(),
       };
 
       bool success;
@@ -79,6 +82,7 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
     _documentController.dispose();
     _phoneController.dispose();
     _creditLimitController.dispose();
+    _deliveryAddressController.dispose();
     super.dispose();
   }
 
@@ -87,7 +91,7 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
     final isEditing = widget.customer != null;
 
     return AlertDialog(
-      title: Text(isEditing ? 'Editar Cliente' : 'Nuevo Cliente (Cta. Cte.)'),
+      title: Text(isEditing ? 'Editar Cliente' : 'Nuevo Cliente'),
       content: Form(
         key: _formKey,
         child: SingleChildScrollView(
@@ -110,6 +114,11 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
                 controller: _phoneController,
                 keyboardType: TextInputType.phone,
                 decoration: const InputDecoration(labelText: 'Teléfono (Opcional)', border: OutlineInputBorder()),
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _deliveryAddressController,
+                decoration: const InputDecoration(labelText: 'Dirección de Entrega (Opcional)', border: OutlineInputBorder()),
               ),
               const SizedBox(height: 16),
               TextFormField(
@@ -137,3 +146,4 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
     );
   }
 }
+

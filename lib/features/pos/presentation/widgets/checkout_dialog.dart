@@ -110,6 +110,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   final _cashTenderedFocus = FocusNode();
   
   late TextEditingController _shippingCostCtrl;
+  final _deliveryAddressCtrl = TextEditingController();
 
   Customer? _selectedCustomer;
   
@@ -195,6 +196,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     _cashTenderedCtrl.dispose();
     _shippingCostCtrl.dispose();
     _cashTenderedFocus.dispose();
+    _deliveryAddressCtrl.dispose();
     super.dispose();
   }
 
@@ -387,7 +389,10 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       context: context,
       builder: (ctx) => _CustomerPickerDialog(
         onSelected: (c) {
-          setState(() => _selectedCustomer = c);
+          setState(() {
+            _selectedCustomer = c;
+            _deliveryAddressCtrl.text = c.deliveryAddress ?? '';
+          });
           if (c.defaultPriceTier != null && c.defaultPriceTier!.isNotEmpty) {
             final appSettings = context.read<SettingsProvider>();
             if (appSettings.settings?.features.multiplePrices == true) {
@@ -636,6 +641,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         requiresDispatch: _requiresDispatch,
         fulfillmentStatus: _fulfillmentStatus,
         checkDetails: checkDetailsPayload,
+        deliveryAddress: _deliveryAddressCtrl.text.trim().isEmpty ? null : _deliveryAddressCtrl.text.trim(),
       );
     }
 
@@ -1340,45 +1346,69 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                       ],
                     ),
                   ),
-                  if (_requiresDispatch && _fulfillmentStatus == 'pending') ...[
-                    const SizedBox(height: 12),
-                    Container(
-                      margin: const EdgeInsets.only(left: 48),
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Colors.blueGrey.shade50,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.local_shipping_outlined, size: 18, color: Colors.blueGrey),
-                          const SizedBox(width: 8),
-                          const Text('Flete / Envío:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                          const Spacer(),
-                          SizedBox(
-                            width: 120,
-                            height: 36,
-                            child: TextField(
-                              controller: _shippingCostCtrl,
-                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                              textAlign: TextAlign.right,
-                              decoration: const InputDecoration(
-                                prefixText: '\$ ',
-                                isDense: true,
-                                contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                                border: OutlineInputBorder(),
-                              ),
-                              onChanged: (val) {
-                                // El listener de _shippingCostCtrl ya dispara setState() y _syncPaymentsWithShipping()
-                              },
+                    if (_requiresDispatch && _fulfillmentStatus == 'pending') ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        margin: const EdgeInsets.only(left: 48),
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.blueGrey.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Column(
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(Icons.local_shipping_outlined, size: 18, color: Colors.blueGrey),
+                                const SizedBox(width: 8),
+                                const Text('Flete / Envío:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                                const Spacer(),
+                                SizedBox(
+                                  width: 120,
+                                  height: 36,
+                                  child: TextField(
+                                    controller: _shippingCostCtrl,
+                                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                    textAlign: TextAlign.right,
+                                    decoration: const InputDecoration(
+                                      prefixText: '\$ ',
+                                      isDense: true,
+                                      contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                                      border: OutlineInputBorder(),
+                                    ),
+                                    onChanged: (val) {
+                                      // El listener de _shippingCostCtrl ya dispara setState() y _syncPaymentsWithShipping()
+                                    },
+                                  ),
+                                ),
+                              ],
                             ),
-                          ),
-                        ],
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                const Icon(Icons.location_on_outlined, size: 18, color: Colors.blueGrey),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: TextField(
+                                    controller: _deliveryAddressCtrl,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Dirección de Entrega (Opcional)',
+                                      isDense: true,
+                                      contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                                      border: OutlineInputBorder(),
+                                      filled: true,
+                                      fillColor: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
+                    ],
                   ],
-                ],
-                const SizedBox(height: 8),
+                  const SizedBox(height: 8),
               ],
 
               const SizedBox(height: 24),

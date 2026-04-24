@@ -422,6 +422,7 @@ class PosProvider with ChangeNotifier {
     bool requiresDispatch = false,
     String fulfillmentStatus = 'pending',
     Map<String, dynamic>? checkDetails,
+    String? deliveryAddress,
   }) async {
     if (_cart.isEmpty) return false;
 
@@ -478,6 +479,7 @@ class PosProvider with ChangeNotifier {
           requiresDispatch: requiresDispatch,
           fulfillmentStatus: fulfillmentStatus,
           checkDetails: checkDetails,
+          deliveryAddress: deliveryAddress,
         );
 
         // processSaleUseCase retorna entidad Sale
