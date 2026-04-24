@@ -54,9 +54,12 @@ class UsersProvider with ChangeNotifier {
     }
   }
 
-  Future<bool> deleteUser(int id, int currentUserId) async {
+  // FIX U-3: El backend ya no necesita current_user_id del cliente.
+  // El controller identifica al actor mediante el X-Session-Token del header,
+  // que el ApiClient envía automáticamente en cada petición.
+  Future<bool> deleteUser(int id) async {
     try {
-      await repository.delete(id, currentUserId);
+      await repository.delete(id);
       _users.removeWhere((u) => u['id'] == id);
       notifyListeners();
       return true;

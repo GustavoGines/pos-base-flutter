@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../models/customer_model.dart';
 import '../../providers/customer_provider.dart';
+import 'package:frontend_desktop/features/auth/presentation/widgets/admin_pin_dialog.dart';
 
 class CustomerFormDialog extends StatefulWidget {
   final Customer? customer; // Null = Nuevo, No-null = Editar
@@ -50,6 +51,21 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
       if (widget.customer == null) {
         success = await context.read<CustomerProvider>().createCustomer(payload);
       } else {
+        final newCreditLimit = payload['credit_limit'] as double;
+        final oldCreditLimit = widget.customer!.creditLimit;
+        
+        if (newCreditLimit != oldCreditLimit) {
+          final isAuthorized = await AdminPinDialog.verify(
+            context,
+            action: 'Modificar límite de crédito del cliente'
+          );
+          if (!isAuthorized) {
+            setState(() => _isSubmitting = false);
+            return;
+          }
+        }
+        
+        if (!mounted) return;
         success = await context.read<CustomerProvider>().updateCustomer(widget.customer!.id, payload);
       }
 

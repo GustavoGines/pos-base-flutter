@@ -33,6 +33,9 @@ class ReportsProvider extends ChangeNotifier {
   List<dynamic> _reportData = [];
   List<dynamic> get reportData => _reportData;
 
+  List<dynamic> _brandReportData = [];
+  List<dynamic> get brandReportData => _brandReportData;
+
   List<dynamic> _dailyEvolution = [];
   List<dynamic> get dailyEvolution => _dailyEvolution;
 
@@ -112,7 +115,10 @@ class ReportsProvider extends ChangeNotifier {
     try {
       final df = DateFormat('yyyy-MM-dd');
       final result = await dataSource.getProfitByCategory(df.format(_startDate), df.format(_endDate));
+      final brandResult = await dataSource.getProfitByBrand(df.format(_startDate), df.format(_endDate));
+      
       _reportData = result['data'] ?? [];
+      _brandReportData = brandResult['data'] ?? [];
       _dailyEvolution = result['daily_evolution'] ?? [];
       
       final prev = result['previous_period'] ?? {};

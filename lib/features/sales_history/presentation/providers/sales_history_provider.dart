@@ -133,9 +133,11 @@ class SalesHistoryProvider with ChangeNotifier {
   }
 
   /// Mapa de código → nombre legible del método (para mostrar en UI).
+  /// SH-W3: Itera sobre _activeSales (no _sales) para excluir métodos que
+  /// solo aparecen en ventas anuladas y evitar chips con importe $0.
   Map<String, String> get methodNames {
     final Map<String, String> result = {};
-    for (final sale in _sales) {
+    for (final sale in _activeSales) {
       for (final payment in sale.payments) {
         result.putIfAbsent(payment.methodCode, () => payment.methodName);
       }

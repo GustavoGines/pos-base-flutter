@@ -2,9 +2,11 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import '../models/customer_model.dart';
+import '../../../../core/network/api_client.dart';
 
 class CustomerProvider extends ChangeNotifier {
   final String baseUrl;
+  final ApiClient client;
   
   bool _isLoading = false;
   List<Customer> _customers = [];
@@ -16,7 +18,7 @@ class CustomerProvider extends ChangeNotifier {
   String get searchQuery => _searchQuery;
   List<Map<String, dynamic>> get pendingSales => _pendingSales;
 
-  CustomerProvider({required this.baseUrl});
+  CustomerProvider({required this.baseUrl, required this.client});
 
   String _parseError(http.Response response) {
     try {
@@ -49,7 +51,7 @@ class CustomerProvider extends ChangeNotifier {
     
     try {
       final queryParam = (search != null && search.isNotEmpty) ? '?search=$search' : '';
-      final response = await http.get(Uri.parse('$baseUrl/customers$queryParam'), headers: {
+      final response = await client.get(Uri.parse('$baseUrl/customers$queryParam'), headers: {
         'Accept': 'application/json',
       });
 
@@ -78,7 +80,7 @@ class CustomerProvider extends ChangeNotifier {
         data['balance'] = 0.00;
       }
       
-      final response = await http.post(
+      final response = await client.post(
         Uri.parse('$baseUrl/customers'),
         headers: {
           'Accept': 'application/json',
@@ -100,7 +102,7 @@ class CustomerProvider extends ChangeNotifier {
 
   Future<bool> updateCustomer(int id, Map<String, dynamic> data) async {
     try {
-      final response = await http.put(
+      final response = await client.put(
         Uri.parse('$baseUrl/customers/$id'),
         headers: {
           'Accept': 'application/json',
@@ -122,7 +124,7 @@ class CustomerProvider extends ChangeNotifier {
 
   Future<bool> deleteCustomer(int id) async {
     try {
-      final response = await http.delete(
+      final response = await client.delete(
         Uri.parse('$baseUrl/customers/$id'),
         headers: {
           'Accept': 'application/json',
@@ -142,7 +144,7 @@ class CustomerProvider extends ChangeNotifier {
 
   Future<void> fetchPendingSales(int customerId) async {
     try {
-      final response = await http.get(
+      final response = await client.get(
         Uri.parse('$baseUrl/customers/$customerId/pending-sales'),
         headers: {
           'Accept': 'application/json',
@@ -190,7 +192,7 @@ class CustomerProvider extends ChangeNotifier {
         bodyPayload['check_details'] = checkDetails;
       }
 
-      final response = await http.post(
+      final response = await client.post(
         Uri.parse('$baseUrl/customers/$customerId/payments'),
         headers: {
           'Accept': 'application/json',

@@ -42,11 +42,12 @@ class UsersRemoteDataSource {
     throw Exception(error['message'] ?? 'Error al actualizar empleado');
   }
 
-  Future<void> delete(int id, int currentUserId) async {
+  // FIX U-3: El backend identifica al actor via X-Session-Token (header del ApiClient).
+  // Ya no es necesario enviar current_user_id en el body.
+  Future<void> delete(int id) async {
     final res = await client.delete(
       Uri.parse('$baseUrl/users/$id'),
       headers: _headers,
-      body: json.encode({'current_user_id': currentUserId}),
     );
     if (res.statusCode != 200) {
       final error = json.decode(res.body);

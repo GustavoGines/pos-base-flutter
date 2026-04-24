@@ -267,14 +267,14 @@ void main() async {
           lazy: true,  // Solo carga cuando se navega a Personal y Accesos
         ),
         ChangeNotifierProxyProvider<SettingsProvider, CustomerProvider>(
-          create: (_) => CustomerProvider(baseUrl: apiUrl),
+          create: (_) => CustomerProvider(baseUrl: apiUrl, client: httpClient),
           update: (_, settingsProvider, customerProvider) {
             customerProvider!.setAccess(settingsProvider.features.currentAccounts);
             return customerProvider;
           },
           lazy: false,
         ),
-        ChangeNotifierProvider(create: (_) => TrashProvider(baseUrl: apiUrl), lazy: false),
+        ChangeNotifierProvider(create: (_) => TrashProvider(baseUrl: apiUrl, client: httpClient), lazy: false),
         // [hardware_store] Presupuestos
         ChangeNotifierProvider(
           create: (_) => QuoteProvider(

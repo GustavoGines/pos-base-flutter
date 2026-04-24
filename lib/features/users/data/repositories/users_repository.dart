@@ -7,5 +7,5 @@ class UsersRepository {
   Future<List<Map<String, dynamic>>> getAll() => dataSource.getAll();
   Future<Map<String, dynamic>> create(Map<String, dynamic> data) => dataSource.create(data);
   Future<Map<String, dynamic>> update(int id, Map<String, dynamic> data) => dataSource.update(id, data);
-  Future<void> delete(int id, int currentUserId) => dataSource.delete(id, currentUserId);
+  Future<void> delete(int id) => dataSource.delete(id);
 }

@@ -79,6 +79,9 @@ class PosProvider with ChangeNotifier {
   bool _wasLastSaleDispatched = false;
   bool get wasLastSaleDispatched => _wasLastSaleDispatched;
 
+  bool _lastSalePrinted = false;
+  bool get lastSalePrinted => _lastSalePrinted;
+
   Map<String, dynamic>? _lastDeliveryNote;
   Map<String, dynamic>? get lastDeliveryNote => _lastDeliveryNote;
 
@@ -290,12 +293,22 @@ class PosProvider with ChangeNotifier {
   }
 
   /// Carga un presupuesto en el carrito. Asume que Items ya vienen hidratados.
+  /// Propaga el nivel de precio activo al momento de la carga para que los
+  /// factores mayorista/tarjeta/custom se apliquen correctamente.
   void loadQuoteToCart(Quote quote) {
     clearCart();
     _activeQuoteId = quote.id;
     for (var item in quote.items) {
       if (item.product != null) {
-        _cart.add(CartItem(product: item.product!, quantity: item.quantity));
+        _cart.add(CartItem(
+          product: item.product!,
+          quantity: item.quantity,
+          activeTier: _activeTier,
+          wholesaleFactor: _currentWholesaleFactor,
+          cardFactor: _currentCardFactor,
+          customFactor: _currentCustomFactor,
+          customTierLabel: _customTierLabel,
+        ));
       }
     }
     notifyListeners();
@@ -533,13 +546,16 @@ class PosProvider with ChangeNotifier {
       _lastSalePayments =
           resolvedPayments; // Guardamos la versión resuelta con nombres
       _wasLastSaleDispatched = requiresDispatch;
+      _lastSalePrinted = settings != null;
 
       // Guardar snapshot del carrito ANTES de limpiarlo (lo necesita el dialog de Remito)
       _lastSaleCart = List<CartItem>.from(_cart);
       clearCart();
 
       // ── Lógica de Impresión (A4 o Térmica) ──
-      try {
+      // Solo se imprime si el usuario activó "Imprimir Comprobante" (settings != null).
+      if (settings != null) {
+        try {
         if (localTerminal.printerFormat.startsWith('a4')) {
           final isDeliveredNow = fulfillmentStatus == 'delivered';
           
@@ -548,8 +564,7 @@ class PosProvider with ChangeNotifier {
           final isA4FormatForDispatch = localTerminal.printerFormat == 'a4_split' || localTerminal.printerFormat == 'a4_normal' || localTerminal.printerFormat == 'a4';
           
           if (!(requiresDispatch && isDeliveredNow) || !isA4FormatForDispatch) {
-            final businessSettings = settings ?? const BusinessSettings();
-            
+            // settings no es null aquí (garantizado por el guard externo)
             // Si requiere despacho pero NO es entrega inmediata, generamos el A4 normal de venta
             // pero el remito se generará después desde Logística.
             final pdfBytes = await A4SplitPdfService.generateA4SingleReceipt(
@@ -573,10 +588,10 @@ class PosProvider with ChangeNotifier {
                 'customer': {'name': 'Consumidor Final'}, 
                 'customer_name': 'Consumidor Final',
               },
-              businessName: businessSettings.companyName ?? 'Mi Negocio',
-              businessAddress: businessSettings.address,
-              phone: businessSettings.phone ?? '',
-              cuit: businessSettings.taxId ?? '',
+              businessName: settings.companyName ?? 'Mi Negocio',
+              businessAddress: settings.address,
+              phone: settings.phone ?? '',
+              cuit: settings.taxId ?? '',
               vendorName: userName,
               paperSize: localTerminal.pdfPaperSize,
             );
@@ -699,7 +714,7 @@ class PosProvider with ChangeNotifier {
               items: cartSnapshot,
               total: totalSnapshot,
               shippingCost: shippingCostSnapshot,
-              settings: settings ?? const BusinessSettings(),
+              settings: settings,
               localTerminal: localTerminal,
               deliveryNote: _lastDeliveryNote!,
               paymentDetails: resolvedPayments,
@@ -720,7 +735,7 @@ class PosProvider with ChangeNotifier {
             await _activePrinter.printSaleTicket(
               items: cartSnapshot,
               total: totalSnapshot,
-              settings: settings ?? const BusinessSettings(),
+              settings: settings,
               localTerminal: localTerminal,
               paperSizeOverride:
                   localTerminal.printerFormat == 'thermal_58' ? '58mm' : '80mm',
@@ -739,6 +754,7 @@ class PosProvider with ChangeNotifier {
         _printerWarning =
             'Venta exitosa, pero la impresora no responde: ${e.toString()}';
         debugPrint('=== Printer Error: $e ===');
+      }
       }
 
       // ── El Remito de Logística (Fricción Cero) ──
@@ -881,6 +897,7 @@ class PosProvider with ChangeNotifier {
     _isLoading = true;
     _errorMessage = null;
     _printerWarning = null;
+    _lastSalePrinted = settings != null;
     notifyListeners();
 
     try {
@@ -970,21 +987,117 @@ class PosProvider with ChangeNotifier {
               final ctx = AppConfig.navigatorKey.currentContext;
               if (ctx != null && ctx.mounted) {
                 if (showPreview) {
-                  await showDialog(
+                  // Guardar snapshot para restaurar si se anula desde la preview
+                  _lastSaleCart = List<CartItem>.from(ticketItems);
+
+                  final result = await showDialog<String>(
                     context: ctx,
-                    builder: (context) => Dialog(
-                      child: SizedBox(
-                        width: 800,
-                        height: 600,
-                        child: PdfPreview(
-                          build: (format) async => pdfBytes,
-                          canChangePageFormat: false,
-                          canChangeOrientation: false,
-                          pdfFileName: 'Comprobante_$saleId.pdf',
-                        ),
-                      ),
-                    ),
+                    barrierDismissible: false,
+                    builder: (dialogCtx) {
+                      bool isVoiding = false;
+                      return StatefulBuilder(
+                        builder: (context, setState) {
+                          return Dialog(
+                            child: SizedBox(
+                              width: 800,
+                              height: 700,
+                              child: Scaffold(
+                                appBar: AppBar(
+                                  title: Text('Comprobante #$saleId'),
+                                  automaticallyImplyLeading: false,
+                                  actions: [
+                                    if (isVoiding)
+                                      Center(
+                                        child: Padding(
+                                          padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                                          child: SizedBox(
+                                            width: 24,
+                                            height: 24,
+                                            child: CircularProgressIndicator(
+                                                strokeWidth: 2, color: Colors.red),
+                                          ),
+                                        ),
+                                      )
+                                    else
+                                      TextButton.icon(
+                                        onPressed: () async {
+                                          final confirm = await showDialog<bool>(
+                                            context: dialogCtx,
+                                            builder: (c) => AlertDialog(
+                                              title: const Text('¿Anular Venta?'),
+                                              content: const Text(
+                                                  'Esta acción cancelará el cobro en el sistema y devolverá los productos al carrito.'),
+                                              actions: [
+                                                TextButton(
+                                                    onPressed: () => Navigator.pop(c, false),
+                                                    child: const Text('NO, VOLVER')),
+                                                ElevatedButton(
+                                                  style: ElevatedButton.styleFrom(
+                                                      backgroundColor: Colors.red,
+                                                      foregroundColor: Colors.white),
+                                                  onPressed: () => Navigator.pop(c, true),
+                                                  child: const Text('SÍ, ANULAR'),
+                                                ),
+                                              ],
+                                            ),
+                                          );
+                                          if (confirm == true) {
+                                            setState(() => isVoiding = true);
+                                            try {
+                                              await voidPendingOrder(saleId);
+                                              // Restaurar carrito al estado previo
+                                              _cart.clear();
+                                              _cart.addAll(_lastSaleCart);
+                                              _shippingCost = shippingCost;
+                                              notifyListeners();
+                                              if (dialogCtx.mounted) {
+                                                SnackBarService.warning(
+                                                    dialogCtx,
+                                                    'Venta anulada. Los productos han vuelto al carrito.');
+                                                Navigator.pop(dialogCtx, 'annulled');
+                                              }
+                                            } catch (e) {
+                                              if (dialogCtx.mounted) {
+                                                SnackBarService.error(
+                                                    dialogCtx, 'Error al anular: $e');
+                                                setState(() => isVoiding = false);
+                                              }
+                                            }
+                                          }
+                                        },
+                                        icon: const Icon(Icons.delete_forever, color: Colors.red),
+                                        label: const Text('ANULAR COBRO Y VOLVER',
+                                            style: TextStyle(
+                                                color: Colors.red,
+                                                fontWeight: FontWeight.bold)),
+                                      ),
+                                    const SizedBox(width: 16),
+                                    IconButton(
+                                      icon: const Icon(Icons.close),
+                                      onPressed:
+                                          isVoiding ? null : () => Navigator.pop(dialogCtx),
+                                    ),
+                                  ],
+                                ),
+                                body: PdfPreview(
+                                  build: (format) async => pdfBytes,
+                                  canChangePageFormat: false,
+                                  canChangeOrientation: false,
+                                  pdfFileName: 'Comprobante_$saleId.pdf',
+                                  canDebug: false,
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      );
+                    },
                   );
+
+                  if (result == 'annulled') {
+                    _errorMessage = 'ANNULLED';
+                    return false;
+                  }
                 } else {
                   await Printing.layoutPdf(
                     onLayout: (_) async => pdfBytes,

@@ -37,6 +37,8 @@ abstract class CatalogRemoteDataSource {
     String? notes,
   });
   Future<List<ProductModel>> fetchCriticalAlerts();
+  /// Returns [{id: int, stock: double}] for the given product IDs. Ultra-lightweight.
+  Future<List<Map<String, dynamic>>> fetchBulkStock(List<int> ids);
 }
 
 class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
@@ -399,6 +401,25 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
       }
     } catch (e) {
       print('=== API Error en fetchCriticalAlerts: $e ===');
+      rethrow;
+    }
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchBulkStock(List<int> ids) async {
+    if (ids.isEmpty) return [];
+    try {
+      final uri = Uri.parse('$baseUrl/catalog/products/stock')
+          .replace(queryParameters: {'ids': ids.join(',')});
+      final response = await client.get(uri, headers: {'Accept': 'application/json'});
+      if (response.statusCode == 200) {
+        final List<dynamic> jsonList = json.decode(response.body);
+        return jsonList.cast<Map<String, dynamic>>();
+      } else {
+        throw Exception('Error al obtener stock bulk (${response.statusCode})');
+      }
+    } catch (e) {
+      print('=== API Error en fetchBulkStock: $e ===');
       rethrow;
     }
   }

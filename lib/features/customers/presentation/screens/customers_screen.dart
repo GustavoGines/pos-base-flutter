@@ -5,6 +5,7 @@ import '../../models/customer_model.dart';
 import '../../providers/customer_provider.dart';
 import '../widgets/customer_form_dialog.dart';
 import '../widgets/payment_dialog.dart';
+import 'package:frontend_desktop/features/auth/presentation/widgets/admin_pin_dialog.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
 
 class CustomersScreen extends StatefulWidget {
@@ -44,7 +45,15 @@ class _CustomersScreenState extends State<CustomersScreen> {
           TextButton(
             onPressed: () async {
               Navigator.pop(ctx);
+              
+              final isAuthorized = await AdminPinDialog.verify(
+                context, 
+                action: 'Eliminar cliente de la base de datos'
+              );
+              if (!isAuthorized) return;
+
               try {
+                if (!context.mounted) return;
                 await context.read<CustomerProvider>().deleteCustomer(id);
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Cliente eliminado'), backgroundColor: Colors.green));
