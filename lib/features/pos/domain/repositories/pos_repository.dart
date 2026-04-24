@@ -23,6 +23,7 @@ abstract class PosRepository {
     bool requiresDispatch = false,
     String fulfillmentStatus = 'pending',
     Map<String, dynamic>? checkDetails,
+    String? deliveryAddress,
   });
   Future<List<Map<String, dynamic>>> fetchPendingSales();
   Future<Map<String, dynamic>> payPendingSale({

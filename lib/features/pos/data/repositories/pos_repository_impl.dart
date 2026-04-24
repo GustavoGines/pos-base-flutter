@@ -39,6 +39,7 @@ class PosRepositoryImpl implements PosRepository {
     bool requiresDispatch = false,
     String fulfillmentStatus = 'pending',
     Map<String, dynamic>? checkDetails,
+    String? deliveryAddress,
   }) async {
     final response = await remoteDataSource.processSale(
       total: total,
@@ -56,6 +57,7 @@ class PosRepositoryImpl implements PosRepository {
       requiresDispatch: requiresDispatch,
       fulfillmentStatus: fulfillmentStatus,
       checkDetails: checkDetails,
+      deliveryAddress: deliveryAddress,
     );
 
     return Sale(

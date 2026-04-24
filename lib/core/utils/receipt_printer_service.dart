@@ -656,6 +656,10 @@ class ReceiptPrinterService {
     if (customerName != null && customerName.isNotEmpty) {
       bytes += generator.text('CLIENTE: ${_cleanText(customerName).toUpperCase()}', styles: const PosStyles(bold: true));
     }
+    final deliveryAddress = deliveryNote['sale']?['delivery_address'];
+    if (deliveryAddress != null && deliveryAddress.toString().trim().isNotEmpty) {
+      bytes += generator.text('ENTREGA: ${_cleanText(deliveryAddress.toString()).toUpperCase()}', styles: const PosStyles(bold: true));
+    }
     if (userName != null) {
       bytes += generator.text('VENDIO: ${_cleanText(userName).toUpperCase()}');
     }
@@ -757,6 +761,10 @@ class ReceiptPrinterService {
       b += gen.text('FECHA: ${_formatDate(now)}');
       if (customerName != null && customerName.isNotEmpty) {
         b += gen.text('CLIENTE: ${_cleanText(customerName).toUpperCase()}', styles: const PosStyles(bold: true));
+      }
+      final deliveryAddress = note['sale']?['delivery_address'];
+      if (deliveryAddress != null && deliveryAddress.toString().trim().isNotEmpty) {
+        b += gen.text('ENTREGA: ${_cleanText(deliveryAddress.toString()).toUpperCase()}', styles: const PosStyles(bold: true));
       }
       b += gen.hr(ch: '-');
 

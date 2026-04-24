@@ -34,6 +34,7 @@ abstract class PosRemoteDataSource {
     bool requiresDispatch = false,
     String fulfillmentStatus = 'pending',
     Map<String, dynamic>? checkDetails,
+    String? deliveryAddress,
   });
   Future<List<dynamic>> fetchPendingSales();
   Future<dynamic> payPendingSale({
@@ -156,6 +157,7 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
     bool requiresDispatch = false,
     String fulfillmentStatus = 'pending',
     Map<String, dynamic>? checkDetails,
+    String? deliveryAddress,
   }) async {
     try {
       final payload = {
@@ -171,6 +173,7 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
         'cash_shift_id': shiftId,
         if (userId != null) 'user_id': userId,
         if (customerId != null) 'customer_id': customerId,
+        if (deliveryAddress != null) 'delivery_address': deliveryAddress,
         if (quoteId != null) 'quote_id': quoteId,
         // Bridge de Cheque: solo se incluye si el método es cheque y hay datos del cartón
         if (checkDetails != null) 'check_details': checkDetails,

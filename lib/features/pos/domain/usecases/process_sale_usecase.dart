@@ -23,6 +23,7 @@ class ProcessSaleUseCase {
     bool requiresDispatch = false,
     String fulfillmentStatus = 'pending',
     Map<String, dynamic>? checkDetails,
+    String? deliveryAddress,
   }) async {
     if (items.isEmpty) throw Exception('El carrito está vacío');
     return await repository.processSale(
@@ -41,6 +42,7 @@ class ProcessSaleUseCase {
       requiresDispatch: requiresDispatch,
       fulfillmentStatus: fulfillmentStatus,
       checkDetails: checkDetails,
+      deliveryAddress: deliveryAddress,
     );
   }
 }
