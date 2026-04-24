@@ -514,6 +514,10 @@ class DeliveryNotePdfService {
                       if (sale['id'] != null)
                         pw.Text('Venta N°: ${sale['id'].toString().padLeft(6,'0')}',
                             style: const pw.TextStyle(fontSize: 10, color: _textGrey)),
+                      if (sale['delivery_address'] != null && sale['delivery_address'].toString().trim().isNotEmpty) ...[
+                        pw.SizedBox(height: 4),
+                        pw.Text('Entrega: ${sale['delivery_address']}', style: pw.TextStyle(fontSize: 11, color: _primary, fontWeight: pw.FontWeight.bold)),
+                      ],
                     ],
                   ),
                 ),
