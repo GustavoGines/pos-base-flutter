@@ -137,6 +137,32 @@ class CatalogProvider with ChangeNotifier {
     if (changed) notifyListeners();
   }
 
+  /// Actualiza SILENCIOSAMENTE solo el stock de los productos vendidos.
+  /// Reemplaza el loadProducts() completo post-venta, eliminando el parpadeo de la grilla.
+  /// Se llama en background (fire-and-forget) tras procesar un cobro exitoso.
+  Future<void> refreshStockForSoldProducts(List<int> soldIds) async {
+    if (soldIds.isEmpty) return;
+    try {
+      final updates = await repository.fetchBulkStock(soldIds);
+      bool changed = false;
+      for (final entry in updates) {
+        final id = (entry['id'] as num?)?.toInt();
+        final stock = double.tryParse(entry['stock']?.toString() ?? '');
+        if (id == null || stock == null) continue;
+        final index = _products.indexWhere((p) => p.id == id);
+        if (index != -1) {
+          _products[index] = _products[index].copyWith(stock: stock);
+          changed = true;
+        }
+      }
+      if (changed) notifyListeners();
+    } catch (e) {
+      // Silent failure: el stock local puede quedar levemente desincronizado hasta
+      // el próximo loadProducts() periódico, lo cual es aceptable en un POS.
+      debugPrint('refreshStockForSoldProducts: fallo silencioso ($e)');
+    }
+  }
+
   Future<bool> createProduct(Map<String, dynamic> data) async {
     _isLoading = true;
     _errorMessage = null;

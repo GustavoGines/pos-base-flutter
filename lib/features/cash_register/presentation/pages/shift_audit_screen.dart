@@ -167,7 +167,7 @@ class _ShiftAuditScreenState extends State<ShiftAuditScreen> {
         DataCell(Text(_formatDate(shift.openedAt))),
         DataCell(Text(shift.closedAt != null ? _formatDate(shift.closedAt!) : '---')),
         DataCell(Text('\$${shift.openingBalance.toCurrency()}')),
-        DataCell(Text('\$${((shift.cashSales ?? 0) + (shift.cardSales ?? 0) + (shift.transferSales ?? 0)).toCurrency()}', style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold))),
+        DataCell(Text('\$${((shift.cashSales ?? 0) + (shift.cardSales ?? 0) + (shift.transferSales ?? 0) + (shift.checkSales ?? 0)).toCurrency()}', style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold))),
         DataCell(_buildDifferenceBadge(diff, shift.status)),
         DataCell(_buildStatusBadge(shift.status)),
       ],
@@ -223,7 +223,7 @@ class _ShiftAuditScreenState extends State<ShiftAuditScreen> {
                 _buildDetailRow('Cierre:', shift.closedAt != null ? _formatDate(shift.closedAt!) : 'En curso'),
                 const Divider(height: 32),
                 _buildDetailRow('Fondo Inicial (Apertura):', '\$${shift.openingBalance.toCurrency()}', isBold: true),
-                _buildDetailRow('Ventas Netas Totales:', '\$${((shift.cashSales ?? 0) + (shift.cardSales ?? 0) + (shift.transferSales ?? 0)).toCurrency()}'),
+                _buildDetailRow('Ventas Netas Totales:', '\$${((shift.cashSales ?? 0) + (shift.cardSales ?? 0) + (shift.transferSales ?? 0) + (shift.checkSales ?? 0)).toCurrency()}'),
                 Padding(
                   padding: const EdgeInsets.only(left: 16.0),
                   child: Column(

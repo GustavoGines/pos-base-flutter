@@ -115,4 +115,9 @@ class CatalogRepositoryImpl implements CatalogRepository {
   Future<List<Product>> fetchCriticalAlerts() async {
     return await remoteDataSource.fetchCriticalAlerts();
   }
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchBulkStock(List<int> ids) async {
+    return await remoteDataSource.fetchBulkStock(ids);
+  }
 }

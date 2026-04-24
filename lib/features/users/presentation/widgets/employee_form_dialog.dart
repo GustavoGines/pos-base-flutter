@@ -32,7 +32,7 @@ const List<Map<String, String>> kAllPermissions = [
 class EmployeeFormDialog extends StatefulWidget {
   final Map<String, dynamic>? employee; // null = crear nuevo
 
-  const EmployeeFormDialog({Key? key, this.employee}) : super(key: key);
+  const EmployeeFormDialog({super.key, this.employee});
 
   @override
   State<EmployeeFormDialog> createState() => _EmployeeFormDialogState();
@@ -145,7 +145,7 @@ class _EmployeeFormDialogState extends State<EmployeeFormDialog> {
                       const SizedBox(height: 16),
                       // Rol
                       DropdownButtonFormField<String>(
-                        value: _role,
+                        initialValue: _role,
                         decoration: const InputDecoration(
                           labelText: 'Rol',
                           border: OutlineInputBorder(),
@@ -206,8 +206,11 @@ class _EmployeeFormDialogState extends State<EmployeeFormDialog> {
                           value: checked,
                           onChanged: isAdmin ? null : (val) {
                             setState(() {
-                              if (val == true) _permissions.add(key);
-                              else _permissions.remove(key);
+                              if (val == true) {
+                                _permissions.add(key);
+                              } else {
+                                _permissions.remove(key);
+                              }
                             });
                           },
                           title: Text(perm['label']!, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),

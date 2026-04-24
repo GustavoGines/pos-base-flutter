@@ -56,7 +56,8 @@ class _PosScreenState extends State<PosScreen> {
       // Cargar el contador de órdenes pendientes al abrir el POS
       Provider.of<PosProvider>(context, listen: false).loadPendingSales();
 
-      // Polling veloz (5 seg) para recepción casi-inmediata de órdenes en red local/multicaja
+      // Polling veloz (5 seg) para recepción casi-inmediata de órdenes en red local/multicaja.
+      // Justificado: servidor local con máx. 3 terminales (carga mínima).
       _pendingOrdersTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
         if (mounted) {
           Provider.of<PosProvider>(context, listen: false).loadPendingSales();
@@ -185,6 +186,21 @@ class _PosScreenState extends State<PosScreen> {
 
       if (results.isNotEmpty) {
         if (results.first.isSoldByWeight) {
+          if (embeddedPrice == 0) {
+            // Etiqueta de balanza inválida: el código tiene formato correcto pero precio $0.
+            // Puede ser una etiqueta dañada o mal impresa. No agregamos al carrito silenciosamente.
+            if (mounted) {
+              SnackBarService.error(
+                context,
+                'Etiqueta de balanza inválida (precio \$0) para "${results.first.name}". '
+                'Revise la etiqueta o ingrese el peso manualmente.',
+              );
+            }
+            _searchController.clear();
+            setState(() => _searchQuery = '');
+            _searchFocusNode.requestFocus();
+            return;
+          }
           appliedScaleLogic = true;
         } else {
           if (embeddedPrice == 0) {
@@ -732,7 +748,7 @@ class _PosScreenState extends State<PosScreen> {
 
         // ── Post-venta Logística (Fricción Cero) ──────────────────────────
         // El remito ya fue creado en processCheckout(). Aquí decidimos cómo mostrarlo.
-        if (posProvider.wasLastSaleDispatched) {
+        if (posProvider.wasLastSaleDispatched && posProvider.lastSalePrinted) {
           final deliveryNote = posProvider.lastDeliveryNote;
           final isDeliveredNow = deliveryNote?['status'] == 'delivered';
 
@@ -950,32 +966,39 @@ class _PosScreenState extends State<PosScreen> {
 
         // 2. ACTUALIZACIÓN LOCAL (IN-MEMORY):
         // Reordenamos el "Acceso Rápido" al instante sin depender de la red.
+        // Usamos lastSaleCart (snapshot guardado antes de clearCart) porque
+        // posProvider.cart ya está vacío en este punto.
         if (!mounted) return;
         final catalogProvider =
             Provider.of<CatalogProvider>(context, listen: false);
         final Map<int, int> soldItems = {};
-        for (var item in posProvider.cart) {
-          soldItems[item.product.id] = (soldItems[item.product.id] ?? 0) + 1;
+        for (var item in posProvider.lastSaleCart) {
+          soldItems[item.product.id] =
+              (soldItems[item.product.id] ?? 0) + item.quantity.round();
         }
         catalogProvider.updateProductSalesCountLocally(soldItems);
 
-        // 3. REFRESCO SILENCIOSO (FIRE-AND-FORGET):
-        // Intentamos sincronizar con el server pero sin mostrar errores al cajero.
-        Future.delayed(const Duration(seconds: 1), () {
-          if (mounted) {
-            catalogProvider.loadProducts(page: 1, search: '').catchError((e) {
-              debugPrint(
-                  'Refresco silencioso falló (esperado en redes inestables): $e');
-            });
-            // Refrescar alertas de inventario (Stock mínimo y preventivas)
-            try {
-              Provider.of<InventoryAlertsProvider>(context, listen: false)
-                  .fetchAlerts();
-            } catch (e) {
-              debugPrint('Error refrescando alertas: $e');
-            }
-          }
+        // 3. REFRESCO SELECTIVO (FIRE-AND-FORGET):
+        // Solo actualizamos el stock de los productos vendidos — sin recargar el catálogo completo.
+        // Esto elimina el parpadeo de la grilla y acelera la vuelta a pantalla de venta.
+        final List<int> soldIds = soldItems.keys.toList();
+        catalogProvider.refreshStockForSoldProducts(soldIds).catchError((e) {
+          debugPrint('Refresco de stock silencioso falló (esperado en redes inestables): $e');
         });
+
+        // Refrescar alertas de inventario en paralelo (no bloquea el flujo de caja)
+        try {
+          Provider.of<InventoryAlertsProvider>(context, listen: false)
+              .fetchAlerts();
+        } catch (e) {
+          debugPrint('Error refrescando alertas: $e');
+        }
+
+        // BUG 1 FIX: Alertar al cajero si el comprobante no pudo imprimirse.
+        // La venta ya fue registrada exitosamente — esto es solo feedback de hardware.
+        if (posProvider.printerWarning != null) {
+          SnackBarService.warning(context, posProvider.printerWarning!);
+        }
       }
     } else if (posProvider.isShiftClosed && mounted) {
       // ── SEGURIDAD: Turno cerrado remotamente ─────────────────────

@@ -2,12 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/users_provider.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
+import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
 import '../widgets/employee_form_dialog.dart';
 import '../../../../core/utils/snack_bar_service.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
 
 class UsersManagerScreen extends StatefulWidget {
-  const UsersManagerScreen({Key? key}) : super(key: key);
+  const UsersManagerScreen({super.key});
 
   @override
   State<UsersManagerScreen> createState() => _UsersManagerScreenState();
@@ -53,11 +54,19 @@ class _UsersManagerScreenState extends State<UsersManagerScreen> {
   }
 
   Future<void> _deleteEmployee(Map<String, dynamic> employee) async {
+    // FIX U-1: Exigir PIN de Administrador antes de permitir el borrado.
+    // Un cajero con acceso accidental a esta pantalla no puede eliminar empleados.
+    final isAuthorized = await AdminPinDialog.verify(
+      context,
+      action: 'Eliminar al empleado "${employee['name']}"',
+    );
+    if (!isAuthorized || !mounted) return;
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Eliminar Empleado'),
-        content: Text('¿Estás seguro de que deseas eliminar a ${employee['name']}?'),
+        content: Text('¿Estás seguro de que deseás eliminar a ${employee['name']}?'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
           FilledButton(
@@ -70,10 +79,9 @@ class _UsersManagerScreenState extends State<UsersManagerScreen> {
     );
     if (confirmed != true || !mounted) return;
 
-    final auth = context.read<AuthProvider>();
     final provider = context.read<UsersProvider>();
-    final currentId = auth.currentUser?['id'] ?? 0;
-    final success = await provider.deleteUser(employee['id'], currentId);
+    // FIX U-3: Ya no pasamos currentUserId — el backend lo obtiene del header X-Session-Token.
+    final success = await provider.deleteUser(employee['id']);
     if (!mounted) return;
     if (success) {
       SnackBarService.success(context, 'Empleado eliminado');
@@ -151,12 +159,12 @@ class _UsersManagerScreenState extends State<UsersManagerScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 2))],
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, 2))],
       ),
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
         leading: CircleAvatar(
-          backgroundColor: color.withOpacity(0.1),
+          backgroundColor: color.withValues(alpha: 0.1),
           radius: 26,
           child: Icon(
             isAdmin ? Icons.admin_panel_settings_rounded : Icons.person_rounded,
@@ -172,7 +180,7 @@ class _UsersManagerScreenState extends State<UsersManagerScreen> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
               decoration: BoxDecoration(
-                color: color.withOpacity(0.1),
+                color: color.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Text(

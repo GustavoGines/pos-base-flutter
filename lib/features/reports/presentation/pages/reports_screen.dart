@@ -6,6 +6,7 @@ import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
 import 'package:frontend_desktop/features/checks/presentation/providers/check_provider.dart';
+import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import '../providers/reports_provider.dart';
 
 class ReportsScreen extends StatefulWidget {
@@ -23,7 +24,7 @@ class _ReportsScreenState extends State<ReportsScreen>
   void initState() {
     super.initState();
     final hasAdvancedReports = context.read<SettingsProvider>().features.advancedReports;
-    _tabController = TabController(length: hasAdvancedReports ? 2 : 1, vsync: this);
+    _tabController = TabController(length: hasAdvancedReports ? 3 : 2, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<ReportsProvider>().fetchProfitByCategory();
       // Cargar cheques para el KPI de liquidez (solo si la feature está activa)
@@ -47,14 +48,50 @@ class _ReportsScreenState extends State<ReportsScreen>
       initialDateRange: DateTimeRange(start: provider.startDate, end: provider.endDate),
       firstDate: DateTime(2020),
       lastDate: DateTime.now().add(const Duration(days: 1)),
-      builder: (context, child) => Theme(
-        data: ThemeData.light().copyWith(
-          colorScheme: ColorScheme.light(
-            primary: Colors.indigo.shade800,
-            onPrimary: Colors.white,
+      helpText: 'SELECCIONÁ EL RANGO DE FECHAS',
+      cancelText: 'CANCELAR',
+      confirmText: 'APLICAR',
+      saveText: 'APLICAR',
+      // 🎨 Rediseño Premium: tema indigo alineado con el Dashboard
+      builder: (context, child) => Center(
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 400, maxHeight: 600),
+          child: Theme(
+            data: ThemeData.light().copyWith(
+              colorScheme: ColorScheme.light(
+                primary: Colors.indigo.shade700,
+                onPrimary: Colors.white,
+                secondary: Colors.indigo.shade400,
+                onSecondary: Colors.white,
+                surface: Colors.white,
+                onSurface: Colors.blueGrey.shade900,
+                surfaceContainerHighest: Colors.indigo.shade50,
+              ),
+              textButtonTheme: TextButtonThemeData(
+                style: TextButton.styleFrom(
+                  foregroundColor: Colors.indigo.shade700,
+                  textStyle: const TextStyle(fontWeight: FontWeight.bold, letterSpacing: 0.5),
+                ),
+              ),
+              datePickerTheme: DatePickerThemeData(
+                backgroundColor: Colors.white,
+                headerBackgroundColor: Colors.indigo.shade700,
+                headerForegroundColor: Colors.white,
+                dayOverlayColor: WidgetStateProperty.all(Colors.indigo.withValues(alpha: 0.1)),
+                rangePickerBackgroundColor: Colors.white,
+                rangeSelectionBackgroundColor: Colors.indigo.shade50,
+                rangePickerHeaderBackgroundColor: Colors.indigo.shade700,
+                rangePickerHeaderForegroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              ),
+              dialogTheme: DialogThemeData(
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                elevation: 8,
+              ),
+            ),
+            child: child!,
           ),
         ),
-        child: child!,
       ),
     );
     if (picked != null) {
@@ -89,16 +126,17 @@ class _ReportsScreenState extends State<ReportsScreen>
                       labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                       tabs: [
                         const Tab(icon: Icon(Icons.bar_chart, size: 18), text: 'Por Categoría'),
+                        const Tab(icon: Icon(Icons.branding_watermark, size: 18), text: 'Marcas'),
                         // 🔒 CANDADO 3: Balance Mensual solo para plan con advanced_reports
                         if (hasAdvancedReports)
                           const Tab(icon: Icon(Icons.calendar_month, size: 18), text: 'Balance Mensual'),
                       ],
                     ),
-                    // Filtros solo en pestaña 0 (Por Categoría)
+                    // Filtros solo en pestaña 0 y 1 (Por Categoría y Marcas)
                     AnimatedBuilder(
                       animation: _tabController,
                       builder: (_, __) {
-                        if (_tabController.index == 0) {
+                        if (_tabController.index == 0 || _tabController.index == 1) {
                           return _FiltersBar(
                             provider: provider,
                             onDateTap: () => _selectDateRange(context),
@@ -124,7 +162,15 @@ class _ReportsScreenState extends State<ReportsScreen>
                             : provider.reportData.isEmpty
                                 ? const _EmptyState()
                                 : _DashboardContent(provider: provider),
-                    // Tab 1: Balance Mensual (solo con advanced_reports)
+                    // Tab 1: Por Marcas (reutilizamos la misma vista, pero el provider dará los datos)
+                    provider.isLoading
+                        ? const Center(child: CircularProgressIndicator())
+                        : provider.error != null
+                            ? _ErrorState(message: provider.error!)
+                            : provider.brandReportData.isEmpty
+                                ? const _EmptyState()
+                                : _DashboardContent(provider: provider, isBrand: true),
+                    // Tab 2: Balance Mensual (solo con advanced_reports)
                     if (hasAdvancedReports)
                       _MonthlyBalanceTab(provider: provider),
                   ],
@@ -232,7 +278,8 @@ class _FiltersBar extends StatelessWidget {
 
 class _DashboardContent extends StatelessWidget {
   final ReportsProvider provider;
-  const _DashboardContent({required this.provider});
+  final bool isBrand;
+  const _DashboardContent({required this.provider, this.isBrand = false});
 
   @override
   Widget build(BuildContext context) {
@@ -248,9 +295,9 @@ class _DashboardContent extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(flex: 5, child: _ChartCard(provider: provider)),
+              Expanded(flex: 5, child: _ChartCard(provider: provider, isBrand: isBrand)),
               const SizedBox(width: 16),
-              Expanded(flex: 5, child: _DetailTableCard(provider: provider)),
+              Expanded(flex: 5, child: _DetailTableCard(provider: provider, isBrand: isBrand)),
             ],
           ),
           const SizedBox(height: 24),
@@ -429,18 +476,20 @@ class _HeroCard extends StatelessWidget {
 
 class _ChartCard extends StatelessWidget {
   final ReportsProvider provider;
-  const _ChartCard({required this.provider});
+  final bool isBrand;
+  const _ChartCard({required this.provider, this.isBrand = false});
 
   @override
   Widget build(BuildContext context) {
-    final double maxOverallProfit = provider.reportData.fold(0.0, (m, item) {
+    final dataList = isBrand ? provider.brandReportData : provider.reportData;
+    final double maxOverallProfit = dataList.fold(0.0, (m, item) {
       final p = double.tryParse(item['total_profit'].toString()) ?? 0.0;
       return p > m ? p : m;
     });
     
     final bool useRevenue = maxOverallProfit <= 0;
 
-    final topData = List.of(provider.reportData)
+    final topData = List.of(dataList)
       ..sort((a, b) {
         final valA = double.tryParse(a[useRevenue ? 'total_revenue' : 'total_profit'].toString()) ?? 0.0;
         final valB = double.tryParse(b[useRevenue ? 'total_revenue' : 'total_profit'].toString()) ?? 0.0;
@@ -466,7 +515,9 @@ class _ChartCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              useRevenue ? 'Top 5 Categorías por Facturación' : 'Top 5 Categorías por Ganancia Neta',
+              useRevenue 
+                  ? (isBrand ? 'Top 5 Marcas por Facturación' : 'Top 5 Categorías por Facturación') 
+                  : (isBrand ? 'Top 5 Marcas por Ganancia Neta' : 'Top 5 Categorías por Ganancia Neta'),
               style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.blueGrey.shade800),
             ),
             const SizedBox(height: 24),
@@ -556,10 +607,13 @@ class _ChartCard extends StatelessWidget {
 
 class _DetailTableCard extends StatelessWidget {
   final ReportsProvider provider;
-  const _DetailTableCard({required this.provider});
+  final bool isBrand;
+  const _DetailTableCard({required this.provider, this.isBrand = false});
 
   @override
   Widget build(BuildContext context) {
+    final dataList = isBrand ? provider.brandReportData : provider.reportData;
+
     return Card(
       elevation: 0,
       color: Colors.white,
@@ -573,15 +627,15 @@ class _DetailTableCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Detalle por Categoría',
+              isBrand ? 'Detalle por Marca' : 'Detalle por Categoría',
               style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.blueGrey.shade800),
             ),
             const SizedBox(height: 16),
             // Cabecera
-            _TableHeader(),
+            _TableHeader(isBrand: isBrand),
             const Divider(height: 1),
             // Filas
-            ...provider.reportData.map((item) {
+            ...dataList.map((item) {
               final revenue = double.tryParse(item['total_revenue'].toString()) ?? 0;
               final revenueWithCost = double.tryParse(item['revenue_with_cost'].toString()) ?? 0;
               final profit = double.tryParse(item['total_profit'].toString()) ?? 0;
@@ -605,15 +659,18 @@ class _DetailTableCard extends StatelessWidget {
 }
 
 class _TableHeader extends StatelessWidget {
+  final bool isBrand;
+  const _TableHeader({this.isBrand = false});
+
   @override
   Widget build(BuildContext context) {
     const style = TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.blueGrey);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 10),
       child: Row(
-        children: const [
-          Expanded(flex: 3, child: Text('Categoría', style: style)),
-          SizedBox(width: 45, child: Text('Cant.', style: style, textAlign: TextAlign.right)),
+        children: [
+          Expanded(flex: 3, child: Text(isBrand ? 'Marca' : 'Categoría', style: style)),
+          const SizedBox(width: 45, child: Text('Cant.', style: style, textAlign: TextAlign.right)),
           SizedBox(width: 90, child: Text('Facturación', style: style, textAlign: TextAlign.right)),
           SizedBox(width: 90, child: Text('Ganancia', style: style, textAlign: TextAlign.right)),
           SizedBox(width: 70, child: Text('Margen', style: style, textAlign: TextAlign.right)),
@@ -861,7 +918,12 @@ class _TimeSeriesChartCard extends StatelessWidget {
                         getTitlesWidget: (value, meta) {
                           final int idx = value.toInt();
                           if (idx < 0 || idx >= ev.length) return const SizedBox.shrink();
-                          if (ev.length > 20 && idx % 3 != 0 && idx != ev.length - 1) {
+                          // R-W2: Densidad adaptativa — muestra ~8 etiquetas
+                          // independientemente del tamaño del rango (día, mes, año).
+                          final step = (ev.length / 8).round().clamp(1, ev.length);
+                          final isFirst = idx == 0;
+                          final isLast  = idx == ev.length - 1;
+                          if (!isFirst && !isLast && idx % step != 0) {
                             return const SizedBox.shrink();
                           }
                           final dateStr = ev[idx]['date'].toString();
@@ -916,7 +978,8 @@ class _TimeSeriesChartCard extends StatelessWidget {
                       ),
                       belowBarData: BarAreaData(
                         show: true,
-                        color: Colors.indigo.shade100.withOpacity(0.4),
+                        // R-1: Reemplaza deprecated withOpacity por withValues.
+                        color: Colors.indigo.shade100.withValues(alpha: 0.4),
                       ),
                     ),
                   ],
@@ -1002,16 +1065,23 @@ class _MonthlyBalanceTabState extends State<_MonthlyBalanceTab> {
     );
 
     if (!ctx.mounted) return;
+
+    // BUG R-3 FIX: Validar que el rango no quede invertido antes de aplicarlo.
+    final pickedDate = DateTime(picked.year, picked.month);
     if (isStart) {
-      provider.setBalanceRange(
-        DateTime(picked.year, picked.month),
-        provider.balanceEndMonth,
-      );
+      if (pickedDate.isAfter(provider.balanceEndMonth)) {
+        SnackBarService.warning(
+            ctx, 'La fecha de inicio no puede ser posterior a la fecha de fin.');
+        return;
+      }
+      provider.setBalanceRange(pickedDate, provider.balanceEndMonth);
     } else {
-      provider.setBalanceRange(
-        provider.balanceStartMonth,
-        DateTime(picked.year, picked.month),
-      );
+      if (pickedDate.isBefore(provider.balanceStartMonth)) {
+        SnackBarService.warning(
+            ctx, 'La fecha de fin no puede ser anterior a la fecha de inicio.');
+        return;
+      }
+      provider.setBalanceRange(provider.balanceStartMonth, pickedDate);
     }
     provider.fetchMonthlyBalance();
   }
@@ -1222,6 +1292,9 @@ class _MonthlyBalanceTabState extends State<_MonthlyBalanceTab> {
                               .toList(),
                           barTouchData: BarTouchData(
                             touchTooltipData: BarTouchTooltipData(
+                              // R-2: Color de fondo del tooltip en Balance Mensual
+                              // (igual al del gráfico de categorías — consistencia visual).
+                              getTooltipColor: (_) => Colors.blueGrey.shade800,
                               getTooltipItem: (group, groupIndex, rod, rodIndex) {
                                 if (groupIndex >= provider.balanceMonths.length) return null;
                                 final m = provider.balanceMonths[groupIndex];

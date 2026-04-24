@@ -35,4 +35,6 @@ abstract class CatalogRepository {
     String? notes,
   });
   Future<List<Product>> fetchCriticalAlerts();
+  /// Fetches only {id, stock} for the given IDs. Avoids a full catalog reload post-sale.
+  Future<List<Map<String, dynamic>>> fetchBulkStock(List<int> ids);
 }

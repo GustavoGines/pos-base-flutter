@@ -9,7 +9,7 @@ import '../../data/models/update_info.dart';
 class UpdateDialog extends StatefulWidget {
   final UpdateInfo updateInfo;
 
-  const UpdateDialog({Key? key, required this.updateInfo}) : super(key: key);
+  const UpdateDialog({super.key, required this.updateInfo});
 
   @override
   State<UpdateDialog> createState() => _UpdateDialogState();
@@ -128,8 +128,8 @@ class _UpdateDialogState extends State<UpdateDialog> {
         ? 'Esta actualización reemplaza la aplicación y requiere reinicio.'
         : 'Esta actualización se aplica en segundo plano al servidor local.';
 
-    return WillPopScope(
-      onWillPop: () async => !widget.updateInfo.isCritical && !_isDownloading,
+    return PopScope(
+      canPop: widget.updateInfo.isCritical ? false : !_isDownloading,
       child: AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Column(
@@ -140,9 +140,9 @@ class _UpdateDialogState extends State<UpdateDialog> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(
-                color: componentColor.withOpacity(0.12),
+                color: componentColor.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: componentColor.withOpacity(0.4)),
+                border: Border.all(color: componentColor.withValues(alpha: 0.4)),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,

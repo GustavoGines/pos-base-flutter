@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
+import '../../../../core/network/api_client.dart';
 
 class TrashItem {
   final int id;
@@ -29,6 +29,7 @@ class TrashItem {
 
 class TrashProvider extends ChangeNotifier {
   final String baseUrl;
+  final ApiClient client;
   
   bool _isLoading = false;
   List<TrashItem> _items = [];
@@ -38,7 +39,7 @@ class TrashProvider extends ChangeNotifier {
   List<TrashItem> get items => _items;
   String get currentType => _currentType;
 
-  TrashProvider({required this.baseUrl});
+  TrashProvider({required this.baseUrl, required this.client});
 
   Future<void> fetchTrash(String type) async {
     _currentType = type;
@@ -46,7 +47,7 @@ class TrashProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final response = await http.get(Uri.parse('$baseUrl/trash/$type'), headers: {
+      final response = await client.get(Uri.parse('$baseUrl/trash/$type'), headers: {
         'Accept': 'application/json',
       });
 
@@ -66,7 +67,7 @@ class TrashProvider extends ChangeNotifier {
 
   Future<bool> restoreItem(int id) async {
     try {
-      final response = await http.post(
+      final response = await client.post(
         Uri.parse('$baseUrl/trash/$_currentType/$id/restore'),
         headers: {'Accept': 'application/json'},
       );
@@ -83,7 +84,7 @@ class TrashProvider extends ChangeNotifier {
 
   Future<bool> forceDeleteItem(int id) async {
     try {
-      final response = await http.delete(
+      final response = await client.delete(
         Uri.parse('$baseUrl/trash/$_currentType/$id/force'),
         headers: {'Accept': 'application/json'},
       );

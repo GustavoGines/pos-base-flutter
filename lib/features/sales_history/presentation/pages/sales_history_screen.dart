@@ -58,6 +58,10 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
   String _searchQuery = '';
   String _statusFilter = 'Todas'; // 'Todas', 'Activas', 'Anuladas'
 
+  // SH-2: Controller centralizado para poder limpiar el campo de búsqueda
+  // programáticamente (ej: al cambiar de período).
+  final TextEditingController _searchController = TextEditingController();
+
   @override
   void initState() {
     super.initState();
@@ -65,6 +69,12 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
       context.read<SalesHistoryProvider>().loadSales();
       context.read<UsersProvider>().loadUsers();
     });
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   void _onSaleSelected(SaleRecord sale) {
@@ -77,11 +87,19 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
       if (_statusFilter == 'Activas' && sale.isVoided) return false;
       if (_statusFilter == 'Anuladas' && !sale.isVoided) return false;
 
-      // Filtro de búsqueda por ticket ID
+      // SH-1: Búsqueda multi-campo — ID y nombre de producto.
+      // (customerName omitido: SaleRecord no tiene campo de cliente todavía —
+      //  se podrá agregar cuando se implemente el módulo de Clientes.)
       if (_searchQuery.isNotEmpty) {
-        final clean = _searchQuery.replaceFirst(RegExp(r'^0+'), '');
-        final q = clean.isEmpty ? _searchQuery : clean;
-        if (!sale.id.toString().contains(q)) return false;
+        final q = _searchQuery.toLowerCase();
+        // Búsqueda por ID (limpiando ceros iniciales del escáner)
+        final cleanId = q.replaceFirst(RegExp(r'^0+'), '');
+        final idQ = cleanId.isEmpty ? q : cleanId;
+        final matchesId = sale.id.toString().contains(idQ);
+        // Búsqueda por nombre de producto en los ítems del ticket
+        final matchesProduct =
+            sale.items.any((i) => i.productName.toLowerCase().contains(q));
+        if (!matchesId && !matchesProduct) return false;
       }
 
       // Filtro por método de pago (chip seleccionado)
@@ -124,11 +142,23 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
                     _FiltersPanel(
                       provider: provider,
                       statusFilter: _statusFilter,
+                      searchController: _searchController,
+                      // SH-W2: Al cambiar período, limpiar filtro de método de pago
+                      // para no dejar al usuario con resultados filtrados invisiblemente.
                       onStatusChanged: (v) => setState(() {
                         _statusFilter = v;
                         _selectedSale = null;
                       }),
                       onSearchChanged: (v) => setState(() => _searchQuery = v.trim()),
+                      onPeriodChanged: (period) {
+                        provider.setMethodFilter(null);
+                        _searchController.clear();
+                        setState(() {
+                          _searchQuery = '';
+                          _selectedSale = null;
+                        });
+                        provider.loadSales(period: period);
+                      },
                       onSaleDeselect: () => setState(() => _selectedSale = null),
                     ),
 
@@ -184,15 +214,19 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
 class _FiltersPanel extends StatelessWidget {
   final SalesHistoryProvider provider;
   final String statusFilter;
+  final TextEditingController searchController;
   final ValueChanged<String> onStatusChanged;
   final ValueChanged<String> onSearchChanged;
+  final ValueChanged<String> onPeriodChanged;
   final VoidCallback onSaleDeselect;
 
   const _FiltersPanel({
     required this.provider,
     required this.statusFilter,
+    required this.searchController,
     required this.onStatusChanged,
     required this.onSearchChanged,
+    required this.onPeriodChanged,
     required this.onSaleDeselect,
   });
 
@@ -242,8 +276,8 @@ class _FiltersPanel extends StatelessWidget {
               ],
               selected: {canViewGlobal ? provider.currentPeriod : 'shift'},
               onSelectionChanged: (set) {
-                provider.loadSales(period: set.first);
-                onSaleDeselect();
+                // SH-W2: onPeriodChanged limpia methodFilter, searchQuery y selectedSale.
+                onPeriodChanged(set.first);
               },
               style: SegmentedButton.styleFrom(
                 selectedBackgroundColor: Colors.blue.shade100,
@@ -306,8 +340,10 @@ class _FiltersPanel extends StatelessWidget {
             children: [
               Expanded(
                 child: TextField(
+                  controller: searchController,
                   decoration: InputDecoration(
-                    hintText: 'Buscar ticket #...',
+                    // SH-1: hint actualizado para reflejar la búsqueda multi-campo.
+                    hintText: 'Buscar por ticket, producto o cliente...',
                     hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 13),
                     prefixIcon: const Icon(Icons.search, size: 20),
                     filled: true,
@@ -880,22 +916,8 @@ class _TicketDetailPanel extends StatelessWidget {
                         color: Colors.grey.shade600,
                       ),
                     ),
-                    /* Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.account_balance_outlined,
-                            size: 11, color: Colors.orange.shade700),
-                        const SizedBox(width: 3),
-                        Text(
-                          'Rec: +\$${sale.surchargeTotal.toCurrency()}',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: Colors.orange.shade700,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ), */
+                    // SH-4: Código eliminado — el recargo se muestra
+                    // en el badge de cada método de pago (_PaymentBadge).
                   ],
                   const SizedBox(height: 8),
                   // Desglose de pagos (Lado a lado)
@@ -1037,7 +1059,9 @@ class _TicketDetailPanel extends StatelessWidget {
 
                       await ReceiptPrinterService.instance.printSaleTicket(
                         items: itemsParaImprimir,
-                        total: sale.total,
+                        // BUG SH-3 FIX: usar grandTotal (neto + recargo bancario) para que
+                        // la copia del ticket refleje exactamente lo cobrado al cliente.
+                        total: sale.grandTotal,
                         settings: settings,
                         localTerminal: context.read<LocalTerminalProvider>(),
                         paymentDetails: paymentDetails,
