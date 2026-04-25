@@ -23,10 +23,24 @@ abstract class CatalogRepository {
   Future<Map<String, dynamic>> bulkUpdateProducts(List<int> ids, {int? categoryId, bool? active});
   Future<Map<String, dynamic>> bulkPriceUpdate({
     required double percentage,
+    required String roundingRule,
+    String? targetField,
     List<int>? productIds,
     int? categoryId,
     int? brandId,
   });
+
+  Future<Map<String, dynamic>> bulkPricePreview({
+    required double percentage,
+    required String roundingRule,
+    String? targetField,
+    List<int>? productIds,
+    int? categoryId,
+    int? brandId,
+  });
+
+  Future<List<dynamic>> getBulkPriceHistory();
+  Future<String> revertBulkPrice(int historyId);
   Future<Map<String, dynamic>> adjustStock({
     required int productId,
     required String type,

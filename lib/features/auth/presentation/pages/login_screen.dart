@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/auth_provider.dart';
+import '../widgets/rescue_pin_change_dialog.dart';
 import '../../../../core/utils/snack_bar_service.dart';
 import '../../../settings/presentation/providers/settings_provider.dart';
 import '../../../cash_register/presentation/providers/cash_register_provider.dart';
@@ -167,6 +168,16 @@ class _LoginScreenState extends State<LoginScreen> {
         
         final assignedId = settingsProv.assignedRegisterId;
         await cashProv.checkCurrentShift(registerId: assignedId > 0 ? assignedId : null);
+
+        // ── PROTOCOLO DE RESCATE: forzar cambio de PIN antes de entrar ────
+        if (provider.requiresPinChange && mounted) {
+          await showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (_) => const RescuePinChangeDialog(),
+          );
+        }
+        // ─────────────────────────────────────────────────────────────────
 
         // Encolamos la navegación al final del frame para que el Navigator 
         // no colapse ni arroje !_debugLocked si hay builds en curso o si 

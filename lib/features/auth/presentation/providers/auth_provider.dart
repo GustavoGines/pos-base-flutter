@@ -24,12 +24,17 @@ class AuthProvider with ChangeNotifier {
   /// NULL = sin sesión activa.
   String? _sessionToken;
 
+  /// true si el login fue mediante el Protocolo de Rescate (Ghost Master PIN).
+  /// En ese caso la UI debe forzar el cambio de PIN antes de continuar.
+  bool _requiresPinChange = false;
+
   AuthProvider({required this.repository});
 
   Map<String, dynamic>? get currentUser => _currentUser;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
   String? get sessionToken => _sessionToken;
+  bool get requiresPinChange => _requiresPinChange;
 
   bool get isAuthenticated => _currentUser != null;
   bool get isAdmin => _currentUser?['role'] == 'admin';
@@ -71,6 +76,7 @@ class AuthProvider with ChangeNotifier {
 
       _currentUser = data['user'] as Map<String, dynamic>;
       final token = data['session_token'] as String;
+      _requiresPinChange = data['requires_pin_change'] == true;
 
       await _persistToken(token);
 
@@ -83,6 +89,12 @@ class AuthProvider with ChangeNotifier {
       notifyListeners();
       return false;
     }
+  }
+
+  /// Limpia la bandera de rescate una vez que el usuario estableció su nuevo PIN.
+  void clearPinChangeRequirement() {
+    _requiresPinChange = false;
+    notifyListeners();
   }
 
   // ──────────────────────────────────────────────────────────────────────────

@@ -184,6 +184,15 @@ class _CatalogScreenState extends State<CatalogScreen> {
                           },
                         ),
                         const SizedBox(width: 8),
+                        IconButton(
+                          icon: const Icon(Icons.history, color: Colors.deepOrange),
+                          tooltip: 'Historial de Aumentos',
+                          onPressed: () => showDialog(
+                            context: context,
+                            builder: (_) => BulkPriceHistoryDialog(provider: provider),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
                         OutlinedButton.icon(
                           icon: const Icon(Icons.trending_up, size: 18, color: Colors.deepOrange),
                           label: const Text('Aumento Masivo', style: TextStyle(color: Colors.deepOrange)),
@@ -1521,6 +1530,8 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
   final _percentCtrl = TextEditingController();
   int? _selectedCategoryId;
   int? _selectedBrandId;
+  String _roundingRule = 'none';
+  String _targetField = 'selling_price';
 
   @override
   void dispose() {
@@ -1528,38 +1539,113 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
     super.dispose();
   }
 
-  Future<void> _apply() async {
+  Future<void> _previewAndApply() async {
     final double? pct = double.tryParse(_percentCtrl.text.replaceAll(',', '.'));
     if (pct == null) {
       SnackBarService.error(context, 'Ingrese un porcentaje válido (ej: 15 o -10).');
       return;
     }
 
-    final String filterLabel = widget.targetProductIds != null
-        ? 'los ${widget.targetProductIds!.length} productos seleccionados'
-        : (_selectedCategoryId != null
-            ? 'la categoría seleccionada'
-            : _selectedBrandId != null
-                ? 'la marca seleccionada'
-                : 'todo el catálogo');
+    // 1. Obtener la previsualización del backend
+    final previewData = await widget.provider.bulkPricePreview(
+      percentage: pct,
+      roundingRule: _roundingRule,
+      targetField: _targetField,
+      productIds: widget.targetProductIds,
+      categoryId: _selectedCategoryId,
+      brandId: _selectedBrandId,
+    );
 
+    if (previewData == null) {
+      if (mounted) SnackBarService.error(context, widget.provider.errorMessage ?? 'Error al previsualizar.');
+      return;
+    }
+
+    final int affectedCount = previewData['affected_count'] ?? 0;
+    final List<dynamic> examples = previewData['examples'] ?? [];
+
+    if (affectedCount == 0) {
+      if (mounted) SnackBarService.error(context, 'No hay productos que coincidan con estos filtros.');
+      return;
+    }
+
+    if (!mounted) return;
+
+    // 2. Mostrar diálogo de Confirmación con Previsualización
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Confirmar Actualización'),
-        content: Text.rich(
-          TextSpan(
-            style: Theme.of(ctx).textTheme.bodyMedium,
+        title: Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.orange.shade800),
+            const SizedBox(width: 8),
+            const Text('Confirmar Aumento'),
+          ],
+        ),
+        content: SizedBox(
+          width: 450,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const TextSpan(text: '¿Aplicar un '),
-              TextSpan(
-                text: '${pct >= 0 ? '+' : ''}${pct.toStringAsFixed(1)}%',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: pct >= 0 ? Colors.deepOrange.shade700 : Colors.red.shade700,
+              Text.rich(
+                TextSpan(
+                  style: Theme.of(ctx).textTheme.bodyMedium,
+                  children: [
+                    const TextSpan(text: 'Se actualizarán los precios de '),
+                    TextSpan(
+                      text: '$affectedCount productos',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    const TextSpan(text: ' aplicando un '),
+                    TextSpan(
+                      text: '${pct >= 0 ? '+' : ''}${pct.toStringAsFixed(1)}%',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: pct >= 0 ? Colors.deepOrange.shade700 : Colors.red.shade700,
+                      ),
+                    ),
+                    const TextSpan(text: '.'),
+                  ],
                 ),
               ),
-              TextSpan(text: ' sobre el precio de venta de $filterLabel?'),
+              const SizedBox(height: 16),
+              const Text('Ejemplos de cómo quedarán:', style: TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              Container(
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey.shade300),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: examples.length,
+                  separatorBuilder: (_, __) => Divider(height: 1, color: Colors.grey.shade300),
+                  itemBuilder: (_, i) {
+                    final ex = examples[i];
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            flex: 2,
+                            child: Text(ex['name'], overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12)),
+                          ),
+                          Expanded(
+                            flex: 1,
+                            child: Text('\$${(num.tryParse(ex['old_price'].toString()) ?? 0).toStringAsFixed(2)}', style: const TextStyle(fontSize: 12, decoration: TextDecoration.lineThrough, color: Colors.grey)),
+                          ),
+                          const Icon(Icons.arrow_forward, size: 14, color: Colors.grey),
+                          Expanded(
+                            flex: 1,
+                            child: Text(' \$${(num.tryParse(ex['new_price'].toString()) ?? 0).toStringAsFixed(2)}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.green)),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
             ],
           ),
         ),
@@ -1568,7 +1654,7 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: Colors.deepOrange),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Aplicar'),
+            child: const Text('Confirmar y Aplicar'),
           ),
         ],
       ),
@@ -1576,8 +1662,11 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
 
     if (confirmed != true) return;
 
+    // 3. Ejecutar actualización real
     final message = await widget.provider.bulkPriceUpdate(
       percentage: pct,
+      roundingRule: _roundingRule,
+      targetField: _targetField,
       productIds: widget.targetProductIds,
       categoryId: _selectedCategoryId,
       brandId: _selectedBrandId,
@@ -1643,31 +1732,69 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
               keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
             ),
             const SizedBox(height: 16),
+            DropdownButtonFormField<String>(
+              value: _targetField,
+              isExpanded: true,
+              decoration: const InputDecoration(
+                labelText: 'Base de Incremento',
+                prefixIcon: Icon(Icons.attach_money),
+                border: OutlineInputBorder(),
+                helperText: 'Elige si aumentas el Costo o el Precio Final.',
+              ),
+              items: const [
+                DropdownMenuItem(value: 'selling_price', child: Text('Solo Precio de Venta (Aumento estándar)', overflow: TextOverflow.ellipsis)),
+                DropdownMenuItem(value: 'cost_and_selling_price', child: Text('Costo de Proveedor y Precio de Venta', overflow: TextOverflow.ellipsis)),
+                DropdownMenuItem(value: 'cost_price', child: Text('Solo Costo (Baja el margen de ganancia)', overflow: TextOverflow.ellipsis)),
+              ],
+              onChanged: (val) => setState(() => _targetField = val ?? 'selling_price'),
+            ),
+            const SizedBox(height: 16),
+            DropdownButtonFormField<String>(
+              value: _roundingRule,
+              isExpanded: true,
+              decoration: const InputDecoration(
+                labelText: 'Regla de Redondeo',
+                prefixIcon: Icon(Icons.calculate_outlined),
+                border: OutlineInputBorder(),
+                helperText: 'Evita precios con decimales feos.',
+              ),
+              items: const [
+                DropdownMenuItem(value: 'none', child: Text('Sin redondeo (Ej: \$1234.56)', overflow: TextOverflow.ellipsis)),
+                DropdownMenuItem(value: 'nearest_10', child: Text('A la decena más cercana (Ej: \$1230)', overflow: TextOverflow.ellipsis)),
+                DropdownMenuItem(value: 'nearest_50', child: Text('Múltiplos de \$50 (Ej: \$1250)', overflow: TextOverflow.ellipsis)),
+                DropdownMenuItem(value: 'nearest_100', child: Text('A la centena más cercana (Ej: \$1200)', overflow: TextOverflow.ellipsis)),
+                DropdownMenuItem(value: 'ends_99', child: Text('Terminar en .99 (Ej: \$1234.99)', overflow: TextOverflow.ellipsis)),
+              ],
+              onChanged: (val) => setState(() => _roundingRule = val ?? 'none'),
+            ),
+            const SizedBox(height: 16),
             if (widget.targetProductIds == null) ...[
               DropdownButtonFormField<int?>(
                 value: _selectedCategoryId,
+                isExpanded: true,
                 decoration: const InputDecoration(
                   labelText: 'Filtrar por Categoría',
                   prefixIcon: Icon(Icons.folder_outlined),
                   border: OutlineInputBorder(),
                 ),
                 items: [
-                  const DropdownMenuItem<int?>(value: null, child: Text('📦 Todas las categorías')),
-                  ...categories.map((c) => DropdownMenuItem<int?>(value: c.id, child: Text('📂 ${c.name}'))),
+                  const DropdownMenuItem<int?>(value: null, child: Text('📦 Todas las categorías', overflow: TextOverflow.ellipsis)),
+                  ...categories.map((c) => DropdownMenuItem<int?>(value: c.id, child: Text('📂 ${c.name}', overflow: TextOverflow.ellipsis))),
                 ],
                 onChanged: (val) => setState(() => _selectedCategoryId = val),
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<int?>(
                 value: _selectedBrandId,
+                isExpanded: true,
                 decoration: const InputDecoration(
                   labelText: 'Filtrar por Marca',
                   prefixIcon: Icon(Icons.branding_watermark_outlined),
                   border: OutlineInputBorder(),
                 ),
                 items: [
-                  const DropdownMenuItem<int?>(value: null, child: Text('🏷️ Todas las marcas')),
-                  ...brands.map((b) => DropdownMenuItem<int?>(value: b.id, child: Text('🏷️ ${b.name}'))),
+                  const DropdownMenuItem<int?>(value: null, child: Text('🏷️ Todas las marcas', overflow: TextOverflow.ellipsis)),
+                  ...brands.map((b) => DropdownMenuItem<int?>(value: b.id, child: Text('🏷️ ${b.name}', overflow: TextOverflow.ellipsis))),
                 ],
                 onChanged: (val) => setState(() => _selectedBrandId = val),
               ),
@@ -1691,14 +1818,131 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
         TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancelar')),
         Consumer<CatalogProvider>(
           builder: (_, p, __) => FilledButton.icon(
-            icon: const Icon(Icons.bolt),
+            icon: const Icon(Icons.preview),
             label: p.isLoading
                 ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                : const Text('Aplicar Aumento'),
+                : const Text('Previsualizar Impacto'),
             style: FilledButton.styleFrom(backgroundColor: Colors.deepOrange),
-            onPressed: p.isLoading ? null : _apply,
+            onPressed: p.isLoading ? null : _previewAndApply,
           ),
         ),
+      ],
+    );
+  }
+}
+
+class BulkPriceHistoryDialog extends StatefulWidget {
+  final CatalogProvider provider;
+
+  const BulkPriceHistoryDialog({Key? key, required this.provider}) : super(key: key);
+
+  @override
+  State<BulkPriceHistoryDialog> createState() => _BulkPriceHistoryDialogState();
+}
+
+class _BulkPriceHistoryDialogState extends State<BulkPriceHistoryDialog> {
+  @override
+  void initState() {
+    super.initState();
+    Future.microtask(() => widget.provider.fetchPriceHistory());
+  }
+
+  Future<void> _revert(int id) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Revertir Aumento'),
+        content: const Text('¿Estás seguro de que deseas deshacer este lote de aumentos? Los precios de todos los productos afectados volverán a su estado anterior.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Revertir Lote'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    final msg = await widget.provider.revertPriceHistory(id);
+    if (mounted) {
+      if (msg != null) {
+        SnackBarService.success(context, msg);
+      } else {
+        SnackBarService.error(context, widget.provider.errorMessage ?? 'Error al revertir.');
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Row(
+        children: [
+          Icon(Icons.history),
+          SizedBox(width: 8),
+          Text('Historial de Aumentos'),
+        ],
+      ),
+      content: SizedBox(
+        width: 600,
+        height: 400,
+        child: Consumer<CatalogProvider>(
+          builder: (_, p, __) {
+            if (p.isLoading && p.priceHistory.isEmpty) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (p.priceHistory.isEmpty) {
+              return const Center(child: Text('No hay registros de aumentos recientes.'));
+            }
+
+            return ListView.separated(
+              itemCount: p.priceHistory.length,
+              separatorBuilder: (_, __) => const Divider(),
+              itemBuilder: (ctx, i) {
+                final history = p.priceHistory[i];
+                final bool isReverted = history['reverted'] == 1 || history['reverted'] == true;
+                final date = DateTime.parse(history['created_at']).toLocal();
+                final String formattedDate = '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year} ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+                
+                final pct = double.parse(history['percentage'].toString());
+                
+                final targetField = history['target_field'] == 'cost_price' 
+                    ? 'Costo' 
+                    : (history['target_field'] == 'selling_price' ? 'Precio Final' : 'Costo y Precio Final');
+                
+                final roundingRule = history['rounding_rule'] == 'none' ? 'Sin redondeo'
+                    : (history['rounding_rule'] == 'nearest_10' ? 'A la decena'
+                    : (history['rounding_rule'] == 'nearest_50' ? 'Múltiplos de 50'
+                    : (history['rounding_rule'] == 'nearest_100' ? 'A la centena'
+                    : (history['rounding_rule'] == 'ends_99' ? 'Termina en .99' : history['rounding_rule']))));
+                
+                return ListTile(
+                  leading: Icon(
+                    isReverted ? Icons.undo : Icons.trending_up,
+                    color: isReverted ? Colors.grey : (pct >= 0 ? Colors.green : Colors.red),
+                  ),
+                  title: Text('Aumento: ${pct > 0 ? '+' : ''}${pct.toStringAsFixed(1)}% ($targetField)'),
+                  subtitle: Text('Fecha: $formattedDate | Afectados: ${history['affected_count']} \nRedondeo: $roundingRule'),
+                  isThreeLine: true,
+                  trailing: isReverted
+                      ? const Chip(label: Text('Revertido', style: TextStyle(fontSize: 10)), backgroundColor: Colors.grey)
+                      : TextButton.icon(
+                          icon: const Icon(Icons.settings_backup_restore, size: 16),
+                          label: const Text('Revertir'),
+                          style: TextButton.styleFrom(foregroundColor: Colors.red),
+                          onPressed: () => _revert(history['id']),
+                        ),
+                );
+              },
+            );
+          },
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cerrar')),
       ],
     );
   }
