@@ -3,10 +3,7 @@ extension CurrencyFormatter on num {
   /// Devuelve el valor con 2 decimales solo si es estrictamente fraccionario,
   /// de lo contrario devuelve el entero (ej. 1500.00 -> 1500)
   String toCurrency() {
-    if (this == this.toInt()) {
-      return this.toInt().toString();
-    }
-    return this.toStringAsFixed(2);
+    return this.round().toString();
   }
 
   /// Alias para cantidades

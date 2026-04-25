@@ -71,7 +71,8 @@ class _PaymentDialogState extends State<PaymentDialog> {
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
 
-    final amount = double.tryParse(_amountController.text.trim()) ?? 0.0;
+    final cleanAmount = _amountController.text.replaceAll('\$', '').replaceAll('.', '').replaceAll(' ', '').trim();
+    final amount = double.tryParse(cleanAmount) ?? 0.0;
     if (amount <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('El monto debe ser mayor a 0'), backgroundColor: Colors.red),

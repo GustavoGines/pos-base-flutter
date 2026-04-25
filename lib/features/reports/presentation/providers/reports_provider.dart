@@ -152,14 +152,14 @@ class ReportsProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> exportToExcel() async {
+  Future<void> exportToExcel({bool isBrand = false}) async {
     _isExporting = true;
     _error = null;
     notifyListeners();
 
     try {
       final df = DateFormat('yyyy-MM-dd');
-      final bytes = await dataSource.downloadExcel(df.format(_startDate), df.format(_endDate));
+      final bytes = await dataSource.downloadExcel(df.format(_startDate), df.format(_endDate), isBrand: isBrand);
       
       final docsDir = await getApplicationDocumentsDirectory();
       final reportesDir = Directory('${docsDir.path}${Platform.pathSeparator}Sistema_POS${Platform.pathSeparator}Reportes');
@@ -170,7 +170,8 @@ class ReportsProvider extends ChangeNotifier {
       
       final cleanStart = DateFormat('dd-MM-yyyy').format(_startDate);
       final cleanEnd = DateFormat('dd-MM-yyyy').format(_endDate);
-      final filename = 'Ganancias_${cleanStart}_al_${cleanEnd}.xlsx';
+      final typeStr = isBrand ? 'Marcas' : 'Categorias';
+      final filename = 'Ganancias_${typeStr}_${cleanStart}_al_${cleanEnd}.xlsx';
       final file = File('${reportesDir.path}${Platform.pathSeparator}$filename');
       
       await file.writeAsBytes(bytes);
@@ -195,14 +196,14 @@ class ReportsProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> exportToPdf() async {
+  Future<void> exportToPdf({bool isBrand = false}) async {
     _isExportingPdf = true;
     _error = null;
     notifyListeners();
 
     try {
       final df = DateFormat('yyyy-MM-dd');
-      final bytes = await dataSource.downloadPdf(df.format(_startDate), df.format(_endDate));
+      final bytes = await dataSource.downloadPdf(df.format(_startDate), df.format(_endDate), isBrand: isBrand);
 
       final docsDir = await getApplicationDocumentsDirectory();
       final reportesDir = Directory('${docsDir.path}${Platform.pathSeparator}Sistema_POS${Platform.pathSeparator}Reportes');
@@ -213,7 +214,8 @@ class ReportsProvider extends ChangeNotifier {
 
       final cleanStart = DateFormat('dd-MM-yyyy').format(_startDate);
       final cleanEnd   = DateFormat('dd-MM-yyyy').format(_endDate);
-      final filename = 'Ganancias_${cleanStart}_al_${cleanEnd}.pdf';
+      final typeStr = isBrand ? 'Marcas' : 'Categorias';
+      final filename = 'Ganancias_${typeStr}_${cleanStart}_al_${cleanEnd}.pdf';
       final file = File('${reportesDir.path}${Platform.pathSeparator}$filename');
 
       await file.writeAsBytes(bytes);

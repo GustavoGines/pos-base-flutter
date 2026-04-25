@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../../../../core/utils/currency_formatter.dart';
 
 /// Formulario de captura de datos de un cheque de tercero.
 ///
@@ -156,7 +157,7 @@ class _CheckFormWidgetState extends State<CheckFormWidget> {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
-                  'Importe: \$${widget.amount.toStringAsFixed(2)}',
+                  'Importe: \$${widget.amount.toCurrency()}',
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
                     color: Colors.teal.shade900,

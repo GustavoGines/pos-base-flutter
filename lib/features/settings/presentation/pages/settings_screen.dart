@@ -121,7 +121,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String _translateFeature(String featureCode) {
     const dictionary = {
       'fast_pos': '⚡ Caja Rápida',
-      'z_reports': '🧾 Reportes Z',
+      'z_reports': '🔍 Auditoría General (Turnos y Stock)',
       'quotes': '📝 Presupuestos (PDF/WA)',
       'current_accounts': '💳 Cuentas Corrientes (Fiado)',
       'multiple_prices': '🏷️ Listas de Precios (Mayorista/Tarjeta)',
@@ -590,28 +590,71 @@ class _SettingsScreenState extends State<SettingsScreen> {
               final name = tier['name'];
               final mod = (tier['modifier'] as num).toDouble();
               final sign = mod >= 0 ? '+' : '';
-              return Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                decoration: BoxDecoration(
-                  color: Colors.purple.shade50,
-                  border: Border.all(color: Colors.purple.shade200),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.sell_outlined, size: 16, color: Colors.purple),
-                    const SizedBox(width: 8),
-                    Text(
-                      '$name ($sign${mod.toStringAsFixed(0)}%)',
-                      style: TextStyle(fontWeight: FontWeight.bold, color: Colors.purple.shade900),
+              return GestureDetector(
+                onTap: () {
+                  final editNameCtrl = TextEditingController(text: name);
+                  final editModCtrl = TextEditingController(text: mod.toString());
+                  showDialog(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      title: const Text('Editar Lista de Precios'),
+                      content: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          TextField(
+                            controller: editNameCtrl,
+                            decoration: const InputDecoration(labelText: 'Nombre de la Lista', border: OutlineInputBorder()),
+                          ),
+                          const SizedBox(height: 16),
+                          TextField(
+                            controller: editModCtrl,
+                            keyboardType: const TextInputType.numberWithOptions(signed: true, decimal: true),
+                            decoration: const InputDecoration(labelText: 'Modificador (%)', border: OutlineInputBorder()),
+                          ),
+                        ],
+                      ),
+                      actions: [
+                        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+                        FilledButton(
+                          onPressed: () {
+                            final newName = editNameCtrl.text.trim();
+                            final newMod = double.tryParse(editModCtrl.text.replaceAll(',', '.').trim());
+                            if (newName.isNotEmpty && newMod != null) {
+                              setState(() {
+                                _customTiers[idx] = {'name': newName, 'modifier': newMod};
+                              });
+                              Navigator.pop(ctx);
+                            }
+                          },
+                          child: const Text('Guardar'),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 8),
-                    InkWell(
-                      onTap: () => setState(() => _customTiers.removeAt(idx)),
-                      child: const Icon(Icons.cancel, size: 18, color: Colors.redAccent),
-                    )
-                  ],
+                  );
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.purple.shade50,
+                    border: Border.all(color: Colors.purple.shade200),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.sell_outlined, size: 16, color: Colors.purple),
+                      const SizedBox(width: 8),
+                      Text(
+                        '$name ($sign${mod.toStringAsFixed(0)}%)',
+                        style: TextStyle(fontWeight: FontWeight.bold, color: Colors.purple.shade900),
+                      ),
+                      const SizedBox(width: 8),
+                      InkWell(
+                        onTap: () => setState(() => _customTiers.removeAt(idx)),
+                        child: const Icon(Icons.cancel, size: 18, color: Colors.redAccent),
+                      )
+                    ],
+                  ),
                 ),
               );
             }).toList(),

@@ -13,7 +13,7 @@ import '../data/quote_repository.dart';
 /// Servicio que genera el PDF del presupuesto y abre WhatsApp.
 /// No depende de Flutter widgets — puede llamarse desde cualquier contexto.
 class QuotePdfService {
-  static final _currencyFmt = NumberFormat.currency(locale: 'es_AR', symbol: '\$', decimalDigits: 2);
+  static final _currencyFmt = NumberFormat.currency(locale: 'es_AR', symbol: '\$', decimalDigits: 0);
   static final _dateFmt = DateFormat('dd/MM/yyyy');
 
   /// Genera el PDF, lo guarda en el directorio de descargas, lo muestra al
@@ -103,7 +103,7 @@ class QuotePdfService {
                       allowSharing: true,
                       canChangeOrientation: false,
                       canChangePageFormat: false,
-                      pdfFileName: '\${quote.quoteNumber}.pdf',
+                      pdfFileName: '${quote.quoteNumber}.pdf',
                       build: (format) async => _buildPdf(
                         quote: quote,
                         businessName: businessName,
@@ -186,7 +186,7 @@ class QuotePdfService {
     const bgLight = PdfColor.fromInt(0xFFF5F7FA);
     const textGrey = PdfColor.fromInt(0xFF6B7280);
 
-    final currFmt = NumberFormat.currency(locale: 'es_AR', symbol: '\$', decimalDigits: 2);
+    final currFmt = NumberFormat.currency(locale: 'es_AR', symbol: '\$', decimalDigits: 0);
 
     doc.addPage(
       pw.MultiPage(

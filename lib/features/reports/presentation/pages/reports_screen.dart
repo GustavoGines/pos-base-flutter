@@ -139,6 +139,7 @@ class _ReportsScreenState extends State<ReportsScreen>
                         if (_tabController.index == 0 || _tabController.index == 1) {
                           return _FiltersBar(
                             provider: provider,
+                            isBrand: _tabController.index == 1,
                             onDateTap: () => _selectDateRange(context),
                             onRefresh: () => provider.fetchProfitByCategory(),
                           );
@@ -188,11 +189,13 @@ class _ReportsScreenState extends State<ReportsScreen>
 
 class _FiltersBar extends StatelessWidget {
   final ReportsProvider provider;
+  final bool isBrand;
   final VoidCallback onDateTap;
   final VoidCallback onRefresh;
 
   const _FiltersBar({
     required this.provider,
+    this.isBrand = false,
     required this.onDateTap,
     required this.onRefresh,
   });
@@ -239,7 +242,7 @@ class _FiltersBar extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           FilledButton.icon(
-            onPressed: provider.isExporting ? null : () => provider.exportToExcel(),
+            onPressed: provider.isExporting ? null : () => provider.exportToExcel(isBrand: isBrand),
             icon: provider.isExporting
                 ? const SizedBox(width: 15, height: 15, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                 : const Icon(Icons.file_download, size: 15),
@@ -251,7 +254,7 @@ class _FiltersBar extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           FilledButton.icon(
-            onPressed: provider.isExportingPdf ? null : () => provider.exportToPdf(),
+            onPressed: provider.isExportingPdf ? null : () => provider.exportToPdf(isBrand: isBrand),
             icon: provider.isExportingPdf
                 ? const SizedBox(width: 15, height: 15, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                 : const Icon(Icons.picture_as_pdf, size: 15),

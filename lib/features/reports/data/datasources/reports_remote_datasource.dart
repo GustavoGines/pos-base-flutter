@@ -35,8 +35,9 @@ class ReportsRemoteDataSource {
     }
   }
 
-  Future<List<int>> downloadExcel(String startDate, String endDate) async {
-    final uri = Uri.parse('$baseUrl/reports/sales-by-category/export?start_date=$startDate&end_date=$endDate');
+  Future<List<int>> downloadExcel(String startDate, String endDate, {bool isBrand = false}) async {
+    final typeParam = isBrand ? '&type=brand' : '';
+    final uri = Uri.parse('$baseUrl/reports/sales-by-category/export?start_date=$startDate&end_date=$endDate$typeParam');
     final response = await client.get(uri);
     if (response.statusCode == 200) {
       return response.bodyBytes;
@@ -45,8 +46,9 @@ class ReportsRemoteDataSource {
     }
   }
 
-  Future<List<int>> downloadPdf(String startDate, String endDate) async {
-    final uri = Uri.parse('$baseUrl/reports/sales-by-category/pdf?start_date=$startDate&end_date=$endDate');
+  Future<List<int>> downloadPdf(String startDate, String endDate, {bool isBrand = false}) async {
+    final typeParam = isBrand ? '&type=brand' : '';
+    final uri = Uri.parse('$baseUrl/reports/sales-by-category/pdf?start_date=$startDate&end_date=$endDate$typeParam');
     final response = await client.get(uri, headers: {
       'Accept': 'application/pdf',
     });

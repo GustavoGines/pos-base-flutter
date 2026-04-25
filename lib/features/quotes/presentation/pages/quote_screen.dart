@@ -505,7 +505,7 @@ class _QuoteScreenState extends State<QuoteScreen> {
     return Consumer<QuoteProvider>(
       builder: (_, provider, __) {
         final cart = provider.cart;
-        final fmt = NumberFormat.currency(locale: 'es_AR', symbol: '\$', decimalDigits: 2);
+        final fmt = NumberFormat.currency(locale: 'es_AR', symbol: '\$', decimalDigits: 0);
 
         return Column(
           children: [
@@ -620,7 +620,7 @@ class _QuoteScreenState extends State<QuoteScreen> {
   }
 
   Widget _buildCartItem(CartItem item, QuoteProvider provider) {
-    final fmt = NumberFormat.currency(locale: 'es_AR', symbol: '\$', decimalDigits: 2);
+    final fmt = NumberFormat.currency(locale: 'es_AR', symbol: '\$', decimalDigits: 0);
     final tierColor = provider.activePriceListColor;
     final tierLabel = provider.activePriceListLabel;
     final isBase = item.activeTier == PriceTier.base;
@@ -739,7 +739,7 @@ class _QuoteHeaderDialogState extends State<_QuoteHeaderDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final fmt = NumberFormat.currency(locale: 'es_AR', symbol: '\$', decimalDigits: 2);
+    final fmt = NumberFormat.currency(locale: 'es_AR', symbol: '\$', decimalDigits: 0);
     return AlertDialog(
       title: Row(
         children: [
@@ -901,7 +901,7 @@ class _QuoteSuccessDialog extends StatefulWidget {
 class _QuoteSuccessDialogState extends State<_QuoteSuccessDialog> {
   bool _generatingPdf = false;
   String? _savedPath;
-  final fmt = NumberFormat.currency(locale: 'es_AR', symbol: '\$', decimalDigits: 2);
+  final fmt = NumberFormat.currency(locale: 'es_AR', symbol: '\$', decimalDigits: 0);
 
   Future<void> _printTicket() async {
     try {

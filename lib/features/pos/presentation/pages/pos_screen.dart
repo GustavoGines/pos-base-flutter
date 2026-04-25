@@ -2355,19 +2355,36 @@ class _PosScreenState extends State<PosScreen> {
                                         : Colors.green.shade50,
                                     borderRadius: BorderRadius.circular(8),
                                   ),
-                                  child: Text(
-                                    isByWeight
-                                        ? '\$${product.sellingPrice.toCurrency()}/Kg'
-                                        : '\$${product.sellingPrice.toCurrency()}',
-                                    style: TextStyle(
-                                      color: isByWeight
-                                          ? Colors.orange.shade800
-                                          : Colors.green.shade700,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 13,
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
+                                  child: Consumer<PosProvider>(
+                                    builder: (context, pos, _) {
+                                      double displayPrice = product.sellingPrice;
+                                      if (pos.activeTier == PriceTier.wholesale) {
+                                        displayPrice = (product.priceWholesale != null && product.priceWholesale! > 0) 
+                                          ? product.priceWholesale! 
+                                          : product.sellingPrice * pos.wholesaleFactor;
+                                      } else if (pos.activeTier == PriceTier.card) {
+                                        displayPrice = (product.priceCard != null && product.priceCard! > 0) 
+                                          ? product.priceCard! 
+                                          : product.sellingPrice * pos.cardFactor;
+                                      } else if (pos.activeTier == PriceTier.custom) {
+                                        displayPrice = product.sellingPrice * pos.currentCustomFactor;
+                                      }
+
+                                      return Text(
+                                        isByWeight
+                                            ? '\$${displayPrice.toCurrency()}/Kg'
+                                            : '\$${displayPrice.toCurrency()}',
+                                        style: TextStyle(
+                                          color: isByWeight
+                                              ? Colors.orange.shade800
+                                              : Colors.green.shade700,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 13,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      );
+                                    },
                                   ),
                                 ),
                                 // Badge "Por Peso" para los productos de granel

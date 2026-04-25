@@ -503,8 +503,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         // Ítems del carrito
         ...cart.map((item) => [
           TicketLine(
-            '${item.product.isSoldByWeight ? item.quantity.toStringAsFixed(3) + " kg" : item.quantity.toInt().toString() + " un"} x \$${item.product.sellingPrice.toStringAsFixed(2)}',
-            rightText: '\$${item.subtotal.toStringAsFixed(2)}',
+            '${item.product.isSoldByWeight ? item.quantity.toQty() + " kg" : item.quantity.toInt().toString() + " un"} x \$${item.product.sellingPrice.toCurrency()}',
+            rightText: '\$${item.subtotal.toCurrency()}',
           ),
           TicketLine(item.product.name.toUpperCase(), isBold: true),
         ]).expand((l) => l),
@@ -512,35 +512,35 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
 
         // ──── Sección de pago (igual que el ticket real) ────
         if (isComplexPayment) ...[
-          TicketLine('SUBTOTAL:', rightText: '\$${widget.total.toStringAsFixed(2)}', isBold: true),
+          TicketLine('SUBTOTAL:', rightText: '\$${widget.total.toCurrency()}', isBold: true),
           const TicketLine.hr(),
           // Un renglón por cada método de pago
           ..._lines.map((l) => TicketLine(
             (l.method?.name ?? 'PAGO').toUpperCase(),
-            rightText: '\$${l.amount.toStringAsFixed(2)}',
+            rightText: '\$${l.amount.toCurrency()}',
             isBold: true,
           )),
           if (_totalSurcharge > 0.01)
-            TicketLine('RECARGO BANCARIO:', rightText: '\$${_totalSurcharge.toStringAsFixed(2)}'),
+            TicketLine('RECARGO BANCARIO:', rightText: '\$${_totalSurcharge.toCurrency()}'),
           const TicketLine.hr(),
           if (_shippingCostToApply > 0.01)
-            TicketLine('FLETE / ENVÍO:', rightText: '\$${_shippingCostToApply.toStringAsFixed(2)}'),
-          TicketLine('TOTAL COBRADO:', rightText: '\$${_grandTotal.toStringAsFixed(2)}', isBold: true, isLarge: true),
+            TicketLine('FLETE / ENVÍO:', rightText: '\$${_shippingCostToApply.toCurrency()}'),
+          TicketLine('TOTAL COBRADO:', rightText: '\$${_grandTotal.toCurrency()}', isBold: true, isLarge: true),
           if (hasTendered)
-            TicketLine('EFECTIVO RECIBIDO:', rightText: '\$${_actualTendered.toStringAsFixed(2)}'),
+            TicketLine('EFECTIVO RECIBIDO:', rightText: '\$${_actualTendered.toCurrency()}'),
           if (hasTendered)
-            TicketLine('SU VUELTO:', rightText: '\$${_change.toStringAsFixed(2)}', isBold: true),
+            TicketLine('SU VUELTO:', rightText: '\$${_change.toCurrency()}', isBold: true),
         ] else ...[
           // Venta simple: un pago, sin recargos
           if (_shippingCostToApply > 0.01)
-            TicketLine('FLETE / ENVÍO:', rightText: '\$${_shippingCostToApply.toStringAsFixed(2)}'),
-          TicketLine('TOTAL GENERAL:', rightText: '\$${_grandTotal.toStringAsFixed(2)}', isBold: true, isLarge: true),
+            TicketLine('FLETE / ENVÍO:', rightText: '\$${_shippingCostToApply.toCurrency()}'),
+          TicketLine('TOTAL GENERAL:', rightText: '\$${_grandTotal.toCurrency()}', isBold: true, isLarge: true),
           const TicketLine.hr(),
           TicketLine('PAGO EN:', rightText: (_lines.isNotEmpty ? _lines.first.method?.name ?? 'EFECTIVO' : 'EFECTIVO').toUpperCase()),
           if (hasTendered)
-            TicketLine('EFECTIVO RECIBIDO:', rightText: '\$${_actualTendered.toStringAsFixed(2)}'),
+            TicketLine('EFECTIVO RECIBIDO:', rightText: '\$${_actualTendered.toCurrency()}'),
           if (hasTendered)
-            TicketLine('SU VUELTO:', rightText: '\$${_change.toStringAsFixed(2)}', isBold: true),
+            TicketLine('SU VUELTO:', rightText: '\$${_change.toCurrency()}', isBold: true),
         ],
         const TicketLine.space(),
         TicketLine(

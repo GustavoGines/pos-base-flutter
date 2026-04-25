@@ -36,7 +36,7 @@ import 'features/logistics/data/delivery_note_repository.dart';
 import 'features/logistics/presentation/providers/logistics_provider.dart';
 import 'features/sales_history/presentation/pages/sales_history_screen.dart';
 import 'features/auth/presentation/pages/login_screen.dart';
-import 'features/cash_register/presentation/pages/shift_audit_screen.dart';
+import 'features/reports/presentation/pages/general_audit_screen.dart';
 import 'features/customers/presentation/screens/customers_screen.dart';
 import 'features/trash/presentation/screens/trash_screen.dart';
 import 'features/reports/presentation/pages/reports_screen.dart';
@@ -657,7 +657,7 @@ class _MainAppState extends State<MainApp> {
         '/close-shift': (context) => const CloseShiftScreen(),
         '/catalog': (context) => const CatalogScreen(),
         '/sales-history': (context) => const SalesHistoryScreen(),
-        '/shift-audit': (context) => const ShiftAuditScreen(),
+        '/general-audit': (context) => const GeneralAuditScreen(),
         '/users': (context) => const UsersManagerScreen(),
         '/settings': (context) => const SettingsScreen(),
         '/settings/registers': (context) => const CashRegisterManagementScreen(),
