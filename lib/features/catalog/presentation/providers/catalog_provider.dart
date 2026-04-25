@@ -249,8 +249,45 @@ class CatalogProvider with ChangeNotifier {
     }
   }
 
+  List<dynamic> _priceHistory = [];
+  List<dynamic> get priceHistory => _priceHistory;
+
+  Future<void> fetchPriceHistory() async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      _priceHistory = await repository.getBulkPriceHistory();
+    } catch (e) {
+      _errorMessage = e.toString().replaceAll('Exception: ', '');
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<String?> revertPriceHistory(int historyId) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      final message = await repository.revertBulkPrice(historyId);
+      await loadProducts(page: _currentPage);
+      await fetchPriceHistory();
+      return message;
+    } catch (e) {
+      _errorMessage = e.toString().replaceAll('Exception: ', '');
+      return null;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
   Future<String?> bulkPriceUpdate({
     required double percentage,
+    required String roundingRule,
+    String? targetField,
     List<int>? productIds,
     int? categoryId,
     int? brandId,
@@ -261,15 +298,47 @@ class CatalogProvider with ChangeNotifier {
     try {
       final result = await repository.bulkPriceUpdate(
         percentage: percentage,
+        roundingRule: roundingRule,
+        targetField: targetField,
         productIds: productIds,
         categoryId: categoryId,
         brandId: brandId,
       );
       // Reload current page to reflect new prices
       await loadProducts(page: _currentPage);
-      return result['message'] as String?;
+      return result['message'] as String;
     } catch (e) {
-      _errorMessage = e.toString();
+      _errorMessage = e.toString().replaceAll('Exception: ', '');
+      return null;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<Map<String, dynamic>?> bulkPricePreview({
+    required double percentage,
+    required String roundingRule,
+    String? targetField,
+    List<int>? productIds,
+    int? categoryId,
+    int? brandId,
+  }) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      final result = await repository.bulkPricePreview(
+        percentage: percentage,
+        roundingRule: roundingRule,
+        targetField: targetField,
+        productIds: productIds,
+        categoryId: categoryId,
+        brandId: brandId,
+      );
+      return result;
+    } catch (e) {
+      _errorMessage = e.toString().replaceAll('Exception: ', '');
       return null;
     } finally {
       _isLoading = false;

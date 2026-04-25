@@ -266,6 +266,9 @@ void main() async {
           create: (_) => UsersProvider(repository: usersRepo),
           lazy: true,  // Solo carga cuando se navega a Personal y Accesos
         ),
+        // Expuesto directamente para que RescuePinChangeDialog pueda hacer
+        // context.read<UsersRepository>() sin pasar por UsersProvider.
+        Provider.value(value: usersRepo),
         ChangeNotifierProxyProvider<SettingsProvider, CustomerProvider>(
           create: (_) => CustomerProvider(baseUrl: apiUrl, client: httpClient),
           update: (_, settingsProvider, customerProvider) {

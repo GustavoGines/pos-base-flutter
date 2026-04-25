@@ -82,16 +82,49 @@ class CatalogRepositoryImpl implements CatalogRepository {
   @override
   Future<Map<String, dynamic>> bulkPriceUpdate({
     required double percentage,
+    required String roundingRule,
+    String? targetField,
     List<int>? productIds,
     int? categoryId,
     int? brandId,
   }) async {
     return await remoteDataSource.bulkPriceUpdate(
       percentage: percentage,
+      roundingRule: roundingRule,
+      targetField: targetField,
       productIds: productIds,
       categoryId: categoryId,
       brandId: brandId,
     );
+  }
+
+  @override
+  Future<Map<String, dynamic>> bulkPricePreview({
+    required double percentage,
+    required String roundingRule,
+    String? targetField,
+    List<int>? productIds,
+    int? categoryId,
+    int? brandId,
+  }) async {
+    return await remoteDataSource.bulkPricePreview(
+      percentage: percentage,
+      roundingRule: roundingRule,
+      targetField: targetField,
+      productIds: productIds,
+      categoryId: categoryId,
+      brandId: brandId,
+    );
+  }
+
+  @override
+  Future<List<dynamic>> getBulkPriceHistory() async {
+    return await remoteDataSource.getBulkPriceHistory();
+  }
+
+  @override
+  Future<String> revertBulkPrice(int historyId) async {
+    return await remoteDataSource.revertBulkPrice(historyId);
   }
 
   @override

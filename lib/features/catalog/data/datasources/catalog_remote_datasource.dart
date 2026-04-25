@@ -25,10 +25,22 @@ abstract class CatalogRemoteDataSource {
   Future<Map<String, dynamic>> bulkUpdateProducts(List<int> ids, {int? categoryId, bool? active});
   Future<Map<String, dynamic>> bulkPriceUpdate({
     required double percentage,
+    required String roundingRule,
+    String? targetField,
     List<int>? productIds,
     int? categoryId,
     int? brandId,
   });
+  Future<Map<String, dynamic>> bulkPricePreview({
+    required double percentage,
+    required String roundingRule,
+    String? targetField,
+    List<int>? productIds,
+    int? categoryId,
+    int? brandId,
+  });
+  Future<List<dynamic>> getBulkPriceHistory();
+  Future<String> revertBulkPrice(int historyId);
   Future<Map<String, dynamic>> adjustStock({
     required int productId,
     required String type,
@@ -294,7 +306,7 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
       if (response.statusCode == 200) {
         return json.decode(response.body) as Map<String, dynamic>;
       } else {
-        throw Exception('Failed to bulk delete products: ${response.body}');
+        throw Exception('Error al eliminar productos: ${response.body}');
       }
     } catch (e) {
       print('=== API Error en bulkDeleteProducts: $e ===');
@@ -317,7 +329,7 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
       if (response.statusCode == 200) {
         return json.decode(response.body) as Map<String, dynamic>;
       } else {
-        throw Exception('Failed to bulk update products: ${response.body}');
+        throw Exception('Error al actualizar productos masivamente: ${response.body}');
       }
     } catch (e) {
       print('=== API Error en bulkUpdateProducts: $e ===');
@@ -328,12 +340,18 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
   @override
   Future<Map<String, dynamic>> bulkPriceUpdate({
     required double percentage,
+    required String roundingRule,
+    String? targetField,
     List<int>? productIds,
     int? categoryId,
     int? brandId,
   }) async {
     try {
-      final body = <String, dynamic>{'percentage': percentage};
+      final body = <String, dynamic>{
+        'percentage': percentage,
+        'rounding_rule': roundingRule,
+      };
+      if (targetField != null) body['target_field'] = targetField;
       if (productIds != null && productIds.isNotEmpty) body['product_ids'] = productIds;
       if (categoryId != null) body['category_id'] = categoryId;
       if (brandId != null) body['brand_id'] = brandId;
@@ -346,12 +364,66 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
       if (response.statusCode == 200) {
         return json.decode(response.body) as Map<String, dynamic>;
       } else {
-        throw Exception('Failed to bulk update prices: ${response.body}');
+        throw Exception('Error al actualizar precios masivamente: ${response.body}');
       }
     } catch (e) {
       print('=== API Error en bulkPriceUpdate: $e ===');
       rethrow;
     }
+  }
+
+  @override
+  Future<Map<String, dynamic>> bulkPricePreview({
+    required double percentage,
+    required String roundingRule,
+    String? targetField,
+    List<int>? productIds,
+    int? categoryId,
+    int? brandId,
+  }) async {
+    try {
+      final body = <String, dynamic>{
+        'percentage': percentage,
+        'rounding_rule': roundingRule,
+      };
+      if (targetField != null) body['target_field'] = targetField;
+      if (productIds != null && productIds.isNotEmpty) body['product_ids'] = productIds;
+      if (categoryId != null) body['category_id'] = categoryId;
+      if (brandId != null) body['brand_id'] = brandId;
+
+      final response = await client.post(
+        Uri.parse('$baseUrl/catalog/products/bulk-price-preview'),
+        headers: {'Accept': 'application/json', 'Content-Type': 'application/json'},
+        body: json.encode(body),
+      );
+      if (response.statusCode == 200) {
+        return json.decode(response.body) as Map<String, dynamic>;
+      } else {
+        throw Exception('Error al previsualizar la actualización de precios: ${response.body}');
+      }
+    } catch (e) {
+      print('=== API Error en bulkPricePreview: $e ===');
+      rethrow;
+    }
+  }
+
+  @override
+  Future<List<dynamic>> getBulkPriceHistory() async {
+    final response = await client.get(Uri.parse('$baseUrl/catalog/bulk-price-history'));
+    if (response.statusCode == 200) {
+      return json.decode(response.body) as List<dynamic>;
+    }
+    throw Exception('Error al cargar el historial de aumentos de precios');
+  }
+
+  @override
+  Future<String> revertBulkPrice(int historyId) async {
+    final response = await client.post(Uri.parse('$baseUrl/catalog/bulk-price-history/$historyId/revert'));
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      return data['message'] ?? 'Revertido con éxito';
+    }
+    throw Exception('Error al revertir el aumento de precios: ${response.body}');
   }
 
   @override
