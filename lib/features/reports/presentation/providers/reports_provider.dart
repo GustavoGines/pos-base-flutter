@@ -24,6 +24,12 @@ class ReportsProvider extends ChangeNotifier {
   bool _isExportingPdf = false;
   bool get isExportingPdf => _isExportingPdf;
 
+  bool _isExportingBalanceExcel = false;
+  bool get isExportingBalanceExcel => _isExportingBalanceExcel;
+
+  bool _isExportingBalancePdf = false;
+  bool get isExportingBalancePdf => _isExportingBalancePdf;
+
   DateTime _startDate = DateTime.now().copyWith(day: 1);
   DateTime _endDate = DateTime.now();
 
@@ -236,6 +242,92 @@ class ReportsProvider extends ChangeNotifier {
       _error = 'Error al exportar PDF: $e';
     } finally {
       _isExportingPdf = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> exportMonthlyBalanceToExcel() async {
+    _isExportingBalanceExcel = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      final df = DateFormat('yyyy-MM');
+      final bytes = await dataSource.downloadMonthlyBalanceExcel(df.format(_balanceStartMonth), df.format(_balanceEndMonth));
+      
+      final docsDir = await getApplicationDocumentsDirectory();
+      final reportesDir = Directory('${docsDir.path}${Platform.pathSeparator}Sistema_POS${Platform.pathSeparator}Reportes');
+      
+      if (!await reportesDir.exists()) {
+        await reportesDir.create(recursive: true);
+      }
+      
+      final cleanStart = DateFormat('MM-yyyy').format(_balanceStartMonth);
+      final cleanEnd = DateFormat('MM-yyyy').format(_balanceEndMonth);
+      final filename = 'Balance_Mensual_${cleanStart}_al_${cleanEnd}.xlsx';
+      final file = File('${reportesDir.path}${Platform.pathSeparator}$filename');
+      
+      await file.writeAsBytes(bytes);
+
+      if (Platform.isWindows) {
+        try {
+          await Process.run('explorer.exe', ['/select,', file.path]);
+        } catch (e) {
+          debugPrint('Error abriendo explorer: $e');
+        }
+      } else {
+        final folderUri = Uri.parse('file:///${reportesDir.path.replaceAll('\\', '/')}');
+        if (await canLaunchUrl(folderUri)) {
+          await launchUrl(folderUri);
+        }
+      }
+    } catch (e) {
+      _error = 'Error al exportar Excel: $e';
+    } finally {
+      _isExportingBalanceExcel = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> exportMonthlyBalanceToPdf() async {
+    _isExportingBalancePdf = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      final df = DateFormat('yyyy-MM');
+      final bytes = await dataSource.downloadMonthlyBalancePdf(df.format(_balanceStartMonth), df.format(_balanceEndMonth));
+
+      final docsDir = await getApplicationDocumentsDirectory();
+      final reportesDir = Directory('${docsDir.path}${Platform.pathSeparator}Sistema_POS${Platform.pathSeparator}Reportes');
+
+      if (!await reportesDir.exists()) {
+        await reportesDir.create(recursive: true);
+      }
+
+      final cleanStart = DateFormat('MM-yyyy').format(_balanceStartMonth);
+      final cleanEnd   = DateFormat('MM-yyyy').format(_balanceEndMonth);
+      final filename = 'Balance_Mensual_${cleanStart}_al_${cleanEnd}.pdf';
+      final file = File('${reportesDir.path}${Platform.pathSeparator}$filename');
+
+      await file.writeAsBytes(bytes);
+
+      if (Platform.isWindows) {
+        try {
+          await Process.run('explorer.exe', ['/select,', file.path]);
+        } catch (e) {
+          debugPrint('Error abriendo explorer: $e');
+        }
+      } else {
+        final folderUri = Uri.parse('file:///${reportesDir.path.replaceAll('\\', '/')}');
+        if (await canLaunchUrl(folderUri)) {
+          await launchUrl(folderUri);
+        }
+      }
+    } catch (e) {
+      _error = 'Error al exportar a PDF: $e';
+    } finally {
+      _isExportingBalancePdf = false;
       notifyListeners();
     }
   }

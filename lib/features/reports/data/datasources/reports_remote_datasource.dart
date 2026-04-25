@@ -58,4 +58,26 @@ class ReportsRemoteDataSource {
       throw Exception('Error al descargar el reporte PDF: ${response.statusCode}');
     }
   }
+
+  Future<List<int>> downloadMonthlyBalanceExcel(String startMonth, String endMonth) async {
+    final uri = Uri.parse('$baseUrl/reports/monthly-balance/export?start_month=$startMonth&end_month=$endMonth');
+    final response = await client.get(uri);
+    if (response.statusCode == 200) {
+      return response.bodyBytes;
+    } else {
+      throw Exception('Error al descargar el balance Excel: ${response.statusCode}');
+    }
+  }
+
+  Future<List<int>> downloadMonthlyBalancePdf(String startMonth, String endMonth) async {
+    final uri = Uri.parse('$baseUrl/reports/monthly-balance/pdf?start_month=$startMonth&end_month=$endMonth');
+    final response = await client.get(uri, headers: {
+      'Accept': 'application/pdf',
+    });
+    if (response.statusCode == 200) {
+      return response.bodyBytes;
+    } else {
+      throw Exception('Error al descargar el balance PDF: ${response.statusCode}');
+    }
+  }
 }
