@@ -12,6 +12,9 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
   final String title;
   final Widget? extraAction;
   final bool showBackButton;
+  /// Widget opcional (ej: TabBar) que aparece debajo de la barra principal.
+  /// Idéntico al parámetro `bottom` del AppBar estándar de Flutter.
+  final PreferredSizeWidget? bottom;
 
   const GlobalAppBar({
     super.key,
@@ -19,10 +22,15 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
     this.title = 'Sistema POS',
     this.extraAction,
     this.showBackButton = false,
+    this.bottom,
   });
 
   @override
-  Size get preferredSize => const Size.fromHeight(kToolbarHeight);
+  Size get preferredSize {
+    final bottomHeight = bottom?.preferredSize.height ?? 0.0;
+    // Agregamos un buffer de 4.0px para evitar overflows de redondeo en Windows (2.8px detectados)
+    return Size.fromHeight(kToolbarHeight + bottomHeight + 4.0);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -34,9 +42,12 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
       color: Theme.of(context).colorScheme.surface,
       child: SafeArea(
         bottom: false,
-        child: SizedBox(
-          height: kToolbarHeight,
-          child: Row(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              height: kToolbarHeight,
+              child: Row(
             children: [
               // ── LEFT: Logo + Empresa ──────────────────────────────────────
               Padding(
@@ -264,9 +275,12 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
               ),
             ],
           ),
-        ),
-      ),
-    );
+        ), // ← cierra SizedBox(height: kToolbarHeight)
+        if (bottom != null) bottom!,
+          ], // ← cierra Column.children
+        ), // ← cierra Column
+      ), // ← cierra SafeArea
+    ); // ← cierra Material
   }
 
   // Elemento Directo (Terminal POS)

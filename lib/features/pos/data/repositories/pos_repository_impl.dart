@@ -40,6 +40,7 @@ class PosRepositoryImpl implements PosRepository {
     String fulfillmentStatus = 'pending',
     Map<String, dynamic>? checkDetails,
     String? deliveryAddress,
+    String? priceList,
   }) async {
     final response = await remoteDataSource.processSale(
       total: total,
@@ -58,6 +59,7 @@ class PosRepositoryImpl implements PosRepository {
       fulfillmentStatus: fulfillmentStatus,
       checkDetails: checkDetails,
       deliveryAddress: deliveryAddress,
+      priceList: priceList,
     );
 
     return Sale(

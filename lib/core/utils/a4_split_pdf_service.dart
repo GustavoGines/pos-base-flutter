@@ -5,7 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:printing/printing.dart';
 
 class A4SplitPdfService {
-  static final _currencyFmt = NumberFormat.currency(locale: 'es_AR', symbol: '\$', decimalDigits: 2);
+  static final _currencyFmt = NumberFormat.currency(locale: 'es_AR', symbol: '\$', decimalDigits: 0);
   static final _dateFmt = DateFormat('dd/MM/yyyy HH:mm');
 
   // Paleta de colores para igualar el remito de Logística

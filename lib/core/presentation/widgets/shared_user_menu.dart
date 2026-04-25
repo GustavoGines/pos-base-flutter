@@ -42,9 +42,9 @@ class SharedUserMenu extends StatelessWidget {
             onSelected: (value) async {
               switch (value) {
                 case 'shift_audit':
-                  final auditAuth = await AdminPinDialog.verify(context, action: 'Ver Auditoría de Turnos', permissionKey: 'view_global_history');
+                  final auditAuth = await AdminPinDialog.verify(context, action: 'Ver Auditoría General', permissionKey: 'view_global_history');
                   if (auditAuth && context.mounted) {
-                    Navigator.of(context).pushNamed('/shift-audit');
+                    Navigator.of(context).pushNamed('/general-audit');
                   }
                   break;
                 case 'users':
@@ -105,8 +105,8 @@ class SharedUserMenu extends StatelessWidget {
                   const PopupMenuItem<String>(
                     value: 'shift_audit',
                     child: ListTile(
-                      leading: Icon(Icons.history_edu),
-                      title: Text('Auditoría de Turnos (Z)'),
+                      leading: Icon(Icons.manage_search_rounded),
+                      title: Text('Auditoría General'),
                       contentPadding: EdgeInsets.zero,
                       dense: true,
                     ),

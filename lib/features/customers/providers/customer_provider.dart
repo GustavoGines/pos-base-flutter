@@ -217,7 +217,7 @@ class CustomerProvider extends ChangeNotifier {
 
   Future<void> fetchSingleCustomer(int customerId) async {
     try {
-      final response = await http.get(Uri.parse('$baseUrl/customers/$customerId'), headers: {
+      final response = await client.get(Uri.parse('$baseUrl/customers/$customerId'), headers: {
         'Accept': 'application/json',
       });
       if (response.statusCode == 200) {

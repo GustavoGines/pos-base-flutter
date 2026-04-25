@@ -103,6 +103,8 @@ class PosProvider with ChangeNotifier {
   double _currentCardFactor = 1.0;
   double _currentCustomFactor = 1.0;
   double get currentCustomFactor => _currentCustomFactor;
+  double get wholesaleFactor => _currentWholesaleFactor;
+  double get cardFactor => _currentCardFactor;
 
   void setPriceTier(
     PriceTier tier, {
@@ -295,9 +297,34 @@ class PosProvider with ChangeNotifier {
   /// Carga un presupuesto en el carrito. Asume que Items ya vienen hidratados.
   /// Propaga el nivel de precio activo al momento de la carga para que los
   /// factores mayorista/tarjeta/custom se apliquen correctamente.
-  void loadQuoteToCart(Quote quote) {
+  void loadQuoteToCart(Quote quote, {BusinessSettings? settings}) {
     clearCart();
     _activeQuoteId = quote.id;
+    
+    // Intentar matchear el tier del presupuesto con el POS
+    if (quote.priceList == 'wholesale') {
+      setPriceTier(PriceTier.wholesale);
+    } else if (quote.priceList == 'card') {
+      setPriceTier(PriceTier.card);
+    } else if (quote.priceList == 'base' || quote.priceList == 'Minorista') {
+      setPriceTier(PriceTier.base);
+    } else {
+      // Buscar en listas custom
+      final customTiers = settings?.customPriceTiers ?? [];
+      final match = customTiers.firstWhere(
+        (t) => t['name'] == quote.priceList,
+        orElse: () => <String, dynamic>{},
+      );
+      if (match.isNotEmpty) {
+        final mod = (match['modifier'] as num?)?.toDouble() ?? 0.0;
+        setPriceTier(
+          PriceTier.custom,
+          customFactor: 1.0 + (mod / 100),
+          customLabel: quote.priceList,
+        );
+      }
+    }
+  
     for (var item in quote.items) {
       if (item.product != null) {
         _cart.add(CartItem(
@@ -493,6 +520,7 @@ class PosProvider with ChangeNotifier {
           fulfillmentStatus: fulfillmentStatus,
           checkDetails: checkDetails,
           deliveryAddress: deliveryAddress,
+          priceList: _activeTier == PriceTier.base ? 'Minorista' : (_customTierLabel ?? _activeTier.toString().split('.').last),
         );
 
         // processSaleUseCase retorna entidad Sale
