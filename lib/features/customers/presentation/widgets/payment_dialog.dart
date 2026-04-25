@@ -71,7 +71,7 @@ class _PaymentDialogState extends State<PaymentDialog> {
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
 
-    final cleanAmount = _amountController.text.replaceAll('\$', '').replaceAll('.', '').replaceAll(' ', '').trim();
+    final cleanAmount = _amountController.text.replaceAll(r'$', '').replaceAll('.', '').replaceAll(' ', '').trim();
     final amount = double.tryParse(cleanAmount) ?? 0.0;
     if (amount <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(

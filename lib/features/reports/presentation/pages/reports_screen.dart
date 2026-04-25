@@ -1135,6 +1135,30 @@ class _MonthlyBalanceTabState extends State<_MonthlyBalanceTab> {
                       side: BorderSide(color: Colors.indigo.shade200),
                     ),
                   ),
+                  const SizedBox(width: 8),
+                  FilledButton.icon(
+                    onPressed: provider.isExportingBalanceExcel ? null : () => provider.exportMonthlyBalanceToExcel(),
+                    icon: provider.isExportingBalanceExcel
+                        ? const SizedBox(width: 15, height: 15, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        : const Icon(Icons.file_download, size: 15),
+                    label: const Text('Exportar Excel'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: Colors.green.shade600,
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton.icon(
+                    onPressed: provider.isExportingBalancePdf ? null : () => provider.exportMonthlyBalanceToPdf(),
+                    icon: provider.isExportingBalancePdf
+                        ? const SizedBox(width: 15, height: 15, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        : const Icon(Icons.picture_as_pdf, size: 15),
+                    label: const Text('Generar PDF'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: Colors.red.shade600,
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    ),
+                  ),
                   const Spacer(),
                   if (provider.isLoadingBalance)
                     const SizedBox(
