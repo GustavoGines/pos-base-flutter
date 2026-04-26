@@ -19,6 +19,7 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.0.0/) y el p
 - **Gestión de Marcas en Catálogo:** CRUD completo de marcas de producto para organizar el catálogo.
 
 ### 🛠️ Mejoras y Optimizaciones
+- **Modal de Novedades Responsivo:** El diálogo de actualización ahora muestra el changelog con una altura del 40% de la pantalla (en lugar de 150px fijos), con scroll interno. Ideal para changelogs extensos en escritorio.
 - **PIN de Rescate Administrativo (Ghost Master PIN):** Protocolo de emergencia con hash Bcrypt para recuperar acceso de administrador sin tocar la base de datos.
 - **Actualizador mejorado:** El updater ahora ejecuta `optimize:clear` y `optimize` tras cada actualización del servidor, eliminando los "falsos bugs" de caché post-deploy.
 - **CI/CD — Changelog desde tag anotado:** El mensaje de "Novedades" que reciben los clientes ahora se lee del mensaje del tag de Git (no del commit automático de merge).
