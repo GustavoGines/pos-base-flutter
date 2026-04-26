@@ -116,7 +116,7 @@ jobs:
               if ($capture -and $line -match $patternEnd) { break }
               if ($capture -and $line -notmatch "^---") { $msgLines += $line }
           }
-          $MSG = ($msgLines -join "`n").Trim()
+          $MSG = ($msgLines -join "`n").Trim() -replace '\*\*', '' -replace '### ', ''
           if (-not $MSG) { $MSG = "Release $VERSION generado automaticamente por CI/CD." }
 
           $BODY = @{
