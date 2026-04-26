@@ -104,9 +104,19 @@ jobs:
         run: |
           $VERSION      = "${{ github.ref_name }}"
           $DOWNLOAD_URL = "${{ secrets.R2_PUBLIC_BASE_URL }}/releases/${{ env.ZIP_NAME }}"
-          # Leer el changelog desde el mensaje del TAG anotado (fuente de verdad oficial).
-          # El Release Manager escribe el texto completo al crear el tag con: git tag -a v1.3.0 -m "..."
-          $MSG = git tag -l "${{ github.ref_name }}" --format='%(contents)'
+          # Leer el changelog directamente del archivo CHANGELOG.md
+          $VERSION_NO_V = "${{ github.ref_name }}".TrimStart('v')
+          $patternStart = "^## \[$VERSION_NO_V\]"
+          $patternEnd = "^## \["
+          $lines = Get-Content CHANGELOG.md
+          $msgLines = @()
+          $capture = $false
+          foreach ($line in $lines) {
+              if ($line -match $patternStart) { $capture = $true; continue }
+              if ($capture -and $line -match $patternEnd) { break }
+              if ($capture -and $line -notmatch "^---") { $msgLines += $line }
+          }
+          $MSG = ($msgLines -join "`n").Trim()
           if (-not $MSG) { $MSG = "Release $VERSION generado automaticamente por CI/CD." }
 
           $BODY = @{
