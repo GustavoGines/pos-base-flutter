@@ -101,8 +101,9 @@ jobs:
         run: |
           $VERSION      = "${{ github.ref_name }}"
           $DOWNLOAD_URL = "${{ secrets.R2_PUBLIC_BASE_URL }}/releases/${{ env.ZIP_NAME }}"
-          # Extraer el mensaje del último commit excluyendo merges
-          $MSG = git log -1 --no-merges --pretty=format:"%B"
+          # Leer el changelog desde el mensaje del TAG anotado (fuente de verdad oficial).
+          # El Release Manager escribe el texto completo al crear el tag con: git tag -a v1.3.0 -m "..."
+          $MSG = git tag -l "${{ github.ref_name }}" --format='%(contents)'
           if (-not $MSG) { $MSG = "Release $VERSION generado automaticamente por CI/CD." }
 
           $BODY = @{
