@@ -8,30 +8,21 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.0.0/) y el p
 ## [1.3.0] — 2026-04-26 — Ferretería & Retail Edition
 
 ### 🚀 Nuevas Funcionalidades
-- **Aumento Masivo de Precios:** Actualizá el precio de venta de cientos de productos con un solo clic. Filtrá por categoría, marca o una selección manual. Incluye previsualización del impacto antes de confirmar y reversión completa de lotes desde el historial.
-- **Módulo de Remitos de Logística:** Generá remitos de entrega vinculados a cada venta, con dirección de entrega personalizada por cliente. Los remitos se imprimen en A4 con marca de agua, firma y pie de comprobante.
-- **Cartera de Cheques de Terceros:** Registrá pagos con cheque de terceros directamente en la caja. El módulo incluye un dashboard con semáforo de vencimientos para gestionar el cobro de la cartera.
-- **Motor de Precios Dinámicos (Listas de Precio):** Creá hasta 3 listas de precio diferenciadas (Mayorista, Especial, Tarjeta). El POS cambia de lista de precio en tiempo real desde el carrito de ventas. Ahora disponible para Retail Premium.
-- **Exportación de Balance Mensual:** Descargá el balance mensual completo en PDF y Excel con un solo clic desde los reportes gerenciales.
-- **Dashboard Gerencial por Marcas:** Analizá las ventas desglosadas por marca de producto.
-- **Dirección de Entrega en Checkout:** Input para registrar la dirección de entrega directamente en la pantalla de cobro.
-- **Gestión de Marcas en Catálogo:** CRUD completo de marcas de producto para organizar el catálogo.
+- **Aumento Masivo de Precios:** Actualizá cientos de productos en un clic desde la nueva pantalla. Filtrá, previsualizá el impacto y deshacé cambios si te equivocás.
+- **Generación de Remitos:** Imprimí remitos de entrega tamaño A4 con marca de agua, firma y la dirección exacta del cliente directamente desde la caja.
+- **Cartera de Cheques:** Nuevo dashboard visual con alertas de colores (semáforo) para llevar el control de vencimientos de todos los cheques recibidos.
+- **Exportación de Reportes:** Descargá tu balance mensual completo en PDF y Excel con un solo clic, y analizá tus ventas por marca desde el nuevo dashboard gerencial.
+- **Listas de Precio en Caja:** Cambiá la lista de precios (Minorista/Mayorista) desde el carrito de compras y mirá cómo reaccionan los precios en tiempo real.
 
 ### 🛠️ Mejoras y Optimizaciones
-- **Modal de Novedades Responsivo:** El diálogo de actualización ahora es más amplio en escritorio (40% de la pantalla) para leer mejor todas las novedades.
-- **PIN de Rescate Administrativo:** Protocolo de emergencia para recuperar acceso de administrador sin necesidad de modificar la base de datos manualmente.
-- **Auditoría de Precios en Ventas:** Cada venta registra la lista de precio activa para trazabilidad contable completa.
-- **Actualizador Automático Mejorado:** El actualizador limpia y regenera la caché del servidor tras cada actualización, eliminando los falsos bugs post-actualización.
-- **Rendimiento en Catálogos Grandes:** Las actualizaciones masivas de precios se procesan en bloques seguros, sin riesgo de timeout en catálogos de más de 1.000 productos.
-- **Icono de Impresora Global:** Acceso rápido a ajustes de hardware desde cualquier pantalla de la app.
+- **Novedades Cómodas:** La ventana de actualizaciones (esta que estás leyendo) ahora es mucho más grande en pantallas de escritorio para mayor comodidad.
+- **Ajustes Rápidos:** Agregamos un acceso directo con ícono de impresora en todas las pantallas para configurar el hardware al instante.
+- **Visualización:** Ahora la auditoría muestra la unidad de medida (Kg, Lts) y los PDFs de venta mejoraron su diseño con marcas de agua más profesionales.
 
 ### 🐛 Fixes
-- Corregido error donde los cierres de caja y movimientos de stock se registraban a nombre del usuario incorrecto en la auditoría.
-- Corregido error 500 al registrar pagos de cuenta corriente con ciertos métodos de pago.
-- Corregido error 404 en reportes de ventas por marca y categoría.
 - Corregido recorte de marca de agua en remitos impresos en papel tamaño Carta.
-- Corregida pérdida de items al actualizar el listado de remitos en tiempo real.
-- Corregido error al cargar presupuestos con listas de precio nuevas.
+- Corregida pérdida visual de items al actualizar el listado de remitos.
+- Corregido error visual donde los presupuestos no reflejaban el precio de listas nuevas.
 
 ---
 
