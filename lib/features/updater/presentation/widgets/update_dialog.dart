@@ -183,11 +183,16 @@ class _UpdateDialogState extends State<UpdateDialog> {
             const SizedBox(height: 12),
             const Text('Novedades:', style: TextStyle(fontWeight: FontWeight.w600)),
             const SizedBox(height: 8),
-            Container(
-              constraints: const BoxConstraints(maxHeight: 150),
-              child: SingleChildScrollView(
-                child: Text(widget.updateInfo.changelog),
-              ),
+            LayoutBuilder(
+              builder: (context, _) {
+                final maxH = MediaQuery.of(context).size.height * 0.4;
+                return ConstrainedBox(
+                  constraints: BoxConstraints(maxHeight: maxH),
+                  child: SingleChildScrollView(
+                    child: Text(widget.updateInfo.changelog),
+                  ),
+                );
+              },
             ),
             if (_isDownloading) ...[
               const SizedBox(height: 24),
