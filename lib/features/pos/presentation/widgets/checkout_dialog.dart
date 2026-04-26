@@ -334,8 +334,15 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   }
 
   bool get _canSubmit {
-    if (_pendingBalance > 0.01) return false; // Allowed tiny floating errors
-    if (_cashRequired > 0 && _actualTendered < (_cashRequired - 0.01)) return false;
+    if (_pendingBalance > 0.01) return false; // Saldo pendiente sin cubrir
+    // Solo bloquear si el cajero ingresó un monto recibido MENOR al efectivo de la línea
+    // y el campo fue modificado manualmente (no está vacío ni igual al monto de la línea)
+    if (_cashRequired > 0) {
+      final tendered = _actualTendered;
+      final cashText = _cashTenderedCtrl.text.trim();
+      // Si el campo tiene algo escrito y es menor al requerido → bloquear
+      if (cashText.isNotEmpty && tendered > 0 && tendered < (_cashRequired - 0.01)) return false;
+    }
     if (_hasCuentaCorriente && _selectedCustomer == null) return false;
     return true;
   }

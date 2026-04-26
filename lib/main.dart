@@ -34,7 +34,7 @@ import 'features/cash_register/presentation/pages/close_shift_screen.dart';
 import 'package:frontend_desktop/features/logistics/presentation/screens/logistics_dashboard_screen.dart';
 import 'features/logistics/data/delivery_note_repository.dart';
 import 'features/logistics/presentation/providers/logistics_provider.dart';
-import 'features/sales_history/presentation/pages/sales_history_screen.dart';
+import 'package:frontend_desktop/features/sales_history/presentation/pages/sales_history_screen.dart';
 import 'features/auth/presentation/pages/login_screen.dart';
 import 'features/reports/presentation/pages/general_audit_screen.dart';
 import 'features/customers/presentation/screens/customers_screen.dart';
