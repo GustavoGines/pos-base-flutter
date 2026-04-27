@@ -1158,7 +1158,7 @@ class _AnimatedSubscriptionCardState extends State<AnimatedSubscriptionCard> wit
                     : (widget.expiresAt != null
                         ? 'Expira el: ${DateFormat('dd MMMM, yyyy').format(widget.expiresAt!)}'
                         : (widget.lastSync != null
-                            ? 'Sincronizado el: ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.parse(widget.lastSync!))}'
+                            ? 'Sincronizado el: ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.parse(widget.lastSync!).toLocal())}'
                             : 'Estado: Activo y Protegido')),
                 style: TextStyle(color: Colors.white.withValues(alpha: 0.85), fontSize: 16),
               ),

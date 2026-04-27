@@ -28,7 +28,21 @@ class UpdateService {
       final currentFrontendVersion = packageInfo.version;
 
       final prefs = await SharedPreferences.getInstance();
-      final currentBackendVersion = prefs.getString('backend_version') ?? '0.0.0';
+      
+      // 0. Sincronizar versión REAL del backend local (Single Source of Truth)
+      String currentBackendVersion = prefs.getString('backend_version') ?? '0.0.0';
+      try {
+        final localBackendUri = Uri.parse('${AppConfig.kApiBaseUrl}/version-check');
+        final localResponse = await http.get(localBackendUri).timeout(const Duration(seconds: 5));
+        if (localResponse.statusCode == 200) {
+          final localData = json.decode(localResponse.body);
+          currentBackendVersion = localData['version'] ?? '0.0.0';
+          // Actualizar SharedPreferences para que coincida con la realidad física en disco
+          await prefs.setString('backend_version', currentBackendVersion);
+        }
+      } catch (e) {
+        // Si el backend local no responde, mantenemos el valor de SharedPreferences
+      }
 
       // 1. Chequeo de Backend
       final backendUri = Uri.parse('${AppConfig.kLicenseServerUrl}/api/check-update')

@@ -5,6 +5,17 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.0.0/) y el p
 
 ---
 
+## [1.3.1] — 2026-04-26 — Actualizaciones Inteligentes y Diseño
+
+### ✨ Mejoras Visuales
+- **Dashboard Financiero Compacto:** Rediseñamos el panel de resumen en el Registro de Ventas. Las tarjetas de totales ahora son mucho más compactas y se organizan inteligentemente en bloque. Esto te permite ver todos los métodos de pago fácilmente sin robarle espacio vertical a la lista de tickets, permitiéndote ver muchas más ventas a la vez sin tener que hacer scroll.
+
+### 🛠️ Mejoras de Estabilidad
+- **Sincronización Perfecta:** Mejoramos el motor de actualizaciones. Ahora el sistema detecta de forma mucho más inteligente y precisa la versión exacta que tenés instalada, garantizando que tu caja y tu servidor estén siempre sincronizados sin margen de error.
+- **Actualizaciones 100% Confiables:** Eliminamos los "falsos avisos" de actualización. Tu sistema ahora verifica físicamente los archivos instalados antes de descargar cualquier novedad, brindándote una experiencia más fluida y segura.
+
+---
+
 ## [1.3.0] — 2026-04-26 — Ferretería & Retail Edition
 
 ### 🚀 Nuevas Funcionalidades
@@ -45,6 +56,7 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.0.0/) y el p
 
 ---
 
+[1.3.1]: https://github.com/GustavoGines/pos-base-flutter/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/GustavoGines/pos-base-flutter/compare/v1.2.4...v1.3.0
 [1.2.4]: https://github.com/GustavoGines/pos-base-flutter/compare/v1.1.0...v1.2.4
 [1.1.0]: https://github.com/GustavoGines/pos-base-flutter/releases/tag/v1.1.0

@@ -130,9 +130,9 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
           appBar: const GlobalAppBar(currentRoute: '/sales-history'),
           body: Row(
             children: [
-              // ── Panel Izquierdo ─────────────────────────────────────────────
+              // ── Panel Izquierdo: Filtros y Lista ───────────────────
               Container(
-                width: 400,
+                width: 360,
                 decoration: BoxDecoration(
                   color: Colors.white,
                   border: Border(right: BorderSide(color: Colors.grey.shade300)),
@@ -143,8 +143,6 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
                       provider: provider,
                       statusFilter: _statusFilter,
                       searchController: _searchController,
-                      // SH-W2: Al cambiar período, limpiar filtro de método de pago
-                      // para no dejar al usuario con resultados filtrados invisiblemente.
                       onStatusChanged: (v) => setState(() {
                         _statusFilter = v;
                         _selectedSale = null;
@@ -162,10 +160,6 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
                       onSaleDeselect: () => setState(() => _selectedSale = null),
                     ),
 
-                    // ── Resumen financiero dinámico ────────────────────────
-                    if (!provider.isLoading)
-                      _FinancialSummaryPanel(provider: provider),
-
                     // Lista
                     if (provider.isLoading) const LinearProgressIndicator(),
                     Expanded(
@@ -174,7 +168,7 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
                           : ListView.separated(
                               itemCount: filteredSales.length,
                               separatorBuilder: (context, index) =>
-                                  const Divider(height: 1, indent: 64),
+                                  const Divider(height: 1),
                               itemBuilder: (ctx, i) {
                                 final sale = filteredSales[i];
                                 return _SaleListTile(
@@ -189,16 +183,27 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
                 ),
               ),
 
-              // ── Panel Derecho: Detalle ──────────────────────────────────────
+              // ── Panel Derecho: Resumen Financiero y Detalle ──────────
               Expanded(
-                child: Container(
-                  color: Colors.grey.shade100,
-                  child: _selectedSale == null
-                      ? const _EmptyStateDetail()
-                      : _TicketDetailPanel(
-                          sale: _selectedSale!,
-                          provider: provider,
-                        ),
+                child: Column(
+                  children: [
+                    // ── Panel Superior Derecho: Resumen Financiero ─────
+                    if (!provider.isLoading)
+                      _FinancialSummaryPanel(provider: provider),
+
+                    // ── Detalle del Ticket ─────────────────────────────
+                    Expanded(
+                      child: Container(
+                        color: Colors.grey.shade100,
+                        child: _selectedSale == null
+                            ? const _EmptyStateDetail()
+                            : _TicketDetailPanel(
+                                sale: _selectedSale!,
+                                provider: provider,
+                              ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -266,6 +271,7 @@ class _FiltersPanel extends StatelessWidget {
           Consumer<AuthProvider>(builder: (context, auth, _) {
             final canViewGlobal = auth.hasPermission('view_global_history');
             return SegmentedButton<String>(
+              showSelectedIcon: false,
               segments: [
                 const ButtonSegment(value: 'shift', label: Text('Turno')),
                 if (canViewGlobal) ...const [
@@ -276,12 +282,12 @@ class _FiltersPanel extends StatelessWidget {
               ],
               selected: {canViewGlobal ? provider.currentPeriod : 'shift'},
               onSelectionChanged: (set) {
-                // SH-W2: onPeriodChanged limpia methodFilter, searchQuery y selectedSale.
                 onPeriodChanged(set.first);
               },
               style: SegmentedButton.styleFrom(
                 selectedBackgroundColor: Colors.blue.shade100,
-                textStyle: const TextStyle(fontSize: 12),
+                textStyle: const TextStyle(fontSize: 11),
+                padding: const EdgeInsets.symmetric(horizontal: 6),
               ),
             );
           }),
@@ -401,7 +407,8 @@ class _FinancialSummaryPanel extends StatelessWidget {
     final hasSurcharges = provider.totalSurcharges > 0;
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
       decoration: BoxDecoration(
         color: Colors.white,
         border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
@@ -410,43 +417,50 @@ class _FinancialSummaryPanel extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (byMethod.isNotEmpty) ...[
-            Wrap(
-              spacing: 6.0,
-              runSpacing: 8.0,
-              children: [
-                // Chip "Todos"
-                _MethodChip(
-                  label: 'Todos',
-                  amount: provider.totalVentas + provider.totalSurcharges,
-                  netAmount: hasSurcharges ? provider.totalNetVentas : null,
-                  surchargeAmount: hasSurcharges ? provider.totalSurcharges : null,
-                  icon: Icons.account_balance_wallet_outlined,
-                  color: Colors.blueGrey.shade700,
-                  bgColor: Colors.blueGrey.shade50,
-                  isSelected: selectedMethod == null,
-                  onTap: () => provider.setMethodFilter(null),
-                  isTotal: true,
-                ),
-                ...byMethod.entries.map((entry) {
-                  final code = entry.key;
-                  final total = entry.value;              // cobrado al cliente
-                  final base = byMethodBase[code] ?? total; // neto negocio
-                  final surcharge = byMethodSurcharge[code]; // recargo bancario
-                  final name = methodNames[code] ?? code;
-                  return _MethodChip(
-                    label: name,
-                    amount: total,
-                    netAmount: (surcharge != null && surcharge > 0) ? base : null,
-                    surchargeAmount: (surcharge != null && surcharge > 0) ? surcharge : null,
-                    icon: _iconForCode(code),
-                    color: _colorForCode(code),
-                    bgColor: _bgForCode(code),
-                    isSelected: selectedMethod == code,
-                    onTap: () => provider.setMethodFilter(
-                        selectedMethod == code ? null : code),
-                  );
-                }),
-              ],
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Chip "Todos"
+                  _MethodChip(
+                    label: 'Todos',
+                    amount: provider.totalVentas + provider.totalSurcharges,
+                    netAmount: hasSurcharges ? provider.totalNetVentas : null,
+                    surchargeAmount: hasSurcharges ? provider.totalSurcharges : null,
+                    icon: Icons.account_balance_wallet_outlined,
+                    color: Colors.blueGrey.shade700,
+                    bgColor: Colors.blueGrey.shade50,
+                    isSelected: selectedMethod == null,
+                    onTap: () => provider.setMethodFilter(null),
+                    isTotal: true,
+                  ),
+                  const SizedBox(width: 8),
+                  ...byMethod.entries.map((entry) {
+                    final code = entry.key;
+                    final total = entry.value;              // cobrado al cliente
+                    final base = byMethodBase[code] ?? total; // neto negocio
+                    final surcharge = byMethodSurcharge[code]; // recargo bancario
+                    final name = methodNames[code] ?? code;
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 8.0),
+                      child: _MethodChip(
+                        label: name,
+                        amount: total,
+                        netAmount: (surcharge != null && surcharge > 0) ? base : null,
+                        surchargeAmount: (surcharge != null && surcharge > 0) ? surcharge : null,
+                        icon: _iconForCode(code),
+                        color: _colorForCode(code),
+                        bgColor: _bgForCode(code),
+                        isSelected: selectedMethod == code,
+                        onTap: () => provider.setMethodFilter(
+                            selectedMethod == code ? null : code),
+                      ),
+                    );
+                  }),
+                ],
+              ),
             ),
           ],
         ],
@@ -487,67 +501,83 @@ class _MethodChip extends StatelessWidget {
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        width: 125,
+        constraints: const BoxConstraints(minHeight: 78),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
         decoration: BoxDecoration(
           color: isSelected ? color : bgColor,
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(12),
           border: Border.all(
             color: isSelected ? color : color.withValues(alpha: 0.3),
             width: isSelected ? 1.5 : 1,
           ),
           boxShadow: isSelected
-              ? [BoxShadow(color: color.withValues(alpha: 0.25), blurRadius: 6, offset: const Offset(0, 2))]
+              ? [BoxShadow(color: color.withValues(alpha: 0.25), blurRadius: 4, offset: const Offset(0, 2))]
               : [],
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon, size: 13, color: isSelected ? Colors.white : color),
-            const SizedBox(width: 5),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w600,
-                    color: isSelected ? Colors.white70 : color,
-                  ),
-                ),
-                // Total cobrado al cliente (grande y prominente)
-                Text(
-                  '\$${amount.toCurrency()}',
-                  style: TextStyle(
-                    fontSize: isTotal ? 18 : 16,
-                    fontWeight: FontWeight.bold,
-                    color: isSelected ? Colors.white : color,
-                  ),
-                ),
-                // Desglose neto + recargo bancario (Opción B)
-                if (hasSurcharge) ...[
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Icon(icon, size: 14, color: isSelected ? Colors.white : color),
+            ),
+            const SizedBox(width: 4),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
                   Text(
-                    'Neto: \$${netAmount!.toCurrency()}',
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: 12,
-                      color: isSelected
-                          ? Colors.white.withValues(alpha: 0.8)
-                          : color.withValues(alpha: 0.75),
-                    ),
-                  ),
-                  Text(
-                    'Rec: +\$${surchargeAmount!.toCurrency()}',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: isSelected
-                          ? Colors.orange.shade200
-                          : Colors.orange.shade700,
+                      fontSize: 11,
                       fontWeight: FontWeight.w600,
+                      color: isSelected ? Colors.white70 : color,
                     ),
                   ),
+                  // Total cobrado al cliente
+                  Text(
+                    '\$${amount.toCurrency()}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: isTotal ? 20 : 17,
+                      fontWeight: FontWeight.bold,
+                      color: isSelected ? Colors.white : color,
+                    ),
+                  ),
+                  // Desglose neto + recargo bancario
+                  if (hasSurcharge) ...[
+                    Text(
+                      'Neto: \$${netAmount!.toCurrency()}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: isSelected
+                            ? Colors.white.withValues(alpha: 0.8)
+                            : color.withValues(alpha: 0.75),
+                      ),
+                    ),
+                    Text(
+                      'Rec: +\$${surchargeAmount!.toCurrency()}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: isSelected
+                            ? Colors.orange.shade200
+                            : Colors.orange.shade700,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
           ],
         ),
@@ -572,129 +602,149 @@ class _SaleListTile extends StatelessWidget {
     final dateStr = DateFormat('dd/MM').format(sale.createdAt);
     final hasMultiplePayments = sale.payments.length > 1;
 
-    return ListTile(
-      selected: isSelected,
-      selectedTileColor: Colors.blue.shade50,
+    return InkWell(
       onTap: onTap,
-      leading: CircleAvatar(
-        backgroundColor: sale.isVoided
-            ? Colors.grey.shade300
-            : (isSelected ? Colors.blue.shade600 : Colors.blue.shade100),
-        foregroundColor: sale.isVoided
-            ? Colors.grey.shade600
-            : (isSelected ? Colors.white : Colors.blue.shade800),
-        child: Text('#${sale.id}',
-            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-      ),
-      title: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            '\$${sale.total.toCurrency()}',
-            style: TextStyle(
-              fontSize: 17,
-              fontWeight: FontWeight.bold,
-              color: sale.isVoided ? Colors.grey : Colors.green.shade800,
-              decoration: sale.isVoided ? TextDecoration.lineThrough : null,
-            ),
-          ),
-          if (sale.isVoided)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                  color: Colors.grey.shade400,
-                  borderRadius: BorderRadius.circular(12)),
-              child: const Text('ANULADA',
-                  style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 9,
-                      fontWeight: FontWeight.bold)),
-            )
-          else
-            Text('$timeStr Hs',
-                style: TextStyle(color: Colors.grey.shade500, fontSize: 12)),
-        ],
-      ),
-      subtitle: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SizedBox(height: 3),
-          // Métodos de pago como mini-chips
-          if (sale.payments.isNotEmpty)
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        color: isSelected ? Colors.blue.shade50 : Colors.white,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Fila 1: ID y Fecha/Hora a la izq | Total a la der
             Row(
               children: [
-                ...sale.payments.take(3).map((p) => Padding(
-                      padding: const EdgeInsets.only(right: 4),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 5, vertical: 1),
-                        decoration: BoxDecoration(
-                          color: _bgForCode(p.methodCode),
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(
-                              color:
-                                  _colorForCode(p.methodCode).withValues(alpha: 0.4)),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(_iconForCode(p.methodCode),
-                                size: 10, color: _colorForCode(p.methodCode)),
-                            const SizedBox(width: 3),
-                            Text(
-                              hasMultiplePayments
-                                  ? '\$${p.totalAmount.toStringAsFixed(0)}'
-                                  : p.methodName,
-                              style: TextStyle(
-                                  fontSize: 10,
-                                  color: _colorForCode(p.methodCode),
-                                  fontWeight: FontWeight.w600),
-                            ),
-                          ],
-                        ),
-                      ),
-                    )),
-                if (sale.payments.length > 3)
-                  Text('+${sale.payments.length - 3}',
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: sale.isVoided
+                        ? Colors.grey.shade300
+                        : (isSelected ? Colors.blue.shade600 : Colors.blue.shade100),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text('#${sale.id}',
                       style: TextStyle(
-                          fontSize: 10, color: Colors.grey.shade500)),
-              ],
-            ),
-          const SizedBox(height: 3),
-          Row(
-            children: [
-              Icon(Icons.inventory_2_outlined,
-                  size: 13, color: Colors.grey.shade500),
-              const SizedBox(width: 4),
-              Text(
-                  '${sale.items.length} ítem${sale.items.length != 1 ? 's' : ''}',
-                  style:
-                      TextStyle(color: Colors.grey.shade600, fontSize: 11)),
-              const Spacer(),
-              Text(dateStr,
-                  style: TextStyle(color: Colors.grey.shade500, fontSize: 11)),
-            ],
-          ),
-          if (sale.userName != null) ...[
-            const SizedBox(height: 2),
-            Row(
-              children: [
-                Icon(Icons.person_outline,
-                    size: 13, color: Colors.blueGrey.shade400),
-                const SizedBox(width: 4),
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: sale.isVoided
+                              ? Colors.grey.shade600
+                              : (isSelected ? Colors.white : Colors.blue.shade800))),
+                ),
+                const SizedBox(width: 8),
+                Text('$dateStr $timeStr Hs',
+                    style: TextStyle(color: Colors.grey.shade500, fontSize: 13, fontWeight: FontWeight.w600)),
+                if (sale.isVoided)
+                  Container(
+                    margin: const EdgeInsets.only(left: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                        color: Colors.grey.shade400,
+                        borderRadius: BorderRadius.circular(12)),
+                    child: const Text('ANULADA',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold)),
+                  ),
+                const Spacer(),
                 Text(
-                  (sale.cashierName == null || sale.userName == sale.cashierName)
-                      ? 'Cajero: ${sale.userName}'
-                      : 'Gen: ${sale.userName} | Cob: ${sale.cashierName}',
+                  '\$${sale.total.toCurrency()}',
                   style: TextStyle(
-                      color: Colors.blueGrey.shade500,
-                      fontSize: 10,
-                      fontStyle: FontStyle.italic),
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: sale.isVoided ? Colors.grey : Colors.green.shade800,
+                    decoration: sale.isVoided ? TextDecoration.lineThrough : null,
+                  ),
                 ),
               ],
             ),
-          ]
-        ],
+            const SizedBox(height: 8),
+            
+            // Fila 2: Métodos de Pago a la izq | Ítems y Cajero a la der
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                // Izquierda: Métodos de pago
+                if (sale.payments.isNotEmpty)
+                  Expanded(
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: sale.payments.map((p) => Padding(
+                              padding: const EdgeInsets.only(right: 4),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 5, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: _bgForCode(p.methodCode),
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(
+                                      color: _colorForCode(p.methodCode)
+                                          .withValues(alpha: 0.4)),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(_iconForCode(p.methodCode),
+                                        size: 10,
+                                        color: _colorForCode(p.methodCode)),
+                                    const SizedBox(width: 3),
+                                    Text(
+                                      hasMultiplePayments
+                                          ? '\$${p.totalAmount.toStringAsFixed(0)}'
+                                          : p.methodName,
+                                      style: TextStyle(
+                                          fontSize: 11,
+                                          color: _colorForCode(p.methodCode),
+                                          fontWeight: FontWeight.w600),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            )).toList(),
+                      ),
+                    ),
+                  )
+                else
+                  const Spacer(),
+                  
+                // Derecha: Ítems y Cajero
+                const SizedBox(width: 8),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.inventory_2_outlined, size: 12, color: Colors.grey.shade500),
+                    const SizedBox(width: 3),
+                    Text(
+                        '${sale.items.length} ítem${sale.items.length != 1 ? 's' : ''}',
+                        style: TextStyle(color: Colors.grey.shade600, fontSize: 12, fontWeight: FontWeight.w500)),
+                    if (sale.userName != null) ...[
+                      const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 4),
+                        child: Text('•', style: TextStyle(color: Colors.grey)),
+                      ),
+                      Icon(Icons.person_outline, size: 12, color: Colors.blueGrey.shade400),
+                      const SizedBox(width: 3),
+                      Container(
+                        constraints: const BoxConstraints(maxWidth: 85),
+                        child: Text(
+                          (sale.cashierName == null || sale.userName == sale.cashierName)
+                              ? sale.userName!
+                              : '${sale.userName}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              color: Colors.blueGrey.shade700,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -822,7 +872,7 @@ class _TicketDetailPanel extends StatelessWidget {
       children: [
         // ── Cabecera ──────────────────────────────────────────────────────────
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 20),
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
           decoration: const BoxDecoration(
             color: Colors.white,
             border: Border(bottom: BorderSide(color: Colors.black12)),
@@ -891,43 +941,55 @@ class _TicketDetailPanel extends StatelessWidget {
               ),
 
               // Totales + métodos de pago
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  // Total cobrado al cliente (prominente)
-                  Text(
-                    '\$${sale.grandTotal.toCurrency()}',
-                    style: TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                      color: sale.isVoided
-                          ? Colors.grey.shade500
-                          : Colors.green.shade700,
-                      decoration:
-                          sale.isVoided ? TextDecoration.lineThrough : null,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        // Desglose de pagos (Lado a lado)
+                        Flexible(
+                          child: Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            alignment: WrapAlignment.end,
+                            children: sale.payments.map((p) => _PaymentBadge(payment: p)).toList(),
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        // Total cobrado al cliente (prominente) y Neto
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text(
+                              '\$${sale.grandTotal.toCurrency()}',
+                              style: TextStyle(
+                                fontSize: 28,
+                                fontWeight: FontWeight.bold,
+                                color: sale.isVoided
+                                    ? Colors.grey.shade500
+                                    : Colors.green.shade700,
+                                decoration:
+                                    sale.isVoided ? TextDecoration.lineThrough : null,
+                              ),
+                            ),
+                            // Desglose neto vs recargo bancario (Opción B)
+                            if (hasSurcharge)
+                              Text(
+                                'Neto: \$${sale.netTotal.toCurrency()}',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey.shade500,
+                                ),
+                              ),
+                          ],
+                        ),
+                      ],
                     ),
-                  ),
-                  // Desglose neto vs recargo bancario (Opción B)
-                  if (hasSurcharge) ...[
-                    Text(
-                      'Neto: \$${sale.netTotal.toCurrency()}',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: Colors.grey.shade600,
-                      ),
-                    ),
-                    // SH-4: Código eliminado — el recargo se muestra
-                    // en el badge de cada método de pago (_PaymentBadge).
                   ],
-                  const SizedBox(height: 8),
-                  // Desglose de pagos (Lado a lado)
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    alignment: WrapAlignment.end,
-                    children: sale.payments.map((p) => _PaymentBadge(payment: p)).toList(),
-                  ),
-                ],
+                ),
               ),
             ],
           ),
@@ -936,47 +998,47 @@ class _TicketDetailPanel extends StatelessWidget {
         // ── Tabla de ítems ────────────────────────────────────────────────────
         Expanded(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(32),
+            padding: const EdgeInsets.all(24),
             child: Container(
               decoration: BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(8),
                 boxShadow: [
                   BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.05),
-                      blurRadius: 10,
-                      offset: const Offset(0, 4))
+                      color: Colors.black.withValues(alpha: 0.04),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2))
                 ],
                 border: Border.all(color: Colors.black12),
               ),
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(8),
                 child: SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   child: DataTable(
-                  headingRowHeight: 60,
-                  dataRowMinHeight: 60,
-                  dataRowMaxHeight: 80,
-                  columnSpacing: 40,
+                  headingRowHeight: 40,
+                  dataRowMinHeight: 40,
+                  dataRowMaxHeight: 45,
+                  columnSpacing: 32,
                   headingRowColor:
                       WidgetStateProperty.all(Colors.grey.shade100),
                   columns: const [
                     DataColumn(
                         label: Text('Producto',
-                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold))),
+                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold))),
                     DataColumn(
                         label: Text('Cant/Peso',
-                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold))),
+                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold))),
                     DataColumn(
                         label: Text('P. Unitario',
-                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold))),
+                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold))),
                     DataColumn(
                         label: Text('Subtotal',
-                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold))),
+                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold))),
                   ],
                   rows: sale.items.map((item) {
                     final textStyle = TextStyle(
-                      fontSize: 16,
+                      fontSize: 14,
                       color: sale.isVoided ? Colors.grey : Colors.black87,
                       decoration: sale.isVoided ? TextDecoration.lineThrough : null,
                     );
