@@ -5,17 +5,6 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.0.0/) y el p
 
 ---
 
-## [1.3.1] — 2026-04-26 — Actualizaciones Inteligentes y Diseño
-
-### ✨ Mejoras Visuales
-- **Dashboard Financiero Compacto:** Rediseñamos el panel de resumen en el Registro de Ventas. Las tarjetas de totales ahora son mucho más compactas y se organizan inteligentemente en bloque. Esto te permite ver todos los métodos de pago fácilmente sin robarle espacio vertical a la lista de tickets, permitiéndote ver muchas más ventas a la vez sin tener que hacer scroll.
-
-### 🛠️ Mejoras de Estabilidad
-- **Sincronización Perfecta:** Mejoramos el motor de actualizaciones. Ahora el sistema detecta de forma mucho más inteligente y precisa la versión exacta que tenés instalada, garantizando que tu caja y tu servidor estén siempre sincronizados sin margen de error.
-- **Actualizaciones 100% Confiables:** Eliminamos los "falsos avisos" de actualización. Tu sistema ahora verifica físicamente los archivos instalados antes de descargar cualquier novedad, brindándote una experiencia más fluida y segura.
-
----
-
 ## [1.3.0] — 2026-04-26 — Ferretería & Retail Edition
 
 ### 🚀 Nuevas Funcionalidades
@@ -25,7 +14,13 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.0.0/) y el p
 - **Exportación de Reportes:** Descargá tu balance mensual completo en PDF y Excel con un solo clic, y analizá tus ventas por marca desde el nuevo dashboard gerencial.
 - **Listas de Precio en Caja:** Cambiá la lista de precios (Minorista/Mayorista) desde el carrito de compras y mirá cómo reaccionan los precios en tiempo real.
 
-### 🛠️ Mejoras y Optimizaciones
+### ✨ Mejoras Visuales
+- **Dashboard Financiero Compacto:** Rediseñamos el panel de resumen en el Registro de Ventas. Las tarjetas de totales ahora son mucho más compactas y se organizan inteligentemente en bloque. Esto te permite ver todos los métodos de pago fácilmente sin robarle espacio vertical a la lista de tickets, permitiéndote ver muchas más ventas a la vez sin tener que hacer scroll.
+
+### 🛠️ Mejoras de Estabilidad y Optimizaciones
+- **Updater Auto-Reparable:** El actualizador ahora se auto-renombra para evadir bloqueos de Windows y la caja dispara un rescate automático de base de datos tras la actualización.
+- **Sincronización Perfecta:** Mejoramos el motor de actualizaciones. Ahora el sistema detecta de forma mucho más inteligente y precisa la versión exacta que tenés instalada, garantizando que tu caja y tu servidor estén siempre sincronizados sin margen de error.
+- **Actualizaciones 100% Confiables:** Eliminamos los "falsos avisos" de actualización. Tu sistema ahora verifica físicamente los archivos instalados antes de descargar cualquier novedad, brindándote una experiencia más fluida y segura.
 - **Novedades Cómodas:** La ventana de actualizaciones (esta que estás leyendo) ahora es mucho más grande en pantallas de escritorio para mayor comodidad.
 - **Ajustes Rápidos:** Agregamos un acceso directo con ícono de impresora en todas las pantallas para configurar el hardware al instante.
 - **Visualización:** Ahora la auditoría muestra la unidad de medida (Kg, Lts) y los PDFs de venta mejoraron su diseño con marcas de agua más profesionales.
@@ -56,7 +51,6 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.0.0/) y el p
 
 ---
 
-[1.3.1]: https://github.com/GustavoGines/pos-base-flutter/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/GustavoGines/pos-base-flutter/compare/v1.2.4...v1.3.0
 [1.2.4]: https://github.com/GustavoGines/pos-base-flutter/compare/v1.1.0...v1.2.4
 [1.1.0]: https://github.com/GustavoGines/pos-base-flutter/releases/tag/v1.1.0

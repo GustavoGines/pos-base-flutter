@@ -163,6 +163,22 @@ void main() async {
   final prefs = await SharedPreferences.getInstance();
   final savedApiUrl = prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
 
+  // ── RESCUE TRIGGER OTA ──
+  // Si la app detecta que acaba de ser actualizada, dispara un endpoint de 
+  // rescate silencioso al backend para asegurar que la DB esté parcheada.
+  const currentAppVersion = '1.3.0';
+  final lastVersion = prefs.getString('app_version') ?? '1.0.0';
+  if (lastVersion != currentAppVersion) {
+    try {
+      // Llamada silenciosa de rescate (fire and forget)
+      http.get(Uri.parse('$savedApiUrl/system/rescue-migrate')).ignore();
+      await prefs.setString('app_version', currentAppVersion);
+      debugPrint('Rescue Trigger: Migración solicitada ($lastVersion -> $currentAppVersion)');
+    } catch (e) {
+      debugPrint('Rescue Trigger falló: $e');
+    }
+  }
+
   // Inicialización de Dependencias Base (DI)
   final String apiUrl = savedApiUrl;
   final httpClient = ApiClient(http.Client());

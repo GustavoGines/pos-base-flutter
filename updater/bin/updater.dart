@@ -63,6 +63,24 @@ void main(List<String> args) async {
   }
 
   print('Extrayendo actualizaciones en el directorio...');
+  // Auto-Sobreescritura: Renombrar updater.exe a updater_old.exe para evadir "archivo en uso"
+  if (component == 'frontend') {
+    try {
+      final updaterPath = p.join(targetDir, 'updater.exe');
+      final updaterOldPath = p.join(targetDir, 'updater_old.exe');
+      final updaterFile = File(updaterPath);
+      if (updaterFile.existsSync()) {
+        if (File(updaterOldPath).existsSync()) {
+          File(updaterOldPath).deleteSync();
+        }
+        updaterFile.renameSync(updaterOldPath);
+        print('Updater renombrado a updater_old.exe para permitir sobrescritura.');
+      }
+    } catch (e) {
+      print('Advertencia: No se pudo renombrar updater.exe: $e');
+    }
+  }
+
   try {
     final bytes = File(zipPath).readAsBytesSync();
     final archive = ZipDecoder().decodeBytes(bytes);
@@ -115,8 +133,8 @@ void main(List<String> args) async {
   // Lógicas por componente
   if (component == 'backend') {
     final commands = [
-      ['artisan', 'migrate', '--force'],
       ['artisan', 'optimize:clear'],
+      ['artisan', 'migrate', '--force'],
       ['artisan', 'optimize'],
     ];
 
