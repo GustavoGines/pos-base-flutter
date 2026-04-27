@@ -1,3 +1,5 @@
+import 'dart:io';
+import 'package:path/path.dart' as p;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/settings_provider.dart';
@@ -1066,35 +1068,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  // Los modales (_showUpsellDialog, _showServerConfigDialog, _showTerminalAssignmentDialog) 
-  // se mantienen funcionalmente igual pero podrían estilizarse más.
+  // Los modales se mantienen funcionalmente igual pero podrían estilizarse más.
   // Re-implementando los esenciales para que el archivo compile.
 
-  Future<void> _showServerConfigDialog(BuildContext context) async {
-    final prefs = await SharedPreferences.getInstance();
-    final currentUrl = prefs.getString('pos_api') ?? 'http://127.0.0.1:8000/api';
-    if (!context.mounted) return;
-    final ctrl = TextEditingController(text: currentUrl);
-
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Configuración de Servidor'),
-        content: TextField(controller: ctrl, decoration: const InputDecoration(labelText: 'URL API')),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
-          ElevatedButton(
-            onPressed: () async {
-              await prefs.setString('pos_api', ctrl.text.trim());
-              if (mounted) Navigator.pop(ctx);
-              SnackBarService.success(context, 'Reinicia para aplicar cambios.');
-            },
-            child: const Text('Guardar'),
-          ),
-        ],
-      ),
-    );
-  }
 
   Future<void> _showTerminalAssignmentDialog(BuildContext context, SettingsProvider settingsProvider) async {
     final cashProvider = context.read<CashRegisterProvider>();
