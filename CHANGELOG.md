@@ -29,6 +29,7 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.0.0/) y el p
 - Corregido recorte de marca de agua en remitos impresos en papel tamaño Carta.
 - Corregida pérdida visual de items al actualizar el listado de remitos.
 - Corregido error visual donde los presupuestos no reflejaban el precio de listas nuevas.
+- **Fix crítico OTA:** Eliminada la ruta hardcodeada `C:\laragon\www\...` del actualizador. La ruta del backend ahora se calcula dinámicamente relativa al ejecutable, garantizando compatibilidad con cualquier entorno de instalación.
 
 ---
 
