@@ -18,9 +18,7 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.0.0/) y el p
 - **Dashboard Financiero Compacto:** Rediseñamos el panel de resumen en el Registro de Ventas. Las tarjetas de totales ahora son mucho más compactas y se organizan inteligentemente en bloque. Esto te permite ver todos los métodos de pago fácilmente sin robarle espacio vertical a la lista de tickets, permitiéndote ver muchas más ventas a la vez sin tener que hacer scroll.
 
 ### 🛠️ Mejoras de Estabilidad y Optimizaciones
-- **Updater Auto-Reparable:** El actualizador ahora se auto-renombra para evadir bloqueos de Windows y la caja dispara un rescate automático de base de datos tras la actualización.
-- **Sincronización Perfecta:** Mejoramos el motor de actualizaciones. Ahora el sistema detecta de forma mucho más inteligente y precisa la versión exacta que tenés instalada, garantizando que tu caja y tu servidor estén siempre sincronizados sin margen de error.
-- **Actualizaciones 100% Confiables:** Eliminamos los "falsos avisos" de actualización. Tu sistema ahora verifica físicamente los archivos instalados antes de descargar cualquier novedad, brindándote una experiencia más fluida y segura.
+- **Ecosistema de Actualización Resiliente (OTA v2):** El sistema ahora es 100% inteligente. Verifica físicamente las versiones locales antes de descargar, auto-detecta la ruta del servidor (con opción de ajuste manual en Red), y utiliza un protocolo de auto-renombrado para evadir bloqueos de Windows, garantizando que el sistema nunca quede "roto" tras una actualización.
 - **Novedades Cómodas:** La ventana de actualizaciones (esta que estás leyendo) ahora es mucho más grande en pantallas de escritorio para mayor comodidad.
 - **Ajustes Rápidos:** Agregamos un acceso directo con ícono de impresora en todas las pantallas para configurar el hardware al instante.
 - **Visualización:** Ahora la auditoría muestra la unidad de medida (Kg, Lts) y los PDFs de venta mejoraron su diseño con marcas de agua más profesionales.
@@ -29,7 +27,6 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.0.0/) y el p
 - Corregido recorte de marca de agua en remitos impresos en papel tamaño Carta.
 - Corregida pérdida visual de items al actualizar el listado de remitos.
 - Corregido error visual donde los presupuestos no reflejaban el precio de listas nuevas.
-- **Fix crítico OTA:** Eliminada la ruta hardcodeada `C:\laragon\www\...` del actualizador. La ruta del backend ahora se calcula dinámicamente relativa al ejecutable, garantizando compatibilidad con cualquier entorno de instalación.
 
 ---
 

@@ -57,22 +57,51 @@ class _UpdateDialogState extends State<UpdateDialog> {
 
       final prefs = await SharedPreferences.getInstance();
 
-      // Ruta del backend: primero busca configuración manual guardada por el usuario.
-      // Si no existe, calcula dinámicamente: el backend es hermano del directorio
-      // del ejecutable (un nivel arriba → subcarpeta pos-backend).
-      // Estructura de producción: <raíz>/pos-frontend/Sistema_POS.exe
-      //                           <raíz>/pos-backend/artisan
+      // ── DETECCIÓN DE RUTA DEL BACKEND (3 niveles, sin ningún hardcode) ──────
+      //
+      // Nivel 1: Ruta configurada manualmente por el técnico en Ajustes → Red.
+      // Nivel 2: Detección automática relativa al exe. Asume que el exe está
+      //          en <raíz>/pos-frontend/ y el backend en <raíz>/pos-backend/.
+      //          Si ese directorio existe físicamente en disco, lo usamos.
+      // Nivel 3: No se pudo detectar → informamos al usuario y abortamos.
+      //          El técnico debe configurarlo en Ajustes → Red y Terminales.
+      String? resolvedBackendPath;
+
       final configuredBackendPath = prefs.getString('backend_install_path');
-      final dynamicBackendPath = p.join(
-        File(Platform.resolvedExecutable).parent.parent.path,
-        'pos-backend',
-      );
-      final targetDir = _isFrontend
-          ? installPath
-          : (configuredBackendPath ?? dynamicBackendPath);
+      if (configuredBackendPath != null && configuredBackendPath.isNotEmpty) {
+        // ✅ Nivel 1: configurado manualmente
+        resolvedBackendPath = configuredBackendPath;
+        debugPrint('[UpdateDialog] Ruta backend (manual): $resolvedBackendPath');
+      } else {
+        // ✅ Nivel 2: auto-detección relativa al ejecutable
+        final relPath = p.join(
+          File(Platform.resolvedExecutable).parent.parent.path,
+          'pos-backend',
+        );
+        if (Directory(relPath).existsSync()) {
+          resolvedBackendPath = relPath;
+          debugPrint('[UpdateDialog] Ruta backend (auto-detectada): $resolvedBackendPath');
+        }
+      }
+
+      if (!_isFrontend && resolvedBackendPath == null) {
+        // ❌ Nivel 3: no se pudo determinar la ruta → abortar con mensaje claro
+        if (mounted) {
+          setState(() {
+            _isDownloading = false;
+            _status = '❌ Ruta del backend no configurada.\n\nAndá a Ajustes → Red y Terminales → "Ruta del Backend" y escribí la ruta de instalación del servidor. Ejemplo: C:\\laragon\\www\\Sistema_POS\\pos-backend';
+          });
+        }
+        return;
+      }
+
+      final targetDir = _isFrontend ? installPath : resolvedBackendPath!;
       final componentArg = _isFrontend ? 'frontend' : 'backend';
 
+      debugPrint('[UpdateDialog] targetDir para $componentArg: $targetDir');
+
       // Validar si el updater existe (en desarrollo o 'flutter run' no existe)
+
       if (!File(updaterPath).existsSync()) {
         if (mounted) {
           setState(() {

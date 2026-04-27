@@ -43,6 +43,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _wholesalePercentageCtrl = TextEditingController();
   bool _advancedPriceTiersEnabled = false; // Feature Toggle Multi-Tenant
 
+  // Red y Rutas Locales
+  final _backendPathCtrl = TextEditingController();
+  final _serverUrlCtrl = TextEditingController(); // Para unificar la edición de URL en el form
+
   // Licencia
   final _licenseKeyCtrl = TextEditingController();
   bool _isActivatingLicense = false;
@@ -54,6 +58,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void initState() {
     super.initState();
     _loadVersion();
+    
+    // Listener para auto-completar la ruta del backend si el técnico cambia la URL
+    _serverUrlCtrl.addListener(_handleUrlChange);
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final provider = context.read<SettingsProvider>();
       final settings = provider.settings;
@@ -72,7 +80,57 @@ class _SettingsScreenState extends State<SettingsScreen> {
         
         if (mounted) setState(() {}); 
       }
+      
+      // Cargar configuraciones locales de SharedPreferences
+      SharedPreferences.getInstance().then((prefs) {
+        if (mounted) {
+          setState(() {
+            _backendPathCtrl.text = prefs.getString('backend_install_path') ?? '';
+            _serverUrlCtrl.text = prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
+            
+            // Si la ruta está vacía al iniciar, intentamos auto-detectar una sugerencia
+            if (_backendPathCtrl.text.isEmpty) {
+              _autoDetectBackendPath();
+            }
+          });
+        }
+      });
     });
+  }
+
+  void _handleUrlChange() {
+    // Si el técnico está escribiendo la URL y la ruta está vacía, intentamos ayudar
+    if (_backendPathCtrl.text.isEmpty) {
+      _autoDetectBackendPath();
+    }
+  }
+
+  void _autoDetectBackendPath() {
+    // Estrategia 1: Carpeta hermana (Estructura de producción ideal)
+    // exe en: <raíz>/pos-frontend/app.exe  -> busca <raíz>/pos-backend
+    try {
+      final installDir = File(Platform.resolvedExecutable).parent;
+      final siblingBackend = p.join(installDir.parent.path, 'pos-backend');
+      if (Directory(siblingBackend).existsSync()) {
+        setState(() => _backendPathCtrl.text = siblingBackend);
+        debugPrint('[Settings] Ruta detectada por estructura de carpetas: $siblingBackend');
+        return;
+      }
+    } catch (_) {}
+
+    // Estrategia 2: Derivación desde la URL (Estructura Laragon estándar)
+    // Solo si es localhost/127.0.0.1 y no pudimos por Estrategia 1
+    try {
+      final uri = Uri.parse(_serverUrlCtrl.text);
+      if (uri.host == '127.0.0.1' || uri.host == 'localhost') {
+        final webPath = uri.path.replaceAll(RegExp(r'/public/api$'), '');
+        final guessedPath = r'C:\laragon\www' + webPath.replaceAll('/', r'\');
+        if (Directory(guessedPath).existsSync()) {
+          setState(() => _backendPathCtrl.text = guessedPath);
+          debugPrint('[Settings] Ruta detectada por URL Laragon: $guessedPath');
+        }
+      }
+    } catch (_) {}
   }
 
   @override
@@ -87,6 +145,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _tierModCtrl.dispose();
     _cardPercentageCtrl.dispose();
     _wholesalePercentageCtrl.dispose();
+    _serverUrlCtrl.removeListener(_handleUrlChange);
+    _backendPathCtrl.dispose();
+    _serverUrlCtrl.dispose();
     super.dispose();
   }
 
@@ -107,6 +168,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
     };
 
     final success = await provider.saveSettings(data);
+    
+    // Guardar también las preferencias locales (Red y Rutas)
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('backend_install_path', _backendPathCtrl.text.trim());
+    await prefs.setString('pos_api', _serverUrlCtrl.text.trim());
+
     if (!mounted) return;
 
     if (success) {
@@ -882,37 +949,60 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildSectionHeader('Red y Terminales', 'Configurá la conexión con el servidor y las cajas físicas.'),
+        _buildSectionHeader('Red y Terminales', 'Configurá la conexión con el servidor y las rutas de instalación.'),
         const SizedBox(height: 32),
-        ListTile(
-          contentPadding: const EdgeInsets.all(24),
-          tileColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: Colors.grey.shade200)),
-          leading: const CircleAvatar(backgroundColor: Color(0xFFE8EAF6), child: Icon(Icons.dns, color: Color(0xFF3F51B5))),
-          title: const Text('Dirección del Servidor', style: TextStyle(fontWeight: FontWeight.bold)),
-          subtitle: const Text('Configurá la IP de la base de datos principal.'),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () => _showServerConfigDialog(context),
+        
+        // Campo de URL del Servidor (Integrado en el flujo de guardado principal)
+        _buildTextField(
+          'Dirección URL del Servidor (API)', 
+          _serverUrlCtrl, 
+          icon: Icons.dns_outlined, 
+          hint: 'Ej: http://127.0.0.1/Sistema_POS/pos-backend/public/api'
         ),
+        
         const SizedBox(height: 24),
+        
+        // NUEVO CAMPO: Ruta del Backend
+        _buildTextField(
+          'Ruta Local del Backend (Servidor)', 
+          _backendPathCtrl, 
+          icon: Icons.folder_open_outlined, 
+          hint: 'Ej: C:\\laragon\\www\\Sistema_POS\\pos-backend',
+          maxLines: 1,
+        ),
+        const Padding(
+          padding: EdgeInsets.only(left: 12, top: 8),
+          child: Text(
+            '⚠️ Esta ruta es necesaria para que las actualizaciones automáticas puedan reemplazar los archivos del servidor local.',
+            style: TextStyle(fontSize: 12, color: Colors.orange, fontWeight: FontWeight.w500),
+          ),
+        ),
+
+        const SizedBox(height: 48),
+        const Divider(),
+        const SizedBox(height: 24),
+
+        _buildSectionTitle('Terminal y Cajas'),
+        const SizedBox(height: 16),
+        
         ListTile(
-          contentPadding: const EdgeInsets.all(24),
+          contentPadding: const EdgeInsets.all(20),
           tileColor: Colors.white,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: Colors.grey.shade200)),
           leading: const CircleAvatar(backgroundColor: Color(0xFFFBE9E7), child: Icon(Icons.desktop_windows, color: Color(0xFFD84315))),
-          title: const Text('Terminal Local', style: TextStyle(fontWeight: FontWeight.bold)),
-          subtitle: Text('Esta PC está asignada a: Caja ID ${provider.assignedRegisterId}'),
+          title: const Text('Asignación de Terminal', style: TextStyle(fontWeight: FontWeight.bold)),
+          subtitle: Text('Esta PC está configurada como: Caja ID ${provider.assignedRegisterId}'),
           trailing: const Icon(Icons.chevron_right),
           onTap: () => _showTerminalAssignmentDialog(context, provider),
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 16),
         ListTile(
-          contentPadding: const EdgeInsets.all(24),
+          contentPadding: const EdgeInsets.all(20),
           tileColor: Colors.white,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: Colors.grey.shade200)),
           leading: const CircleAvatar(backgroundColor: Color(0xFFFFF3E0), child: Icon(Icons.settings_suggest_outlined, color: Colors.orange)),
           title: const Text('Administración de Cajas', style: TextStyle(fontWeight: FontWeight.bold)),
-          subtitle: const Text('Crea, edita o elimina las terminales físicas del sistema.'),
+          subtitle: const Text('Configurá los nombres y permisos de cada terminal física.'),
           trailing: const Icon(Icons.chevron_right),
           onTap: () {
             if (provider.features.multiCaja) {
@@ -924,8 +1014,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 featureName: 'Gestión Multi-Caja',
                 description:
                     'La administración de múltiples terminales físicas es '
-                    'una función exclusiva del plan PREMIUM.\n\n'
-                    'Actualizá para organizar tu negocio y sincronizar las cajas.',
+                    'una función exclusiva del plan PREMIUM.',
                 onNavigateToSettings: () =>
                     setState(() => _activeSection = SettingsSection.subscription),
               );
