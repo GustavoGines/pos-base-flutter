@@ -54,14 +54,22 @@ class _UpdateDialogState extends State<UpdateDialog> {
       // Calcular ruta de instalación (donde está el .exe de esta aplicación)
       final installPath = File(Platform.resolvedExecutable).parent.path;
       final updaterPath = p.join(installPath, 'updater.exe');
-      
+
       final prefs = await SharedPreferences.getInstance();
-      final defaultBackendPath = r'C:\laragon\www\Sistema_POS\pos-backend';
+
+      // Ruta del backend: primero busca configuración manual guardada por el usuario.
+      // Si no existe, calcula dinámicamente: el backend es hermano del directorio
+      // del ejecutable (un nivel arriba → subcarpeta pos-backend).
+      // Estructura de producción: <raíz>/pos-frontend/Sistema_POS.exe
+      //                           <raíz>/pos-backend/artisan
       final configuredBackendPath = prefs.getString('backend_install_path');
-      
-      final targetDir = _isFrontend 
-         ? installPath 
-         : (configuredBackendPath ?? defaultBackendPath);
+      final dynamicBackendPath = p.join(
+        File(Platform.resolvedExecutable).parent.parent.path,
+        'pos-backend',
+      );
+      final targetDir = _isFrontend
+          ? installPath
+          : (configuredBackendPath ?? dynamicBackendPath);
       final componentArg = _isFrontend ? 'frontend' : 'backend';
 
       // Validar si el updater existe (en desarrollo o 'flutter run' no existe)
