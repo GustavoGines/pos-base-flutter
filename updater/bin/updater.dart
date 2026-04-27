@@ -88,10 +88,11 @@ void main(List<String> args) async {
     for (final file in archive) {
       final filename = file.name;
       
-      // Auto-protección: el actualizador no puede sobreescribirse a sí mismo mientras corre
-      if (component == 'frontend' && filename.toLowerCase().endsWith('updater.exe')) {
-        continue;
-      }
+      // Auto-protección: el actualizador se renombra a updater_old.exe antes,
+      // por lo que ahora sí podemos extraer el nuevo updater.exe.
+      // if (component == 'frontend' && filename.toLowerCase().endsWith('updater.exe')) {
+      //   continue;
+      // }
 
       if (file.isFile) {
         final data = file.content as List<int>;

@@ -30,7 +30,10 @@ class _UpdateDialogState extends State<UpdateDialog> {
     });
 
     try {
-      final dio = Dio();
+      final dio = Dio(BaseOptions(
+        connectTimeout: const Duration(seconds: 15),
+        receiveTimeout: const Duration(minutes: 5),
+      ));
       final tempDir = await getTemporaryDirectory();
       final zipName = _isFrontend ? 'update_v${widget.updateInfo.version}.zip' : 'update_backend_v${widget.updateInfo.version}.zip';
       final zipPath = p.join(tempDir.path, zipName);
@@ -126,7 +129,12 @@ class _UpdateDialogState extends State<UpdateDialog> {
         processArgs.add('-Wait'); // Para backend, esperamos que termine silenciosamente
       }
 
-      await Process.run('powershell', processArgs);
+      await Process.run('powershell', processArgs).timeout(
+        const Duration(minutes: 2),
+        onTimeout: () {
+          throw Exception('La actualización del servidor tardó demasiado y fue cancelada. Asegúrese de aceptar los permisos de Administrador.');
+        },
+      );
 
       if (_isFrontend) {
         // En frontend, nos salimos para dejar que reemplace los archivos en uso
