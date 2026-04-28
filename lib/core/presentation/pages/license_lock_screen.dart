@@ -225,25 +225,7 @@ class _LicenseLockScreenState extends State<LicenseLockScreen> {
                 ],
               ),
               const SizedBox(height: 24),
-              // DEBUG INFO FOR DIAGNOSIS
-              Consumer<SettingsProvider>(
-                builder: (context, settings, _) {
-                  final key = settings.settings?.licenseStatus ?? '';
-                  final plan = settings.currentPlan;
-                  final licenseValid = key.isNotEmpty && plan != 'blocked';
-                  final hbBlocked = LicenseHeartbeatService().isBlocked;
-                  final isBlockedTotal = !settings.isLicenseActive;
-                  return Container(
-                    padding: const EdgeInsets.all(8),
-                    color: Colors.black54,
-                    child: Text(
-                      'DEBUG: key.isNotEmpty=${key.isNotEmpty} | plan=$plan | hbBlocked=$hbBlocked | isBlocked=$isBlockedTotal\nurl: ${AppConfig.kApiBaseUrl}',
-                      style: const TextStyle(color: Colors.yellowAccent, fontSize: 11, fontFamily: 'monospace'),
-                      textAlign: TextAlign.center,
-                    ),
-                  );
-                },
-              ),
+              const SizedBox(height: 24),
             ],
           ),
         ),
