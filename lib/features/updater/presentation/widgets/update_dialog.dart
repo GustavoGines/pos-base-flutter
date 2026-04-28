@@ -130,12 +130,11 @@ class _UpdateDialogState extends State<UpdateDialog> {
         // cuando updater.exe invocaba a php artisan migrate.
       }
 
-      await Process.run('powershell', processArgs).timeout(
-        const Duration(minutes: 2),
-        onTimeout: () {
-          throw Exception('La actualización del servidor tardó demasiado y fue cancelada. Asegúrese de aceptar los permisos de Administrador.');
-        },
-      );
+      // Usamos Process.start (fire & forget) en lugar de Process.run.
+      // Process.run bloquea esperando que PowerShell+UAC termine, lo que
+      // congela el diálogo indefinidamente. Start-Process lanza el proceso
+      // elevado y PowerShell retorna de inmediato.
+      await Process.start('powershell', processArgs);
 
       if (_isFrontend) {
         // En frontend, nos salimos para dejar que reemplace los archivos en uso
@@ -256,12 +255,14 @@ class _UpdateDialogState extends State<UpdateDialog> {
                   style: const TextStyle(fontSize: 13, color: Colors.grey),
                 ),
               ),
-            ] else if (_status.startsWith('Error') || _status.startsWith('✅')) ...[
+            ] else if (_status != 'Listo para actualizar') ...[
               const SizedBox(height: 16),
               Text(
                 _status,
                 style: TextStyle(
-                  color: _status.startsWith('Error') ? Colors.red : Colors.green.shade700,
+                  color: _status.startsWith('Error') || _status.startsWith('❌')
+                      ? Colors.red
+                      : Colors.green.shade700,
                   fontSize: 13,
                 ),
               ),
