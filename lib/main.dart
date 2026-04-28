@@ -166,7 +166,7 @@ void main() async {
   // ── RESCUE TRIGGER OTA ──
   // Si la app detecta que acaba de ser actualizada, dispara un endpoint de 
   // rescate silencioso al backend para asegurar que la DB esté parcheada.
-  const currentAppVersion = '1.3.1';
+  const currentAppVersion = '1.3.0';
   final lastVersion = prefs.getString('app_version') ?? '1.0.0';
   if (lastVersion != currentAppVersion) {
     try {

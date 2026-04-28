@@ -5,13 +5,6 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.0.0/) y el p
 
 ---
 
-## [1.3.1] — 2026-04-28 — Hotfix OTA
-
-### 🐛 Fixes
-- **[CRÍTICO] Updater del Servidor Congelado:** Se removió un bloqueo (parámetro `-Wait` en PowerShell) que causaba que el actualizador del backend se quedara trabado en "Aplicando actualización..." de forma indefinida en algunos entornos locales.
-
----
-
 ## [1.3.0] — 2026-04-27 — Ferretería & Retail Edition
 
 ### 🚀 Nuevas Funcionalidades
@@ -40,6 +33,7 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.0.0/) y el p
 - **[CRÍTICO] Módulos Premium bloqueados post-actualización:** Corregido bug donde, tras actualizar a v1.3.0, los módulos Premium (Listas de Precio, Remítos, Cheques) aparecían bloqueados a pesar de tener licencia activa. El problema era una combinación de caché de base de datos obsoleta y un payload incompleto del servidor de licencias. Solucionado con un Failsafe local en el backend.
 - **[CRÍTICO] Updater congelado:** Corregido escenario donde el diálogo de actualización quedaba bloqueado sin respuesta al ejecutar el servidor de licencias en modo cold-start (Render tarda 2-3 min en despertar). Se agregó timeout explícito de 2 minutos al proceso de PowerShell.
 - **[CRÍTICO] Reseteo forzado de URL del Servidor:** Corregido bug donde la aplicación forzaba constantemente la IP del servidor al valor de producción (Sistema_POS) al reiniciar, ignorando las configuraciones manuales de red del usuario en la pantalla de Settings o Login.
+- **[CRÍTICO] Updater del Servidor Congelado:** Se removió un bloqueo (parámetro `-Wait` en PowerShell) que causaba que el actualizador del backend se quedara trabado en "Aplicando actualización..." de forma indefinida en algunos entornos locales.
 
 ---
 
