@@ -32,6 +32,7 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.0.0/) y el p
 - Corregido error visual donde los presupuestos no reflejaban el precio de listas nuevas.
 - **[CRÍTICO] Módulos Premium bloqueados post-actualización:** Corregido bug donde, tras actualizar a v1.3.0, los módulos Premium (Listas de Precio, Remítos, Cheques) aparecían bloqueados a pesar de tener licencia activa. El problema era una combinación de caché de base de datos obsoleta y un payload incompleto del servidor de licencias. Solucionado con un Failsafe local en el backend.
 - **[CRÍTICO] Updater congelado:** Corregido escenario donde el diálogo de actualización quedaba bloqueado sin respuesta al ejecutar el servidor de licencias en modo cold-start (Render tarda 2-3 min en despertar). Se agregó timeout explícito de 2 minutos al proceso de PowerShell.
+- **[CRÍTICO] Reseteo forzado de URL del Servidor:** Corregido bug donde la aplicación forzaba constantemente la IP del servidor al valor de producción (Sistema_POS) al reiniciar, ignorando las configuraciones manuales de red del usuario en la pantalla de Settings o Login.
 
 ---
 
