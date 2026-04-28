@@ -183,10 +183,33 @@ void main(List<String> args) async {
     
   } else if (component == 'frontend') {
     final exePath = p.join(targetDir, 'Sistema_POS.exe');
+
+    // 1. Remover "Mark of the Web" de todos los archivos extraídos.
+    //    Windows SmartScreen bloquea silenciosamente EXEs descargados de internet
+    //    si tienen el Zone.Identifier ADS stream. Unblock-File lo elimina.
+    print('Desbloqueando archivos extraídos (SmartScreen)...');
+    try {
+      Process.runSync('powershell', [
+        '-Command',
+        'Get-ChildItem -Path "${targetDir.replaceAll(r'\', r'\\')}" -Recurse | Unblock-File -ErrorAction SilentlyContinue',
+      ]);
+      print('Archivos desbloqueados correctamente.');
+    } catch (e) {
+      print('Advertencia: No se pudo ejecutar Unblock-File: $e');
+    }
+
     if (File(exePath).existsSync()) {
       print('Lanzando la aplicación actualizada...');
       try {
-        await Process.start(exePath, [], workingDirectory: targetDir, mode: ProcessStartMode.detached);
+        // Lanzar via PowerShell Start-Process SIN -Verb RunAs.
+        // El updater.exe corre como Admin, pero la App debe correr como usuario
+        // normal. Usar Start-Process sin RunAs hereda el token del shell del
+        // usuario, no el token de admin, evitando fallos en Windows 11.
+        Process.runSync('powershell', [
+          '-Command',
+          'Start-Process -FilePath "${exePath.replaceAll(r'\', r'\\')}" -WorkingDirectory "${targetDir.replaceAll(r'\', r'\\')}"',
+        ]);
+        print('Aplicación relanzada exitosamente.');
       } catch (e) {
         print('Error al abrir $exePath: $e');
       }
