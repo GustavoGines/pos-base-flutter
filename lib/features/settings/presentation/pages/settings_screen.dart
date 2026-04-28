@@ -55,11 +55,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _isSyncingLicense = false;
   bool _isCheckingUpdate = false;
   String _appVersion = '';
+  
+  // Developer Mode
+  int _versionTaps = 0;
+  String _currentChannel = 'stable';
 
   @override
   void initState() {
     super.initState();
     _loadVersion();
+    _loadChannel();
     
     // Listener para auto-completar la ruta del backend si el técnico cambia la URL
     _serverUrlCtrl.addListener(_handleUrlChange);
@@ -242,6 +247,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _loadVersion() async {
     final packageInfo = await PackageInfo.fromPlatform();
     if (mounted) setState(() => _appVersion = packageInfo.version);
+  }
+
+  Future<void> _loadChannel() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) setState(() => _currentChannel = prefs.getString('update_channel') ?? 'stable');
+  }
+
+  Future<void> _handleVersionTap() async {
+    _versionTaps++;
+    if (_versionTaps >= 7) {
+      _versionTaps = 0;
+      final prefs = await SharedPreferences.getInstance();
+      final newChannel = _currentChannel == 'stable' ? 'beta' : 'stable';
+      await prefs.setString('update_channel', newChannel);
+      setState(() => _currentChannel = newChannel);
+      
+      if (!mounted) return;
+      if (newChannel == 'beta') {
+        SnackBarService.success(context, 'Modo Desarrollador: Canal Beta Activado 🐛');
+      } else {
+        SnackBarService.success(context, 'Modo Producción: Canal Stable Activado 🚀');
+      }
+    }
   }
 
   Future<void> _checkForUpdate() async {
@@ -923,9 +951,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
           if (_appVersion.isNotEmpty) ...[
             const SizedBox(height: 16),
             Center(
-              child: Text(
-                'Versión actual del sistema: v$_appVersion',
-                style: TextStyle(color: Colors.grey.shade500, fontSize: 13, fontWeight: FontWeight.w500),
+              child: GestureDetector(
+                onTap: _handleVersionTap,
+                child: Text(
+                  'Versión actual del sistema: v$_appVersion' + (_currentChannel == 'beta' ? ' (BETA)' : ''),
+                  style: TextStyle(color: _currentChannel == 'beta' ? Colors.orange.shade600 : Colors.grey.shade500, fontSize: 13, fontWeight: FontWeight.w500),
+                ),
               ),
             ),
           ],

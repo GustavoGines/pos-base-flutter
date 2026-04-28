@@ -44,9 +44,11 @@ class UpdateService {
         // Si el backend local no responde, mantenemos el valor de SharedPreferences
       }
 
+      final updateChannel = prefs.getString('update_channel') ?? 'stable';
+
       // 1. Chequeo de Backend
       final backendUri = Uri.parse('${AppConfig.kLicenseServerUrl}/api/check-update')
-          .replace(queryParameters: {'component': 'backend', 'current_version': currentBackendVersion});
+          .replace(queryParameters: {'component': 'backend', 'current_version': currentBackendVersion, 'channel': updateChannel});
 
       final backendResponse = await http
           .get(backendUri, headers: {'Accept': 'application/json'})
@@ -61,7 +63,7 @@ class UpdateService {
 
       // 2. Chequeo de Frontend
       final frontendUri = Uri.parse('${AppConfig.kLicenseServerUrl}/api/check-update')
-          .replace(queryParameters: {'component': 'frontend', 'current_version': currentFrontendVersion});
+          .replace(queryParameters: {'component': 'frontend', 'current_version': currentFrontendVersion, 'channel': updateChannel});
 
       final frontendResponse = await http
           .get(frontendUri, headers: {'Accept': 'application/json'})

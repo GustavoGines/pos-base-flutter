@@ -120,6 +120,7 @@ class SettingsProvider with ChangeNotifier {
         print('Stack: $stack');
       }
       _errorMessage = e.toString().replaceAll('Exception: ', '');
+      rethrow;
     } finally {
       if (!isSilent) {
         _isLoading = false;

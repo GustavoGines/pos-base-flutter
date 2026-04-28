@@ -161,7 +161,10 @@ void main() async {
   
   // Obtener URL de la API del almacenamiento local
   final prefs = await SharedPreferences.getInstance();
-  final savedApiUrl = prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
+  
+  // AUTO-FIX AGRESIVO: Forzamos la base URL a Sistema_POS para matar el bug de Sistema_POS_test
+  await prefs.setString('pos_api', AppConfig.kApiBaseUrl);
+  final savedApiUrl = AppConfig.kApiBaseUrl;
 
   // ── RESCUE TRIGGER OTA ──
   // Si la app detecta que acaba de ser actualizada, dispara un endpoint de 
