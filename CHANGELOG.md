@@ -5,6 +5,13 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.0.0/) y el p
 
 ---
 
+## [1.3.1] — 2026-04-28 — Hotfix OTA
+
+### 🐛 Fixes
+- **[CRÍTICO] Updater del Servidor Congelado:** Se removió un bloqueo (parámetro `-Wait` en PowerShell) que causaba que el actualizador del backend se quedara trabado en "Aplicando actualización..." de forma indefinida en algunos entornos locales.
+
+---
+
 ## [1.3.0] — 2026-04-27 — Ferretería & Retail Edition
 
 ### 🚀 Nuevas Funcionalidades

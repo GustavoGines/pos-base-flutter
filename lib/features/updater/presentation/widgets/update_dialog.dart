@@ -126,7 +126,8 @@ class _UpdateDialogState extends State<UpdateDialog> {
       ];
       
       if (!_isFrontend) {
-        processArgs.add('-Wait'); // Para backend, esperamos que termine silenciosamente
+        // Se removió el -Wait porque causaba bloqueos (hangs) en PowerShell
+        // cuando updater.exe invocaba a php artisan migrate.
       }
 
       await Process.run('powershell', processArgs).timeout(
