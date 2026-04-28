@@ -23,8 +23,8 @@ class OtaStartupResult {
 /// corrió mientras la app estaba cerrada y qué resultado tuvo.
 ///
 /// Archivos que chequea en el directorio de instalación:
-///   - ota_result.txt   → 'SUCCESS' o 'FAILED' (escrito por updater.exe)
-///   - ota_pending.json → info del update que se intentó instalar
+///   - ota_result.txt   → JSON: {"status":"SUCCESS","version":"1.3.0","component":"frontend"}
+///   - ota_pending.json → info del update que se intentó instalar (fallback)
 ///   - updater_log.txt  → log completo para diagnóstico
 class OtaStartupChecker {
   static final String _installPath =
@@ -44,22 +44,43 @@ class OtaStartupChecker {
       if (!_resultFile.existsSync()) return null;
 
       final resultRaw = _resultFile.readAsStringSync().trim();
-      final success = resultRaw == 'SUCCESS';
 
-      String component = 'frontend';
+      // ── Parseo del resultado ─────────────────────────────────────────
+      // Formato nuevo (updater v3+): JSON  {"status":"SUCCESS","version":"1.3.0","component":"frontend"}
+      // Formato viejo (compatibilidad): texto plano "SUCCESS" o "FAILED"
+      bool success = false;
       String version = 'desconocida';
+      String component = 'frontend';
       bool wasPending = false;
 
-      if (_pendingFile.existsSync()) {
+      if (resultRaw.startsWith('{')) {
+        // Formato JSON — updater.exe OTA v3
         try {
-          final data =
-              jsonDecode(_pendingFile.readAsStringSync()) as Map<String, dynamic>;
-          component = data['component']?.toString() ?? 'frontend';
+          final data = jsonDecode(resultRaw) as Map<String, dynamic>;
+          success = data['status']?.toString() == 'SUCCESS';
           version = data['version']?.toString() ?? 'desconocida';
-          wasPending = true;
-        } catch (_) {}
+          component = data['component']?.toString() ?? 'frontend';
+        } catch (_) {
+          // Si el JSON está corrupto, intentamos el texto plano
+          success = resultRaw.contains('SUCCESS');
+        }
+      } else {
+        // Formato legacy (actualizaciones anteriores a OTA v3)
+        success = resultRaw == 'SUCCESS';
+
+        // Intentar obtener versión/componente desde ota_pending.json
+        if (_pendingFile.existsSync()) {
+          try {
+            final data =
+                jsonDecode(_pendingFile.readAsStringSync()) as Map<String, dynamic>;
+            component = data['component']?.toString() ?? 'frontend';
+            version = data['version']?.toString() ?? 'desconocida';
+            wasPending = true;
+          } catch (_) {}
+        }
       }
 
+      // ── Leer las últimas 40 líneas del log ───────────────────────────
       String logContent = '';
       if (_logFile.existsSync()) {
         try {
