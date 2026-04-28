@@ -162,6 +162,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (!_formKey.currentState!.validate()) return;
 
     final provider = context.read<SettingsProvider>();
+
+    // ── IMPORTANTE: guardar URL y ruta local PRIMERO ──────────────────────────
+    // Si el usuario cambió la URL del servidor, el request de saveSettings debe
+    // usar ya la nueva URL. De lo contrario falla con "No se puede conectar".
+    final newUrl = _serverUrlCtrl.text.trim();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('pos_api', newUrl);
+    await prefs.setString('backend_install_path', _backendPathCtrl.text.trim());
+
+    // Actualizar el provider en memoria con la nueva URL antes del request HTTP
+    provider.updateBaseUrl(newUrl);
+
     final data = {
       'company_name': _companyNameCtrl.text.trim(),
       'address': _addressCtrl.text.trim(),
@@ -175,17 +187,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     };
 
     final success = await provider.saveSettings(data);
-    
-    // Guardar también las preferencias locales (Red y Rutas)
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('backend_install_path', _backendPathCtrl.text.trim());
-    await prefs.setString('pos_api', _serverUrlCtrl.text.trim());
 
     if (!mounted) return;
 
     if (success) {
-      // Hardware config ya no se reconfigura desde settings globales.
-      // Cada terminal usa su LocalTerminalProvider local (SharedPreferences).
       SnackBarService.success(context, 'Configuración guardada correctamente');
     } else {
       SnackBarService.error(context, provider.errorMessage ?? 'Error al guardar');
