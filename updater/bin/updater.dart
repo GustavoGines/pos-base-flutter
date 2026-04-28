@@ -246,7 +246,7 @@ void main(List<String> args) async {
   } catch (e) {
     log.err('Error fatal decodificando el ZIP: $e');
     log.writeResult(false, detail: 'ZIP corrupto o ilegible');
-    _writeOtaResult(targetDir, false);
+    _writeOtaResult(targetDir, false, component: component, version: _extractVersion(zipPath));
     exit(1);
   }
 
@@ -293,7 +293,7 @@ void main(List<String> args) async {
 
     final success = extractionOk && !hasError;
     log.writeResult(success);
-    _writeOtaResult(targetDir, success);
+    _writeOtaResult(targetDir, success, component: component, version: _extractVersion(zipPath));
 
   } else if (component == 'frontend') {
 
@@ -324,7 +324,7 @@ void main(List<String> args) async {
 
     // 3. Escribir resultado ANTES de relanzar la app
     log.writeResult(extractionOk);
-    _writeOtaResult(targetDir, extractionOk);
+    _writeOtaResult(targetDir, extractionOk, component: component, version: _extractVersion(zipPath));
 
     // 4. Relanzar la app
     final exePath = p.join(targetDir, 'Sistema_POS.exe');
@@ -351,12 +351,18 @@ void main(List<String> args) async {
   exit(0);
 }
 
-/// Escribe ota_result.txt en el directorio destino.
+/// Escribe ota_result.txt en el directorio destino como JSON.
+/// Formato: {"status":"SUCCESS","version":"1.3.0","component":"frontend"}
 /// La app Flutter lo lee al arrancar para mostrar el resultado.
-void _writeOtaResult(String targetDir, bool success) {
+void _writeOtaResult(
+  String targetDir,
+  bool success, {
+  String component = 'frontend',
+  String version = 'desconocida',
+}) {
   try {
-    File(p.join(targetDir, 'ota_result.txt'))
-        .writeAsStringSync(success ? 'SUCCESS' : 'FAILED');
+    final json = '{"status":"${success ? 'SUCCESS' : 'FAILED'}","version":"$version","component":"$component"}';
+    File(p.join(targetDir, 'ota_result.txt')).writeAsStringSync(json);
   } catch (_) {}
 }
 
