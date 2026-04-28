@@ -139,6 +139,10 @@ void main(List<String> args) async {
       ['artisan', 'optimize'],
     ];
 
+    // Escribir resultado final para que la App pueda verificar el éxito real
+    final resultFile = File(p.join(targetDir, 'ota_result.txt'));
+    bool hasError = false;
+
     for (final cmd in commands) {
       final cmdString = 'php ${cmd.join(' ')}';
       print('Ejecutando $cmdString en backend...');
@@ -155,10 +159,20 @@ void main(List<String> args) async {
         if (result.stderr.toString().trim().isNotEmpty) {
           print('STDERR ($cmdString):\n${result.stderr}');
         }
+        if (result.exitCode != 0) {
+          hasError = true;
+          print('ERROR: $cmdString retornó código ${result.exitCode}');
+        }
       } catch (e) {
+        hasError = true;
         print('Error al intentar ejecutar $cmdString: $e');
       }
     }
+
+    // Señal de resultado para que Flutter pueda verificar
+    try {
+      resultFile.writeAsStringSync(hasError ? 'FAILED' : 'SUCCESS');
+    } catch (_) {}
 
     try {
       File(zipPath).deleteSync();

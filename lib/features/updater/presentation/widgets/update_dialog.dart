@@ -140,16 +140,51 @@ class _UpdateDialogState extends State<UpdateDialog> {
         // En frontend, nos salimos para dejar que reemplace los archivos en uso
         exit(0);
       } else {
-        // En backend, actualizamos las preferencias para no volver a pedirlo
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('backend_version', widget.updateInfo.version);
-        
+        // En backend: el actualizador corre en segundo plano.
+        // Esperamos el archivo ota_result.txt que el updater escribe al terminar.
+        // Timeout de 90 segundos (extraccion + migrate puede tardar).
+        if (mounted) {
+          setState(() {
+            _status = '⏳ Aplicando migraciones en segundo plano...';
+          });
+        }
+
+        final resultFile = File(p.join(targetDir, 'ota_result.txt'));
+        // Limpiar resultado anterior si existe
+        if (resultFile.existsSync()) resultFile.deleteSync();
+
+        bool resultFound = false;
+        for (int i = 0; i < 90; i++) {
+          await Future.delayed(const Duration(seconds: 1));
+          if (resultFile.existsSync()) {
+            resultFound = true;
+            break;
+          }
+        }
+
+        String finalStatus;
+        bool success = false;
+        if (!resultFound) {
+          finalStatus = '⚠️ Tiempo de espera agotado. Verificá la ventana negra del actualizador.';
+        } else {
+          final result = resultFile.readAsStringSync().trim();
+          success = result == 'SUCCESS';
+          finalStatus = success
+              ? '✅ Servidor actualizado exitosamente.'
+              : '❌ Error durante la actualización. Revisá la ventana del actualizador para más detalles.';
+        }
+
+        if (success) {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('backend_version', widget.updateInfo.version);
+        }
+
         if (mounted) {
           setState(() {
             _isDownloading = false;
-            _isComplete = true; // Flag for UI
+            _isComplete = true;
             _progress = 1.0;
-            _status = '✅ Servidor actualizado exitosamente.';
+            _status = finalStatus;
           });
         }
       }
