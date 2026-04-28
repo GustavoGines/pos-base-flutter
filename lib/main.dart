@@ -47,6 +47,7 @@ import 'features/checks/presentation/providers/check_provider.dart';
 import 'features/checks/data/repositories/check_repository_impl.dart';
 import 'features/checks/data/datasources/check_remote_datasource.dart';
 import 'features/checks/presentation/screens/check_wallet_screen.dart';
+import 'features/updater/presentation/widgets/ota_result_dialog.dart';
 
 // Repositories & DataSources
 import 'features/reports/data/datasources/reports_remote_datasource.dart';
@@ -452,6 +453,17 @@ class _MainAppState extends State<MainApp> {
       setState(() {
         _isInitializing = false;
         _initError = null;
+      });
+
+      // ── CHECK DE RESULTADO OTA ──
+      // Si el updater corrió mientras la app estaba cerrada, mostrar el
+      // resultado al usuario (éxito o log de error) en el primer frame.
+      // Funciona en todos los clientes de producción de forma automática.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final ctx = navigatorKey.currentContext;
+        if (ctx != null && ctx.mounted) {
+          OtaResultDialog.showIfNeeded(ctx);
+        }
       });
     }
   }
