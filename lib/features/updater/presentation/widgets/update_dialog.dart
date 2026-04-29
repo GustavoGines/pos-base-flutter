@@ -183,7 +183,11 @@ class _UpdateDialogState extends State<UpdateDialog> {
         componentArg: componentArg,
         targetDir: targetDir,
         zipPath: zipPath,
-        installPath: installPath,
+        // FRONTEND: necesita admin para escribir en C:\Program Files\
+        // BACKEND:  NO necesita admin (C:\laragon\www\ es escribible por el usuario).
+        //           Pedir UAC desde un proceso DETACHED cancela silenciosamente
+        //           porque no hay ventana padre para mostrar el dialogo UAC.
+        requireElevation: _isFrontend,
       );
 
       if (_isFrontend) {
@@ -298,44 +302,60 @@ class _UpdateDialogState extends State<UpdateDialog> {
     }
   }
 
-  /// Escribe un launcher.bat en el dir de instalación y lo lanza con
-  /// ProcessStartMode.detached para que el proceso sea completamente
-  /// independiente de la app Flutter (sobrevive al exit(0)).
+  /// Escribe un launcher.bat en %TEMP% y lo lanza DETACHED.
+  ///
+  /// [requireElevation] = true  → Frontend: Start-Process -Verb RunAs (UAC)
+  /// [requireElevation] = false → Backend: corre directo sin elevar.
+  ///   El motivo: -Verb RunAs desde un proceso DETACHED no tiene ventana padre
+  ///   visible para el prompt UAC → Windows cancela la elevación silenciosamente
+  ///   → el updater nunca arranca. El backend no necesita admin porque su
+  ///   directorio (C:\laragon\www\...) es escribible por el usuario actual.
   Future<void> _launchUpdaterDetached({
     required String updaterPath,
     required String componentArg,
     required String targetDir,
     required String zipPath,
-    required String installPath,
+    required bool requireElevation,
   }) async {
-    // Escapar comillas simples en rutas para el argumento de PowerShell
     String psEscape(String s) => s.replaceAll("'", "''");
 
     final argList =
         "--component=$componentArg --target-dir='${psEscape(targetDir)}' --zip-path='${psEscape(zipPath)}'";
 
-    // El batch simplemente llama a PowerShell que eleva el updater con UAC.
-    // -ExecutionPolicy Bypass evita problemas con políticas restrictivas en W11.
-    final batContent = '@echo off\r\n'
-        'powershell -ExecutionPolicy Bypass -Command "'
-        'Start-Process -FilePath \'${psEscape(updaterPath)}\' '
-        '-ArgumentList \'$argList\' '
-        '-Verb RunAs'
-        '"\r\n';
+    final String batContent;
+    if (requireElevation) {
+      // FRONTEND: eleva con UAC. El usuario ve el prompt en los 5s del countdown.
+      batContent = '@echo off\r\n'
+          'powershell -ExecutionPolicy Bypass -Command "'
+          'Start-Process -FilePath \'${psEscape(updaterPath)}\' '
+          '-ArgumentList \'$argList\' '
+          '-Verb RunAs'
+          '"\r\n';
+    } else {
+      // BACKEND: sin elevación. Start-Process normal, sin -Verb RunAs.
+      // WindowStyle Hidden evita que aparezca una ventana de consola.
+      batContent = '@echo off\r\n'
+          'powershell -ExecutionPolicy Bypass -Command "'
+          'Start-Process -FilePath \'${psEscape(updaterPath)}\' '
+          '-ArgumentList \'$argList\' '
+          '-WindowStyle Hidden'
+          '"\r\n';
+    }
 
-    // El BAT se escribe en %TEMP% (no en C:\Program Files\) para evitar
-    // errno=5 (Acceso Denegado). Solo necesita existir hasta que cmd lo lea.
-    final batPath = p.join(Directory.systemTemp.path, '_ota_launcher_${DateTime.now().millisecondsSinceEpoch}.bat');
+    // El BAT se escribe en %TEMP% (no en C:\Program Files\) para evitar errno=5.
+    final batPath = p.join(
+        Directory.systemTemp.path,
+        '_ota_launcher_${DateTime.now().millisecondsSinceEpoch}.bat');
     try {
       File(batPath).writeAsStringSync(batContent);
-      debugPrint('[UpdateDialog] Launcher BAT escrito en: $batPath');
+      debugPrint('[UpdateDialog] Launcher BAT (${
+        requireElevation ? 'ELEVADO' : 'NORMAL'
+      }) escrito en: $batPath');
     } catch (e) {
       debugPrint('[UpdateDialog] Error escribiendo BAT: $e');
       rethrow;
     }
 
-    // ProcessStartMode.detached: equivale a CREATE_NO_WINDOW | DETACHED_PROCESS.
-    // El proceso CMD queda fuera del Job Object de Flutter → sobrevive al exit(0).
     await Process.start(
       'cmd',
       ['/c', batPath],
