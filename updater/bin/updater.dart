@@ -367,8 +367,13 @@ void _writeOtaResult(
 }
 
 /// Extrae la versión del nombre del ZIP para el header del log.
+/// Soporta formatos: update_v1.3.0.zip, update_backend_v1.3.0.zip
 String _extractVersion(String zipPath) {
   final name = p.basename(zipPath);
-  final match = RegExp(r'v([\d.]+)').firstMatch(name);
-  return match?.group(1) ?? 'desconocida';
+  // Patrón estricto semver: solo captura dígitos y puntos entre dígitos
+  // Evita capturar el punto antes de la extensión .zip
+  final match = RegExp(r'v(\d+\.\d+[\.\d]*)').firstMatch(name);
+  if (match == null) return 'desconocida';
+  // Quitar cualquier punto al final por si el regex fue demasiado greedy
+  return match.group(1)!.replaceAll(RegExp(r'\.$'), '');
 }
