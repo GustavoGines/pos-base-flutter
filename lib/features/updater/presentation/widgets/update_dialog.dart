@@ -42,18 +42,28 @@ class _UpdateDialogState extends State<UpdateDialog> {
       ));
 
       // ─────────────────────────────────────────────────────────────────
-      // CRÍTICO: Guardar el ZIP en el DIRECTORIO DE INSTALACIÓN (no en
-      // %TEMP%). Esto garantiza que:
-      //   1. El archivo sobreviva si el proceso padre (la app) muere.
-      //   2. Si el updater falla a mitad, el ZIP sigue disponible para
-      //      un reintento sin re-descargar.
-      //   3. No hay problemas de permisos de escritura entre particiones.
+      // ESTRATEGIA DE ALMACENAMIENTO DEL ZIP (diferente por componente):
+      //
+      // FRONTEND → directorio de instalación (C:\Program Files\Sistema POS\)
+      //   Motivo: la app hace exit(0) antes de que el updater termine.
+      //   El ZIP debe sobrevivir al cierre del proceso padre. %TEMP% puede
+      //   ser limpiado por Windows al reiniciar. installPath garantiza
+      //   persistencia. El updater corre con UAC (admin) y puede leer/borrar.
+      //
+      // BACKEND → %TEMP% del sistema (Directory.systemTemp)
+      //   Motivo: la app NO se cierra durante la actualización del backend.
+      //   %TEMP% es siempre escribible por el usuario actual SIN privilegios
+      //   de admin. Escribir en C:\Program Files\ desde Flutter (sin elevar)
+      //   falla con errno=5 (Acceso denegado). El updater (elevado con UAC)
+      //   puede leer desde %TEMP% sin problemas.
       // ─────────────────────────────────────────────────────────────────
       final installPath = File(Platform.resolvedExecutable).parent.path;
       final zipName = _isFrontend
           ? 'update_v${widget.updateInfo.version}.zip'
           : 'update_backend_v${widget.updateInfo.version}.zip';
-      final zipPath = p.join(installPath, zipName);
+      // Frontend: installPath (sobrevive exit(0)) | Backend: %TEMP% (evita errno=5)
+      final zipDir = _isFrontend ? installPath : Directory.systemTemp.path;
+      final zipPath = p.join(zipDir, zipName);
 
       debugPrint('[UpdateDialog] Guardando ZIP en: $zipPath');
 
