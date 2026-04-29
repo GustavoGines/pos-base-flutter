@@ -25,6 +25,10 @@ class _UpdateDialogState extends State<UpdateDialog> {
   bool _isComplete = false;
   double _progress = 0.0;
   String _status = 'Listo para actualizar';
+  // Log del updater para actualizaciones de backend
+  String _backendLog = '';
+  bool _showLog = false;
+  String? _backendTargetDir; // guardado para leer el log al finalizar
 
   bool get _isFrontend => widget.updateInfo.component == 'frontend';
   bool get _isFull => widget.isFullSystemUpdate;
@@ -197,34 +201,60 @@ class _UpdateDialogState extends State<UpdateDialog> {
         // Salir — el updater ya está completamente desacoplado
         exit(0);
       } else {
-        // Backend: esperar el archivo de resultado del updater (hasta 120s)
-        if (mounted) {
-          setState(() => _status = '⏳ Aplicando migraciones en segundo plano...');
-        }
-
+        // ── BACKEND: esperar resultado del updater con logs en vivo ──────
+        _backendTargetDir = targetDir;
+        final logFile = File(p.join(targetDir, 'updater_log.txt'));
         final resultFile = File(p.join(targetDir, 'ota_result.txt'));
+
+        if (mounted) {
+          setState(() => _status = '⏳ Iniciando actualizador del servidor...');
+        }
 
         bool resultFound = false;
         for (int i = 0; i < 120; i++) {
-          await Future.delayed(const Duration(seconds: 1));
+          await Future.delayed(const Duration(seconds: 2));
           if (!mounted) return;
+
+          // ── Leer últimas líneas del log en vivo ───────────────────────
+          if (logFile.existsSync()) {
+            try {
+              final lines = logFile.readAsStringSync().split('\n');
+              final tail = lines.length > 12 ? lines.sublist(lines.length - 12) : lines;
+              final lastLine = tail.lastWhere((l) => l.trim().isNotEmpty, orElse: () => '');
+              if (mounted) {
+                setState(() {
+                  _backendLog = tail.join('\n').trim();
+                  // Extraer estado del último log para el status visible
+                  if (lastLine.contains('[ERROR]') || lastLine.contains('[WARN]')) {
+                    _status = '⚠️ Procesando... (${i * 2}s) — revisá el log';
+                  } else {
+                    _status = '⏳ Aplicando... (${i * 2}s)';
+                  }
+                });
+              }
+            } catch (_) {}
+          }
+
           if (resultFile.existsSync()) {
             resultFound = true;
             break;
           }
-          // Actualizar status cada 10s para que el usuario sepa que sigue vivo
-          if (i > 0 && i % 10 == 0) {
-            if (mounted) {
-              setState(() => _status = '⏳ Aplicando migraciones... (${i}s)');
-            }
-          }
+        }
+
+        // ── Leer log completo al finalizar ───────────────────────────────
+        String fullLog = '';
+        if (logFile.existsSync()) {
+          try {
+            final lines = logFile.readAsStringSync().split('\n');
+            final tail = lines.length > 50 ? lines.sublist(lines.length - 50) : lines;
+            fullLog = tail.join('\n').trim();
+          } catch (_) {}
         }
 
         String finalStatus;
         bool success = false;
         if (!resultFound) {
-          finalStatus =
-              '⚠️ Tiempo de espera agotado. Revisá el archivo updater_log.txt en la carpeta del servidor para ver el detalle.';
+          finalStatus = '⚠️ Tiempo de espera agotado (120s).';
         } else {
           final resultRaw = resultFile.readAsStringSync().trim();
           if (resultRaw.startsWith('{')) {
@@ -237,15 +267,13 @@ class _UpdateDialogState extends State<UpdateDialog> {
           } else {
             success = resultRaw == 'SUCCESS';
           }
-          
           finalStatus = success
-              ? '✅ Servidor actualizado exitosamente.'
-              : '❌ Error durante la actualización.\nRevisá updater_log.txt en la carpeta del servidor para más detalles.';
+              ? '✅ Servidor actualizado exitosamente a v${widget.updateInfo.version}.'
+              : '❌ Error durante la actualización. Revisá el log para más detalles.';
         }
 
         if (success) {
           await prefs.setString('backend_version', widget.updateInfo.version);
-          // Limpiar estado pendiente
           await _clearPendingState(installPath);
         }
 
@@ -255,6 +283,8 @@ class _UpdateDialogState extends State<UpdateDialog> {
             _isComplete = success;
             _progress = 1.0;
             _status = finalStatus;
+            _backendLog = fullLog;
+            _showLog = !success; // Auto-expandir log si hay error
           });
         }
       }
@@ -293,7 +323,9 @@ class _UpdateDialogState extends State<UpdateDialog> {
         '-Verb RunAs'
         '"\r\n';
 
-    final batPath = p.join(installPath, '_ota_launcher.bat');
+    // El BAT se escribe en %TEMP% (no en C:\Program Files\) para evitar
+    // errno=5 (Acceso Denegado). Solo necesita existir hasta que cmd lo lea.
+    final batPath = p.join(Directory.systemTemp.path, '_ota_launcher_${DateTime.now().millisecondsSinceEpoch}.bat');
     try {
       File(batPath).writeAsStringSync(batContent);
       debugPrint('[UpdateDialog] Launcher BAT escrito en: $batPath');
@@ -475,6 +507,96 @@ class _UpdateDialogState extends State<UpdateDialog> {
                   fontSize: 13,
                 ),
               ),
+            ],
+            // ── Log del backend (en vivo y al finalizar) ───────────────
+            if (!_isFrontend && _backendLog.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              GestureDetector(
+                onTap: () => setState(() => _showLog = !_showLog),
+                child: Row(
+                  children: [
+                    Icon(
+                      _showLog ? Icons.expand_less : Icons.expand_more,
+                      size: 16,
+                      color: Colors.grey.shade600,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      _showLog ? 'Ocultar log del actualizador' : 'Ver log del actualizador',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade600,
+                        decoration: TextDecoration.underline,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (_showLog) ...[
+                const SizedBox(height: 8),
+                Container(
+                  height: 180,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0F172A),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: (_isComplete
+                              ? Colors.green.shade700
+                              : Colors.orange.shade700)
+                          .withValues(alpha: 0.4),
+                    ),
+                  ),
+                  child: Column(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: Colors.black26,
+                          borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.terminal, size: 12, color: Colors.grey.shade400),
+                            const SizedBox(width: 6),
+                            Text(
+                              'updater_log.txt — ${_backendTargetDir ?? ''}',
+                              style: TextStyle(fontSize: 10, color: Colors.grey.shade400, fontFamily: 'monospace'),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const Spacer(),
+                            if (_isDownloading)
+                              SizedBox(
+                                width: 10, height: 10,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 1.5,
+                                  color: Colors.grey.shade400,
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                      Expanded(
+                        child: Scrollbar(
+                          thumbVisibility: true,
+                          child: SingleChildScrollView(
+                            reverse: true, // auto-scroll al final (log más reciente)
+                            padding: const EdgeInsets.all(8),
+                            child: SelectableText(
+                              _backendLog,
+                              style: const TextStyle(
+                                fontSize: 10,
+                                color: Color(0xFFCBD5E1),
+                                fontFamily: 'monospace',
+                                height: 1.5,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ],
           ],
         ),
