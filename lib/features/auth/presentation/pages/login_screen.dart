@@ -437,14 +437,21 @@ class _LoginScreenState extends State<LoginScreen> {
                           foregroundColor: Colors.white,
                         ),
                         onPressed: () async {
-                          final result = await showDialog<bool>(
+                          await showDialog<bool>(
                             context: context,
-                            builder: (_) => UpdateDialog(updateInfo: _frontendUpdate!),
+                            // Si también hay backend pendiente, abrir el diálogo integral
+                            builder: (_) => UpdateDialog(
+                              updateInfo: _frontendUpdate!,
+                              isFullSystemUpdate: _backendUpdate != null,
+                            ),
                           );
-                          if (result == true) _checkForUpdates();
+                          _checkForUpdates();
                         },
                         icon: const Icon(Icons.monitor, size: 18),
-                        label: const Text('Actualiz. App', style: TextStyle(fontWeight: FontWeight.bold)),
+                        label: Text(
+                          _backendUpdate != null ? 'Actualiz. Integral' : 'Actualiz. App',
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
                       ),
                     if (_frontendUpdate != null) const SizedBox(width: 10),
 
@@ -452,10 +459,17 @@ class _LoginScreenState extends State<LoginScreen> {
                     if (_backendUpdate != null)
                       ElevatedButton.icon(
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF0D9488),
+                          backgroundColor: _frontendUpdate != null
+                              ? Colors.grey.shade400
+                              : const Color(0xFF0D9488),
                           foregroundColor: Colors.white,
                         ),
                         onPressed: () async {
+                          if (_frontendUpdate != null) {
+                            SnackBarService.warning(context,
+                                'Primero debés actualizar la App para poder actualizar el Servidor con seguridad.');
+                            return;
+                          }
                           final result = await showDialog<bool>(
                             context: context,
                             builder: (_) => UpdateDialog(updateInfo: _backendUpdate!),
@@ -463,7 +477,8 @@ class _LoginScreenState extends State<LoginScreen> {
                           if (result == true) _checkForUpdates();
                         },
                         icon: const Icon(Icons.dns_rounded, size: 18),
-                        label: const Text('Actualiz. Servidor', style: TextStyle(fontWeight: FontWeight.bold)),
+                        label: const Text('Actualiz. Servidor',
+                            style: TextStyle(fontWeight: FontWeight.bold)),
                       ),
                     if (_backendUpdate != null) const SizedBox(width: 10),
                     IconButton(

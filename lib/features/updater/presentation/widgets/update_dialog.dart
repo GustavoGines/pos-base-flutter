@@ -8,8 +8,13 @@ import '../../data/models/update_info.dart';
 
 class UpdateDialog extends StatefulWidget {
   final UpdateInfo updateInfo;
+  final bool isFullSystemUpdate;
 
-  const UpdateDialog({super.key, required this.updateInfo});
+  const UpdateDialog({
+    super.key,
+    required this.updateInfo,
+    this.isFullSystemUpdate = false,
+  });
 
   @override
   State<UpdateDialog> createState() => _UpdateDialogState();
@@ -22,6 +27,7 @@ class _UpdateDialogState extends State<UpdateDialog> {
   String _status = 'Listo para actualizar';
 
   bool get _isFrontend => widget.updateInfo.component == 'frontend';
+  bool get _isFull => widget.isFullSystemUpdate;
 
   Future<void> _startUpdate() async {
     setState(() {
@@ -171,8 +177,9 @@ class _UpdateDialogState extends State<UpdateDialog> {
         for (int i = 5; i >= 1; i--) {
           if (mounted) {
             setState(() {
-              _status =
-                  '⚠️ Aceptá el permiso de Administrador que aparecerá.\nCerrando en $i segundo${i != 1 ? 's' : ''}...';
+              _status = _isFull
+                  ? '⚠️ Aceptá el permiso de Administrador.\nAl reiniciar, el Servidor se actualizará automáticamente.\nCerrando en $i segundo${i != 1 ? 's' : ''}...'
+                  : '⚠️ Aceptá el permiso de Administrador que aparecerá.\nCerrando en $i segundo${i != 1 ? 's' : ''}...';
             });
           }
           await Future.delayed(const Duration(seconds: 1));
@@ -209,8 +216,18 @@ class _UpdateDialogState extends State<UpdateDialog> {
           finalStatus =
               '⚠️ Tiempo de espera agotado. Revisá el archivo updater_log.txt en la carpeta del servidor para ver el detalle.';
         } else {
-          final result = resultFile.readAsStringSync().trim();
-          success = result == 'SUCCESS';
+          final resultRaw = resultFile.readAsStringSync().trim();
+          if (resultRaw.startsWith('{')) {
+            try {
+              final data = json.decode(resultRaw);
+              success = data['status'] == 'SUCCESS';
+            } catch (_) {
+              success = false;
+            }
+          } else {
+            success = resultRaw == 'SUCCESS';
+          }
+          
           finalStatus = success
               ? '✅ Servidor actualizado exitosamente.'
               : '❌ Error durante la actualización.\nRevisá updater_log.txt en la carpeta del servidor para más detalles.';
@@ -317,15 +334,26 @@ class _UpdateDialogState extends State<UpdateDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final Color componentColor =
-        _isFrontend ? const Color(0xFF673AB7) : const Color(0xFF0D9488);
-    final IconData componentIcon =
-        _isFrontend ? Icons.monitor : Icons.dns_rounded;
-    final String componentLabel =
-        _isFrontend ? 'App (Frontend)' : 'Servidor (Backend)';
-    final String componentDescription = _isFrontend
-        ? 'Esta actualización reemplaza la aplicación y requiere reinicio.'
-        : 'Esta actualización se aplica en segundo plano al servidor local.';
+    final Color componentColor = _isFull
+        ? const Color(0xFF1E3A8A)
+        : _isFrontend
+            ? const Color(0xFF673AB7)
+            : const Color(0xFF0D9488);
+    final IconData componentIcon = _isFull
+        ? Icons.auto_mode_rounded
+        : _isFrontend
+            ? Icons.monitor
+            : Icons.dns_rounded;
+    final String componentLabel = _isFull
+        ? 'Actualización Integral del Sistema'
+        : _isFrontend
+            ? 'App (Frontend)'
+            : 'Servidor (Backend)';
+    final String componentDescription = _isFull
+        ? 'Esta actualización sincronizada actualizará tanto la App como el Servidor. Se descargará la App primero y, tras reiniciarse, se completará la actualización del Servidor automáticamente.'
+        : _isFrontend
+            ? 'Esta actualización reemplaza la aplicación y requiere reinicio.'
+            : 'Esta actualización se aplica en segundo plano al servidor local.';
 
     return PopScope(
       canPop: widget.updateInfo.isCritical ? false : !_isDownloading,
@@ -361,11 +389,15 @@ class _UpdateDialogState extends State<UpdateDialog> {
             const SizedBox(height: 10),
             Row(
               children: [
-                Icon(Icons.system_update_alt, color: componentColor),
+                Icon(
+                    _isFull
+                        ? Icons.system_update_rounded
+                        : Icons.system_update_alt,
+                    color: componentColor),
                 const SizedBox(width: 10),
-                const Text('Actualización Disponible',
-                    style:
-                        TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                Text(_isFull ? 'Actualización del Sistema' : 'Actualización Disponible',
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 16)),
               ],
             ),
           ],
@@ -460,7 +492,7 @@ class _UpdateDialogState extends State<UpdateDialog> {
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8)),
               ),
-              child: const Text('ACTUALIZAR AHORA'),
+              child: Text(_isFull ? 'ACTUALIZAR SISTEMA' : 'ACTUALIZAR AHORA'),
             ),
         ],
       ),

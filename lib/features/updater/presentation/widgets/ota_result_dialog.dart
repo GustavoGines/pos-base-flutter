@@ -14,21 +14,24 @@ class OtaResultDialog extends StatelessWidget {
 
   /// Muestra el diálogo y luego limpia los archivos de estado.
   /// Llama esto desde la pantalla principal después del primer frame.
-  static Future<void> showIfNeeded(BuildContext context) async {
+  /// Retorna el [OtaStartupResult] si se mostró algo, para encadenamiento lógico.
+  static Future<OtaStartupResult?> showIfNeeded(BuildContext context) async {
     final result = OtaStartupChecker.check();
-    if (result == null) return;
+    if (result == null) return null;
 
     // Limpiar inmediatamente para que no aparezca de nuevo si el usuario
     // cierra y re-abre la app.
     OtaStartupChecker.clearState();
 
-    if (!context.mounted) return;
+    if (!context.mounted) return result;
 
     await showDialog(
       context: context,
       barrierDismissible: result.success,
       builder: (_) => OtaResultDialog(result: result),
     );
+
+    return result;
   }
 
   @override
