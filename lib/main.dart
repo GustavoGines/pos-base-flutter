@@ -48,6 +48,8 @@ import 'features/checks/data/repositories/check_repository_impl.dart';
 import 'features/checks/data/datasources/check_remote_datasource.dart';
 import 'features/checks/presentation/screens/check_wallet_screen.dart';
 import 'features/updater/presentation/widgets/ota_result_dialog.dart';
+import 'features/updater/data/services/update_service.dart';
+import 'features/updater/presentation/widgets/update_dialog.dart';
 
 // Repositories & DataSources
 import 'features/reports/data/datasources/reports_remote_datasource.dart';
@@ -455,14 +457,42 @@ class _MainAppState extends State<MainApp> {
         _initError = null;
       });
 
-      // ── CHECK DE RESULTADO OTA ──
+      // ── CHECK DE RESULTADO OTA (Smart Chaining) ──
       // Si el updater corrió mientras la app estaba cerrada, mostrar el
-      // resultado al usuario (éxito o log de error) en el primer frame.
-      // Funciona en todos los clientes de producción de forma automática.
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+      // resultado al usuario. Si fue una actualización exitosa del Frontend,
+      // encadenar automáticamente la actualización del Backend (Auto-Resume).
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        // Usamos navigatorKey.currentContext en el momento de uso (no capturado
+        // antes del await) para evitar el problema de contexto obsoleto.
         final ctx = navigatorKey.currentContext;
-        if (ctx != null && ctx.mounted) {
-          OtaResultDialog.showIfNeeded(ctx);
+        if (ctx == null || !ctx.mounted) return;
+
+        final otaResult = await OtaResultDialog.showIfNeeded(ctx);
+
+        // Auto-Resume: si la App se actualizó con éxito, buscar si el
+        // Backend sigue pendiente y lanzarlo automáticamente.
+        if (otaResult != null && otaResult.success && otaResult.component == 'frontend') {
+          // Pequeña pausa para que la UI se asiente después de cerrar el diálogo
+          await Future.delayed(const Duration(milliseconds: 400));
+
+          final ctx2 = navigatorKey.currentContext;
+          if (ctx2 == null || !ctx2.mounted) return;
+
+          try {
+            final check = await UpdateService().checkUpdate();
+            final backendUpdate = check.backendUpdate;
+
+            final ctx3 = navigatorKey.currentContext;
+            if (backendUpdate != null && ctx3 != null && ctx3.mounted) {
+              showDialog(
+                context: ctx3,
+                barrierDismissible: true,
+                builder: (_) => UpdateDialog(updateInfo: backendUpdate),
+              );
+            }
+          } catch (e) {
+            debugPrint('[OTA Auto-Resume] Error chequeando backend: $e');
+          }
         }
       });
     }

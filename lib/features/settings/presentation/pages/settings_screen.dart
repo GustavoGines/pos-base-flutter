@@ -286,13 +286,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
       final frontendUpdate = result.frontendUpdate;
       final backendUpdate = result.backendUpdate;
 
-      if (frontendUpdate != null) {
+      if (!mounted) return;
+
+      if (frontendUpdate != null && backendUpdate != null) {
+        // ESCENARIO 1: ACTUALIZACIÓN DOBLE (INTEGRAL)
+        // No damos a elegir, forzamos el flujo integral empezando por el frontend
+        showDialog(
+          context: context,
+          barrierDismissible: !frontendUpdate.isCritical,
+          builder: (_) => UpdateDialog(
+            updateInfo: frontendUpdate,
+            isFullSystemUpdate: true,
+          ),
+        );
+      } else if (frontendUpdate != null) {
+        // ESCENARIO 2: Solo Frontend
         showDialog(
           context: context,
           barrierDismissible: !frontendUpdate.isCritical,
           builder: (_) => UpdateDialog(updateInfo: frontendUpdate),
         );
       } else if (backendUpdate != null) {
+        // ESCENARIO 3: Solo Backend
         // El backend ya se actualiza automáticamente, solo informamos
         showDialog(
           context: context,
@@ -300,7 +315,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           builder: (_) => UpdateDialog(updateInfo: backendUpdate),
         );
       } else {
-        SnackBarService.success(context, 'Tu sistema está actualizado (v$_appVersion)');
+        SnackBarService.success(
+            context, 'Tu sistema está actualizado (v$_appVersion)');
       }
     } catch (e) {
       if (!mounted) return;
