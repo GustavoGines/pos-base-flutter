@@ -83,17 +83,17 @@ void main(List<String> args) async {
     if (arg.startsWith('--component=')) {
       component = arg.split('=')[1];
     } else if (arg.startsWith('--target-dir=')) {
-      targetDir = arg.substring('--target-dir='.length).replaceAll('"', '');
+      targetDir = arg.substring('--target-dir='.length).replaceAll('"', '').replaceAll("'", "");
     } else if (arg.startsWith('--zip-path=')) {
-      zipPath = arg.substring('--zip-path='.length).replaceAll('"', '');
+      zipPath = arg.substring('--zip-path='.length).replaceAll('"', '').replaceAll("'", "");
     }
   }
 
   // Fallback para versiones muy antiguas (2 args posicionales)
   if (component == null && args.length >= 2 && !args[0].startsWith('--')) {
     component = 'frontend';
-    zipPath = args[0].replaceAll('"', '');
-    targetDir = args[1].replaceAll('"', '');
+    zipPath = args[0].replaceAll('"', '').replaceAll("'", "");
+    targetDir = args[1].replaceAll('"', '').replaceAll("'", "");
   }
 
   // Validación de argumentos mínimos
