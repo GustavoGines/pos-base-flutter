@@ -10,6 +10,8 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.0.0/) y el p
 ### 🐛 Fixes
 - **Startup Connection Fallback:** Corregido un fallo técnico donde el diálogo emergente para configurar la IP del servidor fallaba silenciosamente por un problema de contexto `BuildContext` si el backend principal estaba caído durante el arranque inicial de la aplicación.
 - **Productividad de Catálogo:** Agregada la funcionalidad de cálculo de porcentaje de ganancia automático para derivar precio de venta desde el costo en la creación y edición de productos, con persistencia de preferencias de usuario.
+- **Generación de Código de Barras:** Corregido fallo donde limpiar el código de barras no enviaba el valor vacío al servidor para autogenerar un código EAN-13 interno.
+- **Flujo de Creación Rápida:** Al crear una nueva Marca o Categoría desde la ventana de producto, el desplegable ahora la selecciona automáticamente.
 
 ---
 
