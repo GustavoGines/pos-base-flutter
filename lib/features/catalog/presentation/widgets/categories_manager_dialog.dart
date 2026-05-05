@@ -37,7 +37,7 @@ class _CategoriesManagerDialogState extends State<CategoriesManagerDialog> {
     final ok = await provider.createCategory(name);
     if (!mounted) return;
     setState(() => _adding = false);
-    if (ok) {
+    if (ok != null) {
       _newNameCtrl.clear();
       _newFocusNode.requestFocus();
       _showSnack('Categoría "$name" creada', isError: false);

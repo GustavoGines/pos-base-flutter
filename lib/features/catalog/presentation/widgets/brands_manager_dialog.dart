@@ -37,7 +37,7 @@ class _BrandsManagerDialogState extends State<BrandsManagerDialog> {
     final ok = await provider.createBrand(name);
     if (!mounted) return;
     setState(() => _adding = false);
-    if (ok) {
+    if (ok != null) {
       _newNameCtrl.clear();
       _newFocusNode.requestFocus();
       _showSnack('Marca "$name" creada', isError: false);
