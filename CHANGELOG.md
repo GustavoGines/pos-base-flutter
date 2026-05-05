@@ -5,6 +5,13 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.0.0/) y el p
 
 ---
 
+## [1.3.2] — 2026-05-05 — Catálogo UI Fix
+
+### 🐛 Fixes
+- **Experiencia de Usuario en Catálogo:** Mejorada la visualización de errores al crear o editar productos, categorías y marcas con nombres duplicados, mostrando ahora un mensaje claro y amigable en lugar de una excepción cruda (`Exception`).
+
+---
+
 ## [1.3.1] — 2026-05-04 — Frontend Hotfixes
 
 ### 🐛 Fixes

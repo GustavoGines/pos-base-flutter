@@ -135,8 +135,17 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
       );
       if (response.statusCode == 201) {
         return BrandModel.fromJson(json.decode(response.body));
+      } else if (response.statusCode == 422) {
+        final errorData = json.decode(response.body);
+        final errors = errorData['errors'];
+        if (errors is Map && errors['name'] is List && errors['name'].isNotEmpty) {
+          if (errors['name'][0].toString().contains('unique')) {
+            throw Exception('Ya existe una marca con ese nombre. Por favor elige otro.');
+          }
+        }
+        throw Exception(errorData['message'] ?? 'Error de validación al crear marca.');
       } else {
-        throw Exception('Error al crear marca: ${response.body}');
+        throw Exception('Error del servidor al crear marca (Status: ${response.statusCode})');
       }
     } catch (e) {
       print('=== API Error en createBrand: $e ===');
@@ -154,8 +163,17 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
       );
       if (response.statusCode == 200) {
         return BrandModel.fromJson(json.decode(response.body));
+      } else if (response.statusCode == 422) {
+        final errorData = json.decode(response.body);
+        final errors = errorData['errors'];
+        if (errors is Map && errors['name'] is List && errors['name'].isNotEmpty) {
+          if (errors['name'][0].toString().contains('unique')) {
+            throw Exception('Ya existe una marca con ese nombre. Por favor elige otro.');
+          }
+        }
+        throw Exception(errorData['message'] ?? 'Error de validación al actualizar marca.');
       } else {
-        throw Exception('Error al actualizar marca: ${response.body}');
+        throw Exception('Error del servidor al actualizar marca (Status: ${response.statusCode})');
       }
     } catch (e) {
       print('=== API Error en updateBrand: $e ===');
@@ -193,8 +211,17 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
       );
       if (response.statusCode == 201) {
         return CategoryModel.fromJson(json.decode(response.body));
+      } else if (response.statusCode == 422) {
+        final errorData = json.decode(response.body);
+        final errors = errorData['errors'];
+        if (errors is Map && errors['name'] is List && errors['name'].isNotEmpty) {
+          if (errors['name'][0].toString().contains('unique')) {
+            throw Exception('Ya existe una categoría con ese nombre. Por favor elige otro.');
+          }
+        }
+        throw Exception(errorData['message'] ?? 'Error de validación al crear categoría.');
       } else {
-        throw Exception('Error al crear categoría: ${response.body}');
+        throw Exception('Error del servidor al crear categoría (Status: ${response.statusCode})');
       }
     } catch (e) {
       print('=== API Error en createCategory: $e ===');
@@ -212,8 +239,17 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
       );
       if (response.statusCode == 200) {
         return CategoryModel.fromJson(json.decode(response.body));
+      } else if (response.statusCode == 422) {
+        final errorData = json.decode(response.body);
+        final errors = errorData['errors'];
+        if (errors is Map && errors['name'] is List && errors['name'].isNotEmpty) {
+          if (errors['name'][0].toString().contains('unique')) {
+            throw Exception('Ya existe una categoría con ese nombre. Por favor elige otro.');
+          }
+        }
+        throw Exception(errorData['message'] ?? 'Error de validación al actualizar categoría.');
       } else {
-        throw Exception('Error al actualizar categoría: ${response.body}');
+        throw Exception('Error del servidor al actualizar categoría (Status: ${response.statusCode})');
       }
     } catch (e) {
       print('=== API Error en updateCategory: $e ===');
@@ -251,8 +287,17 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
       );
       if (response.statusCode == 201) {
         return ProductModel.fromJson(json.decode(response.body));
+      } else if (response.statusCode == 422) {
+        final errorData = json.decode(response.body);
+        final errors = errorData['errors'];
+        if (errors is Map && errors['name'] is List && errors['name'].isNotEmpty) {
+          if (errors['name'][0].toString().contains('unique')) {
+            throw Exception('Ya existe un producto con ese nombre. Por favor elige otro.');
+          }
+        }
+        throw Exception(errorData['message'] ?? 'Error de validación al crear producto.');
       } else {
-        throw Exception('Failed to create product: ${response.body}');
+        throw Exception('Error del servidor al crear producto (Status: ${response.statusCode})');
       }
     } catch (e) {
       print('=== API Error en createProduct: $e ===');
@@ -270,8 +315,17 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
       );
       if (response.statusCode == 200) {
         return ProductModel.fromJson(json.decode(response.body));
+      } else if (response.statusCode == 422) {
+        final errorData = json.decode(response.body);
+        final errors = errorData['errors'];
+        if (errors is Map && errors['name'] is List && errors['name'].isNotEmpty) {
+          if (errors['name'][0].toString().contains('unique')) {
+            throw Exception('Ya existe un producto con ese nombre. Por favor elige otro.');
+          }
+        }
+        throw Exception(errorData['message'] ?? 'Error de validación al actualizar producto.');
       } else {
-        throw Exception('Failed to update product: ${response.body}');
+        throw Exception('Error del servidor al actualizar producto (Status: ${response.statusCode})');
       }
     } catch (e) {
       print('=== API Error en updateProduct: $e ===');

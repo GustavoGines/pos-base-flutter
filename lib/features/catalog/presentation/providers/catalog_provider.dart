@@ -172,7 +172,7 @@ class CatalogProvider with ChangeNotifier {
       _products = [product, ..._products];
       return true;
     } catch (e) {
-      _errorMessage = e.toString();
+      _errorMessage = e.toString().replaceAll('Exception: ', '');
       return false;
     } finally {
       _isLoading = false;
@@ -190,7 +190,7 @@ class CatalogProvider with ChangeNotifier {
       if (idx != -1) _products[idx] = updated;
       return true;
     } catch (e) {
-      _errorMessage = e.toString();
+      _errorMessage = e.toString().replaceAll('Exception: ', '');
       return false;
     } finally {
       _isLoading = false;
@@ -400,7 +400,7 @@ class CatalogProvider with ChangeNotifier {
       _categories = [..._categories, created];
       return created.id;
     } catch (e) {
-      _errorMessage = e.toString();
+      _errorMessage = e.toString().replaceAll('Exception: ', '');
       return null;
     } finally {
       _isLoading = false;
@@ -422,7 +422,7 @@ class CatalogProvider with ChangeNotifier {
       }
       return true;
     } catch (e) {
-      _errorMessage = e.toString();
+      _errorMessage = e.toString().replaceAll('Exception: ', '');
       return false;
     } finally {
       _isLoading = false;
@@ -460,7 +460,7 @@ class CatalogProvider with ChangeNotifier {
       _brands = [..._brands, created];
       return created.id;
     } catch (e) {
-      _errorMessage = e.toString();
+      _errorMessage = e.toString().replaceAll('Exception: ', '');
       return null;
     } finally {
       _isLoading = false;
@@ -482,7 +482,7 @@ class CatalogProvider with ChangeNotifier {
       }
       return true;
     } catch (e) {
-      _errorMessage = e.toString();
+      _errorMessage = e.toString().replaceAll('Exception: ', '');
       return false;
     } finally {
       _isLoading = false;
