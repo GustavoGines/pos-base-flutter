@@ -5,6 +5,14 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.0.0/) y el p
 
 ---
 
+## [1.3.1] — 2026-05-04 — Frontend Hotfixes
+
+### 🐛 Fixes
+- **Startup Connection Fallback:** Corregido un fallo técnico donde el diálogo emergente para configurar la IP del servidor fallaba silenciosamente por un problema de contexto `BuildContext` si el backend principal estaba caído durante el arranque inicial de la aplicación.
+- **Productividad de Catálogo:** Agregada la funcionalidad de cálculo de porcentaje de ganancia automático para derivar precio de venta desde el costo en la creación y edición de productos, con persistencia de preferencias de usuario.
+
+---
+
 ## [1.3.0] — 2026-04-28 — Ferretería & Retail Edition
 
 ### 🚀 Nuevas Funcionalidades

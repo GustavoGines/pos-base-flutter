@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
@@ -169,7 +170,7 @@ void main() async {
   // ── RESCUE TRIGGER OTA ──
   // Si la app detecta que acaba de ser actualizada, dispara un endpoint de 
   // rescate silencioso al backend para asegurar que la DB esté parcheada.
-  const currentAppVersion = '1.3.0';
+  const currentAppVersion = '1.3.1';
   final lastVersion = prefs.getString('app_version') ?? '1.0.0';
   if (lastVersion != currentAppVersion) {
     try {
@@ -329,8 +330,6 @@ class MainApp extends StatefulWidget {
 class _MainAppState extends State<MainApp> {
   bool _isInitializing = true;
   String? _initError;
-  int _retryCount = 0;
-  static const int _maxRetries = 5;
 
   bool _isShowingSessionDialog = false;
 
@@ -406,40 +405,32 @@ class _MainAppState extends State<MainApp> {
       _initError = null;
     });
 
-    // 1. Cargar Settings del negocio con lógica de reintento para Render Cold Start
     bool success = false;
-    while (!success && _retryCount <= _maxRetries) {
-      try {
-        await settingsProvider.loadSettings();
-        success = true;
-      } catch (e) {
-        final prefs = await SharedPreferences.getInstance();
-        final currentUrl = prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
+    try {
+      await settingsProvider.loadSettings();
+      success = true;
+    } catch (e) {
+      final prefs = await SharedPreferences.getInstance();
+      final currentUrl = prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
 
-        // Auto-fix: Si estamos en localhost 8000 y falla, probar con Laragon (puerto 80) una vez
-        if (_retryCount == 0 && currentUrl.contains(':8000')) {
-          await prefs.setString('pos_api', AppConfig.kApiBaseUrl);
-          settingsProvider.updateBaseUrl(AppConfig.kApiBaseUrl);
-          continue; // Intento inmediato con la nueva URL
-        }
-
-        if (_retryCount < _maxRetries) {
-          _retryCount++;
-          setState(() {
-            _initError = 'El servidor está despertando. Reintento $_retryCount de $_maxRetries...';
-          });
-          await Future.delayed(const Duration(seconds: 30));
-        } else {
-          setState(() {
-            _isInitializing = false;
-            _initError = 'No se pudo conectar tras varios intentos. Verifique si Laragon está iniciado o si el servidor de licencias en Render está activo.';
-          });
-          return; // Abortar resto de la carga
-        }
+      // Auto-fix: Si estamos en localhost 8000 y falla, probar con Laragon (puerto 80) una vez
+      if (currentUrl.contains(':8000')) {
+        await prefs.setString('pos_api', AppConfig.kApiBaseUrl);
+        settingsProvider.updateBaseUrl(AppConfig.kApiBaseUrl);
+        try {
+          await settingsProvider.loadSettings();
+          success = true;
+        } catch (_) {}
       }
     }
 
-    if (!success) return;
+    if (!success) {
+      setState(() {
+        _isInitializing = false;
+        _initError = 'No se pudo conectar al servidor';
+      });
+      return; // Abortar resto de la carga
+    }
 
     // 2. Verificar estado de la Caja de ESTA terminal física asignada
     try {
@@ -501,59 +492,146 @@ class _MainAppState extends State<MainApp> {
   final GlobalKey<NavigatorState> navigatorKey = AppConfig.navigatorKey;
   final ValueNotifier<String?> _currentRoute = ValueNotifier<String?>(null);
 
+  Future<void> _showNetworkSettingsDialog(BuildContext context) async {
+    final prefs = await SharedPreferences.getInstance();
+    final currentUrl = prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
+    final urlController = TextEditingController(text: currentUrl);
+
+    if (!context.mounted) return;
+
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dCtx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.dns_outlined, color: Colors.blueAccent),
+            SizedBox(width: 8),
+            Text('Configurar Servidor', style: TextStyle(fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Ingrese la IP o URL de la PC principal:', style: TextStyle(color: Colors.blueGrey)),
+            const SizedBox(height: 16),
+            TextField(
+              controller: urlController,
+              decoration: InputDecoration(
+                hintText: 'Ej: http://192.168.1.50/api',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                prefixIcon: const Icon(Icons.link),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dCtx),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton.icon(
+            onPressed: () async {
+              String newUrl = urlController.text.trim();
+              if (newUrl.isNotEmpty) {
+                if (!newUrl.startsWith('http://') && !newUrl.startsWith('https://')) {
+                  newUrl = 'http://$newUrl';
+                }
+                if (newUrl.endsWith('/')) {
+                  newUrl = newUrl.substring(0, newUrl.length - 1);
+                }
+                
+                await prefs.setString('pos_api', newUrl);
+                
+                if (context.mounted) {
+                  final settingsProvider = Provider.of<SettingsProvider>(context, listen: false);
+                  settingsProvider.updateBaseUrl(newUrl);
+
+                  Navigator.pop(dCtx);
+                  
+                  // Intentar validar la nueva IP antes de reiniciar toda la app
+                  setState(() {
+                    _isInitializing = true;
+                    _initError = null;
+                  });
+                  
+                  try {
+                    await settingsProvider.loadSettings();
+                    // Si conecta, reiniciamos el proceso de Flutter para reconstruir el árbol DI
+                    Process.start(Platform.resolvedExecutable, Platform.executableArguments);
+                    exit(0);
+                  } catch (e) {
+                    setState(() {
+                      _isInitializing = false;
+                      _initError = 'No se pudo conectar a la nueva IP. Verifique la dirección.';
+                    });
+                  }
+                }
+              }
+            },
+            icon: const Icon(Icons.save),
+            label: const Text('Guardar y Reintentar'),
+            style: FilledButton.styleFrom(backgroundColor: Colors.blue.shade800),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildLoadingOrErrorScreen() {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      home: Scaffold(
-        backgroundColor: const Color(0xFF1E2D45),
-        body: Center(
-          child: Container(
-            constraints: const BoxConstraints(maxWidth: 400),
-            padding: const EdgeInsets.all(32),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.point_of_sale_rounded, size: 72, color: Color(0xFF3B82F6)),
-                const SizedBox(height: 24),
-                const Text('Sistema POS', style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Colors.white)),
-                const SizedBox(height: 8),
-                Text(_initError != null ? 'ESTADO: $_initError' : 'Iniciando sistema...', 
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 14, color: Colors.white54)),
-                const SizedBox(height: 32),
-                if (_initError != null && _retryCount >= _maxRetries) ...[
-                  const Icon(Icons.error_outline_rounded, color: Colors.redAccent, size: 48),
+      home: Builder(
+        builder: (innerContext) => Scaffold(
+          backgroundColor: const Color(0xFF1E2D45),
+          body: Center(
+            child: Container(
+              constraints: const BoxConstraints(maxWidth: 400),
+              padding: const EdgeInsets.all(32),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.point_of_sale_rounded, size: 72, color: Color(0xFF3B82F6)),
                   const SizedBox(height: 24),
-                  ElevatedButton.icon(
-                    onPressed: () {
-                      _retryCount = 0;
-                      _initializeApp();
-                    },
-                    icon: const Icon(Icons.refresh_rounded),
-                    label: const Text('Reintentar Conexión'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blue,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                  const Text('Sistema POS', style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Colors.white)),
+                  const SizedBox(height: 8),
+                  Text(_initError != null ? 'ESTADO: $_initError' : 'Iniciando sistema...', 
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(fontSize: 14, color: Colors.white54)),
+                  const SizedBox(height: 32),
+                  if (_initError != null) ...[
+                    const Icon(Icons.error_outline_rounded, color: Colors.redAccent, size: 48),
+                    const SizedBox(height: 24),
+                    ElevatedButton.icon(
+                      onPressed: () {
+                        _initializeApp();
+                      },
+                      icon: const Icon(Icons.refresh_rounded),
+                      label: const Text('Reintentar Conexión'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blue,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextButton.icon(
-                    onPressed: () async {
-                      // Abrir mini-dialog manual para corregir URL (si falla Laragon)
-                      if (!mounted) return;
-                      // Aquí podrías implementar un modal simple si fuera necesario corregir la URL a mano
-                    },
-                    icon: const Icon(Icons.settings_ethernet, color: Colors.white70),
-                    label: const Text('Ajustes de Red', style: TextStyle(color: Colors.white70)),
-                  ),
-                ] else
-                  const SizedBox(
-                    width: 40,
-                    height: 40,
-                    child: CircularProgressIndicator(color: Color(0xFF3B82F6), strokeWidth: 3),
-                  ),
-              ],
+                    const SizedBox(height: 12),
+                    TextButton.icon(
+                      onPressed: () async {
+                        if (!mounted) return;
+                        await _showNetworkSettingsDialog(innerContext);
+                      },
+                      icon: const Icon(Icons.settings_ethernet, color: Colors.white70),
+                      label: const Text('Configurar Servidor', style: TextStyle(color: Colors.white70)),
+                    ),
+                  ] else
+                    const SizedBox(
+                      width: 40,
+                      height: 40,
+                      child: CircularProgressIndicator(color: Color(0xFF3B82F6), strokeWidth: 3),
+                    ),
+                ],
+              ),
             ),
           ),
         ),

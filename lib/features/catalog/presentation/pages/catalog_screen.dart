@@ -2,6 +2,7 @@ import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:frontend_desktop/features/catalog/presentation/providers/catalog_provider.dart';
 import '../widgets/stock_adjustment_dialog.dart';
 import '../../domain/entities/product.dart';
@@ -731,8 +732,10 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
   late TextEditingController _internalCodeCtrl;
   late TextEditingController _costCtrl;
   late TextEditingController _priceCtrl;
+  late TextEditingController _marginCtrl;
   late TextEditingController _stockCtrl;
   late TextEditingController _minStockCtrl;
+  bool _isAutoCalculating = false;
   bool _isSoldByWeight = false;
   bool _active = true;
   bool _isCombo = false;
@@ -754,7 +757,14 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     _internalCodeCtrl = TextEditingController(text: p?.internalCode ?? '');
     _costCtrl = TextEditingController(text: p != null ? p.costPrice.toCurrency() : '');
     _priceCtrl = TextEditingController(text: p != null ? p.sellingPrice.toCurrency() : '');
+    _marginCtrl = TextEditingController();
     _stockCtrl = TextEditingController(text: p != null ? p.stock.toStringAsFixed(p.isSoldByWeight ? 3 : 0) : '0');
+    
+    _loadSavedMargin();
+    
+    _costCtrl.addListener(_onCostOrMarginChanged);
+    _marginCtrl.addListener(_onCostOrMarginChanged);
+    _priceCtrl.addListener(_onPriceChanged);
     _minStockCtrl = TextEditingController(text: (p?.minStock != null) ? p!.minStock!.toStringAsFixed(0) : '');
     _isSoldByWeight = p?.isSoldByWeight ?? false;
     _active = p?.active ?? true;
@@ -775,22 +785,91 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
 
   @override
   void dispose() {
+    _costCtrl.removeListener(_onCostOrMarginChanged);
+    _marginCtrl.removeListener(_onCostOrMarginChanged);
+    _priceCtrl.removeListener(_onPriceChanged);
     _nameCtrl.dispose();
     _barcodeCtrl.dispose();
     _internalCodeCtrl.dispose();
     _costCtrl.dispose();
     _priceCtrl.dispose();
+    _marginCtrl.dispose();
     _stockCtrl.dispose();
     _minStockCtrl.dispose();
     _expiryCtrl.dispose();
     super.dispose();
   }
 
+  Future<void> _loadSavedMargin() async {
+    if (_isEditing) {
+       final cost = double.tryParse(_costCtrl.text.replaceAll(',', '.')) ?? 0.0;
+       final price = double.tryParse(_priceCtrl.text.replaceAll(',', '.')) ?? 0.0;
+       if (cost > 0) {
+         final margin = ((price - cost) / cost) * 100;
+         _isAutoCalculating = true;
+         _marginCtrl.text = margin.toStringAsFixed(2);
+         _isAutoCalculating = false;
+       }
+    } else {
+       final prefs = await SharedPreferences.getInstance();
+       final savedMargin = prefs.getDouble('last_profit_margin') ?? 0.0;
+       if (savedMargin > 0) {
+         _isAutoCalculating = true;
+         _marginCtrl.text = savedMargin.toStringAsFixed(2);
+         _isAutoCalculating = false;
+       }
+    }
+  }
+
+  void _onCostOrMarginChanged() {
+    if (_isAutoCalculating) return;
+    final costStr = _costCtrl.text.replaceAll(',', '.');
+    final marginStr = _marginCtrl.text.replaceAll(',', '.');
+    
+    if (costStr.isEmpty) {
+       _isAutoCalculating = true;
+       _priceCtrl.text = '';
+       _isAutoCalculating = false;
+       return;
+    }
+
+    final cost = double.tryParse(costStr) ?? 0.0;
+    final margin = double.tryParse(marginStr) ?? 0.0;
+    
+    final newPrice = cost + (cost * (margin / 100));
+    _isAutoCalculating = true;
+    _priceCtrl.text = newPrice.toStringAsFixed(2);
+    _isAutoCalculating = false;
+  }
+
+  void _onPriceChanged() {
+    if (_isAutoCalculating) return;
+    final costStr = _costCtrl.text.replaceAll(',', '.');
+    final priceStr = _priceCtrl.text.replaceAll(',', '.');
+    
+    if (costStr.isEmpty || priceStr.isEmpty) {
+       _isAutoCalculating = true;
+       _marginCtrl.text = '';
+       _isAutoCalculating = false;
+       return;
+    }
+
+    final cost = double.tryParse(costStr) ?? 0.0;
+    final price = double.tryParse(priceStr) ?? 0.0;
+    
+    if (cost > 0) {
+      final margin = ((price - cost) / cost) * 100;
+      _isAutoCalculating = true;
+      _marginCtrl.text = margin.toStringAsFixed(2);
+      _isAutoCalculating = false;
+    }
+  }
+
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
     final data = {
       'name': _nameCtrl.text.trim(),
-      if (_barcodeCtrl.text.isNotEmpty) 'barcode': _barcodeCtrl.text.trim(),
+      'barcode': _barcodeCtrl.text.trim(),
       if (_internalCodeCtrl.text.isNotEmpty) 'internal_code': _internalCodeCtrl.text.trim(),
       'cost_price': double.tryParse(_costCtrl.text.replaceAll(',', '.')) ?? 0.0,
       'selling_price': double.tryParse(_priceCtrl.text.replaceAll(',', '.')) ?? 0.0,
@@ -814,6 +893,10 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
 
     if (mounted) {
       if (ok) {
+        final margin = double.tryParse(_marginCtrl.text.replaceAll(',', '.')) ?? 0.0;
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setDouble('last_profit_margin', margin);
+
         Navigator.of(context).pop();
         SnackBarService.success(context, _isEditing ? 'Producto actualizado correctamente.' : '¡Producto creado exitosamente!');
       } else {
@@ -897,7 +980,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                         icon: const Icon(Icons.add),
                         onPressed: () async {
                           final nameCtrl = TextEditingController();
-                          final created = await showDialog<bool>(
+                          final createdId = await showDialog<int?>(
                             context: context,
                             builder: (ctx) => AlertDialog(
                               title: const Text('Nueva Categoría'),
@@ -918,9 +1001,9 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                                       ? null
                                       : () async {
                                           if (nameCtrl.text.trim().isEmpty) return;
-                                          final ok = await p.createCategory(nameCtrl.text.trim());
-                                          if (ok && ctx.mounted) {
-                                            Navigator.pop(ctx, true);
+                                          final newId = await p.createCategory(nameCtrl.text.trim());
+                                          if (newId != null && ctx.mounted) {
+                                            Navigator.pop(ctx, newId);
                                           } else if (ctx.mounted) {
                                             SnackBarService.error(ctx, p.errorMessage ?? 'Error al crear');
                                           }
@@ -931,15 +1014,8 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                               ],
                             ),
                           );
-                          if (created == true && mounted) {
-                            try {
-                              final newCat = categories.firstWhere((c) => c.name.toLowerCase() == nameCtrl.text.trim().toLowerCase());
-                              setState(() => _categoryId = newCat.id);
-                            } catch (_) {
-                              if (categories.isNotEmpty) {
-                                setState(() => _categoryId = categories.last.id);
-                              }
-                            }
+                          if (createdId != null && mounted) {
+                            setState(() => _categoryId = createdId);
                           }
                         },
                       ),
@@ -968,7 +1044,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                         icon: const Icon(Icons.add),
                         onPressed: () async {
                           final nameCtrl = TextEditingController();
-                          final created = await showDialog<bool>(
+                          final createdId = await showDialog<int?>(
                             context: context,
                             builder: (ctx) => AlertDialog(
                               title: const Text('Nueva Marca'),
@@ -989,9 +1065,9 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                                       ? null
                                       : () async {
                                           if (nameCtrl.text.trim().isEmpty) return;
-                                          final ok = await p.createBrand(nameCtrl.text.trim());
-                                          if (ok && ctx.mounted) {
-                                            Navigator.pop(ctx, true);
+                                          final newId = await p.createBrand(nameCtrl.text.trim());
+                                          if (newId != null && ctx.mounted) {
+                                            Navigator.pop(ctx, newId);
                                           } else if (ctx.mounted) {
                                             SnackBarService.error(ctx, p.errorMessage ?? 'Error al crear marca');
                                           }
@@ -1002,15 +1078,8 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                               ],
                             ),
                           );
-                          if (created == true && mounted) {
-                            try {
-                              final newBrand = brands.firstWhere((b) => b.name.toLowerCase() == nameCtrl.text.trim().toLowerCase());
-                              setState(() => _brandId = newBrand.id);
-                            } catch (_) {
-                              if (brands.isNotEmpty) {
-                                setState(() => _brandId = brands.last.id);
-                              }
-                            }
+                          if (createdId != null && mounted) {
+                            setState(() => _brandId = createdId);
                           }
                         },
                       ),
@@ -1028,6 +1097,14 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                           decoration: const InputDecoration(labelText: 'Precio Costo', prefixText: '\$ '),
                           keyboardType: const TextInputType.numberWithOptions(decimal: true),
                           validator: (v) => (v == null || double.tryParse(v.replaceAll(',', '.')) == null) ? 'Ingrese un monto válido' : null,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: TextFormField(
+                          controller: _marginCtrl,
+                          decoration: const InputDecoration(labelText: 'Utilidad', suffixText: '%', prefixIcon: Icon(Icons.percent, size: 16)),
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
                         ),
                       ),
                       const SizedBox(width: 12),
