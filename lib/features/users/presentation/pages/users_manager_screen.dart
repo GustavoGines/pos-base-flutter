@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/users_provider.dart';
@@ -152,7 +153,17 @@ class _UsersManagerScreenState extends State<UsersManagerScreen> {
 
   Widget _buildEmployeeCard(Map<String, dynamic> emp) {
     final isAdmin = emp['role'] == 'admin';
-    final perms = (emp['permissions'] as List?)?.cast<String>() ?? [];
+    List<String> perms = [];
+    final rawPerms = emp['permissions'];
+    if (rawPerms is List) {
+      perms = rawPerms.cast<String>();
+    } else if (rawPerms is String) {
+      try {
+        final parsed = jsonDecode(rawPerms);
+        if (parsed is List) perms = parsed.cast<String>();
+      } catch (_) {}
+    }
+
     final color = isAdmin ? Colors.blue.shade800 : Colors.blueGrey.shade600;
 
     return Container(

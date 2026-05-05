@@ -391,17 +391,17 @@ class CatalogProvider with ChangeNotifier {
   // GESTIÓN DE CATEGORÍAS
   // ───────────────────────────────────────────────────────
 
-  Future<bool> createCategory(String name, {String? description}) async {
+  Future<int?> createCategory(String name, {String? description}) async {
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
     try {
       final created = await repository.createCategory(name, description: description);
       _categories = [..._categories, created];
-      return true;
+      return created.id;
     } catch (e) {
       _errorMessage = e.toString();
-      return false;
+      return null;
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -451,17 +451,17 @@ class CatalogProvider with ChangeNotifier {
   // GESTIÓN DE MARCAS
   // ───────────────────────────────────────────────────────
 
-  Future<bool> createBrand(String name, {String? description}) async {
+  Future<int?> createBrand(String name, {String? description}) async {
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
     try {
       final created = await repository.createBrand(name, description: description);
       _brands = [..._brands, created];
-      return true;
+      return created.id;
     } catch (e) {
       _errorMessage = e.toString();
-      return false;
+      return null;
     } finally {
       _isLoading = false;
       notifyListeners();

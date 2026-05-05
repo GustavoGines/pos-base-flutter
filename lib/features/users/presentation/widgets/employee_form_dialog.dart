@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -54,8 +55,13 @@ class _EmployeeFormDialogState extends State<EmployeeFormDialog> {
       _nameCtrl.text = widget.employee!['name'] ?? '';
       _role = widget.employee!['role'] ?? 'cashier';
       final perms = widget.employee!['permissions'];
-      if (perms != null) {
-        _permissions = Set<String>.from(perms as List);
+      if (perms is List) {
+        _permissions = Set<String>.from(perms);
+      } else if (perms is String) {
+        try {
+          final parsed = jsonDecode(perms);
+          if (parsed is List) _permissions = Set<String>.from(parsed);
+        } catch (_) {}
       }
     }
     // Admins tienen todos los permisos implícitamente
