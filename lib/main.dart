@@ -422,6 +422,15 @@ class _MainAppState extends State<MainApp> {
           success = true;
         } catch (_) {}
       }
+
+      // Reintento Automático (1 vez después de 2 segundos) para dar tiempo a Laragon/Red a despertar
+      if (!success) {
+        await Future.delayed(const Duration(seconds: 2));
+        try {
+          await settingsProvider.loadSettings();
+          success = true;
+        } catch (_) {}
+      }
     }
 
     if (!success) {
