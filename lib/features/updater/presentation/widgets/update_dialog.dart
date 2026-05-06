@@ -65,8 +65,10 @@ class _UpdateDialogState extends State<UpdateDialog> {
       final zipName = _isFrontend
           ? 'update_v${widget.updateInfo.version}.zip'
           : 'update_backend_v${widget.updateInfo.version}.zip';
-      // Frontend: installPath (sobrevive exit(0)) | Backend: %TEMP% (evita errno=5)
-      final zipDir = _isFrontend ? installPath : Directory.systemTemp.path;
+      // Tanto Frontend como Backend usan %TEMP% para evitar errno=5 (Acceso denegado)
+      // al escribir en C:\Program Files sin permisos de administrador.
+      // El updater.exe (elevado) podrá leer desde %TEMP% sin problemas.
+      final zipDir = Directory.systemTemp.path;
       final zipPath = p.join(zipDir, zipName);
 
       debugPrint('[UpdateDialog] Guardando ZIP en: $zipPath');

@@ -15,6 +15,8 @@ import 'package:frontend_desktop/features/settings/presentation/providers/settin
 import 'package:frontend_desktop/features/pos/domain/entities/cart_item.dart';
 import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
 import 'package:frontend_desktop/features/catalog/presentation/providers/catalog_provider.dart';
+import 'package:frontend_desktop/core/utils/a4_split_pdf_service.dart';
+import 'package:printing/printing.dart';
 
 // ─── Helpers de presentación para métodos de pago ────────────────────────────
 
@@ -1090,53 +1092,103 @@ class _TicketDetailPanel extends StatelessWidget {
                 onPressed: () async {
                   final settings =
                       context.read<SettingsProvider>().settings;
+                  final localTerminal = context.read<LocalTerminalProvider>();
                   if (settings != null) {
                     try {
-                      final itemsParaImprimir = sale.items.map((item) {
-                        return CartItem(
-                          product: Product(
-                            id: item.productId ?? 0,
-                            name: item.productName,
-                            sellingPrice: item.unitPrice,
-                            costPrice: item.unitPrice,
-                            isSoldByWeight: item.isSoldByWeight,
-                            stock: 0,
-                            internalCode: '',
-                            barcode: '',
-                            active: true,
-                          ),
-                          quantity: item.quantity,
+                      final isA4 = localTerminal.printerFormat.startsWith('a4');
+
+                      if (isA4) {
+                        final saleJson = {
+                          'id': sale.id,
+                          'total': sale.total,
+                          'total_amount': sale.total,
+                          'surcharge_amount': sale.surchargeTotal,
+                          'tendered_amount': sale.grandTotal,
+                          'change_amount': 0,
+                          'customer_name': 'Consumidor Final',
+                          'items': sale.items.map((i) => {
+                            'subtotal': i.subtotal,
+                            'quantity': i.quantity,
+                            'product_name': i.productName,
+                            'product': {
+                               'name': i.productName,
+                               'is_sold_by_weight': i.isSoldByWeight,
+                            }
+                          }).toList(),
+                          'payments': sale.payments.map((p) => {
+                            'amount': p.baseAmount,
+                            'payment_method': {
+                              'name': p.methodName,
+                            }
+                          }).toList(),
+                        };
+
+                        await Printing.layoutPdf(
+                          onLayout: (format) async {
+                            return await A4SplitPdfService.generateA4SingleReceipt(
+                              sale: saleJson,
+                              businessName: settings.companyName ?? 'MI NEGOCIO',
+                              businessAddress: settings.address,
+                              phone: settings.phone ?? '',
+                              cuit: settings.taxId ?? '',
+                              vendorName: sale.userName,
+                              paperSize: localTerminal.pdfPaperSize,
+                            );
+                          },
+                          name: 'Copia_Ticket_${sale.id}',
                         );
-                      }).toList();
 
-                      final paymentDetails = sale.payments.map((p) => {
-                        'name': p.methodName,
-                        'amount': p.baseAmount,
-                        '_isCash': p.isCash,
-                      }).toList()
-                        ..sort((a, b) {
-                          final aCash = a['_isCash'] as bool;
-                          final bCash = b['_isCash'] as bool;
-                          if (aCash == bCash) return 0;
-                          return aCash ? -1 : 1;
-                        });
+                        if (context.mounted) {
+                          SnackBarService.success(context,
+                              'Copia de Ticket #${sale.id} abierta en visor PDF.');
+                        }
+                      } else {
+                        final itemsParaImprimir = sale.items.map((item) {
+                          return CartItem(
+                            product: Product(
+                              id: item.productId ?? 0,
+                              name: item.productName,
+                              sellingPrice: item.unitPrice,
+                              costPrice: item.unitPrice,
+                              isSoldByWeight: item.isSoldByWeight,
+                              stock: 0,
+                              internalCode: '',
+                              barcode: '',
+                              active: true,
+                            ),
+                            quantity: item.quantity,
+                          );
+                        }).toList();
 
-                      await ReceiptPrinterService.instance.printSaleTicket(
-                        items: itemsParaImprimir,
-                        // BUG SH-3 FIX: usar grandTotal (neto + recargo bancario) para que
-                        // la copia del ticket refleje exactamente lo cobrado al cliente.
-                        total: sale.grandTotal,
-                        settings: settings,
-                        localTerminal: context.read<LocalTerminalProvider>(),
-                        paymentDetails: paymentDetails,
-                        receiptNumber: sale.id.toString(),
-                        userName: sale.userName,
-                        cashierName: sale.cashierName,
-                        surchargeAmount: sale.surchargeTotal,
-                      );
-                      if (context.mounted) {
-                        SnackBarService.success(context,
-                            'Ticket #${sale.id} enviado a la impresora.');
+                        final paymentDetails = sale.payments.map((p) => {
+                          'name': p.methodName,
+                          'amount': p.baseAmount,
+                          '_isCash': p.isCash,
+                        }).toList()
+                          ..sort((a, b) {
+                            final aCash = a['_isCash'] as bool;
+                            final bCash = b['_isCash'] as bool;
+                            if (aCash == bCash) return 0;
+                            return aCash ? -1 : 1;
+                          });
+
+                        await ReceiptPrinterService.instance.printSaleTicket(
+                          items: itemsParaImprimir,
+                          // BUG SH-3 FIX: usar grandTotal (neto + recargo bancario) para que
+                          // la copia del ticket refleje exactamente lo cobrado al cliente.
+                          total: sale.grandTotal,
+                          settings: settings,
+                          localTerminal: localTerminal,
+                          paymentDetails: paymentDetails,
+                          receiptNumber: sale.id.toString(),
+                          userName: sale.userName,
+                          cashierName: sale.cashierName,
+                          surchargeAmount: sale.surchargeTotal,
+                        );
+                        if (context.mounted) {
+                          SnackBarService.success(context,
+                              'Ticket #${sale.id} enviado a la impresora.');
+                        }
                       }
                     } catch (e) {
                       if (context.mounted) {

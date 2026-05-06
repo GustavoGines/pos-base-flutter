@@ -5,6 +5,14 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.0.0/) y el p
 
 ---
 
+## [1.3.4] - 2026-05-06 - OTA Path & A4 Printer Fix
+
+### 🚀 Mejoras
+- **Impresión de Copias:** El botón "Imprimir Copia" en el Historial de Ventas ahora detecta si la impresora configurada es A4/Carta y despliega correctamente la vista previa en PDF visual, en lugar de fallar enviando comandos térmicos.
+
+### 🐛 Fixes
+- **Actualizador OTA:** Resuelto un error crítico (`PathAccessException: errno = 5`) que ocurría al intentar descargar actualizaciones en la carpeta de instalación en Windows (Archivos de Programa) sin permisos de Administrador. Ahora los archivos ZIP se descargan de forma segura en la carpeta `%TEMP%` del sistema operativo.
+
 ## [1.3.3] — 2026-05-06 — Stock Sync Fix
 
 ### 🐛 Fixes
