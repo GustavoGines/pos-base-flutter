@@ -5,6 +5,11 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.0.0/) y el p
 
 ---
 
+## [1.3.6] - 2026-05-06 - Dynamic Network IP Fix for Updater
+
+### 🐛 Fixes
+- **Sincronización en Redes LAN:** Corregido un defecto crítico en `UpdateService` donde las PCs secundarias intentaban consultar la versión local contra `127.0.0.1` (fallback de fábrica) en lugar de utilizar la IP dinámica del servidor configurada en Ajustes (`pos_api`). Este error causaba que las terminales fallaran silenciosamente en la consulta local y siempre enviaran su versión antigua al servidor de licencias, generando falsas alertas de actualización.
+
 ## [1.3.5] - 2026-05-06 - Strict Cache Busting Fix
 
 ### 🐛 Fixes
