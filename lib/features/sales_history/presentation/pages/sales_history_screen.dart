@@ -14,6 +14,7 @@ import 'package:frontend_desktop/core/providers/local_terminal_provider.dart';
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
 import 'package:frontend_desktop/features/pos/domain/entities/cart_item.dart';
 import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
+import 'package:frontend_desktop/features/catalog/presentation/providers/catalog_provider.dart';
 
 // ─── Helpers de presentación para métodos de pago ────────────────────────────
 
@@ -855,6 +856,7 @@ class _TicketDetailPanel extends StatelessWidget {
       if (ok) {
         SnackBarService.success(
             context, 'Ticket #${sale.id} anulado con éxito. Stock restaurado.');
+        context.read<CatalogProvider>().fetchCriticalAlerts();
       } else {
         SnackBarService.error(
             context, provider.errorMessage ?? 'Error al anular el ticket.');
