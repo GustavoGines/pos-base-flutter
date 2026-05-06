@@ -5,6 +5,11 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.0.0/) y el p
 
 ---
 
+## [1.3.8] - 2026-05-06 - OTA PowerShell Array Fix
+
+### 🐛 Fixes
+- **Actualizador OTA:** Corregido un defecto introducido en versiones recientes donde la migración a archivos `.bat` para evitar matar el proceso hijo en Windows causó que PowerShell destruyera las comillas dobles de los argumentos al usar `Start-Process`. Esto causaba que el actualizador leyera la ruta truncada en el primer espacio (`C:\Program`), fallando silenciosamente la instalación. Ahora los argumentos se envían como un "PowerShell Array" seguro (`'arg1', 'arg2'`).
+
 ## [1.3.7] - 2026-05-06 - Auto-Retry Connection
 
 ### 🚀 Mejoras

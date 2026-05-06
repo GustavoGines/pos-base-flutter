@@ -322,7 +322,7 @@ class _UpdateDialogState extends State<UpdateDialog> {
     String psEscape(String s) => s.replaceAll("'", "''");
 
     final argList =
-        '--component=$componentArg --target-dir="${psEscape(targetDir)}" --zip-path="${psEscape(zipPath)}"';
+        '\'--component=$componentArg\', \'--target-dir=${psEscape(targetDir)}\', \'--zip-path=${psEscape(zipPath)}\'';
 
     final String batContent;
     if (requireElevation) {
@@ -330,7 +330,7 @@ class _UpdateDialogState extends State<UpdateDialog> {
       batContent = '@echo off\r\n'
           'powershell -ExecutionPolicy Bypass -Command "'
           'Start-Process -FilePath \'${psEscape(updaterPath)}\' '
-          '-ArgumentList \'$argList\' '
+          '-ArgumentList $argList '
           '-Verb RunAs'
           '"\r\n';
     } else {
@@ -339,7 +339,7 @@ class _UpdateDialogState extends State<UpdateDialog> {
       batContent = '@echo off\r\n'
           'powershell -ExecutionPolicy Bypass -Command "'
           'Start-Process -FilePath \'${psEscape(updaterPath)}\' '
-          '-ArgumentList \'$argList\' '
+          '-ArgumentList $argList '
           '-WindowStyle Hidden'
           '"\r\n';
     }
