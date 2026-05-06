@@ -5,6 +5,11 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.0.0/) y el p
 
 ---
 
+## [1.3.5] - 2026-05-06 - Strict Cache Busting Fix
+
+### 🐛 Fixes
+- **Sincronización de Versiones (PCs Secundarias):** Implementado un "Cache Buster" matemático (Timestamp dinámico) en el chequeo de versión local (`/version-check`) para evadir el almacenamiento en caché de algunos routers de red o de la pila HTTP de Windows, asegurando que las terminales secundarias detecten el servidor actualizado instantáneamente y no entren en bucles.
+
 ## [1.3.4] - 2026-05-06 - OTA Path & A4 Printer Fix
 
 ### 🚀 Mejoras

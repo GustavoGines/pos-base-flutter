@@ -32,7 +32,7 @@ class UpdateService {
       // 0. Sincronizar versión REAL del backend local (Single Source of Truth)
       String currentBackendVersion = prefs.getString('backend_version') ?? '0.0.0';
       try {
-        final localBackendUri = Uri.parse('${AppConfig.kApiBaseUrl}/version-check');
+        final localBackendUri = Uri.parse('${AppConfig.kApiBaseUrl}/version-check?t=${DateTime.now().millisecondsSinceEpoch}');
         final localResponse = await http.get(localBackendUri).timeout(const Duration(seconds: 5));
         if (localResponse.statusCode == 200) {
           final localData = json.decode(localResponse.body);
