@@ -5,6 +5,11 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.0.0/) y el p
 
 ---
 
+## [1.3.7] - 2026-05-06 - Auto-Retry Connection
+
+### 🚀 Mejoras
+- **Conectividad de Red:** Implementado un "Reintento Automático Invisible" en la pantalla de carga inicial. Si la aplicación arranca antes que la tarjeta de red (Wi-Fi) o Laragon, espera automáticamente 2 segundos en segundo plano y reintenta la conexión una vez antes de mostrar un error al usuario.
+
 ## [1.3.6] - 2026-05-06 - Dynamic Network IP Fix for Updater
 
 ### 🐛 Fixes
