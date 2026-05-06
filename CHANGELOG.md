@@ -5,6 +5,13 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.0.0/) y el p
 
 ---
 
+## [1.3.3] — 2026-05-06 — Stock Sync Fix
+
+### 🐛 Fixes
+- **Notificaciones de Stock:** Corregido error visual donde la campanita de alertas de stock crítico no se refrescaba automáticamente tras anular un ticket de venta desde el historial.
+
+---
+
 ## [1.3.2] — 2026-05-05 — Catálogo UI Fix
 
 ### 🐛 Fixes
