@@ -46,4 +46,6 @@ app.*.map.json
 
 # Inno Setup — scripts de instalador y carpetas de output (locales, no distribuir)
 *.iss
+/Instalador/
+/Instalador_SistemaPOS/
 /Instalador_SistemaPOS_*/
