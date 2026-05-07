@@ -29,8 +29,12 @@ class UpdateService {
 
       final prefs = await SharedPreferences.getInstance();
       
-      // 0. Sincronizar versión REAL del backend local (Single Source of Truth)
-      String currentBackendVersion = prefs.getString('backend_version') ?? '0.0.0';
+      // 0. Obtener versión REAL del backend local (Single Source of Truth).
+      // IMPORTANTE: si /version-check falla (timeout, URL incorrecta, etc.)
+      // usamos '0.0.0' como fallback —nunca el valor cacheado en SharedPrefs—
+      // para evitar que un entorno cambiado (ej: Sistema_POS → Sistema_POS_test)
+      // bloquee silenciosamente la detección de actualizaciones.
+      String currentBackendVersion = '0.0.0';
       try {
         final currentApiUrl = prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
         final localBackendUri = Uri.parse('$currentApiUrl/version-check?t=${DateTime.now().millisecondsSinceEpoch}');
@@ -38,11 +42,10 @@ class UpdateService {
         if (localResponse.statusCode == 200) {
           final localData = json.decode(localResponse.body);
           currentBackendVersion = localData['version'] ?? '0.0.0';
-          // Actualizar SharedPreferences para que coincida con la realidad física en disco
-          await prefs.setString('backend_version', currentBackendVersion);
         }
       } catch (e) {
-        // Si el backend local no responde, mantenemos el valor de SharedPreferences
+        // Si el backend local no responde, currentBackendVersion queda en '0.0.0'
+        // → el servidor de licencias siempre detectará que hay una versión disponible.
       }
 
       final updateChannel = prefs.getString('update_channel') ?? 'stable';
