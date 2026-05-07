@@ -5,10 +5,11 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.0.0/) y el p
 
 ---
 
-## [1.3.8] - 2026-05-06 - OTA PowerShell Array Fix
+## [1.3.8] - 2026-05-07 - OTA Version Detection Fix
 
 ### 🐛 Fixes
-- **Actualizador OTA:** Corregido un defecto introducido en versiones recientes donde la migración a archivos `.bat` para evitar matar el proceso hijo en Windows causó que PowerShell destruyera las comillas dobles de los argumentos al usar `Start-Process`. Esto causaba que el actualizador leyera la ruta truncada en el primer espacio (`C:\Program`), fallando silenciosamente la instalación. Ahora los argumentos se envían como un "PowerShell Array" seguro (`'arg1', 'arg2'`).
+- **Detección de versión del backend:** Corregido un defecto en `UpdateService` donde si `/version-check` fallaba (timeout, URL de entorno incorrecta, etc.), el sistema usaba el valor cacheado de `SharedPreferences['backend_version']` como fallback. Esto causaba que al cambiar de entorno (ej: `Sistema_POS` → `Sistema_POS_test`) o al configurar el backend por primera vez, el frontend enviara una versión incorrecta al servidor de licencias y no detectara actualizaciones disponibles. Ahora el fallback siempre es `0.0.0`, garantizando que el servidor de licencias siempre detecte la actualización.
+- **Actualizador OTA (`.bat`):** Corregido un defecto donde los argumentos enviados a `Start-Process` vía archivo `.bat` eran destruidos por PowerShell al parsear comillas dobles, causando que el updater leyera la ruta truncada en el primer espacio. Ahora los argumentos se pasan como un array de PowerShell seguro (`'arg1', 'arg2'`).
 
 ## [1.3.7] - 2026-05-06 - Auto-Retry Connection
 
