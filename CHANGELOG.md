@@ -4,6 +4,15 @@ Todos los cambios notables de la aplicación de caja (Flutter/Windows) están do
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.0.0/) y el proyecto adhiere a [Semantic Versioning](https://semver.org/).
 
 ---
+## [1.3.9] - 2026-05-08 - Dynamic Quotes & Shift Validation Fix
+
+### 🚀 Mejoras
+- **Ventas y Presupuestos:** Los presupuestos recuperados para cobro ahora aplican dinámicamente los precios actuales del catálogo en lugar de mantener los precios congelados del momento de su creación. Esto protege la rentabilidad del comercio ante fluctuaciones de costos por inflación.
+
+### 🐛 Fixes
+- **Multi-Caja y Sesiones:** Se implementó una reevaluación estricta de turnos al cambiar de caja física en los Ajustes. Ahora, si la nueva terminal no tiene un turno abierto, el sistema redirecciona forzosamente a la pantalla de "Apertura de Caja" y limpia el carrito de ventas, evitando que el usuario facture accidentalmente en nombre de otra terminal o bajo un turno inexistente.
+
+
 
 ## [1.3.8] - 2026-05-07 - OTA Version Detection Fix
 
