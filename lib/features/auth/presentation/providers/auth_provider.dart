@@ -48,19 +48,43 @@ class AuthProvider with ChangeNotifier {
     return (perms as List).contains(key);
   }
 
-  // ──────────────────────────────────────────────────────────────────────────
-  // INIT: Restaurar token persistido (Crash Recovery)
-  // Llamar desde main.dart ANTES de runApp para que el token esté disponible
-  // en el primer request que haga la app al iniciarse.
-  // ──────────────────────────────────────────────────────────────────────────
+  /// Restaura el token desde SharedPreferences y lo valida contra el servidor.
+  ///
+  /// PROPÓSITO: Detectar tokens stale (de sesiones ya invalidadas por otro login)
+  /// ANTES de que sean enviados al servidor, evitando falsos "Sesión Cerrada".
+  ///
+  /// La validación es NO-BLOQUEANTE: la app arranca de inmediato y la verificación
+  /// ocurre en background. Si el token es stale, se limpia antes del primer request.
   Future<void> restoreSessionFromPrefs() async {
     final prefs = await SharedPreferences.getInstance();
     final savedToken = prefs.getString(_kSessionTokenKey);
-    if (savedToken != null) {
-      _sessionToken = savedToken;
-      _updateApiClientToken(savedToken);
-      debugPrint('=== AUTH: Token restaurado desde SharedPreferences ===');
-    }
+    if (savedToken == null) return;
+
+    // Inyectar token provisionalmente en el ApiClient
+    _sessionToken = savedToken;
+    _updateApiClientToken(savedToken);
+    debugPrint('=== AUTH: Token restaurado provisionalmente desde SharedPreferences ===');
+
+    // Validación en background (fire & forget): NO bloquea el arranque de la app.
+    // Si el token es stale, se limpia antes del primer request real.
+    _validateTokenInBackground(savedToken);
+  }
+
+  /// Valida el token en background sin bloquear el arranque de la app.
+  /// Si el token fue invalidado (otro login), lo limpia silenciosamente.
+  void _validateTokenInBackground(String token) {
+    repository.validateToken(token).then((userData) {
+      if (userData != null) {
+        debugPrint('=== AUTH: Token validado OK (usuario: ${userData['name']}) — login requerido ===');
+      } else {
+        // Token stale → limpiar antes de que cause un "Sesión Cerrada" inesperado
+        _clearToken();
+        debugPrint('=== AUTH: Token stale detectado en background — limpiado silenciosamente ===');
+      }
+    }).catchError((e) {
+      // Sin conexión → mantener token (modo offline de 72h)
+      debugPrint('=== AUTH: Sin conexión al validar token en background (modo offline) ===');
+    });
   }
 
   // ──────────────────────────────────────────────────────────────────────────

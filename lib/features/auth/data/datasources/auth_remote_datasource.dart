@@ -113,6 +113,38 @@ class AuthRemoteDataSource {
   }
 
   // ──────────────────────────────────────────────────────────────────────────
+  // VALIDACIÓN DE TOKEN AL ARRANQUE (Crash Recovery)
+  // GET /auth/me — Verifica que el token persistido en disco sigue siendo
+  // válido en BD. Retorna el usuario si OK, null si el token es stale.
+  // NO lanza excepción para SESSION_EXPIRED — devuelve null silenciosamente.
+  // Sí lanza en caso de error de red (sin internet).
+  // ──────────────────────────────────────────────────────────────────────────
+  Future<Map<String, dynamic>?> validateToken(String sessionToken) async {
+    final url = '$baseUrl/auth/me';
+    debugPrint('=== AUTH: Validando token al arranque GET $url ===');
+    final response = await client
+        .get(
+          Uri.parse(url),
+          headers: {
+            'Accept': 'application/json',
+            'X-Session-Token': sessionToken,
+          },
+        )
+        .timeout(const Duration(seconds: 8));
+
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      return data['user'] as Map<String, dynamic>;
+    }
+
+    // 401 SESSION_EXPIRED o SESSION_MISSING → token stale, no lanzar excepción
+    if (response.statusCode == 401) return null;
+
+    // Cualquier otro error de servidor → lanzar para que el caller lo maneje
+    throw Exception('Respuesta inesperada del servidor (${response.statusCode})');
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
   // LOGOUT
   // Nullifica el session_token en BD. Idempotente (200 aunque el token
   // ya haya sido invalidado por otro login).

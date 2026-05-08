@@ -72,11 +72,18 @@ class _CashRegisterManagementScreenState extends State<CashRegisterManagementScr
   }
 
   Future<void> _createRegister(String name) async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('pos_session_token') ?? '';
+    
     setState(() => _isLoading = true);
     try {
       final response = await http.post(
         Uri.parse('$_baseUrl/registers'),
-        headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+        headers: {
+          'Content-Type': 'application/json', 
+          'Accept': 'application/json',
+          'X-Session-Token': token,
+        },
         body: jsonEncode({'name': name}),
       );
       if (response.statusCode == 201) {
@@ -93,11 +100,18 @@ class _CashRegisterManagementScreenState extends State<CashRegisterManagementScr
   }
 
   Future<void> _updateRegister(int id, String name) async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('pos_session_token') ?? '';
+
     setState(() => _isLoading = true);
     try {
       final response = await http.put(
         Uri.parse('$_baseUrl/registers/$id'),
-        headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+        headers: {
+          'Content-Type': 'application/json', 
+          'Accept': 'application/json',
+          'X-Session-Token': token,
+        },
         body: jsonEncode({'name': name}),
       );
       if (response.statusCode == 200) {
@@ -132,11 +146,17 @@ class _CashRegisterManagementScreenState extends State<CashRegisterManagementScr
 
     if (confirmar != true) return;
 
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('pos_session_token') ?? '';
+
     setState(() => _isLoading = true);
     try {
       final response = await http.delete(
         Uri.parse('$_baseUrl/registers/$id'),
-        headers: {'Accept': 'application/json'},
+        headers: {
+          'Accept': 'application/json',
+          'X-Session-Token': token,
+        },
       );
       if (response.statusCode == 200) {
         _fetchRegisters();

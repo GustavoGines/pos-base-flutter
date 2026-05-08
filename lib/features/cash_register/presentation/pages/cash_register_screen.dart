@@ -57,11 +57,12 @@ class _CashRegisterScreenState extends State<CashRegisterScreen> {
       cashProv.loadRegisters();
 
       // Polling cada 10 segundos: detecta turnos abiertos por otras terminales
-      // sin que el admin tenga que navegar. Se cancela automáticamente en dispose().
+      // sin que el admin tenga que navegar. Usa el método silencioso para no
+      // generar flickering visual en la UI durante el uso normal.
       _shiftPollTimer = Timer.periodic(const Duration(seconds: 10), (_) {
         if (!mounted) return;
         final id = context.read<SettingsProvider>().assignedRegisterId;
-        context.read<CashRegisterProvider>().checkCurrentShift(
+        context.read<CashRegisterProvider>().checkCurrentShiftSilently(
           registerId: id > 0 ? id : null,
         );
       });
@@ -183,26 +184,40 @@ class _CashRegisterScreenState extends State<CashRegisterScreen> {
                         );
                       }
 
-                      // Fallback: Dropdown libre (no debería llegar aquí si assignedId está bien configurado)
-                      if (_selectedRegisterId == null && registers.isNotEmpty) {
-                        _selectedRegisterId = registers.first.id;
+                      // Fallback: Dropdown libre (sin asignación explícita de terminal)
+                      // Solo auto-selecciona si no hay valor previo, o si el valor previo
+                      // ya no existe en la lista (ej: la caja fue eliminada).
+                      final validIds = registers.map((r) => r.id).toSet();
+                      if ((_selectedRegisterId == null || !validIds.contains(_selectedRegisterId)) && registers.isNotEmpty) {
+                        // Usar addPostFrameCallback para no mutar estado durante build
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (mounted) setState(() => _selectedRegisterId = registers.first.id);
+                        });
                       }
+
+                      // Deduplica items por si acaso hay registros con el mismo ID (defensa extra)
+                      final seenIds = <int>{};
+                      final uniqueItems = registers
+                          .where((r) => seenIds.add(r.id))
+                          .map((reg) => DropdownMenuItem<int>(
+                                value: reg.id,
+                                child: Text(reg.name),
+                              ))
+                          .toList();
+
+                      // El value del dropdown debe ser null si aún no hay un ID válido en la lista
+                      final dropdownValue = validIds.contains(_selectedRegisterId) ? _selectedRegisterId : null;
 
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 24),
                         child: DropdownButtonFormField<int>(
-                          value: _selectedRegisterId,
+                          value: dropdownValue,
                           decoration: const InputDecoration(
                             labelText: 'Caja Física',
                             prefixIcon: Icon(Icons.computer),
                             border: OutlineInputBorder(),
                           ),
-                          items: registers.map((reg) {
-                            return DropdownMenuItem<int>(
-                              value: reg.id,
-                              child: Text(reg.name),
-                            );
-                          }).toList(),
+                          items: uniqueItems,
                           onChanged: (val) {
                             setState(() {
                               _selectedRegisterId = val;

@@ -19,4 +19,11 @@ class AuthRepository {
   Future<void> logout(String sessionToken) async {
     return await remoteDataSource.logout(sessionToken);
   }
+
+  /// Valida el token restaurado desde disco contra el servidor.
+  /// Retorna el Map del usuario si el token sigue siendo válido, null si fue invalidado.
+  /// Lanza excepción solo en caso de error de red (para modo offline).
+  Future<Map<String, dynamic>?> validateToken(String sessionToken) async {
+    return await remoteDataSource.validateToken(sessionToken);
+  }
 }

@@ -167,7 +167,10 @@ class _LoginScreenState extends State<LoginScreen> {
         await settingsProv.loadSettings(isSilent: true);
         
         final assignedId = settingsProv.assignedRegisterId;
+        debugPrint('=== LOGIN: Verificando turno activo (registerId: ${assignedId > 0 ? assignedId : "null (fallback a Caja Principal)"}) ===');
         await cashProv.checkCurrentShift(registerId: assignedId > 0 ? assignedId : null);
+        debugPrint('=== LOGIN: Turno detectado: ${cashProv.currentShift != null ? "ID:${cashProv.currentShift!.id} (${cashProv.currentShift!.status})" : "NINGUNO"} ===');
+
 
         // ── PROTOCOLO DE RESCATE: forzar cambio de PIN antes de entrar ────
         if (provider.requiresPinChange && mounted) {
