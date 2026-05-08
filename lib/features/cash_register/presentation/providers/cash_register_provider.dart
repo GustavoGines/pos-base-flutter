@@ -56,17 +56,38 @@ class CashRegisterProvider with ChangeNotifier {
     }
   }
 
+  /// Verifica el turno activo de forma EXPLÍCITA (con loading visible).
+  /// Usar al hacer login o al montar la pantalla de Apertura de Caja por primera vez.
   Future<void> checkCurrentShift({int? registerId}) async {
     _clearError();
     _setLoading(true);
     try {
-      _currentShift = await getCurrentShiftUseCase(registerId: registerId);
+      final result = await getCurrentShiftUseCase(registerId: registerId);
+      _currentShift = result; // Solo actualiza si la llamada tuvo éxito
     } catch (e) {
-      _errorMessage = e.toString();
+      // No limpiamos _currentShift: un error de red no debe borrar el estado conocido.
+      // Tampoco seteamos _errorMessage para no contaminar la UI en chequeos de fondo.
+      debugPrint('=== CashRegisterProvider: checkCurrentShift error: $e ===');
     } finally {
       _setLoading(false);
     }
   }
+
+  /// Verifica el turno activo de forma SILENCIOSA (sin loading ni flicker de UI).
+  /// Usar en el polling periódico para no interrumpir la pantalla en curso.
+  Future<void> checkCurrentShiftSilently({int? registerId}) async {
+    try {
+      final result = await getCurrentShiftUseCase(registerId: registerId);
+      if (_currentShift?.id != result?.id) {
+        // Solo notificar si el estado cambió realmente
+        _currentShift = result;
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('=== CashRegisterProvider: silent check error (ignored): $e ===');
+    }
+  }
+
 
   Future<void> loadAllShifts() async {
     if (getAllShiftsUseCase == null) return;
@@ -90,11 +111,33 @@ class CashRegisterProvider with ChangeNotifier {
       return true;
     } on SessionExpiredException catch (e) {
       // Sesión única: otro dispositivo inició sesión con este usuario.
-      // Tag explícito para que main.dart pueda detectarlo y mostrar el dialog correcto.
       _errorMessage = 'SESSION_EXPIRED: ${e.message}';
       return false;
     } catch (e) {
-      _errorMessage = e.toString();
+      final errorMsg = e.toString();
+
+      // ── AUTO-RECUPERACIÓN (nivel Provider) ─────────────────────────────────
+      // Si el backend rechaza porque ya existe un turno activo, significa que
+      // checkCurrentShift() no lo detectó a tiempo (race condition de timing).
+      // Solución: buscamos el turno activo directamente y devolvemos true
+      // (el Consumer en /home verá currentShift != null y mostrará PosScreen).
+      // Esta lógica vive en el Provider para evitar el problema del BuildContext
+      // stale que ocurre cuando el Consumer se reconstruye durante el await.
+      if (errorMsg.contains('Ya existe un turno abierto')) {
+        debugPrint('=== CashRegisterProvider: turno ya existe → buscando turno activo ===');
+        try {
+          final existing = await getCurrentShiftUseCase(registerId: registerId);
+          if (existing != null) {
+            _currentShift = existing;
+            debugPrint('=== CashRegisterProvider: turno activo recuperado (ID:${existing.id}) → redirigiendo ===');
+            return true; // Tratamos como éxito: main.dart navegará a /pos
+          }
+        } catch (_) {
+          // Si tampoco podemos obtener el turno, caemos al error normal
+        }
+      }
+
+      _errorMessage = errorMsg;
       return false;
     } finally {
       _setLoading(false);

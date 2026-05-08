@@ -14,6 +14,7 @@ import 'package:intl/intl.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import '../../../updater/data/services/update_service.dart';
 import '../../../updater/presentation/widgets/update_dialog.dart';
+import '../../../pos/presentation/providers/pos_provider.dart';
 
 enum SettingsSection { general, prices, hardware, subscription, network }
 
@@ -1142,7 +1143,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
           onChanged: (id) async {
             if (id != null) {
               await settingsProvider.setAssignedRegisterId(id);
-              Navigator.pop(ctx);
+              if (ctx.mounted) Navigator.pop(ctx);
+              
+              // Forzar recarga del turno con la nueva caja asignada.
+              // Esto actualizará globalmente el CashRegisterProvider y el Consumer en /home
+              // echará al usuario a la pantalla de "Abrir Caja" si la nueva terminal está cerrada.
+              await cashProvider.checkCurrentShift(registerId: id);
+              
+              // Limpiar carrito para que no quede huérfano de la terminal anterior
+              if (AppConfig.navigatorKey.currentContext != null) {
+                AppConfig.navigatorKey.currentContext!.read<PosProvider>().clearCart();
+              }
+              
+              // Redirigir a /home para que reevalúe el estado y muestre la apertura de caja si es necesario
+              AppConfig.navigatorKey.currentState?.pushNamedAndRemoveUntil('/home', (route) => false);
             }
           },
         ),

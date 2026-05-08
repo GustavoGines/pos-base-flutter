@@ -53,8 +53,17 @@ class _PosScreenState extends State<PosScreen> {
       // búsqueda que el módulo de Catálogo haya dejado activa en el provider.
       Provider.of<CatalogProvider>(context, listen: false)
           .loadProducts(page: 1, search: '');
+      // Sincronizar y aplicar lista de precios fijada por la terminal
+      final localTerminal = Provider.of<LocalTerminalProvider>(context, listen: false);
+      final posProvider = Provider.of<PosProvider>(context, listen: false);
+      
+      posProvider.setDefaultTier(localTerminal.lockedPriceTier, localTerminal.lockedPriceTierLabel);
+      if (posProvider.cart.isEmpty) {
+        posProvider.clearCart(); // Aplica la lista fijada inmediatamente
+      }
+
       // Cargar el contador de órdenes pendientes al abrir el POS
-      Provider.of<PosProvider>(context, listen: false).loadPendingSales();
+      posProvider.loadPendingSales();
 
       // Polling veloz (5 seg) para recepción casi-inmediata de órdenes en red local/multicaja.
       // Justificado: servidor local con máx. 3 terminales (carga mínima).
@@ -1937,93 +1946,127 @@ class _PosScreenState extends State<PosScreen> {
                                   color: Colors.grey,
                                   fontSize: 13,
                                   fontWeight: FontWeight.bold)),
-                          SizedBox(
-                            height: 30,
-                            child: DropdownButton<String>(
-                              value: currentValue,
-                              isDense: true,
-                              underline: const SizedBox(),
-                              icon: const Icon(Icons.keyboard_arrow_down,
-                                  size: 16),
-                              style: const TextStyle(
-                                  fontSize: 13,
-                                  color: Colors.black87,
-                                  fontWeight: FontWeight.bold),
-                              items: [
-                                const DropdownMenuItem(
-                                    value: 'base',
-                                    child: Text('🏪 Minorista (Base)')),
-                                const DropdownMenuItem(
-                                    value: 'wholesale',
-                                    child: Text('🏭 Mayorista')),
-                                const DropdownMenuItem(
-                                    value: 'card', child: Text('💳 Tarjeta')),
-                                // Listas personalizadas dinámicas del backend
-                                ...customTiers.map((t) {
-                                  final name =
-                                      t['name']?.toString() ?? 'Custom';
-                                  final mod =
-                                      (t['modifier'] as num?)?.toDouble() ??
-                                          0.0;
-                                  final sign = mod >= 0 ? '+' : '';
-                                  return DropdownMenuItem(
-                                    value: 'custom_$name',
-                                    child: Text(
-                                        '🏷️ $name ($sign${mod.toStringAsFixed(0)}%)'),
+                          Row(
+                            children: [
+                              SizedBox(
+                                height: 30,
+                                child: DropdownButton<String>(
+                                  value: currentValue,
+                                  isDense: true,
+                                  underline: const SizedBox(),
+                                  icon: const Icon(Icons.keyboard_arrow_down,
+                                      size: 16),
+                                  style: const TextStyle(
+                                      fontSize: 13,
+                                      color: Colors.black87,
+                                      fontWeight: FontWeight.bold),
+                                  items: [
+                                    const DropdownMenuItem(
+                                        value: 'base',
+                                        child: Text('🏪 Minorista (Base)')),
+                                    const DropdownMenuItem(
+                                        value: 'wholesale',
+                                        child: Text('🏭 Mayorista')),
+                                    const DropdownMenuItem(
+                                        value: 'card', child: Text('💳 Tarjeta')),
+                                    // Listas personalizadas dinámicas del backend
+                                    ...customTiers.map((t) {
+                                      final name =
+                                          t['name']?.toString() ?? 'Custom';
+                                      final mod =
+                                          (t['modifier'] as num?)?.toDouble() ??
+                                              0.0;
+                                      final sign = mod >= 0 ? '+' : '';
+                                      return DropdownMenuItem(
+                                        value: 'custom_$name',
+                                        child: Text(
+                                            '🏷️ $name ($sign${mod.toStringAsFixed(0)}%)'),
+                                      );
+                                    }),
+                                  ],
+                                  onChanged: (String? val) {
+                                    if (val == null) return;
+                                    if (val == 'base') {
+                                      pos.setPriceTier(PriceTier.base);
+                                    } else if (val == 'wholesale') {
+                                      pos.setPriceTier(
+                                        PriceTier.wholesale,
+                                        wholesaleFactor: settings != null
+                                            ? 1 +
+                                                (settings
+                                                        .globalWholesalePercentage /
+                                                    100)
+                                            : null,
+                                        cardFactor: settings != null
+                                            ? 1 +
+                                                (settings.globalCardPercentage /
+                                                    100)
+                                            : null,
+                                      );
+                                    } else if (val == 'card') {
+                                      pos.setPriceTier(
+                                        PriceTier.card,
+                                        wholesaleFactor: settings != null
+                                            ? 1 +
+                                                (settings
+                                                        .globalWholesalePercentage /
+                                                    100)
+                                            : null,
+                                        cardFactor: settings != null
+                                            ? 1 +
+                                                (settings.globalCardPercentage /
+                                                    100)
+                                            : null,
+                                      );
+                                    } else if (val.startsWith('custom_')) {
+                                      final label =
+                                          val.substring(7); // strip 'custom_'
+                                      final tier = customTiers.firstWhere(
+                                          (t) => t['name'] == label,
+                                          orElse: () => {});
+                                      final mod =
+                                          (tier['modifier'] as num?)?.toDouble() ??
+                                              0.0;
+                                      pos.setPriceTier(
+                                        PriceTier.custom,
+                                        customFactor: 1 + (mod / 100),
+                                        customLabel: label,
+                                      );
+                                    }
+                                  },
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Consumer<LocalTerminalProvider>(
+                                builder: (context, terminal, _) {
+                                  // Se considera "fijado" si el nivel de la terminal 
+                                  // coincide con el que seleccionamos actualmente
+                                  final isPinned = terminal.lockedPriceTier == currentValue;
+                                  return IconButton(
+                                    icon: Icon(
+                                      isPinned ? Icons.push_pin : Icons.push_pin_outlined,
+                                      size: 18,
+                                      color: isPinned ? Colors.orange.shade700 : Colors.grey.shade400,
+                                    ),
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(),
+                                    tooltip: isPinned ? 'Lista fijada para esta terminal' : 'Fijar lista para esta terminal',
+                                    onPressed: () {
+                                      if (isPinned) {
+                                        terminal.setLockedPriceTier('base');
+                                        pos.setDefaultTier('base', null);
+                                        SnackBarService.success(context, 'Lista de precios desbloqueada. Volverá a Base al finalizar la venta.');
+                                      } else {
+                                        final customLabel = pos.activeTier == PriceTier.custom ? pos.customTierLabel : null;
+                                        terminal.setLockedPriceTier(currentValue, label: customLabel);
+                                        pos.setDefaultTier(currentValue, customLabel);
+                                        SnackBarService.success(context, 'Lista fijada. El carrito usará esta lista automáticamente.');
+                                      }
+                                    },
                                   );
-                                }),
-                              ],
-                              onChanged: (String? val) {
-                                if (val == null) return;
-                                if (val == 'base') {
-                                  pos.setPriceTier(PriceTier.base);
-                                } else if (val == 'wholesale') {
-                                  pos.setPriceTier(
-                                    PriceTier.wholesale,
-                                    wholesaleFactor: settings != null
-                                        ? 1 +
-                                            (settings
-                                                    .globalWholesalePercentage /
-                                                100)
-                                        : null,
-                                    cardFactor: settings != null
-                                        ? 1 +
-                                            (settings.globalCardPercentage /
-                                                100)
-                                        : null,
-                                  );
-                                } else if (val == 'card') {
-                                  pos.setPriceTier(
-                                    PriceTier.card,
-                                    wholesaleFactor: settings != null
-                                        ? 1 +
-                                            (settings
-                                                    .globalWholesalePercentage /
-                                                100)
-                                        : null,
-                                    cardFactor: settings != null
-                                        ? 1 +
-                                            (settings.globalCardPercentage /
-                                                100)
-                                        : null,
-                                  );
-                                } else if (val.startsWith('custom_')) {
-                                  final label =
-                                      val.substring(7); // strip 'custom_'
-                                  final tier = customTiers.firstWhere(
-                                      (t) => t['name'] == label,
-                                      orElse: () => {});
-                                  final mod =
-                                      (tier['modifier'] as num?)?.toDouble() ??
-                                          0.0;
-                                  pos.setPriceTier(
-                                    PriceTier.custom,
-                                    customFactor: 1 + (mod / 100),
-                                    customLabel: label,
-                                  );
-                                }
-                              },
-                            ),
+                                },
+                              ),
+                            ],
                           ),
                         ],
                       ),

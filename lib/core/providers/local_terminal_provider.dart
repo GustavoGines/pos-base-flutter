@@ -7,6 +7,8 @@ class LocalTerminalProvider extends ChangeNotifier {
   static const String _printerNameOrIpKey = 'local_printer_name_or_ip';
   static const String _scaleComPortKey = 'local_scale_com_port';
   static const String _pdfPaperSizeKey = 'local_pdf_paper_size';
+  static const String _lockedPriceTierKey = 'local_locked_price_tier';
+  static const String _lockedPriceTierLabelKey = 'local_locked_price_tier_label';
 
   // Opciones válidas: 'thermal_80', 'thermal_58', 'a4'
   String _printerFormat = 'thermal_80';
@@ -17,6 +19,9 @@ class LocalTerminalProvider extends ChangeNotifier {
   String _printerNameOrIp = '';
   String _scaleComPort = '';
   String _pdfPaperSize = 'a4'; // Opciones válidas: 'a4', 'letter'
+  
+  String _lockedPriceTier = 'base';
+  String? _lockedPriceTierLabel;
 
   bool _isInitialized = false;
 
@@ -25,6 +30,8 @@ class LocalTerminalProvider extends ChangeNotifier {
   String get printerNameOrIp => _printerNameOrIp;
   String get scaleComPort => _scaleComPort;
   String get pdfPaperSize => _pdfPaperSize;
+  String get lockedPriceTier => _lockedPriceTier;
+  String? get lockedPriceTierLabel => _lockedPriceTierLabel;
   bool get isInitialized => _isInitialized;
 
   LocalTerminalProvider() {
@@ -42,6 +49,8 @@ class LocalTerminalProvider extends ChangeNotifier {
     _printerNameOrIp = prefs.getString(_printerNameOrIpKey) ?? '';
     _scaleComPort = prefs.getString(_scaleComPortKey) ?? '';
     _pdfPaperSize = prefs.getString(_pdfPaperSizeKey) ?? 'a4';
+    _lockedPriceTier = prefs.getString(_lockedPriceTierKey) ?? 'base';
+    _lockedPriceTierLabel = prefs.getString(_lockedPriceTierLabelKey);
     _isInitialized = true;
     notifyListeners();
   }
@@ -78,6 +87,19 @@ class LocalTerminalProvider extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_pdfPaperSizeKey, size);
     _pdfPaperSize = size;
+    notifyListeners();
+  }
+
+  Future<void> setLockedPriceTier(String tier, {String? label}) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_lockedPriceTierKey, tier);
+    if (label != null) {
+      await prefs.setString(_lockedPriceTierLabelKey, label);
+    } else {
+      await prefs.remove(_lockedPriceTierLabelKey);
+    }
+    _lockedPriceTier = tier;
+    _lockedPriceTierLabel = label;
     notifyListeners();
   }
 }

@@ -270,6 +270,14 @@ class PosProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  String _defaultTierStr = 'base';
+  String? _defaultTierLabel;
+
+  void setDefaultTier(String tier, String? label) {
+    _defaultTierStr = tier;
+    _defaultTierLabel = label;
+  }
+
   void clearCart() {
     _cart.clear();
     _activePendingSaleId = null;
@@ -288,9 +296,12 @@ class PosProvider with ChangeNotifier {
     _currentRequiresDispatch = false;
     _currentFulfillmentStatus = 'pending';
 
-    // Reset price tier a base al iniciar una nueva venta
-    _activeTier = PriceTier.base;
-    _customTierLabel = null;
+    // Reset price tier al nivel bloqueado de la terminal o base
+    _activeTier = _defaultTierStr == 'wholesale' ? PriceTier.wholesale
+                : _defaultTierStr == 'card' ? PriceTier.card
+                : _defaultTierStr.startsWith('custom_') ? PriceTier.custom
+                : PriceTier.base;
+    _customTierLabel = _defaultTierStr.startsWith('custom_') ? _defaultTierLabel : null;
     notifyListeners();
   }
 

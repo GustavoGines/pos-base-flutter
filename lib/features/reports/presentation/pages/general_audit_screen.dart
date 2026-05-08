@@ -701,7 +701,9 @@ class _ShiftSalesListState extends State<_ShiftSalesList> {
 
     return Column(
       children: _sales.map((sale) {
-        final total = (sale['total'] as num).toDouble() + (sale['total_surcharge'] as num).toDouble();
+        final saleTotal = double.tryParse(sale['total']?.toString() ?? '0') ?? 0.0;
+        final saleSurcharge = double.tryParse(sale['total_surcharge']?.toString() ?? '0') ?? 0.0;
+        final total = saleTotal + saleSurcharge;
         final priceList = sale['price_list'] ?? 'Minorista';
         final isVoided = sale['status'] == 'voided';
         

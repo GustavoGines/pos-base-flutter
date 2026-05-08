@@ -22,6 +22,7 @@ class CashRegisterRemoteDataSourceImpl implements CashRegisterRemoteDataSource {
       final uri = registerId != null
           ? Uri.parse('$baseUrl/shifts/current?cash_register_id=$registerId')
           : Uri.parse('$baseUrl/shifts/current');
+          
       final response = await client.get(
         uri,
         headers: {'Accept': 'application/json'},

@@ -762,8 +762,7 @@ class _MainAppState extends State<MainApp> {
                     final rawError = cashProv.errorMessage ?? '';
                     final msg = rawError.replaceAll('Exception: ', '');
 
-                    // Error SESSION_EXPIRED es manejado globalmente por ApiClient.
-                    // Evitamos mostrar un snackbar redundante si ya se mostró el popup naranja.
+                    // SESSION_EXPIRED: manejado globalmente por ApiClient.
                     if (rawError.contains('SESSION_EXPIRED') ||
                         rawError.contains('otro dispositivo')) {
                       return;
