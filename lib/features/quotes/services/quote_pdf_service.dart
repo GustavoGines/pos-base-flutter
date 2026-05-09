@@ -201,7 +201,7 @@ class QuotePdfService {
                 child: pw.Text(
                   quote.validUntil != null
                     ? 'Validez del presupuesto: hasta el ${_dateFmt.format(DateTime.parse(quote.validUntil!))}. Los precios pueden variar sin previo aviso.'
-                    : 'Validez del presupuesto: 15 días. Los precios pueden variar sin previo aviso.',
+                    : 'Validez del presupuesto: 7 días. Los precios pueden variar sin previo aviso.',
                   style: pw.TextStyle(
                     fontSize: 9,
                     color: primary,

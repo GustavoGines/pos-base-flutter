@@ -37,7 +37,7 @@ class _QuoteScreenState extends State<QuoteScreen> {
   final _customerNameCtrl = TextEditingController();
   final _customerPhoneCtrl = TextEditingController();
   final _notesCtrl = TextEditingController();
-  DateTime? _validUntil;
+  DateTime? _validUntil = DateTime.now().add(const Duration(days: 7));
 
   @override
   void initState() {
