@@ -4,13 +4,14 @@ Todos los cambios notables de la aplicación de caja (Flutter/Windows) están do
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.0.0/) y el proyecto adhiere a [Semantic Versioning](https://semver.org/).
 
 ---
-## [1.3.9] - 2026-05-08 - Dynamic Quotes & Shift Validation Fix
+## [1.3.9] - 2026-05-08 - Actualización de Precios Dinámicos y Estabilidad de Cajas
 
-### 🚀 Mejoras
-- **Ventas y Presupuestos:** Los presupuestos recuperados para cobro ahora aplican dinámicamente los precios actuales del catálogo en lugar de mantener los precios congelados del momento de su creación. Esto protege la rentabilidad del comercio ante fluctuaciones de costos por inflación.
+### 🚀 Mejoras Comerciales
+- **Protección contra Inflación en Presupuestos:** Ahora, al recuperar un presupuesto guardado para facturarlo, el sistema actualizará automáticamente todos los artículos a los precios vigentes del catálogo. ¡Asegurá tu margen de ganancia sin importar cuándo se armó el presupuesto!
+- **Configuración Inmediata de Impresoras:** Ajustá o cambiá tu impresora de tickets y empezá a imprimir al instante. Ya no es necesario reiniciar el sistema para que tome los nuevos parámetros.
 
-### 🐛 Fixes
-- **Multi-Caja y Sesiones:** Se implementó una reevaluación estricta de turnos al cambiar de caja física en los Ajustes. Ahora, si la nueva terminal no tiene un turno abierto, el sistema redirecciona forzosamente a la pantalla de "Apertura de Caja" y limpia el carrito de ventas, evitando que el usuario facture accidentalmente en nombre de otra terminal o bajo un turno inexistente.
+### 🐛 Solución de Problemas
+- **Seguridad en Multi-Caja:** Mejoramos el control de sesiones al alternar entre distintas cajas físicas. El sistema ahora garantiza que cada terminal opere bajo su propio turno abierto, previniendo errores de facturación cruzada y protegiendo la integridad de tus cierres de caja.
 
 
 
