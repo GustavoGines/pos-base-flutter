@@ -30,11 +30,19 @@ class ReportsProvider extends ChangeNotifier {
   bool _isExportingBalancePdf = false;
   bool get isExportingBalancePdf => _isExportingBalancePdf;
 
+  // Fechas compartidas para Reporte de Ganancias
   DateTime _startDate = DateTime.now().copyWith(day: 1);
   DateTime _endDate = DateTime.now();
 
   DateTime get startDate => _startDate;
   DateTime get endDate => _endDate;
+
+  // Fechas PROPIAS e independientes para Consumo Interno
+  DateTime _icStartDate = DateTime.now().copyWith(day: 1);
+  DateTime _icEndDate = DateTime.now();
+
+  DateTime get icStartDate => _icStartDate;
+  DateTime get icEndDate => _icEndDate;
 
   List<dynamic> _reportData = [];
   List<dynamic> get reportData => _reportData;
@@ -44,6 +52,9 @@ class ReportsProvider extends ChangeNotifier {
 
   List<dynamic> _dailyEvolution = [];
   List<dynamic> get dailyEvolution => _dailyEvolution;
+
+  List<dynamic> _internalConsumptionData = [];
+  List<dynamic> get internalConsumptionData => _internalConsumptionData;
 
   double _previousPeriodRevenue = 0;
   double _previousPeriodProfit = 0;
@@ -113,6 +124,12 @@ class ReportsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setIcDateRange(DateTime start, DateTime end) {
+    _icStartDate = start;
+    _icEndDate = end;
+    notifyListeners();
+  }
+
   Future<void> fetchProfitByCategory() async {
     _isLoading = true;
     _error = null;
@@ -130,6 +147,27 @@ class ReportsProvider extends ChangeNotifier {
       final prev = result['previous_period'] ?? {};
       _previousPeriodRevenue = double.tryParse(prev['revenue']?.toString() ?? '0') ?? 0;
       _previousPeriodProfit = double.tryParse(prev['profit']?.toString() ?? '0') ?? 0;
+    } catch (e) {
+      _error = e.toString();
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> fetchInternalConsumption() async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      final df = DateFormat('yyyy-MM-dd');
+      // Usar las fechas propias del reporte de consumo interno, NO las compartidas
+      final result = await dataSource.getInternalConsumption(
+        df.format(_icStartDate),
+        df.format(_icEndDate),
+      );
+      _internalConsumptionData = result['data'] ?? [];
     } catch (e) {
       _error = e.toString();
     } finally {

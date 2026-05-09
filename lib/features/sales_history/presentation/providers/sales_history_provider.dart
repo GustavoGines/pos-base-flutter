@@ -20,6 +20,10 @@ class SalesHistoryProvider with ChangeNotifier {
   int? _selectedUserId;
   int? get selectedUserId => _selectedUserId;
 
+  // Memoria del turno actual para mantener el filtro al cambiar de cajero
+  int? _currentShiftId;
+  int? get currentShiftId => _currentShiftId;
+
   /// Filtro opcional por código de método de pago (ej: 'efectivo', 'debito').
   /// null = sin filtro (mostrar todos).
   String? _methodFilter;
@@ -32,7 +36,7 @@ class SalesHistoryProvider with ChangeNotifier {
 
   void setSelectedUserId(int? id) {
     _selectedUserId = id;
-    loadSales();
+    loadSales(shiftId: _currentShiftId);
   }
 
   SalesHistoryProvider({required this.dataSource});
@@ -41,12 +45,22 @@ class SalesHistoryProvider with ChangeNotifier {
     if (period != null) {
       _currentPeriod = period;
     }
+    if (shiftId != null || period == 'shift') {
+       if (shiftId != null) {
+         _currentShiftId = shiftId;
+       } else if (period == 'shift') {
+         // Si pedimos explícitamente el período 'shift' pero el shiftId es null
+         // (ej: al cambiar a una terminal sin turno activo), debemos limpiar el caché.
+         _currentShiftId = null;
+       }
+    }
+
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
     try {
       _sales = await dataSource.fetchSales(
-          period: _currentPeriod, shiftId: shiftId, userId: _selectedUserId);
+          period: _currentPeriod, shiftId: _currentShiftId, userId: _selectedUserId);
     } catch (e) {
       _errorMessage = e.toString();
     } finally {

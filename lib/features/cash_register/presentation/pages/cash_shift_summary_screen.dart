@@ -128,6 +128,12 @@ class CashShiftSummaryScreen extends StatelessWidget {
                   _buildRow('Ventas por Transf.', '\$${(closedShift.transferSales ?? 0).toCurrency()}'),
                   _buildRow('Total Recargos (Tarj/Billeteras)', '\$${(closedShift.totalSurcharge ?? 0).toCurrency()}'),
 
+                  // Cuenta Corriente: sección informativa (no entra en saldo físico)
+                  if ((closedShift.ccSalesCount ?? 0) > 0) ...[
+                    const Divider(height: 8),
+                    _buildCcSection(closedShift),
+                  ],
+
                   // Cheques: Solo visible si feature habilitada
                   if (context.read<SettingsProvider>().settings?.features.checks == true) ...[
                     const Divider(height: 8),
@@ -199,6 +205,39 @@ class CashShiftSummaryScreen extends StatelessWidget {
         children: [
           Text(label, style: TextStyle(fontSize: 16, color: Colors.black87, fontWeight: bold ? FontWeight.bold : FontWeight.w500)),
           Text(value, style: TextStyle(fontSize: 16, color: Colors.black, fontWeight: bold ? FontWeight.w900 : FontWeight.w700)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCcSection(CashRegisterShift shift) {
+    final count = shift.ccSalesCount ?? 0;
+    final total = shift.ccSales ?? 0.0;
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.purple.shade50,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.purple.shade200),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.account_balance_wallet_outlined, color: Colors.purple.shade700, size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Cta. Cte. (deuda registrada)',
+                    style: TextStyle(fontWeight: FontWeight.bold, color: Colors.purple.shade800, fontSize: 14)),
+                Text('$count venta${count != 1 ? 's' : ''} — no ingresa al arqueo',
+                    style: TextStyle(fontSize: 11, color: Colors.purple.shade500)),
+              ],
+            ),
+          ),
+          Text('\$${total.toCurrency()}',
+              style: TextStyle(fontWeight: FontWeight.bold, color: Colors.purple.shade900, fontSize: 15)),
         ],
       ),
     );

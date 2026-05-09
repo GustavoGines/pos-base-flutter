@@ -8,6 +8,7 @@ import 'package:frontend_desktop/features/settings/presentation/providers/settin
 import 'package:frontend_desktop/features/checks/presentation/providers/check_provider.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import '../providers/reports_provider.dart';
+import '../widgets/internal_consumption_report_view.dart';
 
 class ReportsScreen extends StatefulWidget {
   const ReportsScreen({super.key});
@@ -24,7 +25,7 @@ class _ReportsScreenState extends State<ReportsScreen>
   void initState() {
     super.initState();
     final hasAdvancedReports = context.read<SettingsProvider>().features.advancedReports;
-    _tabController = TabController(length: hasAdvancedReports ? 3 : 2, vsync: this);
+    _tabController = TabController(length: hasAdvancedReports ? 4 : 2, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<ReportsProvider>().fetchProfitByCategory();
       // Cargar cheques para el KPI de liquidez (solo si la feature está activa)
@@ -127,9 +128,11 @@ class _ReportsScreenState extends State<ReportsScreen>
                       tabs: [
                         const Tab(icon: Icon(Icons.bar_chart, size: 18), text: 'Por Categoría'),
                         const Tab(icon: Icon(Icons.branding_watermark, size: 18), text: 'Marcas'),
-                        // 🔒 CANDADO 3: Balance Mensual solo para plan con advanced_reports
-                        if (hasAdvancedReports)
+                        // 🔒 CANDADO 3: Balance Mensual y Consumo Interno solo para plan con advanced_reports
+                        if (hasAdvancedReports) ...[
                           const Tab(icon: Icon(Icons.calendar_month, size: 18), text: 'Balance Mensual'),
+                          const Tab(icon: Icon(Icons.inventory_2, size: 18), text: 'Consumo Interno'),
+                        ]
                       ],
                     ),
                     // Filtros solo en pestaña 0 y 1 (Por Categoría y Marcas)
@@ -174,6 +177,9 @@ class _ReportsScreenState extends State<ReportsScreen>
                     // Tab 2: Balance Mensual (solo con advanced_reports)
                     if (hasAdvancedReports)
                       _MonthlyBalanceTab(provider: provider),
+                    // Tab 3: Consumo Interno (solo con advanced_reports)
+                    if (hasAdvancedReports)
+                      const InternalConsumptionReportView(),
                   ],
                 ),
               ),

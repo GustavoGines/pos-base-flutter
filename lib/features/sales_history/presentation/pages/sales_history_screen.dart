@@ -15,6 +15,7 @@ import 'package:frontend_desktop/features/settings/presentation/providers/settin
 import 'package:frontend_desktop/features/pos/domain/entities/cart_item.dart';
 import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
 import 'package:frontend_desktop/features/catalog/presentation/providers/catalog_provider.dart';
+import 'package:frontend_desktop/features/cash_register/presentation/providers/cash_register_provider.dart';
 import 'package:frontend_desktop/core/utils/a4_split_pdf_service.dart';
 import 'package:printing/printing.dart';
 
@@ -69,7 +70,8 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<SalesHistoryProvider>().loadSales();
+      final shiftId = context.read<CashRegisterProvider>().currentShift?.id;
+      context.read<SalesHistoryProvider>().loadSales(shiftId: shiftId);
       context.read<UsersProvider>().loadUsers();
     });
   }
@@ -158,7 +160,8 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
                           _searchQuery = '';
                           _selectedSale = null;
                         });
-                        provider.loadSales(period: period);
+                        final shiftId = context.read<CashRegisterProvider>().currentShift?.id;
+                        provider.loadSales(period: period, shiftId: shiftId);
                       },
                       onSaleDeselect: () => setState(() => _selectedSale = null),
                     ),

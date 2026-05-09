@@ -20,6 +20,7 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
   late TextEditingController _phoneController;
   late TextEditingController _creditLimitController;
   late TextEditingController _deliveryAddressController;
+  bool _isInternalAccount = false;
   
   bool _isSubmitting = false;
 
@@ -31,6 +32,7 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
     _phoneController = TextEditingController(text: widget.customer?.phone ?? '');
     _creditLimitController = TextEditingController(text: widget.customer != null ? widget.customer!.creditLimit.toString() : '');
     _deliveryAddressController = TextEditingController(text: widget.customer?.deliveryAddress ?? '');
+    _isInternalAccount = widget.customer?.isInternalAccount ?? false;
   }
 
   Future<void> _submit() async {
@@ -45,6 +47,7 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
         'phone': _phoneController.text.trim(),
         'credit_limit': double.tryParse(_creditLimitController.text.trim()) ?? 0.0,
         'delivery_address': _deliveryAddressController.text.trim(),
+        'is_internal_account': _isInternalAccount,
       };
 
       bool success;
@@ -141,6 +144,14 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
                 controller: _creditLimitController,
                 keyboardType: TextInputType.number,
                 decoration: const InputDecoration(labelText: 'Límite de Crédito (\$) (Opcional)', border: OutlineInputBorder()),
+              ),
+              const SizedBox(height: 16),
+              SwitchListTile(
+                title: const Text('Cuenta de Consumo Interno (Ej: Repostería / Uso Propio)', style: TextStyle(fontSize: 14)),
+                subtitle: const Text('Excluye estas ventas de los reportes de ganancias y facturación.', style: TextStyle(fontSize: 12)),
+                value: _isInternalAccount,
+                activeColor: Colors.indigo,
+                onChanged: (val) => setState(() => _isInternalAccount = val),
               ),
             ],
           ),

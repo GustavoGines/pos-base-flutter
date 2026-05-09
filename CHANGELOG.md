@@ -4,6 +4,19 @@ Todos los cambios notables de la aplicación de caja (Flutter/Windows) están do
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.0.0/) y el proyecto adhiere a [Semantic Versioning](https://semver.org/).
 
 ---
+## [1.4.0] - 2026-05-09 - Cuentas de Consumo Interno, Pagos Mixtos y Blindaje de Turnos
+
+### 🚀 Nuevas Funcionalidades (Comerciales)
+- **Pagos Combinados en Cuenta Corriente:** ¡Ahora podés recibir pagos múltiples en una sola operación! Si un cliente salda su deuda pagando una parte en Efectivo y el resto por Transferencia, el sistema lo permite automáticamente calculando la diferencia en tiempo real.
+- **Cuentas de Consumo Interno (Dueños/Socios):** Se agregó la capacidad de crear "Cuentas Internas". Si vos o un socio retiran mercadería del local, ya no se ensuciarán tus estadísticas de ventas ni ganancias.
+- **Reporte Gerencial de Consumo Interno:** Nuevo módulo exclusivo en Reportes para auditar y valorizar toda la mercadería retirada por los dueños o empleados, calculado a precio de costo.
+- **Ventas Fiadas en el Arqueo de Caja:** El Cierre de Turno ahora detalla explícitamente cuánto dinero se vendió bajo la modalidad de "Cuenta Corriente" (fiado), separándolo del efectivo y tarjetas para que las cuentas siempre cuadren.
+- **Claridad Visual en Saldos:** Mejoramos la pantalla de Cuentas Corrientes. En lugar de mostrar signos negativos confusos, ahora indica con claridad "Deuda a Pagar" (en rojo), "Saldo a Favor" (en verde) o "Cuenta al Día" (en gris).
+
+### 🐛 Correcciones y Estabilidad
+- **Blindaje Total de Cajas (Multi-Terminal):** Se solucionó definitivamente un error de sincronización donde, al cobrar velozmente en una terminal secundaria, la venta podía registrarse accidentalmente bajo el turno de la computadora principal. Ahora cada venta está 100% blindada a su propia caja física, asegurando un historial de Turnos perfecto.
+
+---
 ## [1.3.9] - 2026-05-08 - Actualización de Precios Dinámicos y Estabilidad de Cajas
 
 ### 🚀 Mejoras Comerciales

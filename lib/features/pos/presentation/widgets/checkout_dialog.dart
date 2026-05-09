@@ -129,6 +129,12 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     super.initState();
     final posProvider = context.read<PosProvider>();
     
+    // Auto-seleccionar el último cliente usado en Cta Cte si existe
+    _selectedCustomer = posProvider.lastSelectedCustomer;
+    if (_selectedCustomer != null) {
+      _deliveryAddressCtrl.text = _selectedCustomer!.deliveryAddress ?? '';
+    }
+    
     // Recuperar estado persistente si existe, o usar la memoria del último flete
     _requiresDispatch = posProvider.currentRequiresDispatch;
     _fulfillmentStatus = posProvider.currentFulfillmentStatus;
@@ -400,21 +406,41 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
             _selectedCustomer = c;
             _deliveryAddressCtrl.text = c.deliveryAddress ?? '';
           });
-          if (c.defaultPriceTier != null && c.defaultPriceTier!.isNotEmpty) {
+          context.read<PosProvider>().setLastSelectedCustomer(c);
+          final localTerminal = context.read<LocalTerminalProvider>();
+          if (localTerminal.lockedPriceTier == 'none' && c.defaultPriceTier != null && c.defaultPriceTier!.isNotEmpty) {
             final appSettings = context.read<SettingsProvider>();
             if (appSettings.settings?.features.multiplePrices == true) {
               PriceTier tier;
               switch (c.defaultPriceTier) {
                 case 'wholesale': tier = PriceTier.wholesale; break;
                 case 'card': tier = PriceTier.card; break;
-                default: tier = PriceTier.base;
+                default: 
+                  if (c.defaultPriceTier!.startsWith('custom_')) {
+                    tier = PriceTier.custom;
+                  } else {
+                    tier = PriceTier.base;
+                  }
               }
               final settings = appSettings.settings;
-              context.read<PosProvider>().setPriceTier(
-                tier,
-                wholesaleFactor: settings != null ? 1 + (settings.globalWholesalePercentage / 100) : null,
-                cardFactor: settings != null ? 1 + (settings.globalCardPercentage / 100) : null,
-              );
+              
+              if (tier == PriceTier.custom) {
+                final customLabel = c.defaultPriceTier!.substring(7);
+                final customTiers = settings?.customPriceTiers ?? [];
+                final match = customTiers.firstWhere((t) => t['name'] == customLabel, orElse: () => {});
+                final mod = (match['modifier'] as num?)?.toDouble() ?? 0.0;
+                context.read<PosProvider>().setPriceTier(
+                  tier,
+                  customFactor: 1 + (mod / 100),
+                  customLabel: customLabel,
+                );
+              } else {
+                context.read<PosProvider>().setPriceTier(
+                  tier,
+                  wholesaleFactor: settings != null ? 1 + (settings.globalWholesalePercentage / 100) : null,
+                  cardFactor: settings != null ? 1 + (settings.globalCardPercentage / 100) : null,
+                );
+              }
               // Como CheckoutDialog tiene copia estática del 'total', si el tier bajó los precios el total debe recalcularse.
               // Para no complicar la caja con saldos saltando de golpe, le avisamos al Provider que ya recalculó en background.
               // El cajero verá el nuevo total en la barra superior del diálogo si lo cerramos.
@@ -433,7 +459,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         return;
       }
       final ccNeed = _lines.where((l) => l.method?.code == 'cuenta_corriente').fold(0.0, (s, l) => s + l.total);
-      if (ccNeed > _availableCredit) {
+      if (!_selectedCustomer!.isInternalAccount && ccNeed > _availableCredit) {
         SnackBarService.error(context,
           'El cliente no tiene límite de crédito suficiente. '
           'Disponible: \$${_availableCredit.toCurrency()}');
@@ -1090,7 +1116,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(_selectedCustomer!.name, style: TextStyle(color: Colors.purple.shade700, fontWeight: FontWeight.bold)),
-                                    Text('Crédito disp: \$${_availableCredit.toCurrency()}', style: TextStyle(fontSize: 12)),
+                                    Text(_selectedCustomer!.isInternalAccount ? 'Crédito disp: Ilimitado (Cuenta Interna)' : 'Crédito disp: \$${_availableCredit.toCurrency()}', style: TextStyle(fontSize: 12)),
                                   ],
                                 ),
                         ),

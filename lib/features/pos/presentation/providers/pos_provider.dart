@@ -18,6 +18,7 @@ import 'package:frontend_desktop/core/config/app_config.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:frontend_desktop/core/utils/a4_split_pdf_service.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
+import 'package:frontend_desktop/features/customers/models/customer_model.dart';
 
 class PosProvider with ChangeNotifier {
   final ProcessSaleUseCase processSaleUseCase;
@@ -160,6 +161,14 @@ class PosProvider with ChangeNotifier {
     _currentRequiresDispatch = requires;
     _currentFulfillmentStatus = status;
     notifyListeners();
+  }
+
+  // Recordar el último cliente seleccionado en Cuenta Corriente para mayor agilidad
+  Customer? _lastSelectedCustomer;
+  Customer? get lastSelectedCustomer => _lastSelectedCustomer;
+
+  void setLastSelectedCustomer(Customer? customer) {
+    _lastSelectedCustomer = customer;
   }
 
   PosProvider({

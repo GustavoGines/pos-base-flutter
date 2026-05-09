@@ -21,7 +21,7 @@ class LocalTerminalProvider extends ChangeNotifier {
   String _scaleComPort = '';
   String _pdfPaperSize = 'a4'; // Opciones válidas: 'a4', 'letter'
   
-  String _lockedPriceTier = 'base';
+  String _lockedPriceTier = 'none';
   String? _lockedPriceTierLabel;
 
   bool _isInitialized = false;
@@ -50,7 +50,7 @@ class LocalTerminalProvider extends ChangeNotifier {
     _printerNameOrIp = prefs.getString(_printerNameOrIpKey) ?? '';
     _scaleComPort = prefs.getString(_scaleComPortKey) ?? '';
     _pdfPaperSize = prefs.getString(_pdfPaperSizeKey) ?? 'a4';
-    _lockedPriceTier = prefs.getString(_lockedPriceTierKey) ?? 'base';
+    _lockedPriceTier = prefs.getString(_lockedPriceTierKey) ?? 'none';
     _lockedPriceTierLabel = prefs.getString(_lockedPriceTierLabelKey);
     _isInitialized = true;
 

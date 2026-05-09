@@ -168,17 +168,24 @@ class CustomerProvider extends ChangeNotifier {
 
   Future<bool> registerPayment({
     required int customerId, 
-    required double amount, 
-    required String paymentMethod,
+    double? amount, 
+    String? paymentMethod,
+    List<Map<String, dynamic>>? payments,
     String description = '',
     List<int> saleIds = const [],
     Map<String, dynamic>? checkDetails,
   }) async {
     try {
-      final Map<String, dynamic> bodyPayload = {
-        'amount': amount,
-        'payment_method': paymentMethod,
-      };
+      final Map<String, dynamic> bodyPayload = {};
+      
+      if (payments != null && payments.isNotEmpty) {
+        bodyPayload['payments'] = payments;
+      } else if (amount != null && paymentMethod != null) {
+        bodyPayload['amount'] = amount;
+        bodyPayload['payment_method'] = paymentMethod;
+      } else {
+        throw Exception("Debes proveer 'payments' o bien 'amount' y 'paymentMethod'");
+      }
 
       if (description.isNotEmpty) {
         bodyPayload['description'] = description;

@@ -57,7 +57,8 @@ class _PosScreenState extends State<PosScreen> {
       final localTerminal = Provider.of<LocalTerminalProvider>(context, listen: false);
       final posProvider = Provider.of<PosProvider>(context, listen: false);
       
-      posProvider.setDefaultTier(localTerminal.lockedPriceTier, localTerminal.lockedPriceTierLabel);
+      final initialTier = localTerminal.lockedPriceTier == 'none' ? 'base' : localTerminal.lockedPriceTier;
+      posProvider.setDefaultTier(initialTier, localTerminal.lockedPriceTierLabel);
       if (posProvider.cart.isEmpty) {
         posProvider.clearCart(); // Aplica la lista fijada inmediatamente
       }
@@ -657,7 +658,8 @@ class _PosScreenState extends State<PosScreen> {
     // ── VALIDACIÓN PROACTIVA: Verificar el turno en el servidor ANTES de abrir
     // la pantalla de cobro. Esto intercepta el caso donde el turno fue cerrado
     // desde otra terminal mientras este cliente estaba ocioso con el carrito lleno.
-    await cashRegisterProvider.checkCurrentShift();
+    final settingsProvider = Provider.of<SettingsProvider>(context, listen: false);
+    await cashRegisterProvider.checkCurrentShift(registerId: settingsProvider.assignedRegisterId > 0 ? settingsProvider.assignedRegisterId : null);
 
     final currentShift = cashRegisterProvider.currentShift;
     if (!mounted) return;
@@ -2053,7 +2055,7 @@ class _PosScreenState extends State<PosScreen> {
                                     tooltip: isPinned ? 'Lista fijada para esta terminal' : 'Fijar lista para esta terminal',
                                     onPressed: () {
                                       if (isPinned) {
-                                        terminal.setLockedPriceTier('base');
+                                        terminal.setLockedPriceTier('none');
                                         pos.setDefaultTier('base', null);
                                         SnackBarService.success(context, 'Lista de precios desbloqueada. Volverá a Base al finalizar la venta.');
                                       } else {

@@ -35,6 +35,20 @@ class ReportsRemoteDataSource {
     }
   }
 
+  Future<Map<String, dynamic>> getInternalConsumption(String startDate, String endDate) async {
+    final uri = Uri.parse('$baseUrl/reports/internal-consumption?start_date=$startDate&end_date=$endDate');
+    
+    final response = await client.get(uri, headers: {
+      'Accept': 'application/json',
+    });
+
+    if (response.statusCode == 200) {
+      return json.decode(response.body);
+    } else {
+      throw Exception('Error al obtener consumo interno: ${response.statusCode}');
+    }
+  }
+
   Future<List<int>> downloadExcel(String startDate, String endDate, {bool isBrand = false}) async {
     final typeParam = isBrand ? '&type=brand' : '';
     final uri = Uri.parse('$baseUrl/reports/sales-by-category/export?start_date=$startDate&end_date=$endDate$typeParam');

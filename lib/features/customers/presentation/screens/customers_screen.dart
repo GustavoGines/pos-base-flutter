@@ -5,8 +5,11 @@ import '../../models/customer_model.dart';
 import '../../providers/customer_provider.dart';
 import '../widgets/customer_form_dialog.dart';
 import '../widgets/payment_dialog.dart';
+import '../widgets/sale_detail_dialog.dart';
+import '../widgets/payment_detail_dialog.dart';
 import 'package:frontend_desktop/features/auth/presentation/widgets/admin_pin_dialog.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
+import 'package:frontend_desktop/features/sales_history/data/datasources/sales_history_remote_datasource.dart';
 
 class CustomersScreen extends StatefulWidget {
   const CustomersScreen({super.key});
@@ -162,7 +165,8 @@ class _CustomersScreenState extends State<CustomersScreen> {
                               separatorBuilder: (context, index) => const Divider(height: 1, indent: 64),
                               itemBuilder: (context, index) {
                                 final customer = provider.customers[index];
-                                final isDebtor = customer.balance > 0;
+                                // 3 estados: deuda (>0), crédito a favor (<0), al día (=0)
+                                final balanceState = customer.balance > 0 ? 1 : customer.balance < 0 ? -1 : 0;
                                 final isSelected = _selectedCustomer?.id == customer.id;
 
                                 return ListTile(
@@ -185,10 +189,14 @@ class _CustomersScreenState extends State<CustomersScreen> {
                                         ),
                                       ),
                                       Text(
-                                        '\$${customer.balance.toCurrency()}',
+                                        '\$${customer.balance.abs().toCurrency()}',
                                         style: TextStyle(
                                           fontWeight: FontWeight.bold,
-                                          color: isDebtor ? Colors.red.shade700 : Colors.green.shade700,
+                                          color: balanceState > 0
+                                              ? Colors.red.shade700
+                                              : balanceState < 0
+                                                  ? Colors.green.shade600
+                                                  : Colors.grey.shade500,
                                           fontSize: 14,
                                         ),
                                       ),
@@ -293,12 +301,36 @@ class _CustomerDetailPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDebtor = customer.balance > 0;
+    // ── 3 estados del saldo ──────────────────────────────────────────
+    final balance    = customer.balance;
+    final isDebtor   = balance > 0;   // Tiene deuda pendiente
+    final isCredit   = balance < 0;   // Saldo a favor (pagó de más)
+    final isCleared  = balance == 0;  // Al día
+
+    final String balanceLabel = isDebtor ? 'Deuda a Pagar'
+        : isCredit ? 'Saldo a Favor'
+        : 'Cuenta al Día';
+
+    final Color balanceColor = isDebtor ? Colors.red.shade700
+        : isCredit ? Colors.green.shade600
+        : Colors.grey.shade500;
+
+    final IconData balanceIcon = isDebtor ? Icons.warning_amber_rounded
+        : isCredit ? Icons.savings_outlined
+        : Icons.check_circle_outline;
+
+    final Color avatarBg = isDebtor ? Colors.red.shade50
+        : isCredit ? Colors.green.shade50
+        : Colors.grey.shade100;
+
+    final Color avatarFg = isDebtor ? Colors.red.shade700
+        : isCredit ? Colors.green.shade700
+        : Colors.grey.shade500;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Cabecera del Detalle
+        // ── Cabecera del Detalle ──
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
           decoration: const BoxDecoration(
@@ -308,19 +340,21 @@ class _CustomerDetailPanel extends StatelessWidget {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
+              // ── Nombre + datos del cliente ──
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     children: [
                       CircleAvatar(
-                        backgroundColor: isDebtor ? Colors.red.shade50 : Colors.green.shade50,
-                        foregroundColor: isDebtor ? Colors.red.shade700 : Colors.green.shade700,
+                        backgroundColor: avatarBg,
+                        foregroundColor: avatarFg,
                         radius: 20,
                         child: const Icon(Icons.person, size: 24),
                       ),
                       const SizedBox(width: 16),
-                      Text(customer.name, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+                      Text(customer.name,
+                          style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
                     ],
                   ),
                   const SizedBox(height: 8),
@@ -328,33 +362,64 @@ class _CustomerDetailPanel extends StatelessWidget {
                     children: [
                       Icon(Icons.badge_outlined, size: 14, color: Colors.grey.shade600),
                       const SizedBox(width: 6),
-                      Text('DNI: ${customer.documentNumber}', style: TextStyle(color: Colors.grey.shade600, fontSize: 14)),
+                      Text('DNI: ${customer.documentNumber}',
+                          style: TextStyle(color: Colors.grey.shade600, fontSize: 14)),
                       if (customer.phone != null && customer.phone!.isNotEmpty) ...[
                         const SizedBox(width: 16),
                         Icon(Icons.phone_outlined, size: 14, color: Colors.grey.shade600),
                         const SizedBox(width: 4),
-                        Text(customer.phone!, style: TextStyle(color: Colors.grey.shade600, fontSize: 14)),
+                        Text(customer.phone!,
+                            style: TextStyle(color: Colors.grey.shade600, fontSize: 14)),
                       ],
                       if (customer.creditLimit > 0) ...[
                         const SizedBox(width: 16),
                         Icon(Icons.credit_score_outlined, size: 14, color: Colors.blueGrey.shade600),
                         const SizedBox(width: 4),
-                        Text('Límite de Crédito: \$${customer.creditLimit.toCurrency()}', style: TextStyle(color: Colors.blueGrey.shade800, fontWeight: FontWeight.w500)),
-                      ]
+                        Text('Límite: \$${customer.creditLimit.toCurrency()}',
+                            style: TextStyle(
+                                color: Colors.blueGrey.shade800, fontWeight: FontWeight.w500)),
+                      ],
                     ],
                   ),
                 ],
               ),
+
+              // ── Bloque de saldo 3 estados ──
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Text('Saldo Actual', style: TextStyle(fontSize: 14, color: Colors.grey.shade500, fontWeight: FontWeight.w600)),
+                  // Badge contextual con ícono + etiqueta
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: balanceColor.withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: balanceColor.withValues(alpha: 0.25)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(balanceIcon, size: 14, color: balanceColor),
+                        const SizedBox(width: 5),
+                        Text(
+                          balanceLabel,
+                          style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: balanceColor),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  // Monto — siempre sin signo, la etiqueta lo explica
                   Text(
-                    '\$${customer.balance.toCurrency()}',
+                    isCleared ? '\$0' : '\$${balance.abs().toCurrency()}',
                     style: TextStyle(
-                      fontSize: 32,
+                      fontSize: 36,
                       fontWeight: FontWeight.bold,
-                      color: isDebtor ? Colors.red.shade700 : Colors.green.shade700,
+                      color: balanceColor,
+                      letterSpacing: -1,
                     ),
                   ),
                 ],
@@ -401,49 +466,157 @@ class _CustomerDetailPanel extends StatelessWidget {
                             itemBuilder: (context, index) {
                               final trx = customer.transactions[index];
                               final isPayment = trx.type == 'payment';
+                              final isCharge = trx.type == 'charge' || trx.type == 'sale';
+                              final hasTicket = isCharge && trx.saleId != null;
+                              final isClickable = isPayment || hasTicket;
 
                               final localDate = trx.createdAt.toLocal();
+                              final dateStr =
+                                  '${localDate.day.toString().padLeft(2, '0')}/${localDate.month.toString().padLeft(2, '0')}/${localDate.year}  '
+                                  '${localDate.hour.toString().padLeft(2, '0')}:${localDate.minute.toString().padLeft(2, '0')}';
 
-                              return ListTile(
-                                contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                                leading: CircleAvatar(
-                                  radius: 20,
-                                  backgroundColor: isPayment ? Colors.green.shade50 : Colors.red.shade50,
-                                  child: Icon(
-                                    isPayment ? Icons.arrow_downward : Icons.shopping_cart_outlined,
-                                    color: isPayment ? Colors.green.shade700 : Colors.red.shade700,
-                                    size: 20,
-                                  ),
-                                ),
-                                title: Text(
-                                  trx.description ?? (isPayment ? 'Abono en Caja' : 'Factura Impaga de Pos'),
-                                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
-                                ),
-                                subtitle: Padding(
-                                  padding: const EdgeInsets.only(top: 4.0),
-                                  child: Text(
-                                    '${localDate.day}/${localDate.month}/${localDate.year} ${localDate.hour}:${localDate.minute.toString().padLeft(2, '0')}', 
-                                    style: TextStyle(color: Colors.blueGrey.shade400, fontSize: 13)
-                                  ),
-                                ),
-                                trailing: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  crossAxisAlignment: CrossAxisAlignment.end,
-                                  children: [
-                                    Text(
-                                      '${isPayment ? '+' : '-'}\$${trx.amount.toCurrency()}',
-                                      style: TextStyle(
-                                        color: isPayment ? Colors.green.shade700 : Colors.red.shade700,
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 16
-                                      ),
+                              return Material(
+                                color: Colors.transparent,
+                                child: InkWell(
+                                  onTap: isClickable
+                                      ? () {
+                                          if (isPayment) {
+                                            PaymentDetailDialog.show(
+                                              context,
+                                              transaction: trx,
+                                              customerName: customer.name,
+                                            );
+                                          } else if (hasTicket) {
+                                            final ds = context.read<SalesHistoryRemoteDataSource>();
+                                            SaleDetailDialog.show(
+                                              context,
+                                              saleId: trx.saleId!,
+                                              dataSource: ds,
+                                            );
+                                          }
+                                        }
+                                      : null,
+                                  hoverColor: isPayment
+                                      ? Colors.green.shade50
+                                      : Colors.indigo.shade50,
+                                  splashColor: isPayment
+                                      ? Colors.green.shade100
+                                      : Colors.indigo.shade100,
+                                  highlightColor: isPayment
+                                      ? Colors.green.shade100.withValues(alpha: 0.5)
+                                      : Colors.indigo.shade100.withValues(alpha: 0.5),
+                                  mouseCursor: isClickable
+                                      ? SystemMouseCursors.click
+                                      : SystemMouseCursors.basic,
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 24, vertical: 14),
+                                    child: Row(
+                                      crossAxisAlignment: CrossAxisAlignment.center,
+                                      children: [
+                                        // ── Avatar ──
+                                        CircleAvatar(
+                                          radius: 22,
+                                          backgroundColor: isPayment
+                                              ? Colors.green.shade100
+                                              : Colors.red.shade100,
+                                          child: Icon(
+                                            isPayment
+                                                ? Icons.arrow_downward_rounded
+                                                : Icons.shopping_cart_outlined,
+                                            color: isPayment
+                                                ? Colors.green.shade700
+                                                : Colors.red.shade700,
+                                            size: 20,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 16),
+
+                                        // ── Descripción + fecha ──
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Row(
+                                                children: [
+                                                  Expanded(
+                                                    child: Text(
+                                                      trx.description ??
+                                                          (isPayment
+                                                              ? 'Abono en Caja'
+                                                              : 'Factura Cta. Cte.'),
+                                                      style: const TextStyle(
+                                                          fontWeight:
+                                                              FontWeight.w600,
+                                                          fontSize: 14),
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                    ),
+                                                  ),
+                                                  if (isClickable) ...[
+                                                    const SizedBox(width: 6),
+                                                    Tooltip(
+                                                      message: isPayment
+                                                          ? 'Ver detalle del abono'
+                                                          : 'Ver detalle del ticket',
+                                                      child: Icon(
+                                                        isPayment
+                                                            ? Icons.info_outline_rounded
+                                                            : Icons.receipt_long_outlined,
+                                                        size: 15,
+                                                        color: isPayment
+                                                            ? Colors.green.shade400
+                                                            : Colors.indigo.shade400,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ],
+                                              ),
+                                              const SizedBox(height: 3),
+                                              Text(
+                                                dateStr,
+                                                style: TextStyle(
+                                                    color:
+                                                        Colors.blueGrey.shade400,
+                                                    fontSize: 12),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+
+                                        const SizedBox(width: 12),
+
+                                        // ── Monto + acumulado ──
+                                        Column(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.end,
+                                          children: [
+                                            Text(
+                                              '${isPayment ? '+' : '-'}\$${trx.amount.toCurrency()}',
+                                              style: TextStyle(
+                                                color: isPayment
+                                                    ? Colors.green.shade700
+                                                    : Colors.red.shade700,
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 16,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 3),
+                                            Text(
+                                              'Acum: \$${trx.balanceAfter.toCurrency()}',
+                                              style: TextStyle(
+                                                  fontSize: 11,
+                                                  color:
+                                                      Colors.blueGrey.shade400),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
                                     ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      'Acumulado: \$${trx.balanceAfter.toCurrency()}',
-                                      style: TextStyle(fontSize: 12, color: Colors.blueGrey.shade500, fontWeight: FontWeight.normal),
-                                    ),
-                                  ],
+                                  ),
                                 ),
                               );
                             },
@@ -456,7 +629,7 @@ class _CustomerDetailPanel extends StatelessWidget {
           ),
         ),
 
-        // Footer Actions (Botón Registrar Pago)
+        // ── Footer Actions ──
         if (isDebtor)
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 20),
@@ -469,11 +642,12 @@ class _CustomerDetailPanel extends StatelessWidget {
               children: [
                 FilledButton.icon(
                   icon: const Icon(Icons.account_balance_wallet, size: 24),
-                  label: const Text('REGISTRAR ABONO', style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1, fontSize: 15)),
+                  label: const Text('REGISTRAR ABONO',
+                      style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1, fontSize: 15)),
                   style: FilledButton.styleFrom(
                     backgroundColor: Theme.of(context).colorScheme.primary,
                     padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 20),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
                   onPressed: () {
                     showDialog(
@@ -482,6 +656,30 @@ class _CustomerDetailPanel extends StatelessWidget {
                       builder: (_) => PaymentDialog(customer: customer),
                     );
                   },
+                ),
+              ],
+            ),
+          ),
+
+        // Aviso cuando hay saldo a favor (pagó de más / anulación post-pago)
+        if (isCredit)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+            decoration: BoxDecoration(
+              color: Colors.green.shade50,
+              border: const Border(top: BorderSide(color: Colors.black12)),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.info_outline, size: 18, color: Colors.green.shade700),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Este cliente tiene \$${balance.abs().toCurrency()} a su favor. '
+                    'Se descontará automáticamente en su próxima compra, o podés devolverlo en efectivo.',
+                    style: TextStyle(
+                        color: Colors.green.shade800, fontSize: 13, fontWeight: FontWeight.w500),
+                  ),
                 ),
               ],
             ),

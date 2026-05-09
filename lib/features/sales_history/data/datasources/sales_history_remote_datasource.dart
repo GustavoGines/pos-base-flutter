@@ -38,4 +38,15 @@ class SalesHistoryRemoteDataSource {
       throw Exception(error['message'] ?? 'Error al anular la venta');
     }
   }
+
+  /// Obtiene el detalle completo de una venta por ID (ítems + pagos + cliente).
+  Future<Map<String, dynamic>> fetchSaleDetail(int saleId) async {
+    final uri = Uri.parse('$baseUrl/sales/$saleId');
+    final response = await client.get(uri, headers: {'Accept': 'application/json'});
+    if (response.statusCode == 200) {
+      return json.decode(response.body) as Map<String, dynamic>;
+    } else {
+      throw Exception('Error al obtener detalle de venta ($saleId): ${response.statusCode}');
+    }
+  }
 }

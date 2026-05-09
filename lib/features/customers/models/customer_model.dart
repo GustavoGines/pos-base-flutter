@@ -7,6 +7,7 @@ class CustomerTransaction {
   final double amount;
   final double balanceAfter;
   final String? description;
+  final String? paymentMethod; // 'efectivo', 'transferencia', 'cheque', etc.
   final DateTime createdAt;
 
   CustomerTransaction({
@@ -18,6 +19,7 @@ class CustomerTransaction {
     required this.amount,
     required this.balanceAfter,
     this.description,
+    this.paymentMethod,
     required this.createdAt,
   });
 
@@ -31,6 +33,7 @@ class CustomerTransaction {
       amount: double.tryParse(json['amount'].toString()) ?? 0.0,
       balanceAfter: double.tryParse(json['balance_after'].toString()) ?? 0.0,
       description: json['description'],
+      paymentMethod: json['payment_method'],
       createdAt: DateTime.parse(json['created_at']),
     );
   }
@@ -46,6 +49,7 @@ class Customer {
   final bool isActive;
   final String? defaultPriceTier; // 'base', 'wholesale', 'card'
   final String? deliveryAddress;
+  final bool isInternalAccount;
   final List<CustomerTransaction> transactions;
 
   Customer({
@@ -58,6 +62,7 @@ class Customer {
     required this.isActive,
     this.defaultPriceTier,
     this.deliveryAddress,
+    this.isInternalAccount = false,
     this.transactions = const [],
   });
 
@@ -72,6 +77,7 @@ class Customer {
       isActive: json['is_active'] == 1 || json['is_active'] == true,
       defaultPriceTier: json['default_price_tier'],
       deliveryAddress: json['delivery_address'],
+      isInternalAccount: json['is_internal_account'] == 1 || json['is_internal_account'] == true,
       transactions: json['transactions'] != null 
           ? (json['transactions'] as List).map((t) => CustomerTransaction.fromJson(t)).toList()
           : [],

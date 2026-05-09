@@ -255,6 +255,7 @@ void main() async {
           lazy: false
         ),
         ChangeNotifierProvider(create: (_) => SalesHistoryProvider(dataSource: salesHistoryDataSource), lazy: false),
+        Provider<SalesHistoryRemoteDataSource>.value(value: salesHistoryDataSource),
         ChangeNotifierProvider(create: (_) => CatalogProvider(
           getProductsUseCase: getProductsUseCase,
           repository: catalogRepo,
