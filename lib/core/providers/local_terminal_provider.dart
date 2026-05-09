@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:frontend_desktop/core/utils/receipt_printer_service.dart';
 
 class LocalTerminalProvider extends ChangeNotifier {
   static const String _printerFormatKey = 'local_printer_format';
@@ -43,7 +44,7 @@ class LocalTerminalProvider extends ChangeNotifier {
     _printerFormat = prefs.getString(_printerFormatKey) ?? 'thermal_80';
     if (_printerFormat == 'a4_split' || _printerFormat == 'a4_standard' || _printerFormat == 'a4_normal') {
       _printerFormat = 'a4';
-      prefs.setString(_printerFormatKey, 'a4'); // Update the stored preference
+      prefs.setString(_printerFormatKey, 'a4');
     }
     _printerConnection = prefs.getString(_printerConnectionKey) ?? 'none';
     _printerNameOrIp = prefs.getString(_printerNameOrIpKey) ?? '';
@@ -52,45 +53,66 @@ class LocalTerminalProvider extends ChangeNotifier {
     _lockedPriceTier = prefs.getString(_lockedPriceTierKey) ?? 'base';
     _lockedPriceTierLabel = prefs.getString(_lockedPriceTierLabelKey);
     _isInitialized = true;
+
+    // ── CRÍTICO: sincronizar el singleton de impresión con la config guardada.
+    // Sin esto, ReceiptPrinterService arranca siempre con defaultUsb() (COM3
+    // hardcodeado) ignorando lo que el usuario configuró en Ajustes > Hardware.
+    _syncPrinterService();
+
     notifyListeners();
+  }
+
+  /// Propaga la configuración actual al singleton ReceiptPrinterService.
+  /// Se llama al cargar los ajustes (arranque) y al cambiar cualquier
+  /// parámetro de impresora para mantener ambos en sincronía.
+  void _syncPrinterService() {
+    ReceiptPrinterService.instance.reconfigure(this);
   }
 
   Future<void> setPrinterFormat(String format) async {
+    // ── IMPORTANTE: actualizar la memoria ANTES del await para que
+    // _syncPrinterService() lea el valor nuevo y no el viejo.
+    _printerFormat = format;
+    _syncPrinterService();
+    notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_printerFormatKey, format);
-    _printerFormat = format;
-    notifyListeners();
   }
 
   Future<void> setPrinterConnection(String connection) async {
+    _printerConnection = connection;
+    _syncPrinterService();
+    notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_printerConnectionKey, connection);
-    _printerConnection = connection;
-    notifyListeners();
   }
 
   Future<void> setPrinterNameOrIp(String nameOrIp) async {
+    _printerNameOrIp = nameOrIp;
+    _syncPrinterService();
+    notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_printerNameOrIpKey, nameOrIp);
-    _printerNameOrIp = nameOrIp;
-    notifyListeners();
   }
 
   Future<void> setScaleComPort(String port) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_scaleComPortKey, port);
     _scaleComPort = port;
     notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_scaleComPortKey, port);
   }
 
   Future<void> setPdfPaperSize(String size) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_pdfPaperSizeKey, size);
     _pdfPaperSize = size;
     notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_pdfPaperSizeKey, size);
   }
 
   Future<void> setLockedPriceTier(String tier, {String? label}) async {
+    _lockedPriceTier = tier;
+    _lockedPriceTierLabel = label;
+    notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_lockedPriceTierKey, tier);
     if (label != null) {
@@ -98,8 +120,5 @@ class LocalTerminalProvider extends ChangeNotifier {
     } else {
       await prefs.remove(_lockedPriceTierLabelKey);
     }
-    _lockedPriceTier = tier;
-    _lockedPriceTierLabel = label;
-    notifyListeners();
   }
 }
