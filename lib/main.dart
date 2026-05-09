@@ -272,6 +272,7 @@ void main() async {
             openShiftUseCase: OpenShiftUseCase(cashRegisterRepo),
             closeShiftUseCase: CloseShiftUseCase(cashRegisterRepo),
             getRegistersUseCase: GetRegistersUseCase(cashRegisterRepo),
+            printerService: ReceiptPrinterService.instance,
           ),
           lazy: false,
         ),
