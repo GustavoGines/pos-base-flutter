@@ -218,4 +218,21 @@ class QuoteProvider extends ChangeNotifier {
       notifyListeners();
     }
   }
+
+  Future<void> updateQuoteStatus(int quoteId, String status) async {
+    _isLoading = true;
+    notifyListeners();
+    try {
+      final updatedQuote = await repository.updateStatus(quoteId, status);
+      final index = _quotes.indexWhere((q) => q.id == quoteId);
+      if (index >= 0) {
+        _quotes[index] = updatedQuote;
+      }
+    } catch (e) {
+      _errorMessage = e.toString();
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
 }

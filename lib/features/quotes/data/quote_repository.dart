@@ -185,4 +185,24 @@ class QuoteRepository {
     
     throw Exception('Error al recuperar el presupuesto');
   }
+
+  Future<Quote> updateStatus(int quoteId, String status) async {
+    final uri = Uri.parse('$_base/$quoteId/status');
+    final body = jsonEncode({'status': status});
+
+    final response = await client.patch(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: body,
+    );
+
+    if (response.statusCode == 200) {
+      return Quote.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+    }
+    
+    throw Exception('Error al actualizar el estado del presupuesto');
+  }
 }
