@@ -14,6 +14,9 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.0.0/) y el p
 - **Pagos Combinados en Cuenta Corriente:** ¡Ahora podés recibir pagos múltiples en una sola operación! Si un cliente salda su deuda pagando una parte en Efectivo y el resto por Transferencia, el sistema lo permite automáticamente calculando la diferencia en tiempo real.
 - **Cuentas de Consumo Interno (Dueños/Socios):** Se agregó la capacidad de crear "Cuentas Internas". Si vos o un socio retiran mercadería del local, ya no se ensuciarán tus estadísticas de ventas ni ganancias.
 - **Reporte Gerencial de Consumo Interno:** Nuevo módulo exclusivo en Reportes para auditar y valorizar toda la mercadería retirada por los dueños o empleados, calculado a precio de costo.
+- **Filtro Avanzado de Clientes (Consumo Interno):** Ahora podés desplegar y seleccionar a un cliente o socio específico dentro del reporte para ver exactamente cuánto retiró esa sola persona.
+- **Botón "Hoy" Ultrarrápido:** Se agregó un botón de acceso directo en todos los reportes para consultar inmediatamente las métricas del día de hoy sin tener que navegar por el calendario.
+- **Interfaz "Hero Card" en Reportes:** Rediseño total de la sección de consumos internos, mostrando el Costo Operativo y la Cantidad de Artículos en tarjetas gigantes en la parte superior, junto con una tabla mucho más compacta, densa y centrada para monitores grandes.
 - **Ventas Fiadas en el Arqueo de Caja:** El Cierre de Turno ahora detalla explícitamente cuánto dinero se vendió bajo la modalidad de "Cuenta Corriente" (fiado), separándolo del efectivo y tarjetas para que las cuentas siempre cuadren.
 - **Claridad Visual en Saldos:** Mejoramos la pantalla de Cuentas Corrientes. En lugar de mostrar signos negativos confusos, ahora indica con claridad "Deuda a Pagar" (en rojo), "Saldo a Favor" (en verde) o "Cuenta al Día" (en gris).
 
