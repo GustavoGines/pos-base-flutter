@@ -4,18 +4,13 @@ Todos los cambios notables de la aplicación de caja (Flutter/Windows) están do
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.0.0/) y el proyecto adhiere a [Semantic Versioning](https://semver.org/).
 
 ---
-## [1.4.1] - 2026-05-09 - Dashboard Enterprise de Presupuestos y Optimizaciones POS
+## [1.4.0] - 2026-05-09 - Cuentas de Consumo Interno, Dashboard de Presupuestos y Pagos Mixtos
 
-### 🚀 Mejoras Comerciales y Experiencia de Usuario
+### 🚀 Nuevas Funcionalidades (Comerciales)
 - **Dashboard de Presupuestos Enterprise:** Rediseño completo de la grilla de presupuestos para que veas mucha más información en una sola pantalla. La selección de presupuestos es ahora ultra-rápida y fluida, ideal para negocios con mucho volumen.
 - **Limpieza de Caja a un Clic:** Se agregó un botón rojo de "Vaciar" en el panel del Ticket Actual. Ahora podés vaciar un carrito entero si el cliente se arrepiente sin necesidad de borrar los productos uno por uno.
 - **Precisión Total en Listas de Precios:** Ahora, cuando recuperás un presupuesto guardado, el sistema respeta de forma inteligente el modificador de la lista de precios (Mayorista, Tarjetas, etc.), garantizando que cobres exactamente el precio correcto.
 - **Sincronización Perfecta de Horarios:** Todas las fechas y horas de creación de presupuestos se ajustan automáticamente al horario local (Argentina), eliminando cualquier desfasaje.
-
----
-## [1.4.0] - 2026-05-09 - Cuentas de Consumo Interno, Pagos Mixtos y Blindaje de Turnos
-
-### 🚀 Nuevas Funcionalidades (Comerciales)
 - **Pagos Combinados en Cuenta Corriente:** ¡Ahora podés recibir pagos múltiples en una sola operación! Si un cliente salda su deuda pagando una parte en Efectivo y el resto por Transferencia, el sistema lo permite automáticamente calculando la diferencia en tiempo real.
 - **Cuentas de Consumo Interno (Dueños/Socios):** Se agregó la capacidad de crear "Cuentas Internas". Si vos o un socio retiran mercadería del local, ya no se ensuciarán tus estadísticas de ventas ni ganancias.
 - **Reporte Gerencial de Consumo Interno:** Nuevo módulo exclusivo en Reportes para auditar y valorizar toda la mercadería retirada por los dueños o empleados, calculado a precio de costo.
