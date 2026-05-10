@@ -44,6 +44,9 @@ class ReportsProvider extends ChangeNotifier {
   DateTime get icStartDate => _icStartDate;
   DateTime get icEndDate => _icEndDate;
 
+  int? _icCustomerId;
+  int? get icCustomerId => _icCustomerId;
+
   List<dynamic> _reportData = [];
   List<dynamic> get reportData => _reportData;
 
@@ -130,6 +133,12 @@ class ReportsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setIcCustomerId(int? id) {
+    _icCustomerId = id;
+    notifyListeners();
+    fetchInternalConsumption();
+  }
+
   Future<void> fetchProfitByCategory() async {
     _isLoading = true;
     _error = null;
@@ -166,6 +175,7 @@ class ReportsProvider extends ChangeNotifier {
       final result = await dataSource.getInternalConsumption(
         df.format(_icStartDate),
         df.format(_icEndDate),
+        customerId: _icCustomerId,
       );
       _internalConsumptionData = result['data'] ?? [];
     } catch (e) {

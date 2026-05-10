@@ -234,6 +234,21 @@ class _FiltersBar extends StatelessWidget {
             style: TextStyle(color: Colors.blueGrey, fontSize: 13, fontWeight: FontWeight.w500),
           ),
           OutlinedButton.icon(
+            onPressed: () {
+              final today = DateTime.now();
+              provider.setDateRange(today, today);
+              onRefresh();
+            },
+            icon: const Icon(Icons.today, size: 15),
+            label: const Text('Hoy', style: TextStyle(fontSize: 13)),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.indigo.shade600,
+              side: BorderSide(color: Colors.indigo.shade200),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            ),
+          ),
+          const SizedBox(width: 8),
+          OutlinedButton.icon(
             onPressed: onDateTap,
             icon: const Icon(Icons.calendar_today, size: 15),
             label: Text(

@@ -35,8 +35,9 @@ class ReportsRemoteDataSource {
     }
   }
 
-  Future<Map<String, dynamic>> getInternalConsumption(String startDate, String endDate) async {
-    final uri = Uri.parse('$baseUrl/reports/internal-consumption?start_date=$startDate&end_date=$endDate');
+  Future<Map<String, dynamic>> getInternalConsumption(String startDate, String endDate, {int? customerId}) async {
+    final params = 'start_date=$startDate&end_date=$endDate${customerId != null ? '&customer_id=$customerId' : ''}';
+    final uri = Uri.parse('$baseUrl/reports/internal-consumption?$params');
     
     final response = await client.get(uri, headers: {
       'Accept': 'application/json',
