@@ -154,7 +154,8 @@ class _PosScreenState extends State<PosScreen> {
             );
 
             if (confirm == true) {
-              posProvider.loadQuoteToCart(quote);
+              final settings = context.read<SettingsProvider>().settings;
+              posProvider.loadQuoteToCart(quote, settings: settings);
               SnackBarService.success(
                   context, 'Presupuesto cargado listo para facturar.');
             }
@@ -1714,17 +1715,83 @@ class _PosScreenState extends State<PosScreen> {
               ),
             ),
 
+          // Banner de Recuperación de Presupuesto
+          if (pos.activeQuoteId != null)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              color: Colors.indigo.shade50,
+              child: Row(
+                children: [
+                  Icon(Icons.description_rounded,
+                      color: Colors.indigo.shade800, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Presupuesto Recuperado',
+                      style: TextStyle(
+                          color: Colors.indigo.shade900,
+                          fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.close,
+                        color: Colors.indigo.shade900, size: 18),
+                    tooltip: 'Quitar Presupuesto',
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    onPressed: () {
+                      pos.clearCart();
+                      _searchFocusNode.requestFocus();
+                    },
+                  ),
+                ],
+              ),
+            ),
+
           // Header del carrito
           Container(
             padding: const EdgeInsets.all(16),
             color: Colors.blue.shade50,
-            child: const Row(
+            child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('Ticket Actual',
+                const Text('Ticket Actual',
                     style:
                         TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                Icon(Icons.shopping_cart),
+                Row(
+                  children: [
+                    if (pos.cart.isNotEmpty)
+                      IconButton(
+                        icon: const Icon(Icons.delete_sweep, color: Colors.red),
+                        tooltip: 'Vaciar Carrito',
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        onPressed: () async {
+                          final confirm = await showDialog<bool>(
+                            context: context,
+                            builder: (c) => AlertDialog(
+                              title: const Text('Vaciar Carrito'),
+                              content: const Text('¿Deseas quitar todos los productos y vaciar el carrito?'),
+                              actions: [
+                                TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancelar')),
+                                FilledButton(
+                                  style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                                  onPressed: () => Navigator.pop(c, true),
+                                  child: const Text('Vaciar'),
+                                ),
+                              ],
+                            ),
+                          );
+                          if (confirm == true) {
+                            pos.clearCart();
+                            _searchFocusNode.requestFocus();
+                          }
+                        },
+                      ),
+                    const SizedBox(width: 8),
+                    const Icon(Icons.shopping_cart),
+                  ],
+                ),
               ],
             ),
           ),

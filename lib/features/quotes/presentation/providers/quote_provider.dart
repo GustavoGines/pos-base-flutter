@@ -208,6 +208,7 @@ class QuoteProvider extends ChangeNotifier {
 
   Future<void> loadQuotes({String? search, String? status}) async {
     _isLoading = true;
+    _errorMessage = null;   // ← reset para que no queden errores colgados
     notifyListeners();
     try {
       _quotes = await repository.listQuotes(search: search, status: status);
@@ -230,6 +231,53 @@ class QuoteProvider extends ChangeNotifier {
       }
     } catch (e) {
       _errorMessage = e.toString();
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<Quote?> editQuote(
+    int quoteId, {
+    String? customerName,
+    String? customerPhone,
+    String? notes,
+    String? validUntil,
+  }) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      final updated = await repository.updateQuote(
+        quoteId,
+        customerName: customerName,
+        customerPhone: customerPhone,
+        notes: notes,
+        validUntil: validUntil,
+      );
+      final index = _quotes.indexWhere((q) => q.id == quoteId);
+      if (index >= 0) _quotes[index] = updated;
+      return updated;
+    } catch (e) {
+      _errorMessage = e.toString().replaceFirst('Exception: ', '');
+      return null;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> deleteQuote(int quoteId) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      await repository.deleteQuote(quoteId);
+      _quotes.removeWhere((q) => q.id == quoteId);
+      return true;
+    } catch (e) {
+      _errorMessage = e.toString().replaceFirst('Exception: ', '');
+      return false;
     } finally {
       _isLoading = false;
       notifyListeners();

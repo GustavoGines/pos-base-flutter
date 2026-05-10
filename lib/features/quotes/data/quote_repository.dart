@@ -61,6 +61,15 @@ class Quote {
   });
 
   factory Quote.fromJson(Map<String, dynamic> json) {
+    String? parseLaravelDate(String? raw) {
+      if (raw == null || raw.isEmpty) return null;
+      if (!raw.endsWith('Z') && !raw.contains('+') && raw.length > 10) {
+        final isoStr = '${raw.replaceAll(' ', 'T')}Z';
+        return DateTime.tryParse(isoStr)?.toLocal().toIso8601String();
+      }
+      return DateTime.tryParse(raw)?.toLocal().toIso8601String() ?? raw;
+    }
+
     final rawItems = json['items'] as List? ?? [];
     return Quote(
       id: json['id'] as int,
@@ -71,8 +80,8 @@ class Quote {
       customerName: json['customer_name']?.toString(),
       customerPhone: json['customer_phone']?.toString(),
       notes: json['notes']?.toString(),
-      validUntil: json['valid_until']?.toString(),
-      createdAt: json['created_at']?.toString(),
+      validUntil: (json['valid_until'] as String?)?.substring(0, 10),
+      createdAt: parseLaravelDate(json['created_at']?.toString()),
       priceList: json['price_list']?.toString() ?? 'base',
       items: rawItems
           .map(
@@ -186,6 +195,21 @@ class QuoteRepository {
     throw Exception('Error al recuperar el presupuesto');
   }
 
+  /// Recupera un presupuesto por ID con productos hidratados (para cargar al carrito)
+  Future<Quote?> getQuoteById(int quoteId) async {
+    final uri = Uri.parse('$_base/$quoteId');
+    final response = await client.get(
+      uri,
+      headers: {'Accept': 'application/json'},
+    );
+    if (response.statusCode == 200) {
+      return Quote.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+    } else if (response.statusCode == 404) {
+      return null;
+    }
+    throw Exception('Error al recuperar el presupuesto');
+  }
+
   Future<Quote> updateStatus(int quoteId, String status) async {
     final uri = Uri.parse('$_base/$quoteId/status');
     final body = jsonEncode({'status': status});
@@ -204,5 +228,47 @@ class QuoteRepository {
     }
     
     throw Exception('Error al actualizar el estado del presupuesto');
+  }
+
+  Future<Quote> updateQuote(int quoteId, {
+    String? customerName,
+    String? customerPhone,
+    String? notes,
+    String? validUntil,
+  }) async {
+    final uri = Uri.parse('$_base/$quoteId');
+    final body = jsonEncode({
+      'customer_name': customerName,
+      'customer_phone': customerPhone,
+      'notes': notes,
+      'valid_until': validUntil,
+    });
+
+    final response = await client.put(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: body,
+    );
+
+    if (response.statusCode == 200) {
+      return Quote.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+    }
+    throw Exception('Error al actualizar el presupuesto');
+  }
+
+  Future<void> deleteQuote(int quoteId) async {
+    final uri = Uri.parse('$_base/$quoteId');
+    final response = await client.delete(
+      uri,
+      headers: {'Accept': 'application/json'},
+    );
+
+    if (response.statusCode != 200) {
+      final msg = jsonDecode(response.body)?['message'] ?? 'Error al eliminar el presupuesto';
+      throw Exception(msg);
+    }
   }
 }

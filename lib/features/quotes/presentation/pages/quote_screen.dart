@@ -205,7 +205,7 @@ class _QuoteScreenState extends State<QuoteScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: const GlobalAppBar(currentRoute: '/quotes', title: 'Presupuestos'),
+      appBar: const GlobalAppBar(currentRoute: '/quotes', title: 'Nuevo Presupuesto', showBackButton: true),
       body: Row(
         children: [
           // -- Panel Izquierdo: Buscador ------------------------------------

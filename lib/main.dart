@@ -41,7 +41,6 @@ import 'features/reports/presentation/pages/general_audit_screen.dart';
 import 'features/customers/presentation/screens/customers_screen.dart';
 import 'features/trash/presentation/screens/trash_screen.dart';
 import 'features/reports/presentation/pages/reports_screen.dart';
-import 'features/quotes/presentation/pages/quote_screen.dart';
 import 'features/quotes/presentation/pages/quotes_list_screen.dart';
 import 'features/quotes/presentation/providers/quote_provider.dart';
 import 'features/quotes/data/quote_repository.dart';
