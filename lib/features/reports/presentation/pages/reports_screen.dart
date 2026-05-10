@@ -24,8 +24,23 @@ class _ReportsScreenState extends State<ReportsScreen>
   @override
   void initState() {
     super.initState();
-    final hasAdvancedReports = context.read<SettingsProvider>().features.advancedReports;
-    _tabController = TabController(length: hasAdvancedReports ? 4 : 2, vsync: this);
+    final features = context.read<SettingsProvider>().features;
+    final hasAdvancedReports = features.advancedReports;
+    final hasCurrentAccounts = features.currentAccounts;
+    
+    // Calculamos el total de solapas: 
+    // 2 base (Categoría, Marcas) 
+    // + 1 si tiene Advanced Reports (Balance Mensual)
+    // + 1 si tiene Advanced Reports Y Current Accounts (Consumo Interno)
+    int tabCount = 2;
+    if (hasAdvancedReports) {
+      tabCount += 1; // Balance Mensual
+      if (hasCurrentAccounts) {
+        tabCount += 1; // Consumo Interno
+      }
+    }
+
+    _tabController = TabController(length: tabCount, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<ReportsProvider>().fetchProfitByCategory();
       // Cargar cheques para el KPI de liquidez (solo si la feature está activa)
@@ -103,7 +118,9 @@ class _ReportsScreenState extends State<ReportsScreen>
 
   @override
   Widget build(BuildContext context) {
-    final hasAdvancedReports = context.watch<SettingsProvider>().features.advancedReports;
+    final features = context.watch<SettingsProvider>().features;
+    final hasAdvancedReports = features.advancedReports;
+    final hasCurrentAccounts = features.currentAccounts;
 
     return Scaffold(
       appBar: const GlobalAppBar(currentRoute: '/reports'),
@@ -131,7 +148,8 @@ class _ReportsScreenState extends State<ReportsScreen>
                         // 🔒 CANDADO 3: Balance Mensual y Consumo Interno solo para plan con advanced_reports
                         if (hasAdvancedReports) ...[
                           const Tab(icon: Icon(Icons.calendar_month, size: 18), text: 'Balance Mensual'),
-                          const Tab(icon: Icon(Icons.inventory_2, size: 18), text: 'Consumo Interno'),
+                          if (hasCurrentAccounts)
+                            const Tab(icon: Icon(Icons.inventory_2, size: 18), text: 'Consumo Interno'),
                         ]
                       ],
                     ),
@@ -177,8 +195,8 @@ class _ReportsScreenState extends State<ReportsScreen>
                     // Tab 2: Balance Mensual (solo con advanced_reports)
                     if (hasAdvancedReports)
                       _MonthlyBalanceTab(provider: provider),
-                    // Tab 3: Consumo Interno (solo con advanced_reports)
-                    if (hasAdvancedReports)
+                    // Tab 3: Consumo Interno (solo con advanced_reports Y currentAccounts)
+                    if (hasAdvancedReports && hasCurrentAccounts)
                       const InternalConsumptionReportView(),
                   ],
                 ),
