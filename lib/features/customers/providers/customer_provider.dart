@@ -174,6 +174,7 @@ class CustomerProvider extends ChangeNotifier {
     String description = '',
     List<int> saleIds = const [],
     Map<String, dynamic>? checkDetails,
+    int? cashShiftId,
   }) async {
     try {
       final Map<String, dynamic> bodyPayload = {};
@@ -197,6 +198,10 @@ class CustomerProvider extends ChangeNotifier {
 
       if (checkDetails != null) {
         bodyPayload['check_details'] = checkDetails;
+      }
+
+      if (cashShiftId != null) {
+        bodyPayload['cash_shift_id'] = cashShiftId;
       }
 
       final response = await client.post(

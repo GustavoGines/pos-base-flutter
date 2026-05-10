@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../models/customer_model.dart';
 import '../../providers/customer_provider.dart';
 import '../../../settings/presentation/providers/settings_provider.dart';
+import '../../../cash_register/presentation/providers/cash_register_provider.dart';
 
 class _PaymentLine {
   String method;
@@ -187,6 +188,7 @@ class _PaymentDialogState extends State<PaymentDialog> {
         payments: paymentsPayload,
         description: _descriptionController.text.trim(),
         saleIds: _paymentType == 'specific' ? _selectedSaleIds : const [],
+        cashShiftId: context.read<CashRegisterProvider>().currentShift?.id,
       );
 
       if (success && mounted) {

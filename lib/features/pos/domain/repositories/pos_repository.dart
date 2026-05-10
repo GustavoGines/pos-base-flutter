@@ -33,6 +33,7 @@ abstract class PosRepository {
     required List<Map<String, dynamic>> payments,
     required double tenderedAmount,
     required double changeAmount,
+    required int shiftId,
     int? userId,
     List<CartItem>? items,
     double shippingCost = 0.0,

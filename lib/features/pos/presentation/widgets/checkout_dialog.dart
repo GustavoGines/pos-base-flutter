@@ -634,6 +634,14 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
 
     bool success;
 
+    final shiftId = context.read<CashRegisterProvider>().currentShift?.id;
+    final userId = currentUser?['id'] as int?;
+
+    if (shiftId == null) {
+      SnackBarService.error(context, 'No hay turno de caja abierto');
+      return;
+    }
+
     if (isPending) {
       success = await posProvider.payPendingSale(
         saleId: widget.saleId!,
@@ -642,22 +650,15 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         payments: paymentsPayload,
         tenderedAmount: _actualTendered,
         changeAmount: _change,
+        shiftId: shiftId,
         localTerminal: localTerminal,
         userName: userName,
         settings: _printReceipt ? settings : null,
-        userId: currentUser?['id'] as int?,
+        userId: userId,
         showPreview: _showPreview,
         checkDetails: checkDetailsPayload,
       );
     } else {
-      final shiftId = context.read<CashRegisterProvider>().currentShift?.id;
-      final userId = currentUser?['id'] as int?;
-
-      if (shiftId == null) {
-        SnackBarService.error(context, 'No hay turno de caja abierto');
-        return;
-      }
-
       success = await posProvider.processCheckout(
         shiftId: shiftId,
         totalSurcharge: _totalSurcharge,

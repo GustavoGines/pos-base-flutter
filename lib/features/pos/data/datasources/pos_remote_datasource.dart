@@ -44,6 +44,7 @@ abstract class PosRemoteDataSource {
     required List<Map<String, dynamic>> payments,
     required double tenderedAmount,
     required double changeAmount,
+    required int shiftId,
     int? userId,
     List<CartItem>? items,
     double shippingCost = 0.0,
@@ -259,6 +260,7 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
     required List<Map<String, dynamic>> payments,
     required double tenderedAmount,
     required double changeAmount,
+    required int shiftId,
     int? userId,
     List<CartItem>? items,
     double shippingCost = 0.0,
@@ -273,6 +275,7 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
         'shipping_cost': shippingCost,
         if (userId != null) 'user_id': userId,
         if (checkDetails != null) 'check_details': checkDetails,
+        'cash_shift_id': shiftId,
       };
       if (items != null) {
         payload['items'] = items.map((item) => {
