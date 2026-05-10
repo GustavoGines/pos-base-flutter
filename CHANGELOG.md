@@ -23,6 +23,7 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.0.0/) y el p
 
 ### 🐛 Correcciones y Estabilidad
 - **Blindaje Total de Cajas (Multi-Terminal):** Se solucionó definitivamente un error de sincronización donde, al cobrar velozmente en una terminal secundaria, la venta podía registrarse accidentalmente bajo el turno de la computadora principal. Ahora cada venta está 100% blindada a su propia caja física, asegurando un historial de Turnos perfecto.
+- **Arreglo Crítico: Arqueo de Caja y Abonos:** Se solucionó un problema grave donde el dinero recibido por cobros de "Abonos" (Cuentas Corrientes) o pagos de "Ventas en Espera" se enviaban al turno incorrecto en sistemas Multi-Caja. Además, el efectivo de dichos abonos no se reflejaba en el monto esperado del Cierre de Caja de la terminal, provocando sobrantes misteriosos. Ahora el arqueo cuadra al centavo en la terminal exacta donde ocurre el cobro.
 
 ---
 ## [1.3.9] - 2026-05-08 - Actualización de Precios Dinámicos y Estabilidad de Cajas
