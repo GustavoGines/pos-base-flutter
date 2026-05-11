@@ -78,22 +78,30 @@ void main(List<String> args) async {
   String? targetDir;
   String? zipPath;
 
+  // Log de diagnóstico: mostrar TODOS los args recibidos para auditar
+  stdout.writeln('[ARGS] Total recibidos: ${args.length}');
+  for (int i = 0; i < args.length; i++) {
+    stdout.writeln('[ARGS]   [$i] = "${args[i]}"');
+  }
+
   // Parser de argumentos con soporte --flag=valor
+  // IMPORTANTE: usar substring(), NO split('=')[1].
+  // split() corta en todos los '=', substring() preserva la ruta completa.
   for (final arg in args) {
     if (arg.startsWith('--component=')) {
-      component = arg.split('=')[1];
+      component = arg.substring('--component='.length).trim();
     } else if (arg.startsWith('--target-dir=')) {
-      targetDir = arg.substring('--target-dir='.length).replaceAll('"', '').replaceAll("'", "");
+      targetDir = arg.substring('--target-dir='.length).trim();
     } else if (arg.startsWith('--zip-path=')) {
-      zipPath = arg.substring('--zip-path='.length).replaceAll('"', '').replaceAll("'", "");
+      zipPath = arg.substring('--zip-path='.length).trim();
     }
   }
 
   // Fallback para versiones muy antiguas (2 args posicionales)
   if (component == null && args.length >= 2 && !args[0].startsWith('--')) {
     component = 'frontend';
-    zipPath = args[0].replaceAll('"', '').replaceAll("'", "");
-    targetDir = args[1].replaceAll('"', '').replaceAll("'", "");
+    zipPath = args[0].trim();
+    targetDir = args[1].trim();
   }
 
   // Validación de argumentos mínimos

@@ -312,6 +312,22 @@ class _UpdateDialogState extends State<UpdateDialog> {
   ///   visible para el prompt UAC → Windows cancela la elevación silenciosamente
   ///   → el updater nunca arranca. El backend no necesita admin porque su
   ///   directorio (C:\laragon\www\...) es escribible por el usuario actual.
+  /// Escribe un launcher.ps1 en %TEMP% y lo lanza DETACHED vía powershell -File.
+  ///
+  /// ¿Por qué .ps1 y no .bat?
+  /// El enfoque anterior usaba un .bat que llamaba a PowerShell con -Command "...".
+  /// El problema: PowerShell reinterpreta el string del -Command, y cualquier
+  /// comilla doble (") dentro de la ruta (ej: "--target-dir=C:\Program Files\..")
+  /// TERMINA el string prematuramente. PowerShell lee "--target-dir=C:\Program"
+  /// y el resto (" Files\Sistema POS") queda como tokens sueltos → la carpeta
+  /// destino queda truncada en el primer espacio.
+  ///
+  /// Con -File, PowerShell carga el .ps1 como código nativo. Las comillas simples
+  /// en el .ps1 son literales de PowerShell y preservan los espacios sin ninguna
+  /// ambigüedad, sin importar la ruta de instalación.
+  ///
+  /// [requireElevation] = true  → Frontend: Start-Process -Verb RunAs (UAC)
+  /// [requireElevation] = false → Backend: corre directo sin elevar.
   Future<void> _launchUpdaterDetached({
     required String updaterPath,
     required String componentArg,
@@ -319,53 +335,64 @@ class _UpdateDialogState extends State<UpdateDialog> {
     required String zipPath,
     required bool requireElevation,
   }) async {
-    String psEscape(String s) => s.replaceAll("'", "''");
+    // En PowerShell, las comillas simples son literales. Para incluir una comilla
+    // simple dentro de un string single-quoted, se duplica ('').
+    String psQ(String s) => s.replaceAll("'", "''");
 
-    final argList =
-        '\'--component=$componentArg\', \'"--target-dir=${psEscape(targetDir)}"\', \'"--zip-path=${psEscape(zipPath)}"\'';
-
-    final String batContent;
+    // Construir el contenido del .ps1 con sintaxis nativa de PowerShell.
+    // Los argumentos se pasan como un array: @('arg1', 'arg2', 'arg3').
+    // Esto preserva los espacios dentro de cada elemento sin necesidad de
+    // doble-quoting ni escaping adicional.
+    final String ps1Content;
     if (requireElevation) {
-      // FRONTEND: eleva con UAC. El usuario ve el prompt en los 5s del countdown.
-      batContent = '@echo off\r\n'
-          'powershell -ExecutionPolicy Bypass -Command "'
-          'Start-Process -FilePath \'${psEscape(updaterPath)}\' '
-          '-ArgumentList $argList '
-          '-Verb RunAs'
-          '"\r\n';
+      ps1Content = [
+        '# OTA Launcher — Frontend (elevado)',
+        '\$args = @(',
+        "  '--component=$componentArg',",
+        "  '--target-dir=${psQ(targetDir)}',",
+        "  '--zip-path=${psQ(zipPath)}'",
+        ')',
+        "Start-Process -FilePath '${psQ(updaterPath)}' -ArgumentList \$args -Verb RunAs",
+      ].join('\r\n');
     } else {
-      // BACKEND: sin elevación. Start-Process normal, sin -Verb RunAs.
-      // WindowStyle Hidden evita que aparezca una ventana de consola.
-      batContent = '@echo off\r\n'
-          'powershell -ExecutionPolicy Bypass -Command "'
-          'Start-Process -FilePath \'${psEscape(updaterPath)}\' '
-          '-ArgumentList $argList '
-          '-WindowStyle Hidden'
-          '"\r\n';
+      ps1Content = [
+        '# OTA Launcher — Backend (sin elevación)',
+        '\$args = @(',
+        "  '--component=$componentArg',",
+        "  '--target-dir=${psQ(targetDir)}',",
+        "  '--zip-path=${psQ(zipPath)}'",
+        ')',
+        "Start-Process -FilePath '${psQ(updaterPath)}' -ArgumentList \$args -WindowStyle Hidden",
+      ].join('\r\n');
     }
 
-    // El BAT se escribe en %TEMP% (no en C:\Program Files\) para evitar errno=5.
-    final batPath = p.join(
+    // Escribir el .ps1 en %TEMP% para no necesitar permisos de admin al escribir.
+    final ps1Path = p.join(
         Directory.systemTemp.path,
-        '_ota_launcher_${DateTime.now().millisecondsSinceEpoch}.bat');
+        '_ota_launcher_${DateTime.now().millisecondsSinceEpoch}.ps1');
     try {
-      File(batPath).writeAsStringSync(batContent);
-      debugPrint('[UpdateDialog] Launcher BAT (${
+      File(ps1Path).writeAsStringSync(ps1Content);
+      debugPrint('[UpdateDialog] Launcher PS1 (${
         requireElevation ? 'ELEVADO' : 'NORMAL'
-      }) escrito en: $batPath');
+      }) escrito en: $ps1Path');
+      debugPrint('[UpdateDialog] Contenido PS1:\n$ps1Content');
     } catch (e) {
-      debugPrint('[UpdateDialog] Error escribiendo BAT: $e');
+      debugPrint('[UpdateDialog] Error escribiendo PS1: $e');
       rethrow;
     }
 
+    // Lanzar PowerShell con -File (no -Command).
+    // -File ejecuta el script como código nativo: no reinterpreta strings,
+    // no corta en comillas dobles, no rompe rutas con espacios.
+    // DETACHED desacopla el proceso de Flutter → sobrevive al exit(0).
     await Process.start(
-      'cmd',
-      ['/c', batPath],
+      'powershell',
+      ['-ExecutionPolicy', 'Bypass', '-NonInteractive', '-File', ps1Path],
       mode: ProcessStartMode.detached,
       runInShell: false,
     );
 
-    debugPrint('[UpdateDialog] Launcher lanzado en modo DETACHED.');
+    debugPrint('[UpdateDialog] Launcher PS1 lanzado en modo DETACHED.');
   }
 
   /// Persiste info del update pendiente en disco para diagnóstico post-crash.
