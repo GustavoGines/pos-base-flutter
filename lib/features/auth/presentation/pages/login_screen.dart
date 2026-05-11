@@ -422,15 +422,6 @@ class _LoginScreenState extends State<LoginScreen> {
                                     'v$_appVersion',
                                     style: TextStyle(color: Colors.grey.shade600, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.0),
                                   ),
-                                  if (_appVersion.contains('1.4.2')) ...[
-                                    const SizedBox(width: 6),
-                                    const Icon(Icons.cloud_done_rounded, size: 14, color: Color(0xFF10B981)),
-                                    const SizedBox(width: 2),
-                                    const Text(
-                                      'OTA',
-                                      style: TextStyle(color: Color(0xFF10B981), fontSize: 10, fontWeight: FontWeight.bold),
-                                    ),
-                                  ],
                                 ],
                               ),
                           ),

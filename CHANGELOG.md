@@ -4,21 +4,7 @@ Todos los cambios notables de la aplicación de caja (Flutter/Windows) están do
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.0.0/) y el proyecto adhiere a [Semantic Versioning](https://semver.org/).
 
 ---
-## [1.4.2] - 2026-05-11 - Despliegue Oficial OTA v1.4.2
-
-### 🚀 Mejoras
-- **Preparación de Infraestructura OTA:** Se restableció el indicador visual ("☁ OTA") en la pantalla de login para auditar el éxito de esta nueva actualización. La versión base de instalación limpia ahora actuará como trampolín para validar la actualización a v1.4.2 en todas las terminales.
-## [1.4.1] - 2026-05-11 - Parche de Concurrencia y OTA
-
-### 🚀 Mejoras
-- **Badge de Actualización Exitosa:** Se agregó un indicador visual interactivo ("☁ OTA") en la pantalla de inicio de sesión que aparece exclusivamente cuando el sistema detecta que la terminal fue actualizada exitosamente por aire a la versión 1.4.1.
-
-### 🐛 Correcciones y Estabilidad
-- **Blindaje de Órdenes en Espera Multi-Caja (Parche Crítico):** Resolvimos un defecto extremadamente raro donde dos cajeros que intentaran cobrar el mismo ticket pendiente exactamente en el mismo milisegundo podían duplicar el registro de pago. Ahora, el servidor bloquea automáticamente la orden para asegurar que solo una caja la procese, garantizando arqueos de caja 100% exactos sin importar en qué terminal se originó o se cobró el ticket.
-- **Actualizador OTA en PowerShell:** El motor de actualizaciones automáticas fue reescrito internamente para usar PowerShell puro en lugar de scripts `.bat`. Esto soluciona por completo los errores donde la actualización fallaba y cortaba la ruta si la carpeta principal contenía espacios en su nombre.
-
----
-## [1.4.0] - 2026-05-09 - Cuentas de Consumo Interno, Dashboard de Presupuestos y Pagos Mixtos
+## [1.4.0] - 2026-05-11 - Consumo Interno, Multi-Caja y Estabilidad OTA
 
 ### 🚀 Nuevas Funcionalidades (Comerciales)
 - **Dashboard de Presupuestos Enterprise:** Rediseño completo de la grilla de presupuestos para que veas mucha más información en una sola pantalla. La selección de presupuestos es ahora ultra-rápida y fluida, ideal para negocios con mucho volumen.
@@ -36,8 +22,11 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.0.0/) y el p
 - **Claridad Visual en Saldos:** Mejoramos la pantalla de Cuentas Corrientes. En lugar de mostrar signos negativos confusos, ahora indica con claridad "Deuda a Pagar" (en rojo), "Saldo a Favor" (en verde) o "Cuenta al Día" (en gris).
 
 ### 🐛 Correcciones y Estabilidad
-- **Blindaje Total de Cajas (Multi-Terminal):** Se solucionó definitivamente un error de sincronización donde, al cobrar velozmente en una terminal secundaria, la venta podía registrarse accidentalmente bajo el turno de la computadora principal. Ahora cada venta está 100% blindada a su propia caja física, asegurando un historial de Turnos perfecto.
-- **Arreglo Crítico: Arqueo de Caja y Abonos:** Se solucionó un problema grave donde el dinero recibido por cobros de "Abonos" (Cuentas Corrientes) o pagos de "Ventas en Espera" se enviaban al turno incorrecto en sistemas Multi-Caja. Además, el efectivo de dichos abonos no se reflejaba en el monto esperado del Cierre de Caja de la terminal, provocando sobrantes misteriosos. Ahora el arqueo cuadra al centavo en la terminal exacta donde ocurre el cobro.
+- **Blindaje de Órdenes en Espera Multi-Caja:** Resolvimos un defecto donde dos cajeros que intentaran cobrar el mismo ticket pendiente simultáneamente podían duplicar el registro. Ahora, el servidor bloquea automáticamente la orden para asegurar que solo una caja la procese, garantizando arqueos 100% exactos.
+- **Actualizador OTA blindado para rutas con espacios:** El motor de actualizaciones automáticas fue parcheado internamente (pasando a PowerShell puro con doble quoting) solucionando por completo los fallos de extracción cuando la carpeta del sistema se encuentra dentro de "Archivos de Programa".
+- **Arreglo Crítico: Arqueo de Caja y Abonos:** Se solucionó un problema grave donde el dinero recibido por cobros de "Abonos" (Cuentas Corrientes) o pagos de "Ventas en Espera" se enviaban al turno incorrecto en sistemas Multi-Caja. Ahora el arqueo cuadra al centavo en la terminal exacta donde ocurre el cobro.
+- **Blindaje Total de Cajas (Multi-Terminal):** Se solucionó definitivamente un error de sincronización donde, al cobrar velozmente en una terminal secundaria, la venta podía registrarse accidentalmente bajo el turno de la computadora principal. Ahora cada venta está 100% blindada a su propia caja física.
+
 
 ---
 ## [1.3.9] - 2026-05-08 - Actualización de Precios Dinámicos y Estabilidad de Cajas
