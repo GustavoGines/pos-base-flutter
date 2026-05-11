@@ -4,6 +4,15 @@ Todos los cambios notables de la aplicación de caja (Flutter/Windows) están do
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.0.0/) y el proyecto adhiere a [Semantic Versioning](https://semver.org/).
 
 ---
+## [1.4.1] - 2026-05-11 - Parche OTA y Badge de Confirmación
+
+### 🚀 Mejoras
+- **Confirmación Visual de Update OTA:** Tras actualizarse exitosamente por aire a la v1.4.1, la pantalla de login mostrará un badge verde "☁ OTA" junto a la versión, confirmando que el nuevo binario está activo en la terminal.
+
+### 🐛 Correcciones Críticas
+- **Arreglo definitivo del OTA en rutas con espacios:** Reemplazamos el lanzador `.bat` por un script `.ps1` nativo. El `.bat` anterior causaba que PowerShell cortara la ruta de instalación en el primer espacio, instalando en `C:\Program` en lugar de `C:\Program Files\Sistema POS`. Con `.ps1 -File`, los argumentos se pasan como array nativo de PowerShell y los espacios quedan preservados sin ambigüedad.
+
+---
 ## [1.4.0] - 2026-05-11 - Consumo Interno, Multi-Caja y Estabilidad OTA
 
 ### 🚀 Nuevas Funcionalidades (Comerciales)
