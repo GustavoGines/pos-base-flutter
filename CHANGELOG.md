@@ -4,6 +4,16 @@ Todos los cambios notables de la aplicación de caja (Flutter/Windows) están do
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.0.0/) y el proyecto adhiere a [Semantic Versioning](https://semver.org/).
 
 ---
+## [1.4.1] - 2026-05-11 - Parche de Concurrencia y OTA
+
+### 🚀 Mejoras
+- **Badge de Actualización Exitosa:** Se agregó un indicador visual interactivo ("☁ OTA") en la pantalla de inicio de sesión que aparece exclusivamente cuando el sistema detecta que la terminal fue actualizada exitosamente por aire a la versión 1.4.1.
+
+### 🐛 Correcciones y Estabilidad
+- **Blindaje de Órdenes en Espera Multi-Caja (Parche Crítico):** Resolvimos un defecto extremadamente raro donde dos cajeros que intentaran cobrar el mismo ticket pendiente exactamente en el mismo milisegundo podían duplicar el registro de pago. Ahora, el servidor bloquea automáticamente la orden para asegurar que solo una caja la procese, garantizando arqueos de caja 100% exactos sin importar en qué terminal se originó o se cobró el ticket.
+- **Actualizador OTA en PowerShell:** El motor de actualizaciones automáticas fue reescrito internamente para usar PowerShell puro en lugar de scripts `.bat`. Esto soluciona por completo los errores donde la actualización fallaba y cortaba la ruta si la carpeta principal contenía espacios en su nombre.
+
+---
 ## [1.4.0] - 2026-05-09 - Cuentas de Consumo Interno, Dashboard de Presupuestos y Pagos Mixtos
 
 ### 🚀 Nuevas Funcionalidades (Comerciales)

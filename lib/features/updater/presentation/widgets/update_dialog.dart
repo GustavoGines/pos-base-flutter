@@ -322,7 +322,7 @@ class _UpdateDialogState extends State<UpdateDialog> {
     String psEscape(String s) => s.replaceAll("'", "''");
 
     final argList =
-        '\'--component=$componentArg\', \'--target-dir=${psEscape(targetDir)}\', \'--zip-path=${psEscape(zipPath)}\'';
+        '\'--component=$componentArg\', \'"--target-dir=${psEscape(targetDir)}"\', \'"--zip-path=${psEscape(zipPath)}"\'';
 
     final String batContent;
     if (requireElevation) {
