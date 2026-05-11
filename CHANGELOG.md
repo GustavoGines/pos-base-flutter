@@ -4,6 +4,10 @@ Todos los cambios notables de la aplicación de caja (Flutter/Windows) están do
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.0.0/) y el proyecto adhiere a [Semantic Versioning](https://semver.org/).
 
 ---
+## [1.4.2] - 2026-05-11 - Despliegue Oficial OTA v1.4.2
+
+### 🚀 Mejoras
+- **Preparación de Infraestructura OTA:** Se restableció el indicador visual ("☁ OTA") en la pantalla de login para auditar el éxito de esta nueva actualización. La versión base de instalación limpia ahora actuará como trampolín para validar la actualización a v1.4.2 en todas las terminales.
 ## [1.4.1] - 2026-05-11 - Parche de Concurrencia y OTA
 
 ### 🚀 Mejoras
