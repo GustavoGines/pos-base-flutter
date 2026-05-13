@@ -330,28 +330,30 @@ class _UpdateDialogState extends State<UpdateDialog> {
     // Para incluir una ' dentro de ese string se duplica ('').
     String psQ(String s) => s.replaceAll("'", "''");
 
-    // IMPORTANTE: NO usar $args — variable reservada de PowerShell.
-    // Usamos $updaterArgs para evitar conflictos.
+    // BUG CONOCIDO DE POWERSHELL: -ArgumentList con array @(...) une los
+    // elementos con espacios SIN comillas → 'C:\Program Files\...' se parte
+    // en 'C:\Program' y 'Files\...' → ruta truncada en el updater.
+    //
+    // SOLUCIÓN: un único string con " embebidos alrededor de cada ruta.
+    // El parser CRT de Windows los delimitará correctamente:
+    //   --component=frontend     → argv[1]
+    //   "--target-dir=C:\Pro..." → argv[2] sin comillas
+    //   "--zip-path=..."         → argv[3] sin comillas
+    //
+    // Usamos single-quoted string en PS1 para que \ sean literales
+    // y los " lleguen intactos a Start-Process.
     final String ps1Content;
     if (requireElevation) {
       ps1Content = [
         '# OTA Launcher — Frontend (elevado con UAC)',
-        '\$updaterArgs = @(',
-        "  '--component=$componentArg',",
-        "  '--target-dir=${psQ(targetDir)}',",
-        "  '--zip-path=${psQ(zipPath)}'",
-        ')',
-        "Start-Process -FilePath '${psQ(updaterPath)}' -ArgumentList \$updaterArgs -Verb RunAs",
+        "\$argStr = '--component=$componentArg \"--target-dir=${psQ(targetDir)}\" \"--zip-path=${psQ(zipPath)}\"'",
+        "Start-Process -FilePath '${psQ(updaterPath)}' -ArgumentList \$argStr -Verb RunAs",
       ].join('\r\n');
     } else {
       ps1Content = [
         '# OTA Launcher — Backend (sin elevacion)',
-        '\$updaterArgs = @(',
-        "  '--component=$componentArg',",
-        "  '--target-dir=${psQ(targetDir)}',",
-        "  '--zip-path=${psQ(zipPath)}'",
-        ')',
-        "Start-Process -FilePath '${psQ(updaterPath)}' -ArgumentList \$updaterArgs -WindowStyle Hidden",
+        "\$argStr = '--component=$componentArg \"--target-dir=${psQ(targetDir)}\" \"--zip-path=${psQ(zipPath)}\"'",
+        "Start-Process -FilePath '${psQ(updaterPath)}' -ArgumentList \$argStr -WindowStyle Hidden",
       ].join('\r\n');
     }
 
