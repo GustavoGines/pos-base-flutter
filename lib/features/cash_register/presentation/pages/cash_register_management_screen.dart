@@ -16,7 +16,7 @@ class CashRegisterManagementScreen extends StatefulWidget {
 
 class _CashRegisterManagementScreenState extends State<CashRegisterManagementScreen> {
   bool _isLoading = false;
-  String _baseUrl = 'http://127.0.0.1:8000/api';
+  String _baseUrl = 'http://127.0.0.1/Sistema_POS/pos-backend/public/api';
 
   @override
   void initState() {
@@ -28,7 +28,7 @@ class _CashRegisterManagementScreenState extends State<CashRegisterManagementScr
     final prefs = await SharedPreferences.getInstance();
     if (mounted) {
       setState(() {
-        _baseUrl = prefs.getString('pos_api') ?? 'http://127.0.0.1:8000/api';
+        _baseUrl = prefs.getString('pos_api') ?? 'http://127.0.0.1/Sistema_POS/pos-backend/public/api';
       });
     }
   }

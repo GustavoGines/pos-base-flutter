@@ -216,7 +216,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _showServerConfigDialog() async {
     final prefs = await SharedPreferences.getInstance();
-    final currentUrl = prefs.getString('pos_api') ?? 'http://127.0.0.1:8000/api';
+    final currentUrl = prefs.getString('pos_api') ?? 'http://127.0.0.1/Sistema_POS/pos-backend/public/api';
     if (!mounted) return;
     final ctrl = TextEditingController(text: currentUrl);
 
@@ -237,7 +237,7 @@ class _LoginScreenState extends State<LoginScreen> {
           children: [
             const Text(
               'Apunta este frontend a la computadora principal (Servidor).\n'
-              'Ejemplo: http://192.168.1.50:8000/api',
+              'Ejemplo: http://192.168.1.50/Sistema_POS/pos-backend/public/api',
               style: TextStyle(color: Colors.blueGrey, fontSize: 13),
             ),
             const SizedBox(height: 16),
