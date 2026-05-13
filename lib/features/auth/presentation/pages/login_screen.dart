@@ -30,6 +30,7 @@ class _LoginScreenState extends State<LoginScreen> {
   UpdateInfo? _frontendUpdate;
   UpdateInfo? _backendUpdate;
   String _appVersion = '';
+  bool _updateCheckCompleted = false;
 
   @override
   void initState() {
@@ -52,24 +53,29 @@ class _LoginScreenState extends State<LoginScreen> {
       setState(() => _appVersion = packageInfo.version);
     }
 
-    final result = await UpdateService().checkUpdate();
-    if (!mounted) return;
+    try {
+      final result = await UpdateService().checkUpdate(throwErrors: true);
+      if (!mounted) return;
 
-    // Actualización crítica del frontend → diálogo bloqueante
-    if (result.frontendUpdate != null && result.frontendUpdate!.isCritical) {
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (_) => UpdateDialog(updateInfo: result.frontendUpdate!),
-      );
-      return;
+      // Actualización crítica del frontend → diálogo bloqueante
+      if (result.frontendUpdate != null && result.frontendUpdate!.isCritical) {
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (_) => UpdateDialog(updateInfo: result.frontendUpdate!),
+        );
+        return;
+      }
+
+      // Actualizaciones no críticas → badges en pantalla
+      setState(() {
+        _frontendUpdate = result.frontendUpdate;
+        _backendUpdate = result.backendUpdate;
+        _updateCheckCompleted = true;
+      });
+    } catch (e) {
+      // Fallo de red u otro error silencioso: no mostramos 'AL DÍA'
     }
-
-    // Actualizaciones no críticas → badges en pantalla
-    setState(() {
-      _frontendUpdate = result.frontendUpdate;
-      _backendUpdate = result.backendUpdate;
-    });
   }
 
 
@@ -422,7 +428,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                     'v$_appVersion',
                                     style: TextStyle(color: Colors.grey.shade600, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.0),
                                   ),
-                                  if (_appVersion.contains('1.4.1')) ...[
+                                  if (_updateCheckCompleted && _frontendUpdate == null && _backendUpdate == null) ...[
                                     const SizedBox(width: 6),
                                     const Icon(Icons.cloud_done_rounded, size: 14, color: Color(0xFF10B981)),
                                     const SizedBox(width: 2),
