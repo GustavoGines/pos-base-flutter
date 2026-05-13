@@ -71,7 +71,10 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final shiftId = context.read<CashRegisterProvider>().currentShift?.id;
-      context.read<SalesHistoryProvider>().loadSales(shiftId: shiftId);
+      final provider = context.read<SalesHistoryProvider>();
+      // Reseteamos filtros que hayan quedado sucios en el singleton de sesiones anteriores
+      provider.setMethodFilter(null);
+      provider.loadSales(period: 'shift', shiftId: shiftId);
       context.read<UsersProvider>().loadUsers();
     });
   }

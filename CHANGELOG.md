@@ -4,6 +4,12 @@ Todos los cambios notables de la aplicación de caja (Flutter/Windows) están do
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.0.0/) y el proyecto adhiere a [Semantic Versioning](https://semver.org/).
 
 ---
+## [1.4.3] - 2026-05-13 - Corrección Visual de Registro de Ventas
+
+### 🐛 Correcciones Críticas
+- **Ventas Ocultas (Filtro Fantasma):** Se corrigió un problema donde, tras realizar ciertas ventas, la pantalla de "Registro de Ventas" en Turnos parecía estar vacía. Esto ocurría porque el filtro de método de pago (ej. "Efectivo") quedaba guardado invisiblemente en la memoria de la aplicación desde una sesión anterior, ocultando las nuevas ventas. Ahora, cada vez que entras a los Turnos, la pantalla se limpia por completo garantizando que veas exactamente lo que acaba de suceder.
+
+---
 ## [1.4.2] - 2026-05-13 - Estabilidad de Red, Anulaciones y Cobros
 
 ### 🚀 Mejoras de Estabilidad
