@@ -29,7 +29,7 @@ class SalesHistoryRemoteDataSource {
     final response = await client.post(
       Uri.parse('$baseUrl/sales/$saleId/void'),
       headers: {'Accept': 'application/json'},
-    );
+    ).timeout(const Duration(seconds: 30));
     if (response.statusCode == 200) {
       final body = json.decode(response.body) as Map<String, dynamic>;
       return SaleRecord.fromJson(body['sale'] as Map<String, dynamic>);

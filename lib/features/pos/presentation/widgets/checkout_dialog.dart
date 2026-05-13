@@ -42,8 +42,8 @@ class PaymentLine {
     updateMethod(method, defaultCardSurcharge: defaultCardSurcharge, disableSurcharge: disableSurcharge);
   }
 
-  double get amount => double.tryParse(controller.text) ?? 0.0;
-  double get currentPercentage => double.tryParse(percentageController.text) ?? 0.0;
+  double get amount => double.tryParse(controller.text.replaceAll(',', '.')) ?? 0.0;
+  double get currentPercentage => double.tryParse(percentageController.text.replaceAll(',', '.')) ?? 0.0;
   
   double get surcharge {
     if (method == null || method!.isCash) return 0.0;
@@ -324,7 +324,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
 
   double get _actualTendered {
     if (_cashRequired == 0) return 0;
-    return double.tryParse(_cashTenderedCtrl.text) ?? 0.0;
+    return double.tryParse(_cashTenderedCtrl.text.replaceAll(',', '.')) ?? 0.0;
   }
 
   double get _change {
@@ -974,7 +974,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                               focusNode: line.percentageFocus,
                               onFocusChange: (hasFocus) {
                                 if (!hasFocus && line.method != null) {
-                                  final newPct = double.tryParse(line.percentageController.text) ?? 0.0;
+                                  final newPct = double.tryParse(line.percentageController.text.replaceAll(',', '.')) ?? 0.0;
                                   if (newPct != line.method!.surchargeValue) {
                                     provider.updatePaymentMethodSurcharge(line.method!.id, newPct);
                                   }

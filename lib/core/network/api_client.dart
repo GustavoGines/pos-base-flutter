@@ -56,6 +56,10 @@ class ApiClient extends http.BaseClient {
         request.headers['X-Session-Token'] = sessionToken!;
       }
 
+      // Prevenir el reúso de sockets muertos (SocketException/ClientException)
+      // que ocurre cuando Apache/Nginx cierra la conexión por inactividad.
+      request.headers['Connection'] = 'close';
+
       final response = await _inner.send(request);
 
       // ── Intercepción de 401: Sesión expirada ─────────────────────────────

@@ -4,6 +4,16 @@ Todos los cambios notables de la aplicación de caja (Flutter/Windows) están do
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.0.0/) y el proyecto adhiere a [Semantic Versioning](https://semver.org/).
 
 ---
+## [1.4.2] - 2026-05-13 - Estabilidad de Red, Anulaciones y Cobros
+
+### 🚀 Mejoras de Estabilidad
+- **Blindaje de Red para Terminales Secundarias:** Las PCs secundarias y terminales conectadas por Wi-Fi ahora crean túneles de red frescos y directos para cada acción (desactivación de Keep-Alive). Esto elimina por completo el molesto cartel rojo intermitente ("Verifique conexión al servidor") que aparecía al entrar al catálogo u otras pantallas tras haber dejado la caja inactiva por varios minutos.
+
+### 🐛 Correcciones Críticas
+- **Desbloqueo del Botón de Anular Ventas:** Se aumentó el tiempo de espera interno (timeout) de 10 a 30 segundos en las verificaciones de permisos (PIN) y ejecución de anulaciones. Esto evita que el sistema se rinda y muestre error de red si la base de datos principal está temporalmente ocupada procesando información pesada de otras cajas simultáneas.
+- **Botón de Cobro Congelado (Ceros Fantasmas):** Solucionado un defecto crítico de alta prioridad donde el botón de "Confirmar Pago" no se iluminaba aunque todo pareciera estar pagado. Se corrigió un agresivo redondeo automático en los pagos y se mejoró la tolerancia a configuraciones de idioma para que el sistema acepte y lea a la perfección tanto "Puntos" como "Comas" en centavos de los carritos. Ahora el cobro será exacto hasta el último centavo y el botón reaccionará con precisión.
+
+---
 ## [1.4.1] - 2026-05-11 - Parche OTA y Badge de Confirmación
 
 ### 🚀 Mejoras

@@ -26,7 +26,7 @@ class AuthRemoteDataSource {
             },
             body: json.encode({'pin': pin}),
           )
-          .timeout(const Duration(seconds: 10));
+          .timeout(const Duration(seconds: 30));
 
       debugPrint(
           '=== AUTH: Status ${response.statusCode}, body: ${response.body} ===');
@@ -90,7 +90,7 @@ class AuthRemoteDataSource {
             },
             body: json.encode({'pin': pin}),
           )
-          .timeout(const Duration(seconds: 10));
+          .timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
