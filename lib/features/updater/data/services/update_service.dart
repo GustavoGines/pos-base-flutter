@@ -42,10 +42,16 @@ class UpdateService {
         if (localResponse.statusCode == 200) {
           final localData = json.decode(localResponse.body);
           currentBackendVersion = localData['version'] ?? '0.0.0';
+        } else {
+          // Si el servidor responde pero hay error (500, 404), usamos 0.0.0 para permitir que el OTA lo repare.
+          currentBackendVersion = '0.0.0'; 
         }
+      } on TimeoutException {
+        // Laragon o la red no ha arrancado todavía
+        if (throwErrors) throw Exception('El servidor local está apagado o iniciando (Timeout).');
       } catch (e) {
-        // Si el backend local no responde, currentBackendVersion queda en '0.0.0'
-        // → el servidor de licencias siempre detectará que hay una versión disponible.
+        // Conexión rechazada (SocketException), etc.
+        if (throwErrors) throw Exception('El servidor local está apagado o inaccesible.');
       }
 
       final updateChannel = prefs.getString('update_channel') ?? 'stable';
