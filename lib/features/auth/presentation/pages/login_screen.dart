@@ -427,7 +427,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                     const Icon(Icons.cloud_done_rounded, size: 14, color: Color(0xFF10B981)),
                                     const SizedBox(width: 2),
                                     const Text(
-                                      'OTA',
+                                      'AL DÍA',
                                       style: TextStyle(color: Color(0xFF10B981), fontSize: 10, fontWeight: FontWeight.bold),
                                     ),
                                   ],
