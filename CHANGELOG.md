@@ -4,6 +4,12 @@ Todos los cambios notables de la aplicación de caja (Flutter/Windows) están do
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.0.0/) y el proyecto adhiere a [Semantic Versioning](https://semver.org/).
 
 ---
+## [1.4.4] - 2026-05-13 - Corrección de Entornos de Sincronización
+
+### 🐛 Correcciones Críticas
+- **Sincronización de Licencias Fantasma:** Se solucionó un problema crítico donde el sistema forzaba la actualización de la licencia contra la URL por defecto (`AppConfig.kApiBaseUrl`) ignorando la URL activa configurada en la red local (`pos_api`). Esto causaba que, al usar entornos de prueba (ej. `Sistema_POS_test`), la base de datos de prueba nunca recibiera la actualización de permisos desde el servidor central, resultando en planes desfasados. Ahora la sincronización respeta el entorno activo.
+
+---
 ## [1.4.3] - 2026-05-13 - Corrección Visual de Registro de Ventas
 
 ### 🐛 Correcciones Críticas

@@ -181,8 +181,11 @@ class SettingsProvider with ChangeNotifier {
     _isLoading = true;
     notifyListeners();
     try {
+      final prefs = await SharedPreferences.getInstance();
+      final activeUrl = prefs.getString('pos_api') ?? baseUrl;
+      
       final response = await http.post(
-        Uri.parse('$baseUrl/settings/license'),
+        Uri.parse('$activeUrl/settings/license'),
         headers: {'Accept': 'application/json', 'Content-Type': 'application/json'},
         body: json.encode({'license_key': licenseKey}),
       );
@@ -237,8 +240,11 @@ class SettingsProvider with ChangeNotifier {
       notifyListeners();
     }
     try {
+      final prefs = await SharedPreferences.getInstance();
+      final activeUrl = prefs.getString('pos_api') ?? baseUrl;
+
       final response = await http.post(
-        Uri.parse('$baseUrl/settings/license/sync'),
+        Uri.parse('$activeUrl/settings/license/sync'),
         headers: {'Accept': 'application/json', 'Content-Type': 'application/json'},
       ).timeout(const Duration(minutes: 4)); // 4 min: tolera cold-start de Render (2-3 min)
 
@@ -306,21 +312,27 @@ class SettingsProvider with ChangeNotifier {
     }
 
     if (needsSync) {
-      http.post(
-        Uri.parse('${AppConfig.kApiBaseUrl}/settings/license/sync'),
-        headers: {'Accept': 'application/json', 'Content-Type': 'application/json'},
-      ).timeout(const Duration(minutes: 4)).then((response) { // 4 min: tolera cold-start de Render
-        if (response.statusCode == 200) {
-          getSettingsUseCase().then((newSettings) {
-            _settings = newSettings;
-            // Bug #3 fix: actualizar el Secure Storage con el server_time recibido
-            // para que el Drift Check del próximo ciclo use el reloj del servidor.
-            LicenseHeartbeatService().updateLastSync(newSettings);
-            notifyListeners();
-          });
-        }
-      }).catchError((_) {
-        // Fracaso silencioso intencional
+      // ⚠️ CRÍTICO: usar la URL activa (SharedPrefs) y NO AppConfig.kApiBaseUrl hardcodeado.
+      // Si la app apunta a un backend alternativo (ej: _test), sincronizar contra ese backend
+      // para que los permisos se actualicen donde realmente está leyendo la app.
+      SharedPreferences.getInstance().then((prefs) {
+        final activeUrl = prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
+        http.post(
+          Uri.parse('$activeUrl/settings/license/sync'),
+          headers: {'Accept': 'application/json', 'Content-Type': 'application/json'},
+        ).timeout(const Duration(minutes: 4)).then((response) { // 4 min: tolera cold-start de Render
+          if (response.statusCode == 200) {
+            getSettingsUseCase().then((newSettings) {
+              _settings = newSettings;
+              // Bug #3 fix: actualizar el Secure Storage con el server_time recibido
+              // para que el Drift Check del próximo ciclo use el reloj del servidor.
+              LicenseHeartbeatService().updateLastSync(newSettings);
+              notifyListeners();
+            });
+          }
+        }).catchError((_) {
+          // Fracaso silencioso intencional
+        });
       });
     }
   }

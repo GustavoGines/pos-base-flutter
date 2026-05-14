@@ -223,7 +223,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() => _isActivatingLicense = true);
     try {
       final provider = context.read<SettingsProvider>();
-      final newPlan = await provider.activateLicense(AppConfig.kApiBaseUrl, key);
+      // ⚠️ Usar la URL activa (SharedPrefs) y NO AppConfig.kApiBaseUrl hardcodeado
+      final prefs = await SharedPreferences.getInstance();
+      final activeUrl = prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
+      final newPlan = await provider.activateLicense(activeUrl, key);
       if (!mounted) return;
       _licenseKeyCtrl.clear();
       SnackBarService.success(context, '✅ Licencia activada: ${newPlan.toUpperCase()}');
@@ -239,7 +242,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() => _isSyncingLicense = true);
     try {
       final provider = context.read<SettingsProvider>();
-      await provider.syncLicenseWithServer(AppConfig.kApiBaseUrl);
+      // ⚠️ Usar la URL activa (SharedPrefs) y NO AppConfig.kApiBaseUrl hardcodeado
+      final prefs = await SharedPreferences.getInstance();
+      final activeUrl = prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
+      await provider.syncLicenseWithServer(activeUrl);
       if (!mounted) return;
       SnackBarService.success(context, '✅ Permisos sincronizados.');
     } catch (e) {
