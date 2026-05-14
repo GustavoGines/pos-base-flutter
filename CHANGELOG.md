@@ -4,6 +4,12 @@ Todos los cambios notables de la aplicación de caja (Flutter/Windows) están do
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.0.0/) y el proyecto adhiere a [Semantic Versioning](https://semver.org/).
 
 ---
+## [1.4.5] - 2026-05-14 - Sincronización de QA y Entorno
+
+### 🚀 Mejoras
+- **Mantenimiento y Estabilidad:** Sincronización de versión con el Backend tras la implementación de la nueva arquitectura de Testing Automatizado (QA) y soporte universal de bases de datos en el servidor. El ecosistema ahora funciona en conjunto sobre la versión `v1.4.5`.
+
+---
 ## [1.4.4] - 2026-05-13 - Corrección de Entornos de Sincronización
 
 ### 🐛 Correcciones Críticas
