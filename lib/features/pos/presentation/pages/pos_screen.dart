@@ -56,9 +56,34 @@ class _PosScreenState extends State<PosScreen> {
       // Sincronizar y aplicar lista de precios fijada por la terminal
       final localTerminal = Provider.of<LocalTerminalProvider>(context, listen: false);
       final posProvider = Provider.of<PosProvider>(context, listen: false);
+      final settings = Provider.of<SettingsProvider>(context, listen: false).settings;
       
-      final initialTier = localTerminal.lockedPriceTier == 'none' ? 'base' : localTerminal.lockedPriceTier;
-      posProvider.setDefaultTier(initialTier, localTerminal.lockedPriceTierLabel);
+      String initialTier = 'base';
+      String? initialLabel;
+
+      if (localTerminal.lockedPriceTier != 'none') {
+        final lockedTier = localTerminal.lockedPriceTier;
+        
+        // Validar si es una lista custom y si aún existe/está habilitada en la configuración global
+        if (lockedTier.startsWith('custom_')) {
+          final tierName = lockedTier.replaceFirst('custom_', '');
+          final isEnabledGlobal = settings != null && (settings.features.multiplePrices || settings.enableAdvancedPriceTiers);
+          final exists = isEnabledGlobal && settings.customPriceTiers.any((t) => t['name'] == tierName);
+          
+          if (exists) {
+            initialTier = lockedTier;
+            initialLabel = localTerminal.lockedPriceTierLabel;
+          } else {
+            // Limpiar la lista fijada porque ya no es válida o fue eliminada
+            localTerminal.setLockedPriceTier('none');
+          }
+        } else {
+          initialTier = lockedTier;
+          initialLabel = localTerminal.lockedPriceTierLabel;
+        }
+      }
+
+      posProvider.setDefaultTier(initialTier, initialLabel);
       if (posProvider.cart.isEmpty) {
         posProvider.clearCart(); // Aplica la lista fijada inmediatamente
       }
