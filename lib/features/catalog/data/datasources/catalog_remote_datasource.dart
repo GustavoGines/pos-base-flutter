@@ -5,7 +5,7 @@ import '../models/category_model.dart';
 import '../models/brand_model.dart';
 
 abstract class CatalogRemoteDataSource {
-  /// Returns a map with 'data' (List<ProductModel>), 'current_page', 'last_page'.
+  /// Returns a map with 'data' (`List<ProductModel>`), 'current_page', 'last_page'.
   Future<Map<String, dynamic>> fetchProducts({int page = 1, String? search, String? sortBy, String? sortDirection, int? perPage});
   Future<List<CategoryModel>> fetchCategories();
   // Brand CRUD

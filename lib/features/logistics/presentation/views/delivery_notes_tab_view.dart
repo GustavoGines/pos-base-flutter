@@ -6,7 +6,7 @@ import '../widgets/delivery_note_card.dart';
 class DeliveryNotesTabView extends StatefulWidget {
   final String status;
 
-  const DeliveryNotesTabView({Key? key, required this.status}) : super(key: key);
+  const DeliveryNotesTabView({super.key, required this.status});
 
   @override
   State<DeliveryNotesTabView> createState() => _DeliveryNotesTabViewState();
@@ -19,7 +19,7 @@ class _DeliveryNotesTabViewState extends State<DeliveryNotesTabView> {
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
-    
+
     // Al inicializar el tab, verificamos si ya tiene datos. Si no, cargamos la primera página.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final provider = context.read<LogisticsProvider>();
@@ -38,7 +38,8 @@ class _DeliveryNotesTabViewState extends State<DeliveryNotesTabView> {
 
   void _onScroll() {
     // Infinite Scroll: cuando estemos al 85% del scroll, pedimos la siguiente página
-    if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent * 0.85) {
+    if (_scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent * 0.85) {
       context.read<LogisticsProvider>().fetchNextPage(widget.status);
     }
   }

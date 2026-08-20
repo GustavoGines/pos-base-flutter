@@ -6,7 +6,7 @@ import '../../domain/entities/category.dart';
 /// Dialog de gestión ABM de Categorías.
 /// Estilo consistente con ProductFormDialog y BulkPriceUpdateDialog del sistema.
 class CategoriesManagerDialog extends StatefulWidget {
-  const CategoriesManagerDialog({Key? key}) : super(key: key);
+  const CategoriesManagerDialog({super.key});
 
   @override
   State<CategoriesManagerDialog> createState() => _CategoriesManagerDialogState();
@@ -207,7 +207,7 @@ class _CategoriesManagerDialogState extends State<CategoriesManagerDialog> {
       contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
       leading: CircleAvatar(
         radius: 16,
-        backgroundColor: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+        backgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
         child: Icon(Icons.label_rounded,
             color: Theme.of(context).colorScheme.primary, size: 16),
       ),

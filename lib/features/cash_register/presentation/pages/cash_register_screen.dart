@@ -12,12 +12,12 @@ class CashRegisterScreen extends StatefulWidget {
   final VoidCallback onContinueToPos;
 
   const CashRegisterScreen({
-    Key? key,
+    super.key,
     required this.onOpenShift,
     required this.isLoading,
     this.errorMessage,
     required this.onContinueToPos,
-  }) : super(key: key);
+  });
 
   @override
   _CashRegisterScreenState createState() => _CashRegisterScreenState();
@@ -211,7 +211,7 @@ class _CashRegisterScreenState extends State<CashRegisterScreen> {
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 24),
                         child: DropdownButtonFormField<int>(
-                          value: dropdownValue,
+                          initialValue: dropdownValue,
                           decoration: const InputDecoration(
                             labelText: 'Caja Física',
                             prefixIcon: Icon(Icons.computer),

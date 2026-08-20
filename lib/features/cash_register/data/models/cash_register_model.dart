@@ -2,10 +2,10 @@ import '../../domain/entities/cash_register.dart';
 
 class CashRegisterModel extends CashRegister {
   CashRegisterModel({
-    required int id,
-    required String name,
-    required bool isActive,
-  }) : super(id: id, name: name, isActive: isActive);
+    required super.id,
+    required super.name,
+    required super.isActive,
+  });
 
   factory CashRegisterModel.fromJson(Map<String, dynamic> json) {
     return CashRegisterModel(

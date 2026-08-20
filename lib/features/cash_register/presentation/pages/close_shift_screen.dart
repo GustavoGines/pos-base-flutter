@@ -7,7 +7,7 @@ import 'cash_shift_summary_screen.dart';
 import 'package:frontend_desktop/features/auth/presentation/providers/auth_provider.dart';
 
 class CloseShiftScreen extends StatefulWidget {
-  const CloseShiftScreen({Key? key}) : super(key: key);
+  const CloseShiftScreen({super.key});
 
   @override
   State<CloseShiftScreen> createState() => _CloseShiftScreenState();

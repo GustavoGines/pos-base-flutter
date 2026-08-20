@@ -2,10 +2,10 @@ import '../../domain/entities/brand.dart';
 
 class BrandModel extends Brand {
   BrandModel({
-    required int id,
-    required String name,
-    String? description,
-  }) : super(id: id, name: name, description: description);
+    required super.id,
+    required super.name,
+    super.description,
+  });
 
   factory BrandModel.fromJson(Map<String, dynamic> json) {
     return BrandModel(

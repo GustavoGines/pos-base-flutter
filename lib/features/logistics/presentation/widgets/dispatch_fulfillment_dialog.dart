@@ -11,7 +11,7 @@ import '../../../../features/logistics/services/delivery_note_pdf_service.dart';
 class DispatchFulfillmentDialog extends StatefulWidget {
   final Map<String, dynamic> note;
 
-  const DispatchFulfillmentDialog({Key? key, required this.note}) : super(key: key);
+  const DispatchFulfillmentDialog({super.key, required this.note});
 
   static Future<void> show(BuildContext context, Map<String, dynamic> note) {
     return showDialog(
@@ -22,7 +22,8 @@ class DispatchFulfillmentDialog extends StatefulWidget {
   }
 
   @override
-  State<DispatchFulfillmentDialog> createState() => _DispatchFulfillmentDialogState();
+  State<DispatchFulfillmentDialog> createState() =>
+      _DispatchFulfillmentDialogState();
 }
 
 class _DispatchFulfillmentDialogState extends State<DispatchFulfillmentDialog> {
@@ -33,15 +34,17 @@ class _DispatchFulfillmentDialogState extends State<DispatchFulfillmentDialog> {
   void initState() {
     super.initState();
     _items = widget.note['items'] ?? [];
-    
+
     // Autocompletado Inteligente: Cargar por defecto la cantidad que falta entregar.
     // Si compró 10 y retiró 2, arranca en 8 (0 clics para el operario que despacha el resto).
     for (var item in _items) {
       final itemId = item['id'] as int;
-      final purchased = double.tryParse(item['quantity_purchased'].toString()) ?? 0;
-      final delivered = double.tryParse(item['quantity_delivered'].toString()) ?? 0;
+      final purchased =
+          double.tryParse(item['quantity_purchased'].toString()) ?? 0;
+      final delivered =
+          double.tryParse(item['quantity_delivered'].toString()) ?? 0;
       final remaining = purchased - delivered;
-      
+
       _dispatchQuantities[itemId] = remaining > 0 ? remaining : 0;
     }
   }
@@ -82,12 +85,14 @@ class _DispatchFulfillmentDialogState extends State<DispatchFulfillmentDialog> {
     }
 
     if (!hasItemsToDeliver) {
-      SnackBarService.warning(context, 'Debe indicar al menos una cantidad a despachar.');
+      SnackBarService.warning(
+          context, 'Debe indicar al menos una cantidad a despachar.');
       return;
     }
 
     final provider = context.read<LogisticsProvider>();
-    final success = await provider.confirmDispatch(widget.note['id'], _dispatchQuantities);
+    final success =
+        await provider.confirmDispatch(widget.note['id'], _dispatchQuantities);
 
     if (success) {
       if (mounted) {
@@ -98,7 +103,8 @@ class _DispatchFulfillmentDialogState extends State<DispatchFulfillmentDialog> {
       }
     } else {
       if (mounted) {
-        SnackBarService.error(context, provider.errorMessage ?? 'Error al confirmar despacho');
+        SnackBarService.error(
+            context, provider.errorMessage ?? 'Error al confirmar despacho');
       }
     }
   }
@@ -125,7 +131,9 @@ class _DispatchFulfillmentDialogState extends State<DispatchFulfillmentDialog> {
   }
 
   String _formatQty(double qty) {
-    return qty.truncateToDouble() == qty ? qty.toInt().toString() : qty.toStringAsFixed(1);
+    return qty.truncateToDouble() == qty
+        ? qty.toInt().toString()
+        : qty.toStringAsFixed(1);
   }
 
   @override
@@ -139,7 +147,8 @@ class _DispatchFulfillmentDialogState extends State<DispatchFulfillmentDialog> {
         children: [
           Icon(Icons.inventory, color: Colors.blue.shade700, size: 32),
           const SizedBox(width: 12),
-          Text('Despachar Remito #${widget.note['id']}', style: const TextStyle(fontWeight: FontWeight.bold)),
+          Text('Despachar Remito #${widget.note['id']}',
+              style: const TextStyle(fontWeight: FontWeight.bold)),
         ],
       ),
       content: SizedBox(
@@ -178,20 +187,32 @@ class _DispatchFulfillmentDialogState extends State<DispatchFulfillmentDialog> {
                   final itemId = item['id'] as int;
                   final product = item['product'] ?? {};
                   final productName = product['name'] ?? 'Producto Desconocido';
-                  
-                  final purchased = double.tryParse(item['quantity_purchased'].toString()) ?? 0;
-                  final delivered = double.tryParse(item['quantity_delivered'].toString()) ?? 0;
+
+                  final purchased =
+                      double.tryParse(item['quantity_purchased'].toString()) ??
+                          0;
+                  final delivered =
+                      double.tryParse(item['quantity_delivered'].toString()) ??
+                          0;
                   final remaining = purchased - delivered;
-                  
+
                   final currentQty = _dispatchQuantities[itemId] ?? 0;
                   final bool isCompleted = remaining <= 0;
 
                   if (isCompleted) {
                     return ListTile(
                       contentPadding: EdgeInsets.zero,
-                      title: Text(productName, style: const TextStyle(fontWeight: FontWeight.bold, decoration: TextDecoration.lineThrough, color: Colors.grey)),
-                      subtitle: const Text('Ítem completado', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
-                      trailing: const Icon(Icons.check_circle, color: Colors.green),
+                      title: Text(productName,
+                          style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              decoration: TextDecoration.lineThrough,
+                              color: Colors.grey)),
+                      subtitle: const Text('Ítem completado',
+                          style: TextStyle(
+                              color: Colors.green,
+                              fontWeight: FontWeight.bold)),
+                      trailing:
+                          const Icon(Icons.check_circle, color: Colors.green),
                     );
                   }
 
@@ -203,11 +224,17 @@ class _DispatchFulfillmentDialogState extends State<DispatchFulfillmentDialog> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(productName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                              Text(productName,
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16)),
                               const SizedBox(height: 6),
                               Text(
                                 'Compró: ${_formatQty(purchased)} | Ya Retiró: ${_formatQty(delivered)} | Faltan: ${_formatQty(remaining)}',
-                                style: TextStyle(color: Colors.grey.shade700, fontSize: 13, fontWeight: FontWeight.w500),
+                                style: TextStyle(
+                                    color: Colors.grey.shade700,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w500),
                               ),
                             ],
                           ),
@@ -222,7 +249,9 @@ class _DispatchFulfillmentDialogState extends State<DispatchFulfillmentDialog> {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               IconButton(
-                                onPressed: currentQty <= 0 || isDispatching ? null : () => _decrement(itemId),
+                                onPressed: currentQty <= 0 || isDispatching
+                                    ? null
+                                    : () => _decrement(itemId),
                                 icon: const Icon(Icons.remove),
                                 color: Colors.red.shade700,
                                 splashRadius: 24,
@@ -232,11 +261,16 @@ class _DispatchFulfillmentDialogState extends State<DispatchFulfillmentDialog> {
                                 alignment: Alignment.center,
                                 child: Text(
                                   _formatQty(currentQty),
-                                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                  style: const TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold),
                                 ),
                               ),
                               IconButton(
-                                onPressed: currentQty >= remaining || isDispatching ? null : () => _increment(itemId, remaining),
+                                onPressed:
+                                    currentQty >= remaining || isDispatching
+                                        ? null
+                                        : () => _increment(itemId, remaining),
                                 icon: const Icon(Icons.add),
                                 color: Colors.green.shade700,
                                 splashRadius: 24,
@@ -257,19 +291,27 @@ class _DispatchFulfillmentDialogState extends State<DispatchFulfillmentDialog> {
       actions: [
         TextButton(
           onPressed: isDispatching ? null : () => Navigator.pop(context),
-          child: const Text('Cancelar', style: TextStyle(color: Colors.grey, fontSize: 16)),
+          child: const Text('Cancelar',
+              style: TextStyle(color: Colors.grey, fontSize: 16)),
         ),
         const SizedBox(width: 12),
         FilledButton.icon(
           onPressed: isDispatching ? null : _onConfirm,
-          icon: isDispatching 
-              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+          icon: isDispatching
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                      color: Colors.white, strokeWidth: 2))
               : const Icon(Icons.check_circle_outline),
-          label: Text(isDispatching ? 'PROCESANDO...' : 'CONFIRMAR DESPACHO', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          label: Text(isDispatching ? 'PROCESANDO...' : 'CONFIRMAR DESPACHO',
+              style:
+                  const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
           style: FilledButton.styleFrom(
             backgroundColor: Colors.green.shade700,
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           ),
         ),
       ],
@@ -290,7 +332,8 @@ class _PostDispatchPrintSheet extends StatefulWidget {
   });
 
   @override
-  State<_PostDispatchPrintSheet> createState() => _PostDispatchPrintSheetState();
+  State<_PostDispatchPrintSheet> createState() =>
+      _PostDispatchPrintSheetState();
 }
 
 class _PostDispatchPrintSheetState extends State<_PostDispatchPrintSheet> {
@@ -351,7 +394,8 @@ class _PostDispatchPrintSheetState extends State<_PostDispatchPrintSheet> {
       );
 
       if (mounted) {
-        SnackBarService.success(context, '¡Remito de despacho impreso con éxito!');
+        SnackBarService.success(
+            context, '¡Remito de despacho impreso con éxito!');
         Navigator.pop(context);
       }
     } catch (e) {
@@ -364,7 +408,10 @@ class _PostDispatchPrintSheetState extends State<_PostDispatchPrintSheet> {
   @override
   Widget build(BuildContext context) {
     // Etiqueta dinámica según el formato de papel de esta terminal
-    final paperLabel = context.watch<LocalTerminalProvider>().pdfPaperSize == 'letter' ? 'Carta' : 'A4';
+    final paperLabel =
+        context.watch<LocalTerminalProvider>().pdfPaperSize == 'letter'
+            ? 'Carta'
+            : 'A4';
 
     return Padding(
       padding: const EdgeInsets.all(28),
@@ -381,10 +428,12 @@ class _PostDispatchPrintSheetState extends State<_PostDispatchPrintSheet> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text('¡Despacho confirmado!',
-                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                        style: TextStyle(
+                            fontSize: 20, fontWeight: FontWeight.bold)),
                     Text(
                       '¿Deseás imprimir el Remito de Despacho para que el cliente firme?',
-                      style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+                      style:
+                          TextStyle(color: Colors.grey.shade600, fontSize: 13),
                     ),
                   ],
                 ),
@@ -393,45 +442,56 @@ class _PostDispatchPrintSheetState extends State<_PostDispatchPrintSheet> {
           ),
           const SizedBox(height: 16),
           const Divider(),
-
           ListTile(
             enabled: !_isPrinting,
             leading: Container(
               padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(8)),
+              decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(8)),
               child: Icon(Icons.preview, color: Colors.blue.shade700, size: 26),
             ),
-            title: Text('Ver Remito $paperLabel (Vista Previa)', style: const TextStyle(fontWeight: FontWeight.bold)),
-            subtitle: Text('Abre el doble Remito de Despacho en $paperLabel — ORIGINAL y DUPLICADO'),
-            trailing: _isPrinting ? const CircularProgressIndicator() : const Icon(Icons.chevron_right),
+            title: Text('Ver Remito $paperLabel (Vista Previa)',
+                style: const TextStyle(fontWeight: FontWeight.bold)),
+            subtitle: Text(
+                'Abre el doble Remito de Despacho en $paperLabel — ORIGINAL y DUPLICADO'),
+            trailing: _isPrinting
+                ? const CircularProgressIndicator()
+                : const Icon(Icons.chevron_right),
             onTap: _previewA4,
           ),
-
           const Divider(),
-
           ListTile(
             enabled: !_isPrinting,
             leading: Container(
               padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(color: Colors.green.shade50, borderRadius: BorderRadius.circular(8)),
-              child: Icon(Icons.receipt_long, color: Colors.green.shade700, size: 26),
+              decoration: BoxDecoration(
+                  color: Colors.green.shade50,
+                  borderRadius: BorderRadius.circular(8)),
+              child: Icon(Icons.receipt_long,
+                  color: Colors.green.shade700, size: 26),
             ),
-            title: const Text('Imprimir Remito Térmico', style: TextStyle(fontWeight: FontWeight.bold)),
-            subtitle: const Text('Imprime 2 copias: una para el cliente y una con firma para el despachante'),
-            trailing: _isPrinting ? const CircularProgressIndicator() : const Icon(Icons.chevron_right),
+            title: const Text('Imprimir Remito Térmico',
+                style: TextStyle(fontWeight: FontWeight.bold)),
+            subtitle: const Text(
+                'Imprime 2 copias: una para el cliente y una con firma para el despachante'),
+            trailing: _isPrinting
+                ? const CircularProgressIndicator()
+                : const Icon(Icons.chevron_right),
             onTap: _printThermal,
           ),
-
           const Divider(),
-
           ListTile(
             leading: Container(
               padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(8)),
+              decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(8)),
               child: Icon(Icons.close, color: Colors.grey.shade600, size: 26),
             ),
             title: const Text('No imprimir ahora'),
-            subtitle: const Text('Podés reimprimir más tarde desde la tarjeta del remito'),
+            subtitle: const Text(
+                'Podés reimprimir más tarde desde la tarjeta del remito'),
             onTap: () => Navigator.pop(context),
           ),
         ],

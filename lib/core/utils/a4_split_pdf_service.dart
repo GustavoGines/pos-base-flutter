@@ -45,7 +45,7 @@ class A4SplitPdfService {
     final bool isDispatch = sale['requires_dispatch'] == 1 || sale['requires_dispatch'] == true;
 
     // buildWatermark pinta la marca de agua detrás de cada sección
-    pw.Widget _buildWatermark(String text, bool isSmall) => pw.Center(
+    pw.Widget buildWatermark(String text, bool isSmall) => pw.Center(
       child: pw.Opacity(
         opacity: 0.1, // 10% de negro = gris muy sutil
         child: pw.Transform.rotateBox(
@@ -64,11 +64,11 @@ class A4SplitPdfService {
     );
 
     pw.Widget buildWatermarkTop(pw.Context ctx) => pw.Positioned.fill(
-      child: _buildWatermark('COMPROBANTE\nNO FISCAL', isSmallOrder),
+      child: buildWatermark('COMPROBANTE\nNO FISCAL', isSmallOrder),
     );
 
     pw.Widget buildWatermarkBot(pw.Context ctx) => pw.Positioned.fill(
-      child: _buildWatermark('ORIGINAL', isSmallOrder),
+      child: buildWatermark('ORIGINAL', isSmallOrder),
     );
 
     final format = paperSize.toLowerCase() == 'letter' ? PdfPageFormat.letter : PdfPageFormat.a4;
@@ -104,7 +104,7 @@ class A4SplitPdfService {
                         bottom: 0, left: 0, right: 0,
                         child: _buildFooter(businessName, isCompact: true, isSale: true),
                       ),
-                      _buildWatermark('COMPROBANTE\nNO FISCAL', true),
+                      buildWatermark('COMPROBANTE\nNO FISCAL', true),
                     ],
                   ),
                 ),
@@ -150,7 +150,7 @@ class A4SplitPdfService {
                         bottom: 0, left: 0, right: 0,
                         child: _buildFooter(businessName, isCompact: true, isSale: false),
                       ),
-                      _buildWatermark('ORIGINAL', true),
+                      buildWatermark('ORIGINAL', true),
                     ],
                   ),
                 ),
@@ -458,7 +458,7 @@ class A4SplitPdfService {
                         pw.Text('- ${(p['payment_method']?['name'] ?? 'PAGO').toUpperCase()}', style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey700)),
                         pw.Text(_currencyFmt.format(double.tryParse(p['amount'].toString()) ?? 0), style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey700)),
                       ]
-                    )).toList(),
+                    )),
                   ] else if (payments.isNotEmpty) ...[
                     pw.Row(
                       mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,

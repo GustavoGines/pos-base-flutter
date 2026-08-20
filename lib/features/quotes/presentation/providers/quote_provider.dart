@@ -43,7 +43,7 @@ class QuoteProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Cambia la lista de precios para TODO el carrito (mismo comportamiento que POS).
+  /// Cambia la lista de precios para todo el carrito (mismo comportamiento que POS).
   void setPriceTier(
     PriceTier tier, {
     double? customFactor,

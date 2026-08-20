@@ -4,48 +4,27 @@ import 'brand_model.dart';
 
 class ProductModel extends Product {
   ProductModel({
-    required int id,
-    required String name,
-    String? barcode,
-    required String internalCode,
-    required double costPrice,
-    required double sellingPrice,
-    double? priceWholesale, // [hardware_store]
-    double? priceCard,      // [hardware_store]
-    required double stock,
-    double? minStock,
-    required bool active,
-    required bool isSoldByWeight,
-    bool isCombo = false,
-    List<Map<String, dynamic>>? comboIngredients,
-    List<Map<String, dynamic>>? priceTiers,
-    int salesCount = 0,
-    int? vencimientoDias,
-    String unitType = 'un',
-    CategoryModel? category,
-    BrandModel? brand,
-  }) : super(
-          id: id,
-          name: name,
-          barcode: barcode,
-          internalCode: internalCode,
-          costPrice: costPrice,
-          sellingPrice: sellingPrice,
-          priceWholesale: priceWholesale, // [hardware_store]
-          priceCard: priceCard,           // [hardware_store]
-          stock: stock,
-          minStock: minStock,
-          active: active,
-          isSoldByWeight: isSoldByWeight,
-          isCombo: isCombo,
-          comboIngredients: comboIngredients,
-          priceTiers: priceTiers,
-          salesCount: salesCount,
-          vencimientoDias: vencimientoDias,
-          unitType: unitType,
-          category: category,
-          brand: brand,
-        );
+    required super.id,
+    required super.name,
+    super.barcode,
+    required super.internalCode,
+    required super.costPrice,
+    required super.sellingPrice,
+    super.priceWholesale, // [hardware_store]
+    super.priceCard,      // [hardware_store]
+    required super.stock,
+    super.minStock,
+    required super.active,
+    required super.isSoldByWeight,
+    super.isCombo,
+    super.comboIngredients,
+    super.priceTiers,
+    super.salesCount,
+    super.vencimientoDias,
+    super.unitType,
+    CategoryModel? super.category,
+    BrandModel? super.brand,
+  });
 
   @override
   ProductModel copyWith({

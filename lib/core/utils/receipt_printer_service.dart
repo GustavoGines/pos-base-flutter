@@ -543,7 +543,9 @@ class ReceiptPrinterService {
   }) async {
     if (localTerminal.printerConnection.toLowerCase() == 'none') return;
     if (config.connectionType == PrinterConnectionType.usb &&
-        (config.comPort == null || config.comPort!.trim().isEmpty)) return;
+        (config.comPort == null || config.comPort!.trim().isEmpty)) {
+      return;
+    }
 
     final profile = await _getProfile();
     PaperSize targetPaperSize = config.paperSize;

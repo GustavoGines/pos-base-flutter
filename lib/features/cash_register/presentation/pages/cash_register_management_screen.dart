@@ -8,7 +8,7 @@ import '../../domain/entities/cash_register.dart';
 import '../providers/cash_register_provider.dart';
 
 class CashRegisterManagementScreen extends StatefulWidget {
-  const CashRegisterManagementScreen({Key? key}) : super(key: key);
+  const CashRegisterManagementScreen({super.key});
 
   @override
   _CashRegisterManagementScreenState createState() => _CashRegisterManagementScreenState();

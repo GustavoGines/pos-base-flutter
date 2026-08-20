@@ -5,10 +5,11 @@ import '../providers/logistics_provider.dart';
 import '../views/delivery_notes_tab_view.dart';
 
 class LogisticsDashboardScreen extends StatefulWidget {
-  const LogisticsDashboardScreen({Key? key}) : super(key: key);
+  const LogisticsDashboardScreen({super.key});
 
   @override
-  State<LogisticsDashboardScreen> createState() => _LogisticsDashboardScreenState();
+  State<LogisticsDashboardScreen> createState() =>
+      _LogisticsDashboardScreenState();
 }
 
 class _LogisticsDashboardScreenState extends State<LogisticsDashboardScreen> {
@@ -55,9 +56,15 @@ class _LogisticsDashboardScreenState extends State<LogisticsDashboardScreen> {
                       unselectedLabelColor: Colors.grey,
                       indicatorWeight: 3,
                       tabs: [
-                        Tab(text: 'PENDIENTES', icon: Icon(Icons.pending_actions, size: 20)),
-                        Tab(text: 'EN CURSO', icon: Icon(Icons.timelapse, size: 20)),
-                        Tab(text: 'COMPLETADOS', icon: Icon(Icons.check_circle, size: 20)),
+                        Tab(
+                            text: 'PENDIENTES',
+                            icon: Icon(Icons.pending_actions, size: 20)),
+                        Tab(
+                            text: 'EN CURSO',
+                            icon: Icon(Icons.timelapse, size: 20)),
+                        Tab(
+                            text: 'COMPLETADOS',
+                            icon: Icon(Icons.check_circle, size: 20)),
                       ],
                     ),
                   ),
@@ -70,22 +77,28 @@ class _LogisticsDashboardScreenState extends State<LogisticsDashboardScreen> {
                       child: TextField(
                         controller: _searchController,
                         onChanged: (value) {
-                          context.read<LogisticsProvider>().onSearchChanged(value);
+                          context
+                              .read<LogisticsProvider>()
+                              .onSearchChanged(value);
                           setState(() {});
                         },
                         decoration: InputDecoration(
                           hintText: 'Buscar remito o cliente...',
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                          border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8)),
                           filled: true,
                           fillColor: Colors.grey.shade100,
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 0),
                           prefixIcon: const Icon(Icons.search, size: 20),
                           suffixIcon: _searchController.text.isNotEmpty
                               ? IconButton(
                                   icon: const Icon(Icons.clear, size: 18),
                                   onPressed: () {
                                     _searchController.clear();
-                                    context.read<LogisticsProvider>().onSearchChanged('');
+                                    context
+                                        .read<LogisticsProvider>()
+                                        .onSearchChanged('');
                                     setState(() {});
                                   },
                                 )

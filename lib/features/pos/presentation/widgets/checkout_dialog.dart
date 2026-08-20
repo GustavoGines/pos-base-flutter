@@ -1335,47 +1335,41 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                           style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
                         ),
                         const SizedBox(height: 4),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: RadioListTile<String>(
-                                title: const Text('A Preparar (Pendiente)', style: TextStyle(fontSize: 12)),
-                                value: 'pending',
-                                groupValue: _fulfillmentStatus,
-                                activeColor: Colors.orange.shade700,
-                                contentPadding: EdgeInsets.zero,
-                                dense: true,
-                                visualDensity: VisualDensity.compact,
-                                  onChanged: (val) {
-                                  setState(() {
-                                    _fulfillmentStatus = val!;
-                                    context.read<PosProvider>().setCurrentLogistics(_requiresDispatch, _fulfillmentStatus);
-                                    _syncPaymentsWithShipping();
-                                  });
-                                },
-
+                        RadioGroup<String>(
+                          groupValue: _fulfillmentStatus,
+                          onChanged: (val) {
+                            if (val != null) {
+                              setState(() {
+                                _fulfillmentStatus = val;
+                                context.read<PosProvider>().setCurrentLogistics(_requiresDispatch, _fulfillmentStatus);
+                                _syncPaymentsWithShipping();
+                              });
+                            }
+                          },
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: RadioListTile<String>(
+                                  title: const Text('A Preparar (Pendiente)', style: TextStyle(fontSize: 12)),
+                                  value: 'pending',
+                                  activeColor: Colors.orange.shade700,
+                                  contentPadding: EdgeInsets.zero,
+                                  dense: true,
+                                  visualDensity: VisualDensity.compact,
+                                ),
                               ),
-                            ),
-                            Expanded(
-                              child: RadioListTile<String>(
-                                title: const Text('Se lo lleva AHORA', style: TextStyle(fontSize: 12, color: Colors.green, fontWeight: FontWeight.bold)),
-                                value: 'delivered',
-                                groupValue: _fulfillmentStatus,
-                                activeColor: Colors.green,
-                                contentPadding: EdgeInsets.zero,
-                                dense: true,
-                                visualDensity: VisualDensity.compact,
-                                  onChanged: (val) {
-                                  setState(() {
-                                    _fulfillmentStatus = val!;
-                                    context.read<PosProvider>().setCurrentLogistics(_requiresDispatch, _fulfillmentStatus);
-                                    _syncPaymentsWithShipping();
-                                  });
-                                },
-
+                              Expanded(
+                                child: RadioListTile<String>(
+                                  title: const Text('Se lo lleva AHORA', style: TextStyle(fontSize: 12, color: Colors.green, fontWeight: FontWeight.bold)),
+                                  value: 'delivered',
+                                  activeColor: Colors.green,
+                                  contentPadding: EdgeInsets.zero,
+                                  dense: true,
+                                  visualDensity: VisualDensity.compact,
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ],
                     ),

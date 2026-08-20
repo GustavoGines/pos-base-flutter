@@ -7,7 +7,7 @@ import '../../../../core/utils/snack_bar_service.dart';
 class AdminPinDialog extends StatefulWidget {
   final String actionDescription;
 
-  const AdminPinDialog({Key? key, required this.actionDescription}) : super(key: key);
+  const AdminPinDialog({super.key, required this.actionDescription});
 
   /// Helper estático para interceptar acciones.
   /// Retorna true si:

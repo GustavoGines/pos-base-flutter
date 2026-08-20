@@ -13,7 +13,7 @@ import 'dispatch_fulfillment_dialog.dart';
 class DeliveryNoteCard extends StatefulWidget {
   final Map<String, dynamic> note;
 
-  const DeliveryNoteCard({Key? key, required this.note}) : super(key: key);
+  const DeliveryNoteCard({super.key, required this.note});
 
   @override
   State<DeliveryNoteCard> createState() => _DeliveryNoteCardState();
@@ -67,7 +67,10 @@ class _DeliveryNoteCardState extends State<DeliveryNoteCard> {
     final customerName = customer?['name'] ?? 'Consumidor Final';
     final status = widget.note['status']?.toString() ?? 'pending';
     final date = widget.note['created_at'] != null
-        ? DateTime.parse(widget.note['created_at']).toLocal().toString().split(' ')[0]
+        ? DateTime.parse(widget.note['created_at'])
+            .toLocal()
+            .toString()
+            .split(' ')[0]
         : '';
 
     return Card(
@@ -85,7 +88,8 @@ class _DeliveryNoteCardState extends State<DeliveryNoteCard> {
                 color: Colors.blue.shade50,
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Icon(Icons.local_shipping, color: Colors.blue.shade800, size: 20),
+              child: Icon(Icons.local_shipping,
+                  color: Colors.blue.shade800, size: 20),
             ),
             const SizedBox(width: 16),
 
@@ -99,28 +103,36 @@ class _DeliveryNoteCardState extends State<DeliveryNoteCard> {
                     children: [
                       Text(
                         'Remito #${widget.note['id']}',
-                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                        style: const TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.bold),
                       ),
                       const SizedBox(width: 12),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 2),
                         decoration: BoxDecoration(
                           color: _getStatusColor(status),
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: Text(
                           _getStatusTranslation(status),
-                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 11),
                         ),
                       ),
                       const SizedBox(width: 12),
-                      Text('📅 $date', style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
+                      Text('📅 $date',
+                          style: TextStyle(
+                              color: Colors.grey.shade600, fontSize: 12)),
                     ],
                   ),
                   const SizedBox(height: 2),
                   Text(
                     'Cliente: $customerName',
-                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                    style: const TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.w500),
                   ),
                 ],
               ),
@@ -133,7 +145,8 @@ class _DeliveryNoteCardState extends State<DeliveryNoteCard> {
                 OutlinedButton.icon(
                   onPressed: _onReprint,
                   icon: const Icon(Icons.print, size: 16),
-                  label: const Text('Reimprimir', style: TextStyle(fontSize: 13)),
+                  label:
+                      const Text('Reimprimir', style: TextStyle(fontSize: 13)),
                   style: OutlinedButton.styleFrom(
                     visualDensity: VisualDensity.compact,
                     padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -142,9 +155,11 @@ class _DeliveryNoteCardState extends State<DeliveryNoteCard> {
                 const SizedBox(width: 8),
                 if (status != 'delivered')
                   FilledButton.icon(
-                    onPressed: () => DispatchFulfillmentDialog.show(context, widget.note),
+                    onPressed: () =>
+                        DispatchFulfillmentDialog.show(context, widget.note),
                     icon: const Icon(Icons.check_box, size: 16),
-                    label: const Text('Despachar', style: TextStyle(fontSize: 13)),
+                    label:
+                        const Text('Despachar', style: TextStyle(fontSize: 13)),
                     style: FilledButton.styleFrom(
                       backgroundColor: Colors.green.shade700,
                       visualDensity: VisualDensity.compact,
@@ -205,7 +220,8 @@ class _ReprintSheetState extends State<_ReprintSheet> {
               double.parse(item['quantity_delivered'].toString()) > 0)
           .map((item) => {
                 'id': item['id'],
-                'delivered_now': double.parse(item['quantity_delivered'].toString()),
+                'delivered_now':
+                    double.parse(item['quantity_delivered'].toString()),
               })
           .toList();
 
@@ -215,15 +231,19 @@ class _ReprintSheetState extends State<_ReprintSheet> {
       // delivered → allItemsPayload tiene todos los ítems con su cantidad total entregada
       final payloadToUse = allItemsPayload.isNotEmpty
           ? allItemsPayload
-          : items.map((item) => {
-                'id': item['id'],
-                'delivered_now': noteStatus == 'pending'
-                    ? 0.0 // ORDEN DE RETIRO: nada entregado aún
-                    : double.parse(item['quantity_purchased'].toString()),
-              }).toList();
+          : items
+              .map((item) => {
+                    'id': item['id'],
+                    'delivered_now': noteStatus == 'pending'
+                        ? 0.0 // ORDEN DE RETIRO: nada entregado aún
+                        : double.parse(item['quantity_purchased'].toString()),
+                  })
+              .toList();
 
       if (widget.showPreview) {
-        final previewLines = _buildTicketLines(sale, customerName, vendorName, dispatcherName, payloadToUse, items, settings, isReprint: true);
+        final previewLines = _buildTicketLines(sale, customerName, vendorName,
+            dispatcherName, payloadToUse, items, settings,
+            isReprint: true);
         if (!ctx.mounted) return;
         final docLabel = noteStatus == 'pending'
             ? 'Orden de Retiro'
@@ -269,8 +289,6 @@ class _ReprintSheetState extends State<_ReprintSheet> {
       final currentUser = ctx.read<AuthProvider>().currentUser;
       final dispatcherName = currentUser?['name'] ?? 'SISTEMA';
 
-
-
       await DeliveryNotePdfService.preview(
         context: ctx,
         note: widget.note,
@@ -299,8 +317,6 @@ class _ReprintSheetState extends State<_ReprintSheet> {
       final vendorName = sale['user']?['name'];
       final currentUser = ctx.read<AuthProvider>().currentUser;
       final dispatcherName = currentUser?['name'] ?? 'SISTEMA';
-
-
 
       await DeliveryNotePdfService.printDirect(
         note: widget.note,
@@ -336,58 +352,69 @@ class _ReprintSheetState extends State<_ReprintSheet> {
   }) {
     final now = DateTime.now().toLocal();
     String pad(int n) => n.toString().padLeft(2, '0');
-    final fecha = '${pad(now.day)}/${pad(now.month)}/${now.year} ${pad(now.hour)}:${pad(now.minute)}';
+    final fecha =
+        '${pad(now.day)}/${pad(now.month)}/${now.year} ${pad(now.hour)}:${pad(now.minute)}';
     final remNum = widget.note['id'].toString().padLeft(6, '0');
 
     List<TicketLine> buildCopy(String copyLabel) => [
-      if (settings?.companyName != null)
-        TicketLine(settings!.companyName!.toUpperCase(), align: TicketAlign.center, isBold: true, isLarge: true),
-      if (settings?.address != null && settings!.address!.isNotEmpty)
-        TicketLine(settings.address!, align: TicketAlign.center),
-      if (settings?.taxId != null && settings!.taxId!.isNotEmpty)
-        TicketLine('CUIT: ${settings.taxId}', align: TicketAlign.center, isBold: true),
-      const TicketLine.hr(bold: true),
-      TicketLine(
-        widget.note['status']?.toString() == 'pending' 
-            ? 'ORDEN DE RETIRO' 
-            : (widget.note['status']?.toString() == 'partial' ? 'REMITO DE DESPACHO PARCIAL' : 'REMITO DE DESPACHO'), 
-        align: TicketAlign.center, 
-        isBold: true
-      ),
-      TicketLine('[ $copyLabel ]', align: TicketAlign.center),
-      const TicketLine.hr(),
-      TicketLine('REM N°: $remNum', isBold: true),
-      TicketLine('FECHA: $fecha'),
-      TicketLine('CLIENTE: ${customerName ?? 'Consumidor Final'}', isBold: true),
-      if (vendorName != null) TicketLine('VENDIO: ${vendorName.toUpperCase()}'),
-      TicketLine('DESPACHO: ${dispatcherName.toUpperCase()}'),
-      const TicketLine.hr(),
-      ...payload.expand((d) {
-        final item = items.firstWhere((i) => i['id'] == d['id'], orElse: () => null);
-        if (item == null) return [const TicketLine.space()];
-        final name = (item['product']?['name'] ?? 'Producto').toUpperCase();
-        final purchased = double.parse(item['quantity_purchased'].toString());
-        final deliveredBefore = double.parse(item['quantity_delivered'].toString());
-        final deliveredNow = (d['delivered_now'] as num).toDouble();
-        // Para reimpresión: deliveredNow YA ES el total acumulado → remaining = purchased - deliveredNow
-        // Para despacho: deliveredNow es incremental → remaining = purchased - deliveredBefore - deliveredNow
-        final remaining = isReprint
-            ? purchased - deliveredNow
-            : purchased - deliveredBefore - deliveredNow;
-        return [
-          TicketLine(name, isBold: true),
-          TicketLine('Entregando: ${deliveredNow.toStringAsFixed(1)} | Saldo: ${remaining.toStringAsFixed(1)}'),
-          const TicketLine.space(),
+          if (settings?.companyName != null)
+            TicketLine(settings!.companyName!.toUpperCase(),
+                align: TicketAlign.center, isBold: true, isLarge: true),
+          if (settings?.address != null && settings!.address!.isNotEmpty)
+            TicketLine(settings.address!, align: TicketAlign.center),
+          if (settings?.taxId != null && settings!.taxId!.isNotEmpty)
+            TicketLine('CUIT: ${settings.taxId}',
+                align: TicketAlign.center, isBold: true),
+          const TicketLine.hr(bold: true),
+          TicketLine(
+              widget.note['status']?.toString() == 'pending'
+                  ? 'ORDEN DE RETIRO'
+                  : (widget.note['status']?.toString() == 'partial'
+                      ? 'REMITO DE DESPACHO PARCIAL'
+                      : 'REMITO DE DESPACHO'),
+              align: TicketAlign.center,
+              isBold: true),
+          TicketLine('[ $copyLabel ]', align: TicketAlign.center),
+          const TicketLine.hr(),
+          TicketLine('REM N°: $remNum', isBold: true),
+          TicketLine('FECHA: $fecha'),
+          TicketLine('CLIENTE: ${customerName ?? 'Consumidor Final'}',
+              isBold: true),
+          if (vendorName != null)
+            TicketLine('VENDIO: ${vendorName.toUpperCase()}'),
+          TicketLine('DESPACHO: ${dispatcherName.toUpperCase()}'),
+          const TicketLine.hr(),
+          ...payload.expand((d) {
+            final item =
+                items.firstWhere((i) => i['id'] == d['id'], orElse: () => null);
+            if (item == null) return [const TicketLine.space()];
+            final name = (item['product']?['name'] ?? 'Producto').toUpperCase();
+            final purchased =
+                double.parse(item['quantity_purchased'].toString());
+            final deliveredBefore =
+                double.parse(item['quantity_delivered'].toString());
+            final deliveredNow = (d['delivered_now'] as num).toDouble();
+            // Para reimpresión: deliveredNow YA ES el total acumulado → remaining = purchased - deliveredNow
+            // Para despacho: deliveredNow es incremental → remaining = purchased - deliveredBefore - deliveredNow
+            final remaining = isReprint
+                ? purchased - deliveredNow
+                : purchased - deliveredBefore - deliveredNow;
+            return [
+              TicketLine(name, isBold: true),
+              TicketLine(
+                  'Entregando: ${deliveredNow.toStringAsFixed(1)} | Saldo: ${remaining.toStringAsFixed(1)}'),
+              const TicketLine.space(),
+            ];
+          }),
+          const TicketLine.hr(bold: true),
         ];
-      }),
-      const TicketLine.hr(bold: true),
-    ];
 
     // Copia 1 (Cliente) + separador visual + Copia 2 (Despachante con firma)
     return [
       ...buildCopy('COPIA CLIENTE'),
       const TicketLine.space(),
-      const TicketLine('✂ - - - - - - - CORTE - - - - - - - ✂', align: TicketAlign.center),
+      const TicketLine('✂ - - - - - - - CORTE - - - - - - - ✂',
+          align: TicketAlign.center),
       const TicketLine.space(),
       ...buildCopy('COPIA DESPACHANTE - ORIGINAL'),
       const TicketLine('FIRMA CONFORMIDAD DEL CLIENTE:', isBold: true),
@@ -432,11 +459,13 @@ class _ReprintSheetState extends State<_ReprintSheet> {
                   children: [
                     Text(
                       'Reimprimir #${widget.note['id']}',
-                      style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                      style: const TextStyle(
+                          fontSize: 22, fontWeight: FontWeight.bold),
                     ),
                     Text(
                       docLabel,
-                      style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+                      style:
+                          TextStyle(color: Colors.grey.shade600, fontSize: 13),
                     ),
                   ],
                 ),
@@ -456,12 +485,20 @@ class _ReprintSheetState extends State<_ReprintSheet> {
             enabled: !_isPrinting,
             leading: Container(
               padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(color: Colors.green.shade50, borderRadius: BorderRadius.circular(8)),
-              child: Icon(Icons.receipt_long, color: Colors.green.shade700, size: 28),
+              decoration: BoxDecoration(
+                  color: Colors.green.shade50,
+                  borderRadius: BorderRadius.circular(8)),
+              child: Icon(Icons.receipt_long,
+                  color: Colors.green.shade700, size: 28),
             ),
-            title: Text('$docLabel Térmico', style: const TextStyle(fontWeight: FontWeight.bold)),
-            subtitle: Text(widget.showPreview ? 'Se mostrará vista previa antes de imprimir — $thermalSubtitle' : thermalSubtitle),
-            trailing: _isPrinting ? const CircularProgressIndicator() : const Icon(Icons.chevron_right),
+            title: Text('$docLabel Térmico',
+                style: const TextStyle(fontWeight: FontWeight.bold)),
+            subtitle: Text(widget.showPreview
+                ? 'Se mostrará vista previa antes de imprimir — $thermalSubtitle'
+                : thermalSubtitle),
+            trailing: _isPrinting
+                ? const CircularProgressIndicator()
+                : const Icon(Icons.chevron_right),
             onTap: () => _printThermal(context),
           ),
 
@@ -472,14 +509,19 @@ class _ReprintSheetState extends State<_ReprintSheet> {
             enabled: !_isPrinting,
             leading: Container(
               padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(8)),
+              decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(8)),
               child: Icon(Icons.preview, color: Colors.blue.shade700, size: 28),
             ),
-            title: Text('Ver $docLabel $paperLabel (PDF)', style: const TextStyle(fontWeight: FontWeight.bold)),
+            title: Text('Ver $docLabel $paperLabel (PDF)',
+                style: const TextStyle(fontWeight: FontWeight.bold)),
             subtitle: Text(noteStatus == 'pending'
                 ? 'Abre la Orden de Retiro en $paperLabel para entregar al cliente'
                 : 'Abre el doble Remito $paperLabel — ORIGINAL (cliente) + DUPLICADO (despachante con firma)'),
-            trailing: _isPrinting ? const CircularProgressIndicator() : const Icon(Icons.chevron_right),
+            trailing: _isPrinting
+                ? const CircularProgressIndicator()
+                : const Icon(Icons.chevron_right),
             onTap: () => _previewA4(context),
           ),
 
@@ -490,12 +532,19 @@ class _ReprintSheetState extends State<_ReprintSheet> {
             enabled: !_isPrinting,
             leading: Container(
               padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(color: Colors.indigo.shade50, borderRadius: BorderRadius.circular(8)),
-              child: Icon(Icons.picture_as_pdf, color: Colors.indigo.shade700, size: 28),
+              decoration: BoxDecoration(
+                  color: Colors.indigo.shade50,
+                  borderRadius: BorderRadius.circular(8)),
+              child: Icon(Icons.picture_as_pdf,
+                  color: Colors.indigo.shade700, size: 28),
             ),
-            title: Text('Imprimir $paperLabel Directo', style: const TextStyle(fontWeight: FontWeight.bold)),
-            subtitle: Text('Envía el doble remito $paperLabel directamente a la impresora láser'),
-            trailing: _isPrinting ? const CircularProgressIndicator() : const Icon(Icons.chevron_right),
+            title: Text('Imprimir $paperLabel Directo',
+                style: const TextStyle(fontWeight: FontWeight.bold)),
+            subtitle: Text(
+                'Envía el doble remito $paperLabel directamente a la impresora láser'),
+            trailing: _isPrinting
+                ? const CircularProgressIndicator()
+                : const Icon(Icons.chevron_right),
             onTap: () => _printA4Direct(context),
           ),
 

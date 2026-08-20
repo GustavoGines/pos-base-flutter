@@ -2,10 +2,10 @@ import '../../domain/entities/category.dart';
 
 class CategoryModel extends Category {
   CategoryModel({
-    required int id,
-    required String name,
-    String? description,
-  }) : super(id: id, name: name, description: description);
+    required super.id,
+    required super.name,
+    super.description,
+  });
 
   factory CategoryModel.fromJson(Map<String, dynamic> json) {
     return CategoryModel(

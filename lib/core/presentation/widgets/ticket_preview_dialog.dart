@@ -8,11 +8,11 @@ class TicketPreviewDialog extends StatelessWidget {
   final VoidCallback? onConfirmPrint;
 
   const TicketPreviewDialog({
-    Key? key,
+    super.key,
     required this.title,
     required this.lines,
     this.onConfirmPrint,
-  }) : super(key: key);
+  });
 
   /// Muestra el dialog y devuelve true si el usuario confirmó la impresión.
   static Future<bool> show(

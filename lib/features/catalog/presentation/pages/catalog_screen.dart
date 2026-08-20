@@ -14,7 +14,7 @@ import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
 
 class CatalogScreen extends StatefulWidget {
-  const CatalogScreen({Key? key}) : super(key: key);
+  const CatalogScreen({super.key});
 
   @override
   State<CatalogScreen> createState() => _CatalogScreenState();
@@ -141,7 +141,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                               decoration: BoxDecoration(
                                 color: Colors.blue.shade800,
                                 borderRadius: BorderRadius.circular(8),
-                                boxShadow: [BoxShadow(color: Colors.blue.withOpacity(0.3), blurRadius: 4, offset: const Offset(0, 2))],
+                                boxShadow: [BoxShadow(color: Colors.blue.withValues(alpha: 0.3), blurRadius: 4, offset: const Offset(0, 2))],
                               ),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
@@ -719,7 +719,7 @@ class ProductFormDialog extends StatefulWidget {
   final CatalogProvider provider;
   final Product? product;
 
-  const ProductFormDialog({Key? key, required this.provider, this.product}) : super(key: key);
+  const ProductFormDialog({super.key, required this.provider, this.product});
 
   @override
   State<ProductFormDialog> createState() => _ProductFormDialogState();
@@ -964,7 +964,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                   children: [
                     Expanded(
                       child: DropdownButtonFormField<int?>(
-                        value: _categoryId,
+                        initialValue: _categoryId,
                         decoration: const InputDecoration(labelText: 'Categoría', prefixIcon: Icon(Icons.category_outlined)),
                         items: [
                           const DropdownMenuItem<int?>(value: null, child: Text('— Sin categoría —')),
@@ -1028,7 +1028,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                   children: [
                     Expanded(
                       child: DropdownButtonFormField<int?>(
-                        value: _brandId,
+                        initialValue: _brandId,
                         decoration: const InputDecoration(labelText: 'Marca', prefixIcon: Icon(Icons.branding_watermark_outlined)),
                         items: [
                           const DropdownMenuItem<int?>(value: null, child: Text('— Sin marca —')),
@@ -1173,7 +1173,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                   children: [
                     Expanded(
                       child: DropdownButtonFormField<String>(
-                        value: _unitType,
+                        initialValue: _unitType,
                         decoration: const InputDecoration(
                           labelText: 'Unidad de Medida',
                           prefixIcon: Icon(Icons.square_foot),
@@ -1283,7 +1283,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                               ],
                             ),
                           );
-                        }).toList(),
+                        }),
                       ],
                     ),
                   ),
@@ -1412,7 +1412,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                   ],
                 ),
               );
-            }).toList(),
+            }),
             const Text(
               'Nota: Si vende unidades fraccionadas, puede usar decimales (Ej: 5.5).',
               style: TextStyle(fontSize: 11, color: Colors.black54),
@@ -1597,7 +1597,7 @@ class BulkPriceUpdateDialog extends StatefulWidget {
   final CatalogProvider provider;
   final List<int>? targetProductIds;
 
-  const BulkPriceUpdateDialog({Key? key, required this.provider, this.targetProductIds}) : super(key: key);
+  const BulkPriceUpdateDialog({super.key, required this.provider, this.targetProductIds});
 
   @override
   State<BulkPriceUpdateDialog> createState() => _BulkPriceUpdateDialogState();
@@ -1810,7 +1810,7 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
             ),
             const SizedBox(height: 16),
             DropdownButtonFormField<String>(
-              value: _targetField,
+              initialValue: _targetField,
               isExpanded: true,
               decoration: const InputDecoration(
                 labelText: 'Base de Incremento',
@@ -1827,7 +1827,7 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
             ),
             const SizedBox(height: 16),
             DropdownButtonFormField<String>(
-              value: _roundingRule,
+              initialValue: _roundingRule,
               isExpanded: true,
               decoration: const InputDecoration(
                 labelText: 'Regla de Redondeo',
@@ -1847,7 +1847,7 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
             const SizedBox(height: 16),
             if (widget.targetProductIds == null) ...[
               DropdownButtonFormField<int?>(
-                value: _selectedCategoryId,
+                initialValue: _selectedCategoryId,
                 isExpanded: true,
                 decoration: const InputDecoration(
                   labelText: 'Filtrar por Categoría',
@@ -1862,7 +1862,7 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<int?>(
-                value: _selectedBrandId,
+                initialValue: _selectedBrandId,
                 isExpanded: true,
                 decoration: const InputDecoration(
                   labelText: 'Filtrar por Marca',
@@ -1911,7 +1911,7 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
 class BulkPriceHistoryDialog extends StatefulWidget {
   final CatalogProvider provider;
 
-  const BulkPriceHistoryDialog({Key? key, required this.provider}) : super(key: key);
+  const BulkPriceHistoryDialog({super.key, required this.provider});
 
   @override
   State<BulkPriceHistoryDialog> createState() => _BulkPriceHistoryDialogState();

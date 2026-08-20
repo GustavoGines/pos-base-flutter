@@ -19,12 +19,12 @@ class PlanUpgradeDialog extends StatelessWidget {
   final VoidCallback? onNavigateToSettings;
 
   const PlanUpgradeDialog({
-    Key? key,
+    super.key,
     this.title = 'Plan Premium Requerido',
     required this.featureName,
     required this.description,
     this.onNavigateToSettings,
-  }) : super(key: key);
+  });
 
   // ───── Contacto de soporte ─────────────────────────────────────────────────
   static const _whatsappNumber = '543704787285'; // +54 370 478-7285 (Argentina)
@@ -92,7 +92,7 @@ class PlanUpgradeDialog extends StatelessWidget {
                   shape: BoxShape.circle,
                   boxShadow: [
                     BoxShadow(
-                      color: const Color(0xFF673AB7).withOpacity(0.35),
+                      color: const Color(0xFF673AB7).withValues(alpha: 0.35),
                       blurRadius: 24,
                       offset: const Offset(0, 10),
                     ),

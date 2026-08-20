@@ -6,7 +6,7 @@ import '../../domain/entities/brand.dart';
 /// Dialog de gestión ABM de Marcas.
 /// Estilo consistente con CategoriesManagerDialog.
 class BrandsManagerDialog extends StatefulWidget {
-  const BrandsManagerDialog({Key? key}) : super(key: key);
+  const BrandsManagerDialog({super.key});
 
   @override
   State<BrandsManagerDialog> createState() => _BrandsManagerDialogState();
@@ -207,7 +207,7 @@ class _BrandsManagerDialogState extends State<BrandsManagerDialog> {
       contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
       leading: CircleAvatar(
         radius: 16,
-        backgroundColor: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+        backgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
         child: Icon(Icons.branding_watermark_outlined,
             color: Theme.of(context).colorScheme.primary, size: 16),
       ),

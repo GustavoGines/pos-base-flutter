@@ -16,14 +16,14 @@ class _PaymentLine {
   TextEditingController checkIssueDateCtrl;
   TextEditingController checkPaymentDateCtrl;
 
-  _PaymentLine({required this.method}) : 
-    amountCtrl = TextEditingController(),
-    checkBankCtrl = TextEditingController(),
-    checkNumberCtrl = TextEditingController(),
-    checkIssuerCuitCtrl = TextEditingController(),
-    checkIssuerNameCtrl = TextEditingController(),
-    checkIssueDateCtrl = TextEditingController(),
-    checkPaymentDateCtrl = TextEditingController();
+  _PaymentLine({required this.method})
+      : amountCtrl = TextEditingController(),
+        checkBankCtrl = TextEditingController(),
+        checkNumberCtrl = TextEditingController(),
+        checkIssuerCuitCtrl = TextEditingController(),
+        checkIssuerNameCtrl = TextEditingController(),
+        checkIssueDateCtrl = TextEditingController(),
+        checkPaymentDateCtrl = TextEditingController();
 
   void dispose() {
     amountCtrl.dispose();
@@ -48,10 +48,10 @@ class PaymentDialog extends StatefulWidget {
 class _PaymentDialogState extends State<PaymentDialog> {
   final _formKey = GlobalKey<FormState>();
   final _descriptionController = TextEditingController();
-  
+
   bool _isSubmitting = false;
   String _paymentType = 'general';
-  List<int> _selectedSaleIds = [];
+  final List<int> _selectedSaleIds = [];
   final List<_PaymentLine> _lines = [];
 
   double _targetAmount = 0.0;
@@ -60,7 +60,7 @@ class _PaymentDialogState extends State<PaymentDialog> {
   void initState() {
     super.initState();
     _descriptionController.text = '';
-    
+
     if (widget.customer.balance > 0) {
       _targetAmount = widget.customer.balance.abs();
     }
@@ -110,7 +110,7 @@ class _PaymentDialogState extends State<PaymentDialog> {
         total += double.tryParse(sale['amount_due'].toString()) ?? 0.0;
       }
     }
-    
+
     setState(() {
       _targetAmount = total;
       if (_lines.length == 1) {
@@ -121,7 +121,11 @@ class _PaymentDialogState extends State<PaymentDialog> {
 
   double get _totalEntered {
     return _lines.fold(0.0, (sum, line) {
-      final clean = line.amountCtrl.text.replaceAll(r'$', '').replaceAll('.', '').replaceAll(' ', '').trim();
+      final clean = line.amountCtrl.text
+          .replaceAll(r'$', '')
+          .replaceAll('.', '')
+          .replaceAll(' ', '')
+          .trim();
       return sum + (double.tryParse(clean) ?? 0.0);
     });
   }
@@ -131,7 +135,9 @@ class _PaymentDialogState extends State<PaymentDialog> {
 
     if (_paymentType == 'specific' && _selectedSaleIds.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Debes seleccionar al menos un ticket'), backgroundColor: Colors.red),
+        const SnackBar(
+            content: Text('Debes seleccionar al menos un ticket'),
+            backgroundColor: Colors.red),
       );
       return;
     }
@@ -140,7 +146,11 @@ class _PaymentDialogState extends State<PaymentDialog> {
     double totalPaid = 0.0;
 
     for (var line in _lines) {
-      final cleanAmount = line.amountCtrl.text.replaceAll(r'$', '').replaceAll('.', '').replaceAll(' ', '').trim();
+      final cleanAmount = line.amountCtrl.text
+          .replaceAll(r'$', '')
+          .replaceAll('.', '')
+          .replaceAll(' ', '')
+          .trim();
       final amount = double.tryParse(cleanAmount) ?? 0.0;
       if (amount <= 0) continue;
 
@@ -151,7 +161,10 @@ class _PaymentDialogState extends State<PaymentDialog> {
             line.checkIssuerCuitCtrl.text.trim().isEmpty ||
             line.checkIssuerNameCtrl.text.trim().isEmpty) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Complete los datos obligatorios de todos los cheques.'), backgroundColor: Colors.red),
+            const SnackBar(
+                content: Text(
+                    'Complete los datos obligatorios de todos los cheques.'),
+                backgroundColor: Colors.red),
           );
           return;
         }
@@ -160,8 +173,12 @@ class _PaymentDialogState extends State<PaymentDialog> {
           'check_number': line.checkNumberCtrl.text.trim(),
           'issuer_cuit': line.checkIssuerCuitCtrl.text.trim(),
           'issuer_name': line.checkIssuerNameCtrl.text.trim(),
-          'issue_date': line.checkIssueDateCtrl.text.trim().isNotEmpty ? line.checkIssueDateCtrl.text.trim() : DateTime.now().toString().split(' ')[0],
-          'payment_date': line.checkPaymentDateCtrl.text.trim().isNotEmpty ? line.checkPaymentDateCtrl.text.trim() : DateTime.now().toString().split(' ')[0],
+          'issue_date': line.checkIssueDateCtrl.text.trim().isNotEmpty
+              ? line.checkIssueDateCtrl.text.trim()
+              : DateTime.now().toString().split(' ')[0],
+          'payment_date': line.checkPaymentDateCtrl.text.trim().isNotEmpty
+              ? line.checkPaymentDateCtrl.text.trim()
+              : DateTime.now().toString().split(' ')[0],
         };
       }
 
@@ -175,7 +192,9 @@ class _PaymentDialogState extends State<PaymentDialog> {
 
     if (totalPaid <= 0 || paymentsPayload.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('El monto total debe ser mayor a 0'), backgroundColor: Colors.red),
+        const SnackBar(
+            content: Text('El monto total debe ser mayor a 0'),
+            backgroundColor: Colors.red),
       );
       return;
     }
@@ -184,17 +203,19 @@ class _PaymentDialogState extends State<PaymentDialog> {
 
     try {
       final success = await context.read<CustomerProvider>().registerPayment(
-        customerId: widget.customer.id, 
-        payments: paymentsPayload,
-        description: _descriptionController.text.trim(),
-        saleIds: _paymentType == 'specific' ? _selectedSaleIds : const [],
-        cashShiftId: context.read<CashRegisterProvider>().currentShift?.id,
-      );
+            customerId: widget.customer.id,
+            payments: paymentsPayload,
+            description: _descriptionController.text.trim(),
+            saleIds: _paymentType == 'specific' ? _selectedSaleIds : const [],
+            cashShiftId: context.read<CashRegisterProvider>().currentShift?.id,
+          );
 
       if (success && mounted) {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Pago registrado correctamente'), backgroundColor: Colors.green),
+          const SnackBar(
+              content: Text('Pago registrado correctamente'),
+              backgroundColor: Colors.green),
         );
       }
     } catch (e) {
@@ -232,46 +253,55 @@ class _PaymentDialogState extends State<PaymentDialog> {
                   width: double.infinity,
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: Colors.blueGrey.shade50,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.blueGrey.shade200)
-                  ),
+                      color: Colors.blueGrey.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.blueGrey.shade200)),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('Deuda Total', style: TextStyle(color: Colors.blueGrey, fontWeight: FontWeight.bold)),
+                          const Text('Deuda Total',
+                              style: TextStyle(
+                                  color: Colors.blueGrey,
+                                  fontWeight: FontWeight.bold)),
                           const SizedBox(height: 4),
-                          Text(
-                            '\$ ${widget.customer.balance.toCurrency()}', 
-                            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.blueGrey.shade700)
-                          ),
+                          Text('\$ ${widget.customer.balance.toCurrency()}',
+                              style: TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.blueGrey.shade700)),
                         ],
                       ),
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
-                          const Text('Objetivo a Pagar', style: TextStyle(color: Colors.teal, fontWeight: FontWeight.bold)),
+                          const Text('Objetivo a Pagar',
+                              style: TextStyle(
+                                  color: Colors.teal,
+                                  fontWeight: FontWeight.bold)),
                           const SizedBox(height: 4),
-                          Text(
-                            '\$ ${_targetAmount.toCurrency()}', 
-                            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.teal.shade700)
-                          ),
+                          Text('\$ ${_targetAmount.toCurrency()}',
+                              style: TextStyle(
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.teal.shade700)),
                         ],
                       ),
                     ],
                   ),
                 ),
                 const SizedBox(height: 24),
-                
-                const Text('Tipo de Abono', style: TextStyle(fontWeight: FontWeight.bold)),
+                const Text('Tipo de Abono',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
                 const SizedBox(height: 8),
                 SegmentedButton<String>(
                   segments: const [
-                    ButtonSegment(value: 'general', label: Text('Abono General')),
-                    ButtonSegment(value: 'specific', label: Text('Tickets Específicos')),
+                    ButtonSegment(
+                        value: 'general', label: Text('Abono General')),
+                    ButtonSegment(
+                        value: 'specific', label: Text('Tickets Específicos')),
                   ],
                   selected: {_paymentType},
                   onSelectionChanged: (Set<String> newSelection) {
@@ -282,16 +312,18 @@ class _PaymentDialogState extends State<PaymentDialog> {
                       } else {
                         _targetAmount = widget.customer.balance.abs();
                         if (_lines.length == 1) {
-                           _lines[0].amountCtrl.text = _targetAmount > 0 ? _targetAmount.toStringAsFixed(2) : '';
+                          _lines[0].amountCtrl.text = _targetAmount > 0
+                              ? _targetAmount.toStringAsFixed(2)
+                              : '';
                         }
                       }
                     });
                   },
                 ),
                 const SizedBox(height: 16),
-
                 if (isSpecific) ...[
-                  const Text('Tickets Pendientes', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const Text('Tickets Pendientes',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
                   const SizedBox(height: 8),
                   Container(
                     height: 180,
@@ -306,16 +338,28 @@ class _PaymentDialogState extends State<PaymentDialog> {
                             itemBuilder: (context, index) {
                               final sale = provider.pendingSales[index];
                               final saleId = sale['id'] as int;
-                              final amountDue = double.tryParse(sale['amount_due'].toString()) ?? 0.0;
-                              final dateStr = sale['created_at']?.toString() ?? '';
-                              final date = dateStr.isNotEmpty ? DateTime.parse(dateStr).toLocal().toString().split(' ')[0] : '';
-                              
-                              final isSelected = _selectedSaleIds.contains(saleId);
-                              
+                              final amountDue = double.tryParse(
+                                      sale['amount_due'].toString()) ??
+                                  0.0;
+                              final dateStr =
+                                  sale['created_at']?.toString() ?? '';
+                              final date = dateStr.isNotEmpty
+                                  ? DateTime.parse(dateStr)
+                                      .toLocal()
+                                      .toString()
+                                      .split(' ')[0]
+                                  : '';
+
+                              final isSelected =
+                                  _selectedSaleIds.contains(saleId);
+
                               return CheckboxListTile(
                                 title: Text('Ticket #$saleId'),
                                 subtitle: Text('Fecha: $date'),
-                                secondary: Text('\$${amountDue.toCurrency()}', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.redAccent)),
+                                secondary: Text('\$${amountDue.toCurrency()}',
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.redAccent)),
                                 value: isSelected,
                                 onChanged: (bool? val) {
                                   setState(() {
@@ -333,11 +377,12 @@ class _PaymentDialogState extends State<PaymentDialog> {
                   ),
                   const SizedBox(height: 16),
                 ],
-
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text('Métodos de Pago', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                    const Text('Métodos de Pago',
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 16)),
                     TextButton.icon(
                       icon: const Icon(Icons.add),
                       label: const Text('Agregar Método'),
@@ -346,7 +391,6 @@ class _PaymentDialogState extends State<PaymentDialog> {
                   ],
                 ),
                 const Divider(),
-                
                 ..._lines.asMap().entries.map((entry) {
                   final line = entry.value;
                   return Padding(
@@ -360,21 +404,28 @@ class _PaymentDialogState extends State<PaymentDialog> {
                             Expanded(
                               flex: 2,
                               child: DropdownButtonFormField<String>(
-                                value: line.method,
+                                initialValue: line.method,
                                 decoration: InputDecoration(
                                   labelText: 'Método',
                                   isDense: true,
-                                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                  border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(8)),
                                 ),
                                 items: [
-                                  const DropdownMenuItem(value: 'cash', child: Text('Efectivo')),
-                                  const DropdownMenuItem(value: 'card', child: Text('Tarjeta')),
-                                  const DropdownMenuItem(value: 'transfer', child: Text('Transferencia')),
+                                  const DropdownMenuItem(
+                                      value: 'cash', child: Text('Efectivo')),
+                                  const DropdownMenuItem(
+                                      value: 'card', child: Text('Tarjeta')),
+                                  const DropdownMenuItem(
+                                      value: 'transfer',
+                                      child: Text('Transferencia')),
                                   if (settings?.features.checks == true)
-                                    const DropdownMenuItem(value: 'cheque', child: Text('Cheque')),
+                                    const DropdownMenuItem(
+                                        value: 'cheque', child: Text('Cheque')),
                                 ],
                                 onChanged: (val) {
-                                  if (val != null) setState(() => line.method = val);
+                                  if (val != null)
+                                    setState(() => line.method = val);
                                 },
                               ),
                             ),
@@ -385,17 +436,20 @@ class _PaymentDialogState extends State<PaymentDialog> {
                                 controller: line.amountCtrl,
                                 keyboardType: TextInputType.number,
                                 decoration: InputDecoration(
-                                  labelText: 'Monto', 
-                                  prefixText: '\$ ',
-                                  isDense: true,
-                                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8))
-                                ),
-                                validator: (val) => val == null || val.isEmpty ? 'Req.' : null,
+                                    labelText: 'Monto',
+                                    prefixText: '\$ ',
+                                    isDense: true,
+                                    border: OutlineInputBorder(
+                                        borderRadius:
+                                            BorderRadius.circular(8))),
+                                validator: (val) =>
+                                    val == null || val.isEmpty ? 'Req.' : null,
                               ),
                             ),
                             if (_lines.length > 1)
                               IconButton(
-                                icon: const Icon(Icons.remove_circle_outline, color: Colors.red),
+                                icon: const Icon(Icons.remove_circle_outline,
+                                    color: Colors.red),
                                 onPressed: () => _removeLine(line),
                                 tooltip: 'Eliminar',
                               )
@@ -415,21 +469,71 @@ class _PaymentDialogState extends State<PaymentDialog> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Text('Detalles del Cheque', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.blue)),
+                                const Text('Detalles del Cheque',
+                                    style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 12,
+                                        color: Colors.blue)),
                                 const SizedBox(height: 8),
                                 Row(
                                   children: [
-                                    Expanded(child: TextField(controller: line.checkBankCtrl, decoration: InputDecoration(labelText: 'Banco', isDense: true, border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)), filled: true, fillColor: Colors.white))),
+                                    Expanded(
+                                        child: TextField(
+                                            controller: line.checkBankCtrl,
+                                            decoration: InputDecoration(
+                                                labelText: 'Banco',
+                                                isDense: true,
+                                                border: OutlineInputBorder(
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            8)),
+                                                filled: true,
+                                                fillColor: Colors.white))),
                                     const SizedBox(width: 8),
-                                    Expanded(child: TextField(controller: line.checkNumberCtrl, decoration: InputDecoration(labelText: 'Nro Cheque', isDense: true, border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)), filled: true, fillColor: Colors.white))),
+                                    Expanded(
+                                        child: TextField(
+                                            controller: line.checkNumberCtrl,
+                                            decoration: InputDecoration(
+                                                labelText: 'Nro Cheque',
+                                                isDense: true,
+                                                border: OutlineInputBorder(
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            8)),
+                                                filled: true,
+                                                fillColor: Colors.white))),
                                   ],
                                 ),
                                 const SizedBox(height: 8),
                                 Row(
                                   children: [
-                                    Expanded(child: TextField(controller: line.checkIssuerCuitCtrl, decoration: InputDecoration(labelText: 'CUIT Firmante', isDense: true, border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)), filled: true, fillColor: Colors.white))),
+                                    Expanded(
+                                        child: TextField(
+                                            controller:
+                                                line.checkIssuerCuitCtrl,
+                                            decoration: InputDecoration(
+                                                labelText: 'CUIT Firmante',
+                                                isDense: true,
+                                                border: OutlineInputBorder(
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            8)),
+                                                filled: true,
+                                                fillColor: Colors.white))),
                                     const SizedBox(width: 8),
-                                    Expanded(child: TextField(controller: line.checkIssuerNameCtrl, decoration: InputDecoration(labelText: 'Nombre Firmante', isDense: true, border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)), filled: true, fillColor: Colors.white))),
+                                    Expanded(
+                                        child: TextField(
+                                            controller:
+                                                line.checkIssuerNameCtrl,
+                                            decoration: InputDecoration(
+                                                labelText: 'Nombre Firmante',
+                                                isDense: true,
+                                                border: OutlineInputBorder(
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            8)),
+                                                filled: true,
+                                                fillColor: Colors.white))),
                                   ],
                                 ),
                               ],
@@ -439,30 +543,44 @@ class _PaymentDialogState extends State<PaymentDialog> {
                     ),
                   );
                 }),
-                
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   margin: const EdgeInsets.only(top: 8, bottom: 16),
                   decoration: BoxDecoration(
-                    color: totalEntered >= _targetAmount ? Colors.green.shade50 : Colors.orange.shade50,
+                    color: totalEntered >= _targetAmount
+                        ? Colors.green.shade50
+                        : Colors.orange.shade50,
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: totalEntered >= _targetAmount ? Colors.green.shade200 : Colors.orange.shade200),
+                    border: Border.all(
+                        color: totalEntered >= _targetAmount
+                            ? Colors.green.shade200
+                            : Colors.orange.shade200),
                   ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text('Total Ingresado:', style: TextStyle(fontWeight: FontWeight.bold, color: totalEntered >= _targetAmount ? Colors.green.shade800 : Colors.orange.shade800)),
-                      Text('\$ ${totalEntered.toCurrency()}', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: totalEntered >= _targetAmount ? Colors.green.shade700 : Colors.orange.shade700)),
+                      Text('Total Ingresado:',
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: totalEntered >= _targetAmount
+                                  ? Colors.green.shade800
+                                  : Colors.orange.shade800)),
+                      Text('\$ ${totalEntered.toCurrency()}',
+                          style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: totalEntered >= _targetAmount
+                                  ? Colors.green.shade700
+                                  : Colors.orange.shade700)),
                     ],
                   ),
                 ),
-
                 TextFormField(
                   controller: _descriptionController,
                   decoration: const InputDecoration(
-                    labelText: 'Descripción / Nota (Opcional)', 
-                    border: OutlineInputBorder()
-                  ),
+                      labelText: 'Descripción / Nota (Opcional)',
+                      border: OutlineInputBorder()),
                 ),
               ],
             ),
@@ -477,9 +595,14 @@ class _PaymentDialogState extends State<PaymentDialog> {
         ElevatedButton(
           onPressed: _isSubmitting ? null : _submit,
           style: ElevatedButton.styleFrom(backgroundColor: Colors.teal),
-          child: _isSubmitting 
-            ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-            : const Text('Confirmar Pago', style: TextStyle(color: Colors.white)),
+          child: _isSubmitting
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                      color: Colors.white, strokeWidth: 2))
+              : const Text('Confirmar Pago',
+                  style: TextStyle(color: Colors.white)),
         ),
       ],
     );

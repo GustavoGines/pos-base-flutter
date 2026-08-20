@@ -3,7 +3,7 @@ import '../entities/category.dart';
 import '../entities/brand.dart';
 
 abstract class CatalogRepository {
-  /// Returns {data: List<Product>, current_page: int, last_page: int}
+  /// Returns {data: `List<Product>`, current_page: int, last_page: int}
   Future<Map<String, dynamic>> getProducts({int page = 1, String? search, String? sortBy, String? sortDirection, int? perPage});
   Future<List<Category>> getCategories();
   // Brand CRUD

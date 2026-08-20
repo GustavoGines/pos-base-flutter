@@ -533,7 +533,7 @@ class _NavDropdownGroupState extends State<_NavDropdownGroup> {
             AnimatedRotation(
               turns: controller.isOpen ? 0.5 : 0.0,
               duration: const Duration(milliseconds: 200),
-              child: Icon(Icons.expand_more, size: 16, color: color.withOpacity(0.7)),
+              child: Icon(Icons.expand_more, size: 16, color: color.withValues(alpha: 0.7)),
             ),
           ]
         ],
@@ -572,13 +572,13 @@ void _showUpgradeDialog(
                 children: [
                   Container(
                     padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(color: Colors.white.withOpacity(0.15), shape: BoxShape.circle),
+                    decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.15), shape: BoxShape.circle),
                     child: const Icon(Icons.workspace_premium_rounded, color: Colors.white, size: 36),
                   ),
                   const SizedBox(height: 12),
                   Text(title, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 6),
-                  Text('Plan Básico activo — Mejorá tu plan para desbloquear', textAlign: TextAlign.center, style: TextStyle(color: Colors.white.withOpacity(0.80), fontSize: 12)),
+                  Text('Plan Básico activo — Mejorá tu plan para desbloquear', textAlign: TextAlign.center, style: TextStyle(color: Colors.white.withValues(alpha: 0.80), fontSize: 12)),
                 ],
               ),
             ),

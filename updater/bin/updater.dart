@@ -126,7 +126,7 @@ void main(List<String> args) async {
   );
 
   log.log('Updater iniciado correctamente.');
-  log.log('PID del proceso: ${pid}');
+  log.log('PID del proceso: $pid');
   log.log('Plataforma: ${Platform.operatingSystem} ${Platform.operatingSystemVersion}');
 
   // ── PASO 1: Verificar que el ZIP existe ─────────────────

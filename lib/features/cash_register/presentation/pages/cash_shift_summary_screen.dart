@@ -11,7 +11,7 @@ import 'package:intl/intl.dart';
 class CashShiftSummaryScreen extends StatelessWidget {
   final CashRegisterShift closedShift;
 
-  const CashShiftSummaryScreen({Key? key, required this.closedShift}) : super(key: key);
+  const CashShiftSummaryScreen({super.key, required this.closedShift});
 
   void _exit(BuildContext context) {
     try {
