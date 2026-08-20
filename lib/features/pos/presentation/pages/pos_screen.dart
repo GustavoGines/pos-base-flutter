@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:frontend_desktop/features/pos/domain/entities/cart_item.dart';
 import 'package:provider/provider.dart';
@@ -19,6 +20,8 @@ import 'package:frontend_desktop/core/providers/local_terminal_provider.dart';
 import 'package:frontend_desktop/core/utils/a4_split_pdf_service.dart';
 import 'package:printing/printing.dart';
 import 'package:frontend_desktop/features/logistics/presentation/providers/logistics_provider.dart';
+import 'package:pusher_channels_flutter/pusher_channels_flutter.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart'; // Just in case, though we will configure hardcoded for local or get from ApiClient
 
 class PosScreen extends StatefulWidget {
   const PosScreen({Key? key}) : super(key: key);
@@ -44,10 +47,13 @@ class _PosScreenState extends State<PosScreen> {
   final _pendingOrdersLayerLink = LayerLink();
   bool _isPendingPinned = false; // Modo Híbrido
 
+  final PusherChannelsFlutter _pusher = PusherChannelsFlutter.getInstance();
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initReverb();
       _searchFocusNode.requestFocus();
       // Siempre cargar la lista COMPLETA al entrar a POS, ignorando cualquier
       // búsqueda que el módulo de Catálogo haya dejado activa en el provider.
@@ -101,8 +107,58 @@ class _PosScreenState extends State<PosScreen> {
     });
   }
 
+  Future<void> _initReverb() async {
+    final localTerminal = Provider.of<LocalTerminalProvider>(context, listen: false);
+    final terminalId = localTerminal.terminalId;
+
+    try {
+      await _pusher.init(
+        apiKey: "kz786cdfeldnzispymxq", // Local Reverb key from laravel .env
+        cluster: "mt1",
+        useTLS: false, 
+        // We use localhost if it's running on the same PC, or you can extract the backend IP from ApiClient.
+        // For simplicity in a Laragon local environment, typically the backend is on the same machine.
+        // Wait, if backend is on localhost, then 127.0.0.1 is correct for desktop app!
+        host: "127.0.0.1", 
+        port: 8080,
+        wsPort: 8080,
+        onEvent: _onReverbEvent,
+      );
+      await _pusher.subscribe(channelName: "pos.scans.\$terminalId");
+      await _pusher.connect();
+    } catch (e) {
+      debugPrint("Error connecting Reverb: \$e");
+    }
+  }
+
+  void _onReverbEvent(dynamic event) {
+    // Reverb wraps the payload data inside the event.data as a stringified JSON
+    if (event.eventName == "App\\Events\\MobileScanned") {
+      try {
+        final data = jsonDecode(event.data);
+        final barcode = data['barcode'];
+        
+        if (mounted && barcode != null) {
+          // Inject the barcode into the search controller
+          _searchController.text = barcode;
+          
+          // Trigger the search automatically
+          _onProductScannedOrSearched(barcode);
+          
+          // Optional: Clear the search controller after a short delay so it's ready again
+          // Future.delayed(const Duration(seconds: 1), () {
+          //   if (mounted) _searchController.clear();
+          // });
+        }
+      } catch (e) {
+        debugPrint("Error parsing Reverb event: \$e");
+      }
+    }
+  }
+
   @override
   void dispose() {
+    _pusher.disconnect();
     _pendingOrdersTimer?.cancel();
     _debounceSearchTimer?.cancel();
     _searchFocusNode.dispose();

@@ -23,6 +23,8 @@ class LocalTerminalProvider extends ChangeNotifier {
   
   String _lockedPriceTier = 'none';
   String? _lockedPriceTierLabel;
+  
+  String _terminalId = 'caja-1'; // Default for scanner
 
   bool _isInitialized = false;
 
@@ -33,6 +35,7 @@ class LocalTerminalProvider extends ChangeNotifier {
   String get pdfPaperSize => _pdfPaperSize;
   String get lockedPriceTier => _lockedPriceTier;
   String? get lockedPriceTierLabel => _lockedPriceTierLabel;
+  String get terminalId => _terminalId;
   bool get isInitialized => _isInitialized;
 
   LocalTerminalProvider() {
@@ -52,6 +55,7 @@ class LocalTerminalProvider extends ChangeNotifier {
     _pdfPaperSize = prefs.getString(_pdfPaperSizeKey) ?? 'a4';
     _lockedPriceTier = prefs.getString(_lockedPriceTierKey) ?? 'none';
     _lockedPriceTierLabel = prefs.getString(_lockedPriceTierLabelKey);
+    _terminalId = prefs.getString('local_terminal_id') ?? 'caja-1';
     _isInitialized = true;
 
     // ── CRÍTICO: sincronizar el singleton de impresión con la config guardada.
@@ -120,5 +124,12 @@ class LocalTerminalProvider extends ChangeNotifier {
     } else {
       await prefs.remove(_lockedPriceTierLabelKey);
     }
+  }
+
+  Future<void> setTerminalId(String id) async {
+    _terminalId = id;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('local_terminal_id', id);
   }
 }

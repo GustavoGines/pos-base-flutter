@@ -18,6 +18,8 @@ import 'features/reports/presentation/providers/reports_provider.dart';
 import 'core/providers/local_terminal_provider.dart';
 import 'features/reports/presentation/providers/inventory_alerts_provider.dart';
 import 'features/reports/data/datasources/inventory_alerts_datasource.dart';
+import 'features/mobile/presentation/screens/mobile_menu_screen.dart';
+import 'features/mobile/presentation/screens/mobile_scanner_screen.dart';
 import 'core/config/app_config.dart';
 
 import 'core/presentation/widgets/license_guard.dart';
@@ -672,6 +674,7 @@ class _MainAppState extends State<MainApp> {
         // Protección GLOBAL anti-overflow para ventanas estrechas
         return LayoutBuilder(
           builder: (context, constraints) {
+            if (Platform.isAndroid || Platform.isIOS) return guardedChild;
             const double minAppWidth = 1024.0;
             const double minAppHeight = 550.0;
 
@@ -746,6 +749,9 @@ class _MainAppState extends State<MainApp> {
         '/login': (context) => const LoginScreen(),
         '/home': (context) => Consumer<CashRegisterProvider>(
           builder: (ctx, cashProv, _) {
+            if (Platform.isAndroid || Platform.isIOS) {
+              return const MobileMenuScreen();
+            }
             final shift = cashProv.currentShift;
             final bool open = shift != null && shift.isOpen;
             if (open) {
@@ -837,6 +843,8 @@ class _MainAppState extends State<MainApp> {
         '/reports': (context) => const ReportsScreen(),
         // [logistics]
         '/delivery-notes': (context) => const LogisticsDashboardScreen(),
+        // [mobile]
+        '/mobile-scanner': (context) => const MobileScannerScreen(),
       },
     );
   }
