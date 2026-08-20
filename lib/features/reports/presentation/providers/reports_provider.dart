@@ -64,22 +64,37 @@ class ReportsProvider extends ChangeNotifier {
 
   double get revenueTrendPercentage {
     if (_previousPeriodRevenue == 0) return totalRevenue > 0 ? 100.0 : 0.0;
-    return ((totalRevenue - _previousPeriodRevenue) / _previousPeriodRevenue) * 100;
+    return ((totalRevenue - _previousPeriodRevenue) / _previousPeriodRevenue) *
+        100;
   }
 
   double get profitTrendPercentage {
     if (_previousPeriodProfit == 0) return totalProfit > 0 ? 100.0 : 0.0;
-    return ((totalProfit - _previousPeriodProfit) / _previousPeriodProfit) * 100;
+    return ((totalProfit - _previousPeriodProfit) / _previousPeriodProfit) *
+        100;
   }
 
-  double get totalRevenue => _reportData.fold(0, (sum, item) => sum + (double.tryParse(item['total_revenue'].toString()) ?? 0));
-  double get totalProfit => _reportData.fold(0, (sum, item) => sum + (double.tryParse(item['total_profit'].toString()) ?? 0));
-  
-  /// Facturación de items que SÍ tienen costo registrado (base real del margen)
-  double get totalRevenueWithCost => _reportData.fold(0, (sum, item) => sum + (double.tryParse(item['revenue_with_cost'].toString()) ?? 0));
+  double get totalRevenue => _reportData.fold(
+      0,
+      (sum, item) =>
+          sum + (double.tryParse(item['total_revenue'].toString()) ?? 0));
+  double get totalProfit => _reportData.fold(
+      0,
+      (sum, item) =>
+          sum + (double.tryParse(item['total_profit'].toString()) ?? 0));
 
-  int get totalItemsWithCost => _reportData.fold(0, (sum, item) => sum + (int.tryParse(item['items_with_cost'].toString()) ?? 0));
-  int get totalItems => _reportData.fold(0, (sum, item) => sum + (int.tryParse(item['total_items'].toString()) ?? 0));
+  /// Facturación de items que SÍ tienen costo registrado (base real del margen)
+  double get totalRevenueWithCost => _reportData.fold(
+      0,
+      (sum, item) =>
+          sum + (double.tryParse(item['revenue_with_cost'].toString()) ?? 0));
+
+  int get totalItemsWithCost => _reportData.fold(
+      0,
+      (sum, item) =>
+          sum + (int.tryParse(item['items_with_cost'].toString()) ?? 0));
+  int get totalItems => _reportData.fold(0,
+      (sum, item) => sum + (int.tryParse(item['total_items'].toString()) ?? 0));
 
   bool get hasMissingCostData => totalItems > totalItemsWithCost;
 
@@ -93,11 +108,12 @@ class ReportsProvider extends ChangeNotifier {
   bool get isLoadingBalance => _isLoadingBalance;
 
   /// Mes inicial para el Balance (por defecto: hace 5 meses)
-  DateTime _balanceStartMonth = DateTime(DateTime.now().year, DateTime.now().month - 5);
+  DateTime _balanceStartMonth =
+      DateTime(DateTime.now().year, DateTime.now().month - 5);
   DateTime _balanceEndMonth = DateTime.now();
 
   DateTime get balanceStartMonth => _balanceStartMonth;
-  DateTime get balanceEndMonth   => _balanceEndMonth;
+  DateTime get balanceEndMonth => _balanceEndMonth;
 
   List<dynamic> _balanceMonths = [];
   List<dynamic> get balanceMonths => _balanceMonths;
@@ -105,19 +121,25 @@ class ReportsProvider extends ChangeNotifier {
   Map<String, dynamic> _balanceTotals = {};
   Map<String, dynamic> get balanceTotals => _balanceTotals;
 
-  double get balanceTotalRevenue  => double.tryParse(_balanceTotals['total_revenue']?.toString() ?? '0') ?? 0;
-  double get balanceTotalProfit   => double.tryParse(_balanceTotals['total_profit']?.toString() ?? '0') ?? 0;
-  double get balanceAvgMargin     => double.tryParse(_balanceTotals['avg_margin_pct']?.toString() ?? '0') ?? 0;
-  double get balanceTotalCost     => double.tryParse(_balanceTotals['total_cost']?.toString() ?? '0') ?? 0;
+  double get balanceTotalRevenue =>
+      double.tryParse(_balanceTotals['total_revenue']?.toString() ?? '0') ?? 0;
+  double get balanceTotalProfit =>
+      double.tryParse(_balanceTotals['total_profit']?.toString() ?? '0') ?? 0;
+  double get balanceAvgMargin =>
+      double.tryParse(_balanceTotals['avg_margin_pct']?.toString() ?? '0') ?? 0;
+  double get balanceTotalCost =>
+      double.tryParse(_balanceTotals['total_cost']?.toString() ?? '0') ?? 0;
 
   double get balanceMaxRevenue {
     if (_balanceMonths.isEmpty) return 1;
-    return _balanceMonths.map((m) => double.tryParse(m['total_revenue'].toString()) ?? 0).reduce((a, b) => a > b ? a : b);
+    return _balanceMonths
+        .map((m) => double.tryParse(m['total_revenue'].toString()) ?? 0)
+        .reduce((a, b) => a > b ? a : b);
   }
 
   void setBalanceRange(DateTime start, DateTime end) {
     _balanceStartMonth = DateTime(start.year, start.month);
-    _balanceEndMonth   = DateTime(end.year, end.month);
+    _balanceEndMonth = DateTime(end.year, end.month);
     notifyListeners();
   }
 
@@ -146,16 +168,20 @@ class ReportsProvider extends ChangeNotifier {
 
     try {
       final df = DateFormat('yyyy-MM-dd');
-      final result = await dataSource.getProfitByCategory(df.format(_startDate), df.format(_endDate));
-      final brandResult = await dataSource.getProfitByBrand(df.format(_startDate), df.format(_endDate));
-      
+      final result = await dataSource.getProfitByCategory(
+          df.format(_startDate), df.format(_endDate));
+      final brandResult = await dataSource.getProfitByBrand(
+          df.format(_startDate), df.format(_endDate));
+
       _reportData = result['data'] ?? [];
       _brandReportData = brandResult['data'] ?? [];
       _dailyEvolution = result['daily_evolution'] ?? [];
-      
+
       final prev = result['previous_period'] ?? {};
-      _previousPeriodRevenue = double.tryParse(prev['revenue']?.toString() ?? '0') ?? 0;
-      _previousPeriodProfit = double.tryParse(prev['profit']?.toString() ?? '0') ?? 0;
+      _previousPeriodRevenue =
+          double.tryParse(prev['revenue']?.toString() ?? '0') ?? 0;
+      _previousPeriodProfit =
+          double.tryParse(prev['profit']?.toString() ?? '0') ?? 0;
     } catch (e) {
       _error = e.toString();
     } finally {
@@ -196,8 +222,8 @@ class ReportsProvider extends ChangeNotifier {
         mf.format(_balanceStartMonth),
         mf.format(_balanceEndMonth),
       );
-      _balanceMonths  = result['months'] ?? [];
-      _balanceTotals  = Map<String, dynamic>.from(result['totals'] ?? {});
+      _balanceMonths = result['months'] ?? [];
+      _balanceTotals = Map<String, dynamic>.from(result['totals'] ?? {});
     } catch (e) {
       _error = e.toString();
     } finally {
@@ -213,21 +239,25 @@ class ReportsProvider extends ChangeNotifier {
 
     try {
       final df = DateFormat('yyyy-MM-dd');
-      final bytes = await dataSource.downloadExcel(df.format(_startDate), df.format(_endDate), isBrand: isBrand);
-      
+      final bytes = await dataSource.downloadExcel(
+          df.format(_startDate), df.format(_endDate),
+          isBrand: isBrand);
+
       final docsDir = await getApplicationDocumentsDirectory();
-      final reportesDir = Directory('${docsDir.path}${Platform.pathSeparator}Sistema_POS${Platform.pathSeparator}Reportes');
-      
+      final reportesDir = Directory(
+          '${docsDir.path}${Platform.pathSeparator}Sistema_POS${Platform.pathSeparator}Reportes');
+
       if (!await reportesDir.exists()) {
         await reportesDir.create(recursive: true);
       }
-      
+
       final cleanStart = DateFormat('dd-MM-yyyy').format(_startDate);
       final cleanEnd = DateFormat('dd-MM-yyyy').format(_endDate);
       final typeStr = isBrand ? 'Marcas' : 'Categorias';
-      final filename = 'Ganancias_${typeStr}_${cleanStart}_al_${cleanEnd}.xlsx';
-      final file = File('${reportesDir.path}${Platform.pathSeparator}$filename');
-      
+      final filename = 'Ganancias_${typeStr}_${cleanStart}_al_$cleanEnd.xlsx';
+      final file =
+          File('${reportesDir.path}${Platform.pathSeparator}$filename');
+
       await file.writeAsBytes(bytes);
 
       if (Platform.isWindows) {
@@ -237,7 +267,8 @@ class ReportsProvider extends ChangeNotifier {
           debugPrint('Error abriendo explorer: $e');
         }
       } else {
-        final folderUri = Uri.parse('file:///${reportesDir.path.replaceAll('\\', '/')}');
+        final folderUri =
+            Uri.parse('file:///${reportesDir.path.replaceAll('\\', '/')}');
         if (await canLaunchUrl(folderUri)) {
           await launchUrl(folderUri);
         }
@@ -257,20 +288,24 @@ class ReportsProvider extends ChangeNotifier {
 
     try {
       final df = DateFormat('yyyy-MM-dd');
-      final bytes = await dataSource.downloadPdf(df.format(_startDate), df.format(_endDate), isBrand: isBrand);
+      final bytes = await dataSource.downloadPdf(
+          df.format(_startDate), df.format(_endDate),
+          isBrand: isBrand);
 
       final docsDir = await getApplicationDocumentsDirectory();
-      final reportesDir = Directory('${docsDir.path}${Platform.pathSeparator}Sistema_POS${Platform.pathSeparator}Reportes');
+      final reportesDir = Directory(
+          '${docsDir.path}${Platform.pathSeparator}Sistema_POS${Platform.pathSeparator}Reportes');
 
       if (!await reportesDir.exists()) {
         await reportesDir.create(recursive: true);
       }
 
       final cleanStart = DateFormat('dd-MM-yyyy').format(_startDate);
-      final cleanEnd   = DateFormat('dd-MM-yyyy').format(_endDate);
+      final cleanEnd = DateFormat('dd-MM-yyyy').format(_endDate);
       final typeStr = isBrand ? 'Marcas' : 'Categorias';
-      final filename = 'Ganancias_${typeStr}_${cleanStart}_al_${cleanEnd}.pdf';
-      final file = File('${reportesDir.path}${Platform.pathSeparator}$filename');
+      final filename = 'Ganancias_${typeStr}_${cleanStart}_al_$cleanEnd.pdf';
+      final file =
+          File('${reportesDir.path}${Platform.pathSeparator}$filename');
 
       await file.writeAsBytes(bytes);
 
@@ -281,7 +316,8 @@ class ReportsProvider extends ChangeNotifier {
           debugPrint('Error abriendo explorer: $e');
         }
       } else {
-        final folderUri = Uri.parse('file:///${reportesDir.path.replaceAll('\\', '/')}');
+        final folderUri =
+            Uri.parse('file:///${reportesDir.path.replaceAll('\\', '/')}');
         if (await canLaunchUrl(folderUri)) {
           await launchUrl(folderUri);
         }
@@ -301,20 +337,23 @@ class ReportsProvider extends ChangeNotifier {
 
     try {
       final df = DateFormat('yyyy-MM');
-      final bytes = await dataSource.downloadMonthlyBalanceExcel(df.format(_balanceStartMonth), df.format(_balanceEndMonth));
-      
+      final bytes = await dataSource.downloadMonthlyBalanceExcel(
+          df.format(_balanceStartMonth), df.format(_balanceEndMonth));
+
       final docsDir = await getApplicationDocumentsDirectory();
-      final reportesDir = Directory('${docsDir.path}${Platform.pathSeparator}Sistema_POS${Platform.pathSeparator}Reportes');
-      
+      final reportesDir = Directory(
+          '${docsDir.path}${Platform.pathSeparator}Sistema_POS${Platform.pathSeparator}Reportes');
+
       if (!await reportesDir.exists()) {
         await reportesDir.create(recursive: true);
       }
-      
+
       final cleanStart = DateFormat('MM-yyyy').format(_balanceStartMonth);
       final cleanEnd = DateFormat('MM-yyyy').format(_balanceEndMonth);
-      final filename = 'Balance_Mensual_${cleanStart}_al_${cleanEnd}.xlsx';
-      final file = File('${reportesDir.path}${Platform.pathSeparator}$filename');
-      
+      final filename = 'Balance_Mensual_${cleanStart}_al_$cleanEnd.xlsx';
+      final file =
+          File('${reportesDir.path}${Platform.pathSeparator}$filename');
+
       await file.writeAsBytes(bytes);
 
       if (Platform.isWindows) {
@@ -324,7 +363,8 @@ class ReportsProvider extends ChangeNotifier {
           debugPrint('Error abriendo explorer: $e');
         }
       } else {
-        final folderUri = Uri.parse('file:///${reportesDir.path.replaceAll('\\', '/')}');
+        final folderUri =
+            Uri.parse('file:///${reportesDir.path.replaceAll('\\', '/')}');
         if (await canLaunchUrl(folderUri)) {
           await launchUrl(folderUri);
         }
@@ -344,19 +384,22 @@ class ReportsProvider extends ChangeNotifier {
 
     try {
       final df = DateFormat('yyyy-MM');
-      final bytes = await dataSource.downloadMonthlyBalancePdf(df.format(_balanceStartMonth), df.format(_balanceEndMonth));
+      final bytes = await dataSource.downloadMonthlyBalancePdf(
+          df.format(_balanceStartMonth), df.format(_balanceEndMonth));
 
       final docsDir = await getApplicationDocumentsDirectory();
-      final reportesDir = Directory('${docsDir.path}${Platform.pathSeparator}Sistema_POS${Platform.pathSeparator}Reportes');
+      final reportesDir = Directory(
+          '${docsDir.path}${Platform.pathSeparator}Sistema_POS${Platform.pathSeparator}Reportes');
 
       if (!await reportesDir.exists()) {
         await reportesDir.create(recursive: true);
       }
 
       final cleanStart = DateFormat('MM-yyyy').format(_balanceStartMonth);
-      final cleanEnd   = DateFormat('MM-yyyy').format(_balanceEndMonth);
-      final filename = 'Balance_Mensual_${cleanStart}_al_${cleanEnd}.pdf';
-      final file = File('${reportesDir.path}${Platform.pathSeparator}$filename');
+      final cleanEnd = DateFormat('MM-yyyy').format(_balanceEndMonth);
+      final filename = 'Balance_Mensual_${cleanStart}_al_$cleanEnd.pdf';
+      final file =
+          File('${reportesDir.path}${Platform.pathSeparator}$filename');
 
       await file.writeAsBytes(bytes);
 
@@ -367,7 +410,8 @@ class ReportsProvider extends ChangeNotifier {
           debugPrint('Error abriendo explorer: $e');
         }
       } else {
-        final folderUri = Uri.parse('file:///${reportesDir.path.replaceAll('\\', '/')}');
+        final folderUri =
+            Uri.parse('file:///${reportesDir.path.replaceAll('\\', '/')}');
         if (await canLaunchUrl(folderUri)) {
           await launchUrl(folderUri);
         }

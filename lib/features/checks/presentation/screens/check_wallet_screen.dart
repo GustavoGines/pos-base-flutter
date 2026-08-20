@@ -313,12 +313,18 @@ class _CheckWalletScreenState extends State<CheckWalletScreen> {
                                 final filteredChecks =
                                     provider.checks.where((c) {
                                   if (_activeFilter == 'activos' &&
-                                      c.status != 'in_wallet') return false;
+                                      c.status != 'in_wallet') {
+                                    return false;
+                                  }
                                   if (_activeFilter == 'salientes' &&
                                       c.status != 'deposited' &&
-                                      c.status != 'endorsed') return false;
+                                      c.status != 'endorsed') {
+                                    return false;
+                                  }
                                   if (_activeFilter == 'conflictos' &&
-                                      c.status != 'rejected') return false;
+                                      c.status != 'rejected') {
+                                    return false;
+                                  }
 
                                   if (_searchQuery.isNotEmpty) {
                                     if (!c.checkNumber

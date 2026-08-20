@@ -3,54 +3,33 @@ import '../../domain/entities/business_settings.dart';
 
 class BusinessSettingsModel extends BusinessSettings {
   const BusinessSettingsModel({
-    String? companyName,
-    String? address,
-    String? phone,
-    String? taxId,
-    String? receiptFooterMessage,
-    String? licenseStatus,
-    String? licensePlanType,
-    String? licensePlanMode,
-    String? lastLicenseCheck,
-    String? serverTime,
-    DateTime? licenseExpiresAt,
-    DateTime? licenseNextPaymentAt,
-    String? licenseManageUrl,
-    bool isLifetime = false,
-    double globalWholesalePercentage = -15.0,
-    double globalCardPercentage = 15.0,
-    List<Map<String, dynamic>> customPriceTiers = const [],
-    String businessType = 'retail',
-    FeatureFlags features = const FeatureFlags(),
-    bool enableAdvancedPriceTiers = false,
-  }) : super(
-          companyName: companyName,
-          address: address,
-          phone: phone,
-          taxId: taxId,
-          receiptFooterMessage: receiptFooterMessage,
-          licenseStatus: licenseStatus,
-          licensePlanType: licensePlanType,
-          licensePlanMode: licensePlanMode,
-          lastLicenseCheck: lastLicenseCheck,
-          serverTime: serverTime,
-          licenseExpiresAt: licenseExpiresAt,
-          licenseNextPaymentAt: licenseNextPaymentAt,
-          licenseManageUrl: licenseManageUrl,
-          isLifetime: isLifetime,
-          globalWholesalePercentage: globalWholesalePercentage,
-          globalCardPercentage: globalCardPercentage,
-          customPriceTiers: customPriceTiers,
-          businessType: businessType,
-          features: features,
-          enableAdvancedPriceTiers: enableAdvancedPriceTiers,
-        );
+    super.companyName,
+    super.address,
+    super.phone,
+    super.taxId,
+    super.receiptFooterMessage,
+    super.licenseStatus,
+    super.licensePlanType,
+    super.licensePlanMode,
+    super.lastLicenseCheck,
+    super.serverTime,
+    super.licenseExpiresAt,
+    super.licenseNextPaymentAt,
+    super.licenseManageUrl,
+    super.isLifetime,
+    super.globalWholesalePercentage,
+    super.globalCardPercentage,
+    super.customPriceTiers,
+    super.businessType,
+    super.features,
+    super.enableAdvancedPriceTiers,
+  });
 
   factory BusinessSettingsModel.fromJson(Map<String, dynamic> json) {
     // Parser ultra-robusto para el diccionario de features
     Map<String, dynamic> featuresMap = {};
     final rawFeatures = json['license_features_dict'];
-    
+
     if (rawFeatures != null) {
       if (rawFeatures is Map<String, dynamic>) {
         featuresMap = rawFeatures;
@@ -66,23 +45,33 @@ class BusinessSettingsModel extends BusinessSettings {
         }
       }
     }
-    
+
     // Fallback: Si no hay dict, intentamos leer 'features' (para respuestas directas de API)
     if (featuresMap.isEmpty && json['features'] is Map<String, dynamic>) {
       featuresMap = json['features'];
     }
-    
+
     final featureFlags = FeatureFlags(
       fastPos: featuresMap['fast_pos'] == true || featuresMap['fast_pos'] == 1,
-      zReports: featuresMap['z_reports'] == true || featuresMap['z_reports'] == 1,
+      zReports:
+          featuresMap['z_reports'] == true || featuresMap['z_reports'] == 1,
       quotes: featuresMap['quotes'] == true || featuresMap['quotes'] == 1,
-      currentAccounts: featuresMap['current_accounts'] == true || featuresMap['current_accounts'] == 1,
-      multiplePrices: featuresMap['multiple_prices'] == true || featuresMap['multiple_prices'] == 1,
-      multiCaja: featuresMap['multi_caja'] == true || featuresMap['multi_caja'] == 1,
-      advancedReports: featuresMap['advanced_reports'] == true || featuresMap['advanced_reports'] == 1,
-      predictiveAlerts: featuresMap['predictive_alerts'] == true || featuresMap['predictive_alerts'] == 1,
-      logistics: featuresMap['logistics'] == true || featuresMap['logistics'] == 1,
-      checks: featuresMap['cheques'] == true || featuresMap['cheques'] == 1 || featuresMap['checks'] == true || featuresMap['checks'] == 1,
+      currentAccounts: featuresMap['current_accounts'] == true ||
+          featuresMap['current_accounts'] == 1,
+      multiplePrices: featuresMap['multiple_prices'] == true ||
+          featuresMap['multiple_prices'] == 1,
+      multiCaja:
+          featuresMap['multi_caja'] == true || featuresMap['multi_caja'] == 1,
+      advancedReports: featuresMap['advanced_reports'] == true ||
+          featuresMap['advanced_reports'] == 1,
+      predictiveAlerts: featuresMap['predictive_alerts'] == true ||
+          featuresMap['predictive_alerts'] == 1,
+      logistics:
+          featuresMap['logistics'] == true || featuresMap['logistics'] == 1,
+      checks: featuresMap['cheques'] == true ||
+          featuresMap['cheques'] == 1 ||
+          featuresMap['checks'] == true ||
+          featuresMap['checks'] == 1,
     );
 
     return BusinessSettingsModel(
@@ -91,21 +80,31 @@ class BusinessSettingsModel extends BusinessSettings {
       phone: json['phone'],
       taxId: json['tax_id'],
       receiptFooterMessage: json['receipt_footer_message'],
-      licenseStatus: json['license_key'],      // The actual license key string
-      licensePlanType: json['app_plan'],        // Written by LicenseSyncService as 'app_plan'
+      licenseStatus: json['license_key'], // The actual license key string
+      licensePlanType:
+          json['app_plan'], // Written by LicenseSyncService as 'app_plan'
       licensePlanMode: json['license_plan_mode'] ?? 'saas',
       lastLicenseCheck: json['last_license_check'],
       serverTime: json['server_time'],
-      licenseExpiresAt: json['license_expires_at'] != null ? DateTime.tryParse(json['license_expires_at']) : null,
-      licenseNextPaymentAt: json['license_next_payment_at'] != null ? DateTime.tryParse(json['license_next_payment_at']) : null,
+      licenseExpiresAt: json['license_expires_at'] != null
+          ? DateTime.tryParse(json['license_expires_at'])
+          : null,
+      licenseNextPaymentAt: json['license_next_payment_at'] != null
+          ? DateTime.tryParse(json['license_next_payment_at'])
+          : null,
       licenseManageUrl: json['license_manage_url'],
       isLifetime: json['license_is_lifetime'] == '1',
-      globalWholesalePercentage: double.tryParse(json['wholesale_percentage']?.toString() ?? '-15.0') ?? -15.0,
-      globalCardPercentage: double.tryParse(json['card_percentage']?.toString() ?? '15.0') ?? 15.0,
+      globalWholesalePercentage: double.tryParse(
+              json['wholesale_percentage']?.toString() ?? '-15.0') ??
+          -15.0,
+      globalCardPercentage:
+          double.tryParse(json['card_percentage']?.toString() ?? '15.0') ??
+              15.0,
       customPriceTiers: _parseCustomTiers(json['custom_price_tiers']),
       businessType: json['license_business_type'] ?? 'retail',
       features: featureFlags,
-      enableAdvancedPriceTiers: json['enable_advanced_price_tiers'] == '1' || json['enable_advanced_price_tiers'] == true,
+      enableAdvancedPriceTiers: json['enable_advanced_price_tiers'] == '1' ||
+          json['enable_advanced_price_tiers'] == true,
     );
   }
 
@@ -131,8 +130,6 @@ class BusinessSettingsModel extends BusinessSettings {
       return const [];
     }
   }
-
-
 
   /// Serializa todos los campos editables por el usuario para enviar al backend.
   /// Las keys deben coincidir con las que usa [BusinessSettingsModel.fromJson]

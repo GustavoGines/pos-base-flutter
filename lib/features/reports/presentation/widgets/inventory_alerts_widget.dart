@@ -37,7 +37,8 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
     final catalogProvider = context.read<CatalogProvider>();
     try {
       final productId = int.parse(alert['product_id'].toString());
-      final product = catalogProvider.products.firstWhere((p) => p.id == productId);
+      final product =
+          catalogProvider.products.firstWhere((p) => p.id == productId);
       showDialog(
         context: context,
         builder: (ctx) => StockAdjustmentDialog(
@@ -52,7 +53,9 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
       });
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Producto no disponible en catálogo local. Recargue la App.')),
+        const SnackBar(
+            content: Text(
+                'Producto no disponible en catálogo local. Recargue la App.')),
       );
     }
   }
@@ -69,8 +72,12 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
           child: Consumer2<InventoryAlertsProvider, SettingsProvider>(
             builder: (context, provider, settings, _) {
               final hasPredictive = settings.features.predictiveAlerts;
-              final count = hasPredictive ? provider.totalAlertsCount : provider.reactiveAlerts.length;
-              final hasCritical = provider.reactiveAlerts.isNotEmpty || (hasPredictive && provider.predictiveCriticalAlerts.isNotEmpty);
+              final count = hasPredictive
+                  ? provider.totalAlertsCount
+                  : provider.reactiveAlerts.length;
+              final hasCritical = provider.reactiveAlerts.isNotEmpty ||
+                  (hasPredictive &&
+                      provider.predictiveCriticalAlerts.isNotEmpty);
 
               return TweenAnimationBuilder<double>(
                 key: ValueKey(count > 0 ? count : 0),
@@ -83,21 +90,23 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
                     alignment: Alignment.center,
                     children: [
                       Transform.rotate(
-                       angle: count > 0 ? (0.3 * (1.0 - value)) : 0,
-                       child: IconButton(
-                        tooltip: count == 0
-                            ? 'Sin alertas de stock'
-                            : '$count producto${count > 1 ? 's' : ''} con bajo stock',
-                        icon: Icon(
-                          count > 0 ? Icons.notifications_active : Icons.notifications_none,
-                          color: hasCritical
-                              ? Colors.red.shade600
-                              : count > 0
-                                  ? Colors.orange.shade700
-                                  : Colors.blueGrey.shade400,
+                        angle: count > 0 ? (0.3 * (1.0 - value)) : 0,
+                        child: IconButton(
+                          tooltip: count == 0
+                              ? 'Sin alertas de stock'
+                              : '$count producto${count > 1 ? 's' : ''} con bajo stock',
+                          icon: Icon(
+                            count > 0
+                                ? Icons.notifications_active
+                                : Icons.notifications_none,
+                            color: hasCritical
+                                ? Colors.red.shade600
+                                : count > 0
+                                    ? Colors.orange.shade700
+                                    : Colors.blueGrey.shade400,
+                          ),
+                          onPressed: _toggleOverlay,
                         ),
-                        onPressed: _toggleOverlay,
-                       ),
                       ),
                       if (count > 0)
                         Positioned(
@@ -107,16 +116,27 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
                             child: Transform.scale(
                               scale: 0.8 + (0.2 * value),
                               child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 4, vertical: 2),
                                 decoration: BoxDecoration(
-                                  color: hasCritical ? Colors.red.shade600 : Colors.orange.shade600,
+                                  color: hasCritical
+                                      ? Colors.red.shade600
+                                      : Colors.orange.shade600,
                                   borderRadius: BorderRadius.circular(10),
-                                  border: Border.all(color: Colors.white, width: 1.5),
+                                  border: Border.all(
+                                      color: Colors.white, width: 1.5),
                                   boxShadow: [
-                                    BoxShadow(color: hasCritical ? Colors.red.withOpacity(0.4) : Colors.orange.withOpacity(0.4), blurRadius: 4, spreadRadius: 1),
+                                    BoxShadow(
+                                        color: hasCritical
+                                            ? Colors.red.withValues(alpha: 0.4)
+                                            : Colors.orange
+                                                .withValues(alpha: 0.4),
+                                        blurRadius: 4,
+                                        spreadRadius: 1),
                                   ],
                                 ),
-                                constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                                constraints: const BoxConstraints(
+                                    minWidth: 16, minHeight: 16),
                                 child: Text(
                                   count > 9 ? '9+' : count.toString(),
                                   style: const TextStyle(
@@ -158,7 +178,7 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
               elevation: 16,
               borderRadius: BorderRadius.circular(20),
               clipBehavior: Clip.antiAlias,
-              shadowColor: Colors.black.withOpacity(0.3),
+              shadowColor: Colors.black.withValues(alpha: 0.3),
               child: Container(
                 decoration: BoxDecoration(
                   color: Colors.white,
@@ -189,17 +209,21 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
         children: [
           Container(
             padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(color: Colors.orange.shade50, shape: BoxShape.circle),
-            child: Icon(Icons.notifications_active, color: Colors.orange.shade800, size: 20),
+            decoration: BoxDecoration(
+                color: Colors.orange.shade50, shape: BoxShape.circle),
+            child: Icon(Icons.notifications_active,
+                color: Colors.orange.shade800, size: 20),
           ),
           const SizedBox(width: 12),
           const Expanded(
-            child: Text('Alertas de Reposición', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            child: Text('Alertas de Reposición',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
           ),
           IconButton(
             icon: const Icon(Icons.refresh, size: 20, color: Colors.blueGrey),
             tooltip: null,
-            onPressed: () => context.read<InventoryAlertsProvider>().fetchAlerts(),
+            onPressed: () =>
+                context.read<InventoryAlertsProvider>().fetchAlerts(),
           ),
           IconButton(
             icon: const Icon(Icons.close, size: 20),
@@ -215,21 +239,23 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
     return Consumer2<InventoryAlertsProvider, SettingsProvider>(
       builder: (context, provider, settings, _) {
         final hasPredictive = settings.features.predictiveAlerts;
-        
+
         if (provider.isLoading) {
           return const Padding(
             padding: EdgeInsets.all(32),
             child: Center(child: CircularProgressIndicator()),
           );
-        } 
-        
-        if ((hasPredictive && provider.alerts.isEmpty) || (!hasPredictive && provider.reactiveAlerts.isEmpty)) {
+        }
+
+        if ((hasPredictive && provider.alerts.isEmpty) ||
+            (!hasPredictive && provider.reactiveAlerts.isEmpty)) {
           return Padding(
             padding: const EdgeInsets.all(32),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.check_circle_outline, size: 48, color: Colors.green.shade400),
+                Icon(Icons.check_circle_outline,
+                    size: 48, color: Colors.green.shade400),
                 const SizedBox(height: 12),
                 Text('¡Todo en orden!',
                     style: TextStyle(
@@ -237,9 +263,13 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
                         fontWeight: FontWeight.bold,
                         color: Colors.green.shade700)),
                 const SizedBox(height: 6),
-                Text(hasPredictive ? 'No hay productos con menos de 3 días de stock estimado ni debajo del mínimo.' : 'Ningún producto alcanzó su stock mínimo.',
+                Text(
+                    hasPredictive
+                        ? 'No hay productos con menos de 3 días de stock estimado ni debajo del mínimo.'
+                        : 'Ningún producto alcanzó su stock mínimo.',
                     textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                    style:
+                        TextStyle(fontSize: 12, color: Colors.grey.shade600)),
                 if (!hasPredictive) ...[
                   const SizedBox(height: 24),
                   _buildProBanner(context),
@@ -260,7 +290,8 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
               ...provider.reactiveAlerts
                   .map((a) => _buildDynamicTile(context, a, 'critical')),
             ],
-            if (hasPredictive && provider.predictiveCriticalAlerts.isNotEmpty) ...[
+            if (hasPredictive &&
+                provider.predictiveCriticalAlerts.isNotEmpty) ...[
               _SectionHeader(
                   label: '🟠 ALERTA DE VELOCIDAD — <= 3 días',
                   color: Colors.orange.shade50,
@@ -284,8 +315,8 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
 
   Widget _buildDynamicTile(BuildContext context, dynamic alert, String level) {
     final type = alert['alert_type']?.toString() ?? 'predictive';
-    final onTap = () => _handleAlertTap(context, alert);
-    
+    void onTap() => _handleAlertTap(context, alert);
+
     if (type == 'out_of_stock' || type == 'low_stock') {
       return _ReactiveAlertTile(alert: alert, level: level, onReponer: onTap);
     }
@@ -321,7 +352,7 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF7C3AED).withOpacity(0.3),
+            color: const Color(0xFF7C3AED).withValues(alpha: 0.3),
             blurRadius: 8,
             offset: const Offset(0, 4),
           ),
@@ -332,7 +363,8 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
         child: InkWell(
           borderRadius: BorderRadius.circular(12),
           onTap: () async {
-            final url = Uri.parse('https://wa.me/543704787285?text=Hola,%20quiero%20contratar%20el%20Plan%20Premium%20para%20activar%20las%20Alertas%20Predictivas');
+            final url = Uri.parse(
+                'https://wa.me/543704787285?text=Hola,%20quiero%20contratar%20el%20Plan%20Premium%20para%20activar%20las%20Alertas%20Predictivas');
             if (await canLaunchUrl(url)) {
               await launchUrl(url, mode: LaunchMode.externalApplication);
             }
@@ -344,10 +376,11 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.2),
+                    color: Colors.white.withValues(alpha: 0.2),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.workspace_premium_rounded, color: Colors.white, size: 24),
+                  child: const Icon(Icons.workspace_premium_rounded,
+                      color: Colors.white, size: 24),
                 ),
                 const SizedBox(width: 12),
                 const Expanded(
@@ -356,7 +389,10 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
                     children: [
                       Text(
                         'Desbloquear Alertas Predictivas',
-                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13),
                       ),
                       SizedBox(height: 2),
                       Text(
@@ -366,7 +402,8 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
                     ],
                   ),
                 ),
-                const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white70, size: 14),
+                const Icon(Icons.arrow_forward_ios_rounded,
+                    color: Colors.white70, size: 14),
               ],
             ),
           ),
@@ -405,9 +442,11 @@ class _ReactiveAlertTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final stock = double.tryParse(alert['current_stock']?.toString() ?? '0') ?? 0.0;
+    final stock =
+        double.tryParse(alert['current_stock']?.toString() ?? '0') ?? 0.0;
     final isCritical = alert['alert_type'] == 'out_of_stock';
-    final isWeight = alert['is_sold_by_weight'] == 1 || alert['is_sold_by_weight'] == true;
+    final isWeight =
+        alert['is_sold_by_weight'] == 1 || alert['is_sold_by_weight'] == true;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -416,9 +455,13 @@ class _ReactiveAlertTile extends StatelessWidget {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: isCritical ? Colors.red.shade100 : Colors.orange.shade100),
+          border: Border.all(
+              color: isCritical ? Colors.red.shade100 : Colors.orange.shade100),
           boxShadow: [
-            BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 5, offset: const Offset(0, 2)),
+            BoxShadow(
+                color: Colors.black.withValues(alpha: 0.02),
+                blurRadius: 5,
+                offset: const Offset(0, 2)),
           ],
         ),
         child: Column(
@@ -430,16 +473,20 @@ class _ReactiveAlertTile extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(alert['product_name'].toString(),
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                          style: const TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 13),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis),
                       Text(alert['internal_code']?.toString() ?? '',
-                          style: TextStyle(color: Colors.grey.shade500, fontSize: 11)),
+                          style: TextStyle(
+                              color: Colors.grey.shade500, fontSize: 11)),
                     ],
                   ),
                 ),
                 Text(
-                  isWeight ? '${stock.toStringAsFixed(3)} Kg' : '${stock.toInt()} u',
+                  isWeight
+                      ? '${stock.toStringAsFixed(3)} Kg'
+                      : '${stock.toInt()} u',
                   style: TextStyle(
                       fontWeight: FontWeight.bold,
                       color: isCritical ? Colors.red : Colors.orange.shade800),
@@ -453,12 +500,19 @@ class _ReactiveAlertTile extends StatelessWidget {
                 TextButton(
                   onPressed: () {
                     try {
-                      final productId = int.parse(alert['product_id'].toString());
-                      final product = context.read<CatalogProvider>().products.firstWhere((p) => p.id == productId);
-                      Navigator.of(context).pushNamed('/catalog', arguments: product);
+                      final productId =
+                          int.parse(alert['product_id'].toString());
+                      final product = context
+                          .read<CatalogProvider>()
+                          .products
+                          .firstWhere((p) => p.id == productId);
+                      Navigator.of(context)
+                          .pushNamed('/catalog', arguments: product);
                     } catch (e) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Producto no disponible en catálogo local.')),
+                        const SnackBar(
+                            content: Text(
+                                'Producto no disponible en catálogo local.')),
                       );
                     }
                   },
@@ -488,7 +542,7 @@ class _PredictiveAlertTile extends StatelessWidget {
   final VoidCallback onTap;
 
   const _PredictiveAlertTile({
-    required this.alert, 
+    required this.alert,
     required this.level,
     required this.onTap,
   });
@@ -498,9 +552,12 @@ class _PredictiveAlertTile extends StatelessWidget {
     final isCritical = level == 'critical';
     final color = isCritical ? Colors.red.shade600 : Colors.orange.shade700;
     final bgColor = isCritical ? Colors.red.shade50 : Colors.orange.shade50;
-    final days = double.tryParse(alert['days_of_coverage']?.toString() ?? '0') ?? 0.0;
-    final stock = double.tryParse(alert['current_stock']?.toString() ?? '0') ?? 0.0;
-    final avgDaily = double.tryParse(alert['avg_daily_units']?.toString() ?? '0') ?? 0.0;
+    final days =
+        double.tryParse(alert['days_of_coverage']?.toString() ?? '0') ?? 0.0;
+    final stock =
+        double.tryParse(alert['current_stock']?.toString() ?? '0') ?? 0.0;
+    final avgDaily =
+        double.tryParse(alert['avg_daily_units']?.toString() ?? '0') ?? 0.0;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -509,9 +566,13 @@ class _PredictiveAlertTile extends StatelessWidget {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: isCritical ? Colors.red.shade100 : Colors.orange.shade100),
+          border: Border.all(
+              color: isCritical ? Colors.red.shade100 : Colors.orange.shade100),
           boxShadow: [
-            BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 5, offset: const Offset(0, 2)),
+            BoxShadow(
+                color: Colors.black.withValues(alpha: 0.02),
+                blurRadius: 5,
+                offset: const Offset(0, 2)),
           ],
         ),
         child: Column(
@@ -520,9 +581,12 @@ class _PredictiveAlertTile extends StatelessWidget {
               children: [
                 Container(
                   padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(color: bgColor, shape: BoxShape.circle),
+                  decoration:
+                      BoxDecoration(color: bgColor, shape: BoxShape.circle),
                   child: Icon(
-                    isCritical ? Icons.warning_rounded : Icons.access_time_rounded,
+                    isCritical
+                        ? Icons.warning_rounded
+                        : Icons.access_time_rounded,
                     color: color,
                     size: 16,
                   ),
@@ -534,18 +598,21 @@ class _PredictiveAlertTile extends StatelessWidget {
                     children: [
                       Text(
                         alert['product_name'].toString(),
-                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                        style: const TextStyle(
+                            fontSize: 13, fontWeight: FontWeight.w600),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
                       const SizedBox(height: 2),
                       Text(
                         '${alert['category']} · Stock: ${stock % 1 == 0 ? stock.toInt() : stock} unid.',
-                        style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                        style: TextStyle(
+                            fontSize: 11, color: Colors.grey.shade600),
                       ),
                       Text(
                         'Velocidad: ${avgDaily.toStringAsFixed(1)} uds/día',
-                        style: TextStyle(fontSize: 10, color: Colors.grey.shade500),
+                        style: TextStyle(
+                            fontSize: 10, color: Colors.grey.shade500),
                       ),
                     ],
                   ),
@@ -565,7 +632,10 @@ class _PredictiveAlertTile extends StatelessWidget {
                     const SizedBox(height: 2),
                     Text('para llegar\nal mínimo',
                         textAlign: TextAlign.right,
-                        style: TextStyle(fontSize: 8, height: 1.1, color: Colors.grey.shade500)),
+                        style: TextStyle(
+                            fontSize: 8,
+                            height: 1.1,
+                            color: Colors.grey.shade500)),
                   ],
                 ),
               ],
@@ -577,12 +647,19 @@ class _PredictiveAlertTile extends StatelessWidget {
                 TextButton(
                   onPressed: () {
                     try {
-                      final productId = int.parse(alert['product_id'].toString());
-                      final product = context.read<CatalogProvider>().products.firstWhere((p) => p.id == productId);
-                      Navigator.of(context).pushNamed('/catalog', arguments: product);
+                      final productId =
+                          int.parse(alert['product_id'].toString());
+                      final product = context
+                          .read<CatalogProvider>()
+                          .products
+                          .firstWhere((p) => p.id == productId);
+                      Navigator.of(context)
+                          .pushNamed('/catalog', arguments: product);
                     } catch (e) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Producto no disponible en catálogo local.')),
+                        const SnackBar(
+                            content: Text(
+                                'Producto no disponible en catálogo local.')),
                       );
                     }
                   },

@@ -69,11 +69,19 @@ class _StockAlertBellState extends State<StockAlertBell> {
                     alignment: Alignment.center,
                     children: [
                       Transform.rotate(
-                        angle: count > 0 ? (0.15 * (1.0 - value) * (DateTime.now().second % 5 == 0 ? 1 : 0)) : 0, 
+                        angle: count > 0
+                            ? (0.15 *
+                                (1.0 - value) *
+                                (DateTime.now().second % 5 == 0 ? 1 : 0))
+                            : 0,
                         child: IconButton(
                           icon: Icon(
-                            count > 0 ? Icons.notifications_active : Icons.notifications_none,
-                            color: count > 0 ? Colors.orange.shade700 : Colors.blueGrey,
+                            count > 0
+                                ? Icons.notifications_active
+                                : Icons.notifications_none,
+                            color: count > 0
+                                ? Colors.orange.shade700
+                                : Colors.blueGrey,
                           ),
                           tooltip: 'Alertas de Stock',
                           onPressed: _toggleOverlay,
@@ -113,11 +121,19 @@ class _StockAlertBellState extends State<StockAlertBell> {
               borderRadius: BorderRadius.circular(10),
               border: Border.all(color: Colors.white, width: 1.5),
               boxShadow: [
-                BoxShadow(color: Colors.red.withOpacity(0.4), blurRadius: 4, spreadRadius: 1),
+                BoxShadow(
+                    color: Colors.red.withValues(alpha: 0.4),
+                    blurRadius: 4,
+                    spreadRadius: 1),
               ],
             ),
             constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
-            child: Text('$count', style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold), textAlign: TextAlign.center),
+            child: Text('$count',
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold),
+                textAlign: TextAlign.center),
           ),
         );
       },
@@ -142,7 +158,7 @@ class _StockAlertBellState extends State<StockAlertBell> {
               elevation: 16,
               borderRadius: BorderRadius.circular(20),
               clipBehavior: Clip.antiAlias,
-              shadowColor: Colors.black.withOpacity(0.3),
+              shadowColor: Colors.black.withValues(alpha: 0.3),
               child: Container(
                 decoration: BoxDecoration(
                   color: Colors.white,
@@ -171,17 +187,21 @@ class _StockAlertBellState extends State<StockAlertBell> {
         children: [
           Container(
             padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(color: Colors.orange.shade50, shape: BoxShape.circle),
-            child: Icon(Icons.warning_amber_rounded, color: Colors.orange.shade800, size: 20),
+            decoration: BoxDecoration(
+                color: Colors.orange.shade50, shape: BoxShape.circle),
+            child: Icon(Icons.warning_amber_rounded,
+                color: Colors.orange.shade800, size: 20),
           ),
           const SizedBox(width: 12),
           const Expanded(
-            child: Text('Notificaciones de Stock', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            child: Text('Notificaciones de Stock',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
           ),
           IconButton(
             icon: const Icon(Icons.refresh, size: 20, color: Colors.blueGrey),
             tooltip: null,
-            onPressed: () => context.read<CatalogProvider>().fetchCriticalAlerts(),
+            onPressed: () =>
+                context.read<CatalogProvider>().fetchCriticalAlerts(),
           ),
           IconButton(
             icon: const Icon(Icons.close, size: 20),
@@ -198,7 +218,9 @@ class _StockAlertBellState extends State<StockAlertBell> {
       builder: (context, provider, _) {
         final alerts = provider.criticalAlerts;
         if (alerts.isEmpty) {
-          return const Center(child: Text('¡Todo en orden!', style: TextStyle(color: Colors.grey)));
+          return const Center(
+              child: Text('¡Todo en orden!',
+                  style: TextStyle(color: Colors.grey)));
         }
         return ListView.separated(
           padding: const EdgeInsets.all(16),
@@ -232,9 +254,13 @@ class _StockAlertItem extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: isCritical ? Colors.red.shade100 : Colors.orange.shade100),
+        border: Border.all(
+            color: isCritical ? Colors.red.shade100 : Colors.orange.shade100),
         boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 5, offset: const Offset(0, 2)),
+          BoxShadow(
+              color: Colors.black.withValues(alpha: 0.02),
+              blurRadius: 5,
+              offset: const Offset(0, 2)),
         ],
       ),
       child: Column(
@@ -245,14 +271,24 @@ class _StockAlertItem extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(product.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13), maxLines: 1, overflow: TextOverflow.ellipsis),
-                    Text(product.internalCode, style: TextStyle(color: Colors.grey.shade500, fontSize: 11)),
+                    Text(product.name,
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 13),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis),
+                    Text(product.internalCode,
+                        style: TextStyle(
+                            color: Colors.grey.shade500, fontSize: 11)),
                   ],
                 ),
               ),
               Text(
-                product.isSoldByWeight ? '${stock.toQty()} Kg' : '${stock.toInt()} u',
-                style: TextStyle(fontWeight: FontWeight.bold, color: isCritical ? Colors.red : Colors.orange.shade800),
+                product.isSoldByWeight
+                    ? '${stock.toQty()} Kg'
+                    : '${stock.toInt()} u',
+                style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: isCritical ? Colors.red : Colors.orange.shade800),
               ),
             ],
           ),
@@ -263,7 +299,8 @@ class _StockAlertItem extends StatelessWidget {
               TextButton(
                 onPressed: () {
                   onAction();
-                  Navigator.of(context).pushNamed('/catalog', arguments: product);
+                  Navigator.of(context)
+                      .pushNamed('/catalog', arguments: product);
                 },
                 child: const Text('Ver', style: TextStyle(fontSize: 12)),
               ),
@@ -279,7 +316,10 @@ class _StockAlertItem extends StatelessWidget {
                     ),
                   );
                 },
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.teal.shade50, foregroundColor: Colors.teal.shade700, elevation: 0),
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.teal.shade50,
+                    foregroundColor: Colors.teal.shade700,
+                    elevation: 0),
                 child: const Text('Reponer', style: TextStyle(fontSize: 12)),
               ),
             ],

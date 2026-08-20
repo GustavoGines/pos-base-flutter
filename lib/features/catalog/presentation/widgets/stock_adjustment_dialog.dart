@@ -9,8 +9,8 @@ class StockAdjustmentDialog extends StatefulWidget {
   final CatalogProvider provider;
   final Product product;
 
-  const StockAdjustmentDialog({Key? key, required this.provider, required this.product})
-      : super(key: key);
+  const StockAdjustmentDialog(
+      {super.key, required this.provider, required this.product});
 
   @override
   State<StockAdjustmentDialog> createState() => _StockAdjustmentDialogState();
@@ -37,13 +37,18 @@ class _StockAdjustmentDialogState extends State<StockAdjustmentDialog> {
   }
 
   Future<void> _submit() async {
-    final double? qty = _quantityCtrl.text.isEmpty ? 0 : double.tryParse(_quantityCtrl.text.replaceAll(',', '.'));
-    final double? minStockVal = _minStockCtrl.text.trim().isNotEmpty ? double.tryParse(_minStockCtrl.text.replaceAll(',', '.')) : null;
+    final double? qty = _quantityCtrl.text.isEmpty
+        ? 0
+        : double.tryParse(_quantityCtrl.text.replaceAll(',', '.'));
+    final double? minStockVal = _minStockCtrl.text.trim().isNotEmpty
+        ? double.tryParse(_minStockCtrl.text.replaceAll(',', '.'))
+        : null;
 
     // Validación: debe haber cantidad > 0 O un cambio en el stock mínimo
     bool hasMinStockChange = minStockVal != widget.product.minStock;
     if ((qty == null || qty <= 0) && !hasMinStockChange) {
-      SnackBarService.error(context, 'Ingrese una cantidad válida o modifique el stock mínimo.');
+      SnackBarService.error(
+          context, 'Ingrese una cantidad válida o modifique el stock mínimo.');
       return;
     }
 
@@ -59,10 +64,13 @@ class _StockAdjustmentDialogState extends State<StockAdjustmentDialog> {
               style: Theme.of(ctx).textTheme.bodyMedium,
               children: [
                 TextSpan(
-                  text: '${qty.toStringAsFixed(widget.product.isSoldByWeight ? 3 : 0)} $unitLabel',
+                  text:
+                      '${qty.toStringAsFixed(widget.product.isSoldByWeight ? 3 : 0)} $unitLabel',
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
-                    color: _selectedType == 'in' ? Colors.teal.shade700 : Colors.orange.shade800,
+                    color: _selectedType == 'in'
+                        ? Colors.teal.shade700
+                        : Colors.orange.shade800,
                   ),
                 ),
                 const TextSpan(text: ' de '),
@@ -74,10 +82,14 @@ class _StockAdjustmentDialogState extends State<StockAdjustmentDialog> {
             ),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancelar')),
             FilledButton(
               style: FilledButton.styleFrom(
-                backgroundColor: _selectedType == 'in' ? Colors.teal : Colors.orange.shade700,
+                backgroundColor: _selectedType == 'in'
+                    ? Colors.teal
+                    : Colors.orange.shade700,
               ),
               onPressed: () => Navigator.pop(ctx, true),
               child: Text('Confirmar $typeLabel'),
@@ -104,24 +116,27 @@ class _StockAdjustmentDialogState extends State<StockAdjustmentDialog> {
             .firstWhere((p) => p.id == widget.product.id,
                 orElse: () => widget.product as dynamic)
             .stock;
-        
+
         String snackMsg;
         if (qty != null && qty > 0) {
           final action = _selectedType == 'in' ? 'ingresaron' : 'egresaron';
           final unitLabel = widget.product.isSoldByWeight ? 'Kg' : 'unidades';
-          snackMsg = '✓ Se $action ${qty.toStringAsFixed(widget.product.isSoldByWeight ? 3 : 0)} $unitLabel. Stock actual: ${newStock.toStringAsFixed(widget.product.isSoldByWeight ? 3 : 0)} $unitLabel.';
+          snackMsg =
+              '✓ Se $action ${qty.toStringAsFixed(widget.product.isSoldByWeight ? 3 : 0)} $unitLabel. Stock actual: ${newStock.toStringAsFixed(widget.product.isSoldByWeight ? 3 : 0)} $unitLabel.';
         } else {
           snackMsg = '✓ Stock Mínimo actualizado correctamente.';
         }
-        
+
         SnackBarService.success(context, snackMsg);
 
         // Disparar sincronización global silenciosa del Motor Cero Gravedad
         try {
-          Provider.of<InventoryAlertsProvider>(context, listen: false).fetchAlerts();
+          Provider.of<InventoryAlertsProvider>(context, listen: false)
+              .fetchAlerts();
         } catch (_) {}
       } else {
-        SnackBarService.error(context, widget.provider.errorMessage ?? 'Error al ajustar stock.');
+        SnackBarService.error(
+            context, widget.provider.errorMessage ?? 'Error al ajustar stock.');
       }
     }
   }
@@ -154,16 +169,20 @@ class _StockAdjustmentDialogState extends State<StockAdjustmentDialog> {
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.inventory_2_outlined, size: 20, color: Colors.blueGrey),
+                  const Icon(Icons.inventory_2_outlined,
+                      size: 20, color: Colors.blueGrey),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(product.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                        Text(product.name,
+                            style:
+                                const TextStyle(fontWeight: FontWeight.bold)),
                         Text(
                           'Stock actual: ${product.stock.toStringAsFixed(product.isSoldByWeight ? 3 : 0)} $unitLabel',
-                          style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+                          style: TextStyle(
+                              color: Colors.grey.shade600, fontSize: 13),
                         ),
                       ],
                     ),
@@ -205,13 +224,17 @@ class _StockAdjustmentDialogState extends State<StockAdjustmentDialog> {
             TextField(
               controller: _quantityCtrl,
               autofocus: true,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
               decoration: InputDecoration(
-                labelText: 'Cantidad a ${_selectedType == 'in' ? 'ingresar' : 'egresar'}',
+                labelText:
+                    'Cantidad a ${_selectedType == 'in' ? 'ingresar' : 'egresar'}',
                 suffixText: unitLabel,
                 prefixIcon: Icon(
                   _selectedType == 'in' ? Icons.add : Icons.remove,
-                  color: _selectedType == 'in' ? Colors.teal : Colors.orange.shade700,
+                  color: _selectedType == 'in'
+                      ? Colors.teal
+                      : Colors.orange.shade700,
                 ),
                 border: const OutlineInputBorder(),
               ),
@@ -226,7 +249,8 @@ class _StockAdjustmentDialogState extends State<StockAdjustmentDialog> {
                 hintText: 'Umbral para aviso de reposición',
                 border: OutlineInputBorder(),
               ),
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
             ),
             const SizedBox(height: 12),
             // Motivo
@@ -252,11 +276,19 @@ class _StockAdjustmentDialogState extends State<StockAdjustmentDialog> {
         Consumer<CatalogProvider>(
           builder: (_, p, __) => FilledButton.icon(
             icon: p.isLoading
-                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                : Icon(_selectedType == 'in' ? Icons.add : Icons.remove, size: 18),
-            label: Text(_selectedType == 'in' ? 'Registrar Ingreso' : 'Registrar Egreso'),
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.white))
+                : Icon(_selectedType == 'in' ? Icons.add : Icons.remove,
+                    size: 18),
+            label: Text(_selectedType == 'in'
+                ? 'Registrar Ingreso'
+                : 'Registrar Egreso'),
             style: FilledButton.styleFrom(
-              backgroundColor: _selectedType == 'in' ? Colors.teal : Colors.orange.shade700,
+              backgroundColor:
+                  _selectedType == 'in' ? Colors.teal : Colors.orange.shade700,
             ),
             onPressed: p.isLoading ? null : _submit,
           ),
@@ -301,7 +333,9 @@ class _TypeButton extends StatelessWidget {
         ),
         child: Column(
           children: [
-            Icon(icon, color: isSelected ? Colors.white : Colors.grey.shade600, size: 28),
+            Icon(icon,
+                color: isSelected ? Colors.white : Colors.grey.shade600,
+                size: 28),
             const SizedBox(height: 4),
             Text(
               label,

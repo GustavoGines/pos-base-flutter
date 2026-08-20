@@ -19,7 +19,7 @@ import '../../../pos/presentation/providers/pos_provider.dart';
 enum SettingsSection { general, prices, hardware, subscription, network }
 
 class SettingsScreen extends StatefulWidget {
-  const SettingsScreen({Key? key}) : super(key: key);
+  const SettingsScreen({super.key});
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -27,7 +27,8 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   final _formKey = GlobalKey<FormState>();
-  SettingsSection _activeSection = SettingsSection.subscription; // Start in Subscription as requested
+  SettingsSection _activeSection =
+      SettingsSection.subscription; // Start in Subscription as requested
 
   // Negocio
   final _companyNameCtrl = TextEditingController();
@@ -48,7 +49,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   // Red y Rutas Locales
   final _backendPathCtrl = TextEditingController();
-  final _serverUrlCtrl = TextEditingController(); // Para unificar la edición de URL en el form
+  final _serverUrlCtrl =
+      TextEditingController(); // Para unificar la edición de URL en el form
 
   // Licencia
   final _licenseKeyCtrl = TextEditingController();
@@ -56,7 +58,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _isSyncingLicense = false;
   bool _isCheckingUpdate = false;
   String _appVersion = '';
-  
+
   // Developer Mode
   int _versionTaps = 0;
   String _currentChannel = 'stable';
@@ -66,7 +68,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     super.initState();
     _loadVersion();
     _loadChannel();
-    
+
     // Listener para auto-completar la ruta del backend si el técnico cambia la URL
     _serverUrlCtrl.addListener(_handleUrlChange);
 
@@ -79,23 +81,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _phoneCtrl.text = settings.phone ?? '';
         _taxIdCtrl.text = settings.taxId ?? '';
         _footerCtrl.text = settings.receiptFooterMessage ?? '';
-        
+
         _cardPercentageCtrl.text = settings.globalCardPercentage.toString();
-        _wholesalePercentageCtrl.text = settings.globalWholesalePercentage.toString();
+        _wholesalePercentageCtrl.text =
+            settings.globalWholesalePercentage.toString();
         _advancedPriceTiersEnabled = settings.enableAdvancedPriceTiers;
-        
-        _customTiers = List<Map<String, dynamic>>.from(settings.customPriceTiers.map((e) => Map<String, dynamic>.from(e)));
-        
-        if (mounted) setState(() {}); 
+
+        _customTiers = List<Map<String, dynamic>>.from(
+            settings.customPriceTiers.map((e) => Map<String, dynamic>.from(e)));
+
+        if (mounted) setState(() {});
       }
-      
+
       // Cargar configuraciones locales de SharedPreferences
       SharedPreferences.getInstance().then((prefs) {
         if (mounted) {
           setState(() {
-            _backendPathCtrl.text = prefs.getString('backend_install_path') ?? '';
-            _serverUrlCtrl.text = prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
-            
+            _backendPathCtrl.text =
+                prefs.getString('backend_install_path') ?? '';
+            _serverUrlCtrl.text =
+                prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
+
             // Si la ruta está vacía al iniciar, intentamos auto-detectar una sugerencia
             if (_backendPathCtrl.text.isEmpty) {
               _autoDetectBackendPath();
@@ -121,7 +127,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       final siblingBackend = p.join(installDir.parent.path, 'pos-backend');
       if (Directory(siblingBackend).existsSync()) {
         setState(() => _backendPathCtrl.text = siblingBackend);
-        debugPrint('[Settings] Ruta detectada por estructura de carpetas: $siblingBackend');
+        debugPrint(
+            '[Settings] Ruta detectada por estructura de carpetas: $siblingBackend');
         return;
       }
     } catch (_) {}
@@ -181,8 +188,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
       'phone': _phoneCtrl.text.trim(),
       'tax_id': _taxIdCtrl.text.trim(),
       'receipt_footer_message': _footerCtrl.text.trim(),
-      'card_percentage': double.tryParse(_cardPercentageCtrl.text.trim().replaceAll(',', '.')) ?? 15.0,
-      'wholesale_percentage': double.tryParse(_wholesalePercentageCtrl.text.trim().replaceAll(',', '.')) ?? -15.0,
+      'card_percentage': double.tryParse(
+              _cardPercentageCtrl.text.trim().replaceAll(',', '.')) ??
+          15.0,
+      'wholesale_percentage': double.tryParse(
+              _wholesalePercentageCtrl.text.trim().replaceAll(',', '.')) ??
+          -15.0,
       'custom_price_tiers': _customTiers,
       'enable_advanced_price_tiers': _advancedPriceTiersEnabled ? '1' : '0',
     };
@@ -194,7 +205,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (success) {
       SnackBarService.success(context, 'Configuración guardada correctamente');
     } else {
-      SnackBarService.error(context, provider.errorMessage ?? 'Error al guardar');
+      SnackBarService.error(
+          context, provider.errorMessage ?? 'Error al guardar');
     }
   }
 
@@ -229,10 +241,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
       final newPlan = await provider.activateLicense(activeUrl, key);
       if (!mounted) return;
       _licenseKeyCtrl.clear();
-      SnackBarService.success(context, '✅ Licencia activada: ${newPlan.toUpperCase()}');
+      SnackBarService.success(
+          context, '✅ Licencia activada: ${newPlan.toUpperCase()}');
     } catch (e) {
       if (!mounted) return;
-      SnackBarService.error(context, e.toString().replaceAll('Exception: ', ''));
+      SnackBarService.error(
+          context, e.toString().replaceAll('Exception: ', ''));
     } finally {
       if (mounted) setState(() => _isActivatingLicense = false);
     }
@@ -250,7 +264,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       SnackBarService.success(context, '✅ Permisos sincronizados.');
     } catch (e) {
       if (!mounted) return;
-      SnackBarService.error(context, e.toString().replaceAll('Exception: ', ''));
+      SnackBarService.error(
+          context, e.toString().replaceAll('Exception: ', ''));
     } finally {
       if (mounted) setState(() => _isSyncingLicense = false);
     }
@@ -263,7 +278,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _loadChannel() async {
     final prefs = await SharedPreferences.getInstance();
-    if (mounted) setState(() => _currentChannel = prefs.getString('update_channel') ?? 'stable');
+    if (mounted)
+      setState(() =>
+          _currentChannel = prefs.getString('update_channel') ?? 'stable');
   }
 
   Future<void> _handleVersionTap() async {
@@ -274,12 +291,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
       final newChannel = _currentChannel == 'stable' ? 'beta' : 'stable';
       await prefs.setString('update_channel', newChannel);
       setState(() => _currentChannel = newChannel);
-      
+
       if (!mounted) return;
       if (newChannel == 'beta') {
-        SnackBarService.success(context, 'Modo Desarrollador: Canal Beta Activado 🐛');
+        SnackBarService.success(
+            context, 'Modo Desarrollador: Canal Beta Activado 🐛');
       } else {
-        SnackBarService.success(context, 'Modo Producción: Canal Stable Activado 🚀');
+        SnackBarService.success(
+            context, 'Modo Producción: Canal Stable Activado 🚀');
       }
     }
   }
@@ -333,8 +352,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-
-
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<SettingsProvider>();
@@ -352,7 +369,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               children: [
                 // --- SIDEBAR (Xbox Style) ---
                 _buildSidebar(),
-                
+
                 // --- CONTENT AREA ---
                 Expanded(
                   child: Form(
@@ -362,7 +379,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       child: SingleChildScrollView(
                         key: ValueKey(_activeSection),
                         child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 64, vertical: 48),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 64, vertical: 48),
                           child: Align(
                             alignment: Alignment.topCenter,
                             child: ConstrainedBox(
@@ -424,10 +442,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: FilledButton.icon(
                 onPressed: _saveSettings,
                 icon: const Icon(Icons.save_outlined),
-                label: const Text('GUARDAR', style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1)),
+                label: const Text('GUARDAR',
+                    style: TextStyle(
+                        fontWeight: FontWeight.bold, letterSpacing: 1)),
                 style: FilledButton.styleFrom(
                   backgroundColor: const Color(0xFF673AB7),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
                 ),
               ),
             ),
@@ -437,7 +458,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _buildSidebarItem({required IconData icon, required String title, required SettingsSection section}) {
+  Widget _buildSidebarItem(
+      {required IconData icon,
+      required String title,
+      required SettingsSection section}) {
     final isActive = _activeSection == section;
     final activeColor = const Color(0xFF673AB7);
 
@@ -447,12 +471,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
         decoration: BoxDecoration(
-          color: isActive ? activeColor.withOpacity(0.08) : Colors.transparent,
+          color: isActive
+              ? activeColor.withValues(alpha: 0.08)
+              : Colors.transparent,
           borderRadius: BorderRadius.circular(12),
         ),
         child: Row(
           children: [
-            Icon(icon, color: isActive ? activeColor : Colors.grey.shade600, size: 22),
+            Icon(icon,
+                color: isActive ? activeColor : Colors.grey.shade600, size: 22),
             const SizedBox(width: 16),
             Text(
               title,
@@ -464,7 +491,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             if (isActive) ...[
               const Spacer(),
-              Container(width: 4, height: 20, decoration: BoxDecoration(color: activeColor, borderRadius: BorderRadius.circular(2))),
+              Container(
+                  width: 4,
+                  height: 20,
+                  decoration: BoxDecoration(
+                      color: activeColor,
+                      borderRadius: BorderRadius.circular(2))),
             ]
           ],
         ),
@@ -491,21 +523,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildSectionHeader('Datos del Negocio', 'Configurá los datos que aparecerán en tus tickets y facturas.'),
+        _buildSectionHeader('Datos del Negocio',
+            'Configurá los datos que aparecerán en tus tickets y facturas.'),
         const SizedBox(height: 32),
-        _buildTextField('Nombre del Comercio', _companyNameCtrl, icon: Icons.badge_outlined),
+        _buildTextField('Nombre del Comercio', _companyNameCtrl,
+            icon: Icons.badge_outlined),
         const SizedBox(height: 24),
-        _buildTextField('Dirección / Sucursal', _addressCtrl, icon: Icons.location_on_outlined),
+        _buildTextField('Dirección / Sucursal', _addressCtrl,
+            icon: Icons.location_on_outlined),
         const SizedBox(height: 24),
         Row(
           children: [
-            Expanded(child: _buildTextField('Teléfono', _phoneCtrl, icon: Icons.phone_outlined)),
+            Expanded(
+                child: _buildTextField('Teléfono', _phoneCtrl,
+                    icon: Icons.phone_outlined)),
             const SizedBox(width: 24),
-            Expanded(child: _buildTextField('CUIT / Tax ID', _taxIdCtrl, icon: Icons.receipt_long_outlined)),
+            Expanded(
+                child: _buildTextField('CUIT / Tax ID', _taxIdCtrl,
+                    icon: Icons.receipt_long_outlined)),
           ],
         ),
         const SizedBox(height: 24),
-        _buildTextField('Mensaje Pie de Ticket', _footerCtrl, icon: Icons.message_outlined, maxLines: 3),
+        _buildTextField('Mensaje Pie de Ticket', _footerCtrl,
+            icon: Icons.message_outlined, maxLines: 3),
       ],
     );
   }
@@ -514,12 +554,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildSectionHeader('Precios y Factores', 'Configurá los porcentajes matemáticos para las listas de precios globales.'),
+        _buildSectionHeader('Precios y Factores',
+            'Configurá los porcentajes matemáticos para las listas de precios globales.'),
         const SizedBox(height: 32),
 
         // ── Feature Toggle Multi-Tenant ──────────────────────────────────────
         Builder(builder: (context) {
-          final hasMultiPrices = provider.settings?.features.multiplePrices == true;
+          final hasMultiPrices =
+              provider.settings?.features.multiplePrices == true;
           final isLocked = !hasMultiPrices;
 
           return Column(
@@ -529,21 +571,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   color: isLocked
                       ? Colors.grey.shade50
                       : _advancedPriceTiersEnabled
-                          ? const Color(0xFF1A237E).withOpacity(0.06)
+                          ? const Color(0xFF1A237E).withValues(alpha: 0.06)
                           : Colors.grey.shade50,
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(
                     color: isLocked
                         ? Colors.grey.shade200
                         : _advancedPriceTiersEnabled
-                            ? const Color(0xFF3F51B5).withOpacity(0.4)
+                            ? const Color(0xFF3F51B5).withValues(alpha: 0.4)
                             : Colors.grey.shade200,
                     width: 1.5,
                   ),
                 ),
                 child: SwitchListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16)),
                   secondary: Stack(
                     clipBehavior: Clip.none,
                     children: [
@@ -553,7 +597,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           color: isLocked
                               ? Colors.grey.shade100
                               : _advancedPriceTiersEnabled
-                                  ? const Color(0xFF3F51B5).withOpacity(0.12)
+                                  ? const Color(0xFF3F51B5)
+                                      .withValues(alpha: 0.12)
                                   : Colors.grey.shade100,
                           borderRadius: BorderRadius.circular(10),
                         ),
@@ -581,7 +626,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               color: Colors.orange.shade600,
                               shape: BoxShape.circle,
                             ),
-                            child: const Icon(Icons.workspace_premium, size: 10, color: Colors.white),
+                            child: const Icon(Icons.workspace_premium,
+                                size: 10, color: Colors.white),
                           ),
                         ),
                     ],
@@ -610,12 +656,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           : _advancedPriceTiersEnabled
                               ? 'El POS muestra el selector de Listas (Mayorista / Tarjeta / Custom). Los recargos del método de pago se desactivan automáticamente para evitar doble cobro.'
                               : 'El POS opera con precio único. Los recargos configurados en cada Método de Pago se aplican normalmente al momento del cobro.',
-                      style: TextStyle(fontSize: 12, color: Colors.grey.shade600, height: 1.4),
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade600,
+                          height: 1.4),
                     ),
                   ),
                   value: _advancedPriceTiersEnabled,
                   // Switch visualmente desactivado si el plan no incluye el feature
-                  activeColor: isLocked ? Colors.grey.shade400 : const Color(0xFF3F51B5),
+                  activeThumbColor:
+                      isLocked ? Colors.grey.shade400 : const Color(0xFF3F51B5),
                   onChanged: (val) {
                     if (isLocked) {
                       // Mostrar upsell — no cambiar el estado local
@@ -628,8 +678,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             'es una función exclusiva del plan AVANZADO.\n\n'
                             'Permite aplicar precios diferenciados por tipo de cliente '
                             'directamente desde la caja, sin recargos duplicados.',
-                        onNavigateToSettings: () =>
-                            setState(() => _activeSection = SettingsSection.subscription),
+                        onNavigateToSettings: () => setState(() =>
+                            _activeSection = SettingsSection.subscription),
                       );
                       return; // ← bloquea el setState
                     }
@@ -640,9 +690,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
               const SizedBox(height: 32),
               Row(
                 children: [
-                  Expanded(child: _buildTextField('Recargo por Tarjeta (%)', _cardPercentageCtrl, icon: Icons.credit_card, hint: 'Ej: 15.0', enabled: !isLocked && _advancedPriceTiersEnabled)),
+                  Expanded(
+                      child: _buildTextField(
+                          'Recargo por Tarjeta (%)', _cardPercentageCtrl,
+                          icon: Icons.credit_card,
+                          hint: 'Ej: 15.0',
+                          enabled: !isLocked && _advancedPriceTiersEnabled)),
                   const SizedBox(width: 24),
-                  Expanded(child: _buildTextField('Descuento Mayorista (%)', _wholesalePercentageCtrl, icon: Icons.factory_outlined, hint: 'Ej: -15.0', enabled: !isLocked && _advancedPriceTiersEnabled)),
+                  Expanded(
+                      child: _buildTextField(
+                          'Descuento Mayorista (%)', _wholesalePercentageCtrl,
+                          icon: Icons.factory_outlined,
+                          hint: 'Ej: -15.0',
+                          enabled: !isLocked && _advancedPriceTiersEnabled)),
                 ],
               ),
             ],
@@ -663,129 +723,155 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ignoring: !enabled,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildSectionHeader('Listas de Precios Especiales', 'Creá modificadores dinámicos para clientes (Ej: "Gremio" con -10%).'),
-        const SizedBox(height: 24),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            Expanded(
-              flex: 3,
-              child: _buildTextField('Nombre de la Lista', _tierNameCtrl, hint: 'Ej: Gremio', icon: Icons.label_outline),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              flex: 2,
-              child: _buildTextField('Modificador (%)', _tierModCtrl, hint: 'Ej: -10', icon: Icons.percent),
-            ),
-            const SizedBox(width: 16),
-            SizedBox(
-              height: 52,
-              child: FilledButton.icon(
-                onPressed: () {
-                  final name = _tierNameCtrl.text.trim();
-                  final modStr = _tierModCtrl.text.trim();
-                  final mod = double.tryParse(modStr);
-                  if (name.isNotEmpty && mod != null) {
-                    setState(() {
-                      _customTiers.add({'name': name, 'modifier': mod});
-                      _tierNameCtrl.clear();
-                      _tierModCtrl.clear();
-                    });
-                  } else {
-                    SnackBarService.warning(context, 'Ingresá un nombre y un porcentaje válido numérico.');
-                  }
-                },
-                icon: const Icon(Icons.add),
-                label: const Text('AÑADIR LISTA'),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 16),
-        if (_customTiers.isEmpty)
-          const Text('No hay listas de precios activas.', style: TextStyle(color: Colors.grey, fontStyle: FontStyle.italic))
-        else
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: _customTiers.asMap().entries.map((entry) {
-              final idx = entry.key;
-              final tier = entry.value;
-              final name = tier['name'];
-              final mod = (tier['modifier'] as num).toDouble();
-              final sign = mod >= 0 ? '+' : '';
-              return GestureDetector(
-                onTap: () {
-                  final editNameCtrl = TextEditingController(text: name);
-                  final editModCtrl = TextEditingController(text: mod.toString());
-                  showDialog(
-                    context: context,
-                    builder: (ctx) => AlertDialog(
-                      title: const Text('Editar Lista de Precios'),
-                      content: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          TextField(
-                            controller: editNameCtrl,
-                            decoration: const InputDecoration(labelText: 'Nombre de la Lista', border: OutlineInputBorder()),
-                          ),
-                          const SizedBox(height: 16),
-                          TextField(
-                            controller: editModCtrl,
-                            keyboardType: const TextInputType.numberWithOptions(signed: true, decimal: true),
-                            decoration: const InputDecoration(labelText: 'Modificador (%)', border: OutlineInputBorder()),
-                          ),
-                        ],
-                      ),
-                      actions: [
-                        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
-                        FilledButton(
-                          onPressed: () {
-                            final newName = editNameCtrl.text.trim();
-                            final newMod = double.tryParse(editModCtrl.text.replaceAll(',', '.').trim());
-                            if (newName.isNotEmpty && newMod != null) {
-                              setState(() {
-                                _customTiers[idx] = {'name': newName, 'modifier': newMod};
-                              });
-                              Navigator.pop(ctx);
-                            }
-                          },
-                          child: const Text('Guardar'),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: Colors.purple.shade50,
-                    border: Border.all(color: Colors.purple.shade200),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.sell_outlined, size: 16, color: Colors.purple),
-                      const SizedBox(width: 8),
-                      Text(
-                        '$name ($sign${mod.toStringAsFixed(0)}%)',
-                        style: TextStyle(fontWeight: FontWeight.bold, color: Colors.purple.shade900),
-                      ),
-                      const SizedBox(width: 8),
-                      InkWell(
-                        onTap: () => setState(() => _customTiers.removeAt(idx)),
-                        child: const Icon(Icons.cancel, size: 18, color: Colors.redAccent),
-                      )
-                    ],
+            _buildSectionHeader('Listas de Precios Especiales',
+                'Creá modificadores dinámicos para clientes (Ej: "Gremio" con -10%).'),
+            const SizedBox(height: 24),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: _buildTextField('Nombre de la Lista', _tierNameCtrl,
+                      hint: 'Ej: Gremio', icon: Icons.label_outline),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  flex: 2,
+                  child: _buildTextField('Modificador (%)', _tierModCtrl,
+                      hint: 'Ej: -10', icon: Icons.percent),
+                ),
+                const SizedBox(width: 16),
+                SizedBox(
+                  height: 52,
+                  child: FilledButton.icon(
+                    onPressed: () {
+                      final name = _tierNameCtrl.text.trim();
+                      final modStr = _tierModCtrl.text.trim();
+                      final mod = double.tryParse(modStr);
+                      if (name.isNotEmpty && mod != null) {
+                        setState(() {
+                          _customTiers.add({'name': name, 'modifier': mod});
+                          _tierNameCtrl.clear();
+                          _tierModCtrl.clear();
+                        });
+                      } else {
+                        SnackBarService.warning(context,
+                            'Ingresá un nombre y un porcentaje válido numérico.');
+                      }
+                    },
+                    icon: const Icon(Icons.add),
+                    label: const Text('AÑADIR LISTA'),
                   ),
                 ),
-              );
-            }).toList(),
-          ),
-        ],
-      ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            if (_customTiers.isEmpty)
+              const Text('No hay listas de precios activas.',
+                  style: TextStyle(
+                      color: Colors.grey, fontStyle: FontStyle.italic))
+            else
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: _customTiers.asMap().entries.map((entry) {
+                  final idx = entry.key;
+                  final tier = entry.value;
+                  final name = tier['name'];
+                  final mod = (tier['modifier'] as num).toDouble();
+                  final sign = mod >= 0 ? '+' : '';
+                  return GestureDetector(
+                    onTap: () {
+                      final editNameCtrl = TextEditingController(text: name);
+                      final editModCtrl =
+                          TextEditingController(text: mod.toString());
+                      showDialog(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          title: const Text('Editar Lista de Precios'),
+                          content: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              TextField(
+                                controller: editNameCtrl,
+                                decoration: const InputDecoration(
+                                    labelText: 'Nombre de la Lista',
+                                    border: OutlineInputBorder()),
+                              ),
+                              const SizedBox(height: 16),
+                              TextField(
+                                controller: editModCtrl,
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                        signed: true, decimal: true),
+                                decoration: const InputDecoration(
+                                    labelText: 'Modificador (%)',
+                                    border: OutlineInputBorder()),
+                              ),
+                            ],
+                          ),
+                          actions: [
+                            TextButton(
+                                onPressed: () => Navigator.pop(ctx),
+                                child: const Text('Cancelar')),
+                            FilledButton(
+                              onPressed: () {
+                                final newName = editNameCtrl.text.trim();
+                                final newMod = double.tryParse(editModCtrl.text
+                                    .replaceAll(',', '.')
+                                    .trim());
+                                if (newName.isNotEmpty && newMod != null) {
+                                  setState(() {
+                                    _customTiers[idx] = {
+                                      'name': newName,
+                                      'modifier': newMod
+                                    };
+                                  });
+                                  Navigator.pop(ctx);
+                                }
+                              },
+                              child: const Text('Guardar'),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.purple.shade50,
+                        border: Border.all(color: Colors.purple.shade200),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.sell_outlined,
+                              size: 16, color: Colors.purple),
+                          const SizedBox(width: 8),
+                          Text(
+                            '$name ($sign${mod.toStringAsFixed(0)}%)',
+                            style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.purple.shade900),
+                          ),
+                          const SizedBox(width: 8),
+                          InkWell(
+                            onTap: () =>
+                                setState(() => _customTiers.removeAt(idx)),
+                            child: const Icon(Icons.cancel,
+                                size: 18, color: Colors.redAccent),
+                          )
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -803,12 +889,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
           padding: const EdgeInsets.all(28),
           decoration: BoxDecoration(
             gradient: LinearGradient(
-              colors: [Color(0xFF673AB7).withOpacity(0.08), Color(0xFF3F51B5).withOpacity(0.06)],
+              colors: [
+                Color(0xFF673AB7).withValues(alpha: 0.08),
+                Color(0xFF3F51B5).withValues(alpha: 0.06)
+              ],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: Color(0xFF673AB7).withOpacity(0.2)),
+            border: Border.all(color: Color(0xFF673AB7).withValues(alpha: 0.2)),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -818,10 +907,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: Color(0xFF673AB7).withOpacity(0.12),
+                      color: Color(0xFF673AB7).withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: const Icon(Icons.computer_outlined, color: Color(0xFF673AB7), size: 28),
+                    child: const Icon(Icons.computer_outlined,
+                        color: Color(0xFF673AB7), size: 28),
                   ),
                   const SizedBox(width: 16),
                   const Expanded(
@@ -830,12 +920,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       children: [
                         Text(
                           'Arquitectura Multi-Caja Activa',
-                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF311B92)),
+                          style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF311B92)),
                         ),
                         SizedBox(height: 4),
                         Text(
                           'Cada terminal configura su propio hardware de forma independiente.',
-                          style: TextStyle(fontSize: 13, color: Color(0xFF4527A0)),
+                          style:
+                              TextStyle(fontSize: 13, color: Color(0xFF4527A0)),
                         ),
                       ],
                     ),
@@ -864,20 +958,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               const SizedBox(height: 24),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Color(0xFF673AB7).withOpacity(0.3)),
+                  border: Border.all(
+                      color: Color(0xFF673AB7).withValues(alpha: 0.3)),
                 ),
                 child: Row(
                   children: [
-                    Icon(Icons.info_outline_rounded, color: Color(0xFF673AB7), size: 20),
+                    Icon(Icons.info_outline_rounded,
+                        color: Color(0xFF673AB7), size: 20),
                     const SizedBox(width: 12),
                     const Expanded(
                       child: Text(
                         'Estos ajustes se guardan en esta PC únicamente (SharedPreferences) y no se sincronizan con la nube.',
-                        style: TextStyle(fontSize: 12, color: Color(0xFF4527A0)),
+                        style:
+                            TextStyle(fontSize: 12, color: Color(0xFF4527A0)),
                       ),
                     ),
                   ],
@@ -900,9 +998,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF311B92))),
+              Text(title,
+                  style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                      color: Color(0xFF311B92))),
               const SizedBox(height: 2),
-              Text(subtitle, style: const TextStyle(fontSize: 12, color: Color(0xFF5E35B1))),
+              Text(subtitle,
+                  style:
+                      const TextStyle(fontSize: 12, color: Color(0xFF5E35B1))),
             ],
           ),
         ),
@@ -919,12 +1023,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildSectionHeader('Suscripción y Licencia', 'Gestioná tu acceso Premium, Módulos y facturación.'),
+        _buildSectionHeader('Suscripción y Licencia',
+            'Gestioná tu acceso Premium, Módulos y facturación.'),
         const SizedBox(height: 32),
-        
         if (provider.isLicenseActive) ...[
           AnimatedSubscriptionCard(
-            isPremium: provider.currentPlan.toLowerCase() == 'premium' || provider.currentPlan.toLowerCase() == 'pro',
+            isPremium: provider.currentPlan.toLowerCase() == 'premium' ||
+                provider.currentPlan.toLowerCase() == 'pro',
             isLifetime: isLifetime,
             expiresAt: expiresAt,
             lastSync: settings?.lastLicenseCheck,
@@ -936,16 +1041,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
           Wrap(
             spacing: 12,
             runSpacing: 12,
-            children: (provider.allowedAddons.isEmpty) 
-              ? [const Text('No hay addons específicos activos.', style: TextStyle(color: Colors.grey))]
-              : provider.allowedAddons.map((addon) => Chip(
-                  label: Text(
-                    _translateFeature(addon),
-                    style: const TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF424242)),
-                  ),
-                  backgroundColor: Colors.white,
-                  side: BorderSide(color: Colors.grey.shade300),
-                )).toList(),
+            children: (provider.allowedAddons.isEmpty)
+                ? [
+                    const Text('No hay addons específicos activos.',
+                        style: TextStyle(color: Colors.grey))
+                  ]
+                : provider.allowedAddons
+                    .map((addon) => Chip(
+                          label: Text(
+                            _translateFeature(addon),
+                            style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF424242)),
+                          ),
+                          backgroundColor: Colors.white,
+                          side: BorderSide(color: Colors.grey.shade300),
+                        ))
+                    .toList(),
           ),
           const SizedBox(height: 32),
           const SizedBox(height: 32),
@@ -954,10 +1066,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
               Expanded(
                 child: OutlinedButton.icon(
                   onPressed: _isSyncingLicense ? null : _syncLicense,
-                  icon: _isSyncingLicense ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.sync),
+                  icon: _isSyncingLicense
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.sync),
                   label: const Text('FORZAR SINCRONIZACIÓN'),
                   style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 24, vertical: 16),
                     side: BorderSide(color: Colors.grey.shade300),
                   ),
                 ),
@@ -966,10 +1084,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
               Expanded(
                 child: FilledButton.icon(
                   onPressed: _isCheckingUpdate ? null : _checkForUpdate,
-                  icon: _isCheckingUpdate ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Icon(Icons.system_update_alt),
+                  icon: _isCheckingUpdate
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.white))
+                      : const Icon(Icons.system_update_alt),
                   label: const Text('BUSCAR ACTUALIZACIONES'),
                   style: FilledButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 24, vertical: 16),
                     backgroundColor: const Color(0xFF3F51B5),
                   ),
                 ),
@@ -982,23 +1107,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: GestureDetector(
                 onTap: _handleVersionTap,
                 child: Text(
-                  'Versión actual del sistema: v$_appVersion' + (_currentChannel == 'beta' ? ' (BETA)' : ''),
-                  style: TextStyle(color: _currentChannel == 'beta' ? Colors.orange.shade600 : Colors.grey.shade500, fontSize: 13, fontWeight: FontWeight.w500),
+                  'Versión actual del sistema: v$_appVersion${_currentChannel == 'beta' ? ' (BETA)' : ''}',
+                  style: TextStyle(
+                      color: _currentChannel == 'beta'
+                          ? Colors.orange.shade600
+                          : Colors.grey.shade500,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500),
                 ),
               ),
             ),
           ],
         ] else ...[
           // --- ESTADO SIN LICENCIA ---
-          _buildTextField('Clave de Licencia', _licenseKeyCtrl, icon: Icons.vpn_key_outlined, hint: 'XXXX-XXXX-XXXX-XXXX'),
+          _buildTextField('Clave de Licencia', _licenseKeyCtrl,
+              icon: Icons.vpn_key_outlined, hint: 'XXXX-XXXX-XXXX-XXXX'),
           const SizedBox(height: 24),
           SizedBox(
             width: double.infinity,
             height: 54,
             child: ElevatedButton(
               onPressed: _isActivatingLicense ? null : _activateLicense,
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF673AB7), foregroundColor: Colors.white),
-              child: _isActivatingLicense ? const CircularProgressIndicator(color: Colors.white) : const Text('ACTIVAR AHORA'),
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF673AB7),
+                  foregroundColor: Colors.white),
+              child: _isActivatingLicense
+                  ? const CircularProgressIndicator(color: Colors.white)
+                  : const Text('ACTIVAR AHORA'),
             ),
           ),
         ],
@@ -1010,24 +1145,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildSectionHeader('Red y Terminales', 'Configurá la conexión con el servidor y las rutas de instalación.'),
+        _buildSectionHeader('Red y Terminales',
+            'Configurá la conexión con el servidor y las rutas de instalación.'),
         const SizedBox(height: 32),
-        
+
         // Campo de URL del Servidor (Integrado en el flujo de guardado principal)
-        _buildTextField(
-          'Dirección URL del Servidor (API)', 
-          _serverUrlCtrl, 
-          icon: Icons.dns_outlined, 
-          hint: 'Ej: http://127.0.0.1/Sistema_POS/pos-backend/public/api'
-        ),
-        
+        _buildTextField('Dirección URL del Servidor (API)', _serverUrlCtrl,
+            icon: Icons.dns_outlined,
+            hint: 'Ej: http://127.0.0.1/Sistema_POS/pos-backend/public/api'),
+
         const SizedBox(height: 24),
-        
+
         // NUEVO CAMPO: Ruta del Backend
         _buildTextField(
-          'Ruta Local del Backend (Servidor)', 
-          _backendPathCtrl, 
-          icon: Icons.folder_open_outlined, 
+          'Ruta Local del Backend (Servidor)',
+          _backendPathCtrl,
+          icon: Icons.folder_open_outlined,
           hint: 'Ej: C:\\laragon\\www\\Sistema_POS\\pos-backend',
           maxLines: 1,
         ),
@@ -1035,7 +1168,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           padding: EdgeInsets.only(left: 12, top: 8),
           child: Text(
             '⚠️ Esta ruta es necesaria para que las actualizaciones automáticas puedan reemplazar los archivos del servidor local.',
-            style: TextStyle(fontSize: 12, color: Colors.orange, fontWeight: FontWeight.w500),
+            style: TextStyle(
+                fontSize: 12,
+                color: Colors.orange,
+                fontWeight: FontWeight.w500),
           ),
         ),
 
@@ -1045,14 +1181,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
         _buildSectionTitle('Terminal y Cajas'),
         const SizedBox(height: 16),
-        
+
         ListTile(
           contentPadding: const EdgeInsets.all(20),
           tileColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: Colors.grey.shade200)),
-          leading: const CircleAvatar(backgroundColor: Color(0xFFFBE9E7), child: Icon(Icons.desktop_windows, color: Color(0xFFD84315))),
-          title: const Text('Asignación de Terminal', style: TextStyle(fontWeight: FontWeight.bold)),
-          subtitle: Text('Esta PC está configurada como: Caja ID ${provider.assignedRegisterId}'),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(color: Colors.grey.shade200)),
+          leading: const CircleAvatar(
+              backgroundColor: Color(0xFFFBE9E7),
+              child: Icon(Icons.desktop_windows, color: Color(0xFFD84315))),
+          title: const Text('Asignación de Terminal',
+              style: TextStyle(fontWeight: FontWeight.bold)),
+          subtitle: Text(
+              'Esta PC está configurada como: Caja ID ${provider.assignedRegisterId}'),
           trailing: const Icon(Icons.chevron_right),
           onTap: () => _showTerminalAssignmentDialog(context, provider),
         ),
@@ -1060,10 +1202,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ListTile(
           contentPadding: const EdgeInsets.all(20),
           tileColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: Colors.grey.shade200)),
-          leading: const CircleAvatar(backgroundColor: Color(0xFFFFF3E0), child: Icon(Icons.settings_suggest_outlined, color: Colors.orange)),
-          title: const Text('Administración de Cajas', style: TextStyle(fontWeight: FontWeight.bold)),
-          subtitle: const Text('Configurá los nombres y permisos de cada terminal física.'),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(color: Colors.grey.shade200)),
+          leading: const CircleAvatar(
+              backgroundColor: Color(0xFFFFF3E0),
+              child:
+                  Icon(Icons.settings_suggest_outlined, color: Colors.orange)),
+          title: const Text('Administración de Cajas',
+              style: TextStyle(fontWeight: FontWeight.bold)),
+          subtitle: const Text(
+              'Configurá los nombres y permisos de cada terminal física.'),
           trailing: const Icon(Icons.chevron_right),
           onTap: () {
             if (provider.features.multiCaja) {
@@ -1076,8 +1225,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 description:
                     'La administración de múltiples terminales físicas es '
                     'una función exclusiva del plan PREMIUM.',
-                onNavigateToSettings: () =>
-                    setState(() => _activeSection = SettingsSection.subscription),
+                onNavigateToSettings: () => setState(
+                    () => _activeSection = SettingsSection.subscription),
               );
             }
           },
@@ -1086,23 +1235,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-
   Widget _buildSectionHeader(String title, String subtitle) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(title, style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Color(0xFF212121))),
+        Text(title,
+            style: const TextStyle(
+                fontSize: 32,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF212121))),
         const SizedBox(height: 8),
-        Text(subtitle, style: TextStyle(fontSize: 16, color: Colors.grey.shade600)),
+        Text(subtitle,
+            style: TextStyle(fontSize: 16, color: Colors.grey.shade600)),
       ],
     );
   }
 
   Widget _buildSectionTitle(String title) {
-    return Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF424242)));
+    return Text(title,
+        style: const TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: Color(0xFF424242)));
   }
 
-  Widget _buildTextField(String label, TextEditingController controller, {IconData? icon, String? hint, int maxLines = 1, bool enabled = true}) {
+  Widget _buildTextField(String label, TextEditingController controller,
+      {IconData? icon, String? hint, int maxLines = 1, bool enabled = true}) {
     return TextFormField(
       controller: controller,
       maxLines: maxLines,
@@ -1111,16 +1269,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  InputDecoration _inputDecoration(String label, IconData? icon, {String? hint, bool enabled = true}) {
+  InputDecoration _inputDecoration(String label, IconData? icon,
+      {String? hint, bool enabled = true}) {
     return InputDecoration(
       labelText: label,
       hintText: hint,
-      prefixIcon: icon != null ? Icon(icon, size: 20, color: enabled ? null : Colors.grey) : null,
+      prefixIcon: icon != null
+          ? Icon(icon, size: 20, color: enabled ? null : Colors.grey)
+          : null,
       filled: true,
       fillColor: enabled ? Colors.white : Colors.grey.shade50,
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade200)),
-      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade200)),
-      disabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade100)),
+      border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: Colors.grey.shade200)),
+      enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: Colors.grey.shade200)),
+      disabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: Colors.grey.shade100)),
       contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
       labelStyle: enabled ? null : TextStyle(color: Colors.grey.shade500),
       hintStyle: enabled ? null : TextStyle(color: Colors.grey.shade400),
@@ -1130,10 +1297,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
   // Los modales se mantienen funcionalmente igual pero podrían estilizarse más.
   // Re-implementando los esenciales para que el archivo compile.
 
-
-  Future<void> _showTerminalAssignmentDialog(BuildContext context, SettingsProvider settingsProvider) async {
+  Future<void> _showTerminalAssignmentDialog(
+      BuildContext context, SettingsProvider settingsProvider) async {
     final cashProvider = context.read<CashRegisterProvider>();
-    if (cashProvider.availableRegisters == null || cashProvider.availableRegisters!.isEmpty) {
+    if (cashProvider.availableRegisters == null ||
+        cashProvider.availableRegisters!.isEmpty) {
       await cashProvider.loadRegisters();
     }
     if (!context.mounted) return;
@@ -1144,25 +1312,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
       builder: (ctx) => AlertDialog(
         title: const Text('Asignar Terminal'),
         content: DropdownButtonFormField<int>(
-          value: registers.any((r) => r.id == settingsProvider.assignedRegisterId) ? settingsProvider.assignedRegisterId : registers.firstOrNull?.id,
-          items: registers.map((r) => DropdownMenuItem(value: r.id, child: Text(r.name))).toList(),
+          initialValue:
+              registers.any((r) => r.id == settingsProvider.assignedRegisterId)
+                  ? settingsProvider.assignedRegisterId
+                  : registers.firstOrNull?.id,
+          items: registers
+              .map((r) => DropdownMenuItem(value: r.id, child: Text(r.name)))
+              .toList(),
           onChanged: (id) async {
             if (id != null) {
               await settingsProvider.setAssignedRegisterId(id);
               if (ctx.mounted) Navigator.pop(ctx);
-              
+
               // Forzar recarga del turno con la nueva caja asignada.
               // Esto actualizará globalmente el CashRegisterProvider y el Consumer en /home
               // echará al usuario a la pantalla de "Abrir Caja" si la nueva terminal está cerrada.
               await cashProvider.checkCurrentShift(registerId: id);
-              
+
               // Limpiar carrito para que no quede huérfano de la terminal anterior
               if (AppConfig.navigatorKey.currentContext != null) {
-                AppConfig.navigatorKey.currentContext!.read<PosProvider>().clearCart();
+                AppConfig.navigatorKey.currentContext!
+                    .read<PosProvider>()
+                    .clearCart();
               }
-              
+
               // Redirigir a /home para que reevalúe el estado y muestre la apertura de caja si es necesario
-              AppConfig.navigatorKey.currentState?.pushNamedAndRemoveUntil('/home', (route) => false);
+              AppConfig.navigatorKey.currentState
+                  ?.pushNamedAndRemoveUntil('/home', (route) => false);
             }
           },
         ),
@@ -1188,10 +1364,12 @@ class AnimatedSubscriptionCard extends StatefulWidget {
   });
 
   @override
-  State<AnimatedSubscriptionCard> createState() => _AnimatedSubscriptionCardState();
+  State<AnimatedSubscriptionCard> createState() =>
+      _AnimatedSubscriptionCardState();
 }
 
-class _AnimatedSubscriptionCardState extends State<AnimatedSubscriptionCard> with SingleTickerProviderStateMixin {
+class _AnimatedSubscriptionCardState extends State<AnimatedSubscriptionCard>
+    with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _glowAnimation;
   bool _isHovered = false;
@@ -1203,7 +1381,7 @@ class _AnimatedSubscriptionCardState extends State<AnimatedSubscriptionCard> wit
       vsync: this,
       duration: const Duration(seconds: 3),
     )..repeat(reverse: true);
-    
+
     _glowAnimation = Tween<double>(begin: 0.7, end: 1.3).animate(
       CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
     );
@@ -1218,12 +1396,21 @@ class _AnimatedSubscriptionCardState extends State<AnimatedSubscriptionCard> wit
   @override
   Widget build(BuildContext context) {
     final title = widget.isPremium ? 'PLAN PREMIUM' : 'PLAN BÁSICO';
-    
+
     final gradientColors = widget.isPremium
-        ? [const Color(0xFF7C3AED), const Color(0xFF3B82F6), const Color(0xFF9333EA)] // Vibrant purple -> blue -> violet
-        : [const Color(0xFF1E293B), const Color(0xFF334155), const Color(0xFF0F172A)]; // Sleek dark slate
-        
-    final shadowColor = widget.isPremium ? const Color(0xFF7C3AED) : const Color(0xFF000000);
+        ? [
+            const Color(0xFF7C3AED),
+            const Color(0xFF3B82F6),
+            const Color(0xFF9333EA)
+          ] // Vibrant purple -> blue -> violet
+        : [
+            const Color(0xFF1E293B),
+            const Color(0xFF334155),
+            const Color(0xFF0F172A)
+          ]; // Sleek dark slate
+
+    final shadowColor =
+        widget.isPremium ? const Color(0xFF7C3AED) : const Color(0xFF000000);
 
     return MouseRegion(
       onEnter: (_) => setState(() => _isHovered = true),
@@ -1236,94 +1423,133 @@ class _AnimatedSubscriptionCardState extends State<AnimatedSubscriptionCard> wit
           animation: _glowAnimation,
           builder: (context, child) {
             return Container(
-          padding: const EdgeInsets.all(32),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: gradientColors,
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(24),
-            boxShadow: [
-              BoxShadow(
-                color: shadowColor.withValues(alpha: 0.3 * _glowAnimation.value),
-                blurRadius: 30 * _glowAnimation.value,
-                offset: const Offset(0, 15),
-              ),
-            ],
-            border: Border.all(color: Colors.white.withValues(alpha: 0.1), width: 1.5),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: widget.isPremium ? Colors.amber.shade400.withValues(alpha: 0.9) : Colors.white.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(30),
-                      boxShadow: widget.isPremium ? [BoxShadow(color: Colors.amber.withValues(alpha: 0.5), blurRadius: 10)] : [],
-                    ),
-                    child: Text(
-                      title,
-                      style: TextStyle(
-                        color: widget.isPremium ? Colors.black87 : Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 13,
-                        letterSpacing: 1.2,
-                      ),
-                    ),
-                  ),
-                  Icon(
-                    widget.isPremium ? Icons.workspace_premium : Icons.verified_user,
-                    color: widget.isPremium ? Colors.amber.shade300 : Colors.blue.shade300,
-                    size: 36,
+              padding: const EdgeInsets.all(32),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: gradientColors,
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(24),
+                boxShadow: [
+                  BoxShadow(
+                    color: shadowColor.withValues(
+                        alpha: 0.3 * _glowAnimation.value),
+                    blurRadius: 30 * _glowAnimation.value,
+                    offset: const Offset(0, 15),
                   ),
                 ],
+                border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.1), width: 1.5),
               ),
-              const SizedBox(height: 24),
-              Text(
-                widget.isLifetime ? 'Acceso Vitalicio (LifeTime)' : 'Suscripción Activa',
-                style: const TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.w900, letterSpacing: -0.5),
-              ),
-              const SizedBox(height: 10),
-              Text(
-                widget.isLifetime
-                    ? 'Disfrutás de todas las funciones Premium sin límites de tiempo.'
-                    : (widget.expiresAt != null
-                        ? 'Expira el: ${DateFormat('dd MMMM, yyyy').format(widget.expiresAt!)}'
-                        : (widget.lastSync != null
-                            ? 'Sincronizado el: ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.parse(widget.lastSync!).toLocal())}'
-                            : 'Estado: Activo y Protegido')),
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.85), fontSize: 16),
-              ),
-              const SizedBox(height: 36),
-              if (!widget.isLifetime && widget.manageUrl != null)
-                MouseRegion(
-                  cursor: SystemMouseCursors.click,
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    child: ElevatedButton.icon(
-                      onPressed: () => launchUrl(Uri.parse(widget.manageUrl!)),
-                      icon: Icon(Icons.manage_accounts, color: widget.isPremium ? const Color(0xFF7C3AED) : Colors.white, size: 20),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: widget.isPremium ? Colors.white : Colors.blue.shade600,
-                        foregroundColor: widget.isPremium ? const Color(0xFF7C3AED) : Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 16),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                        elevation: 8,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: widget.isPremium
+                              ? Colors.amber.shade400.withValues(alpha: 0.9)
+                              : Colors.white.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(30),
+                          boxShadow: widget.isPremium
+                              ? [
+                                  BoxShadow(
+                                      color:
+                                          Colors.amber.withValues(alpha: 0.5),
+                                      blurRadius: 10)
+                                ]
+                              : [],
+                        ),
+                        child: Text(
+                          title,
+                          style: TextStyle(
+                            color: widget.isPremium
+                                ? Colors.black87
+                                : Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                            letterSpacing: 1.2,
+                          ),
+                        ),
                       ),
-                      label: const Text('GESTIONAR SUSCRIPCIÓN', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                    ),
+                      Icon(
+                        widget.isPremium
+                            ? Icons.workspace_premium
+                            : Icons.verified_user,
+                        color: widget.isPremium
+                            ? Colors.amber.shade300
+                            : Colors.blue.shade300,
+                        size: 36,
+                      ),
+                    ],
                   ),
-                ),
-            ],
-          ),
-        );
-      },
-    ),
+                  const SizedBox(height: 24),
+                  Text(
+                    widget.isLifetime
+                        ? 'Acceso Vitalicio (LifeTime)'
+                        : 'Suscripción Activa',
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 26,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: -0.5),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    widget.isLifetime
+                        ? 'Disfrutás de todas las funciones Premium sin límites de tiempo.'
+                        : (widget.expiresAt != null
+                            ? 'Expira el: ${DateFormat('dd MMMM, yyyy').format(widget.expiresAt!)}'
+                            : (widget.lastSync != null
+                                ? 'Sincronizado el: ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.parse(widget.lastSync!).toLocal())}'
+                                : 'Estado: Activo y Protegido')),
+                    style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.85),
+                        fontSize: 16),
+                  ),
+                  const SizedBox(height: 36),
+                  if (!widget.isLifetime && widget.manageUrl != null)
+                    MouseRegion(
+                      cursor: SystemMouseCursors.click,
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        child: ElevatedButton.icon(
+                          onPressed: () =>
+                              launchUrl(Uri.parse(widget.manageUrl!)),
+                          icon: Icon(Icons.manage_accounts,
+                              color: widget.isPremium
+                                  ? const Color(0xFF7C3AED)
+                                  : Colors.white,
+                              size: 20),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: widget.isPremium
+                                ? Colors.white
+                                : Colors.blue.shade600,
+                            foregroundColor: widget.isPremium
+                                ? const Color(0xFF7C3AED)
+                                : Colors.white,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 28, vertical: 16),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16)),
+                            elevation: 8,
+                          ),
+                          label: const Text('GESTIONAR SUSCRIPCIÓN',
+                              style: TextStyle(
+                                  fontWeight: FontWeight.bold, fontSize: 14)),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            );
+          },
+        ),
       ),
     );
   }

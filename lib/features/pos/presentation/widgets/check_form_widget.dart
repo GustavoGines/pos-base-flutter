@@ -20,21 +20,21 @@ class CheckFormWidget extends StatefulWidget {
   final ValueChanged<Map<String, dynamic>?> onChanged;
 
   const CheckFormWidget({
-    Key? key,
+    super.key,
     required this.amount,
     required this.onChanged,
-  }) : super(key: key);
+  });
 
   @override
   State<CheckFormWidget> createState() => _CheckFormWidgetState();
 }
 
 class _CheckFormWidgetState extends State<CheckFormWidget> {
-  final _bankCtrl        = TextEditingController();
+  final _bankCtrl = TextEditingController();
   final _checkNumberCtrl = TextEditingController();
-  final _cuitCtrl        = TextEditingController();
-  final _issuerCtrl      = TextEditingController();
-  final _issueDateCtrl   = TextEditingController();
+  final _cuitCtrl = TextEditingController();
+  final _issuerCtrl = TextEditingController();
+  final _issueDateCtrl = TextEditingController();
   final _paymentDateCtrl = TextEditingController();
 
   @override
@@ -42,8 +42,12 @@ class _CheckFormWidgetState extends State<CheckFormWidget> {
     super.initState();
     // Notificar al padre cada vez que cualquier campo cambie
     for (final ctrl in [
-      _bankCtrl, _checkNumberCtrl, _cuitCtrl,
-      _issuerCtrl, _issueDateCtrl, _paymentDateCtrl,
+      _bankCtrl,
+      _checkNumberCtrl,
+      _cuitCtrl,
+      _issuerCtrl,
+      _issueDateCtrl,
+      _paymentDateCtrl,
     ]) {
       ctrl.addListener(_notify);
     }
@@ -52,8 +56,12 @@ class _CheckFormWidgetState extends State<CheckFormWidget> {
   @override
   void dispose() {
     for (final ctrl in [
-      _bankCtrl, _checkNumberCtrl, _cuitCtrl,
-      _issuerCtrl, _issueDateCtrl, _paymentDateCtrl,
+      _bankCtrl,
+      _checkNumberCtrl,
+      _cuitCtrl,
+      _issuerCtrl,
+      _issueDateCtrl,
+      _paymentDateCtrl,
     ]) {
       ctrl.removeListener(_notify);
       ctrl.dispose();
@@ -82,11 +90,11 @@ class _CheckFormWidgetState extends State<CheckFormWidget> {
   void _notify() {
     widget.onChanged(_isValid
         ? {
-            'bank_name':    _bankCtrl.text.trim(),
+            'bank_name': _bankCtrl.text.trim(),
             'check_number': _checkNumberCtrl.text.trim(),
-            'issuer_cuit':  _cuitCtrl.text.trim(),
-            'issuer_name':  _issuerCtrl.text.trim(),
-            'issue_date':   _issueDateCtrl.text.trim(),
+            'issuer_cuit': _cuitCtrl.text.trim(),
+            'issuer_name': _issuerCtrl.text.trim(),
+            'issue_date': _issueDateCtrl.text.trim(),
             'payment_date': _paymentDateCtrl.text.trim(),
             // 'amount' lo toma el backend del total_amount del SalePayment
           }
@@ -110,9 +118,12 @@ class _CheckFormWidgetState extends State<CheckFormWidget> {
 
   InputDecoration _dec(String label, {IconData? icon}) => InputDecoration(
         labelText: label,
-        prefixIcon: icon != null ? Icon(icon, size: 18, color: Colors.teal.shade600) : null,
+        prefixIcon: icon != null
+            ? Icon(icon, size: 18, color: Colors.teal.shade600)
+            : null,
         isDense: true,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
@@ -151,7 +162,8 @@ class _CheckFormWidgetState extends State<CheckFormWidget> {
               const Spacer(),
               // Importe (read-only, viene del desglose de pago)
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
                   color: Colors.teal.shade100,
                   borderRadius: BorderRadius.circular(8),
@@ -177,7 +189,8 @@ class _CheckFormWidgetState extends State<CheckFormWidget> {
                 child: TextField(
                   controller: _bankCtrl,
                   textCapitalization: TextCapitalization.words,
-                  decoration: _dec('Banco', icon: Icons.account_balance_outlined),
+                  decoration:
+                      _dec('Banco', icon: Icons.account_balance_outlined),
                 ),
               ),
               const SizedBox(width: 10),
@@ -211,7 +224,8 @@ class _CheckFormWidgetState extends State<CheckFormWidget> {
                 child: TextField(
                   controller: _issuerCtrl,
                   textCapitalization: TextCapitalization.words,
-                  decoration: _dec('Nombre Firmante', icon: Icons.person_outline),
+                  decoration:
+                      _dec('Nombre Firmante', icon: Icons.person_outline),
                 ),
               ),
             ],

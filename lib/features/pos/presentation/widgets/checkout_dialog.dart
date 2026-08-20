@@ -29,45 +29,63 @@ class PaymentLine {
   TextEditingController checkIssueDateController;
   TextEditingController checkPaymentDateController;
 
-  PaymentLine({this.method, double initialAmount = 0.0, double? defaultCardSurcharge, bool disableSurcharge = false})
-      : controller = TextEditingController(text: initialAmount > 0 ? initialAmount.toCurrency() : ''),
+  PaymentLine(
+      {this.method,
+      double initialAmount = 0.0,
+      double? defaultCardSurcharge,
+      bool disableSurcharge = false})
+      : controller = TextEditingController(
+            text: initialAmount > 0 ? initialAmount.toCurrency() : ''),
         percentageController = TextEditingController(),
         percentageFocus = FocusNode(),
         checkBankController = TextEditingController(),
         checkNumberController = TextEditingController(),
         checkIssuerCuitController = TextEditingController(),
         checkIssuerNameController = TextEditingController(),
-        checkIssueDateController = TextEditingController(text: DateTime.now().toString().split(' ')[0]),
-        checkPaymentDateController = TextEditingController(text: DateTime.now().add(const Duration(days: 30)).toString().split(' ')[0]) {
-    updateMethod(method, defaultCardSurcharge: defaultCardSurcharge, disableSurcharge: disableSurcharge);
+        checkIssueDateController = TextEditingController(
+            text: DateTime.now().toString().split(' ')[0]),
+        checkPaymentDateController = TextEditingController(
+            text: DateTime.now()
+                .add(const Duration(days: 30))
+                .toString()
+                .split(' ')[0]) {
+    updateMethod(method,
+        defaultCardSurcharge: defaultCardSurcharge,
+        disableSurcharge: disableSurcharge);
   }
 
-  double get amount => double.tryParse(controller.text.replaceAll(',', '.')) ?? 0.0;
-  double get currentPercentage => double.tryParse(percentageController.text.replaceAll(',', '.')) ?? 0.0;
-  
+  double get amount =>
+      double.tryParse(controller.text.replaceAll(',', '.')) ?? 0.0;
+  double get currentPercentage =>
+      double.tryParse(percentageController.text.replaceAll(',', '.')) ?? 0.0;
+
   double get surcharge {
     if (method == null || method!.isCash) return 0.0;
     return (currentPercentage / 100.0) * amount;
   }
-  
+
   double get total => amount + surcharge;
 
-  void updateMethod(PaymentMethod? m, {double? defaultCardSurcharge, bool disableSurcharge = false}) {
+  void updateMethod(PaymentMethod? m,
+      {double? defaultCardSurcharge, bool disableSurcharge = false}) {
     method = m;
     if (disableSurcharge) {
       percentageController.text = '0.0';
       return;
     }
     double val = m?.surchargeValue ?? 0.0;
-    
+
     // Si el cajero selecciona tarjeta de crédito/débito y la BD local no tiene un recargo específico,
     // inyectamos automáticamente el recargo global de configuraciones (ej: 15%).
-    if (m != null && val == 0.0 && defaultCardSurcharge != null && defaultCardSurcharge > 0) {
+    if (m != null &&
+        val == 0.0 &&
+        defaultCardSurcharge != null &&
+        defaultCardSurcharge > 0) {
       if (m.code.contains('credito') || m.code.contains('tarjeta')) {
         val = defaultCardSurcharge;
       }
     }
-    
+
     percentageController.text = val.toStringAsFixed(1);
   }
 
@@ -88,7 +106,7 @@ class CheckoutDialog extends StatefulWidget {
   final double total;
   final int? saleId;
 
-  const CheckoutDialog({Key? key, required this.total, this.saleId}) : super(key: key);
+  const CheckoutDialog({super.key, required this.total, this.saleId});
 
   @override
   State<CheckoutDialog> createState() => _CheckoutDialogState();
@@ -101,19 +119,19 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   final List<PaymentMethod?> _previousValidMethods = [];
   bool _printReceipt = true;
   bool _showPreview = false;
-  bool _requiresDispatch = false; 
-  String _fulfillmentStatus = 'pending'; 
+  bool _requiresDispatch = false;
+  String _fulfillmentStatus = 'pending';
 
   // Global cash tendered
   final _cashTenderedCtrl = TextEditingController();
   // FocusNode dedicado para poder enfocar el campo por código
   final _cashTenderedFocus = FocusNode();
-  
+
   late TextEditingController _shippingCostCtrl;
   final _deliveryAddressCtrl = TextEditingController();
 
   Customer? _selectedCustomer;
-  
+
   bool get _isCartAlreadySurcharged {
     // En Modo Básico (toggle off) los surcharges de métodos de pago SIEMPRE aplican.
     final settings = context.read<SettingsProvider>().settings;
@@ -121,34 +139,32 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     // En Modo Avanzado: suprimimos el recargo del método si el carrito ya tiene
     // el factor de tarjeta o un custom con recargo positivo (para evitar doble cobro).
     final pos = context.read<PosProvider>();
-    return pos.activeTier == PriceTier.card || (pos.activeTier == PriceTier.custom && pos.currentCustomFactor > 1.0);
+    return pos.activeTier == PriceTier.card ||
+        (pos.activeTier == PriceTier.custom && pos.currentCustomFactor > 1.0);
   }
 
   @override
   void initState() {
     super.initState();
     final posProvider = context.read<PosProvider>();
-    
+
     // Auto-seleccionar el último cliente usado en Cta Cte si existe
     _selectedCustomer = posProvider.lastSelectedCustomer;
     if (_selectedCustomer != null) {
       _deliveryAddressCtrl.text = _selectedCustomer!.deliveryAddress ?? '';
     }
-    
+
     // Recuperar estado persistente si existe, o usar la memoria del último flete
     _requiresDispatch = posProvider.currentRequiresDispatch;
     _fulfillmentStatus = posProvider.currentFulfillmentStatus;
-    
+
     // Si la venta actual tiene 0 (porque acabamos de empezar o limpiar), sugerimos el último usado
-    final initialShipping = posProvider.shippingCost > 0 
-        ? posProvider.shippingCost 
+    final initialShipping = posProvider.shippingCost > 0
+        ? posProvider.shippingCost
         : posProvider.lastUsedShippingCost;
 
     _shippingCostCtrl = TextEditingController(
-      text: initialShipping > 0 
-          ? initialShipping.toCurrency() 
-          : ''
-    );
+        text: initialShipping > 0 ? initialShipping.toCurrency() : '');
     // Sincronizar la memoria local del diálogo con el último flete usado
     // (No llamamos a setShippingCost del provider para no alterar el total del fondo prematuramente)
     _shippingCostCtrl.addListener(() {
@@ -176,10 +192,12 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     final provider = context.read<PosProvider>();
     final settings = context.read<SettingsProvider>().settings;
     if (provider.paymentMethods.isNotEmpty) {
-      final defaultCash = provider.paymentMethods.firstWhere((p) => p.isCash, orElse: () => provider.paymentMethods.first);
+      final defaultCash = provider.paymentMethods.firstWhere((p) => p.isCash,
+          orElse: () => provider.paymentMethods.first);
       final line = PaymentLine(
-        method: defaultCash, 
-        initialAmount: widget.total + (_requiresDispatch ? _shippingCostToApply : 0.0),
+        method: defaultCash,
+        initialAmount:
+            widget.total + (_requiresDispatch ? _shippingCostToApply : 0.0),
         defaultCardSurcharge: settings?.globalCardPercentage,
         disableSurcharge: _isCartAlreadySurcharged,
       );
@@ -262,7 +280,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     final provider = context.read<PosProvider>();
     final settings = context.read<SettingsProvider>().settings;
     if (provider.paymentMethods.isEmpty) return;
-    
+
     // Auto-fill available balance
     double left = _pendingBalance > 0 ? _pendingBalance : 0.0;
 
@@ -273,7 +291,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     );
 
     final line = PaymentLine(
-      method: defaultMethod, 
+      method: defaultMethod,
       initialAmount: left,
       defaultCardSurcharge: settings?.globalCardPercentage,
       disableSurcharge: _isCartAlreadySurcharged,
@@ -305,21 +323,28 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     }
   }
 
-  double get _totalBaseAmount => _lines.fold(0, (sum, line) => sum + line.amount);
-  double get _totalSurcharge => _lines.fold(0, (sum, line) => sum + line.surcharge);
-  
+  double get _totalBaseAmount =>
+      _lines.fold(0, (sum, line) => sum + line.amount);
+  double get _totalSurcharge =>
+      _lines.fold(0, (sum, line) => sum + line.surcharge);
+
   double get _shippingCostToApply {
     if (_requiresDispatch && _fulfillmentStatus == 'pending') {
-      return double.tryParse(_shippingCostCtrl.text.replaceAll(',', '.')) ?? 0.0;
+      return double.tryParse(_shippingCostCtrl.text.replaceAll(',', '.')) ??
+          0.0;
     }
     return 0.0;
   }
 
-  double get _grandTotal => widget.total + _totalSurcharge + _shippingCostToApply;
-  double get _pendingBalance => widget.total + _shippingCostToApply - _totalBaseAmount;
+  double get _grandTotal =>
+      widget.total + _totalSurcharge + _shippingCostToApply;
+  double get _pendingBalance =>
+      widget.total + _shippingCostToApply - _totalBaseAmount;
 
   double get _cashRequired {
-    return _lines.where((l) => l.method?.isCash == true).fold(0.0, (sum, l) => sum + l.total);
+    return _lines
+        .where((l) => l.method?.isCash == true)
+        .fold(0.0, (sum, l) => sum + l.total);
   }
 
   double get _actualTendered {
@@ -332,7 +357,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     return _actualTendered - _cashRequired;
   }
 
-  bool get _hasCuentaCorriente => _lines.any((l) => l.method?.code == 'cuenta_corriente');
+  bool get _hasCuentaCorriente =>
+      _lines.any((l) => l.method?.code == 'cuenta_corriente');
 
   double get _availableCredit {
     if (_selectedCustomer == null) return 0;
@@ -347,7 +373,9 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       final tendered = _actualTendered;
       final cashText = _cashTenderedCtrl.text.trim();
       // Si el campo tiene algo escrito y es menor al requerido → bloquear
-      if (cashText.isNotEmpty && tendered > 0 && tendered < (_cashRequired - 0.01)) return false;
+      if (cashText.isNotEmpty &&
+          tendered > 0 &&
+          tendered < (_cashRequired - 0.01)) return false;
     }
     if (_hasCuentaCorriente && _selectedCustomer == null) return false;
     return true;
@@ -356,7 +384,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   void _showProUpsellDialog([String? methodName]) {
     final isCheque = methodName?.toLowerCase().contains('cheque') == true;
     final title = isCheque ? 'Actualizá a Premium' : 'Actualizá a Premium';
-    final content = isCheque 
+    final content = isCheque
         ? 'El cobro con cheques de terceros es exclusivo del Plan Premium.\n\n¿Qué te permite?\n• Registrar cheques diferidos.\n• Visualizar la cartera en el dashboard.\n• Semáforo de pagos próximos.'
         : 'El módulo de Cuentas Corrientes es exclusivo para el Plan Premium.\n\n¿Qué te permite?\n• Fiar a tus clientes de confianza.\n• Controlar saldos deudores.\n• Armar estados de cuenta fiables.\n\nContatáte para subir al Plan Premium y desbloquearlo.';
 
@@ -366,7 +394,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Row(
           children: [
-            Icon(Icons.workspace_premium, color: Colors.orange.shade700, size: 28),
+            Icon(Icons.workspace_premium,
+                color: Colors.orange.shade700, size: 28),
             const SizedBox(width: 8),
             Text(title),
           ],
@@ -375,8 +404,10 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            style: TextButton.styleFrom(foregroundColor: Colors.purple.shade700),
-            child: const Text('Entendido', style: TextStyle(fontWeight: FontWeight.bold)),
+            style:
+                TextButton.styleFrom(foregroundColor: Colors.purple.shade700),
+            child: const Text('Entendido',
+                style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -390,7 +421,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         await customerProvider.fetchCustomers();
       } catch (e) {
         if (mounted) {
-          SnackBarService.error(context, 'No se pudo cargar la lista de clientes.');
+          SnackBarService.error(
+              context, 'No se pudo cargar la lista de clientes.');
         }
         return;
       }
@@ -408,14 +440,20 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
           });
           context.read<PosProvider>().setLastSelectedCustomer(c);
           final localTerminal = context.read<LocalTerminalProvider>();
-          if (localTerminal.lockedPriceTier == 'none' && c.defaultPriceTier != null && c.defaultPriceTier!.isNotEmpty) {
+          if (localTerminal.lockedPriceTier == 'none' &&
+              c.defaultPriceTier != null &&
+              c.defaultPriceTier!.isNotEmpty) {
             final appSettings = context.read<SettingsProvider>();
             if (appSettings.settings?.features.multiplePrices == true) {
               PriceTier tier;
               switch (c.defaultPriceTier) {
-                case 'wholesale': tier = PriceTier.wholesale; break;
-                case 'card': tier = PriceTier.card; break;
-                default: 
+                case 'wholesale':
+                  tier = PriceTier.wholesale;
+                  break;
+                case 'card':
+                  tier = PriceTier.card;
+                  break;
+                default:
                   if (c.defaultPriceTier!.startsWith('custom_')) {
                     tier = PriceTier.custom;
                   } else {
@@ -423,23 +461,29 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                   }
               }
               final settings = appSettings.settings;
-              
+
               if (tier == PriceTier.custom) {
                 final customLabel = c.defaultPriceTier!.substring(7);
                 final customTiers = settings?.customPriceTiers ?? [];
-                final match = customTiers.firstWhere((t) => t['name'] == customLabel, orElse: () => {});
+                final match = customTiers.firstWhere(
+                    (t) => t['name'] == customLabel,
+                    orElse: () => {});
                 final mod = (match['modifier'] as num?)?.toDouble() ?? 0.0;
                 context.read<PosProvider>().setPriceTier(
-                  tier,
-                  customFactor: 1 + (mod / 100),
-                  customLabel: customLabel,
-                );
+                      tier,
+                      customFactor: 1 + (mod / 100),
+                      customLabel: customLabel,
+                    );
               } else {
                 context.read<PosProvider>().setPriceTier(
-                  tier,
-                  wholesaleFactor: settings != null ? 1 + (settings.globalWholesalePercentage / 100) : null,
-                  cardFactor: settings != null ? 1 + (settings.globalCardPercentage / 100) : null,
-                );
+                      tier,
+                      wholesaleFactor: settings != null
+                          ? 1 + (settings.globalWholesalePercentage / 100)
+                          : null,
+                      cardFactor: settings != null
+                          ? 1 + (settings.globalCardPercentage / 100)
+                          : null,
+                    );
               }
               // Como CheckoutDialog tiene copia estática del 'total', si el tier bajó los precios el total debe recalcularse.
               // Para no complicar la caja con saldos saltando de golpe, le avisamos al Provider que ya recalculó en background.
@@ -455,14 +499,18 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   Future<void> _processCheckout() async {
     if (_hasCuentaCorriente) {
       if (_selectedCustomer == null) {
-        SnackBarService.error(context, 'Debe seleccionar un cliente para fiar.');
+        SnackBarService.error(
+            context, 'Debe seleccionar un cliente para fiar.');
         return;
       }
-      final ccNeed = _lines.where((l) => l.method?.code == 'cuenta_corriente').fold(0.0, (s, l) => s + l.total);
+      final ccNeed = _lines
+          .where((l) => l.method?.code == 'cuenta_corriente')
+          .fold(0.0, (s, l) => s + l.total);
       if (!_selectedCustomer!.isInternalAccount && ccNeed > _availableCredit) {
-        SnackBarService.error(context,
-          'El cliente no tiene límite de crédito suficiente. '
-          'Disponible: \$${_availableCredit.toCurrency()}');
+        SnackBarService.error(
+            context,
+            'El cliente no tiene límite de crédito suficiente. '
+            'Disponible: \$${_availableCredit.toCurrency()}');
         return;
       }
     }
@@ -481,7 +529,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
           chequeLine.checkNumberController.text.trim().isEmpty ||
           chequeLine.checkIssuerCuitController.text.trim().isEmpty ||
           chequeLine.checkIssuerNameController.text.trim().isEmpty) {
-        SnackBarService.error(context, 'Complete los datos obligatorios del cheque (Banco, Número, CUIT, Firmante).');
+        SnackBarService.error(context,
+            'Complete los datos obligatorios del cheque (Banco, Número, CUIT, Firmante).');
         return;
       }
       checkDetailsPayload = {
@@ -498,16 +547,19 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     }
 
     // Convert lines to payload
-    List<Map<String, dynamic>> paymentsPayload = _lines.map((l) => {
-      'payment_method_id': l.method!.id,
-      'base_amount': l.amount,
-      'surcharge_amount': l.surcharge,
-      'total_amount': l.total,
-    }).toList();
+    List<Map<String, dynamic>> paymentsPayload = _lines
+        .map((l) => {
+              'payment_method_id': l.method!.id,
+              'base_amount': l.amount,
+              'surcharge_amount': l.surcharge,
+              'total_amount': l.total,
+            })
+        .toList();
 
     // Vista Previa: solo aplica para impresoras térmicas.
     // Para A4, el provider maneja el visor PDF directamente según showPreview.
-    final localTerminal = Provider.of<LocalTerminalProvider>(context, listen: false);
+    final localTerminal =
+        Provider.of<LocalTerminalProvider>(context, listen: false);
     final isA4 = localTerminal.printerFormat.startsWith('a4');
 
     if (_printReceipt && _showPreview && !isA4) {
@@ -521,63 +573,89 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       final lines = <TicketLine>[
         // Encabezado
         if (settings?.companyName != null)
-          TicketLine(settings!.companyName!.toUpperCase(), align: TicketAlign.center, isBold: true, isLarge: true),
+          TicketLine(settings!.companyName!.toUpperCase(),
+              align: TicketAlign.center, isBold: true, isLarge: true),
         if (settings?.address != null && settings!.address!.isNotEmpty)
           TicketLine(settings.address!, align: TicketAlign.center),
         if (settings?.taxId != null && settings!.taxId!.isNotEmpty)
-          TicketLine('CUIT: ${settings.taxId}', align: TicketAlign.center, isBold: true),
+          TicketLine('CUIT: ${settings.taxId}',
+              align: TicketAlign.center, isBold: true),
         const TicketLine.hr(bold: true),
-        TicketLine('COMPROBANTE DE VENTA', align: TicketAlign.center, isBold: true),
+        TicketLine('COMPROBANTE DE VENTA',
+            align: TicketAlign.center, isBold: true),
         const TicketLine.hr(),
-        TicketLine('FECHA: ${DateTime.now().day.toString().padLeft(2,'0')}/${DateTime.now().month.toString().padLeft(2,'0')}/${DateTime.now().year}'),
+        TicketLine(
+            'FECHA: ${DateTime.now().day.toString().padLeft(2, '0')}/${DateTime.now().month.toString().padLeft(2, '0')}/${DateTime.now().year}'),
         if (userName != null) TicketLine('CAJERO: ${userName.toUpperCase()}'),
         const TicketLine.hr(),
 
         // Ítems del carrito
-        ...cart.map((item) => [
-          TicketLine(
-            '${item.product.isSoldByWeight ? item.quantity.toQty() + " kg" : item.quantity.toInt().toString() + " un"} x \$${item.product.sellingPrice.toCurrency()}',
-            rightText: '\$${item.subtotal.toCurrency()}',
-          ),
-          TicketLine(item.product.name.toUpperCase(), isBold: true),
-        ]).expand((l) => l),
+        ...cart
+            .map((item) => [
+                  TicketLine(
+                    '${item.product.isSoldByWeight ? "${item.quantity.toQty()} kg" : "${item.quantity.toInt()} un"} x \$${item.product.sellingPrice.toCurrency()}',
+                    rightText: '\$${item.subtotal.toCurrency()}',
+                  ),
+                  TicketLine(item.product.name.toUpperCase(), isBold: true),
+                ])
+            .expand((l) => l),
         const TicketLine.hr(bold: true),
 
         // ──── Sección de pago (igual que el ticket real) ────
         if (isComplexPayment) ...[
-          TicketLine('SUBTOTAL:', rightText: '\$${widget.total.toCurrency()}', isBold: true),
+          TicketLine('SUBTOTAL:',
+              rightText: '\$${widget.total.toCurrency()}', isBold: true),
           const TicketLine.hr(),
           // Un renglón por cada método de pago
           ..._lines.map((l) => TicketLine(
-            (l.method?.name ?? 'PAGO').toUpperCase(),
-            rightText: '\$${l.amount.toCurrency()}',
-            isBold: true,
-          )),
+                (l.method?.name ?? 'PAGO').toUpperCase(),
+                rightText: '\$${l.amount.toCurrency()}',
+                isBold: true,
+              )),
           if (_totalSurcharge > 0.01)
-            TicketLine('RECARGO BANCARIO:', rightText: '\$${_totalSurcharge.toCurrency()}'),
+            TicketLine('RECARGO BANCARIO:',
+                rightText: '\$${_totalSurcharge.toCurrency()}'),
           const TicketLine.hr(),
           if (_shippingCostToApply > 0.01)
-            TicketLine('FLETE / ENVÍO:', rightText: '\$${_shippingCostToApply.toCurrency()}'),
-          TicketLine('TOTAL COBRADO:', rightText: '\$${_grandTotal.toCurrency()}', isBold: true, isLarge: true),
+            TicketLine('FLETE / ENVÍO:',
+                rightText: '\$${_shippingCostToApply.toCurrency()}'),
+          TicketLine('TOTAL COBRADO:',
+              rightText: '\$${_grandTotal.toCurrency()}',
+              isBold: true,
+              isLarge: true),
           if (hasTendered)
-            TicketLine('EFECTIVO RECIBIDO:', rightText: '\$${_actualTendered.toCurrency()}'),
+            TicketLine('EFECTIVO RECIBIDO:',
+                rightText: '\$${_actualTendered.toCurrency()}'),
           if (hasTendered)
-            TicketLine('SU VUELTO:', rightText: '\$${_change.toCurrency()}', isBold: true),
+            TicketLine('SU VUELTO:',
+                rightText: '\$${_change.toCurrency()}', isBold: true),
         ] else ...[
           // Venta simple: un pago, sin recargos
           if (_shippingCostToApply > 0.01)
-            TicketLine('FLETE / ENVÍO:', rightText: '\$${_shippingCostToApply.toCurrency()}'),
-          TicketLine('TOTAL GENERAL:', rightText: '\$${_grandTotal.toCurrency()}', isBold: true, isLarge: true),
+            TicketLine('FLETE / ENVÍO:',
+                rightText: '\$${_shippingCostToApply.toCurrency()}'),
+          TicketLine('TOTAL GENERAL:',
+              rightText: '\$${_grandTotal.toCurrency()}',
+              isBold: true,
+              isLarge: true),
           const TicketLine.hr(),
-          TicketLine('PAGO EN:', rightText: (_lines.isNotEmpty ? _lines.first.method?.name ?? 'EFECTIVO' : 'EFECTIVO').toUpperCase()),
+          TicketLine('PAGO EN:',
+              rightText: (_lines.isNotEmpty
+                      ? _lines.first.method?.name ?? 'EFECTIVO'
+                      : 'EFECTIVO')
+                  .toUpperCase()),
           if (hasTendered)
-            TicketLine('EFECTIVO RECIBIDO:', rightText: '\$${_actualTendered.toCurrency()}'),
+            TicketLine('EFECTIVO RECIBIDO:',
+                rightText: '\$${_actualTendered.toCurrency()}'),
           if (hasTendered)
-            TicketLine('SU VUELTO:', rightText: '\$${_change.toCurrency()}', isBold: true),
+            TicketLine('SU VUELTO:',
+                rightText: '\$${_change.toCurrency()}', isBold: true),
         ],
         const TicketLine.space(),
         TicketLine(
-          isNarrow ? '**NO VALIDO COMO FACTURA**' : '*** NO VALIDO COMO FACTURA ***',
+          isNarrow
+              ? '**NO VALIDO COMO FACTURA**'
+              : '*** NO VALIDO COMO FACTURA ***',
           align: TicketAlign.center,
         ),
       ];
@@ -587,13 +665,17 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         lines.add(const TicketLine.space());
         lines.add(const TicketLine.hr(bold: true)); // Simular corte
         lines.add(const TicketLine.space());
-        lines.add(const TicketLine('ORDEN DE RETIRO / REMITO', align: TicketAlign.center, isBold: true));
+        lines.add(const TicketLine('ORDEN DE RETIRO / REMITO',
+            align: TicketAlign.center, isBold: true));
         lines.add(const TicketLine.hr());
         lines.add(const TicketLine('REMITO N°: (PROXIMO)'));
         lines.add(const TicketLine('VENTA ASOC: (PROXIMA)'));
-        lines.add(TicketLine('FECHA: ${DateTime.now().day.toString().padLeft(2,"0")}/${DateTime.now().month.toString().padLeft(2,"0")}/${DateTime.now().year}'));
+        lines.add(TicketLine(
+            'FECHA: ${DateTime.now().day.toString().padLeft(2, "0")}/${DateTime.now().month.toString().padLeft(2, "0")}/${DateTime.now().year}'));
         if (_selectedCustomer != null) {
-          lines.add(TicketLine('CLIENTE: ${_selectedCustomer!.name.toUpperCase()}', isBold: true));
+          lines.add(TicketLine(
+              'CLIENTE: ${_selectedCustomer!.name.toUpperCase()}',
+              isBold: true));
         }
         if (userName != null) {
           lines.add(TicketLine('VENDIÓ: ${userName.toUpperCase()}'));
@@ -601,21 +683,26 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         lines.add(const TicketLine.hr());
         lines.add(const TicketLine('ARTICULOS A RETIRAR:', isBold: true));
         lines.add(const TicketLine.hr());
-        
+
         for (final item in cart) {
-          final qtyStr = item.product.isSoldByWeight ? '${item.quantity.toStringAsFixed(3)} kg' : '${item.quantity.toInt()} un';
-          lines.add(TicketLine(item.product.name.toUpperCase(), rightText: qtyStr, isBold: true));
+          final qtyStr = item.product.isSoldByWeight
+              ? '${item.quantity.toStringAsFixed(3)} kg'
+              : '${item.quantity.toInt()} un';
+          lines.add(TicketLine(item.product.name.toUpperCase(),
+              rightText: qtyStr, isBold: true));
         }
-        
+
         lines.add(const TicketLine.hr(bold: true));
         lines.add(const TicketLine.space());
         lines.add(const TicketLine('FIRMA DESPACHANTE:'));
         lines.add(const TicketLine.space());
-        lines.add(const TicketLine('__________________________', align: TicketAlign.center));
+        lines.add(const TicketLine('__________________________',
+            align: TicketAlign.center));
         lines.add(const TicketLine.space());
         lines.add(const TicketLine('FIRMA CLIENTE / RETIRA:'));
         lines.add(const TicketLine.space());
-        lines.add(const TicketLine('__________________________', align: TicketAlign.center));
+        lines.add(const TicketLine('__________________________',
+            align: TicketAlign.center));
         lines.add(const TicketLine.space());
       }
 
@@ -629,8 +716,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     }
 
     context.read<PosProvider>().setShippingCost(
-      double.tryParse(_shippingCostCtrl.text.replaceAll(',', '.')) ?? 0.0
-    );
+        double.tryParse(_shippingCostCtrl.text.replaceAll(',', '.')) ?? 0.0);
 
     bool success;
 
@@ -675,7 +761,9 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         requiresDispatch: _requiresDispatch,
         fulfillmentStatus: _fulfillmentStatus,
         checkDetails: checkDetailsPayload,
-        deliveryAddress: _deliveryAddressCtrl.text.trim().isEmpty ? null : _deliveryAddressCtrl.text.trim(),
+        deliveryAddress: _deliveryAddressCtrl.text.trim().isEmpty
+            ? null
+            : _deliveryAddressCtrl.text.trim(),
       );
     }
 
@@ -684,7 +772,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         if (posProvider.printerWarning != null) {
           SnackBarService.warning(context, posProvider.printerWarning!);
         }
-        
+
         // Quick Win: Refrescar alertas de stock al finalizar la venta
         try {
           context.read<CatalogProvider>().fetchCriticalAlerts();
@@ -705,13 +793,14 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         // El dialog se cierra con false para devolver el control a _handleCheckout
         // en pos_screen, que es quien muestra el dialog de seguridad naranja y
         // fuerza el logout + navegación a /login.
-        if (errMsg.contains('SESSION_EXPIRED') || errMsg.contains('otro dispositivo')) {
+        if (errMsg.contains('SESSION_EXPIRED') ||
+            errMsg.contains('otro dispositivo')) {
           Navigator.of(context).pop(false);
           return;
         }
 
-        SnackBarService.error(context, errMsg.isNotEmpty ? errMsg : 'Error al procesar el pago');
-
+        SnackBarService.error(
+            context, errMsg.isNotEmpty ? errMsg : 'Error al procesar el pago');
       }
     }
   }
@@ -762,20 +851,29 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(Icons.receipt_long_outlined, color: Colors.blue.shade700, size: 22),
+                    Icon(Icons.receipt_long_outlined,
+                        color: Colors.blue.shade700, size: 22),
                     const SizedBox(width: 8),
                     Text('Cobrar Orden #${widget.saleId}',
-                        style: TextStyle(fontSize: 18, color: Colors.blue.shade700, fontWeight: FontWeight.bold)),
+                        style: TextStyle(
+                            fontSize: 18,
+                            color: Colors.blue.shade700,
+                            fontWeight: FontWeight.bold)),
                   ],
                 ),
                 const SizedBox(height: 8),
               ] else
-                const Text('Desglose de Pago', style: TextStyle(fontSize: 18, color: Colors.black54, fontWeight: FontWeight.bold)),
-              
+                const Text('Desglose de Pago',
+                    style: TextStyle(
+                        fontSize: 18,
+                        color: Colors.black54,
+                        fontWeight: FontWeight.bold)),
+
               const SizedBox(height: 16),
-              
+
               Container(
-                padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+                padding:
+                    const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
                 decoration: BoxDecoration(
                   color: Colors.blue.shade50,
                   borderRadius: BorderRadius.circular(12),
@@ -789,24 +887,47 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                         children: [
                           Column(
                             children: [
-                              const Text('Total Base', style: TextStyle(fontSize: 14, color: Colors.black54)),
-                              Text('\$${widget.total.toCurrency()}', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+                              const Text('Total Base',
+                                  style: TextStyle(
+                                      fontSize: 14, color: Colors.black54)),
+                              Text('\$${widget.total.toCurrency()}',
+                                  style: const TextStyle(
+                                      fontSize: 24,
+                                      fontWeight: FontWeight.bold)),
                             ],
                           ),
-                          Text('+', style: TextStyle(fontSize: 24, color: Colors.black26)),
+                          Text('+',
+                              style: TextStyle(
+                                  fontSize: 24, color: Colors.black26)),
                           Column(
                             children: [
-                              Text('Recargos', style: TextStyle(fontSize: 14, color: Colors.orange.shade700, fontWeight: FontWeight.bold)),
+                              Text('Recargos',
+                                  style: TextStyle(
+                                      fontSize: 14,
+                                      color: Colors.orange.shade700,
+                                      fontWeight: FontWeight.bold)),
                               Text('\$${_totalSurcharge.toCurrency()}',
-                                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.orange.shade700)),
+                                  style: TextStyle(
+                                      fontSize: 24,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.orange.shade700)),
                             ],
                           ),
-                          Text('=', style: TextStyle(fontSize: 24, color: Colors.black26)),
+                          Text('=',
+                              style: TextStyle(
+                                  fontSize: 24, color: Colors.black26)),
                           Column(
                             children: [
-                              const Text('Gran Total', style: TextStyle(fontSize: 14, color: Colors.black54, fontWeight: FontWeight.bold)),
+                              const Text('Gran Total',
+                                  style: TextStyle(
+                                      fontSize: 14,
+                                      color: Colors.black54,
+                                      fontWeight: FontWeight.bold)),
                               Text('\$${_grandTotal.toCurrency()}',
-                                  style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.blue.shade800)),
+                                  style: TextStyle(
+                                      fontSize: 28,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.blue.shade800)),
                             ],
                           ),
                         ],
@@ -816,9 +937,16 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                         children: [
                           Column(
                             children: [
-                              const Text('Total a Cobrar', style: TextStyle(fontSize: 14, color: Colors.black54, fontWeight: FontWeight.bold)),
+                              const Text('Total a Cobrar',
+                                  style: TextStyle(
+                                      fontSize: 14,
+                                      color: Colors.black54,
+                                      fontWeight: FontWeight.bold)),
                               Text('\$${_grandTotal.toCurrency()}',
-                                  style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.blue.shade800)),
+                                  style: TextStyle(
+                                      fontSize: 32,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.blue.shade800)),
                             ],
                           ),
                         ],
@@ -840,184 +968,245 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                         Row(
                           children: [
                             Expanded(
-                          flex: 2,
-                          // Key con method.id garantiza que Flutter recree el widget
-                          // si hacemos revert explícito, evitando estados visuales desincronizados
-                          child: DropdownButtonFormField<PaymentMethod>(
-                            key: ValueKey('dd_${idx}_${line.method?.id}'),
-                            isExpanded: true,
-                            icon: Icon(Icons.arrow_drop_down_rounded, color: Colors.blue.shade700),
-                            decoration: InputDecoration(
-                              labelText: 'Método',
-                              labelStyle: TextStyle(color: Colors.blue.shade700),
-                              filled: true,
-                              fillColor: Colors.blue.shade50,
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(8),
-                                borderSide: BorderSide(color: Colors.blue.shade200),
+                              flex: 2,
+                              // Key con method.id garantiza que Flutter recree el widget
+                              // si hacemos revert explícito, evitando estados visuales desincronizados
+                              child: DropdownButtonFormField<PaymentMethod>(
+                                key: ValueKey('dd_${idx}_${line.method?.id}'),
+                                isExpanded: true,
+                                icon: Icon(Icons.arrow_drop_down_rounded,
+                                    color: Colors.blue.shade700),
+                                decoration: InputDecoration(
+                                  labelText: 'Método',
+                                  labelStyle:
+                                      TextStyle(color: Colors.blue.shade700),
+                                  filled: true,
+                                  fillColor: Colors.blue.shade50,
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                    borderSide:
+                                        BorderSide(color: Colors.blue.shade200),
+                                  ),
+                                  enabledBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                    borderSide:
+                                        BorderSide(color: Colors.blue.shade200),
+                                  ),
+                                  focusedBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                    borderSide: BorderSide(
+                                        color: Colors.blue.shade500, width: 2),
+                                  ),
+                                  contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 12, vertical: 12),
+                                ),
+                                initialValue: line.method,
+                                items: provider.paymentMethods.map((m) {
+                                  final bool isCuentaCorriente =
+                                      m.code == 'cuenta_corriente';
+                                  final bool isCheque = m.code == 'cheque';
+                                  final bool isLocked = (isCuentaCorriente &&
+                                          settings?.features.currentAccounts !=
+                                              true) ||
+                                      (isCheque &&
+                                          settings?.features.checks != true);
+
+                                  return DropdownMenuItem<PaymentMethod>(
+                                    value: m,
+                                    // enabled: true —  el item es clickeable aunque sea Premium.
+                                    // Al hacer click → onChanged muestra el upsell y revierte.
+                                    enabled: true,
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          _getIconForMethod(m.code),
+                                          color: Colors.blue.shade700,
+                                          size: 18,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Text(
+                                            m.name,
+                                            style: TextStyle(
+                                              color: Colors.blue.shade900,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                        // Hint sutil de que es premium —  no deshabilita ni grisea
+                                        if (isLocked) ...[
+                                          const SizedBox(width: 6),
+                                          Tooltip(
+                                            message:
+                                                'Función Pro —  Hacé clic para conocer más',
+                                            child: Icon(
+                                              Icons.workspace_premium,
+                                              size: 15,
+                                              color: Colors.orange.shade400,
+                                            ),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                  );
+                                }).toList(),
+                                onChanged: (val) {
+                                  if (val == null) return;
+
+                                  final bool isCuentaCorrienteSel =
+                                      val.code == 'cuenta_corriente';
+                                  final bool isChequeSel = val.code == 'cheque';
+                                  final bool isLockedSel =
+                                      (isCuentaCorrienteSel &&
+                                              settings?.features
+                                                      .currentAccounts !=
+                                                  true) ||
+                                          (isChequeSel &&
+                                              settings?.features.checks !=
+                                                  true);
+
+                                  if (isLockedSel) {
+                                    _showProUpsellDialog(val.name);
+
+                                    // Revertir explícitamente al último método válido
+                                    final prev =
+                                        (idx < _previousValidMethods.length)
+                                            ? _previousValidMethods[idx]
+                                            : line.method;
+
+                                    // Truco Flutter: Primero aceptamos el valor bloqueado para forzar a
+                                    // que cambie la `ValueKey` y elimine el estado interno bugeado.
+                                    setState(() => line.updateMethod(val,
+                                        defaultCardSurcharge:
+                                            settings?.globalCardPercentage,
+                                        disableSurcharge:
+                                            _isCartAlreadySurcharged));
+
+                                    // En el microsegundo siguiente, restauramos el método verdadero
+                                    // Así Flutter se ve forzado a renderizar desde cero con la opción original.
+                                    WidgetsBinding.instance
+                                        .addPostFrameCallback((_) {
+                                      if (mounted) {
+                                        setState(() => line.updateMethod(prev,
+                                            defaultCardSurcharge:
+                                                settings?.globalCardPercentage,
+                                            disableSurcharge:
+                                                _isCartAlreadySurcharged));
+                                      }
+                                    });
+                                    return;
+                                  }
+                                  setState(() {
+                                    // Guardar el nuevo método como "previo válido" antes de cambiar
+                                    if (idx < _previousValidMethods.length) {
+                                      _previousValidMethods[idx] = val;
+                                    }
+                                    line.updateMethod(val,
+                                        defaultCardSurcharge:
+                                            settings?.globalCardPercentage,
+                                        disableSurcharge:
+                                            _isCartAlreadySurcharged);
+                                  });
+                                  // Sincronizar el campo de efectivo recibido.
+                                  // Si el método elegido es efectivo → auto-foco para que
+                                  // el cajero tipee cuánto le dan.
+                                  _syncCashField(autoFocus: val.isCash);
+                                },
                               ),
-                              enabledBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(8),
-                                borderSide: BorderSide(color: Colors.blue.shade200),
-                              ),
-                              focusedBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(8),
-                                borderSide: BorderSide(color: Colors.blue.shade500, width: 2),
-                              ),
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                             ),
-                            value: line.method,
-                            items: provider.paymentMethods.map((m) {
-                              final bool isCuentaCorriente = m.code == 'cuenta_corriente';
-                              final bool isCheque = m.code == 'cheque';
-                              final bool isLocked = (isCuentaCorriente && settings?.features.currentAccounts != true) || (isCheque && settings?.features.checks != true);
-                              
-                              return DropdownMenuItem<PaymentMethod>(
-                                value: m,
-                                // enabled: true —  el item es clickeable aunque sea Premium.
-                                // Al hacer click → onChanged muestra el upsell y revierte.
-                                enabled: true,
-                                child: Row(
+                            const SizedBox(width: 8),
+                            Expanded(
+                              flex: 2,
+                              child: TextFormField(
+                                controller: line.controller,
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                        decimal: true),
+                                decoration: InputDecoration(
+                                  labelText: 'Monto a Cubrir',
+                                  prefixText: '\$ ',
+                                  border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(8)),
+                                ),
+                              ),
+                            ),
+                            if (line.method?.isCash != true) ...[
+                              const SizedBox(width: 8),
+                              SizedBox(
+                                width: 64,
+                                child: Focus(
+                                  focusNode: line.percentageFocus,
+                                  onFocusChange: (hasFocus) {
+                                    if (!hasFocus && line.method != null) {
+                                      final newPct = double.tryParse(line
+                                              .percentageController.text
+                                              .replaceAll(',', '.')) ??
+                                          0.0;
+                                      if (newPct !=
+                                          line.method!.surchargeValue) {
+                                        provider.updatePaymentMethodSurcharge(
+                                            line.method!.id, newPct);
+                                      }
+                                    }
+                                  },
+                                  child: TextFormField(
+                                    controller: line.percentageController,
+                                    readOnly: _isCartAlreadySurcharged,
+                                    keyboardType:
+                                        const TextInputType.numberWithOptions(
+                                            decimal: true),
+                                    decoration: InputDecoration(
+                                      labelText: '% Int.',
+                                      labelStyle: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.orange.shade700),
+                                      border: OutlineInputBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(8)),
+                                      contentPadding:
+                                          const EdgeInsets.symmetric(
+                                              horizontal: 8, vertical: 12),
+                                    ),
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.bold),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Container(
+                                width: 80,
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: Colors.orange.shade50,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border:
+                                      Border.all(color: Colors.orange.shade200),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.end,
                                   children: [
-                                    Icon(
-                                      _getIconForMethod(m.code),
-                                      color: Colors.blue.shade700,
-                                      size: 18,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: Text(
-                                        m.name,
+                                    const Text('Extra',
                                         style: TextStyle(
-                                          color: Colors.blue.shade900,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                    // Hint sutil de que es premium —  no deshabilita ni grisea
-                                    if (isLocked) ...[
-                                      const SizedBox(width: 6),
-                                      Tooltip(
-                                        message: 'Función Pro —  Hacé clic para conocer más',
-                                        child: Icon(
-                                          Icons.workspace_premium,
-                                          size: 15,
-                                          color: Colors.orange.shade400,
-                                        ),
-                                      ),
-                                    ],
+                                            fontSize: 10,
+                                            color: Colors.orange)),
+                                    Text('\$${line.surcharge.toCurrency()}',
+                                        style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.orange.shade800)),
                                   ],
                                 ),
-                              );
-                            }).toList(),
-                            onChanged: (val) {
-                              if (val == null) return;
-                              
-                              final bool isCuentaCorrienteSel = val.code == 'cuenta_corriente';
-                              final bool isChequeSel = val.code == 'cheque';
-                              final bool isLockedSel = (isCuentaCorrienteSel && settings?.features.currentAccounts != true) || (isChequeSel && settings?.features.checks != true);
-
-                              if (isLockedSel) {
-                                _showProUpsellDialog(val.name);
-                                
-                                // Revertir explícitamente al último método válido
-                                final prev = (idx < _previousValidMethods.length)
-                                    ? _previousValidMethods[idx]
-                                    : line.method;
-                                    
-                                // Truco Flutter: Primero aceptamos el valor bloqueado para forzar a 
-                                // que cambie la `ValueKey` y elimine el estado interno bugeado.
-                                setState(() => line.updateMethod(val, defaultCardSurcharge: settings?.globalCardPercentage, disableSurcharge: _isCartAlreadySurcharged));
-                                
-                                // En el microsegundo siguiente, restauramos el método verdadero
-                                // Así Flutter se ve forzado a renderizar desde cero con la opción original.
-                                WidgetsBinding.instance.addPostFrameCallback((_) {
-                                  if (mounted) {
-                                    setState(() => line.updateMethod(prev, defaultCardSurcharge: settings?.globalCardPercentage, disableSurcharge: _isCartAlreadySurcharged));
-                                  }
-                                });
-                                return;
-                              }
-                              setState(() {
-                                // Guardar el nuevo método como "previo válido" antes de cambiar
-                                if (idx < _previousValidMethods.length) {
-                                  _previousValidMethods[idx] = val;
-                                }
-                                line.updateMethod(val, defaultCardSurcharge: settings?.globalCardPercentage, disableSurcharge: _isCartAlreadySurcharged);
-                              });
-                              // Sincronizar el campo de efectivo recibido.
-                              // Si el método elegido es efectivo → auto-foco para que
-                              // el cajero tipee cuánto le dan.
-                              _syncCashField(autoFocus: val.isCash);
-                            },
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          flex: 2,
-                          child: TextFormField(
-                            controller: line.controller,
-                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                            decoration: InputDecoration(
-                              labelText: 'Monto a Cubrir',
-                              prefixText: '\$ ',
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                            ),
-                          ),
-                        ),
-                        if (line.method?.isCash != true) ...[
-                          const SizedBox(width: 8),
-                          SizedBox(
-                            width: 64,
-                            child: Focus(
-                              focusNode: line.percentageFocus,
-                              onFocusChange: (hasFocus) {
-                                if (!hasFocus && line.method != null) {
-                                  final newPct = double.tryParse(line.percentageController.text.replaceAll(',', '.')) ?? 0.0;
-                                  if (newPct != line.method!.surchargeValue) {
-                                    provider.updatePaymentMethodSurcharge(line.method!.id, newPct);
-                                  }
-                                }
-                              },
-                              child: TextFormField(
-                                controller: line.percentageController,
-                                readOnly: _isCartAlreadySurcharged,
-                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                decoration: InputDecoration(
-                                  labelText: '% Int.',
-                                  labelStyle: TextStyle(fontSize: 12, color: Colors.orange.shade700),
-                                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                                  contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-                                ),
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(fontWeight: FontWeight.bold),
                               ),
+                            ],
+                            const SizedBox(width: 8),
+                            IconButton(
+                              icon: const Icon(Icons.remove_circle_outline,
+                                  color: Colors.red),
+                              onPressed: _lines.length > 1
+                                  ? () => _removeLine(idx)
+                                  : null,
                             ),
-                          ),
-                          const SizedBox(width: 8),
-                          Container(
-                            width: 80,
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: Colors.orange.shade50,
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: Colors.orange.shade200),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                const Text('Extra', style: TextStyle(fontSize: 10, color: Colors.orange)),
-                                Text('\$${line.surcharge.toCurrency()}', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.orange.shade800)),
-                              ],
-                            ),
-                          ),
-                        ],
-                        const SizedBox(width: 8),
-                        IconButton(
-                          icon: const Icon(Icons.remove_circle_outline, color: Colors.red),
-                          onPressed: _lines.length > 1 ? () => _removeLine(idx) : null,
-                        ),
                           ],
                         ),
                         // ── Formulario de cheque (se despliega cuando code == 'cheque') ──
@@ -1033,29 +1222,106 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Text('Detalles del Cheque', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.blue)),
+                                const Text('Detalles del Cheque',
+                                    style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                        color: Colors.blue)),
                                 const SizedBox(height: 8),
                                 Row(
                                   children: [
-                                    Expanded(child: TextField(controller: line.checkBankController, decoration: InputDecoration(labelText: 'Banco', isDense: true, border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)), filled: true, fillColor: Colors.white))),
+                                    Expanded(
+                                        child: TextField(
+                                            controller:
+                                                line.checkBankController,
+                                            decoration: InputDecoration(
+                                                labelText: 'Banco',
+                                                isDense: true,
+                                                border: OutlineInputBorder(
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            8)),
+                                                filled: true,
+                                                fillColor: Colors.white))),
                                     const SizedBox(width: 8),
-                                    Expanded(child: TextField(controller: line.checkNumberController, decoration: InputDecoration(labelText: 'Nro Cheque', isDense: true, border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)), filled: true, fillColor: Colors.white))),
+                                    Expanded(
+                                        child: TextField(
+                                            controller:
+                                                line.checkNumberController,
+                                            decoration: InputDecoration(
+                                                labelText: 'Nro Cheque',
+                                                isDense: true,
+                                                border: OutlineInputBorder(
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            8)),
+                                                filled: true,
+                                                fillColor: Colors.white))),
                                   ],
                                 ),
                                 const SizedBox(height: 8),
                                 Row(
                                   children: [
-                                    Expanded(child: TextField(controller: line.checkIssuerCuitController, decoration: InputDecoration(labelText: 'CUIT Firmante', isDense: true, border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)), filled: true, fillColor: Colors.white))),
+                                    Expanded(
+                                        child: TextField(
+                                            controller:
+                                                line.checkIssuerCuitController,
+                                            decoration: InputDecoration(
+                                                labelText: 'CUIT Firmante',
+                                                isDense: true,
+                                                border: OutlineInputBorder(
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            8)),
+                                                filled: true,
+                                                fillColor: Colors.white))),
                                     const SizedBox(width: 8),
-                                    Expanded(child: TextField(controller: line.checkIssuerNameController, decoration: InputDecoration(labelText: 'Nombre Firmante', isDense: true, border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)), filled: true, fillColor: Colors.white))),
+                                    Expanded(
+                                        child: TextField(
+                                            controller:
+                                                line.checkIssuerNameController,
+                                            decoration: InputDecoration(
+                                                labelText: 'Nombre Firmante',
+                                                isDense: true,
+                                                border: OutlineInputBorder(
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            8)),
+                                                filled: true,
+                                                fillColor: Colors.white))),
                                   ],
                                 ),
                                 const SizedBox(height: 8),
                                 Row(
                                   children: [
-                                    Expanded(child: TextField(controller: line.checkIssueDateController, decoration: InputDecoration(labelText: 'Emisión (YYYY-MM-DD)', isDense: true, border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)), filled: true, fillColor: Colors.white))),
+                                    Expanded(
+                                        child: TextField(
+                                            controller:
+                                                line.checkIssueDateController,
+                                            decoration: InputDecoration(
+                                                labelText:
+                                                    'Emisión (YYYY-MM-DD)',
+                                                isDense: true,
+                                                border: OutlineInputBorder(
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            8)),
+                                                filled: true,
+                                                fillColor: Colors.white))),
                                     const SizedBox(width: 8),
-                                    Expanded(child: TextField(controller: line.checkPaymentDateController, decoration: InputDecoration(labelText: 'Cobro (YYYY-MM-DD)', isDense: true, border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)), filled: true, fillColor: Colors.white))),
+                                    Expanded(
+                                        child: TextField(
+                                            controller:
+                                                line.checkPaymentDateController,
+                                            decoration: InputDecoration(
+                                                labelText: 'Cobro (YYYY-MM-DD)',
+                                                isDense: true,
+                                                border: OutlineInputBorder(
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            8)),
+                                                filled: true,
+                                                fillColor: Colors.white))),
                                   ],
                                 ),
                               ],
@@ -1066,7 +1332,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                   );
                 }).toList(),
               ),
-              
+
               Align(
                 alignment: Alignment.centerLeft,
                 child: TextButton.icon(
@@ -1081,14 +1347,18 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('Saldo Pendiente a Cubrir:', style: TextStyle(fontSize: 16)),
+                  const Text('Saldo Pendiente a Cubrir:',
+                      style: TextStyle(fontSize: 16)),
                   Text(
-                    _pendingBalance > 0 ? '\$${_pendingBalance.toCurrency()}' : '\$0.00',
+                    _pendingBalance > 0
+                        ? '\$${_pendingBalance.toCurrency()}'
+                        : '\$0.00',
                     style: TextStyle(
-                      fontSize: 20, 
-                      fontWeight: FontWeight.bold, 
-                      color: _pendingBalance > 0.01 ? Colors.red.shade700 : Colors.green.shade700
-                    ),
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: _pendingBalance > 0.01
+                            ? Colors.red.shade700
+                            : Colors.green.shade700),
                   ),
                 ],
               ),
@@ -1102,22 +1372,40 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                   child: Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: _selectedCustomer != null ? Colors.purple.shade50 : Colors.orange.shade50,
+                      color: _selectedCustomer != null
+                          ? Colors.purple.shade50
+                          : Colors.orange.shade50,
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: _selectedCustomer != null ? Colors.purple.shade300 : Colors.orange.shade400),
+                      border: Border.all(
+                          color: _selectedCustomer != null
+                              ? Colors.purple.shade300
+                              : Colors.orange.shade400),
                     ),
                     child: Row(
                       children: [
-                        Icon(Icons.person, color: _selectedCustomer != null ? Colors.purple : Colors.orange),
+                        Icon(Icons.person,
+                            color: _selectedCustomer != null
+                                ? Colors.purple
+                                : Colors.orange),
                         const SizedBox(width: 12),
                         Expanded(
                           child: _selectedCustomer == null
-                              ? Text('Seleccionar Cliente (Cta. Cte.)', style: TextStyle(color: Colors.orange.shade700, fontWeight: FontWeight.bold))
+                              ? Text('Seleccionar Cliente (Cta. Cte.)',
+                                  style: TextStyle(
+                                      color: Colors.orange.shade700,
+                                      fontWeight: FontWeight.bold))
                               : Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text(_selectedCustomer!.name, style: TextStyle(color: Colors.purple.shade700, fontWeight: FontWeight.bold)),
-                                    Text(_selectedCustomer!.isInternalAccount ? 'Crédito disp: Ilimitado (Cuenta Interna)' : 'Crédito disp: \$${_availableCredit.toCurrency()}', style: TextStyle(fontSize: 12)),
+                                    Text(_selectedCustomer!.name,
+                                        style: TextStyle(
+                                            color: Colors.purple.shade700,
+                                            fontWeight: FontWeight.bold)),
+                                    Text(
+                                        _selectedCustomer!.isInternalAccount
+                                            ? 'Crédito disp: Ilimitado (Cuenta Interna)'
+                                            : 'Crédito disp: \$${_availableCredit.toCurrency()}',
+                                        style: TextStyle(fontSize: 12)),
                                   ],
                                 ),
                         ),
@@ -1136,7 +1424,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                       child: TextField(
                         controller: _cashTenderedCtrl,
                         focusNode: _cashTenderedFocus,
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true),
                         textInputAction: TextInputAction.done,
                         onTap: () {
                           // Selecciona todo el texto pre-cargado para sobreescribirlo rápido
@@ -1151,32 +1440,53 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                           prefixText: '\$ ',
                           filled: true,
                           fillColor: Colors.green.shade50,
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                          border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8)),
                           focusedBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(8),
-                            borderSide: BorderSide(color: Colors.green.shade600, width: 2),
+                            borderSide: BorderSide(
+                                color: Colors.green.shade600, width: 2),
                           ),
                           helperText: 'Ingresá el monto que entrega el cliente',
-                          helperStyle: TextStyle(fontSize: 11, color: Colors.green.shade700),
+                          helperStyle: TextStyle(
+                              fontSize: 11, color: Colors.green.shade700),
                         ),
                       ),
                     ),
                     const SizedBox(width: 16),
                     Expanded(
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 12),
                         decoration: BoxDecoration(
-                          color: _change >= 0 ? Colors.green.shade50 : Colors.red.shade50,
+                          color: _change >= 0
+                              ? Colors.green.shade50
+                              : Colors.red.shade50,
                           borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: _change >= 0 ? Colors.green.shade200 : Colors.red.shade200),
+                          border: Border.all(
+                              color: _change >= 0
+                                  ? Colors.green.shade200
+                                  : Colors.red.shade200),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
-                            Text('Vuelto', style: TextStyle(fontSize: 12, color: _change >= 0 ? Colors.green.shade700 : Colors.red.shade700)),
+                            Text('Vuelto',
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    color: _change >= 0
+                                        ? Colors.green.shade700
+                                        : Colors.red.shade700)),
                             Text(
-                              _change >= 0 ? '\$${_change.toCurrency()}' : '-\$${_change.abs().toCurrency()}',
-                              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: _change >= 0 ? Colors.green.shade700 : Colors.red.shade700),
+                              _change >= 0
+                                  ? '\$${_change.toCurrency()}'
+                                  : '-\$${_change.abs().toCurrency()}',
+                              style: TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                  color: _change >= 0
+                                      ? Colors.green.shade700
+                                      : Colors.red.shade700),
                             ),
                           ],
                         ),
@@ -1192,7 +1502,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                 children: [
                   Expanded(
                     child: CheckboxListTile(
-                      title: const Text('Imprimir Comprobante', style: TextStyle(fontWeight: FontWeight.bold)),
+                      title: const Text('Imprimir Comprobante',
+                          style: TextStyle(fontWeight: FontWeight.bold)),
                       value: _printReceipt,
                       activeColor: Colors.blue.shade600,
                       contentPadding: EdgeInsets.zero,
@@ -1218,12 +1529,15 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                             onChanged: (val) async {
                               if (val != null) {
                                 setState(() => _showPreview = val);
-                                final prefs = await SharedPreferences.getInstance();
-                                await prefs.setBool('show_preview_receipt', val);
+                                final prefs =
+                                    await SharedPreferences.getInstance();
+                                await prefs.setBool(
+                                    'show_preview_receipt', val);
                               }
                             },
                           ),
-                          const Text('Vista Previa', style: TextStyle(fontSize: 13)),
+                          const Text('Vista Previa',
+                              style: TextStyle(fontSize: 13)),
                           const SizedBox(width: 8),
                         ],
                       ),
@@ -1246,12 +1560,14 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                     onTap: () {
                       setState(() {
                         _requiresDispatch = !_requiresDispatch;
-                        context.read<PosProvider>().setCurrentLogistics(_requiresDispatch, _fulfillmentStatus);
+                        context.read<PosProvider>().setCurrentLogistics(
+                            _requiresDispatch, _fulfillmentStatus);
                         _syncPaymentsWithShipping();
                       });
                     },
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 4, vertical: 6),
                       child: Row(
                         children: [
                           AnimatedContainer(
@@ -1281,7 +1597,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                             ),
                           ),
                           const SizedBox(width: 10),
-                          const Icon(Icons.local_shipping_outlined, size: 18, color: Colors.black54),
+                          const Icon(Icons.local_shipping_outlined,
+                              size: 18, color: Colors.black54),
                           const SizedBox(width: 6),
                           Expanded(
                             child: Column(
@@ -1316,11 +1633,11 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                     ),
                   ),
                 ),
-                
                 if (_requiresDispatch) ...[
                   const SizedBox(height: 12),
                   Container(
-                    margin: const EdgeInsets.only(left: 48), // Indentar a la altura del texto
+                    margin: const EdgeInsets.only(
+                        left: 48), // Indentar a la altura del texto
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
                       color: Colors.orange.shade50,
@@ -1332,7 +1649,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                       children: [
                         const Text(
                           'Estado de Entrega:',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 12),
                         ),
                         const SizedBox(height: 4),
                         RadioGroup<String>(
@@ -1341,7 +1659,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                             if (val != null) {
                               setState(() {
                                 _fulfillmentStatus = val;
-                                context.read<PosProvider>().setCurrentLogistics(_requiresDispatch, _fulfillmentStatus);
+                                context.read<PosProvider>().setCurrentLogistics(
+                                    _requiresDispatch, _fulfillmentStatus);
                                 _syncPaymentsWithShipping();
                               });
                             }
@@ -1350,7 +1669,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                             children: [
                               Expanded(
                                 child: RadioListTile<String>(
-                                  title: const Text('A Preparar (Pendiente)', style: TextStyle(fontSize: 12)),
+                                  title: const Text('A Preparar (Pendiente)',
+                                      style: TextStyle(fontSize: 12)),
                                   value: 'pending',
                                   activeColor: Colors.orange.shade700,
                                   contentPadding: EdgeInsets.zero,
@@ -1360,7 +1680,11 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                               ),
                               Expanded(
                                 child: RadioListTile<String>(
-                                  title: const Text('Se lo lleva AHORA', style: TextStyle(fontSize: 12, color: Colors.green, fontWeight: FontWeight.bold)),
+                                  title: const Text('Se lo lleva AHORA',
+                                      style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.green,
+                                          fontWeight: FontWeight.bold)),
                                   value: 'delivered',
                                   activeColor: Colors.green,
                                   contentPadding: EdgeInsets.zero,
@@ -1374,69 +1698,79 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                       ],
                     ),
                   ),
-                    if (_requiresDispatch && _fulfillmentStatus == 'pending') ...[
-                      const SizedBox(height: 12),
-                      Container(
-                        margin: const EdgeInsets.only(left: 48),
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: Colors.blueGrey.shade50,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Column(
-                          children: [
-                            Row(
-                              children: [
-                                const Icon(Icons.local_shipping_outlined, size: 18, color: Colors.blueGrey),
-                                const SizedBox(width: 8),
-                                const Text('Flete / Envío:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                                const Spacer(),
-                                SizedBox(
-                                  width: 120,
-                                  height: 36,
-                                  child: TextField(
-                                    controller: _shippingCostCtrl,
-                                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                    textAlign: TextAlign.right,
-                                    decoration: const InputDecoration(
-                                      prefixText: '\$ ',
-                                      isDense: true,
-                                      contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                                      border: OutlineInputBorder(),
-                                    ),
-                                    onChanged: (val) {
-                                      // El listener de _shippingCostCtrl ya dispara setState() y _syncPaymentsWithShipping()
-                                    },
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 12),
-                            Row(
-                              children: [
-                                const Icon(Icons.location_on_outlined, size: 18, color: Colors.blueGrey),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: TextField(
-                                    controller: _deliveryAddressCtrl,
-                                    decoration: const InputDecoration(
-                                      labelText: 'Dirección de Entrega (Opcional)',
-                                      isDense: true,
-                                      contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                                      border: OutlineInputBorder(),
-                                      filled: true,
-                                      fillColor: Colors.white,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
+                  if (_requiresDispatch && _fulfillmentStatus == 'pending') ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      margin: const EdgeInsets.only(left: 48),
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.blueGrey.shade50,
+                        borderRadius: BorderRadius.circular(8),
                       ),
-                    ],
+                      child: Column(
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.local_shipping_outlined,
+                                  size: 18, color: Colors.blueGrey),
+                              const SizedBox(width: 8),
+                              const Text('Flete / Envío:',
+                                  style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13)),
+                              const Spacer(),
+                              SizedBox(
+                                width: 120,
+                                height: 36,
+                                child: TextField(
+                                  controller: _shippingCostCtrl,
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                          decimal: true),
+                                  textAlign: TextAlign.right,
+                                  decoration: const InputDecoration(
+                                    prefixText: '\$ ',
+                                    isDense: true,
+                                    contentPadding: EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 8),
+                                    border: OutlineInputBorder(),
+                                  ),
+                                  onChanged: (val) {
+                                    // El listener de _shippingCostCtrl ya dispara setState() y _syncPaymentsWithShipping()
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              const Icon(Icons.location_on_outlined,
+                                  size: 18, color: Colors.blueGrey),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: TextField(
+                                  controller: _deliveryAddressCtrl,
+                                  decoration: const InputDecoration(
+                                    labelText:
+                                        'Dirección de Entrega (Opcional)',
+                                    isDense: true,
+                                    contentPadding: EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 8),
+                                    border: OutlineInputBorder(),
+                                    filled: true,
+                                    fillColor: Colors.white,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
                   ],
-                  const SizedBox(height: 8),
+                ],
+                const SizedBox(height: 8),
               ],
 
               const SizedBox(height: 24),
@@ -1446,9 +1780,11 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                 children: [
                   Expanded(
                     child: OutlinedButton(
-                      style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16)),
+                      style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 16)),
                       onPressed: () => Navigator.pop(context),
-                      child: const Text('Cancelar', style: TextStyle(fontSize: 16)),
+                      child: const Text('Cancelar',
+                          style: TextStyle(fontSize: 16)),
                     ),
                   ),
                   const SizedBox(width: 16),
@@ -1460,12 +1796,21 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                         padding: const EdgeInsets.symmetric(vertical: 16),
                         disabledBackgroundColor: Colors.grey.shade300,
                       ),
-                      onPressed: (_canSubmit && !provider.isLoading) ? _processCheckout : null,
+                      onPressed: (_canSubmit && !provider.isLoading)
+                          ? _processCheckout
+                          : null,
                       child: provider.isLoading
-                          ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                          ? const SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(
+                                  color: Colors.white, strokeWidth: 2))
                           : Text(
                               isPending ? 'CONFIRMAR COBRO' : 'CONFIRMAR PAGO',
-                              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                              style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white),
                             ),
                     ),
                   ),
@@ -1509,8 +1854,12 @@ class _CustomerPickerDialogState extends State<_CustomerPickerDialog> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text('Seleccionar Cliente', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)),
+                const Text('Seleccionar Cliente',
+                    style:
+                        TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(context)),
               ],
             ),
             const SizedBox(height: 16),
@@ -1519,7 +1868,8 @@ class _CustomerPickerDialogState extends State<_CustomerPickerDialog> {
               decoration: InputDecoration(
                 hintText: 'Buscar por nombre, DNI o Tel...',
                 prefixIcon: const Icon(Icons.search),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                border:
+                    OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
               ),
               onChanged: (_) => setState(() {}),
             ),
@@ -1553,7 +1903,9 @@ class _CustomerPickerDialogState extends State<_CustomerPickerDialog> {
                   }).toList();
 
                   if (list.isEmpty) {
-                    return const Center(child: Text('No se encontraron clientes.', style: TextStyle(color: Colors.grey)));
+                    return const Center(
+                        child: Text('No se encontraron clientes.',
+                            style: TextStyle(color: Colors.grey)));
                   }
 
                   return ListView.separated(
@@ -1564,10 +1916,14 @@ class _CustomerPickerDialogState extends State<_CustomerPickerDialog> {
                       return ListTile(
                         leading: CircleAvatar(
                           backgroundColor: Colors.blue.shade100,
-                          child: Text(c.name[0].toUpperCase(), style: const TextStyle(color: Colors.blue)),
+                          child: Text(c.name[0].toUpperCase(),
+                              style: const TextStyle(color: Colors.blue)),
                         ),
-                        title: Text(c.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                        subtitle: Text('ID: ${c.documentNumber} - Tel: ${c.phone ?? '-'}'),
+                        title: Text(c.name,
+                            style:
+                                const TextStyle(fontWeight: FontWeight.bold)),
+                        subtitle: Text(
+                            'ID: ${c.documentNumber} - Tel: ${c.phone ?? '-'}'),
                         onTap: () => widget.onSelected(c),
                       );
                     },

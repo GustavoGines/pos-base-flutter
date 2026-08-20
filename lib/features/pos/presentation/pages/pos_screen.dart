@@ -119,7 +119,7 @@ class _PosScreenState extends State<PosScreen> {
         // We use localhost if it's running on the same PC, or you can extract the backend IP from ApiClient.
         // For simplicity in a Laragon local environment, typically the backend is on the same machine.
         // Wait, if backend is on localhost, then 127.0.0.1 is correct for desktop app!
-        host: "127.0.0.1", 
+        host: Uri.parse(AppConfig.kApiBaseUrl).host, 
         port: 8080,
         wsPort: 8080,
         onEvent: _onReverbEvent,

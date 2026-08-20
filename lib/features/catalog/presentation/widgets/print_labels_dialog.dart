@@ -77,7 +77,9 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
     // activamos el check automáticamente — el cajero quiere esas fechas.
     // Para productos simples sin fechas (gaseosas, snacks), arranca desmarcado.
     _printDates = widget.products.any(
-      (p) => p.isSoldByWeight || (p.vencimientoDias != null && p.vencimientoDias! > 0),
+      (p) =>
+          p.isSoldByWeight ||
+          (p.vencimientoDias != null && p.vencimientoDias! > 0),
     );
     // Leer settings una sola vez para tenerlos disponibles en el motor PDF
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -111,8 +113,12 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
 
   // ── Callback para PdfPreview — ignora el PdfPageFormat que pasa el widget
   //    y usa siempre el formato elegido por el usuario en el panel izquierdo
-  Future<Uint8List> _buildPdfForPreview(PdfPageFormat _) =>
-      _buildPdfBytes(companyName: _companyName, companyAddress: _companyAddress, companyPhone: _companyPhone, companyTaxId: _companyTaxId, printDates: _printDates);
+  Future<Uint8List> _buildPdfForPreview(PdfPageFormat _) => _buildPdfBytes(
+      companyName: _companyName,
+      companyAddress: _companyAddress,
+      companyPhone: _companyPhone,
+      companyTaxId: _companyTaxId,
+      printDates: _printDates);
 
   // ── Motor PDF principal ─────────────────────────────────────────────
   Future<Uint8List> _buildPdfBytes({
@@ -134,11 +140,14 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
       try {
         // Intentar cargar Roboto desde Google Fonts (Cacheado)
         // Usar un timeout corto para no bloquear la UI si hay problemas de red
-        ttfRegular = _robotoRegular ??= await PdfGoogleFonts.robotoRegular().timeout(const Duration(seconds: 5));
-        ttfBold = _robotoBold ??= await PdfGoogleFonts.robotoBold().timeout(const Duration(seconds: 5));
+        ttfRegular = _robotoRegular ??= await PdfGoogleFonts.robotoRegular()
+            .timeout(const Duration(seconds: 5));
+        ttfBold = _robotoBold ??= await PdfGoogleFonts.robotoBold()
+            .timeout(const Duration(seconds: 5));
       } catch (e) {
         // Fallback a Helvetica si hay error de assets/red/timeout para evitar crash fatal
-        debugPrint('Fallo al cargar fuentes remotas o manifiesto de assets: $e');
+        debugPrint(
+            'Fallo al cargar fuentes remotas o manifiesto de assets: $e');
         _fontLoadingFailed = true; // No volver a intentar en esta sesión
         ttfRegular = pw.Font.helvetica();
         ttfBold = pw.Font.helveticaBold();
@@ -157,20 +166,22 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
       return 45.0;
     }
 
-    pw.Widget buildLabel(Product product, {required double heightLabel, required double widthLabel}) {
+    pw.Widget buildLabel(Product product,
+        {required double heightLabel, required double widthLabel}) {
       final bool isThermal = _paperFormat.startsWith('thermal');
       final double? customWeight = _weights[product.id];
-      final bool hasWeight = product.isSoldByWeight && customWeight != null && customWeight > 0;
+      final bool hasWeight =
+          product.isSoldByWeight && customWeight != null && customWeight > 0;
 
       // Determinamos el PLU numérico: Priorizamos el Código Interno (si es numérico), sino usamos el ID
       final int numericPlu = int.tryParse(product.internalCode) ?? product.id;
       final String pluStr = numericPlu.toString().padLeft(5, '0');
 
-      final double finalPrice = hasWeight 
+      final double finalPrice = hasWeight
           ? product.sellingPrice * (customWeight / 1000)
           : product.sellingPrice;
 
-      final String ean13 = hasWeight 
+      final String ean13 = hasWeight
           ? Ean13Generator.generateForScale(numericPlu, finalPrice)
           : Ean13Generator.generate(
               plu: numericPlu,
@@ -183,7 +194,8 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
           ? dateFmt.format(now.add(Duration(days: product.vencimientoDias!)))
           : null;
 
-      final String precioStr = NumberFormat('#,##0', 'es_AR').format(finalPrice);
+      final String precioStr =
+          NumberFormat('#,##0', 'es_AR').format(finalPrice);
       final bool isValidEan = Ean13Generator.isValid(ean13);
 
       // ── Layout completamente plano: un solo Column min-size, sin spaceBetween
@@ -197,13 +209,17 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
             width: widthLabel * PdfPageFormat.mm,
             height: heightLabel * PdfPageFormat.mm,
             padding: pw.EdgeInsets.symmetric(
-              horizontal: isThermal ? 1.0 * PdfPageFormat.mm : 1.5 * PdfPageFormat.mm,
-              vertical:   isThermal ? 1.0 * PdfPageFormat.mm : 1.5 * PdfPageFormat.mm,
+              horizontal:
+                  isThermal ? 1.0 * PdfPageFormat.mm : 1.5 * PdfPageFormat.mm,
+              vertical:
+                  isThermal ? 1.0 * PdfPageFormat.mm : 1.5 * PdfPageFormat.mm,
             ),
-            decoration: isThermal ? null : pw.BoxDecoration(
-              border: pw.Border.all(color: PdfColors.grey600, width: 0.5),
-              borderRadius: pw.BorderRadius.circular(2),
-            ),
+            decoration: isThermal
+                ? null
+                : pw.BoxDecoration(
+                    border: pw.Border.all(color: PdfColors.grey600, width: 0.5),
+                    borderRadius: pw.BorderRadius.circular(2),
+                  ),
             child: pw.Column(
               mainAxisSize: pw.MainAxisSize.min,
               crossAxisAlignment: pw.CrossAxisAlignment.stretch,
@@ -211,7 +227,8 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
                 // ── NOMBRE ──
                 pw.Text(
                   product.name.toUpperCase(),
-                  style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold),
+                  style: pw.TextStyle(
+                      fontSize: 11, fontWeight: pw.FontWeight.bold),
                   textAlign: pw.TextAlign.center,
                   maxLines: 2,
                   overflow: pw.TextOverflow.clip,
@@ -222,7 +239,8 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
                 if (hasWeight) ...[
                   pw.Text(
                     '${customWeight.toInt()} GS',
-                    style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold),
+                    style: pw.TextStyle(
+                        fontSize: 10, fontWeight: pw.FontWeight.bold),
                     textAlign: pw.TextAlign.center,
                   ),
                   pw.SizedBox(height: 1 * PdfPageFormat.mm),
@@ -233,10 +251,13 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
                   pw.Row(
                     mainAxisAlignment: pw.MainAxisAlignment.center,
                     children: [
-                      pw.Text('ENV: $envStr', style: const pw.TextStyle(fontSize: 7)),
+                      pw.Text('ENV: $envStr',
+                          style: const pw.TextStyle(fontSize: 7)),
                       if (vtoStr != null) ...[
                         pw.SizedBox(width: 3 * PdfPageFormat.mm),
-                        pw.Text('VTO: $vtoStr', style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold)),
+                        pw.Text('VTO: $vtoStr',
+                            style: pw.TextStyle(
+                                fontSize: 7, fontWeight: pw.FontWeight.bold)),
                       ],
                     ],
                   ),
@@ -249,8 +270,11 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
                     mainAxisSize: pw.MainAxisSize.min,
                     crossAxisAlignment: pw.CrossAxisAlignment.start,
                     children: [
-                      pw.Text('UNIDADES', style: const pw.TextStyle(fontSize: 5)),
-                      pw.Text('1', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
+                      pw.Text('UNIDADES',
+                          style: const pw.TextStyle(fontSize: 5)),
+                      pw.Text('1',
+                          style: pw.TextStyle(
+                              fontSize: 9, fontWeight: pw.FontWeight.bold)),
                     ],
                   )
                 else
@@ -260,8 +284,10 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
                     children: [
                       pw.Text('\$/KG', style: const pw.TextStyle(fontSize: 5)),
                       pw.Text(
-                        NumberFormat('#,##0', 'es_AR').format(product.sellingPrice),
-                        style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold),
+                        NumberFormat('#,##0', 'es_AR')
+                            .format(product.sellingPrice),
+                        style: pw.TextStyle(
+                            fontSize: 9, fontWeight: pw.FontWeight.bold),
                       ),
                     ],
                   ),
@@ -279,14 +305,21 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
                         mainAxisSize: pw.MainAxisSize.min,
                         crossAxisAlignment: pw.CrossAxisAlignment.start,
                         children: [
-                          pw.Text('PLU:$pluStr', style: const pw.TextStyle(fontSize: 5)),
+                          pw.Text('PLU:$pluStr',
+                              style: const pw.TextStyle(fontSize: 5)),
                           pw.SizedBox(height: 0.5 * PdfPageFormat.mm),
                           pw.BarcodeWidget(
-                            barcode: isValidEan ? pw.Barcode.ean13() : pw.Barcode.code128(),
+                            barcode: isValidEan
+                                ? pw.Barcode.ean13()
+                                : pw.Barcode.code128(),
                             data: ean13,
                             drawText: false,
-                            height: (widthLabel >= 75.0 ? 11 : 8) * PdfPageFormat.mm,
-                            width: (widthLabel > 60.0 ? 36 : (widthLabel <= 48.0 ? 24 : 28)) * PdfPageFormat.mm,
+                            height: (widthLabel >= 75.0 ? 11 : 8) *
+                                PdfPageFormat.mm,
+                            width: (widthLabel > 60.0
+                                    ? 36
+                                    : (widthLabel <= 48.0 ? 24 : 28)) *
+                                PdfPageFormat.mm,
                           ),
                           pw.SizedBox(height: 0.5 * PdfPageFormat.mm),
                           pw.Text(
@@ -305,12 +338,17 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
                         mainAxisSize: pw.MainAxisSize.min,
                         crossAxisAlignment: pw.CrossAxisAlignment.end,
                         children: [
-                          pw.Text('IMPORTE (\$)', style: pw.TextStyle(fontSize: 6, fontWeight: pw.FontWeight.bold)),
+                          pw.Text('IMPORTE (\$)',
+                              style: pw.TextStyle(
+                                  fontSize: 6, fontWeight: pw.FontWeight.bold)),
                           pw.FittedBox(
                             fit: pw.BoxFit.scaleDown,
                             child: pw.Text(
                               precioStr,
-                              style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold, letterSpacing: -0.5),
+                              style: pw.TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: pw.FontWeight.bold,
+                                  letterSpacing: -0.5),
                             ),
                           ),
                         ],
@@ -324,14 +362,18 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
                 // ── PIE DE NEGOCIO ──
                 pw.Text(
                   companyName.toUpperCase(),
-                  style: pw.TextStyle(fontSize: 6, fontWeight: pw.FontWeight.bold),
+                  style:
+                      pw.TextStyle(fontSize: 6, fontWeight: pw.FontWeight.bold),
                   textAlign: pw.TextAlign.center,
                   maxLines: 1,
                 ),
-                if (companyAddress.isNotEmpty || companyPhone.isNotEmpty || companyTaxId.isNotEmpty)
+                if (companyAddress.isNotEmpty ||
+                    companyPhone.isNotEmpty ||
+                    companyTaxId.isNotEmpty)
                   pw.Text(
                     [
-                      if (companyAddress.isNotEmpty) companyAddress.toUpperCase(),
+                      if (companyAddress.isNotEmpty)
+                        companyAddress.toUpperCase(),
                       if (companyPhone.isNotEmpty) 'TEL: $companyPhone',
                       if (companyTaxId.isNotEmpty) 'CUIT: $companyTaxId',
                     ].join(' • '),
@@ -347,7 +389,9 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
     }
 
     // Generar lista plana de etiquetas para reportes o A4
-    final double labelWidth = _paperFormat == 'thermal_58' ? 47.0 : (_paperFormat == 'thermal' ? 78.0 : 55.0);
+    final double labelWidth = _paperFormat == 'thermal_58'
+        ? 47.0
+        : (_paperFormat == 'thermal' ? 78.0 : 55.0);
     final List<pw.Widget> allLabels = [];
 
     for (final p in widget.products) {
@@ -384,27 +428,32 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
           pw.Page(
             pageFormat: format,
             margin: pw.EdgeInsets.zero,
-            build: (_) => pw.Align(alignment: pw.Alignment.topCenter, child: label),
+            build: (_) =>
+                pw.Align(alignment: pw.Alignment.topCenter, child: label),
           ),
         );
       }
     } else if (_paperFormat == 'custom_55_45') {
-       for (final p in widget.products) {
-         final qty = _quantities[p.id] ?? 1;
-         final h = computeHeight(p);
-         final format = PdfPageFormat(
-           labelWidth * PdfPageFormat.mm,
-           h * PdfPageFormat.mm,
-           marginAll: 0,
-         );
-         final labelWidget = buildLabel(p, heightLabel: h, widthLabel: labelWidth);
-         
-         for (int i = 0; i < qty; i++) {
-            pdf.addPage(
-               pw.Page(pageFormat: format, margin: pw.EdgeInsets.zero, build: (_) => pw.Center(child: labelWidget)),
-            );
-         }
-       }
+      for (final p in widget.products) {
+        final qty = _quantities[p.id] ?? 1;
+        final h = computeHeight(p);
+        final format = PdfPageFormat(
+          labelWidth * PdfPageFormat.mm,
+          h * PdfPageFormat.mm,
+          marginAll: 0,
+        );
+        final labelWidget =
+            buildLabel(p, heightLabel: h, widthLabel: labelWidth);
+
+        for (int i = 0; i < qty; i++) {
+          pdf.addPage(
+            pw.Page(
+                pageFormat: format,
+                margin: pw.EdgeInsets.zero,
+                build: (_) => pw.Center(child: labelWidget)),
+          );
+        }
+      }
     } else {
       pdf.addPage(
         pw.MultiPage(
@@ -607,14 +656,19 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
                     SizedBox(
                       width: 130,
                       child: _FormatCard(
-                        selected: _paperFormat == 'thermal_58' || _paperFormat == 'thermal',
+                        selected: _paperFormat == 'thermal_58' ||
+                            _paperFormat == 'thermal',
                         icon: Icons.receipt_long_outlined,
                         title: 'Rollo Térmico',
                         subtitle: 'Punto de Venta',
                         onTap: () {
                           setState(() {
-                            final localTerminal = context.read<LocalTerminalProvider>();
-                            _paperFormat = localTerminal.printerFormat == 'thermal_80' ? 'thermal' : 'thermal_58';
+                            final localTerminal =
+                                context.read<LocalTerminalProvider>();
+                            _paperFormat =
+                                localTerminal.printerFormat == 'thermal_80'
+                                    ? 'thermal'
+                                    : 'thermal_58';
                             _schedulePreviewRebuild();
                           });
                         },
@@ -623,9 +677,9 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
                     ),
                   ],
                 ),
-                
+
                 const SizedBox(height: 16),
-                
+
                 // ── Opciones Avanzadas ───────────────────────
                 Text(
                   'OPCIONES DE ETIQUETA',
@@ -644,11 +698,16 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
                     border: Border.all(color: Colors.grey.shade200),
                   ),
                   child: CheckboxListTile(
-                    title: const Text('Imprimir ENV y VTO', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                    subtitle: const Text('Útil para códigos de góndola o deteriorados.', style: TextStyle(fontSize: 10)),
+                    title: const Text('Imprimir ENV y VTO',
+                        style: TextStyle(
+                            fontSize: 12, fontWeight: FontWeight.bold)),
+                    subtitle: const Text(
+                        'Útil para códigos de góndola o deteriorados.',
+                        style: TextStyle(fontSize: 10)),
                     value: _printDates,
                     activeColor: Colors.deepPurple,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
                     visualDensity: VisualDensity.compact,
                     onChanged: (val) {
                       if (val != null) {
@@ -667,8 +726,7 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
               color: Colors.white,
-              border:
-                  Border(top: BorderSide(color: Colors.grey.shade200)),
+              border: Border(top: BorderSide(color: Colors.grey.shade200)),
             ),
             child: Row(
               children: [
@@ -708,18 +766,17 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
     final double? currentWeight = _weights[p.id];
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: qty > 0 ? Colors.white : Colors.grey.shade100,
-        border: Border.all(
-          color: qty > 0 ? Colors.deepPurple.shade100 : Colors.grey.shade200,
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: qty > 0 ? Colors.white : Colors.grey.shade100,
+          border: Border.all(
+            color: qty > 0 ? Colors.deepPurple.shade100 : Colors.grey.shade200,
+          ),
+          borderRadius: BorderRadius.circular(8),
         ),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
+        child:
+            Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           Row(
             children: [
               Expanded(
@@ -800,81 +857,88 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
           if (p.isSoldByWeight && qty > 0) ...[
             const SizedBox(height: 12),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.orange.shade50,
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: Colors.orange.shade200, width: 0.5)
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.scale_rounded, size: 14, color: Colors.orange),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                decoration: BoxDecoration(
+                    color: Colors.orange.shade50,
+                    borderRadius: BorderRadius.circular(6),
+                    border:
+                        Border.all(color: Colors.orange.shade200, width: 0.5)),
+                child: Row(children: [
+                  const Icon(Icons.scale_rounded,
+                      size: 14, color: Colors.orange),
                   const SizedBox(width: 4),
-                  const Text('Peso:', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                  const Text('Peso:',
+                      style:
+                          TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
                   const SizedBox(width: 4),
                   SizedBox(
-                    width: 82, // Compactado para evitar overflow en panel de 320px
+                    width:
+                        82, // Compactado para evitar overflow en panel de 320px
                     height: 32,
                     child: TextFormField(
                       initialValue: currentWeight?.toInt().toString() ?? '',
-                      keyboardType: const TextInputType.numberWithOptions(decimal: false),
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: false),
                       textAlign: TextAlign.center,
-                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                      style: const TextStyle(
+                          fontSize: 13, fontWeight: FontWeight.bold),
                       decoration: InputDecoration(
                         isDense: true,
                         filled: true,
                         fillColor: Colors.white,
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 4, vertical: 8),
                         hintText: '100',
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(6),
-                          borderSide: BorderSide(color: Colors.orange.shade200, width: 1),
+                          borderSide: BorderSide(
+                              color: Colors.orange.shade200, width: 1),
                         ),
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(6),
-                          borderSide: BorderSide(color: Colors.orange.shade200, width: 1),
+                          borderSide: BorderSide(
+                              color: Colors.orange.shade200, width: 1),
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(6),
-                          borderSide: const BorderSide(color: Colors.orange, width: 1.5),
+                          borderSide: const BorderSide(
+                              color: Colors.orange, width: 1.5),
                         ),
                         suffixText: 'gr',
                         suffixStyle: TextStyle(
-                          fontSize: 10, 
-                          color: Colors.orange.shade800, 
-                          fontWeight: FontWeight.bold
-                        ),
+                            fontSize: 10,
+                            color: Colors.orange.shade800,
+                            fontWeight: FontWeight.bold),
                       ),
                       onChanged: (val) {
-                         final w = double.tryParse(val.replaceAll(',', '.'));
-                         if (w != null && w > 0) {
-                           _weights[p.id] = w;
-                         } else {
-                           _weights[p.id] = null;
-                         }
-                         _schedulePreviewRebuild();
+                        final w = double.tryParse(val.replaceAll(',', '.'));
+                        if (w != null && w > 0) {
+                          _weights[p.id] = w;
+                        } else {
+                          _weights[p.id] = null;
+                        }
+                        _schedulePreviewRebuild();
                       },
                     ),
                   ),
                   const Spacer(), // Empuja el importe a la derecha de forma flexible
                   Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Text('Total Etq.', style: TextStyle(fontSize: 9, color: Colors.grey)),
-                      Text(
-                        '\$${NumberFormat('#,##0', 'es_AR').format((currentWeight ?? 0) / 1000 * p.sellingPrice)}',
-                        style: const TextStyle(fontSize: 12, color: Colors.deepPurple, fontWeight: FontWeight.bold),
-                      )
-                    ]
-                  )
-                ]
-              )
-            )
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text('Total Etq.',
+                            style: TextStyle(fontSize: 9, color: Colors.grey)),
+                        Text(
+                          '\$${NumberFormat('#,##0', 'es_AR').format((currentWeight ?? 0) / 1000 * p.sellingPrice)}',
+                          style: const TextStyle(
+                              fontSize: 12,
+                              color: Colors.deepPurple,
+                              fontWeight: FontWeight.bold),
+                        )
+                      ])
+                ]))
           ]
-        ]
-      )
-    );
+        ]));
   }
 
   // ── Panel Derecho — Vista Previa ────────────────────────────────────
@@ -904,8 +968,7 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
               if (_totalLabels == 0)
                 Text(
                   'Seleccioná productos para ver el preview',
-                  style:
-                      TextStyle(fontSize: 10, color: Colors.grey.shade500),
+                  style: TextStyle(fontSize: 10, color: Colors.grey.shade500),
                 ),
             ],
           ),
@@ -963,8 +1026,7 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.label_off_outlined,
-              size: 64, color: Colors.grey.shade300),
+          Icon(Icons.label_off_outlined, size: 64, color: Colors.grey.shade300),
           const SizedBox(height: 16),
           Text(
             'Sin etiquetas para previsualizar',
@@ -993,16 +1055,14 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
           TextButton(
-            onPressed:
-                _isPrinting ? null : () => Navigator.of(context).pop(),
+            onPressed: _isPrinting ? null : () => Navigator.of(context).pop(),
             child: const Text('Cancelar'),
           ),
           const SizedBox(width: 12),
           FilledButton.icon(
             style: FilledButton.styleFrom(
               backgroundColor: Colors.deepPurple,
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
             ),
             onPressed: (_isPrinting || _totalLabels == 0) ? null : _print,
             icon: _isPrinting
@@ -1046,7 +1106,9 @@ class _QtyButton extends StatelessWidget {
         width: 26,
         height: 26,
         decoration: BoxDecoration(
-          color: onTap != null ? color.withOpacity(0.12) : Colors.transparent,
+          color: onTap != null
+              ? color.withValues(alpha: 0.12)
+              : Colors.transparent,
           borderRadius: BorderRadius.circular(6),
         ),
         child: Icon(
@@ -1084,7 +1146,7 @@ class _FormatCard extends StatelessWidget {
         duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
         decoration: BoxDecoration(
-          color: selected ? color.withOpacity(0.08) : Colors.white,
+          color: selected ? color.withValues(alpha: 0.08) : Colors.white,
           border: Border.all(
             color: selected ? color : Colors.grey.shade300,
             width: selected ? 2 : 1,

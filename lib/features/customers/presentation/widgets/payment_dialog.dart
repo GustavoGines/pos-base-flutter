@@ -424,8 +424,9 @@ class _PaymentDialogState extends State<PaymentDialog> {
                                         value: 'cheque', child: Text('Cheque')),
                                 ],
                                 onChanged: (val) {
-                                  if (val != null)
+                                  if (val != null) {
                                     setState(() => line.method = val);
+                                  }
                                 },
                               ),
                             ),
