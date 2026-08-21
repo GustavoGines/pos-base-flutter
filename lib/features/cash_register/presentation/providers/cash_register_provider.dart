@@ -78,8 +78,8 @@ class CashRegisterProvider with ChangeNotifier {
   Future<void> checkCurrentShiftSilently({int? registerId}) async {
     try {
       final result = await getCurrentShiftUseCase(registerId: registerId);
-      if (_currentShift?.id != result?.id) {
-        // Solo notificar si el estado cambió realmente
+      if (_currentShift?.id != result?.id || _currentShift?.expectedBalance != result?.expectedBalance) {
+        // Solo notificar si el estado o el saldo esperado cambió realmente
         _currentShift = result;
         notifyListeners();
       }
