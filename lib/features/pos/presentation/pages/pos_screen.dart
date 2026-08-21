@@ -22,7 +22,7 @@ import 'package:printing/printing.dart';
 import 'package:frontend_desktop/features/logistics/presentation/providers/logistics_provider.dart';
 import 'package:dart_pusher_channels/dart_pusher_channels.dart';
 import 'package:frontend_desktop/core/config/app_config.dart';
-
+import 'package:shared_preferences/shared_preferences.dart';
 class PosScreen extends StatefulWidget {
   const PosScreen({super.key});
 
@@ -112,9 +112,12 @@ class _PosScreenState extends State<PosScreen> {
     final terminalId = localTerminal.terminalId;
 
     try {
-      final host = Uri.parse(AppConfig.kApiBaseUrl).host;
+      final prefs = await SharedPreferences.getInstance();
+      final currentUrl = prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
+      final host = Uri.parse(currentUrl).host;
+      
       final options = PusherChannelsOptions.fromHost(
-        scheme: 'ws',
+        scheme: currentUrl.startsWith('https') ? 'wss' : 'ws',
         host: host,
         port: 8080,
         key: 'kz786cdfeldnzispymxq',
