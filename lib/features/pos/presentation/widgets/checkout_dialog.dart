@@ -375,7 +375,9 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       // Si el campo tiene algo escrito y es menor al requerido → bloquear
       if (cashText.isNotEmpty &&
           tendered > 0 &&
-          tendered < (_cashRequired - 0.01)) return false;
+          tendered < (_cashRequired - 0.01)) {
+        return false;
+      }
     }
     if (_hasCuentaCorriente && _selectedCustomer == null) return false;
     return true;

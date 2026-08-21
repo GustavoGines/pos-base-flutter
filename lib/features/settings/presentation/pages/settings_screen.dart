@@ -278,9 +278,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _loadChannel() async {
     final prefs = await SharedPreferences.getInstance();
-    if (mounted)
+    if (mounted) {
       setState(() =>
           _currentChannel = prefs.getString('update_channel') ?? 'stable');
+    }
   }
 
   Future<void> _handleVersionTap() async {

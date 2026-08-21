@@ -1,11 +1,13 @@
-﻿import 'package:flutter/material.dart';
+import 'dart:convert';
+import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:frontend_desktop/core/network/api_client.dart';
+import 'package:frontend_desktop/core/config/app_config.dart';
 import 'package:provider/provider.dart';
 
 class MobileScannerScreen extends StatefulWidget {
-  const MobileScannerScreen({Key? key}) : super(key: key);
+  const MobileScannerScreen({super.key});
 
   @override
   State<MobileScannerScreen> createState() => _MobileScannerScreenState();
@@ -49,24 +51,28 @@ class _MobileScannerScreenState extends State<MobileScannerScreen> {
     setState(() => _isProcessing = true);
 
     try {
-      // 1. Play Beep
-      // For simple beep, you can generate a short frequency or use a bundled asset. 
-      // To keep it simple without assets, we'll just show visual feedback if beep fails.
       try {
         await _audioPlayer.play(AssetSource('beep.mp3'));
       } catch (_) {}
 
-      // 2. Send to Backend
       final apiClient = context.read<ApiClient>();
-      await apiClient.post('/mobile/scan', {
+      
+      final url = Uri.parse('${AppConfig.kApiBaseUrl}/mobile/scan');
+      final payload = jsonEncode({
         'barcode': code,
         'target_pc': _targetPcController.text,
       });
 
+      await apiClient.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: payload,
+      );
+
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Enviado: \ a \'),
+          content: Text('Enviado: $code a ${_targetPcController.text}'),
           backgroundColor: Colors.green,
           duration: const Duration(seconds: 1),
         ),
@@ -75,7 +81,7 @@ class _MobileScannerScreenState extends State<MobileScannerScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error: \'),
+          content: Text('Error: $e'),
           backgroundColor: Colors.red,
         ),
       );
@@ -143,4 +149,3 @@ class _MobileScannerScreenState extends State<MobileScannerScreen> {
     );
   }
 }
-

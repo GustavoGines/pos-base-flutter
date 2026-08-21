@@ -7,7 +7,7 @@ class AppConfig {
 
   /// URL base de la API del backend local (Laragon/Apache).
   static const String kApiBaseUrl =
-      'http://127.0.0.1/Sistema_POS/pos-backend/public/api';
+      'http://192.168.1.200/Sistema_POS/pos-backend/public/api';
 
   /// URL de la API del Servidor de Licencias Central (Render)
   /// Utilizado para consultar check-update (OTA) de manera directa.

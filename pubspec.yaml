@@ -64,6 +64,7 @@ dependencies:
   pusher_channels_flutter: ^2.4.0
   mobile_scanner: ^7.4.0
   audioplayers: ^6.8.1
+  dart_pusher_channels: ^1.2.3
 
 dev_dependencies:
   flutter_test:

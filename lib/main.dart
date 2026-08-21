@@ -20,6 +20,7 @@ import 'features/reports/presentation/providers/inventory_alerts_provider.dart';
 import 'features/reports/data/datasources/inventory_alerts_datasource.dart';
 import 'features/mobile/presentation/screens/mobile_menu_screen.dart';
 import 'features/mobile/presentation/screens/mobile_scanner_screen.dart';
+import 'features/mobile/presentation/screens/mobile_audit_screen.dart';
 import 'core/config/app_config.dart';
 
 import 'core/presentation/widgets/license_guard.dart';
@@ -150,17 +151,19 @@ void main() async {
   
   // Hacer que la app inicie en pantalla completa (maximizada) pero no Kiosk puro,
   // permitiendo que el usuario la achique o minimice si lo requiere.
-  await windowManager.ensureInitialized();
-  WindowOptions windowOptions = const WindowOptions(
-    size: Size(1280, 720),
-    center: true,
-    titleBarStyle: TitleBarStyle.normal,
-  );
-  windowManager.waitUntilReadyToShow(windowOptions, () async {
-    await windowManager.show();
-    await windowManager.focus();
-    await windowManager.maximize();
-  });
+  if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+    await windowManager.ensureInitialized();
+    WindowOptions windowOptions = const WindowOptions(
+      size: Size(1280, 720),
+      center: true,
+      titleBarStyle: TitleBarStyle.normal,
+    );
+    windowManager.waitUntilReadyToShow(windowOptions, () async {
+      await windowManager.show();
+      await windowManager.focus();
+      await windowManager.maximize();
+    });
+  }
   
   // Pre-cargar perfil de impresora para evitar crashes de AssetManifest en Windows
   await ReceiptPrinterService.instance.initialize();
@@ -293,6 +296,7 @@ void main() async {
         // Expuesto directamente para que RescuePinChangeDialog pueda hacer
         // context.read<UsersRepository>() sin pasar por UsersProvider.
         Provider.value(value: usersRepo),
+        Provider<ApiClient>.value(value: httpClient),
         ChangeNotifierProxyProvider<SettingsProvider, CustomerProvider>(
           create: (_) => CustomerProvider(baseUrl: apiUrl, client: httpClient),
           update: (_, settingsProvider, customerProvider) {
@@ -845,6 +849,7 @@ class _MainAppState extends State<MainApp> {
         '/delivery-notes': (context) => const LogisticsDashboardScreen(),
         // [mobile]
         '/mobile-scanner': (context) => const MobileScannerScreen(),
+        '/mobile-audit': (context) => const MobileAuditScreen(),
       },
     );
   }

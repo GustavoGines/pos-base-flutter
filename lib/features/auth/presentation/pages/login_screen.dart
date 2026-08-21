@@ -217,8 +217,13 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _showServerConfigDialog() async {
     final prefs = await SharedPreferences.getInstance();
     final currentUrl = prefs.getString('pos_api') ?? 'http://127.0.0.1/Sistema_POS/pos-backend/public/api';
+    
+    // Extraer solo la IP usando una expresión regular
+    final ipMatch = RegExp(r'http://([^/:]+)').firstMatch(currentUrl);
+    final currentIp = ipMatch != null ? ipMatch.group(1) ?? '127.0.0.1' : '127.0.0.1';
+    
     if (!mounted) return;
-    final ctrl = TextEditingController(text: currentUrl);
+    final ctrl = TextEditingController(text: currentIp);
 
     await showDialog(
       context: context,
@@ -236,16 +241,17 @@ class _LoginScreenState extends State<LoginScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Apunta este frontend a la computadora principal (Servidor).\n'
-              'Ejemplo: http://192.168.1.50/Sistema_POS/pos-backend/public/api',
+              'Ingresa solo la IP de la computadora principal (Servidor).\n'
+              'Ejemplo: 192.168.1.50',
               style: TextStyle(color: Colors.blueGrey, fontSize: 13),
             ),
             const SizedBox(height: 16),
             TextField(
               controller: ctrl,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
               decoration: InputDecoration(
-                labelText: 'URL de la API',
-                prefixIcon: const Icon(Icons.link),
+                labelText: 'IP del Servidor',
+                prefixIcon: const Icon(Icons.wifi),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
               ),
             ),
@@ -258,8 +264,10 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
           FilledButton.icon(
             onPressed: () async {
-              final newUrl = ctrl.text.trim();
-              if (newUrl.isNotEmpty) {
+              final ip = ctrl.text.trim();
+              if (ip.isNotEmpty) {
+                // Reconstruir la URL completa
+                final newUrl = 'http://$ip/Sistema_POS/pos-backend/public/api';
                 await prefs.setString('pos_api', newUrl);
                 if (!ctx.mounted) return;
                 Navigator.pop(ctx);
@@ -300,10 +308,11 @@ class _LoginScreenState extends State<LoginScreen> {
             children: [
 // Remove this Positioned block entirely from here, it will be placed at the end of the Stack
 
-              Center(
-                child: SingleChildScrollView(
-                  child: Container(
-                    width: 400,
+              SafeArea(
+                child: Center(
+                  child: SingleChildScrollView(
+                    child: Container(
+                      width: 400,
                     padding: const EdgeInsets.all(40),
                     decoration: BoxDecoration(
                       color: Colors.white,
@@ -406,6 +415,13 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                           ],
                         ),
+                        const SizedBox(height: 16),
+                        // Botón de configuración de servidor visible dentro del panel
+                        IconButton(
+                          icon: const Icon(Icons.settings_ethernet, color: Colors.blueGrey, size: 28),
+                          tooltip: 'Configurar Servidor',
+                          onPressed: _showServerConfigDialog,
+                        ),
                       ],
                     ), // Cierre de la Column
                     if (_appVersion.isNotEmpty)
@@ -447,12 +463,14 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
                 ),
               ),
+              ), // Cierre de SafeArea
               Positioned(
-                top: 24,
+                bottom: 24,
                 right: 24,
-                child: Row(
-                  children: [
-                    // Badge de update de Frontend (App)
+                child: SafeArea(
+                  child: Row(
+                    children: [
+                      // Badge de update de Frontend (App)
                     if (_frontendUpdate != null)
                       ElevatedButton.icon(
                         style: ElevatedButton.styleFrom(
@@ -503,13 +521,8 @@ class _LoginScreenState extends State<LoginScreen> {
                         label: const Text('Actualiz. Servidor',
                             style: TextStyle(fontWeight: FontWeight.bold)),
                       ),
-                    if (_backendUpdate != null) const SizedBox(width: 10),
-                    IconButton(
-                      icon: const Icon(Icons.settings_ethernet, color: Colors.white54, size: 28),
-                      tooltip: 'Configurar Servidor',
-                      onPressed: _showServerConfigDialog,
-                    ),
                   ],
+                ),
                 ),
               ),
             ],

@@ -846,11 +846,12 @@ class _ShiftSalesListState extends State<_ShiftSalesList> {
         throw Exception('Error al cargar ventas');
       }
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _error = e.toString();
           _loading = false;
         });
+      }
     }
   }
 
@@ -863,8 +864,9 @@ class _ShiftSalesListState extends State<_ShiftSalesList> {
         child: CircularProgressIndicator(),
       ));
     }
-    if (_error != null)
+    if (_error != null) {
       return Text('Error: $_error', style: const TextStyle(color: Colors.red));
+    }
     if (_sales.isEmpty) {
       return const Padding(
         padding: EdgeInsets.symmetric(vertical: 20),

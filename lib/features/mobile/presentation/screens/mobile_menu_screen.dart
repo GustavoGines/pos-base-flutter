@@ -1,7 +1,7 @@
 ﻿import 'package:flutter/material.dart';
 
 class MobileMenuScreen extends StatelessWidget {
-  const MobileMenuScreen({Key? key}) : super(key: key);
+  const MobileMenuScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -51,7 +51,7 @@ class MobileMenuScreen extends StatelessWidget {
     return Card(
       elevation: 4,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      color: Colors.white.withOpacity(0.05),
+      color: Colors.white.withValues(alpha: 0.05),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
@@ -62,7 +62,7 @@ class MobileMenuScreen extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: color.withOpacity(0.2),
+                  color: color.withValues(alpha: 0.2),
                   shape: BoxShape.circle,
                 ),
                 child: Icon(icon, color: color, size: 32),
@@ -85,13 +85,13 @@ class MobileMenuScreen extends StatelessWidget {
                       subtitle,
                       style: TextStyle(
                         fontSize: 14,
-                        color: Colors.white.withOpacity(0.7),
+                        color: Colors.white.withValues(alpha: 0.7),
                       ),
                     ),
                   ],
                 ),
               ),
-              Icon(Icons.arrow_forward_ios, color: Colors.white.withOpacity(0.5)),
+              Icon(Icons.arrow_forward_ios, color: Colors.white.withValues(alpha: 0.5)),
             ],
           ),
         ),
