@@ -21,6 +21,7 @@ import 'features/reports/data/datasources/inventory_alerts_datasource.dart';
 import 'features/mobile/presentation/screens/mobile_menu_screen.dart';
 import 'features/mobile/presentation/screens/mobile_scanner_screen.dart';
 import 'features/mobile/presentation/screens/mobile_audit_screen.dart';
+import 'features/mobile/presentation/screens/mobile_dashboard_screen.dart';
 import 'core/config/app_config.dart';
 
 import 'core/presentation/widgets/license_guard.dart';
@@ -850,7 +851,9 @@ class _MainAppState extends State<MainApp> {
         // [mobile]
         '/mobile-scanner': (context) => const MobileScannerScreen(),
         '/mobile-audit': (context) => const MobileAuditScreen(),
+        '/mobile-dashboard': (context) => const MobileDashboardScreen(),
       },
     );
   }
 }
+

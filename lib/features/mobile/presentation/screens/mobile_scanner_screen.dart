@@ -137,6 +137,16 @@ class _MobileScannerScreenState extends State<MobileScannerScreen> {
                   controller: _scannerController,
                   onDetect: _onDetect,
                 ),
+                Center(
+                  child: Container(
+                    width: 250,
+                    height: 150,
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.greenAccent, width: 3),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
                 if (_isProcessing)
                   const Center(
                     child: CircularProgressIndicator(color: Colors.white),

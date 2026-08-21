@@ -107,7 +107,7 @@ class _BrandsManagerDialogState extends State<BrandsManagerDialog> {
         children: [
           Icon(Icons.branding_watermark_outlined, color: Theme.of(context).colorScheme.primary),
           const SizedBox(width: 10),
-          const Text('Gestión de Marcas'),
+          const Expanded(child: Text('Gestión de Marcas')),
         ],
       ),
       contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
@@ -225,10 +225,6 @@ class _BrandsManagerDialogState extends State<BrandsManagerDialog> {
             )
           : Text(brand.name,
               style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
-      subtitle: (!isEditing && brand.description != null && brand.description!.isNotEmpty)
-          ? Text(brand.description!,
-              style: const TextStyle(fontSize: 12, color: Colors.black45))
-          : null,
       trailing: provider.isLoading && _editingId == brand.id
           ? const SizedBox(width: 20, height: 20,
               child: CircularProgressIndicator(strokeWidth: 2))

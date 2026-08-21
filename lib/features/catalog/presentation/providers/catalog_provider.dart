@@ -48,6 +48,17 @@ class CatalogProvider with ChangeNotifier {
 
   CatalogProvider({required this.getProductsUseCase, required this.repository});
 
+  
+  Future<void> loadMetadata() async {
+    try {
+      if (_categories.isEmpty) _categories = await repository.getCategories();
+      if (_brands.isEmpty) _brands = await repository.getBrands();
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error loading metadata: $e');
+    }
+  }
+
   Future<void> loadProducts({int page = 1, String? search, String? sortBy, String? sortDirection}) async {
     _isLoading = true;
     _errorMessage = null;
@@ -507,3 +518,4 @@ class CatalogProvider with ChangeNotifier {
     }
   }
 }
+

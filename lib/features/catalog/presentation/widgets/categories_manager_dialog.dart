@@ -107,7 +107,7 @@ class _CategoriesManagerDialogState extends State<CategoriesManagerDialog> {
         children: [
           Icon(Icons.label_rounded, color: Theme.of(context).colorScheme.primary),
           const SizedBox(width: 10),
-          const Text('Gestión de Categorías'),
+          const Expanded(child: Text('Gestión de Categorías')),
         ],
       ),
       contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
@@ -225,10 +225,6 @@ class _CategoriesManagerDialogState extends State<CategoriesManagerDialog> {
             )
           : Text(cat.name,
               style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
-      subtitle: (!isEditing && cat.description != null && cat.description!.isNotEmpty)
-          ? Text(cat.description!,
-              style: const TextStyle(fontSize: 12, color: Colors.black45))
-          : null,
       trailing: provider.isLoading && _editingId == cat.id
           ? const SizedBox(width: 20, height: 20,
               child: CircularProgressIndicator(strokeWidth: 2))

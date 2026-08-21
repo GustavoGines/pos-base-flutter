@@ -288,7 +288,7 @@ class _MobileDashboardScreenState extends State<MobileDashboardScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('Turno Actual: ${shift.userName ?? "Desconocido"}', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue)),
-                Text('Efectivo esperado: \$${(shift.expectedBalance ?? 0).toStringAsFixed(0)}', style: TextStyle(fontSize: 12, color: Colors.blue.shade800)),
+                Text('Efectivo esperado: \$${(shift.expectedBalance ?? 0).toStringAsFixed(0)} (Fondo Inicial: \$${shift.openingBalance.toStringAsFixed(0)})', style: TextStyle(fontSize: 12, color: Colors.blue.shade800)),
               ],
             ),
           ),
@@ -449,7 +449,7 @@ class _MobileDashboardScreenState extends State<MobileDashboardScreen> {
                       sideTitles: SideTitles(
                         showTitles: true,
                         reservedSize: 30,
-                        interval: 1,
+                        interval: provider.dailyEvolution.length > 7 ? (provider.dailyEvolution.length / 6).ceilToDouble() : 1,
                         getTitlesWidget: (value, meta) {
                           final idx = value.toInt();
                           if (idx >= 0 && idx < provider.dailyEvolution.length) {

@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -465,7 +466,7 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               ), // Cierre de SafeArea
               Positioned(
-                bottom: 24,
+                top: 24,
                 right: 24,
                 child: SafeArea(
                   child: Row(
@@ -494,10 +495,10 @@ class _LoginScreenState extends State<LoginScreen> {
                           style: const TextStyle(fontWeight: FontWeight.bold),
                         ),
                       ),
-                    if (_frontendUpdate != null) const SizedBox(width: 10),
+                    if (_frontendUpdate != null && _backendUpdate != null && (!Platform.isAndroid && !Platform.isIOS)) const SizedBox(width: 10),
 
-                    // Badge de update de Backend (Servidor) — informativo, se aplica solo
-                    if (_backendUpdate != null)
+                    // Badge de update de Backend (Servidor) — informativo, se aplica solo si no es móvil
+                    if (_backendUpdate != null && (!Platform.isAndroid && !Platform.isIOS))
                       ElevatedButton.icon(
                         style: ElevatedButton.styleFrom(
                           backgroundColor: _frontendUpdate != null

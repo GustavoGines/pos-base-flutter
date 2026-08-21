@@ -1,4 +1,6 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:frontend_desktop/features/auth/presentation/providers/auth_provider.dart';
 
 class MobileMenuScreen extends StatelessWidget {
   const MobileMenuScreen({super.key});
@@ -10,6 +12,16 @@ class MobileMenuScreen extends StatelessWidget {
         title: const Text('Herramientas Móviles'),
         backgroundColor: const Color(0xFF1E2D45),
         foregroundColor: Colors.white,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.lock_outline),
+            tooltip: 'Bloquear Pantalla',
+            onPressed: () {
+              Navigator.pushReplacementNamed(context, '/login');
+              context.read<AuthProvider>().logout();
+            },
+          ),
+        ],
       ),
       body: Container(
         color: const Color(0xFF1E2D45),
@@ -29,11 +41,20 @@ class MobileMenuScreen extends StatelessWidget {
             const SizedBox(height: 16),
             _buildMenuCard(
               context,
-              title: 'Auditoría (Góndola)',
+              title: 'Control de Precios y Stock',
               subtitle: 'Consultar y editar precios/stock',
               icon: Icons.inventory_2,
               color: Colors.green,
               onTap: () => Navigator.pushNamed(context, '/mobile-audit'),
+            ),
+            const SizedBox(height: 16),
+            _buildMenuCard(
+              context,
+              title: 'Panel de Ventas',
+              subtitle: 'Resumen de ventas en vivo',
+              icon: Icons.bar_chart,
+              color: Colors.orange,
+              onTap: () => Navigator.pushNamed(context, '/mobile-dashboard'),
             ),
           ],
         ),
@@ -99,4 +120,3 @@ class MobileMenuScreen extends StatelessWidget {
     );
   }
 }
-
