@@ -1,5 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:frontend_desktop/core/config/app_config.dart';
+import 'package:frontend_desktop/features/catalog/data/models/product_model.dart';
+import 'package:frontend_desktop/core/utils/receipt_printer_service.dart';
 import 'package:flutter/material.dart';
 import 'package:frontend_desktop/features/pos/domain/entities/cart_item.dart';
 import 'package:provider/provider.dart';
@@ -21,8 +26,7 @@ import 'package:frontend_desktop/core/utils/a4_split_pdf_service.dart';
 import 'package:printing/printing.dart';
 import 'package:frontend_desktop/features/logistics/presentation/providers/logistics_provider.dart';
 import 'package:dart_pusher_channels/dart_pusher_channels.dart';
-import 'package:frontend_desktop/core/config/app_config.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+
 class PosScreen extends StatefulWidget {
   const PosScreen({super.key});
 
@@ -129,9 +133,10 @@ class _PosScreenState extends State<PosScreen> {
       );
 
       _pusher!.onConnectionEstablished.listen((_) {
-        final channel = _pusher!.publicChannel('pos.scans.$terminalId');
-        channel.subscribe();
-        channel.bind('App\\Events\\MobileScanned').listen((event) {
+        // Escáner Inalámbrico
+        final scanChannel = _pusher!.publicChannel('pos.scans.$terminalId');
+        scanChannel.subscribe();
+        scanChannel.bind('App\\Events\\MobileScanned').listen((event) {
           try {
             if (event.data == null) return;
             final data = jsonDecode(event.data.toString());
@@ -141,7 +146,47 @@ class _PosScreenState extends State<PosScreen> {
               _onProductScannedOrSearched(barcode);
             }
           } catch (e) {
-            debugPrint("Error parsing Reverb event: $e");
+            debugPrint("Error parsing MobileScanned event: $e");
+          }
+        });
+
+        // Impresora Inalámbrica (Mobile Label Printing)
+        final printerChannel = _pusher!.publicChannel('pos.printers.$terminalId');
+        printerChannel.subscribe();
+        printerChannel.bind('App\\Events\\PrintLabelRequested').listen((event) async {
+          try {
+            if (event.data == null) return;
+            final data = jsonDecode(event.data.toString());
+            final productId = data['productId'];
+            if (mounted && productId != null) {
+               // Encontrar producto por id e imprimir
+               final catalog = Provider.of<CatalogProvider>(context, listen: false);
+               Product? product;
+               try {
+                  product = catalog.products.firstWhere((p) => p.id == productId);
+               } catch (_) {
+                 final auth = Provider.of<AuthProvider>(context, listen: false);
+                 final prefs = await SharedPreferences.getInstance();
+                 final String apiUrl = prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
+                 final response = await http.get(
+                   Uri.parse('$apiUrl/catalog/products/$productId'),
+                   headers: {
+                     'Accept': 'application/json',
+                     'Authorization': 'Bearer ${auth.sessionToken}',
+                   }
+                 );
+                 if (response.statusCode == 200) {
+                    product = ProductModel.fromJson(jsonDecode(response.body));
+                 }
+               }
+               
+               if (product != null) {
+                 await ReceiptPrinterService.instance.printLabel(product);
+                 if (mounted) SnackBarService.success(context, 'Etiqueta impresa remotamente');
+               }
+            }
+          } catch (e) {
+            debugPrint("Error parsing PrintLabelRequested event: $e");
           }
         });
       });

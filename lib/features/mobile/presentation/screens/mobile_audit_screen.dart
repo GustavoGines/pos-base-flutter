@@ -8,6 +8,10 @@ import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import 'package:frontend_desktop/features/catalog/presentation/widgets/categories_manager_dialog.dart';
 import 'package:frontend_desktop/features/catalog/presentation/widgets/brands_manager_dialog.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:frontend_desktop/features/auth/presentation/providers/auth_provider.dart';
 
 class MobileAuditScreen extends StatefulWidget {
   const MobileAuditScreen({super.key});
@@ -183,6 +187,8 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
     final marginCtrl = TextEditingController();
     final priceCtrl = TextEditingController(text: productToEdit != null ? productToEdit.sellingPrice.toInt().toString() : '');
     final stockCtrl = TextEditingController(text: productToEdit != null ? (productToEdit.stock % 1 == 0 ? productToEdit.stock.toInt().toString() : productToEdit.stock.toString()) : '');
+    final vencimientoCtrl = TextEditingController(text: productToEdit?.vencimientoDias?.toString() ?? '');
+    final addStockCtrl = TextEditingController();
 
     bool isSaving = false;
       int? selectedCategoryId = productToEdit?.category?.id;
@@ -251,7 +257,42 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
             }
 
             return AlertDialog(
-              title: Text(productToEdit == null ? 'Nuevo Producto' : 'Editar Producto'),
+              title: Row(
+                children: [
+                  Expanded(child: Text(productToEdit == null ? 'Nuevo Producto' : 'Editar Producto', style: const TextStyle(fontSize: 18))),
+                  if (productToEdit != null)
+                    IconButton(
+                      icon: const Icon(Icons.print, color: Colors.blueAccent),
+                      tooltip: 'Imprimir Etiqueta Remotamente',
+                      onPressed: () async {
+                        try {
+                          final auth = context.read<AuthProvider>();
+                          final prefs = await SharedPreferences.getInstance();
+                          final String apiUrl = prefs.getString('pos_api') ?? 'http://localhost/api';
+                          final response = await http.post(
+                            Uri.parse('$apiUrl/mobile/print-label'),
+                            headers: {
+                              'Content-Type': 'application/json',
+                              'Accept': 'application/json',
+                              'Authorization': 'Bearer ${auth.sessionToken}',
+                            },
+                            body: jsonEncode({
+                              'product_id': productToEdit.id,
+                              'target_pc': 'caja-1',
+                            }),
+                          );
+                          if (response.statusCode == 200) {
+                            if (ctx.mounted) SnackBarService.success(context, 'Orden enviada a la PC principal');
+                          } else {
+                            if (ctx.mounted) SnackBarService.error(context, 'Error al imprimir: ${response.statusCode}');
+                          }
+                        } catch (e) {
+                          if (ctx.mounted) SnackBarService.error(context, 'Error de red: $e');
+                        }
+                      },
+                    ),
+                ],
+              ),
               content: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -374,10 +415,32 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                     ),
 
                     const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          flex: 1,
+                          child: TextField(
+                            controller: stockCtrl,
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            decoration: const InputDecoration(labelText: 'Stock Absoluto', isDense: true, border: OutlineInputBorder()),
+                          ),
+                        ),
+                        if (productToEdit != null) const SizedBox(width: 8),
+                        if (productToEdit != null) Expanded(
+                          flex: 1,
+                          child: TextField(
+                            controller: addStockCtrl,
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            decoration: const InputDecoration(labelText: 'Sumar Stock (+)', isDense: true, border: OutlineInputBorder(), prefixIcon: Icon(Icons.add_box, color: Colors.green, size: 20)),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
                     TextField(
-                      controller: stockCtrl,
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      decoration: const InputDecoration(labelText: 'Stock Actual', isDense: true),
+                      controller: vencimientoCtrl,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(labelText: 'Días para Vencimiento', isDense: true, border: OutlineInputBorder(), prefixIcon: Icon(Icons.event_busy, color: Colors.orange, size: 20)),
                     ),
                     const SizedBox(height: 12),
                     SwitchListTile(
@@ -402,6 +465,8 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                           final cost = double.tryParse(costCtrl.text) ?? 0.0;
                           final price = double.tryParse(priceCtrl.text) ?? 0.0;
                           final stock = double.tryParse(stockCtrl.text) ?? 0.0;
+                          final addStock = double.tryParse(addStockCtrl.text);
+                          final vencimientoDias = int.tryParse(vencimientoCtrl.text);
 
                           if (name.isEmpty) {
                             SnackBarService.error(context, 'El nombre es obligatorio');
@@ -423,6 +488,13 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                               'is_sold_by_weight': isSoldByWeight,
                               'unit_type': isSoldByWeight ? 'kg' : 'un',
                             };
+
+                            if (addStock != null && addStock > 0) {
+                              payload['add_stock'] = addStock;
+                            }
+                            if (vencimientoDias != null) {
+                              payload['vencimiento_dias'] = vencimientoDias;
+                            }
 
                             if (productToEdit == null) {
                               payload['active'] = true;

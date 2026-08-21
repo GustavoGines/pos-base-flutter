@@ -8,6 +8,7 @@ import '../../../features/cash_register/domain/entities/cash_register_shift.dart
 import '../../../features/pos/domain/entities/cart_item.dart';
 import '../../../features/settings/domain/entities/business_settings.dart';
 import '../../../features/quotes/data/quote_repository.dart';
+import '../../../features/catalog/domain/entities/product.dart';
 
 /// Tipo de conexión con la impresora térmica
 enum PrinterConnectionType {
@@ -841,6 +842,33 @@ class ReceiptPrinterService {
 
 
   /// Imprime el comprobante de Cierre Z (Auditoría del turno).
+  Future<void> printLabel(Product product) async {
+    try {
+      final profile = await CapabilityProfile.load();
+      final generator = Generator(config.paperSize, profile);
+      List<int> bytes = [];
+
+      bytes += generator.setStyles(const PosStyles(align: PosAlign.center));
+      bytes += generator.text(product.name, styles: const PosStyles(bold: true, height: PosTextSize.size2, width: PosTextSize.size2));
+      bytes += generator.feed(1);
+      
+      final priceStr = '\$ \${product.sellingPrice.toStringAsFixed(2)}';
+      bytes += generator.text(priceStr, styles: const PosStyles(bold: true, height: PosTextSize.size3, width: PosTextSize.size3));
+      bytes += generator.feed(1);
+
+      if (product.barcode != null && product.barcode!.isNotEmpty) {
+        bytes += generator.barcode(Barcode.code39(product.barcode!.split('').map((e) => e.codeUnitAt(0)).toList()));
+        bytes += generator.text(product.barcode!);
+      }
+      bytes += generator.feed(2);
+      bytes += generator.cut();
+
+      await _send(Uint8List.fromList(bytes));
+    } catch (e) {
+      debugPrint('Error en printLabel: $e');
+    }
+  }
+
   Future<void> printZCloseTicket({
     required CashRegisterShift shift,
     required BusinessSettings settings, // Info visual
