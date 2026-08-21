@@ -1,18 +1,54 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:intl/intl.dart';
 import 'package:frontend_desktop/features/auth/presentation/providers/auth_provider.dart';
+import 'package:frontend_desktop/features/settings/presentation/screens/mobile_network_settings_screen.dart';
 
 class MobileMenuScreen extends StatelessWidget {
   const MobileMenuScreen({super.key});
+
+  String _getFormattedDate() {
+    try {
+      final now = DateTime.now();
+      final formatter = DateFormat('EEE d MMM', 'es_AR');
+      final dateStr = formatter.format(now);
+      return dateStr[0].toUpperCase() + dateStr.substring(1);
+    } catch (_) {
+      return DateFormat('dd/MM/yyyy').format(DateTime.now());
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Herramientas Móviles'),
+        title: const Text('Sistema POS Móvil'),
         backgroundColor: const Color(0xFF1E2D45),
         foregroundColor: Colors.white,
         actions: [
+          Center(
+            child: Padding(
+              padding: const EdgeInsets.only(right: 8.0),
+              child: Text(
+                _getFormattedDate(),
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.7),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.settings),
+            tooltip: 'Configuración de Red',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const MobileNetworkSettingsScreen()),
+              );
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.lock_outline),
             tooltip: 'Bloquear Pantalla',

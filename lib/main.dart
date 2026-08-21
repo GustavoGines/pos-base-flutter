@@ -171,7 +171,35 @@ void main() async {
   
   // Obtener URL de la API del almacenamiento local
   final prefs = await SharedPreferences.getInstance();
-  final savedApiUrl = prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
+  final String localUrl = prefs.getString('pos_api_local') ?? prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
+  final String remoteUrl = prefs.getString('pos_api_remote') ?? '';
+  
+  String activeApiUrl = localUrl;
+
+  // ── Smart Auto-Fallback Network (Mobile/Tablet) ──
+  // Solo hacemos fallback si la URL remota parece válida
+  bool hasValidRemote = remoteUrl.trim().length > 10 && remoteUrl.contains('http');
+  
+  if (hasValidRemote && (Platform.isAndroid || Platform.isIOS)) {
+    try {
+      // Ping rápido a la red local (2000ms) para ver si estamos en el negocio
+      final response = await http.get(Uri.parse('$localUrl/settings')).timeout(const Duration(milliseconds: 2000));
+      if (response.statusCode >= 500) throw Exception('Local server error');
+      activeApiUrl = localUrl;
+      debugPrint('SmartNetwork: Conectado a LOCAL -> $activeApiUrl');
+    } catch (e) {
+      // Si falla (timeout o red inaccesible), cambiamos a la nube
+      activeApiUrl = remoteUrl;
+      debugPrint('SmartNetwork: Red Local falló. Cambiando a REMOTO -> $activeApiUrl');
+    }
+  } else {
+    activeApiUrl = localUrl;
+  }
+  
+  // Guardamos la IP activa temporalmente para retrocompatibilidad
+  await prefs.setString('pos_api', activeApiUrl);
+  
+  final savedApiUrl = activeApiUrl;
 
   // ── RESCUE TRIGGER OTA ──
   // Si la app detecta que acaba de ser actualizada, dispara un endpoint de 
