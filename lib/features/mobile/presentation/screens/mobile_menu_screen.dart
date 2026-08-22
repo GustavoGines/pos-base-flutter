@@ -22,7 +22,7 @@ class MobileMenuScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Sistema POS Móvil'),
+        title: const Text('POS Móvil'),
         backgroundColor: const Color(0xFF1E2D45),
         foregroundColor: Colors.white,
         actions: [
