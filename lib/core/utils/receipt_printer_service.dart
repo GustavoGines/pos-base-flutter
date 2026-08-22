@@ -852,13 +852,18 @@ class ReceiptPrinterService {
       bytes += generator.text(product.name, styles: const PosStyles(bold: true, height: PosTextSize.size2, width: PosTextSize.size2));
       bytes += generator.feed(1);
       
-      final priceStr = '\$ \${product.sellingPrice.toStringAsFixed(2)}';
+      final priceStr = '\$ ${product.sellingPrice.toStringAsFixed(2)}';
       bytes += generator.text(priceStr, styles: const PosStyles(bold: true, height: PosTextSize.size3, width: PosTextSize.size3));
       bytes += generator.feed(1);
 
       if (product.barcode != null && product.barcode!.isNotEmpty) {
-        bytes += generator.barcode(Barcode.code39(product.barcode!.split('').map((e) => e.codeUnitAt(0)).toList()));
-        bytes += generator.text(product.barcode!);
+        final cleanBarcode = product.barcode!.toUpperCase().replaceAll(RegExp(r'[^A-Z0-9\-\.\ \$\/\+\%]'), '');
+        if (cleanBarcode.isNotEmpty) {
+          bytes += generator.barcode(Barcode.code39(cleanBarcode.split('')), width: 2, height: 60, textPos: BarcodeText.none);
+          bytes += generator.text(cleanBarcode, styles: const PosStyles(align: PosAlign.center));
+        } else {
+          bytes += generator.text(product.barcode!, styles: const PosStyles(align: PosAlign.center));
+        }
       }
       bytes += generator.feed(2);
       bytes += generator.cut();
