@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/config/app_config.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
@@ -27,7 +27,7 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
   
   final TextEditingController _priceCtrl = TextEditingController();
   final TextEditingController _stockCtrl = TextEditingController(); // Lectura del stock actual (display)
-  final TextEditingController _addStockQuickCtrl = TextEditingController(); // Sumar stock (+) en vista rÃƒÂ¡pida
+  final TextEditingController _addStockQuickCtrl = TextEditingController(); // Sumar stock (+) en vista rápida
 
   bool _isProcessing = false;
   Product? _scannedProduct;
@@ -64,7 +64,7 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
         await _audioPlayer.play(AssetSource('beep.mp3'));
       } catch (_) {}
 
-      // Pausar cÃƒÂ¡mara mientras procesamos
+      // Pausar cámara mientras procesamos
       _scannerController.stop();
 
       final posProvider = context.read<PosProvider>();
@@ -88,14 +88,14 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
           _scannerController.start(); // Retomar escaneo
         }
       } else {
-        // Encontrar coincidencia exacta por cÃƒÂ³digo
+        // Encontrar coincidencia exacta por código
         Product? match;
         try {
           match = results.firstWhere(
             (p) => p.barcode == query.trim() || p.internalCode == query.trim(),
           );
         } catch (_) {
-          match = results.first; // Si no hay match exacto, usar el primero (ÃƒÂºtil para bÃƒÂºsqueda por ID o nombre manual)
+          match = results.first; // Si no hay match exacto, usar el primero (útil para búsqueda por ID o nombre manual)
         }
 
         if (mounted && true) {
@@ -104,7 +104,7 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
             _scannedProduct = match;
             _priceCtrl.text = match!.sellingPrice.toInt().toString();
             _stockCtrl.text = (match.stock % 1 == 0 ? match.stock.toInt().toString() : match.stock.toString());
-            _addStockQuickCtrl.clear(); // Limpiar campo de ingreso rÃƒÂ¡pido
+            _addStockQuickCtrl.clear(); // Limpiar campo de ingreso rápido
           });
         }
       }
@@ -127,7 +127,7 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
     final String code = barcodes.first.rawValue ?? '';
     if (code.isEmpty) return;
 
-    // Evitar escaneos duplicados rÃƒÂ¡pidos
+    // Evitar escaneos duplicados rápidos
     if (_lastScannedCode == code && _lastScanTime != null) {
       if (DateTime.now().difference(_lastScanTime!).inSeconds < 2) {
         return;
@@ -148,7 +148,7 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
     final addStock = double.tryParse(_addStockQuickCtrl.text.trim());
 
     if (newPrice == null) {
-      SnackBarService.error(context, 'Precio invÃƒÂ¡lido');
+      SnackBarService.error(context, 'Precio inválido');
       return;
     }
 
@@ -162,8 +162,8 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
         'stock': _scannedProduct!.stock,
       };
 
-      // Ã¢Å“â€¦ FIX: Si el empleado llenÃƒÂ³ "Sumar Stock (+)", usamos incremento atÃƒÂ³mico.
-      // Si lo dejÃƒÂ³ vacÃƒÂ­o, solo actualizamos el precio (sin tocar el stock).
+      // ✅ FIX: Si el empleado llenó "Sumar Stock (+)", usamos incremento atómico.
+      // Si lo dejó vacío, solo actualizamos el precio (sin tocar el stock).
       if (addStock != null && addStock > 0) {
         payload['add_stock'] = addStock;
       }
@@ -175,8 +175,8 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
 
       if (success && mounted) {
         final msg = (addStock != null && addStock > 0)
-            ? 'Ã¢Å“â€¦ Precio actualizado y +${addStock.toStringAsFixed(0)} u. sumadas al stock'
-            : 'Ã¢Å“â€¦ Precio actualizado';
+            ? '✅ Precio actualizado y +${addStock.toStringAsFixed(0)} u. sumadas al stock'
+            : '✅ Precio actualizado';
         SnackBarService.success(context, msg);
 
         setState(() {
@@ -215,12 +215,12 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
       );
       
       if (response.statusCode == 200) {
-        if (mounted) SnackBarService.success(context, '\u2705 Orden enviada a la Tiquetera Termica');
+        if (mounted) SnackBarService.success(context, '✅ Orden enviada a la Tiquetera Térmica');
       } else {
-        if (mounted) SnackBarService.error(context, '\u274C Error en Tiquetera Termica: ${response.statusCode}');
+        if (mounted) SnackBarService.error(context, '❌ Error en la Tiquetera Térmica: ${response.statusCode}');
       }
     } catch (e) {
-      if (mounted) SnackBarService.error(context, '\u274C Error de red con la Tiquetera: $e');
+      if (mounted) SnackBarService.error(context, '❌ Error de red con la Tiquetera: $e');
     }
   }
 
@@ -251,7 +251,7 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
         context: context,
         builder: (ctx) {
           return AlertDialog(
-            title: const Text('Escanear CÃƒÂ³digo'),
+            title: const Text('Escanear Código'),
             content: SizedBox(
               width: 300,
               height: 300,
@@ -309,7 +309,7 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                   if (productToEdit != null)
                     IconButton(
                       icon: const Icon(Icons.print, color: Colors.blueAccent),
-                      tooltip: 'Imprimir en Tiquetera Termica',
+                      tooltip: 'Imprimir en Tiquetera Térmica',
                       onPressed: () => _printLabelRemotely(productToEdit.id),
                     ),
                 ],
@@ -326,7 +326,7 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                     TextField(
                       controller: barcodeCtrl,
                       decoration: InputDecoration(
-                        labelText: 'CÃƒÂ³digo de barras', 
+                        labelText: 'Código de barras', 
                         isDense: true,
                         suffixIcon: IconButton(
                           icon: const Icon(Icons.qr_code_scanner, color: Colors.blueAccent),
@@ -345,9 +345,9 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                         Expanded(
                           child: DropdownButtonFormField<int?>(isExpanded: true,
                             initialValue: selectedCategoryId,
-                            decoration: const InputDecoration(labelText: 'CategorÃƒÂ­a', isDense: true, border: OutlineInputBorder()),
+                            decoration: const InputDecoration(labelText: 'Categoría', isDense: true, border: OutlineInputBorder()),
                             items: [
-                              const DropdownMenuItem(value: null, child: Text('Sin CategorÃƒÂ­a')),
+                              const DropdownMenuItem(value: null, child: Text('Sin Categoría')),
                               ...catalogProv.categories.map((c) => DropdownMenuItem(value: c.id, child: Text(c.name))),
                             ],
                             onChanged: (val) => setStateDialog(() => selectedCategoryId = val),
@@ -356,7 +356,7 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                         const SizedBox(width: 8),
                         IconButton.filledTonal(
                           icon: const Icon(Icons.settings),
-                          tooltip: 'Gestionar CategorÃƒÂ­as',
+                          tooltip: 'Gestionar Categorías',
                           onPressed: () async {
                             await showDialog(
                               context: context,
@@ -420,7 +420,7 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                             controller: marginCtrl,
                             keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
                             decoration: const InputDecoration(labelText: '% Gan.', isDense: true),
-                            onChanged: (_) => calcPriceFromMargin(), // Ajusta precio segÃƒÂºn el margen
+                            onChanged: (_) => calcPriceFromMargin(), // Ajusta precio según el margen
                           ),
                         ),
                         const SizedBox(width: 8),
@@ -429,7 +429,7 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                             controller: priceCtrl,
                             keyboardType: const TextInputType.numberWithOptions(decimal: true),
                             decoration: const InputDecoration(labelText: 'Venta (\$)', isDense: true),
-                            onChanged: (_) => calcMarginFromPrice(), // Ajusta margen segÃƒÂºn el precio
+                            onChanged: (_) => calcMarginFromPrice(), // Ajusta margen según el precio
                           ),
                         ),
                       ],
@@ -461,7 +461,7 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                     TextField(
                       controller: vencimientoCtrl,
                       keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(labelText: 'DÃƒÂ­as para Vencimiento', isDense: true, border: OutlineInputBorder(), prefixIcon: Icon(Icons.event_busy, color: Colors.orange, size: 20)),
+                      decoration: const InputDecoration(labelText: 'Días para Vencimiento', isDense: true, border: OutlineInputBorder(), prefixIcon: Icon(Icons.event_busy, color: Colors.orange, size: 20)),
                     ),
                     const SizedBox(height: 12),
                     SwitchListTile(
@@ -592,7 +592,7 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
       ),
       body: Column(
         children: [
-          // 1. ÃƒÂREA DE CÃƒÂMARA O PRODUCTO (Alternan)
+          // 1. ÁREA DE CÁMARA O PRODUCTO (Alternan)
           if (_scannedProduct == null)
             Expanded(
               flex: 3,
@@ -640,7 +640,7 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                           ),
                           IconButton(
                             icon: const Icon(Icons.print, color: Colors.blueAccent),
-                            tooltip: 'Imprimir en Tiquetera Termica',
+                            tooltip: 'Imprimir en Tiquetera Térmica',
                             onPressed: () => _printLabelRemotely(_scannedProduct!.id),
                           ),
                         ],
@@ -653,7 +653,7 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'CÃƒÂ³digo: ${_scannedProduct!.barcode ?? _scannedProduct!.internalCode}',
+                        'Código: ${_scannedProduct!.barcode ?? _scannedProduct!.internalCode}',
                         style: const TextStyle(fontSize: 16, color: Colors.black54),
                       ),
                     ],
@@ -672,7 +672,7 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                   child: TextField(
                     controller: _manualSearchCtrl,
                     decoration: InputDecoration(
-                      hintText: 'Ingresar cÃƒÂ³digo manual...',
+                      hintText: 'Ingresar código manual...',
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                       isDense: true,
                     ),
@@ -690,7 +690,7 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
             ),
           ),
 
-          // 3. ÃƒÂREA DE EDICIÃƒâ€œN
+          // 3. ÁREA DE EDICIÓN
           if (_scannedProduct != null)
             Expanded(
               flex: 4,
@@ -741,14 +741,14 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                         ],
                       ),
                       const SizedBox(height: 12),
-                      // Ã¢Å“â€¦ FIX: Campo "Sumar Stock" con incremento atÃƒÂ³mico (sin race condition)
+                      // ✅ FIX: Campo "Sumar Stock" con incremento atómico (sin race condition)
                       TextFormField(
                         controller: _addStockQuickCtrl,
                         keyboardType: const TextInputType.numberWithOptions(decimal: true),
                         decoration: InputDecoration(
-                          labelText: 'Sumar Stock (+) Ã¢â‚¬â€ Opcional',
+                          labelText: 'Sumar Stock (+) — Opcional',
                           hintText: 'Ej: 12 (suma al stock actual)',
-                          helperText: 'Ã¢Å¡Â¡ Ingreso atÃƒÂ³mico: protegido contra ventas simultÃƒÂ¡neas',
+                          helperText: '⚡ Ingreso atómico: protegido contra ventas simultáneas',
                           border: const OutlineInputBorder(),
                           filled: true,
                           fillColor: Colors.green.shade50,
@@ -791,7 +791,7 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                                 context: context,
                                 builder: (ctx) => AlertDialog(
                                   title: const Text('Eliminar Producto'),
-                                  content: Text('Ã‚Â¿Seguro que deseas eliminar "${_scannedProduct!.name}"? Esta acciÃƒÂ³n no se puede deshacer.'),
+                                  content: Text('¿Seguro que deseas eliminar "${_scannedProduct!.name}"? Esta acción no se puede deshacer.'),
                                   actions: [
                                     TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
                                     TextButton(
@@ -847,7 +847,7 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
             const Expanded(
               flex: 4,
               child: Center(
-                child: Text('ApuntÃƒÂ¡ al CÃƒÂ³digo de barras\no ingresalo manualmente.', textAlign: TextAlign.center, style: TextStyle(color: Colors.black54)),
+                child: Text('Apuntá al Código de barras\no ingresalo manualmente.', textAlign: TextAlign.center, style: TextStyle(color: Colors.black54)),
               ),
             )
         ],
