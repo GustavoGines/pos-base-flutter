@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../../../../core/network/api_client.dart';
+import '../../../../core/config/app_config.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:provider/provider.dart';
@@ -195,6 +197,35 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
     }
   }
 
+  Future<void> _printLabelRemotely(int productId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final String apiUrl = prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
+      
+      final apiClient = context.read<ApiClient>();
+      
+      final response = await apiClient.post(
+        Uri.parse('$apiUrl/mobile/print-label'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: jsonEncode({
+          'product_id': productId,
+          'target_pc': 'caja-1', // Imprime siempre en la PC principal
+        }),
+      );
+      
+      if (response.statusCode == 200) {
+        if (mounted) SnackBarService.success(context, '✅ Orden enviada a la impresora');
+      } else {
+        if (mounted) SnackBarService.error(context, '❌ Error al imprimir: ${response.statusCode}');
+      }
+    } catch (e) {
+      if (mounted) SnackBarService.error(context, '❌ Error de red: $e');
+    }
+  }
+
   Future<void> _showProductFormDialog({String? initialBarcode, Product? productToEdit}) async {
     _scannerController.stop();
 
@@ -281,32 +312,7 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                     IconButton(
                       icon: const Icon(Icons.print, color: Colors.blueAccent),
                       tooltip: 'Imprimir Etiqueta Remotamente',
-                      onPressed: () async {
-                        try {
-                          final auth = context.read<AuthProvider>();
-                          final prefs = await SharedPreferences.getInstance();
-                          final String apiUrl = prefs.getString('pos_api') ?? 'http://localhost/api';
-                          final response = await http.post(
-                            Uri.parse('$apiUrl/mobile/print-label'),
-                            headers: {
-                              'Content-Type': 'application/json',
-                              'Accept': 'application/json',
-                              'Authorization': 'Bearer ${auth.sessionToken}',
-                            },
-                            body: jsonEncode({
-                              'product_id': productToEdit.id,
-                              'target_pc': 'caja-1',
-                            }),
-                          );
-                          if (response.statusCode == 200) {
-                            if (ctx.mounted) SnackBarService.success(context, 'Orden enviada a la PC principal');
-                          } else {
-                            if (ctx.mounted) SnackBarService.error(context, 'Error al imprimir: ${response.statusCode}');
-                          }
-                        } catch (e) {
-                          if (ctx.mounted) SnackBarService.error(context, 'Error de red: $e');
-                        }
-                      },
+                      onPressed: () => _printLabelRemotely(productToEdit.id),
                     ),
                 ],
               ),
@@ -633,6 +639,11 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                             icon: const Icon(Icons.edit, color: Colors.blueAccent),
                             tooltip: 'Editar detalles',
                             onPressed: () => _showProductFormDialog(productToEdit: _scannedProduct),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.print, color: Colors.blueAccent),
+                            tooltip: 'Imprimir Etiqueta Remotamente',
+                            onPressed: () => _printLabelRemotely(_scannedProduct!.id),
                           ),
                         ],
                       ),
