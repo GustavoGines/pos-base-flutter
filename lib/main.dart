@@ -167,7 +167,10 @@ void main() async {
   }
   
   // Pre-cargar perfil de impresora para evitar crashes de AssetManifest en Windows
-  await ReceiptPrinterService.instance.initialize();
+  // ⚠️ SOLO en Desktop — en mobile no existe impresora conectada y puede colgarse
+  if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+    await ReceiptPrinterService.instance.initialize();
+  }
   
   // Obtener URL de la API del almacenamiento local
   final prefs = await SharedPreferences.getInstance();
@@ -443,8 +446,14 @@ class _MainAppState extends State<MainApp> {
     });
 
     bool success = false;
+    // En mobile limitamos el tiempo total de espera para no colgar la pantalla de splash
+    final bool isMobilePlatform = Platform.isAndroid || Platform.isIOS;
+    final Duration requestTimeout = isMobilePlatform
+        ? const Duration(seconds: 6)
+        : const Duration(seconds: 15);
+
     try {
-      await settingsProvider.loadSettings();
+      await settingsProvider.loadSettings().timeout(requestTimeout);
       success = true;
     } catch (e) {
       final prefs = await SharedPreferences.getInstance();
@@ -455,16 +464,16 @@ class _MainAppState extends State<MainApp> {
         await prefs.setString('pos_api', AppConfig.kApiBaseUrl);
         settingsProvider.updateBaseUrl(AppConfig.kApiBaseUrl);
         try {
-          await settingsProvider.loadSettings();
+          await settingsProvider.loadSettings().timeout(requestTimeout);
           success = true;
         } catch (_) {}
       }
 
       // Reintento Automático (1 vez después de 2 segundos) para dar tiempo a Laragon/Red a despertar
-      if (!success) {
+      if (!success && !isMobilePlatform) {
         await Future.delayed(const Duration(seconds: 2));
         try {
-          await settingsProvider.loadSettings();
+          await settingsProvider.loadSettings().timeout(requestTimeout);
           success = true;
         } catch (_) {}
       }
