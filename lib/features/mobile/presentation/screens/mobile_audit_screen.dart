@@ -158,6 +158,8 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
       final catalogProvider = context.read<CatalogProvider>();
       final payload = <String, dynamic>{
         'selling_price': newPrice,
+        'cost_price': _scannedProduct!.costPrice,
+        'stock': _scannedProduct!.stock,
       };
 
       // ✅ FIX: Si el empleado llenó "Sumar Stock (+)", usamos incremento atómico.
@@ -183,6 +185,8 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
           _addStockQuickCtrl.clear();
         });
         _scannerController.start();
+      } else if (mounted) {
+        SnackBarService.error(context, catalogProvider.errorMessage ?? 'Error desconocido al guardar');
       }
     } catch (e) {
       if (mounted) SnackBarService.error(context, 'Error al guardar: $e');
