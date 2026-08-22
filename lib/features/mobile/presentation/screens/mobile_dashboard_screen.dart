@@ -74,9 +74,9 @@ class _MobileDashboardScreenState extends State<MobileDashboardScreen> {
 
     await salesProvider.loadSales(period: _selectedPeriod);
     
-    // Recargar métricas secundarias silenciosamente
-    cashRegisterProvider.checkCurrentShiftSilently();
-    alertsProvider.fetchAlerts();
+    // Recargar métricas secundarias secuencialmente para evitar cuellos de botella en el servidor local
+    await cashRegisterProvider.checkCurrentShiftSilently();
+    await alertsProvider.fetchAlerts();
 
     DateTime start = DateTime.now();
     DateTime end = DateTime.now();
