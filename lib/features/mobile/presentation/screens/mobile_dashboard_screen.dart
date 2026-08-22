@@ -21,6 +21,7 @@ class MobileDashboardScreen extends StatefulWidget {
 class _MobileDashboardScreenState extends State<MobileDashboardScreen> {
   PusherChannelsClient? _pusher;
   String _selectedPeriod = 'today';
+  bool _isScreenLoading = false;
 
   @override
   void initState() {
@@ -67,36 +68,45 @@ class _MobileDashboardScreenState extends State<MobileDashboardScreen> {
   }
 
   Future<void> _loadData() async {
-    final salesProvider = context.read<SalesHistoryProvider>();
-    final reportsProvider = context.read<ReportsProvider>();
-    final cashRegisterProvider = context.read<CashRegisterProvider>();
-    final alertsProvider = context.read<InventoryAlertsProvider>();
+    if (!mounted || _isScreenLoading) return;
+    setState(() => _isScreenLoading = true);
 
-    await salesProvider.loadSales(period: _selectedPeriod);
-    
-    // Recargar métricas secundarias secuencialmente para evitar cuellos de botella en el servidor local
-    await cashRegisterProvider.checkCurrentShiftSilently();
-    await alertsProvider.fetchAlerts();
+    try {
+      final salesProvider = context.read<SalesHistoryProvider>();
+      final reportsProvider = context.read<ReportsProvider>();
+      final cashRegisterProvider = context.read<CashRegisterProvider>();
+      final alertsProvider = context.read<InventoryAlertsProvider>();
 
-    DateTime start = DateTime.now();
-    DateTime end = DateTime.now();
+      await salesProvider.loadSales(period: _selectedPeriod);
+      
+      // Recargar métricas secundarias secuencialmente para evitar cuellos de botella en el servidor local
+      await cashRegisterProvider.checkCurrentShiftSilently();
+      await alertsProvider.fetchAlerts();
 
-    if (_selectedPeriod == 'today') {
-      start = DateTime.now();
-      end = DateTime.now();
-    } else if (_selectedPeriod == 'yesterday') {
-      start = DateTime.now().subtract(const Duration(days: 1));
-      end = DateTime.now().subtract(const Duration(days: 1));
-    } else if (_selectedPeriod == 'week') {
-      start = DateTime.now().subtract(Duration(days: DateTime.now().weekday - 1));
-      end = start.add(const Duration(days: 6));
-    } else if (_selectedPeriod == 'month') {
-      start = DateTime(DateTime.now().year, DateTime.now().month, 1);
-      end = DateTime(DateTime.now().year, DateTime.now().month + 1, 0);
+      DateTime start = DateTime.now();
+      DateTime end = DateTime.now();
+
+      if (_selectedPeriod == 'today') {
+        start = DateTime.now();
+        end = DateTime.now();
+      } else if (_selectedPeriod == 'yesterday') {
+        start = DateTime.now().subtract(const Duration(days: 1));
+        end = DateTime.now().subtract(const Duration(days: 1));
+      } else if (_selectedPeriod == 'week') {
+        start = DateTime.now().subtract(Duration(days: DateTime.now().weekday - 1));
+        end = start.add(const Duration(days: 6));
+      } else if (_selectedPeriod == 'month') {
+        start = DateTime(DateTime.now().year, DateTime.now().month, 1);
+        end = DateTime(DateTime.now().year, DateTime.now().month + 1, 0);
+      }
+
+      reportsProvider.setDateRange(start, end);
+      await reportsProvider.fetchProfitByCategory();
+    } finally {
+      if (mounted) {
+        setState(() => _isScreenLoading = false);
+      }
     }
-
-    reportsProvider.setDateRange(start, end);
-    await reportsProvider.fetchProfitByCategory();
   }
 
   String _getPeriodLabel() {
@@ -148,7 +158,7 @@ class _MobileDashboardScreenState extends State<MobileDashboardScreen> {
         builder: (context, salesProvider, reportsProvider, settingsProvider, cashProvider, alertsProvider, child) {
           final canAccessAdvancedReports = settingsProvider.features.advancedReports;
 
-          if (salesProvider.isLoading || reportsProvider.isLoading) {
+          if (_isScreenLoading) {
             return const Center(child: CircularProgressIndicator());
           }
 
