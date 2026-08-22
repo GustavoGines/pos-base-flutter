@@ -26,7 +26,8 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
   final TextEditingController _manualSearchCtrl = TextEditingController();
   
   final TextEditingController _priceCtrl = TextEditingController();
-  final TextEditingController _stockCtrl = TextEditingController();
+  final TextEditingController _stockCtrl = TextEditingController(); // Lectura del stock actual (display)
+  final TextEditingController _addStockQuickCtrl = TextEditingController(); // Sumar stock (+) en vista rápida
 
   bool _isProcessing = false;
   Product? _scannedProduct;
@@ -46,6 +47,7 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
     _manualSearchCtrl.dispose();
     _priceCtrl.dispose();
     _stockCtrl.dispose();
+    _addStockQuickCtrl.dispose();
     super.dispose();
   }
 
@@ -102,6 +104,7 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
             _scannedProduct = match;
             _priceCtrl.text = match!.sellingPrice.toInt().toString();
             _stockCtrl.text = (match.stock % 1 == 0 ? match.stock.toInt().toString() : match.stock.toString());
+            _addStockQuickCtrl.clear(); // Limpiar campo de ingreso rápido
           });
         }
       }
@@ -142,10 +145,10 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
     if (_scannedProduct == null) return;
 
     final newPrice = double.tryParse(_priceCtrl.text);
-    final newStock = double.tryParse(_stockCtrl.text);
+    final addStock = double.tryParse(_addStockQuickCtrl.text.trim());
 
-    if (newPrice == null || newStock == null) {
-      SnackBarService.error(context, 'Valores numéricos inválidos');
+    if (newPrice == null) {
+      SnackBarService.error(context, 'Precio inválido');
       return;
     }
 
@@ -153,21 +156,31 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
 
     try {
       final catalogProvider = context.read<CatalogProvider>();
+      final payload = <String, dynamic>{
+        'selling_price': newPrice,
+      };
+
+      // ✅ FIX: Si el empleado llenó "Sumar Stock (+)", usamos incremento atómico.
+      // Si lo dejó vacío, solo actualizamos el precio (sin tocar el stock).
+      if (addStock != null && addStock > 0) {
+        payload['add_stock'] = addStock;
+      }
+
       final success = await catalogProvider.updateProduct(
         _scannedProduct!.id,
-        {
-          'selling_price': newPrice,
-          'stock': newStock,
-        },
+        payload,
       );
 
       if (success && mounted) {
-        SnackBarService.success(context, 'Producto actualizado con éxito');
-        
-        // Limpiar y reactivar cámara
+        final msg = (addStock != null && addStock > 0)
+            ? '✅ Precio actualizado y +${addStock.toStringAsFixed(0)} u. sumadas al stock'
+            : '✅ Precio actualizado';
+        SnackBarService.success(context, msg);
+
         setState(() {
           _scannedProduct = null;
           _manualSearchCtrl.clear();
+          _addStockQuickCtrl.clear();
         });
         _scannerController.start();
       }
@@ -690,20 +703,49 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                             ),
                           ),
                           const SizedBox(width: 16),
+                          // Stock actual: solo lectura (display)
                           Expanded(
-                            child: TextFormField(
-                              controller: _stockCtrl,
-                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                              decoration: const InputDecoration(
-                                labelText: 'Stock Actual',
-                                border: OutlineInputBorder(),
-                                filled: true,
-                                fillColor: Colors.white,
+                            child: Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade200,
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(color: Colors.grey.shade400),
                               ),
-                              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('Stock actual', style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    _stockCtrl.text,
+                                    style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.black54),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         ],
+                      ),
+                      const SizedBox(height: 12),
+                      // ✅ FIX: Campo "Sumar Stock" con incremento atómico (sin race condition)
+                      TextFormField(
+                        controller: _addStockQuickCtrl,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        decoration: InputDecoration(
+                          labelText: 'Sumar Stock (+) — Opcional',
+                          hintText: 'Ej: 12 (suma al stock actual)',
+                          helperText: '⚡ Ingreso atómico: protegido contra ventas simultáneas',
+                          border: const OutlineInputBorder(),
+                          filled: true,
+                          fillColor: Colors.green.shade50,
+                          prefixIcon: const Icon(Icons.add_box, color: Colors.green),
+                          labelStyle: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold),
+                          focusedBorder: OutlineInputBorder(
+                            borderSide: BorderSide(color: Colors.green.shade700, width: 2),
+                          ),
+                        ),
+                        style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.green),
                       ),
                       const SizedBox(height: 24),
                       SizedBox(

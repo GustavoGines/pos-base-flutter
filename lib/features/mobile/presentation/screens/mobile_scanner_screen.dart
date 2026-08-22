@@ -5,6 +5,7 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:frontend_desktop/core/network/api_client.dart';
 import 'package:frontend_desktop/core/config/app_config.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class MobileScannerScreen extends StatefulWidget {
   const MobileScannerScreen({super.key});
@@ -16,8 +17,7 @@ class MobileScannerScreen extends StatefulWidget {
 class _MobileScannerScreenState extends State<MobileScannerScreen> {
   final MobileScannerController _scannerController = MobileScannerController();
   final AudioPlayer _audioPlayer = AudioPlayer();
-  final TextEditingController _targetPcController = TextEditingController(text: 'caja-1');
-  
+
   bool _isProcessing = false;
   String? _lastScannedCode;
   DateTime? _lastScanTime;
@@ -26,7 +26,6 @@ class _MobileScannerScreenState extends State<MobileScannerScreen> {
   void dispose() {
     _scannerController.dispose();
     _audioPlayer.dispose();
-    _targetPcController.dispose();
     super.dispose();
   }
 
@@ -55,12 +54,15 @@ class _MobileScannerScreenState extends State<MobileScannerScreen> {
         await _audioPlayer.play(AssetSource('beep.mp3'));
       } catch (_) {}
 
+      // ✅ FIX: Usar la URL configurada por el usuario (Smart Auto-Fallback)
+      final prefs = await SharedPreferences.getInstance();
+      final apiUrl = prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
+
       final apiClient = context.read<ApiClient>();
-      
-      final url = Uri.parse('${AppConfig.kApiBaseUrl}/mobile/scan');
+      final url = Uri.parse('$apiUrl/mobile/scan');
       final payload = jsonEncode({
         'barcode': code,
-        'target_pc': _targetPcController.text,
+        'target_pc': 'caja-1', // Siempre la caja principal (no expuesto al empleado)
       });
 
       await apiClient.post(
@@ -72,7 +74,7 @@ class _MobileScannerScreenState extends State<MobileScannerScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Enviado: $code a ${_targetPcController.text}'),
+          content: Text('✅ Código enviado: $code'),
           backgroundColor: Colors.green,
           duration: const Duration(seconds: 1),
         ),
@@ -110,50 +112,26 @@ class _MobileScannerScreenState extends State<MobileScannerScreen> {
           ),
         ],
       ),
-      body: Column(
+      body: Stack(
         children: [
-          Container(
-            color: Colors.white,
-            padding: const EdgeInsets.all(8.0),
-            child: Row(
-              children: [
-                const Text('PC Destino: ', style: TextStyle(fontWeight: FontWeight.bold)),
-                Expanded(
-                  child: TextField(
-                    controller: _targetPcController,
-                    decoration: const InputDecoration(
-                      isDense: true,
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                ),
-              ],
+          MobileScanner(
+            controller: _scannerController,
+            onDetect: _onDetect,
+          ),
+          Center(
+            child: Container(
+              width: 250,
+              height: 150,
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.greenAccent, width: 3),
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
           ),
-          Expanded(
-            child: Stack(
-              children: [
-                MobileScanner(
-                  controller: _scannerController,
-                  onDetect: _onDetect,
-                ),
-                Center(
-                  child: Container(
-                    width: 250,
-                    height: 150,
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.greenAccent, width: 3),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                ),
-                if (_isProcessing)
-                  const Center(
-                    child: CircularProgressIndicator(color: Colors.white),
-                  ),
-              ],
+          if (_isProcessing)
+            const Center(
+              child: CircularProgressIndicator(color: Colors.white),
             ),
-          ),
         ],
       ),
     );
