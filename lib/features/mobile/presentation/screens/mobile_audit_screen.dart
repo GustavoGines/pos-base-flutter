@@ -536,10 +536,15 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                                 _manualSearchCtrl.text = queryToSearch;
                                 _searchProduct(queryToSearch);
                               }
+                            } else if (ctx.mounted) {
+                              SnackBarService.error(context, catalogProv.errorMessage ?? 'Error desconocido');
                             }
                           } catch (e) {
                             if (ctx.mounted) {
                               SnackBarService.error(context, 'Error: $e');
+                            }
+                          } finally {
+                            if (ctx.mounted) {
                               setStateDialog(() => isSaving = false);
                             }
                           }
