@@ -12,7 +12,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import '../../../updater/data/services/update_service.dart';
 import '../../../updater/presentation/widgets/update_dialog.dart';
 import '../../../updater/data/models/update_info.dart';
-
+import '../../../../core/config/app_config.dart';
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -56,24 +56,46 @@ class _LoginScreenState extends State<LoginScreen> {
 
     try {
       final result = await UpdateService().checkUpdate(throwErrors: true);
-      if (!mounted) return;
+      
+      // Si el usuario sigue pacientemente en la pantalla de login:
+      if (mounted) {
+        // Actualización crítica del frontend → diálogo bloqueante
+        if (result.frontendUpdate != null && result.frontendUpdate!.isCritical) {
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (_) => UpdateDialog(updateInfo: result.frontendUpdate!),
+          );
+          return;
+        }
 
-      // Actualización crítica del frontend → diálogo bloqueante
-      if (result.frontendUpdate != null && result.frontendUpdate!.isCritical) {
-        showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (_) => UpdateDialog(updateInfo: result.frontendUpdate!),
-        );
-        return;
+        // Actualizaciones no críticas → badges en pantalla
+        setState(() {
+          _frontendUpdate = result.frontendUpdate;
+          _backendUpdate = result.backendUpdate;
+          _updateCheckCompleted = true;
+        });
+      } else {
+        // ¡Trampa evitada! El usuario entró rápido al sistema y el login ya se destruyó.
+        // Render despertó tarde, así que usamos el contexto global para lanzarle el aviso 
+        // esté donde esté (Pantalla de ventas, dashboard, etc).
+        final globalContext = AppConfig.navigatorKey.currentContext;
+        if (globalContext != null) {
+          if (result.frontendUpdate != null) {
+            showDialog(
+              context: globalContext,
+              barrierDismissible: !result.frontendUpdate!.isCritical,
+              builder: (_) => UpdateDialog(updateInfo: result.frontendUpdate!),
+            );
+          } else if (result.backendUpdate != null) {
+            showDialog(
+              context: globalContext,
+              barrierDismissible: !result.backendUpdate!.isCritical,
+              builder: (_) => UpdateDialog(updateInfo: result.backendUpdate!),
+            );
+          }
+        }
       }
-
-      // Actualizaciones no críticas → badges en pantalla
-      setState(() {
-        _frontendUpdate = result.frontendUpdate;
-        _backendUpdate = result.backendUpdate;
-        _updateCheckCompleted = true;
-      });
     } catch (e) {
       // Fallo de red u otro error silencioso: no mostramos 'AL DÍA'
     }
