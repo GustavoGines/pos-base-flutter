@@ -22,16 +22,10 @@ class _MobileNetworkSettingsScreenState extends State<MobileNetworkSettingsScree
 
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
-    final legacy = prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
-    String savedLocal = prefs.getString('pos_api_local') ?? legacy;
-    String savedRemote = prefs.getString('pos_api_remote') ?? '';
-
-    // Mostrarle al usuario solo el número/dominio limpio en la caja de texto
-    savedLocal = savedLocal.replaceFirst('http://', '').replaceFirst('https://', '');
-    if (savedLocal.contains('/')) savedLocal = savedLocal.split('/').first;
-
-    savedRemote = savedRemote.replaceFirst('http://', '').replaceFirst('https://', '');
-    if (savedRemote.contains('/')) savedRemote = savedRemote.split('/').first;
+    
+    // Ya no recortamos las URLs, dejamos que el usuario vea la ruta real completa.
+    final savedLocal = prefs.getString('pos_api_local') ?? prefs.getString('pos_api') ?? '';
+    final savedRemote = prefs.getString('pos_api_remote') ?? '';
 
     _localCtrl.text = savedLocal;
     _remoteCtrl.text = savedRemote;
@@ -51,21 +45,18 @@ class _MobileNetworkSettingsScreenState extends State<MobileNetworkSettingsScree
     String cleanLocal = localUrl.trim();
     String cleanRemote = remoteUrl.trim();
 
-    // --- AUTO-FORMATO UX ---
-    // Si el usuario solo escribe la IP (ej. 192.168.1.50)
+    // --- AUTO-FORMATO UX (Solo si no empieza con http) ---
     if (cleanLocal.isNotEmpty && !cleanLocal.startsWith('http')) {
       if (!cleanLocal.contains('/')) {
-        // Le agregamos la ruta por defecto de Laragon
         cleanLocal = 'http://$cleanLocal/Sistema_POS/pos-backend/public/api';
       } else {
         cleanLocal = 'http://$cleanLocal';
       }
     }
     
-    // Si el usuario solo escribe el dominio de Cloudflare (ej. pos.mi-negocio.com)
     if (cleanRemote.isNotEmpty && !cleanRemote.startsWith('http')) {
       if (!cleanRemote.contains('/')) {
-        cleanRemote = 'https://$cleanRemote/api';
+        cleanRemote = 'https://$cleanRemote/Sistema_POS/pos-backend/public/api';
       } else {
         cleanRemote = 'https://$cleanRemote';
       }

@@ -219,12 +219,9 @@ class _LoginScreenState extends State<LoginScreen> {
     final prefs = await SharedPreferences.getInstance();
     final currentUrl = prefs.getString('pos_api') ?? 'http://127.0.0.1/Sistema_POS/pos-backend/public/api';
     
-    // Extraer solo la IP usando una expresión regular
-    final ipMatch = RegExp(r'http://([^/:]+)').firstMatch(currentUrl);
-    final currentIp = ipMatch != null ? ipMatch.group(1) ?? '127.0.0.1' : '127.0.0.1';
-    
+    // Mostrar la URL tal cual, sin intentar extraer solo la IP con regex frágiles
     if (!mounted) return;
-    final ctrl = TextEditingController(text: currentIp);
+    final ctrl = TextEditingController(text: currentUrl);
 
     await showDialog(
       context: context,
@@ -242,16 +239,15 @@ class _LoginScreenState extends State<LoginScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Ingresa solo la IP de la computadora principal (Servidor).\n'
-              'Ejemplo: 192.168.1.50',
+              'Ingresa la URL o IP completa de la API:',
               style: TextStyle(color: Colors.blueGrey, fontSize: 13),
             ),
             const SizedBox(height: 16),
             TextField(
               controller: ctrl,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: TextInputType.url,
               decoration: InputDecoration(
-                labelText: 'IP del Servidor',
+                labelText: 'URL del Servidor',
                 prefixIcon: const Icon(Icons.wifi),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
               ),
@@ -265,11 +261,25 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
           FilledButton.icon(
             onPressed: () async {
-              final ip = ctrl.text.trim();
-              if (ip.isNotEmpty) {
-                // Reconstruir la URL completa
-                final newUrl = 'http://$ip/Sistema_POS/pos-backend/public/api';
+              String newUrl = ctrl.text.trim();
+              if (newUrl.isNotEmpty) {
+                // --- AUTO-FORMATO UX ---
+                if (!newUrl.startsWith('http')) {
+                  if (!newUrl.contains('/')) {
+                    if (newUrl.contains('recovarentals')) {
+                      newUrl = 'https://$newUrl/Sistema_POS/pos-backend/public/api';
+                    } else {
+                      newUrl = 'http://$newUrl/Sistema_POS/pos-backend/public/api';
+                    }
+                  } else {
+                    newUrl = 'http://$newUrl';
+                  }
+                }
+                
                 await prefs.setString('pos_api', newUrl);
+                // Asegurar que actualizamos ambas para no romper el Auto-Fallback
+                await prefs.setString('pos_api_local', newUrl);
+                
                 if (!ctx.mounted) return;
                 Navigator.pop(ctx);
                 SnackBarService.success(context,

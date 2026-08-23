@@ -590,14 +590,27 @@ class _MainAppState extends State<MainApp> {
             onPressed: () async {
               String newUrl = urlController.text.trim();
               if (newUrl.isNotEmpty) {
-                if (!newUrl.startsWith('http://') && !newUrl.startsWith('https://')) {
-                  newUrl = 'http://$newUrl';
+                // --- AUTO-FORMATO UX (Igual que en Ajustes) ---
+                if (!newUrl.startsWith('http')) {
+                  if (!newUrl.contains('/')) {
+                    // Si es solo una IP/dominio, asumimos la ruta por defecto
+                    if (newUrl.contains('recovarentals')) {
+                      newUrl = 'https://$newUrl/Sistema_POS/pos-backend/public/api';
+                    } else {
+                      newUrl = 'http://$newUrl/Sistema_POS/pos-backend/public/api';
+                    }
+                  } else {
+                    newUrl = 'http://$newUrl';
+                  }
                 }
+                
                 if (newUrl.endsWith('/')) {
                   newUrl = newUrl.substring(0, newUrl.length - 1);
                 }
                 
                 await prefs.setString('pos_api', newUrl);
+                // IMPORTANTE: También guardamos pos_api_local para que no pise la configuración al reiniciar
+                await prefs.setString('pos_api_local', newUrl);
                 
                 if (context.mounted) {
                   final settingsProvider = Provider.of<SettingsProvider>(context, listen: false);
@@ -613,9 +626,16 @@ class _MainAppState extends State<MainApp> {
                   
                   try {
                     await settingsProvider.loadSettings();
-                    // Si conecta, reiniciamos el proceso de Flutter para reconstruir el árbol DI
-                    Process.start(Platform.resolvedExecutable, Platform.executableArguments);
-                    exit(0);
+                    
+                    if (Platform.isAndroid || Platform.isIOS) {
+                      // En celular no cerramos la app porque el OS no la vuelve a abrir sola.
+                      // Simplemente volvemos a llamar a la inicialización.
+                      _initializeApp();
+                    } else {
+                      // En Desktop sí podemos reiniciar el proceso
+                      Process.start(Platform.resolvedExecutable, Platform.executableArguments);
+                      exit(0);
+                    }
                   } catch (e) {
                     setState(() {
                       _isInitializing = false;

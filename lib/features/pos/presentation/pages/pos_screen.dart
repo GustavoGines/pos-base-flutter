@@ -118,12 +118,21 @@ class _PosScreenState extends State<PosScreen> {
     try {
       final prefs = await SharedPreferences.getInstance();
       final currentUrl = prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
-      final host = Uri.parse(currentUrl).host;
+      final uri = Uri.parse(currentUrl);
+      
+      final isSecure = currentUrl.startsWith('https');
+      // Si estamos por Cloudflare (api.midominio.com), buscar el websocket en ws.midominio.com
+      final String pusherHost = uri.host.startsWith('api.') 
+          ? uri.host.replaceFirst('api.', 'ws.') 
+          : uri.host;
+          
+      // Cloudflare rutea WSS por el puerto estándar 443. En red local directa usamos el 8080 de Reverb.
+      final int pusherPort = isSecure ? 443 : 8080;
       
       final options = PusherChannelsOptions.fromHost(
-        scheme: currentUrl.startsWith('https') ? 'wss' : 'ws',
-        host: host,
-        port: 8080,
+        scheme: isSecure ? 'wss' : 'ws',
+        host: pusherHost,
+        port: pusherPort,
         key: 'kz786cdfeldnzispymxq',
       );
 

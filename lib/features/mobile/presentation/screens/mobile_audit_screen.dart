@@ -179,12 +179,15 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
             : '✅ Precio actualizado';
         SnackBarService.success(context, msg);
 
+        // En lugar de volver a la cámara, vaciamos el campo de suma rápida
         setState(() {
-          _scannedProduct = null;
-          _manualSearchCtrl.clear();
           _addStockQuickCtrl.clear();
         });
-        _scannerController.start();
+        
+        // Refrescar el producto desde la base de datos para mostrar los datos reales actualizados
+        if (_scannedProduct!.barcode != null && _scannedProduct!.barcode!.isNotEmpty) {
+          _searchProduct(_scannedProduct!.barcode!);
+        }
       } else if (mounted) {
         SnackBarService.error(context, catalogProvider.errorMessage ?? 'Error desconocido al guardar');
       }
