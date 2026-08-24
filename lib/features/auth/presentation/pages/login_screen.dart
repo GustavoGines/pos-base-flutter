@@ -56,7 +56,11 @@ class _LoginScreenState extends State<LoginScreen> {
 
     try {
       final result = await UpdateService().checkUpdate(throwErrors: true);
-      
+      // ── Siempre: alimentar el notificador global para el badge de la AppBar ──
+      if (result.hasAny) {
+        UpdateService.updateNotifier.value = result;
+      }
+
       // Si el usuario sigue pacientemente en la pantalla de login:
       if (mounted) {
         // Actualización crítica del frontend → diálogo bloqueante
@@ -69,17 +73,14 @@ class _LoginScreenState extends State<LoginScreen> {
           return;
         }
 
-        // Actualizaciones no críticas → badges en pantalla
+        // Actualizaciones no críticas → badges en pantalla de login
         setState(() {
           _frontendUpdate = result.frontendUpdate;
           _backendUpdate = result.backendUpdate;
           _updateCheckCompleted = true;
         });
       } else {
-        // ¡Trampa evitada! El usuario entró rápido al sistema y el login ya se destruyó.
-        // Render despertó tarde, así que usamos el contexto global para lanzarle el aviso 
-        // esté donde esté (Pantalla de ventas, dashboard, etc).
-        // esté donde esté (Pantalla de ventas, dashboard, etc).
+        // El usuario entró rápido y el login ya se destruyó → popup global
         final globalContext = AppConfig.navigatorKey.currentContext;
         if (globalContext != null) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
