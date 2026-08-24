@@ -20,18 +20,6 @@ class UpdateService {
   /// Chequea backend y frontend de forma separada.
   /// Retorna [UpdateCheckResult] con ambos componentes (si hay actualizaciones).
   Future<UpdateCheckResult> checkUpdate({bool throwErrors = false}) async {
-    // --- TEST ---
-    await Future.delayed(const Duration(seconds: 10));
-    return UpdateCheckResult(
-      frontendUpdate: UpdateInfo(
-        version: '9.9.9',
-        downloadUrl: 'https://test.zip',
-        changelog: '¡ÉXITO! El Popup Global funciona.',
-        isCritical: false,
-        component: 'frontend',
-      ),
-    );
-    // ------------
     UpdateInfo? frontendUpdate;
     UpdateInfo? backendUpdate;
 
