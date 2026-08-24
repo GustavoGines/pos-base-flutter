@@ -79,21 +79,24 @@ class _LoginScreenState extends State<LoginScreen> {
         // ¡Trampa evitada! El usuario entró rápido al sistema y el login ya se destruyó.
         // Render despertó tarde, así que usamos el contexto global para lanzarle el aviso 
         // esté donde esté (Pantalla de ventas, dashboard, etc).
+        // esté donde esté (Pantalla de ventas, dashboard, etc).
         final globalContext = AppConfig.navigatorKey.currentContext;
         if (globalContext != null) {
-          if (result.frontendUpdate != null) {
-            showDialog(
-              context: globalContext,
-              barrierDismissible: !result.frontendUpdate!.isCritical,
-              builder: (_) => UpdateDialog(updateInfo: result.frontendUpdate!),
-            );
-          } else if (result.backendUpdate != null) {
-            showDialog(
-              context: globalContext,
-              barrierDismissible: !result.backendUpdate!.isCritical,
-              builder: (_) => UpdateDialog(updateInfo: result.backendUpdate!),
-            );
-          }
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (result.frontendUpdate != null) {
+              showDialog(
+                context: globalContext,
+                barrierDismissible: !result.frontendUpdate!.isCritical,
+                builder: (_) => UpdateDialog(updateInfo: result.frontendUpdate!),
+              );
+            } else if (result.backendUpdate != null) {
+              showDialog(
+                context: globalContext,
+                barrierDismissible: !result.backendUpdate!.isCritical,
+                builder: (_) => UpdateDialog(updateInfo: result.backendUpdate!),
+              );
+            }
+          });
         }
       }
     } catch (e) {
