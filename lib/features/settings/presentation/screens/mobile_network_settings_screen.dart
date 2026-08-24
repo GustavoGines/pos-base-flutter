@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:frontend_desktop/core/config/app_config.dart';
 
 class MobileNetworkSettingsScreen extends StatefulWidget {
   const MobileNetworkSettingsScreen({super.key});
