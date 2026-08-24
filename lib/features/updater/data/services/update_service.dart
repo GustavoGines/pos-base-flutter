@@ -16,6 +16,9 @@ class UpdateCheckResult {
 }
 
 class UpdateService {
+  /// Notificador global reactivo para mostrar la alerta en la barra de navegación
+  static final ValueNotifier<UpdateCheckResult?> updateNotifier = ValueNotifier(null);
+
   /// Consulta al servidor si hay versiones nuevas disponibles.
   /// Chequea backend y frontend de forma separada.
   /// Retorna [UpdateCheckResult] con ambos componentes (si hay actualizaciones).
@@ -91,7 +94,12 @@ class UpdateService {
       if (throwErrors) rethrow;
     }
 
-    return UpdateCheckResult(frontendUpdate: frontendUpdate, backendUpdate: backendUpdate);
+    final result = UpdateCheckResult(frontendUpdate: frontendUpdate, backendUpdate: backendUpdate);
+    // Solo notificamos si hay alguna actualización, para no sobreescribir con "vacío" si la red falla en el 2do chequeo
+    if (result.hasAny) {
+      updateNotifier.value = result;
+    }
+    return result;
   }
 }
 

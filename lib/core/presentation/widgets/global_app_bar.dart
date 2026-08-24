@@ -6,6 +6,8 @@ import 'package:frontend_desktop/features/settings/presentation/providers/settin
 import 'package:frontend_desktop/features/reports/presentation/widgets/inventory_alerts_widget.dart';
 import 'package:frontend_desktop/core/providers/local_terminal_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:frontend_desktop/features/updater/data/services/update_service.dart';
+import 'package:frontend_desktop/features/updater/presentation/widgets/update_dialog.dart';
 
 class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
   final String currentRoute;
@@ -247,6 +249,7 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    const UpdateBadgeWidget(),
                     const InventoryAlertsWidget(),
                     const SizedBox(width: 2),
                     // ─ Ícono de Ajustes de Impresión (siempre visible en todas las pantallas) ─
@@ -731,4 +734,73 @@ void _showPrinterSettingsDialog(BuildContext context) {
       ],
     ),
   );
+}
+
+class UpdateBadgeWidget extends StatelessWidget {
+  const UpdateBadgeWidget({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<UpdateCheckResult?>(
+      valueListenable: UpdateService.updateNotifier,
+      builder: (context, result, child) {
+        if (result == null || !result.hasAny) return const SizedBox.shrink();
+
+        final isCritical = (result.frontendUpdate?.isCritical == true) || 
+                           (result.backendUpdate?.isCritical == true);
+
+        return Padding(
+          padding: const EdgeInsets.only(right: 8.0),
+          child: Tooltip(
+            message: '¡Nueva actualización disponible!',
+            child: InkWell(
+              borderRadius: BorderRadius.circular(20),
+              onTap: () {
+                final update = result.frontendUpdate ?? result.backendUpdate!;
+                showDialog(
+                  context: context,
+                  barrierDismissible: !update.isCritical,
+                  builder: (_) => UpdateDialog(updateInfo: update),
+                );
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: isCritical ? Colors.red.shade50 : Colors.purple.shade50,
+                  border: Border.all(color: isCritical ? Colors.red : Colors.purple.shade300),
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: (isCritical ? Colors.red : Colors.purple).withValues(alpha: 0.3),
+                      blurRadius: 8,
+                      spreadRadius: 1,
+                    )
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.system_update_rounded,
+                      size: 16,
+                      color: isCritical ? Colors.red.shade700 : Colors.purple.shade700,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Actualizar',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: isCritical ? Colors.red.shade800 : Colors.purple.shade800,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
 }
