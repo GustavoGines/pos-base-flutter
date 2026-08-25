@@ -1,3 +1,5 @@
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../features/settings/presentation/providers/settings_provider.dart';
@@ -28,7 +30,10 @@ class LicenseGuard extends StatelessWidget {
                 currentRoute == '/login' || 
                 currentRoute == '/close-shift';
 
-            final bool isBlocked = !settingsProvider.isLicenseActive && !isWhitelisted;
+            final bool isMobile = !kIsWeb && (Platform.isAndroid || Platform.isIOS);
+            final bool missingMobileAddon = isMobile && !settingsProvider.hasFeature('mobile_app');
+            final bool isBlocked = (!settingsProvider.isLicenseActive || missingMobileAddon) && !isWhitelisted;
+
 
             return Stack(
               children: [
