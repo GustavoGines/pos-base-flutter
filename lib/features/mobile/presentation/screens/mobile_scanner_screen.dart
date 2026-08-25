@@ -51,7 +51,7 @@ class _MobileScannerScreenState extends State<MobileScannerScreen> {
 
     try {
       try {
-        await _audioPlayer.play(AssetSource('beep.mp3'));
+        await _audioPlayer.play(AssetSource('beep_loud.wav'));
       } catch (_) {}
 
       // ✅ FIX: Usar la URL configurada por el usuario (Smart Auto-Fallback)
