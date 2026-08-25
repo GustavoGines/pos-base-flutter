@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/config/app_config.dart';
 import '../models/update_info.dart';
 
@@ -29,6 +30,9 @@ class MobileUpdateService {
     if (!Platform.isAndroid) return null;
 
     try {
+      final prefs = await SharedPreferences.getInstance();
+      final updateChannel = prefs.getString('update_channel') ?? 'stable';
+
       final packageInfo = await PackageInfo.fromPlatform();
       final currentVersion = packageInfo.version;
 
@@ -37,7 +41,7 @@ class MobileUpdateService {
         queryParameters: {
           'component': 'android',
           'current_version': currentVersion,
-          'channel': 'stable',
+          'channel': updateChannel,
         },
       );
 
