@@ -95,7 +95,7 @@ jobs:
             -d "{
               \"version\": \"v${{ steps.version.outputs.VERSION }}\",
               \"component\": \"android\",
-              \"channel\": \"stable\",
+              \"channel\": \"beta\",
               \"download_url\": \"${{ secrets.R2_PUBLIC_BASE_URL }}/mobile/pos_mobile_v${{ steps.version.outputs.VERSION }}.apk\",
               \"changelog\": $CHANGELOG_ESCAPED,
               \"is_critical\": false,
