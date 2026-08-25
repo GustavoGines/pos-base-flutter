@@ -17,7 +17,6 @@ if (keyPropertiesFile.exists()) {
 android {
     namespace = "ar.com.gglabs.posmobile"
     compileSdk = 36
-    ndkVersion = "30.0.15729638"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
