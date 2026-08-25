@@ -32,7 +32,13 @@ class LicenseGuard extends StatelessWidget {
 
             final bool isMobile = !kIsWeb && (Platform.isAndroid || Platform.isIOS);
             final bool missingMobileAddon = isMobile && !settingsProvider.hasFeature('mobile_app');
-            final bool isBlocked = (!settingsProvider.isLicenseActive || missingMobileAddon) && !isWhitelisted;
+            
+            // Lógica de acceso remoto
+            final String activeUrl = settingsProvider.currentApiUrl;
+            final bool isRemote = activeUrl.contains('trycloudflare.com') || activeUrl.startsWith('https://');
+            final bool missingRemoteAddon = isRemote && !settingsProvider.hasFeature('remote_access');
+
+            final bool isBlocked = (!settingsProvider.isLicenseActive || missingMobileAddon || missingRemoteAddon) && !isWhitelisted;
 
 
             return Stack(

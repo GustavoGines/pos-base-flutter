@@ -16,6 +16,9 @@ class SettingsProvider with ChangeNotifier {
 
   BusinessSettings? _settings;
   BusinessSettings? get settings => _settings;
+  
+  String? _currentApiUrl;
+  String get currentApiUrl => _currentApiUrl ?? AppConfig.kApiBaseUrl;
 
   bool get isLicenseActive {
     final key = _settings?.licenseStatus ?? '';
@@ -98,6 +101,9 @@ class SettingsProvider with ChangeNotifier {
     }
     
     try {
+      final prefs = await SharedPreferences.getInstance();
+      _currentApiUrl = prefs.getString('pos_api');
+
       _settings = await getSettingsUseCase();
       
       // DEBUG: Inspección de permisos PRO
@@ -178,6 +184,7 @@ class SettingsProvider with ChangeNotifier {
   }
 
   void updateBaseUrl(String newUrl) {
+    _currentApiUrl = newUrl;
     if (updateSettingsUseCase.repository is SettingsRepositoryImpl) {
       (updateSettingsUseCase.repository as SettingsRepositoryImpl).updateBaseUrl(newUrl);
     }
