@@ -32,11 +32,6 @@ class SettingsProvider with ChangeNotifier {
   LicenseSecurityStatus get securityStatus => LicenseHeartbeatService().securityStatus;
   String get currentPlan => _settings?.licensePlanType ?? 'basic';
 
-  bool hasFeature(String featureKey) {
-    if (_settings == null || _settings!.features == null) return false;
-    return _settings!.features![featureKey] == true;
-  }
-
   List<String> get allowedAddons => _settings?.licenseFeatures ?? [];
 
   // ─── [feature-flags] Permisos Modulares ─────────────────────────────────────

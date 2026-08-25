@@ -11,6 +11,8 @@ class FeatureFlags extends Equatable {
   final bool predictiveAlerts;
   final bool logistics;
   final bool checks;
+  final bool mobileApp;
+  final bool remoteAccess;
 
   const FeatureFlags({
     this.fastPos = false,
@@ -23,6 +25,8 @@ class FeatureFlags extends Equatable {
     this.predictiveAlerts = false,
     this.logistics = false,
     this.checks = false,
+    this.mobileApp = false,
+    this.remoteAccess = false,
   });
 
   @override
@@ -37,6 +41,8 @@ class FeatureFlags extends Equatable {
         predictiveAlerts,
         logistics,
         checks,
+        mobileApp,
+        remoteAccess,
       ];
 }
 
@@ -85,6 +91,8 @@ class BusinessSettings extends Equatable {
     if (features.predictiveAlerts) list.add('predictive_alerts');
     if (features.logistics) list.add('logistics');
     if (features.checks) list.add('checks');
+    if (features.mobileApp) list.add('mobile_app');
+    if (features.remoteAccess) list.add('remote_access');
     return list;
   }
 
