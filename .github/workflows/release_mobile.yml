@@ -45,6 +45,9 @@ jobs:
             exit 1
           fi
 
+      - name: Accept Android licenses
+        run: yes | sdkmanager --licenses || true
+
       - name: Build APK (release)
         env:
           ANDROID_KEYSTORE_PATH: pos_mobile_release.jks
