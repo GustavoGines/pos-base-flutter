@@ -1,4 +1,4 @@
-package com.example.frontend_desktop
+package ar.com.gglabs.posmobile
 
 import io.flutter.embedding.android.FlutterActivity
 

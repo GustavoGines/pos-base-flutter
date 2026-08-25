@@ -15,8 +15,9 @@ import 'package:package_info_plus/package_info_plus.dart';
 import '../../../updater/data/services/update_service.dart';
 import '../../../updater/presentation/widgets/update_dialog.dart';
 import '../../../pos/presentation/providers/pos_provider.dart';
+import '../widgets/mobile_app_qr_section.dart';
 
-enum SettingsSection { general, prices, hardware, subscription, network }
+enum SettingsSection { general, prices, hardware, subscription, network, mobileApp }
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -434,6 +435,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
             title: 'Red y Terminales',
             section: SettingsSection.network,
           ),
+          if (Platform.isWindows)
+            _buildSidebarItem(
+              icon: Icons.phone_android,
+              title: 'App Móvil',
+              section: SettingsSection.mobileApp,
+            ),
           const Spacer(),
           Padding(
             padding: const EdgeInsets.all(24),
@@ -517,6 +524,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         return _buildSubscriptionSection(provider);
       case SettingsSection.network:
         return _buildNetworkSection(provider);
+      case SettingsSection.mobileApp:
+        return MobileAppQrSection(r2PublicBaseUrl: 'https://pub-xxxx.r2.dev'); // Will fix the URL via config if needed or leave a placeholder as they might be doing elsewhere
     }
   }
 

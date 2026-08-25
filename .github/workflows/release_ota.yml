@@ -10,7 +10,7 @@ name: 🚀 OTA Release Pipeline
 on:
   push:
     tags:
-      - 'v*'
+      - 'desktop-v*'
 
 jobs:
   build-and-deploy:
@@ -21,9 +21,13 @@ jobs:
       # ── El workflow corre desde la raíz del repo pos-frontend ──
       UPDATER_DIR:  updater
       RELEASE_DIR:  build/windows/x64/runner/Release
-      ZIP_NAME:     update_${{ github.ref_name }}.zip
 
     steps:
+      - name: Set ZIP_NAME
+        shell: pwsh
+        run: |
+          $val = "update_${{ github.ref_name }}.zip".Replace('desktop-', '')
+          echo "ZIP_NAME=$val" >> $env:GITHUB_ENV
 
       # ─── 1. CHECKOUT ────────────────────────────────────
       - name: 📥 Checkout del repositorio
@@ -102,10 +106,10 @@ jobs:
       - name: 📡 Registrar Release en el Servidor de Licencias
         shell: pwsh
         run: |
-          $VERSION      = "${{ github.ref_name }}"
+          $VERSION      = "${{ github.ref_name }}".Replace('desktop-', '')
           $DOWNLOAD_URL = "${{ secrets.R2_PUBLIC_BASE_URL }}/releases/${{ env.ZIP_NAME }}"
           # Leer el changelog directamente del archivo CHANGELOG.md
-          $VERSION_NO_V = "${{ github.ref_name }}".TrimStart('v')
+          $VERSION_NO_V = $VERSION.TrimStart('v')
           $patternStart = "^## \[$VERSION_NO_V\]"
           $patternEnd = "^## \["
           $lines = Get-Content CHANGELOG.md

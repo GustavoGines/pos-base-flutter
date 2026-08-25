@@ -1,0 +1,7 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Directorio de caché interno de la app (para APKs descargados) -->
+    <cache-path name="apk_downloads" path="apk_downloads/" />
+    <!-- Directorio de caché externo (fallback Android <= 9) -->
+    <external-cache-path name="external_apk_downloads" path="apk_downloads/" />
+</paths>

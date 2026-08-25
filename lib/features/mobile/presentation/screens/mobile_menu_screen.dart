@@ -3,9 +3,35 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:frontend_desktop/features/auth/presentation/providers/auth_provider.dart';
 import 'package:frontend_desktop/features/settings/presentation/screens/mobile_network_settings_screen.dart';
+import 'package:frontend_desktop/features/updater/data/services/mobile_update_service.dart';
+import 'package:frontend_desktop/features/updater/presentation/widgets/mobile_update_dialog.dart';
 
-class MobileMenuScreen extends StatelessWidget {
+class MobileMenuScreen extends StatefulWidget {
   const MobileMenuScreen({super.key});
+
+  @override
+  State<MobileMenuScreen> createState() => _MobileMenuScreenState();
+}
+
+class _MobileMenuScreenState extends State<MobileMenuScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // Chequear actualizaciones disponibles al abrir la pantalla principal
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkForUpdate());
+  }
+
+  Future<void> _checkForUpdate() async {
+    final update = await MobileUpdateService.checkForUpdate();
+    if (!mounted) return;
+    if (update != null) {
+      await showDialog(
+        context: context,
+        barrierDismissible: !update.isCritical,
+        builder: (_) => MobileUpdateDialog(updateInfo: update),
+      );
+    }
+  }
 
   String _getFormattedDate() {
     try {

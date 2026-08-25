@@ -49,3 +49,8 @@ app.*.map.json
 /Instalador/
 /Instalador_SistemaPOS/
 /Instalador_SistemaPOS_*/
+
+# Android signing credentials (NEVER commit)
+android/key.properties
+android/*.jks
+android/*.keystore
