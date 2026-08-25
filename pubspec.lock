@@ -385,10 +385,11 @@ packages:
   flutter_libserialport:
     dependency: "direct main"
     description:
-      name: flutter_libserialport
-      sha256: f24b5fe6f1821d1c1b3bf2be737ca53f6b0ae78657032a790aa00abb810c8759
-      url: "https://pub.dev"
-    source: hosted
+      path: "."
+      ref: main
+      resolved-ref: "2b7fe46167e3303c4ddd8340e79d9dc1e69ca382"
+      url: "https://github.com/selvam920/flutter_libserialport.git"
+    source: git
     version: "0.6.0"
   flutter_lints:
     dependency: "direct dev"
