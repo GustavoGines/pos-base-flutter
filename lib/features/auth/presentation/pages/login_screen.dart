@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -12,6 +13,8 @@ import 'package:package_info_plus/package_info_plus.dart';
 import '../../../updater/data/services/update_service.dart';
 import '../../../updater/presentation/widgets/update_dialog.dart';
 import '../../../updater/data/models/update_info.dart';
+import '../../../updater/data/services/mobile_update_service.dart';
+import '../../../updater/presentation/widgets/mobile_update_dialog.dart';
 import '../../../../core/config/app_config.dart';
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -55,6 +58,28 @@ class _LoginScreenState extends State<LoginScreen> {
     }
 
     try {
+      final isMobile = !kIsWeb && (Platform.isAndroid || Platform.isIOS);
+
+      if (isMobile) {
+        final update = await MobileUpdateService.checkForUpdate();
+        if (mounted) {
+          setState(() {
+            _frontendUpdate = update;
+            _backendUpdate = null;
+            _updateCheckCompleted = true;
+          });
+          
+          if (update != null && update.isCritical) {
+            showDialog(
+              context: context,
+              barrierDismissible: false,
+              builder: (_) => MobileUpdateDialog(updateInfo: update),
+            );
+          }
+        }
+        return;
+      }
+
       final result = await UpdateService().checkUpdate(throwErrors: true);
       // ── Siempre: alimentar el notificador global para el badge de la AppBar ──
       if (result.hasAny) {
