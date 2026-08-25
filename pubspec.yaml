@@ -125,3 +125,10 @@ flutter_launcher_icons:
   ios: false
   image_path: "assets/app_logo.png"
 
+
+dependency_overrides:
+  flutter_libserialport:
+    git:
+      url: https://github.com/selvam920/flutter_libserialport.git
+      ref: main
+
