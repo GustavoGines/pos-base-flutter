@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:package_info_plus/package_info_plus.dart';
+
 class MobileNetworkSettingsScreen extends StatefulWidget {
   const MobileNetworkSettingsScreen({super.key});
 
@@ -12,6 +14,9 @@ class _MobileNetworkSettingsScreenState extends State<MobileNetworkSettingsScree
   final _localCtrl = TextEditingController();
   final _remoteCtrl = TextEditingController();
   bool _isLoading = true;
+  String _appVersion = '';
+  String _currentChannel = 'stable';
+  int _versionTaps = 0;
 
   @override
   void initState() {
@@ -25,11 +30,38 @@ class _MobileNetworkSettingsScreenState extends State<MobileNetworkSettingsScree
     // Ya no recortamos las URLs, dejamos que el usuario vea la ruta real completa.
     final savedLocal = prefs.getString('pos_api_local') ?? prefs.getString('pos_api') ?? '';
     final savedRemote = prefs.getString('pos_api_remote') ?? '';
+    final currentChannel = prefs.getString('update_channel') ?? 'stable';
+
+    final packageInfo = await PackageInfo.fromPlatform();
 
     _localCtrl.text = savedLocal;
     _remoteCtrl.text = savedRemote;
     
-    if (mounted) setState(() => _isLoading = false);
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+        _currentChannel = currentChannel;
+        _appVersion = packageInfo.version;
+      });
+    }
+  }
+
+  Future<void> _handleVersionTap() async {
+    _versionTaps++;
+    if (_versionTaps >= 7) {
+      _versionTaps = 0;
+      final prefs = await SharedPreferences.getInstance();
+      final newChannel = _currentChannel == 'stable' ? 'beta' : 'stable';
+      await prefs.setString('update_channel', newChannel);
+      setState(() => _currentChannel = newChannel);
+
+      if (!mounted) return;
+      if (newChannel == 'beta') {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Modo Desarrollador: Canal Beta Activado 🚀'), backgroundColor: Colors.green));
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Modo Producción: Canal Stable Activado 🟢'), backgroundColor: Colors.green));
+      }
+    }
   }
 
   Future<void> _saveSettings() async {
@@ -114,6 +146,20 @@ class _MobileNetworkSettingsScreenState extends State<MobileNetworkSettingsScree
                   TextField(controller: _remoteCtrl, decoration: InputDecoration(labelText: 'URL Remota (Cloudflare)', hintText: 'Dominio, ej: kiosco.sistema-pos.com', prefixIcon: const Icon(Icons.cloud_outlined), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))), keyboardType: TextInputType.url),
                   const SizedBox(height: 40),
                   SizedBox(width: double.infinity, height: 50, child: FilledButton.icon(icon: const Icon(Icons.save), label: const Text('Guardar Configuración'), onPressed: _saveSettings)),
+                  const SizedBox(height: 32),
+                  Center(
+                    child: GestureDetector(
+                      onTap: _handleVersionTap,
+                      child: Text(
+                        'Versión actual del sistema: v$_appVersion${_currentChannel == 'beta' ? ' (BETA)' : ''}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: _currentChannel == 'beta' ? Colors.orange : Colors.grey,
+                          fontWeight: _currentChannel == 'beta' ? FontWeight.bold : FontWeight.normal,
+                        ),
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
