@@ -81,14 +81,26 @@ jobs:
 
       - name: Notify License Server
         run: |
+          VERSION_NO_V=$(echo "${{ steps.version.outputs.VERSION }}" | sed 's/^v//')
+          CHANGELOG=""
+          
           if [ -f "CHANGELOG_MOBILE.md" ]; then
-            CHANGELOG=$(cat CHANGELOG_MOBILE.md | head -50 || echo "Nueva versión ${{ steps.version.outputs.VERSION }}")
-          else
-            CHANGELOG="Release de POS Móvil v${{ steps.version.outputs.VERSION }}"
+            # Extraer solo la sección de esta versión
+            CHANGELOG=$(awk -v ver="^## \\[$VERSION_NO_V\\]" '
+              $0 ~ ver {flag=1; next}
+              /^## \[/ {if(flag) exit}
+              flag && NF {print $0}
+            ' CHANGELOG_MOBILE.md | sed 's/^### //g' | sed 's/\*\*//g')
+          fi
+          
+          if [ -z "$CHANGELOG" ]; then
+            # Si no hay entrada en el archivo, usar el último commit de forma limpia
+            LAST_COMMIT=$(git log -1 --pretty=%B | head -n 1)
+            CHANGELOG="🚀 Nueva actualización disponible.\n\n• $LAST_COMMIT"
           fi
 
-          # Es necesario escapar comillas
-          CHANGELOG_ESCAPED=$(echo "$CHANGELOG" | jq -Rsa .)
+          # Es necesario escapar comillas para el JSON
+          CHANGELOG_ESCAPED=$(echo -e "$CHANGELOG" | jq -Rsa .)
 
           curl -s -X POST ${{ secrets.LICENSE_SERVER_URL }}/api/releases/new \
             -H "Content-Type: application/json" \
