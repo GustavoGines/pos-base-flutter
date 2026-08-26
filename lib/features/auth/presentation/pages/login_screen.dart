@@ -532,8 +532,8 @@ class _LoginScreenState extends State<LoginScreen> {
                 child: SafeArea(
                   child: Row(
                     children: [
-                      // Badge de update de Frontend (App)
-                    if (_frontendUpdate != null)
+                      // Badge de update de Frontend (App) - Solo en Escritorio
+                    if (_frontendUpdate != null && (kIsWeb || (!Platform.isAndroid && !Platform.isIOS)))
                       ElevatedButton.icon(
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF673AB7),
