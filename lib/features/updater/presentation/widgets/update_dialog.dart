@@ -9,11 +9,13 @@ import '../../data/models/update_info.dart';
 class UpdateDialog extends StatefulWidget {
   final UpdateInfo updateInfo;
   final bool isFullSystemUpdate;
+  final bool autoStart;
 
   const UpdateDialog({
     super.key,
     required this.updateInfo,
     this.isFullSystemUpdate = false,
+    this.autoStart = false,
   });
 
   @override
@@ -29,6 +31,16 @@ class _UpdateDialogState extends State<UpdateDialog> {
   String _backendLog = '';
   bool _showLog = false;
   String? _backendTargetDir; // guardado para leer el log al finalizar
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.autoStart) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _startUpdate();
+      });
+    }
+  }
 
   bool get _isFrontend => widget.updateInfo.component == 'frontend';
   bool get _isFull => widget.isFullSystemUpdate;

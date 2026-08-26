@@ -540,15 +540,20 @@ class _LoginScreenState extends State<LoginScreen> {
                           foregroundColor: Colors.white,
                         ),
                         onPressed: () async {
-                          await showDialog<bool>(
+                          final result = await showDialog<bool>(
                             context: context,
-                            // Si también hay backend pendiente, abrir el diálogo integral
                             builder: (_) => UpdateDialog(
                               updateInfo: _frontendUpdate!,
                               isFullSystemUpdate: _backendUpdate != null,
                             ),
                           );
-                          _checkForUpdates();
+                          if (result == true) {
+                            setState(() {
+                              _frontendUpdate = null;
+                              if (_backendUpdate == null) _updateCheckCompleted = true;
+                            });
+                            _checkForUpdates();
+                          }
                         },
                         icon: const Icon(Icons.monitor, size: 18),
                         label: Text(
@@ -577,7 +582,13 @@ class _LoginScreenState extends State<LoginScreen> {
                             context: context,
                             builder: (_) => UpdateDialog(updateInfo: _backendUpdate!),
                           );
-                          if (result == true) _checkForUpdates();
+                          if (result == true) {
+                            setState(() {
+                              _backendUpdate = null;
+                              if (_frontendUpdate == null) _updateCheckCompleted = true;
+                            });
+                            _checkForUpdates();
+                          }
                         },
                         icon: const Icon(Icons.dns_rounded, size: 18),
                         label: const Text('Actualiz. Servidor',
