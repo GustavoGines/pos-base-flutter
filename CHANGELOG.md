@@ -2,6 +2,13 @@
 Todos los cambios notables de la aplicación de caja (Flutter/Windows) están documentados aquí.
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.0.0/) y el proyecto adhiere a [Semantic Versioning](https://semver.org/).
 
+## [1.6.4] - 2026-08-26
+### Changed
+- Mejora de UX (Actualización Integral): Eliminado el cartel intermedio de "App actualizada con éxito" si el sistema detecta que debe continuar automáticamente con la actualización del Servidor. Ahora el proceso es 100% continuo sin requerir clics adicionales.
+# Changelog — Sistema POS (Frontend)
+Todos los cambios notables de la aplicación de caja (Flutter/Windows) están documentados aquí.
+El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.0.0/) y el proyecto adhiere a [Semantic Versioning](https://semver.org/).
+
 ## [1.6.3] - 2026-08-26
 ### Changed
 - Mejora de UX: Tras finalizar una actualización con éxito, la tarjeta de aviso se oculta instantáneamente (de forma optimista) para una respuesta visual más limpia.

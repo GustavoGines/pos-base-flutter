@@ -510,39 +510,45 @@ class _MainAppState extends State<MainApp> {
       // resultado al usuario. Si fue una actualización exitosa del Frontend,
       // encadenar automáticamente la actualización del Backend (Auto-Resume).
       WidgetsBinding.instance.addPostFrameCallback((_) async {
-        // Usamos navigatorKey.currentContext en el momento de uso (no capturado
-        // antes del await) para evitar el problema de contexto obsoleto.
         final ctx = navigatorKey.currentContext;
         if (ctx == null || !ctx.mounted) return;
 
-        final otaResult = await OtaResultDialog.showIfNeeded(ctx);
+        final otaResult = OtaStartupChecker.check();
+        if (otaResult != null) {
+          OtaStartupChecker.clearState();
 
-        // Auto-Resume: si la App se actualizó con éxito, buscar si el
-        // Backend sigue pendiente y lanzarlo automáticamente.
-        if (otaResult != null && otaResult.success && otaResult.component == 'frontend') {
-          // Pequeña pausa para que la UI se asiente después de cerrar el diálogo
-          await Future.delayed(const Duration(milliseconds: 400));
+          // Auto-Resume: si la App se actualizó con éxito, buscar silenciosamente
+          // si el Backend sigue pendiente ANTES de mostrar el popup de éxito.
+          if (otaResult.success && otaResult.component == 'frontend') {
+            try {
+              final check = await UpdateService().checkUpdate();
+              final backendUpdate = check.backendUpdate;
 
-          final ctx2 = navigatorKey.currentContext;
-          if (ctx2 == null || !ctx2.mounted) return;
-
-          try {
-            final check = await UpdateService().checkUpdate();
-            final backendUpdate = check.backendUpdate;
-
-            final ctx3 = navigatorKey.currentContext;
-            if (backendUpdate != null && ctx3 != null && ctx3.mounted) {
-              showDialog(
-                context: ctx3,
-                barrierDismissible: false,
-                builder: (_) => UpdateDialog(
-                  updateInfo: backendUpdate,
-                  autoStart: true,
-                ),
-              );
+              if (backendUpdate != null && ctx.mounted) {
+                // Actualización integral en progreso: saltamos el cartel de "App actualizada"
+                // y pasamos directamente a la Fase 2 (Servidor).
+                showDialog(
+                  context: ctx,
+                  barrierDismissible: false,
+                  builder: (_) => UpdateDialog(
+                    updateInfo: backendUpdate,
+                    autoStart: true,
+                  ),
+                );
+                return; // Salimos para no mostrar el OtaResultDialog
+              }
+            } catch (e) {
+              debugPrint('[OTA Auto-Resume] Error chequeando backend: $e');
             }
-          } catch (e) {
-            debugPrint('[OTA Auto-Resume] Error chequeando backend: $e');
+          }
+
+          // Si llegamos aquí, o no hubo auto-resume, o fue un error, o solo frontend.
+          if (ctx.mounted) {
+            showDialog(
+              context: ctx,
+              barrierDismissible: otaResult.success,
+              builder: (_) => OtaResultDialog(result: otaResult),
+            );
           }
         }
       });
