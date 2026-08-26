@@ -1,3 +1,14 @@
+## [1.6.0] - 2026-08-26
+### Added
+- ?? Nuevo Sistema de Canales de Actualización (Estable / Beta) integrado.
+- ?? Soporte oficial para despliegues móviles integrados con el servidor.
+
+### Changed
+- ?? Mejorada la experiencia de usuario: el sonido del escáner en auditorías y control de stock ahora suena natural y reacciona sin latencia.
+- ? Optimización de Rendimiento: Limitador de peticiones silenciosas que reduce drásticamente el consumo de red y CPU del servidor al navegar entre pantallas.
+
+### Fixed
+- ?? Seguridad Reforzada: Corrección en el Muro de Fuego que provocaba bloqueos erróneos de permisos de Acceso Remoto.
 # Changelog â€” Sistema POS (Frontend)
 
 Todos los cambios notables de la aplicaciÃ³n de caja (Flutter/Windows) estÃ¡n documentados aquÃ­.
@@ -183,3 +194,4 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.0.0/) y el p
 [1.3.0]: https://github.com/GustavoGines/pos-base-flutter/compare/v1.2.4...v1.3.0
 [1.2.4]: https://github.com/GustavoGines/pos-base-flutter/compare/v1.1.0...v1.2.4
 [1.1.0]: https://github.com/GustavoGines/pos-base-flutter/releases/tag/v1.1.0
+
