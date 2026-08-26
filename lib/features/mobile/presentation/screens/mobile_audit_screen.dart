@@ -62,8 +62,8 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
 
     try {
       try {
-        await _audioPlayer.stop();
-        await _audioPlayer.resume();
+        if (_audioPlayer.state == PlayerState.playing) await _audioPlayer.stop();
+        await _audioPlayer.play(AssetSource('beep_loud.wav'));
       } catch (_) {}
 
       // Pausar cámara mientras procesamos
