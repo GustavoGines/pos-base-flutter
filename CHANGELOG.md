@@ -1,6 +1,9 @@
 ﻿# Changelog — Sistema POS (Frontend)
 Todos los cambios notables de la aplicación de caja (Flutter/Windows) están documentados aquí.
 
+## [1.6.6] - 2026-08-26
+### Correcciones
+- **Validación Estricta de Actualización:** El actualizador ahora garantiza de forma estricta que la memoria caché del servidor (OPcache) se haya purgado por completo antes de dar por finalizada la actualización. Esto elimina por completo los "falsos positivos" de actualización pendiente.
 ## [1.6.5] - 2026-08-26
 ### Novedades
 - **Soporte Oficial para la App Móvil:** El sistema ahora cuenta con todo el motor interno preparado para comunicarse en tiempo real con nuestra nueva Aplicación Móvil.
