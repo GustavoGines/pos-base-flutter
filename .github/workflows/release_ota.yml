@@ -112,7 +112,7 @@ jobs:
           $VERSION_NO_V = $VERSION.TrimStart('v')
           $patternStart = "^## \[$VERSION_NO_V\]"
           $patternEnd = "^## \["
-          $lines = Get-Content CHANGELOG.md
+          $lines = Get-Content CHANGELOG.md -Encoding UTF8
           $msgLines = @()
           $capture = $false
           foreach ($line in $lines) {
