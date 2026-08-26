@@ -217,7 +217,8 @@ class _UpdateDialogState extends State<UpdateDialog> {
         }
 
         bool resultFound = false;
-        for (int i = 0; i < 120; i++) {
+        // Esperamos hasta 20 minutos (600 iteraciones de 2s) para servidores lentos con miles de archivos
+        for (int i = 0; i < 600; i++) {
           await Future.delayed(const Duration(seconds: 2));
           if (!mounted) return;
 
@@ -260,7 +261,7 @@ class _UpdateDialogState extends State<UpdateDialog> {
         String finalStatus;
         bool success = false;
         if (!resultFound) {
-          finalStatus = '⚠️ Tiempo de espera agotado (120s).';
+          finalStatus = '⚠️ Tiempo de espera agotado (20 min).';
         } else {
           final resultRaw = resultFile.readAsStringSync().trim();
           if (resultRaw.startsWith('{')) {

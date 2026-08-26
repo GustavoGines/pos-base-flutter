@@ -1,4 +1,8 @@
-﻿## [1.6.1] - 2026-08-26
+﻿## [1.6.2] - 2026-08-26
+### Fixed
+- Aumentado el tiempo de espera del actualizador a 20 minutos para dar tiempo a que los servidores backend extraigan miles de archivos sin marcar error falso.
+- Ajuste final de versiones para correcta sincronización del cliente y servidor.
+## [1.6.1] - 2026-08-26
 ### Fixed
 - Corrección visual en la visualización de las Novedades de Actualización (eliminación de caracteres extraños).
 # Changelog - POS Móvil (Android)
