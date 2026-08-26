@@ -23,6 +23,7 @@ import 'features/mobile/presentation/screens/mobile_scanner_screen.dart';
 import 'features/mobile/presentation/screens/mobile_audit_screen.dart';
 import 'features/mobile/presentation/screens/mobile_dashboard_screen.dart';
 import 'core/config/app_config.dart';
+import 'features/updater/data/services/ota_startup_checker.dart';
 
 import 'core/presentation/widgets/license_guard.dart';
 import 'core/presentation/widgets/plan_upgrade_dialog.dart';
