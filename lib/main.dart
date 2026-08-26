@@ -534,8 +534,11 @@ class _MainAppState extends State<MainApp> {
             if (backendUpdate != null && ctx3 != null && ctx3.mounted) {
               showDialog(
                 context: ctx3,
-                barrierDismissible: true,
-                builder: (_) => UpdateDialog(updateInfo: backendUpdate),
+                barrierDismissible: false,
+                builder: (_) => UpdateDialog(
+                  updateInfo: backendUpdate,
+                  autoStart: true,
+                ),
               );
             }
           } catch (e) {
