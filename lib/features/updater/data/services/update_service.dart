@@ -96,10 +96,7 @@ class UpdateService {
     }
 
     final result = UpdateCheckResult(frontendUpdate: frontendUpdate, backendUpdate: backendUpdate);
-    // Solo notificamos si hay alguna actualización, para no sobreescribir con "vacío" si la red falla en el 2do chequeo
-    if (result.hasAny) {
-      updateNotifier.value = result;
-    }
+    updateNotifier.value = result;
     return result;
   }
 }

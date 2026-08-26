@@ -81,10 +81,8 @@ class _LoginScreenState extends State<LoginScreen> {
       }
 
       final result = await UpdateService().checkUpdate(throwErrors: true);
-      // ── Siempre: alimentar el notificador global para el badge de la AppBar ──
-      if (result.hasAny) {
-        UpdateService.updateNotifier.value = result;
-      }
+      // ✨ Siempre: alimentar el notificador global para el badge de la AppBar ✨
+      UpdateService.updateNotifier.value = result;
 
       // Si el usuario sigue pacientemente en la pantalla de login:
       if (mounted) {
