@@ -140,9 +140,16 @@ class SettingsProvider with ChangeNotifier {
   }
 
   /// Refresco silencioso para validaciones de fondo en la navegación.
-  /// No altera 'isLoading' ni 'errorMessage' para evitar asustar al usuario
-  /// con carteles rojos si hay un micro-corte de red.
+  DateTime? _lastSilentRefresh;
+
   Future<void> refreshSettingsSilently() async {
+    final now = DateTime.now();
+    // Rate limit: Evitar sobrecargar el servidor local en cada navegación (máx 1 vez cada 2 minutos)
+    if (_lastSilentRefresh != null && now.difference(_lastSilentRefresh!).inMinutes < 2) {
+      return;
+    }
+    _lastSilentRefresh = now;
+
     try {
       final newSettings = await getSettingsUseCase();
       _settings = newSettings;
