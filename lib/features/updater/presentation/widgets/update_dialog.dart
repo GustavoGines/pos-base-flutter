@@ -300,14 +300,17 @@ class _UpdateDialogState extends State<UpdateDialog> {
             });
           }
           
-          // Esperar hasta que el servidor local vuelva a estar online (max ~30 segs)
+          // Esperar hasta que el servidor local vuelva a estar online y reporte la nueva versión (max ~30 segs)
           final currentApiUrl = prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
           for (int i = 0; i < 15; i++) {
             try {
               final pingUri = Uri.parse('$currentApiUrl/version-check?t=${DateTime.now().millisecondsSinceEpoch}');
               final pingRes = await http.get(pingUri).timeout(const Duration(seconds: 2));
               if (pingRes.statusCode == 200) {
-                break; // El servidor ya reinició y responde correctamente
+                final pingData = json.decode(pingRes.body);
+                if (pingData['version'] == widget.updateInfo.version) {
+                  break; // El servidor ya reinició y reporta la versión correcta
+                }
               }
             } catch (_) {}
             await Future.delayed(const Duration(seconds: 2));
