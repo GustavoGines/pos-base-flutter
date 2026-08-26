@@ -527,7 +527,7 @@ class _MainAppState extends State<MainApp> {
               if (backendUpdate != null && ctx.mounted) {
                 // Actualización integral en progreso: saltamos el cartel de "App actualizada"
                 // y pasamos directamente a la Fase 2 (Servidor).
-                showDialog(
+                await showDialog(
                   context: ctx,
                   barrierDismissible: false,
                   builder: (_) => UpdateDialog(
@@ -535,6 +535,8 @@ class _MainAppState extends State<MainApp> {
                     autoStart: true,
                   ),
                 );
+                // Refrescar forzosamente la pantalla de login para borrar el badge obsoleto
+                AppConfig.navigatorKey.currentState?.pushReplacementNamed('/login');
                 return; // Salimos para no mostrar el OtaResultDialog
               }
             } catch (e) {
@@ -544,11 +546,13 @@ class _MainAppState extends State<MainApp> {
 
           // Si llegamos aquí, o no hubo auto-resume, o fue un error, o solo frontend.
           if (ctx.mounted) {
-            showDialog(
+            await showDialog(
               context: ctx,
               barrierDismissible: otaResult.success,
               builder: (_) => OtaResultDialog(result: otaResult),
             );
+            // Refrescar login por si había badges viejos cacheados
+            AppConfig.navigatorKey.currentState?.pushReplacementNamed('/login');
           }
         }
       });
