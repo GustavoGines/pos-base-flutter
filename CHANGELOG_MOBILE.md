@@ -1,4 +1,7 @@
-﻿# Changelog - POS Móvil (Android)
+﻿## [1.6.1] - 2026-08-26
+### Fixed
+- Corrección visual en la visualización de las Novedades de Actualización (eliminación de caracteres extraños).
+# Changelog - POS Móvil (Android)
 
 Todos los cambios notables en la aplicación móvil de Android serán documentados en este archivo.
 
