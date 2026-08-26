@@ -37,6 +37,7 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
   @override
   void initState() {
     super.initState();
+    _audioPlayer.setSource(AssetSource('beep_loud.wav'));
     Future.microtask(() => context.read<CatalogProvider>().loadMetadata());
   }
 
@@ -61,7 +62,8 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
 
     try {
       try {
-        await _audioPlayer.play(AssetSource('beep_loud.wav'));
+        await _audioPlayer.stop();
+        await _audioPlayer.resume();
       } catch (_) {}
 
       // Pausar cámara mientras procesamos

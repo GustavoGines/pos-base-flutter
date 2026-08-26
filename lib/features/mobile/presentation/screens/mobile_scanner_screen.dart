@@ -23,6 +23,12 @@ class _MobileScannerScreenState extends State<MobileScannerScreen> {
   DateTime? _lastScanTime;
 
   @override
+  void initState() {
+    super.initState();
+    _audioPlayer.setSource(AssetSource('beep_loud.wav'));
+  }
+
+  @override
   void dispose() {
     _scannerController.dispose();
     _audioPlayer.dispose();
@@ -51,10 +57,11 @@ class _MobileScannerScreenState extends State<MobileScannerScreen> {
 
     try {
       try {
-        await _audioPlayer.play(AssetSource('beep_loud.wav'));
+        await _audioPlayer.stop();
+        await _audioPlayer.resume();
       } catch (_) {}
 
-      // ✅ FIX: Usar la URL configurada por el usuario (Smart Auto-Fallback)
+      // 🔄 FIX: Usar la URL configurada por el usuario (Smart Auto-Fallback)
       final prefs = await SharedPreferences.getInstance();
       final apiUrl = prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
 
