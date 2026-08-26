@@ -1,35 +1,35 @@
-Ôªø# Changelog ‚Äî Sistema POS (Frontend)
-Todos los cambios notables de la aplicaci√≥n de caja (Flutter/Windows) est√°n documentados aqu√≠.
+# Changelog ó Sistema POS (Frontend)
+Todos los cambios notables de la aplicaciÛn de caja (Flutter/Windows) est·n documentados aquÌ.
 
-## [1.6.6] - 2026-08-26
-### Novedades de esta Gran Actualizaci√≥n (desde v1.4.4)
-- **Soporte Oficial para la App M√≥vil:** El sistema ahora cuenta con todo el motor interno preparado para comunicarse en tiempo real con nuestra nueva Aplicaci√≥n M√≥vil.
-- **Actualizaciones 100% Autom√°ticas:** Redise√±amos por completo el sistema de actualizaci√≥n. Ahora, cuando haya mejoras tanto para la caja como para el servidor, el proceso ser√° continuo, inteligente y completamente autom√°tico, sin requerir clics innecesarios.
-- **Mayor Estabilidad y Resiliencia:** Mejoramos la conexi√≥n de red y le dimos al sistema la capacidad de manejar grandes vol√∫menes de datos durante las actualizaciones sin interrumpir tu trabajo.
-- **Limpieza y Pulido Visual:** Eliminamos textos innecesarios y pulimos las pantallas para que tu experiencia de uso sea m√°s limpia y profesional.
-- **Validaci√≥n Estricta de Actualizaci√≥n:** El actualizador ahora garantiza de forma estricta que la memoria del servidor se purgue completamente para eliminar los "falsos avisos" de actualizaci√≥n pendiente.
+## [1.6.7] - 2026-08-26
+### Novedades de esta Gran ActualizaciÛn (desde v1.4.4)
+- **Soporte Oficial para la App MÛvil:** El sistema ahora cuenta con todo el motor interno preparado para comunicarse en tiempo real con nuestra nueva AplicaciÛn MÛvil.
+- **Actualizaciones 100% Autom·ticas:** RediseÒamos por completo el sistema de actualizaciÛn. Ahora, cuando haya mejoras tanto para la caja como para el servidor, el proceso ser· continuo, inteligente y completamente autom·tico, sin requerir clics innecesarios.
+- **Mayor Estabilidad y Resiliencia:** Mejoramos la conexiÛn de red y le dimos al sistema la capacidad de manejar grandes vol˙menes de datos durante las actualizaciones sin interrumpir tu trabajo.
+- **Limpieza y Pulido Visual:** Eliminamos textos innecesarios y pulimos las pantallas para que tu experiencia de uso sea m·s limpia y profesional.
+- **ValidaciÛn Estricta de ActualizaciÛn:** El actualizador ahora garantiza de forma estricta que la memoria del servidor se purgue completamente para eliminar los "falsos avisos" de actualizaciÛn pendiente.
 ## [1.6.4] - 2026-08-26
 ### Mejoras
-- Mejora de UX (Actualizaci√≥n Integral): Eliminado el cartel intermedio de "App actualizada con √©xito" si el sistema detecta que debe continuar autom√°ticamente con la actualizaci√≥n del Servidor. Ahora el proceso es 100% continuo sin requerir clics adicionales.
+- Mejora de UX (ActualizaciÛn Integral): Eliminado el cartel intermedio de "App actualizada con Èxito" si el sistema detecta que debe continuar autom·ticamente con la actualizaciÛn del Servidor. Ahora el proceso es 100% continuo sin requerir clics adicionales.
 
 ## [1.6.3] - 2026-08-26
 ### Mejoras
-- Mejora de UX: Tras finalizar una actualizaci√≥n con √©xito, la tarjeta de aviso se oculta instant√°neamente (de forma optimista) para una respuesta visual m√°s limpia.
-- Mejora de UX (Actualizaci√≥n Integral): Al reiniciar la aplicaci√≥n tras actualizar la interfaz (Fase 1), el actualizador del servidor (Fase 2) se inicia autom√°ticamente sin requerir que el usuario haga clic por segunda vez.
+- Mejora de UX: Tras finalizar una actualizaciÛn con Èxito, la tarjeta de aviso se oculta instant·neamente (de forma optimista) para una respuesta visual m·s limpia.
+- Mejora de UX (ActualizaciÛn Integral): Al reiniciar la aplicaciÛn tras actualizar la interfaz (Fase 1), el actualizador del servidor (Fase 2) se inicia autom·ticamente sin requerir que el usuario haga clic por segunda vez.
 
 ## [1.6.2] - 2026-08-26
 ### Correcciones
 - Aumentado el tiempo de espera del actualizador a 20 minutos para dar tiempo a que los servidores backend extraigan miles de archivos sin marcar error falso.
-- Ajuste final de versiones para correcta sincronizaci√≥n del cliente y servidor.
+- Ajuste final de versiones para correcta sincronizaciÛn del cliente y servidor.
 
 ## [1.6.1] - 2026-08-26
 ### Correcciones
-- Solucionado el problema de renderizaci√≥n de caracteres especiales y emojis (Mojibake) en los textos de Novedades del actualizador. El changelog ahora se lee y procesa estrictamente en formato UTF-8 nativo.
-- Simplificado el formato del historial de actualizaciones en pantalla, eliminando negritas de Markdown y subt√≠tulos innecesarios para mejorar la legibilidad y evitar confusi√≥n visual.
+- Solucionado el problema de renderizaciÛn de caracteres especiales y emojis (Mojibake) en los textos de Novedades del actualizador. El changelog ahora se lee y procesa estrictamente en formato UTF-8 nativo.
+- Simplificado el formato del historial de actualizaciones en pantalla, eliminando negritas de Markdown y subtÌtulos innecesarios para mejorar la legibilidad y evitar confusiÛn visual.
 
 ## [1.6.0] - 2026-08-26
 ### Mejoras
-- Actualizaci√≥n mayor para dar soporte completo a la App M√≥vil.
+- ActualizaciÛn mayor para dar soporte completo a la App MÛvil.
 
 ---
 ## [1.4.0] - 2026-08-21
