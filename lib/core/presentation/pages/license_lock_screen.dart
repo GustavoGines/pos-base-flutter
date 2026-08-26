@@ -66,10 +66,12 @@ class _LicenseLockScreenState extends State<LicenseLockScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFF111827), // Dark grey/black
       body: Center(
-        child: Container(
-          constraints: const BoxConstraints(maxWidth: 500),
-          padding: const EdgeInsets.all(40),
-          decoration: BoxDecoration(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(16.0),
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 500),
+            padding: const EdgeInsets.all(40),
+            decoration: BoxDecoration(
             color: const Color(0xFF1F2937),
             borderRadius: BorderRadius.circular(20),
             boxShadow: [
@@ -229,6 +231,7 @@ class _LicenseLockScreenState extends State<LicenseLockScreen> {
             ],
           ),
         ),
+      ),
       ),
     );
   }
