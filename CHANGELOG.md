@@ -2,6 +2,13 @@
 Todos los cambios notables de la aplicación de caja (Flutter/Windows) están documentados aquí.
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.0.0/) y el proyecto adhiere a [Semantic Versioning](https://semver.org/).
 
+## [1.6.1] - 2026-08-26
+### Fixed
+- Corrección visual en la visualización de las Novedades de Actualización (eliminación de caracteres extraños).
+# Changelog — Sistema POS (Frontend)
+Todos los cambios notables de la aplicación de caja (Flutter/Windows) están documentados aquí.
+El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.0.0/) y el proyecto adhiere a [Semantic Versioning](https://semver.org/).
+
 ## [1.6.0] - 2026-08-26
 ### Added
 - Nuevo Sistema de Canales de Actualización (Estable / Beta) integrado.
