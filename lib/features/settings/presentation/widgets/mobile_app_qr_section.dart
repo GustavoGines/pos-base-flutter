@@ -113,7 +113,7 @@ class _MobileAppQrSectionState extends State<MobileAppQrSection> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'App Móvil para Empleados',
+                      'App Móvil (Terminal & Gestión)',
                       style: TextStyle(
                           fontSize: 17,
                           fontWeight: FontWeight.bold,

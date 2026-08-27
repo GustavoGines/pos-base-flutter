@@ -1782,17 +1782,51 @@ class _PosScreenState extends State<PosScreen> {
           // ── POS Normal ──────────────────────────────────
           return SafeArea(
             child: LayoutBuilder(builder: (context, constraints) {
-              return Row(
-                children: [
-                  SizedBox(
-                    width: constraints.maxWidth * 0.35,
-                    child: _buildCartPanel(),
-                  ),
-                  const VerticalDivider(width: 1, thickness: 1),
-                  Expanded(
-                    child: _buildRightPanel(),
-                  )
-                ],
+              double ratio = context.read<LocalTerminalProvider>().posSplitRatio;
+              return StatefulBuilder(
+                builder: (context, setState) {
+                  return Row(
+                    children: [
+                      SizedBox(
+                        width: constraints.maxWidth * ratio,
+                        child: _buildCartPanel(),
+                      ),
+                      MouseRegion(
+                        cursor: SystemMouseCursors.resizeColumn,
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.translucent,
+                          onPanUpdate: (details) {
+                            setState(() {
+                              ratio += details.delta.dx / constraints.maxWidth;
+                              if (ratio < 0.20) ratio = 0.20;
+                              if (ratio > 0.65) ratio = 0.65;
+                            });
+                          },
+                          onPanEnd: (details) {
+                            context.read<LocalTerminalProvider>().setPosSplitRatio(ratio);
+                          },
+                          child: Container(
+                            width: 16,
+                            color: Colors.transparent,
+                            child: Center(
+                              child: Container(
+                                width: 4,
+                                height: 40,
+                                decoration: BoxDecoration(
+                                  color: Colors.grey.shade400,
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: _buildRightPanel(),
+                      )
+                    ],
+                  );
+                },
               );
             }),
           );
@@ -2430,7 +2464,7 @@ class _PosScreenState extends State<PosScreen> {
 
           // ── Header dinámico ────────────────────────────────────────────
           if (_searchQuery.isEmpty) ...[
-            const Row(
+            Row(
               children: [
                 Expanded(
                   child: Column(
@@ -2445,6 +2479,7 @@ class _PosScreenState extends State<PosScreen> {
                     ],
                   ),
                 ),
+                _buildViewModeSelector(context),
               ],
             ),
           ] else ...[
@@ -2525,170 +2560,8 @@ class _PosScreenState extends State<PosScreen> {
                   );
                 }
 
-                return GridView.builder(
-                  gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                    maxCrossAxisExtent: 180,
-                    childAspectRatio: 0.85,
-                    crossAxisSpacing: 12,
-                    mainAxisSpacing: 12,
-                  ),
-                  itemCount: displayItems.length,
-                  itemBuilder: (context, index) {
-                    final product = displayItems[index];
-                    final isByWeight = product.isSoldByWeight;
-
-                    return InkWell(
-                      borderRadius: BorderRadius.circular(10),
-                      onTap: () => _handleProductSelection(product),
-                      child: Card(
-                        elevation: 2,
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10)),
-                        child: Container(
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(10),
-                            gradient: LinearGradient(
-                              colors: isByWeight
-                                  ? [
-                                      Colors.orange.shade50,
-                                      Colors.white
-                                    ] // naranja para granel
-                                  : [
-                                      Colors.blue.shade50,
-                                      Colors.white
-                                    ], // azul para unitarios
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ),
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8.0, vertical: 8.0),
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              crossAxisAlignment: CrossAxisAlignment.center,
-                              children: [
-                                // Ícono diferenciador
-                                Icon(
-                                  isByWeight
-                                      ? Icons.scale_rounded
-                                      : Icons.inventory_2_outlined,
-                                  color: isByWeight
-                                      ? Colors.orange.shade600
-                                      : Colors.blue.shade600,
-                                  size: 24,
-                                ),
-                                const SizedBox(height: 4),
-                                Expanded(
-                                  child: Center(
-                                    child: Text(
-                                      product.name,
-                                      textAlign: TextAlign.center,
-                                      style: const TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 13),
-                                      maxLines: 3,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 6, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: isByWeight
-                                        ? Colors.orange.shade100
-                                        : Colors.green.shade50,
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Consumer<PosProvider>(
-                                    builder: (context, pos, _) {
-                                      double displayPrice = product.sellingPrice;
-                                      if (pos.activeTier == PriceTier.wholesale) {
-                                        displayPrice = (product.priceWholesale != null && product.priceWholesale! > 0) 
-                                          ? product.priceWholesale! 
-                                          : product.sellingPrice * pos.wholesaleFactor;
-                                      } else if (pos.activeTier == PriceTier.card) {
-                                        displayPrice = (product.priceCard != null && product.priceCard! > 0) 
-                                          ? product.priceCard! 
-                                          : product.sellingPrice * pos.cardFactor;
-                                      } else if (pos.activeTier == PriceTier.custom) {
-                                        displayPrice = product.sellingPrice * pos.currentCustomFactor;
-                                      }
-
-                                      return Text(
-                                        isByWeight
-                                            ? '\$${displayPrice.toCurrency()}/Kg'
-                                            : '\$${displayPrice.toCurrency()}',
-                                        style: TextStyle(
-                                          color: isByWeight
-                                              ? Colors.orange.shade800
-                                              : Colors.green.shade700,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 13,
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      );
-                                    },
-                                  ),
-                                ),
-                                // Badge "Por Peso" para los productos de granel
-                                if (isByWeight) ...[
-                                  const SizedBox(height: 3),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 6, vertical: 1),
-                                    decoration: BoxDecoration(
-                                      color: Colors.orange.shade200,
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                    child: Text('⚖️ Por Kg',
-                                        style: TextStyle(
-                                            fontSize: 10,
-                                            color: Colors.orange.shade900,
-                                            fontWeight: FontWeight.w600)),
-                                  ),
-                                ],
-                                // Badge de Popularidad (Nivel Senior UX)
-                                if (product.salesCount > 0) ...[
-                                  const SizedBox(height: 4),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 6, vertical: 1),
-                                    decoration: BoxDecoration(
-                                      color: Colors.blue.withValues(alpha: 0.1),
-                                      borderRadius: BorderRadius.circular(4),
-                                      border: Border.all(
-                                          color: Colors.blue
-                                              .withValues(alpha: 0.2)),
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        const Icon(Icons.flash_on_rounded,
-                                            size: 10, color: Colors.blueAccent),
-                                        const SizedBox(width: 2),
-                                        Text(
-                                          '${product.salesCount} vendidos',
-                                          style: const TextStyle(
-                                              fontSize: 9,
-                                              color: Colors.blueAccent,
-                                              fontWeight: FontWeight.bold),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                );
+                final viewMode = context.watch<LocalTerminalProvider>().catalogViewMode;
+                return _buildDynamicCatalogView(displayItems, viewMode);
               },
             ),
           ),
@@ -2816,6 +2689,280 @@ class _PosScreenState extends State<PosScreen> {
       debugPrint('Fallback PDF Error: $e');
     }
   }
+// ─── VIEW MODES IMPLEMENTATION ───
+  Widget _buildViewModeSelector(BuildContext context) {
+    final viewMode = context.watch<LocalTerminalProvider>().catalogViewMode;
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildViewModeButton(context, 'grid_large', Icons.grid_view_rounded, 'Tarjetas Grandes', viewMode),
+          _buildViewModeButton(context, 'grid_medium', Icons.apps_rounded, 'Tarjetas Medianas', viewMode),
+          _buildViewModeButton(context, 'compact', Icons.view_comfy_rounded, 'Botones Compactos', viewMode),
+          _buildViewModeButton(context, 'list', Icons.view_list_rounded, 'Lista', viewMode),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildViewModeButton(BuildContext context, String mode, IconData icon, String tooltip, String currentMode) {
+    final isSelected = mode == currentMode;
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: () => context.read<LocalTerminalProvider>().setCatalogViewMode(mode),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            color: isSelected ? Colors.blue.withAlpha(25) : Colors.transparent,
+            border: Border(
+              bottom: BorderSide(
+                color: isSelected ? Colors.blueAccent : Colors.transparent,
+                width: 2,
+              ),
+            ),
+          ),
+          child: Icon(
+            icon,
+            size: 20,
+            color: isSelected ? Colors.blueAccent : Colors.grey.shade600,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDynamicCatalogView(List<Product> displayItems, String viewMode) {
+    if (viewMode == 'list') {
+      return ListView.builder(
+        itemCount: displayItems.length,
+        itemBuilder: (context, index) => _buildListItem(displayItems[index]),
+      );
+    } else if (viewMode == 'compact') {
+      return GridView.builder(
+        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+          maxCrossAxisExtent: 250,
+          childAspectRatio: 3.5,
+          crossAxisSpacing: 8,
+          mainAxisSpacing: 8,
+        ),
+        itemCount: displayItems.length,
+        itemBuilder: (context, index) => _buildCompactItem(displayItems[index]),
+      );
+    } else if (viewMode == 'grid_medium') {
+      return GridView.builder(
+        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+          maxCrossAxisExtent: 140,
+          childAspectRatio: 0.9,
+          crossAxisSpacing: 8,
+          mainAxisSpacing: 8,
+        ),
+        itemCount: displayItems.length,
+        itemBuilder: (context, index) => _buildGridItem(displayItems[index], isMedium: true),
+      );
+    } else {
+      // Default: grid_large
+      return GridView.builder(
+        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+          maxCrossAxisExtent: 180,
+          childAspectRatio: 0.85,
+          crossAxisSpacing: 12,
+          mainAxisSpacing: 12,
+        ),
+        itemCount: displayItems.length,
+        itemBuilder: (context, index) => _buildGridItem(displayItems[index], isMedium: false),
+      );
+    }
+  }
+
+  Widget _buildListItem(Product product) {
+    final isByWeight = product.isSoldByWeight;
+    return Card(
+      elevation: 1,
+      margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+      child: ListTile(
+        onTap: () => _handleProductSelection(product),
+        leading: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: isByWeight ? Colors.orange.shade50 : Colors.blue.shade50,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(
+            isByWeight ? Icons.scale_rounded : Icons.inventory_2_outlined,
+            color: isByWeight ? Colors.orange.shade600 : Colors.blue.shade600,
+          ),
+        ),
+        title: Text(product.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+        subtitle: product.barcode != null && product.barcode!.isNotEmpty 
+            ? Text(product.barcode!, style: const TextStyle(fontSize: 12)) 
+            : null,
+        trailing: _buildPriceWidget(product, isByWeight, 16),
+      ),
+    );
+  }
+
+  Widget _buildCompactItem(Product product) {
+    final isByWeight = product.isSoldByWeight;
+    return InkWell(
+      borderRadius: BorderRadius.circular(6),
+      onTap: () => _handleProductSelection(product),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: isByWeight ? Colors.orange.shade50 : Colors.blue.shade50,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: isByWeight ? Colors.orange.shade200 : Colors.blue.shade200),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              isByWeight ? Icons.scale_rounded : Icons.inventory_2_outlined,
+              color: isByWeight ? Colors.orange.shade600 : Colors.blue.shade600,
+              size: 18,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                product.name,
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(width: 4),
+            _buildPriceWidget(product, isByWeight, 13),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGridItem(Product product, {required bool isMedium}) {
+    final isByWeight = product.isSoldByWeight;
+    return InkWell(
+      borderRadius: BorderRadius.circular(10),
+      onTap: () => _handleProductSelection(product),
+      child: Card(
+        elevation: 2,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(10),
+            gradient: LinearGradient(
+              colors: isByWeight ? [Colors.orange.shade50, Colors.white] : [Colors.blue.shade50, Colors.white],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+          ),
+          child: Padding(
+            padding: EdgeInsets.symmetric(horizontal: isMedium ? 4.0 : 8.0, vertical: isMedium ? 4.0 : 8.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Icon(
+                  isByWeight ? Icons.scale_rounded : Icons.inventory_2_outlined,
+                  color: isByWeight ? Colors.orange.shade600 : Colors.blue.shade600,
+                  size: isMedium ? 18 : 24,
+                ),
+                SizedBox(height: isMedium ? 2 : 4),
+                Expanded(
+                  child: Center(
+                    child: Text(
+                      product.name,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: isMedium ? 11 : 13),
+                      maxLines: isMedium ? 2 : 3,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ),
+                SizedBox(height: isMedium ? 2 : 4),
+                Container(
+                  padding: EdgeInsets.symmetric(horizontal: 6, vertical: isMedium ? 1 : 2),
+                  decoration: BoxDecoration(
+                    color: isByWeight ? Colors.orange.shade100 : Colors.green.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: _buildPriceWidget(product, isByWeight, isMedium ? 11 : 13),
+                ),
+                if (isByWeight) ...[
+                  SizedBox(height: isMedium ? 2 : 3),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.shade200,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text('⚖️ Por Kg', style: TextStyle(fontSize: isMedium ? 9 : 10, color: Colors.orange.shade900, fontWeight: FontWeight.w600)),
+                  ),
+                ],
+                if (product.salesCount > 0) ...[
+                  SizedBox(height: isMedium ? 2 : 4),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.withAlpha(25),
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(color: Colors.blue.withAlpha(50)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.flash_on_rounded, size: isMedium ? 8 : 10, color: Colors.blueAccent),
+                        const SizedBox(width: 2),
+                        Text(
+                          "${product.salesCount} vend.",
+                          style: TextStyle(fontSize: isMedium ? 8 : 9, color: Colors.blueAccent, fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPriceWidget(Product product, bool isByWeight, double fontSize) {
+    return Consumer<PosProvider>(
+      builder: (context, pos, _) {
+        double displayPrice = product.sellingPrice;
+        if (pos.activeTier == PriceTier.wholesale) {
+          displayPrice = (product.priceWholesale != null && product.priceWholesale! > 0) 
+            ? product.priceWholesale! 
+            : product.sellingPrice * pos.wholesaleFactor;
+        } else if (pos.activeTier == PriceTier.card) {
+          displayPrice = (product.priceCard != null && product.priceCard! > 0) 
+            ? product.priceCard! 
+            : product.sellingPrice * pos.cardFactor;
+        } else if (pos.activeTier == PriceTier.custom) {
+          displayPrice = product.sellingPrice * pos.currentCustomFactor;
+        }
+
+        return Text(
+          isByWeight ? '\$${displayPrice.toStringAsFixed(2)}/Kg' : '\$${displayPrice.toStringAsFixed(2)}',
+          style: TextStyle(
+            color: isByWeight ? Colors.orange.shade800 : Colors.green.shade700,
+            fontWeight: FontWeight.bold,
+            fontSize: fontSize,
+          ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        );
+      },
+    );
+  }
+
 }
 
 // ── Componentes Encapsulados ──────────────────────────────────────────────
