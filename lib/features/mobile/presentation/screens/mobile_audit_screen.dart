@@ -80,7 +80,7 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
               action: SnackBarAction(
                 label: 'CREAR',
                 onPressed: () {
-                  ScaffoldMessenger.of(context).clearSnackBars();
+                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
                   _showProductFormDialog(initialBarcode: query.trim());
                 },
               ),
