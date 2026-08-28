@@ -1,4 +1,4 @@
-import 'package:frontend_desktop/core/utils/currency_formatter.dart';
+﻿import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -32,7 +32,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<CatalogProvider>().loadProducts();
       
-      // Manejar navegación inteligente desde Alertas
+      // Manejar navegaciÃ³n inteligente desde Alertas
       final args = ModalRoute.of(context)?.settings.arguments;
       if (args != null && args is Product) {
         _showProductForm(context, context.read<CatalogProvider>(), product: args);
@@ -84,7 +84,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
           appBar: GlobalAppBar(currentRoute: '/catalog'),
           body: Column(
             children: [
-              // ── Toolbar: Search + Actions ─────────────────────────
+              // â”€â”€ Toolbar: Search + Actions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
                 child: LayoutBuilder(
@@ -95,7 +95,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                         controller: _searchController,
                         onChanged: _onSearchChanged,
                         decoration: InputDecoration(
-                          hintText: 'Buscar por nombre, código de barras o código interno...',
+                          hintText: 'Buscar por nombre, cÃ³digo de barras o cÃ³digo interno...',
                           prefixIcon: const Icon(Icons.search),
                           suffixIcon: _searchController.text.isNotEmpty
                               ? IconButton(
@@ -155,23 +155,23 @@ class _CatalogScreenState extends State<CatalogScreen> {
                               ),
                             ),
                             itemBuilder: (context) => [
-                              const PopupMenuItem(value: 1, child: Row(children: [Icon(Icons.folder_outlined, color: Colors.orange, size: 20), SizedBox(width: 12), Text('Mover Categoría')])),
+                              const PopupMenuItem(value: 1, child: Row(children: [Icon(Icons.folder_outlined, color: Colors.orange, size: 20), SizedBox(width: 12), Text('Mover CategorÃ­a')])),
                               const PopupMenuItem(value: 2, child: Row(children: [Icon(Icons.power_settings_new, color: Colors.teal, size: 20), SizedBox(width: 12), Text('Cambiar Estado')])),
                               const PopupMenuItem(value: 3, child: Row(children: [Icon(Icons.trending_up, color: Colors.deepOrange, size: 20), SizedBox(width: 12), Text('Actualizar Precios')])),
                               const PopupMenuItem(value: 4, child: Row(children: [Icon(Icons.print_outlined, color: Colors.deepPurple, size: 20), SizedBox(width: 12), Text('Imprimir Etiquetas')])),
                               const PopupMenuDivider(),
                               const PopupMenuItem(value: 5, child: Row(children: [Icon(Icons.delete_outline, color: Colors.red, size: 20), SizedBox(width: 12), Text('Eliminar Todo')])),
                               const PopupMenuDivider(),
-                              const PopupMenuItem(value: 6, child: Row(children: [Icon(Icons.deselect, color: Colors.grey, size: 20), SizedBox(width: 12), Text('Cancelar Selección')])),
+                              const PopupMenuItem(value: 6, child: Row(children: [Icon(Icons.deselect, color: Colors.grey, size: 20), SizedBox(width: 12), Text('Cancelar SelecciÃ³n')])),
                             ],
                           ),
                           const SizedBox(width: 12),
                         ],
                         OutlinedButton.icon(
                           icon: const Icon(Icons.label_outline, size: 18),
-                          label: const Text('Categorías'),
+                          label: const Text('CategorÃ­as'),
                           onPressed: () async {
-                            final auth = await AdminPinDialog.verify(context, action: 'Gestionar Categorías', permissionKey: 'manage_catalog');
+                            final auth = await AdminPinDialog.verify(context, action: 'Gestionar CategorÃ­as', permissionKey: 'manage_catalog');
                             if (auth && context.mounted) _openCategoriesManager(context);
                           },
                         ),
@@ -241,7 +241,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                   },
                 ),
               ),
-              // ── Loading bar ──────────────────────────────────────
+              // â”€â”€ Loading bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
               if (provider.isLoading) const LinearProgressIndicator(),
               if (provider.errorMessage != null)
                 Container(
@@ -249,7 +249,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                   padding: const EdgeInsets.all(8),
                   child: Text(provider.errorMessage!, style: TextStyle(color: Colors.red.shade700)),
                 ),
-              // ── Product Table ───────────────────────────────────────────────
+              // â”€â”€ Product Table â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
               Expanded(
                 child: provider.products.isEmpty && !provider.isLoading
                     ? Center(
@@ -278,7 +278,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                         },
                       ),
               ),
-              // ── Pagination Controls ───────────────────────────────
+              // â”€â”€ Pagination Controls â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
               if (!provider.isLoading && provider.lastPage > 1)
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -292,18 +292,18 @@ class _CatalogScreenState extends State<CatalogScreen> {
                       IconButton(
                         icon: const Icon(Icons.chevron_left),
                         onPressed: provider.hasPrevPage ? () => provider.prevPage() : null,
-                        tooltip: 'Página anterior',
+                        tooltip: 'PÃ¡gina anterior',
                       ),
                       const SizedBox(width: 12),
                       Text(
-                        'Página ${provider.currentPage} de ${provider.lastPage}',
+                        'PÃ¡gina ${provider.currentPage} de ${provider.lastPage}',
                         style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                       ),
                       const SizedBox(width: 12),
                       IconButton(
                         icon: const Icon(Icons.chevron_right),
                         onPressed: provider.hasNextPage ? () => provider.nextPage() : null,
-                        tooltip: 'Página siguiente',
+                        tooltip: 'PÃ¡gina siguiente',
                       ),
                     ],
                   ),
@@ -404,9 +404,9 @@ class _CatalogScreenState extends State<CatalogScreen> {
               ),
               sortHeader(fId, '#', 'id'),
               sortHeader(fNombre, 'Nombre', 'name'),
-              sortHeader(fBarcode, 'Cód. Barras', 'barcode'),
-              sortHeader(fInterno, 'Cód. Interno', 'internal_code'),
-              sortHeader(fCat, 'Categoría', 'category_id'),
+              sortHeader(fBarcode, 'CÃ³d. Barras', 'barcode'),
+              sortHeader(fInterno, 'CÃ³d. Interno', 'internal_code'),
+              sortHeader(fCat, 'CategorÃ­a', 'category_id'),
               sortHeader(fBrand, 'Marca', 'brand_id'),
               sortHeader(fCosto, 'Costo', 'cost_price'),
               sortHeader(fVenta, 'Venta', 'selling_price'),
@@ -441,9 +441,9 @@ class _CatalogScreenState extends State<CatalogScreen> {
               ),
               cell(fId, Text(p.id.toString(), style: TextStyle(color: Colors.grey.shade500, fontSize: 12), overflow: TextOverflow.ellipsis)),
               cell(fNombre, Text(p.name, overflow: TextOverflow.ellipsis, maxLines: 1)),
-              cell(fBarcode, Text(p.barcode ?? '—', style: TextStyle(fontSize: 12, color: Colors.grey.shade700), overflow: TextOverflow.ellipsis)),
+              cell(fBarcode, Text(p.barcode ?? 'â€”', style: TextStyle(fontSize: 12, color: Colors.grey.shade700), overflow: TextOverflow.ellipsis)),
               cell(fInterno, Text(p.internalCode, style: TextStyle(fontFamily: 'monospace', fontSize: 12, color: Colors.grey.shade600), overflow: TextOverflow.ellipsis)),
-              cell(fCat, Text(p.category?.name ?? '—', overflow: TextOverflow.ellipsis)),
+              cell(fCat, Text(p.category?.name ?? 'â€”', overflow: TextOverflow.ellipsis)),
               cell(fBrand, p.brand != null
                   ? Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -454,19 +454,19 @@ class _CatalogScreenState extends State<CatalogScreen> {
                       ),
                       child: Text(p.brand!.name, style: TextStyle(fontSize: 11, color: Colors.indigo.shade700, fontWeight: FontWeight.w500), overflow: TextOverflow.ellipsis),
                     )
-                  : Text('—', style: TextStyle(color: Colors.grey.shade400, fontSize: 13))),
+                  : Text('â€”', style: TextStyle(color: Colors.grey.shade400, fontSize: 13))),
               cell(fCosto, Text('\$${p.costPrice.toCurrency()}', overflow: TextOverflow.ellipsis)),
               cell(fVenta, Text('\$${p.sellingPrice.toCurrency()}', style: const TextStyle(fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis)),
 
               cell(fStock, Text(p.isSoldByWeight ? '${p.stock.toCurrency()} kg' : p.stock.toStringAsFixed(0), overflow: TextOverflow.ellipsis)),
               cell(fBal, Align(alignment: Alignment.centerLeft, child: Icon(p.isSoldByWeight ? Icons.scale : Icons.inventory_2, size: 18, color: p.isSoldByWeight ? Colors.deepPurple : Colors.blueGrey))),
               cell(fActivo, Align(alignment: Alignment.centerLeft, child: Icon(p.active ? Icons.check_circle : Icons.cancel, color: p.active ? Colors.green : Colors.red, size: 20))),
-              // Columna VTO: muestra los días o un dash si no aplica
+              // Columna VTO: muestra los dÃ­as o un dash si no aplica
               cell(
                 fVto,
                 p.vencimientoDias != null
                     ? Tooltip(
-                        message: 'Vence ${p.vencimientoDias} días después del envasado',
+                        message: 'Vence ${p.vencimientoDias} dÃ­as despuÃ©s del envasado',
                         child: Text(
                           '${p.vencimientoDias} d',
                           style: TextStyle(
@@ -481,7 +481,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                           overflow: TextOverflow.ellipsis,
                         ),
                       )
-                    : Text('—', style: TextStyle(color: Colors.grey.shade400, fontSize: 13)),
+                    : Text('â€”', style: TextStyle(color: Colors.grey.shade400, fontSize: 13)),
               ),
               cell(fAcciones, Wrap(
                 spacing: 4,
@@ -576,14 +576,14 @@ class _CatalogScreenState extends State<CatalogScreen> {
   }
 
   Future<void> _confirmBulkDelete(CatalogProvider provider) async {
-    final auth = await AdminPinDialog.verify(context, action: 'Eliminar Múltiples Productos', permissionKey: 'manage_catalog');
+    final auth = await AdminPinDialog.verify(context, action: 'Eliminar MÃºltiples Productos', permissionKey: 'manage_catalog');
     if (!auth) return;
 
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Eliminar Lote', style: TextStyle(color: Colors.red)),
-        content: Text('¿Está seguro que desea eliminar DEFINITIVAMENTE los ${_selectedProducts.length} productos seleccionados?\nEsta acción no se puede deshacer.'),
+        content: Text('Â¿EstÃ¡ seguro que desea eliminar DEFINITIVAMENTE los ${_selectedProducts.length} productos seleccionados?\nEsta acciÃ³n no se puede deshacer.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
           FilledButton.icon(
@@ -616,11 +616,11 @@ class _CatalogScreenState extends State<CatalogScreen> {
       builder: (ctx) {
         int? selected;
         return AlertDialog(
-          title: const Text('Mover a Categoría'),
+          title: const Text('Mover a CategorÃ­a'),
           content: DropdownButtonFormField<int?>(
-            decoration: const InputDecoration(labelText: 'Elige la nueva categoría', border: OutlineInputBorder()),
+            decoration: const InputDecoration(labelText: 'Elige la nueva categorÃ­a', border: OutlineInputBorder()),
             items: [
-              const DropdownMenuItem(value: null, child: Text('— Quitar categoría —')),
+              const DropdownMenuItem(value: null, child: Text('â€” Quitar categorÃ­a â€”')),
               ...provider.categories.map((c) => DropdownMenuItem(value: c.id, child: Text(c.name))),
             ],
             onChanged: (val) => selected = val,
@@ -640,7 +640,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
         SnackBarService.success(context, msg);
         setState(() => _selectedProducts.clear());
       } else {
-        SnackBarService.error(context, provider.errorMessage ?? 'Error al actualizar categoría');
+        SnackBarService.error(context, provider.errorMessage ?? 'Error al actualizar categorÃ­a');
       }
     }
   }
@@ -653,7 +653,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Cambiar Estado (Activo/Inactivo)'),
-        content: const Text('¿Qué estado desea aplicar a los productos seleccionados?'),
+        content: const Text('Â¿QuÃ© estado desea aplicar a los productos seleccionados?'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, null), child: const Text('Cancelar')),
           FilledButton.icon(
@@ -687,8 +687,8 @@ class _CatalogScreenState extends State<CatalogScreen> {
     final confirmed = await showDialog<bool>(
       context: ctx,
       builder: (dctx) => AlertDialog(
-        title: const Text('Confirmar Eliminación'),
-        content: Text('¿Seguro de eliminar el producto "${p.name}"?\nEsta acción no se puede deshacer.'),
+        title: const Text('Confirmar EliminaciÃ³n'),
+        content: Text('Â¿Seguro de eliminar el producto "${p.name}"?\nEsta acciÃ³n no se puede deshacer.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(dctx, false), child: const Text('Cancelar')),
           ElevatedButton(
@@ -712,9 +712,9 @@ class _CatalogScreenState extends State<CatalogScreen> {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // FORMULARIO CREAR / EDITAR PRODUCTO
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 class ProductFormDialog extends StatefulWidget {
   final CatalogProvider provider;
   final Product? product;
@@ -898,7 +898,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
         await prefs.setDouble('last_profit_margin', margin);
 
         Navigator.of(context).pop();
-        SnackBarService.success(context, _isEditing ? 'Producto actualizado correctamente.' : '¡Producto creado exitosamente!');
+        SnackBarService.success(context, _isEditing ? 'Producto actualizado correctamente.' : 'Â¡Producto creado exitosamente!');
       } else {
         SnackBarService.error(context, widget.provider.errorMessage ?? 'Error desconocido.');
       }
@@ -927,7 +927,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                   validator: (v) => v == null || v.isEmpty ? 'El nombre es obligatorio' : null,
                 ),
                 const SizedBox(height: 12),
-                // Código Interno (PLU) + Código de barras
+                // CÃ³digo Interno (PLU) + CÃ³digo de barras
                 Row(
                   children: [
                     Expanded(
@@ -939,7 +939,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                           labelText: 'PLU (Interno) *',
                           prefixIcon: Icon(Icons.numbers),
                           counterText: '',
-                          helperText: '5 dígitos numéricos',
+                          helperText: '5 dÃ­gitos numÃ©ricos',
                         ),
                         keyboardType: TextInputType.number,
                       ),
@@ -950,24 +950,24 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                       child: TextFormField(
                         controller: _barcodeCtrl,
                         decoration: const InputDecoration(
-                          labelText: 'Código de Barras (EAN)',
+                          labelText: 'CÃ³digo de Barras (EAN)',
                           prefixIcon: Icon(Icons.qr_code_scanner),
-                          helperText: 'Dejar vacío si es pesable',
+                          helperText: 'Dejar vacÃ­o si es pesable',
                         ),
                       ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 12),
-                // Categoría + quick-create
+                // CategorÃ­a + quick-create
                 Row(
                   children: [
                     Expanded(
                       child: DropdownButtonFormField<int?>(
-                        initialValue: _categoryId,
-                        decoration: const InputDecoration(labelText: 'Categoría', prefixIcon: Icon(Icons.category_outlined)),
+                        value: _categoryId,
+                        decoration: const InputDecoration(labelText: 'CategorÃ­a', prefixIcon: Icon(Icons.category_outlined)),
                         items: [
-                          const DropdownMenuItem<int?>(value: null, child: Text('— Sin categoría —')),
+                          const DropdownMenuItem<int?>(value: null, child: Text('â€” Sin categorÃ­a â€”')),
                           ...categories.map((c) => DropdownMenuItem<int?>(value: c.id, child: Text(c.name))),
                         ],
                         onChanged: (val) => setState(() => _categoryId = val),
@@ -975,7 +975,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                     ),
                     const SizedBox(width: 8),
                     Tooltip(
-                      message: 'Crear nueva categoría rápida',
+                      message: 'Crear nueva categorÃ­a rÃ¡pida',
                       child: IconButton.filledTonal(
                         icon: const Icon(Icons.add),
                         onPressed: () async {
@@ -983,11 +983,11 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                           final createdId = await showDialog<int?>(
                             context: context,
                             builder: (ctx) => AlertDialog(
-                              title: const Text('Nueva Categoría'),
+                              title: const Text('Nueva CategorÃ­a'),
                               content: TextField(
                                 controller: nameCtrl,
                                 decoration: const InputDecoration(
-                                  labelText: 'Nombre de la categoría',
+                                  labelText: 'Nombre de la categorÃ­a',
                                   border: OutlineInputBorder(),
                                   prefixIcon: Icon(Icons.label_outline),
                                 ),
@@ -1028,10 +1028,10 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                   children: [
                     Expanded(
                       child: DropdownButtonFormField<int?>(
-                        initialValue: _brandId,
+                        value: _brandId,
                         decoration: const InputDecoration(labelText: 'Marca', prefixIcon: Icon(Icons.branding_watermark_outlined)),
                         items: [
-                          const DropdownMenuItem<int?>(value: null, child: Text('— Sin marca —')),
+                          const DropdownMenuItem<int?>(value: null, child: Text('â€” Sin marca â€”')),
                           ...brands.map((b) => DropdownMenuItem<int?>(value: b.id, child: Text(b.name))),
                         ],
                         onChanged: (val) => setState(() => _brandId = val),
@@ -1039,7 +1039,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                     ),
                     const SizedBox(width: 8),
                     Tooltip(
-                      message: 'Crear nueva marca rápida',
+                      message: 'Crear nueva marca rÃ¡pida',
                       child: IconButton.filledTonal(
                         icon: const Icon(Icons.add),
                         onPressed: () async {
@@ -1089,14 +1089,14 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                 const SizedBox(height: 12),
                 Row(
                   children: [
-                    // Precio Costo — oculto en Combos (el costo se deriva de sus componentes)
+                    // Precio Costo â€” oculto en Combos (el costo se deriva de sus componentes)
                     if (!_isCombo) ...[
                       Expanded(
                         child: TextFormField(
                           controller: _costCtrl,
                           decoration: const InputDecoration(labelText: 'Precio Costo', prefixText: '\$ '),
                           keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                          validator: (v) => (v == null || double.tryParse(v.replaceAll(',', '.')) == null) ? 'Ingrese un monto válido' : null,
+                          validator: (v) => (v == null || double.tryParse(v.replaceAll(',', '.')) == null) ? 'Ingrese un monto vÃ¡lido' : null,
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -1115,7 +1115,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                         decoration: const InputDecoration(labelText: 'Precio Venta *', prefixText: '\$ '),
                         keyboardType: const TextInputType.numberWithOptions(decimal: true),
                         validator: (v) {
-                          if (v == null || double.tryParse(v.replaceAll(',', '.')) == null) return 'Ingrese un precio válido';
+                          if (v == null || double.tryParse(v.replaceAll(',', '.')) == null) return 'Ingrese un precio vÃ¡lido';
                           // Solo validar costo vs precio si no es un combo
                           if (!_isCombo) {
                             final costStr = _costCtrl.text.replaceAll(',', '.');
@@ -1130,10 +1130,10 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                   ],
                 ),
                 const SizedBox(height: 12),
-                // [hardware_store] Listas de Precio — UI Ocultada (Fase 1 Refactorización)
-                // Se deprecó la carga manual de price_wholesale y price_card
+                // [hardware_store] Listas de Precio â€” UI Ocultada (Fase 1 RefactorizaciÃ³n)
+                // Se deprecÃ³ la carga manual de price_wholesale y price_card
                 const SizedBox(height: 12),
-                // --- SECCIÓN: PRECIOS POR VOLUMEN / MAYORISTAS ---
+                // --- SECCIÃ“N: PRECIOS POR VOLUMEN / MAYORISTAS ---
                 _buildPriceTiersSection(),
                 
                 AnimatedSize(
@@ -1158,9 +1158,9 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                         child: TextFormField(
                           controller: _minStockCtrl,
                           decoration: const InputDecoration(
-                            labelText: 'Stock Mínimo (Alerta)',
+                            labelText: 'Stock MÃ­nimo (Alerta)',
                             prefixIcon: Icon(Icons.notification_important_outlined),
-                            helperText: 'Opcional: Dejar vacío para no alertar',
+                            helperText: 'Opcional: Dejar vacÃ­o para no alertar',
                           ),
                           keyboardType: const TextInputType.numberWithOptions(decimal: true),
                         ),
@@ -1220,7 +1220,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                 SwitchListTile(
                   dense: true,
                   contentPadding: EdgeInsets.zero,
-                  title: const Text('Es un Combo / Receta (Armado dinámico)'),
+                  title: const Text('Es un Combo / Receta (Armado dinÃ¡mico)'),
                   subtitle: const Text('No maneja stock activo propio, descuenta de sus ingredientes.'),
                   value: _isCombo,
                   onChanged: (v) => setState(() => _isCombo = v),
@@ -1244,7 +1244,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                             Text('Productos incluidos en el Combo', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.amber.shade900)),
                             TextButton.icon(
                               icon: const Icon(Icons.add, size: 18),
-                              label: const Text('Añadir Producto'),
+                              label: const Text('AÃ±adir Producto'),
                               onPressed: () async {
                                 await _showIngredientSearchDialog(context, widget.provider);
                               },
@@ -1254,7 +1254,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                         if (_comboIngredients.isEmpty)
                           Padding(
                             padding: const EdgeInsets.symmetric(vertical: 8.0),
-                            child: Text('Agregá los productos individuales y la cantidad que se descontará del stock al vender este combo.', style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
+                            child: Text('AgregÃ¡ los productos individuales y la cantidad que se descontarÃ¡ del stock al vender este combo.', style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
                           ),
                         ..._comboIngredients.map((ing) {
                           return Padding(
@@ -1292,10 +1292,10 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                 TextFormField(
                   controller: _expiryCtrl,
                   decoration: InputDecoration(
-                    labelText: 'Días de Vencimiento (opcional)',
+                    labelText: 'DÃ­as de Vencimiento (opcional)',
                     prefixIcon: const Icon(Icons.hourglass_bottom_outlined),
-                    helperText: 'Ej: 90 → VTO = hoy + 90 días. Dejar vacío si no vence.',
-                    suffixText: 'días',
+                    helperText: 'Ej: 90 â†’ VTO = hoy + 90 dÃ­as. Dejar vacÃ­o si no vence.',
+                    suffixText: 'dÃ­as',
                     border: const OutlineInputBorder(),
                   ),
                   keyboardType: TextInputType.number,
@@ -1303,7 +1303,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                     if (v == null || v.trim().isEmpty) return null;
                     final n = int.tryParse(v.trim());
                     if (n == null || n < 1 || n > 3650) {
-                      return 'Ingresá un número entre 1 y 3650';
+                      return 'IngresÃ¡ un nÃºmero entre 1 y 3650';
                     }
                     return null;
                   },
@@ -1330,7 +1330,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     );
   }
 
-  // --- SECCIÓN PRECIOS POR VOLUMEN ---
+  // --- SECCIÃ“N PRECIOS POR VOLUMEN ---
   Widget _buildPriceTiersSection() {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -1358,7 +1358,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                   });
                 },
                 icon: const Icon(Icons.add),
-                label: const Text('Añadir escala', style: TextStyle(fontSize: 12)),
+                label: const Text('AÃ±adir escala', style: TextStyle(fontSize: 12)),
               ),
             ],
           ),
@@ -1399,7 +1399,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                         onChanged: (v) => _priceTiers[idx]['unit_price'] = double.tryParse(v.replaceAll(',', '.')) ?? 0.0,
                         validator: (v) {
                           if (v == null || v.isEmpty) return 'Requerido';
-                          if (double.tryParse(v.replaceAll(',', '.')) == null) return 'Precio inválido';
+                          if (double.tryParse(v.replaceAll(',', '.')) == null) return 'Precio invÃ¡lido';
                           return null;
                         },
                       ),
@@ -1419,7 +1419,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
             ),
           ] else
             const Text(
-              'No hay escalas de precio configuradas. El producto usará su Precio Base de Venta en cualquier cantidad.',
+              'No hay escalas de precio configuradas. El producto usarÃ¡ su Precio Base de Venta en cualquier cantidad.',
               style: TextStyle(fontSize: 12, color: Colors.black54),
             ),
         ],
@@ -1440,12 +1440,12 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// PICKER DE INGREDIENTES PARA COMBO — busca en el backend, no en memoria local
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// PICKER DE INGREDIENTES PARA COMBO â€” busca en el backend, no en memoria local
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 class _ComboIngredientPickerDialog extends StatefulWidget {
   final CatalogProvider provider;
-  final int? excludeProductId;       // El producto que se está editando (para excluirlo)
+  final int? excludeProductId;       // El producto que se estÃ¡ editando (para excluirlo)
   final List<Map<String, dynamic>> comboIngredients;
   final VoidCallback onChanged;      // Notifica al formulario padre para rebuild
 
@@ -1470,7 +1470,7 @@ class _ComboIngredientPickerDialogState extends State<_ComboIngredientPickerDial
   @override
   void initState() {
     super.initState();
-    // Carga inicial: trae todos los productos (sin filtro de búsqueda)
+    // Carga inicial: trae todos los productos (sin filtro de bÃºsqueda)
     _doSearch('');
   }
 
@@ -1494,7 +1494,7 @@ class _ComboIngredientPickerDialogState extends State<_ComboIngredientPickerDial
     setState(() {
       _firstLoad = false;
       _loading = false;
-      // Filtrar: excluir combos (anti-recursividad) y el producto que se está editando
+      // Filtrar: excluir combos (anti-recursividad) y el producto que se estÃ¡ editando
       _results = results.where((p) {
         if (p.isCombo) return false;
         if (widget.excludeProductId != null && p.id == widget.excludeProductId) return false;
@@ -1526,7 +1526,7 @@ class _ComboIngredientPickerDialogState extends State<_ComboIngredientPickerDial
               controller: _searchCtrl,
               autofocus: true,
               decoration: InputDecoration(
-                labelText: 'Nombre, código de barras o PLU...',
+                labelText: 'Nombre, cÃ³digo de barras o PLU...',
                 prefixIcon: const Icon(Icons.search),
                 border: const OutlineInputBorder(),
                 suffixIcon: _loading
@@ -1589,9 +1589,9 @@ class _ComboIngredientPickerDialogState extends State<_ComboIngredientPickerDial
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // MODAL DE AUMENTO MASIVO DE PRECIOS
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 class BulkPriceUpdateDialog extends StatefulWidget {
 
   final CatalogProvider provider;
@@ -1619,11 +1619,11 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
   Future<void> _previewAndApply() async {
     final double? pct = double.tryParse(_percentCtrl.text.replaceAll(',', '.'));
     if (pct == null) {
-      SnackBarService.error(context, 'Ingrese un porcentaje válido (ej: 15 o -10).');
+      SnackBarService.error(context, 'Ingrese un porcentaje vÃ¡lido (ej: 15 o -10).');
       return;
     }
 
-    // 1. Obtener la previsualización del backend
+    // 1. Obtener la previsualizaciÃ³n del backend
     final previewData = await widget.provider.bulkPricePreview(
       percentage: pct,
       roundingRule: _roundingRule,
@@ -1648,7 +1648,7 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
 
     if (!mounted) return;
 
-    // 2. Mostrar diálogo de Confirmación con Previsualización
+    // 2. Mostrar diÃ¡logo de ConfirmaciÃ³n con PrevisualizaciÃ³n
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -1669,7 +1669,7 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
                 TextSpan(
                   style: Theme.of(ctx).textTheme.bodyMedium,
                   children: [
-                    const TextSpan(text: 'Se actualizarán los precios de '),
+                    const TextSpan(text: 'Se actualizarÃ¡n los precios de '),
                     TextSpan(
                       text: '$affectedCount productos',
                       style: const TextStyle(fontWeight: FontWeight.bold),
@@ -1687,7 +1687,7 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
                 ),
               ),
               const SizedBox(height: 16),
-              const Text('Ejemplos de cómo quedarán:', style: TextStyle(fontWeight: FontWeight.bold)),
+              const Text('Ejemplos de cÃ³mo quedarÃ¡n:', style: TextStyle(fontWeight: FontWeight.bold)),
               const SizedBox(height: 8),
               Container(
                 decoration: BoxDecoration(
@@ -1739,7 +1739,7 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
 
     if (confirmed != true) return;
 
-    // 3. Ejecutar actualización real
+    // 3. Ejecutar actualizaciÃ³n real
     final message = await widget.provider.bulkPriceUpdate(
       percentage: pct,
       roundingRule: _roundingRule,
@@ -1752,7 +1752,7 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
     if (mounted) {
       Navigator.of(context).pop();
       if (message != null) {
-        SnackBarService.success(context, '¡Precios actualizados! $message');
+        SnackBarService.success(context, 'Â¡Precios actualizados! $message');
       } else {
         SnackBarService.error(context, widget.provider.errorMessage ?? 'Error al actualizar precios.');
       }
@@ -1790,7 +1790,7 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
                   const SizedBox(width: 8),
                   const Expanded(
                     child: Text(
-                      'Esta operación actualizará el precio de venta de forma masiva.\nUse valores negativos para aplicar descuentos (ej: -10 para -10%).',
+                      'Esta operaciÃ³n actualizarÃ¡ el precio de venta de forma masiva.\nUse valores negativos para aplicar descuentos (ej: -10 para -10%).',
                       style: TextStyle(fontSize: 12),
                     ),
                   ),
@@ -1801,7 +1801,7 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
             TextField(
               controller: _percentCtrl,
               decoration: const InputDecoration(
-                labelText: 'Porcentaje de variación (%)',
+                labelText: 'Porcentaje de variaciÃ³n (%)',
                 hintText: 'Ej: 15 para +15% o -10 para -10%',
                 prefixIcon: Icon(Icons.percent),
                 border: OutlineInputBorder(),
@@ -1819,7 +1819,7 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
                 helperText: 'Elige si aumentas el Costo o el Precio Final.',
               ),
               items: const [
-                DropdownMenuItem(value: 'selling_price', child: Text('Solo Precio de Venta (Aumento estándar)', overflow: TextOverflow.ellipsis)),
+                DropdownMenuItem(value: 'selling_price', child: Text('Solo Precio de Venta (Aumento estÃ¡ndar)', overflow: TextOverflow.ellipsis)),
                 DropdownMenuItem(value: 'cost_and_selling_price', child: Text('Costo de Proveedor y Precio de Venta', overflow: TextOverflow.ellipsis)),
                 DropdownMenuItem(value: 'cost_price', child: Text('Solo Costo (Baja el margen de ganancia)', overflow: TextOverflow.ellipsis)),
               ],
@@ -1837,9 +1837,9 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
               ),
               items: const [
                 DropdownMenuItem(value: 'none', child: Text('Sin redondeo (Ej: \$1234.56)', overflow: TextOverflow.ellipsis)),
-                DropdownMenuItem(value: 'nearest_10', child: Text('A la decena más cercana (Ej: \$1230)', overflow: TextOverflow.ellipsis)),
-                DropdownMenuItem(value: 'nearest_50', child: Text('Múltiplos de \$50 (Ej: \$1250)', overflow: TextOverflow.ellipsis)),
-                DropdownMenuItem(value: 'nearest_100', child: Text('A la centena más cercana (Ej: \$1200)', overflow: TextOverflow.ellipsis)),
+                DropdownMenuItem(value: 'nearest_10', child: Text('A la decena mÃ¡s cercana (Ej: \$1230)', overflow: TextOverflow.ellipsis)),
+                DropdownMenuItem(value: 'nearest_50', child: Text('MÃºltiplos de \$50 (Ej: \$1250)', overflow: TextOverflow.ellipsis)),
+                DropdownMenuItem(value: 'nearest_100', child: Text('A la centena mÃ¡s cercana (Ej: \$1200)', overflow: TextOverflow.ellipsis)),
                 DropdownMenuItem(value: 'ends_99', child: Text('Terminar en .99 (Ej: \$1234.99)', overflow: TextOverflow.ellipsis)),
               ],
               onChanged: (val) => setState(() => _roundingRule = val ?? 'none'),
@@ -1850,13 +1850,13 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
                 initialValue: _selectedCategoryId,
                 isExpanded: true,
                 decoration: const InputDecoration(
-                  labelText: 'Filtrar por Categoría',
+                  labelText: 'Filtrar por CategorÃ­a',
                   prefixIcon: Icon(Icons.folder_outlined),
                   border: OutlineInputBorder(),
                 ),
                 items: [
-                  const DropdownMenuItem<int?>(value: null, child: Text('📦 Todas las categorías', overflow: TextOverflow.ellipsis)),
-                  ...categories.map((c) => DropdownMenuItem<int?>(value: c.id, child: Text('📂 ${c.name}', overflow: TextOverflow.ellipsis))),
+                  const DropdownMenuItem<int?>(value: null, child: Text('ðŸ“¦ Todas las categorÃ­as', overflow: TextOverflow.ellipsis)),
+                  ...categories.map((c) => DropdownMenuItem<int?>(value: c.id, child: Text('ðŸ“‚ ${c.name}', overflow: TextOverflow.ellipsis))),
                 ],
                 onChanged: (val) => setState(() => _selectedCategoryId = val),
               ),
@@ -1870,8 +1870,8 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
                   border: OutlineInputBorder(),
                 ),
                 items: [
-                  const DropdownMenuItem<int?>(value: null, child: Text('🏷️ Todas las marcas', overflow: TextOverflow.ellipsis)),
-                  ...brands.map((b) => DropdownMenuItem<int?>(value: b.id, child: Text('🏷️ ${b.name}', overflow: TextOverflow.ellipsis))),
+                  const DropdownMenuItem<int?>(value: null, child: Text('ðŸ·ï¸ Todas las marcas', overflow: TextOverflow.ellipsis)),
+                  ...brands.map((b) => DropdownMenuItem<int?>(value: b.id, child: Text('ðŸ·ï¸ ${b.name}', overflow: TextOverflow.ellipsis))),
                 ],
                 onChanged: (val) => setState(() => _selectedBrandId = val),
               ),
@@ -1929,7 +1929,7 @@ class _BulkPriceHistoryDialogState extends State<BulkPriceHistoryDialog> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Revertir Aumento'),
-        content: const Text('¿Estás seguro de que deseas deshacer este lote de aumentos? Los precios de todos los productos afectados volverán a su estado anterior.'),
+        content: const Text('Â¿EstÃ¡s seguro de que deseas deshacer este lote de aumentos? Los precios de todos los productos afectados volverÃ¡n a su estado anterior.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
           FilledButton(
@@ -1992,7 +1992,7 @@ class _BulkPriceHistoryDialogState extends State<BulkPriceHistoryDialog> {
                 
                 final roundingRule = history['rounding_rule'] == 'none' ? 'Sin redondeo'
                     : (history['rounding_rule'] == 'nearest_10' ? 'A la decena'
-                    : (history['rounding_rule'] == 'nearest_50' ? 'Múltiplos de 50'
+                    : (history['rounding_rule'] == 'nearest_50' ? 'MÃºltiplos de 50'
                     : (history['rounding_rule'] == 'nearest_100' ? 'A la centena'
                     : (history['rounding_rule'] == 'ends_99' ? 'Termina en .99' : history['rounding_rule']))));
                 

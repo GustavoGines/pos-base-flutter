@@ -1,4 +1,4 @@
-import 'dart:io';
+﻿import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
@@ -116,7 +116,7 @@ class LicenseRefreshObserver extends NavigatorObserver {
   LicenseRefreshObserver(this.contextGetter, this.routeNotifier);
 
   void _refresh(Route? route) {
-    // CRÍTICO: Ignorar popups, dialogos, y dropdowns para no reiniciar estados globales.
+    // CRÃTICO: Ignorar popups, dialogos, y dropdowns para no reiniciar estados globales.
     // Solo recargamos settings cuando el usuario navega a una nueva PANTALLA real.
     if (route != null && route is! PageRoute) return;
 
@@ -127,13 +127,13 @@ class LicenseRefreshObserver extends NavigatorObserver {
           routeNotifier.value = route.settings.name;
         });
       }
-      
+
       // Fire-and-forget: do NOT await, never block navigation.
       WidgetsBinding.instance.addPostFrameCallback((_) {
         contextGetter().read<SettingsProvider>().refreshSettingsSilently();
       });
     } catch (_) {
-      // Context might be unmounted during startup — silently ignore.
+      // Context might be unmounted during startup â€” silently ignore.
     }
   }
 
@@ -148,9 +148,9 @@ class LicenseRefreshObserver extends NavigatorObserver {
 }
 
 void main() async {
-  // CRÍTICO: Inicialización obligatoria para assets y plugins en desktop
+  // CRÃTICO: InicializaciÃ³n obligatoria para assets y plugins en desktop
   WidgetsFlutterBinding.ensureInitialized();
-  
+
   // Hacer que la app inicie en pantalla completa (maximizada) pero no Kiosk puro,
   // permitiendo que el usuario la achique o minimice si lo requiere.
   if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
@@ -166,111 +166,123 @@ void main() async {
       await windowManager.maximize();
     });
   }
-  
+
   // Pre-cargar perfil de impresora para evitar crashes de AssetManifest en Windows
-  // ⚠️ SOLO en Desktop — en mobile no existe impresora conectada y puede colgarse
+  // âš ï¸ SOLO en Desktop â€” en mobile no existe impresora conectada y puede colgarse
   if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
     await ReceiptPrinterService.instance.initialize();
   }
-  
+
   // Obtener URL de la API del almacenamiento local
   final prefs = await SharedPreferences.getInstance();
-  final String localUrl = prefs.getString('pos_api_local') ?? prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
+  final String localUrl = prefs.getString('pos_api_local') ??
+      prefs.getString('pos_api') ??
+      AppConfig.kApiBaseUrl;
   final String remoteUrl = prefs.getString('pos_api_remote') ?? '';
-  
+
   String activeApiUrl = localUrl;
 
-  // ── Smart Auto-Fallback Network (Mobile/Tablet) ──
-  // Solo hacemos fallback si la URL remota parece válida
-  bool hasValidRemote = remoteUrl.trim().length > 10 && remoteUrl.contains('http');
-  
+  // â”€â”€ Smart Auto-Fallback Network (Mobile/Tablet) â”€â”€
+  // Solo hacemos fallback si la URL remota parece vÃ¡lida
+  bool hasValidRemote =
+      remoteUrl.trim().length > 10 && remoteUrl.contains('http');
+
   if (hasValidRemote && (Platform.isAndroid || Platform.isIOS)) {
     try {
-      // Ping rápido a la red local (2000ms) para ver si estamos en el negocio
-      final response = await http.get(Uri.parse('$localUrl/settings')).timeout(const Duration(milliseconds: 2000));
+      // Ping rÃ¡pido a la red local (2000ms) para ver si estamos en el negocio
+      final response = await http
+          .get(Uri.parse('$localUrl/settings'))
+          .timeout(const Duration(milliseconds: 2000));
       if (response.statusCode >= 500) throw Exception('Local server error');
       activeApiUrl = localUrl;
       debugPrint('SmartNetwork: Conectado a LOCAL -> $activeApiUrl');
     } catch (e) {
       // Si falla (timeout o red inaccesible), cambiamos a la nube
       activeApiUrl = remoteUrl;
-      debugPrint('SmartNetwork: Red Local falló. Cambiando a REMOTO -> $activeApiUrl');
+      debugPrint(
+          'SmartNetwork: Red Local fallÃ³. Cambiando a REMOTO -> $activeApiUrl');
     }
   } else {
     activeApiUrl = localUrl;
   }
-  
+
   // Guardamos la IP activa temporalmente para retrocompatibilidad
   await prefs.setString('pos_api', activeApiUrl);
-  
+
   final savedApiUrl = activeApiUrl;
 
-  // ── RESCUE TRIGGER OTA ──
-  // Si la app detecta que acaba de ser actualizada, dispara un endpoint de 
-  // rescate silencioso al backend para asegurar que la DB esté parcheada.
-  // Esta versión se usa *únicamente* para disparar la migración de emergencia
-  // al detectar que la app se actualizó, para correr las nuevas migraciones DB del backend
-  const currentAppVersion = '1.5.0';
+  // â”€â”€ RESCUE TRIGGER OTA â”€â”€
+  // Si la app detecta que acaba de ser actualizada, dispara un endpoint de
+  // rescate silencioso al backend para asegurar que la DB estÃ© parcheada.
+  // Esta versiÃ³n se usa *Ãºnicamente* para disparar la migraciÃ³n de emergencia
+  // al detectar que la app se actualizÃ³, para correr las nuevas migraciones DB del backend
+  const currentAppVersion = '1.7.1';
   final lastVersion = prefs.getString('app_version') ?? '1.0.0';
   if (lastVersion != currentAppVersion) {
     try {
       // Llamada silenciosa de rescate (fire and forget)
       http.get(Uri.parse('$savedApiUrl/system/rescue-migrate')).ignore();
       await prefs.setString('app_version', currentAppVersion);
-      debugPrint('Rescue Trigger: Migración solicitada ($lastVersion -> $currentAppVersion)');
+      debugPrint(
+          'Rescue Trigger: MigraciÃ³n solicitada ($lastVersion -> $currentAppVersion)');
     } catch (e) {
-      debugPrint('Rescue Trigger falló: $e');
+      debugPrint('Rescue Trigger fallÃ³: $e');
     }
   }
 
-  // Inicialización de Dependencias Base (DI)
+  // InicializaciÃ³n de Dependencias Base (DI)
   final String apiUrl = savedApiUrl;
   final httpClient = ApiClient(http.Client());
 
-  // Auth — creado ANTES de runApp para poder restaurar el token de sesión
+  // Auth â€” creado ANTES de runApp para poder restaurar el token de sesiÃ³n
   // antes del primer request HTTP (Crash Recovery de la Vulnerabilidad #3)
   final authRepo = AuthRepository(
-      remoteDataSource: AuthRemoteDataSource(baseUrl: apiUrl, client: httpClient));
+      remoteDataSource:
+          AuthRemoteDataSource(baseUrl: apiUrl, client: httpClient));
   final authProvider = AuthProvider(repository: authRepo)
-    ..apiClient = httpClient; // Inyección sin dependencia circular
+    ..apiClient = httpClient; // InyecciÃ³n sin dependencia circular
   await authProvider.restoreSessionFromPrefs();
 
-   // Settings
+  // Settings
   final settingsRepo = SettingsRepositoryImpl(
-      remoteDataSource: SettingsRemoteDataSourceImpl(baseUrl: apiUrl, client: httpClient));
+      remoteDataSource:
+          SettingsRemoteDataSourceImpl(baseUrl: apiUrl, client: httpClient));
   final getSettingsUseCase = GetSettingsUseCase(settingsRepo);
   final updateSettingsUseCase = UpdateSettingsUseCase(settingsRepo);
 
   // Catalog
   final catalogRepo = CatalogRepositoryImpl(
-      remoteDataSource: CatalogRemoteDataSourceImpl(baseUrl: apiUrl, client: httpClient));
+      remoteDataSource:
+          CatalogRemoteDataSourceImpl(baseUrl: apiUrl, client: httpClient));
   final getProductsUseCase = GetProductsUseCase(catalogRepo);
 
   // Cash Register
   final cashRegisterRepo = CashRegisterRepositoryImpl(
-      remoteDataSource: CashRegisterRemoteDataSourceImpl(baseUrl: apiUrl, client: httpClient));
-  
+      remoteDataSource: CashRegisterRemoteDataSourceImpl(
+          baseUrl: apiUrl, client: httpClient));
+
   // Pos
   final posRepo = PosRepositoryImpl(
-      remoteDataSource: PosRemoteDataSourceImpl(baseUrl: apiUrl, client: httpClient));
+      remoteDataSource:
+          PosRemoteDataSourceImpl(baseUrl: apiUrl, client: httpClient));
 
   // Sales History
-  final salesHistoryDataSource = SalesHistoryRemoteDataSource(
-      baseUrl: apiUrl, client: httpClient);
+  final salesHistoryDataSource =
+      SalesHistoryRemoteDataSource(baseUrl: apiUrl, client: httpClient);
 
   // Reports
-  final reportsDataSource = ReportsRemoteDataSource(
-      baseUrl: apiUrl, client: httpClient);
+  final reportsDataSource =
+      ReportsRemoteDataSource(baseUrl: apiUrl, client: httpClient);
 
   // Inventory Alerts & Monthly Balance
-  final inventoryAlertsDataSource = InventoryAlertsDataSource(
-      baseUrl: apiUrl, client: httpClient);
+  final inventoryAlertsDataSource =
+      InventoryAlertsDataSource(baseUrl: apiUrl, client: httpClient);
 
   // Logistics
-  final deliveryNoteRepo = DeliveryNoteRepository(
-      baseUrl: apiUrl, client: httpClient);
+  final deliveryNoteRepo =
+      DeliveryNoteRepository(baseUrl: apiUrl, client: httpClient);
 
-  // Auth — ya instanciado antes de runApp (ver arriba con restoreSessionFromPrefs)
+  // Auth â€” ya instanciado antes de runApp (ver arriba con restoreSessionFromPrefs)
 
   // Users
   final usersRepo = UsersRepository(
@@ -278,31 +290,43 @@ void main() async {
 
   // Checks
   final checkRepo = CheckRepositoryImpl(
-      remoteDataSource: CheckRemoteDataSourceImpl(baseUrl: apiUrl, client: httpClient));
+      remoteDataSource:
+          CheckRemoteDataSourceImpl(baseUrl: apiUrl, client: httpClient));
 
   runApp(
     MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => LocalTerminalProvider(), lazy: false),
+        ChangeNotifierProvider(
+            create: (_) => LocalTerminalProvider(), lazy: false),
         ChangeNotifierProvider.value(
           value: authProvider, // Reusar la instancia creada antes de runApp
         ),
         ChangeNotifierProvider(
-          create: (_) => SettingsProvider(
-            getSettingsUseCase: getSettingsUseCase,
-            updateSettingsUseCase: updateSettingsUseCase,
-          ), 
-          lazy: false
-        ),
-        ChangeNotifierProvider(create: (_) => SalesHistoryProvider(dataSource: salesHistoryDataSource), lazy: false),
-        Provider<SalesHistoryRemoteDataSource>.value(value: salesHistoryDataSource),
-        ChangeNotifierProvider(create: (_) => CatalogProvider(
-          getProductsUseCase: getProductsUseCase,
-          repository: catalogRepo,
-        ), lazy: false),
-        ChangeNotifierProvider(create: (_) => ReportsProvider(dataSource: reportsDataSource, balanceDataSource: inventoryAlertsDataSource), lazy: false),
+            create: (_) => SettingsProvider(
+                  getSettingsUseCase: getSettingsUseCase,
+                  updateSettingsUseCase: updateSettingsUseCase,
+                ),
+            lazy: false),
         ChangeNotifierProvider(
-          create: (_) => InventoryAlertsProvider(dataSource: inventoryAlertsDataSource),
+            create: (_) =>
+                SalesHistoryProvider(dataSource: salesHistoryDataSource),
+            lazy: false),
+        Provider<SalesHistoryRemoteDataSource>.value(
+            value: salesHistoryDataSource),
+        ChangeNotifierProvider(
+            create: (_) => CatalogProvider(
+                  getProductsUseCase: getProductsUseCase,
+                  repository: catalogRepo,
+                ),
+            lazy: false),
+        ChangeNotifierProvider(
+            create: (_) => ReportsProvider(
+                dataSource: reportsDataSource,
+                balanceDataSource: inventoryAlertsDataSource),
+            lazy: false),
+        ChangeNotifierProvider(
+          create: (_) =>
+              InventoryAlertsProvider(dataSource: inventoryAlertsDataSource),
           lazy: false,
         ),
         ChangeNotifierProvider(
@@ -326,7 +350,7 @@ void main() async {
         ),
         ChangeNotifierProvider(
           create: (_) => UsersProvider(repository: usersRepo),
-          lazy: true,  // Solo carga cuando se navega a Personal y Accesos
+          lazy: true, // Solo carga cuando se navega a Personal y Accesos
         ),
         // Expuesto directamente para que RescuePinChangeDialog pueda hacer
         // context.read<UsersRepository>() sin pasar por UsersProvider.
@@ -335,12 +359,15 @@ void main() async {
         ChangeNotifierProxyProvider<SettingsProvider, CustomerProvider>(
           create: (_) => CustomerProvider(baseUrl: apiUrl, client: httpClient),
           update: (_, settingsProvider, customerProvider) {
-            customerProvider!.setAccess(settingsProvider.features.currentAccounts);
+            customerProvider!
+                .setAccess(settingsProvider.features.currentAccounts);
             return customerProvider;
           },
           lazy: false,
         ),
-        ChangeNotifierProvider(create: (_) => TrashProvider(baseUrl: apiUrl, client: httpClient), lazy: false),
+        ChangeNotifierProvider(
+            create: (_) => TrashProvider(baseUrl: apiUrl, client: httpClient),
+            lazy: false),
         // [hardware_store] Presupuestos
         ChangeNotifierProvider(
           create: (_) => QuoteProvider(
@@ -391,10 +418,10 @@ class _MainAppState extends State<MainApp> {
     super.initState();
     Future.microtask(() {
       _initializeApp();
-      
-      // ── GANCHOS DE SEGURIDAD GLOBAL (Single Active Session) ──
+
+      // â”€â”€ GANCHOS DE SEGURIDAD GLOBAL (Single Active Session) â”€â”€
       // Atrapa cualquier Error 401 (SESSION_EXPIRED) del ApiClient de manera centralizada.
-      // Así se protege automáticamente toda la aplicación sin tocar pantalla por pantalla.
+      // AsÃ­ se protege automÃ¡ticamente toda la aplicaciÃ³n sin tocar pantalla por pantalla.
       final authProv = context.read<AuthProvider>();
       authProv.apiClient?.onSessionExpired = () {
         final ctx = navigatorKey.currentContext;
@@ -405,7 +432,8 @@ class _MainAppState extends State<MainApp> {
     });
   }
 
-  Future<void> _handleGlobalSessionExpired(BuildContext ctx, AuthProvider authProv) async {
+  Future<void> _handleGlobalSessionExpired(
+      BuildContext ctx, AuthProvider authProv) async {
     _isShowingSessionDialog = true;
 
     await showDialog(
@@ -418,15 +446,16 @@ class _MainAppState extends State<MainApp> {
           Icon(Icons.phonelink_off, color: Colors.orange.shade800, size: 28),
           const SizedBox(width: 12),
           const Expanded(
-              child: Text('Sesión Cerrada',
+              child: Text('SesiÃ³n Cerrada',
                   style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18))),
         ]),
         content: const Text(
-            'Tu sesión fue cerrada porque otro dispositivo inició sesión con tu usuario.\n\n'
-            'Por seguridad, solo se permite una sesión activa por usuario a la vez.'),
+            'Tu sesiÃ³n fue cerrada porque otro dispositivo iniciÃ³ sesiÃ³n con tu usuario.\n\n'
+            'Por seguridad, solo se permite una sesiÃ³n activa por usuario a la vez.'),
         actions: [
           FilledButton.icon(
-            style: FilledButton.styleFrom(backgroundColor: Colors.orange.shade700),
+            style:
+                FilledButton.styleFrom(backgroundColor: Colors.orange.shade700),
             onPressed: () => Navigator.pop(dCtx),
             icon: const Icon(Icons.login),
             label: const Text('Volver al Login'),
@@ -435,14 +464,15 @@ class _MainAppState extends State<MainApp> {
       ),
     );
 
-    // Aniquilar sesión localmente y redirigir
+    // Aniquilar sesiÃ³n localmente y redirigir
     await authProv.forceLogout();
     navigatorKey.currentState?.pushNamedAndRemoveUntil('/login', (r) => false);
     _isShowingSessionDialog = false;
   }
 
   Future<void> _initializeApp() async {
-    final settingsProvider = Provider.of<SettingsProvider>(context, listen: false);
+    final settingsProvider =
+        Provider.of<SettingsProvider>(context, listen: false);
     setState(() {
       _isInitializing = true;
       _initError = null;
@@ -472,7 +502,7 @@ class _MainAppState extends State<MainApp> {
         } catch (_) {}
       }
 
-      // Reintento Automático (1 vez después de 2 segundos) para dar tiempo a Laragon/Red a despertar
+      // Reintento AutomÃ¡tico (1 vez despuÃ©s de 2 segundos) para dar tiempo a Laragon/Red a despertar
       if (!success && !isMobilePlatform) {
         await Future.delayed(const Duration(seconds: 2));
         try {
@@ -490,26 +520,27 @@ class _MainAppState extends State<MainApp> {
       return; // Abortar resto de la carga
     }
 
-    // 2. Verificar estado de la Caja de ESTA terminal física asignada
+    // 2. Verificar estado de la Caja de ESTA terminal fÃ­sica asignada
     try {
       final assignedRegisterId = settingsProvider.assignedRegisterId;
       await Provider.of<CashRegisterProvider>(context, listen: false)
-          .checkCurrentShift(registerId: assignedRegisterId > 0 ? assignedRegisterId : null);
+          .checkCurrentShift(
+              registerId: assignedRegisterId > 0 ? assignedRegisterId : null);
     } catch (_) {
       // Si falla obtener el turno, no bloqueamos la app pero registramos el error
       debugPrint('Error al cargar turno inicial');
     }
-    
+
     if (mounted) {
       setState(() {
         _isInitializing = false;
         _initError = null;
       });
 
-      // ── CHECK DE RESULTADO OTA (Smart Chaining) ──
-      // Si el updater corrió mientras la app estaba cerrada, mostrar el
-      // resultado al usuario. Si fue una actualización exitosa del Frontend,
-      // encadenar automáticamente la actualización del Backend (Auto-Resume).
+      // â”€â”€ CHECK DE RESULTADO OTA (Smart Chaining) â”€â”€
+      // Si el updater corriÃ³ mientras la app estaba cerrada, mostrar el
+      // resultado al usuario. Si fue una actualizaciÃ³n exitosa del Frontend,
+      // encadenar automÃ¡ticamente la actualizaciÃ³n del Backend (Auto-Resume).
       WidgetsBinding.instance.addPostFrameCallback((_) async {
         final ctx = navigatorKey.currentContext;
         if (ctx == null || !ctx.mounted) return;
@@ -518,15 +549,15 @@ class _MainAppState extends State<MainApp> {
         if (otaResult != null) {
           OtaStartupChecker.clearState();
 
-          // Auto-Resume: si la App se actualizó con éxito, buscar silenciosamente
-          // si el Backend sigue pendiente ANTES de mostrar el popup de éxito.
+          // Auto-Resume: si la App se actualizÃ³ con Ã©xito, buscar silenciosamente
+          // si el Backend sigue pendiente ANTES de mostrar el popup de Ã©xito.
           if (otaResult.success && otaResult.component == 'frontend') {
             try {
               final check = await UpdateService().checkUpdate();
               final backendUpdate = check.backendUpdate;
 
               if (backendUpdate != null && ctx.mounted) {
-                // Actualización integral en progreso: saltamos el cartel de "App actualizada"
+                // ActualizaciÃ³n integral en progreso: saltamos el cartel de "App actualizada"
                 // y pasamos directamente a la Fase 2 (Servidor).
                 await showDialog(
                   context: ctx,
@@ -537,7 +568,8 @@ class _MainAppState extends State<MainApp> {
                   ),
                 );
                 // Refrescar forzosamente la pantalla de login para borrar el badge obsoleto
-                AppConfig.navigatorKey.currentState?.pushReplacementNamed('/login');
+                AppConfig.navigatorKey.currentState
+                    ?.pushReplacementNamed('/login');
                 return; // Salimos para no mostrar el OtaResultDialog
               }
             } catch (e) {
@@ -545,14 +577,14 @@ class _MainAppState extends State<MainApp> {
             }
           }
 
-          // Si llegamos aquí, o no hubo auto-resume, o fue un error, o solo frontend.
+          // Si llegamos aquÃ­, o no hubo auto-resume, o fue un error, o solo frontend.
           if (ctx.mounted) {
             await showDialog(
               context: ctx,
               barrierDismissible: otaResult.success,
               builder: (_) => OtaResultDialog(result: otaResult),
             );
-            // Refrescar login por si había badges viejos cacheados
+            // Refrescar login por si habÃ­a badges viejos cacheados
             AppConfig.navigatorKey.currentState?.pushReplacementNamed('/login');
           }
         }
@@ -578,20 +610,23 @@ class _MainAppState extends State<MainApp> {
           children: [
             Icon(Icons.dns_outlined, color: Colors.blueAccent),
             SizedBox(width: 8),
-            Text('Configurar Servidor', style: TextStyle(fontWeight: FontWeight.bold)),
+            Text('Configurar Servidor',
+                style: TextStyle(fontWeight: FontWeight.bold)),
           ],
         ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Ingrese la IP o URL de la PC principal:', style: TextStyle(color: Colors.blueGrey)),
+            const Text('Ingrese la IP o URL de la PC principal:',
+                style: TextStyle(color: Colors.blueGrey)),
             const SizedBox(height: 16),
             TextField(
               controller: urlController,
               decoration: InputDecoration(
                 hintText: 'Ej: http://192.168.1.50/api',
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                border:
+                    OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                 prefixIcon: const Icon(Icons.link),
               ),
             ),
@@ -611,51 +646,56 @@ class _MainAppState extends State<MainApp> {
                   if (!newUrl.contains('/')) {
                     // Si es solo una IP/dominio, asumimos la ruta por defecto
                     if (newUrl.contains('recovarentals')) {
-                      newUrl = 'https://$newUrl/Sistema_POS/pos-backend/public/api';
+                      newUrl =
+                          'https://$newUrl/Sistema_POS/pos-backend/public/api';
                     } else {
-                      newUrl = 'http://$newUrl/Sistema_POS/pos-backend/public/api';
+                      newUrl =
+                          'http://$newUrl/Sistema_POS/pos-backend/public/api';
                     }
                   } else {
                     newUrl = 'http://$newUrl';
                   }
                 }
-                
+
                 if (newUrl.endsWith('/')) {
                   newUrl = newUrl.substring(0, newUrl.length - 1);
                 }
-                
+
                 await prefs.setString('pos_api', newUrl);
-                // IMPORTANTE: También guardamos pos_api_local para que no pise la configuración al reiniciar
+                // IMPORTANTE: TambiÃ©n guardamos pos_api_local para que no pise la configuraciÃ³n al reiniciar
                 await prefs.setString('pos_api_local', newUrl);
-                
+
                 if (context.mounted) {
-                  final settingsProvider = Provider.of<SettingsProvider>(context, listen: false);
+                  final settingsProvider =
+                      Provider.of<SettingsProvider>(context, listen: false);
                   settingsProvider.updateBaseUrl(newUrl);
 
                   Navigator.pop(dCtx);
-                  
+
                   // Intentar validar la nueva IP antes de reiniciar toda la app
                   setState(() {
                     _isInitializing = true;
                     _initError = null;
                   });
-                  
+
                   try {
                     await settingsProvider.loadSettings();
-                    
+
                     if (Platform.isAndroid || Platform.isIOS) {
                       // En celular no cerramos la app porque el OS no la vuelve a abrir sola.
-                      // Simplemente volvemos a llamar a la inicialización.
+                      // Simplemente volvemos a llamar a la inicializaciÃ³n.
                       _initializeApp();
                     } else {
-                      // En Desktop sí podemos reiniciar el proceso
-                      Process.start(Platform.resolvedExecutable, Platform.executableArguments);
+                      // En Desktop sÃ­ podemos reiniciar el proceso
+                      Process.start(Platform.resolvedExecutable,
+                          Platform.executableArguments);
                       exit(0);
                     }
                   } catch (e) {
                     setState(() {
                       _isInitializing = false;
-                      _initError = 'No se pudo conectar a la nueva IP. Verifique la dirección.';
+                      _initError =
+                          'No se pudo conectar a la nueva IP. Verifique la direcciÃ³n.';
                     });
                   }
                 }
@@ -663,7 +703,8 @@ class _MainAppState extends State<MainApp> {
             },
             icon: const Icon(Icons.save),
             label: const Text('Guardar y Reintentar'),
-            style: FilledButton.styleFrom(backgroundColor: Colors.blue.shade800),
+            style:
+                FilledButton.styleFrom(backgroundColor: Colors.blue.shade800),
           ),
         ],
       ),
@@ -683,27 +724,38 @@ class _MainAppState extends State<MainApp> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.point_of_sale_rounded, size: 72, color: Color(0xFF3B82F6)),
+                  const Icon(Icons.point_of_sale_rounded,
+                      size: 72, color: Color(0xFF3B82F6)),
                   const SizedBox(height: 24),
-                  const Text('Sistema POS', style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Colors.white)),
+                  const Text('Sistema POS',
+                      style: TextStyle(
+                          fontSize: 26,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white)),
                   const SizedBox(height: 8),
-                  Text(_initError != null ? 'ESTADO: $_initError' : 'Iniciando sistema...', 
+                  Text(
+                      _initError != null
+                          ? 'ESTADO: $_initError'
+                          : 'Iniciando sistema...',
                       textAlign: TextAlign.center,
-                      style: const TextStyle(fontSize: 14, color: Colors.white54)),
+                      style:
+                          const TextStyle(fontSize: 14, color: Colors.white54)),
                   const SizedBox(height: 32),
                   if (_initError != null) ...[
-                    const Icon(Icons.error_outline_rounded, color: Colors.redAccent, size: 48),
+                    const Icon(Icons.error_outline_rounded,
+                        color: Colors.redAccent, size: 48),
                     const SizedBox(height: 24),
                     ElevatedButton.icon(
                       onPressed: () {
                         _initializeApp();
                       },
                       icon: const Icon(Icons.refresh_rounded),
-                      label: const Text('Reintentar Conexión'),
+                      label: const Text('Reintentar ConexiÃ³n'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.blue,
                         foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 24, vertical: 12),
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -712,14 +764,17 @@ class _MainAppState extends State<MainApp> {
                         if (!mounted) return;
                         await _showNetworkSettingsDialog(innerContext);
                       },
-                      icon: const Icon(Icons.settings_ethernet, color: Colors.white70),
-                      label: const Text('Configurar Servidor', style: TextStyle(color: Colors.white70)),
+                      icon: const Icon(Icons.settings_ethernet,
+                          color: Colors.white70),
+                      label: const Text('Configurar Servidor',
+                          style: TextStyle(color: Colors.white70)),
                     ),
                   ] else
                     const SizedBox(
                       width: 40,
                       height: 40,
-                      child: CircularProgressIndicator(color: Color(0xFF3B82F6), strokeWidth: 3),
+                      child: CircularProgressIndicator(
+                          color: Color(0xFF3B82F6), strokeWidth: 3),
                     ),
                 ],
               ),
@@ -736,11 +791,11 @@ class _MainAppState extends State<MainApp> {
       return _buildLoadingOrErrorScreen();
     }
 
-
     return MaterialApp(
       navigatorKey: navigatorKey,
       navigatorObservers: [
-        LicenseRefreshObserver(() => navigatorKey.currentContext!, _currentRoute),
+        LicenseRefreshObserver(
+            () => navigatorKey.currentContext!, _currentRoute),
       ],
       builder: (context, child) {
         final Widget guardedChild = LicenseGuard(
@@ -749,7 +804,7 @@ class _MainAppState extends State<MainApp> {
           child: child!,
         );
 
-        // Protección GLOBAL anti-overflow para ventanas estrechas
+        // ProtecciÃ³n GLOBAL anti-overflow para ventanas estrechas
         return LayoutBuilder(
           builder: (context, constraints) {
             if (Platform.isAndroid || Platform.isIOS) return guardedChild;
@@ -826,66 +881,72 @@ class _MainAppState extends State<MainApp> {
       routes: {
         '/login': (context) => const LoginScreen(),
         '/home': (context) => Consumer<CashRegisterProvider>(
-          builder: (ctx, cashProv, _) {
-            if (Platform.isAndroid || Platform.isIOS) {
-              return const MobileMenuScreen();
-            }
-            final shift = cashProv.currentShift;
-            final bool open = shift != null && shift.isOpen;
-            if (open) {
-              return const PosScreen();
-            } else {
-              return CashRegisterScreen(
-                isLoading: cashProv.isLoading,
-                errorMessage: cashProv.errorMessage,
-                onOpenShift: (amount, registerId) async {
-                  final userId = ctx.read<AuthProvider>().currentUser?['id'] ?? 1;
+              builder: (ctx, cashProv, _) {
+                if (Platform.isAndroid || Platform.isIOS) {
+                  return const MobileMenuScreen();
+                }
+                final shift = cashProv.currentShift;
+                final bool open = shift != null && shift.isOpen;
+                if (open) {
+                  return const PosScreen();
+                } else {
+                  return CashRegisterScreen(
+                    isLoading: cashProv.isLoading,
+                    errorMessage: cashProv.errorMessage,
+                    onOpenShift: (amount, registerId) async {
+                      final userId =
+                          ctx.read<AuthProvider>().currentUser?['id'] ?? 1;
 
-                  final success = await cashProv.openShift(amount, userId, registerId);
-                  if (success) {
-                    navigatorKey.currentState?.pushReplacementNamed('/pos');
-                  } else {
-                    final rawError = cashProv.errorMessage ?? '';
-                    final msg = rawError.replaceAll('Exception: ', '');
+                      final success =
+                          await cashProv.openShift(amount, userId, registerId);
+                      if (success) {
+                        navigatorKey.currentState?.pushReplacementNamed('/pos');
+                      } else {
+                        final rawError = cashProv.errorMessage ?? '';
+                        final msg = rawError.replaceAll('Exception: ', '');
 
-                    // SESSION_EXPIRED: manejado globalmente por ApiClient.
-                    if (rawError.contains('SESSION_EXPIRED') ||
-                        rawError.contains('otro dispositivo')) {
-                      return;
-                    }
+                        // SESSION_EXPIRED: manejado globalmente por ApiClient.
+                        if (rawError.contains('SESSION_EXPIRED') ||
+                            rawError.contains('otro dispositivo')) {
+                          return;
+                        }
 
-                    // Detectar error de límite de plan → mostrar modal de upselling
-                    final isPlanLimitError = rawError.contains('Límite de cajas') ||
-                        rawError.contains('plan a PRO') ||
-                        rawError.contains('plan a PREMIUM') ||
-                        rawError.contains('Actualice su plan');
+                        // Detectar error de lÃ­mite de plan â†’ mostrar modal de upselling
+                        final isPlanLimitError =
+                            rawError.contains('LÃ­mite de cajas') ||
+                                rawError.contains('plan a PRO') ||
+                                rawError.contains('plan a PREMIUM') ||
+                                rawError.contains('Actualice su plan');
 
-                    if (isPlanLimitError && ctx.mounted) {
-                      PlanUpgradeDialog.show(
-                        ctx,
-                        featureName: 'Múltiples Cajas Simultáneas',
-                        description:
-                            'Su plan actual permite 1 caja activa a la vez. '
-                            'Para operar con varias terminales simultáneamente '
-                            'es necesario el Plan Premium.\n\n'
-                            'Comuníquese con soporte para ampliar su licencia.',
-                        onNavigateToSettings: () =>
-                            navigatorKey.currentState?.pushNamed('/settings'),
-                      );
-                    } else if (ctx.mounted) {
-                      ScaffoldMessenger.of(ctx).showSnackBar(
-                        SnackBar(content: Text(msg), backgroundColor: Colors.red),
-                      );
-                    }
-                  }
-                },
-                onContinueToPos: () {
-                  navigatorKey.currentState?.pushReplacementNamed('/pos');
-                },
-              );
-            }
-          },
-        ),
+                        if (isPlanLimitError && ctx.mounted) {
+                          PlanUpgradeDialog.show(
+                            ctx,
+                            featureName: 'MÃºltiples Cajas SimultÃ¡neas',
+                            description:
+                                'Su plan actual permite 1 caja activa a la vez. '
+                                'Para operar con varias terminales simultÃ¡neamente '
+                                'es necesario el Plan Premium.\n\n'
+                                'ComunÃ­quese con soporte para ampliar su licencia.',
+                            onNavigateToSettings: () => navigatorKey
+                                .currentState
+                                ?.pushNamed('/settings'),
+                          );
+                        } else if (ctx.mounted) {
+                          ScaffoldMessenger.of(ctx).showSnackBar(
+                            SnackBar(
+                                content: Text(msg),
+                                backgroundColor: Colors.red),
+                          );
+                        }
+                      }
+                    },
+                    onContinueToPos: () {
+                      navigatorKey.currentState?.pushReplacementNamed('/pos');
+                    },
+                  );
+                }
+              },
+            ),
         '/pos': (context) => const PosScreen(),
         '/close-shift': (context) => const CloseShiftScreen(),
         '/catalog': (context) => const CatalogScreen(),
@@ -893,7 +954,8 @@ class _MainAppState extends State<MainApp> {
         '/general-audit': (context) => const GeneralAuditScreen(),
         '/users': (context) => const UsersManagerScreen(),
         '/settings': (context) => const SettingsScreen(),
-        '/settings/registers': (context) => const CashRegisterManagementScreen(),
+        '/settings/registers': (context) =>
+            const CashRegisterManagementScreen(),
         '/cuentas-corrientes': (context) => const CustomersScreen(),
         '/checks': (context) {
           final settings = context.watch<SettingsProvider>().settings;
@@ -907,11 +969,15 @@ class _MainAppState extends State<MainApp> {
               PlanUpgradeDialog.show(
                 context,
                 featureName: 'Cartera de Cheques',
-                description: 'El módulo de Cheques de Terceros es exclusivo del Plan Premium.',
-                onNavigateToSettings: () => Navigator.of(context).pushNamed('/settings'),
+                description:
+                    'El mÃ³dulo de Cheques de Terceros es exclusivo del Plan Premium.',
+                onNavigateToSettings: () =>
+                    Navigator.of(context).pushNamed('/settings'),
               );
             });
-            return const Scaffold(backgroundColor: Color(0xFF1E2D45), body: Center(child: CircularProgressIndicator()));
+            return const Scaffold(
+                backgroundColor: Color(0xFF1E2D45),
+                body: Center(child: CircularProgressIndicator()));
           }
           return const CheckWalletScreen();
         },
@@ -929,4 +995,3 @@ class _MainAppState extends State<MainApp> {
     );
   }
 }
-
