@@ -74,23 +74,16 @@ class _MobileNetworkSettingsScreenState extends State<MobileNetworkSettingsScree
     }
 
     String cleanLocal = localUrl.trim();
-    String cleanRemote = remoteUrl.trim();
-
+    
     // --- AUTO-FORMATO UX (Solo si no empieza con http) ---
     if (cleanLocal.isNotEmpty && !cleanLocal.startsWith('http')) {
-      if (!cleanLocal.contains('/')) {
-        cleanLocal = 'http://$cleanLocal/Sistema_POS/pos-backend/public/api';
-      } else {
-        cleanLocal = 'http://$cleanLocal';
-      }
+      cleanLocal = 'http://$cleanLocal';
     }
     
+    // Remote
+    String cleanRemote = _remoteCtrl.text.trim();
     if (cleanRemote.isNotEmpty && !cleanRemote.startsWith('http')) {
-      if (!cleanRemote.contains('/')) {
-        cleanRemote = 'https://$cleanRemote/Sistema_POS/pos-backend/public/api';
-      } else {
-        cleanRemote = 'https://$cleanRemote';
-      }
+      cleanRemote = 'https://$cleanRemote';
     }
 
     cleanLocal = cleanLocal.endsWith('/') ? cleanLocal.substring(0, cleanLocal.length - 1) : cleanLocal;

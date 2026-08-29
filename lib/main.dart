@@ -116,7 +116,7 @@ class LicenseRefreshObserver extends NavigatorObserver {
   LicenseRefreshObserver(this.contextGetter, this.routeNotifier);
 
   void _refresh(Route? route) {
-    // CRÃTICO: Ignorar popups, dialogos, y dropdowns para no reiniciar estados globales.
+    // CRÍTICO: Ignorar popups, dialogos, y dropdowns para no reiniciar estados globales.
     // Solo recargamos settings cuando el usuario navega a una nueva PANTALLA real.
     if (route != null && route is! PageRoute) return;
 
@@ -133,7 +133,7 @@ class LicenseRefreshObserver extends NavigatorObserver {
         contextGetter().read<SettingsProvider>().refreshSettingsSilently();
       });
     } catch (_) {
-      // Context might be unmounted during startup â€” silently ignore.
+      // Context might be unmounted during startup � silently ignore.
     }
   }
 
@@ -148,7 +148,7 @@ class LicenseRefreshObserver extends NavigatorObserver {
 }
 
 void main() async {
-  // CRÃTICO: InicializaciÃ³n obligatoria para assets y plugins en desktop
+  // CRÍTICO: Inicialización obligatoria para assets y plugins en desktop
   WidgetsFlutterBinding.ensureInitialized();
 
   // Hacer que la app inicie en pantalla completa (maximizada) pero no Kiosk puro,
@@ -168,7 +168,7 @@ void main() async {
   }
 
   // Pre-cargar perfil de impresora para evitar crashes de AssetManifest en Windows
-  // âš ï¸ SOLO en Desktop â€” en mobile no existe impresora conectada y puede colgarse
+  // �a�️ SOLO en Desktop � en mobile no existe impresora conectada y puede colgarse
   if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
     await ReceiptPrinterService.instance.initialize();
   }
@@ -182,14 +182,14 @@ void main() async {
 
   String activeApiUrl = localUrl;
 
-  // â”€â”€ Smart Auto-Fallback Network (Mobile/Tablet) â”€â”€
-  // Solo hacemos fallback si la URL remota parece vÃ¡lida
+  // ���� Smart Auto-Fallback Network (Mobile/Tablet) ����
+  // Solo hacemos fallback si la URL remota parece válida
   bool hasValidRemote =
       remoteUrl.trim().length > 10 && remoteUrl.contains('http');
 
   if (hasValidRemote && (Platform.isAndroid || Platform.isIOS)) {
     try {
-      // Ping rÃ¡pido a la red local (2000ms) para ver si estamos en el negocio
+      // Ping rápido a la red local (2000ms) para ver si estamos en el negocio
       final response = await http
           .get(Uri.parse('$localUrl/settings'))
           .timeout(const Duration(milliseconds: 2000));
@@ -200,7 +200,7 @@ void main() async {
       // Si falla (timeout o red inaccesible), cambiamos a la nube
       activeApiUrl = remoteUrl;
       debugPrint(
-          'SmartNetwork: Red Local fallÃ³. Cambiando a REMOTO -> $activeApiUrl');
+          'SmartNetwork: Red Local falló. Cambiando a REMOTO -> $activeApiUrl');
     }
   } else {
     activeApiUrl = localUrl;
@@ -211,11 +211,11 @@ void main() async {
 
   final savedApiUrl = activeApiUrl;
 
-  // â”€â”€ RESCUE TRIGGER OTA â”€â”€
+  // ���� RESCUE TRIGGER OTA ����
   // Si la app detecta que acaba de ser actualizada, dispara un endpoint de
-  // rescate silencioso al backend para asegurar que la DB estÃ© parcheada.
-  // Esta versiÃ³n se usa *Ãºnicamente* para disparar la migraciÃ³n de emergencia
-  // al detectar que la app se actualizÃ³, para correr las nuevas migraciones DB del backend
+  // rescate silencioso al backend para asegurar que la DB esté parcheada.
+  // Esta versión se usa *únicamente* para disparar la migración de emergencia
+  // al detectar que la app se actualizó, para correr las nuevas migraciones DB del backend
   const currentAppVersion = '1.7.4';
   final lastVersion = prefs.getString('app_version') ?? '1.0.0';
   if (lastVersion != currentAppVersion) {
@@ -224,23 +224,23 @@ void main() async {
       http.get(Uri.parse('$savedApiUrl/system/rescue-migrate')).ignore();
       await prefs.setString('app_version', currentAppVersion);
       debugPrint(
-          'Rescue Trigger: MigraciÃ³n solicitada ($lastVersion -> $currentAppVersion)');
+          'Rescue Trigger: Migración solicitada ($lastVersion -> $currentAppVersion)');
     } catch (e) {
-      debugPrint('Rescue Trigger fallÃ³: $e');
+      debugPrint('Rescue Trigger falló: $e');
     }
   }
 
-  // InicializaciÃ³n de Dependencias Base (DI)
+  // Inicialización de Dependencias Base (DI)
   final String apiUrl = savedApiUrl;
   final httpClient = ApiClient(http.Client());
 
-  // Auth â€” creado ANTES de runApp para poder restaurar el token de sesiÃ³n
+  // Auth � creado ANTES de runApp para poder restaurar el token de sesión
   // antes del primer request HTTP (Crash Recovery de la Vulnerabilidad #3)
   final authRepo = AuthRepository(
       remoteDataSource:
           AuthRemoteDataSource(baseUrl: apiUrl, client: httpClient));
   final authProvider = AuthProvider(repository: authRepo)
-    ..apiClient = httpClient; // InyecciÃ³n sin dependencia circular
+    ..apiClient = httpClient; // Inyección sin dependencia circular
   await authProvider.restoreSessionFromPrefs();
 
   // Settings
@@ -282,7 +282,7 @@ void main() async {
   final deliveryNoteRepo =
       DeliveryNoteRepository(baseUrl: apiUrl, client: httpClient);
 
-  // Auth â€” ya instanciado antes de runApp (ver arriba con restoreSessionFromPrefs)
+  // Auth � ya instanciado antes de runApp (ver arriba con restoreSessionFromPrefs)
 
   // Users
   final usersRepo = UsersRepository(
@@ -419,9 +419,9 @@ class _MainAppState extends State<MainApp> {
     Future.microtask(() {
       _initializeApp();
 
-      // â”€â”€ GANCHOS DE SEGURIDAD GLOBAL (Single Active Session) â”€â”€
+      // ���� GANCHOS DE SEGURIDAD GLOBAL (Single Active Session) ����
       // Atrapa cualquier Error 401 (SESSION_EXPIRED) del ApiClient de manera centralizada.
-      // AsÃ­ se protege automÃ¡ticamente toda la aplicaciÃ³n sin tocar pantalla por pantalla.
+      // Así se protege automáticamente toda la aplicación sin tocar pantalla por pantalla.
       final authProv = context.read<AuthProvider>();
       authProv.apiClient?.onSessionExpired = () {
         final ctx = navigatorKey.currentContext;
@@ -446,12 +446,12 @@ class _MainAppState extends State<MainApp> {
           Icon(Icons.phonelink_off, color: Colors.orange.shade800, size: 28),
           const SizedBox(width: 12),
           const Expanded(
-              child: Text('SesiÃ³n Cerrada',
+              child: Text('Sesión Cerrada',
                   style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18))),
         ]),
         content: const Text(
-            'Tu sesiÃ³n fue cerrada porque otro dispositivo iniciÃ³ sesiÃ³n con tu usuario.\n\n'
-            'Por seguridad, solo se permite una sesiÃ³n activa por usuario a la vez.'),
+            'Tu sesión fue cerrada porque otro dispositivo inició sesión con tu usuario.\n\n'
+            'Por seguridad, solo se permite una sesión activa por usuario a la vez.'),
         actions: [
           FilledButton.icon(
             style:
@@ -464,7 +464,7 @@ class _MainAppState extends State<MainApp> {
       ),
     );
 
-    // Aniquilar sesiÃ³n localmente y redirigir
+    // Aniquilar sesión localmente y redirigir
     await authProv.forceLogout();
     navigatorKey.currentState?.pushNamedAndRemoveUntil('/login', (r) => false);
     _isShowingSessionDialog = false;
@@ -502,7 +502,7 @@ class _MainAppState extends State<MainApp> {
         } catch (_) {}
       }
 
-      // Reintento AutomÃ¡tico (1 vez despuÃ©s de 2 segundos) para dar tiempo a Laragon/Red a despertar
+      // Reintento Automático (1 vez después de 2 segundos) para dar tiempo a Laragon/Red a despertar
       if (!success && !isMobilePlatform) {
         await Future.delayed(const Duration(seconds: 2));
         try {
@@ -520,7 +520,7 @@ class _MainAppState extends State<MainApp> {
       return; // Abortar resto de la carga
     }
 
-    // 2. Verificar estado de la Caja de ESTA terminal fÃ­sica asignada
+    // 2. Verificar estado de la Caja de ESTA terminal física asignada
     try {
       final assignedRegisterId = settingsProvider.assignedRegisterId;
       await Provider.of<CashRegisterProvider>(context, listen: false)
@@ -537,10 +537,10 @@ class _MainAppState extends State<MainApp> {
         _initError = null;
       });
 
-      // â”€â”€ CHECK DE RESULTADO OTA (Smart Chaining) â”€â”€
-      // Si el updater corriÃ³ mientras la app estaba cerrada, mostrar el
-      // resultado al usuario. Si fue una actualizaciÃ³n exitosa del Frontend,
-      // encadenar automÃ¡ticamente la actualizaciÃ³n del Backend (Auto-Resume).
+      // ���� CHECK DE RESULTADO OTA (Smart Chaining) ����
+      // Si el updater corrió mientras la app estaba cerrada, mostrar el
+      // resultado al usuario. Si fue una actualización exitosa del Frontend,
+      // encadenar automáticamente la actualización del Backend (Auto-Resume).
       WidgetsBinding.instance.addPostFrameCallback((_) async {
         final ctx = navigatorKey.currentContext;
         if (ctx == null || !ctx.mounted) return;
@@ -549,15 +549,15 @@ class _MainAppState extends State<MainApp> {
         if (otaResult != null) {
           OtaStartupChecker.clearState();
 
-          // Auto-Resume: si la App se actualizÃ³ con Ã©xito, buscar silenciosamente
-          // si el Backend sigue pendiente ANTES de mostrar el popup de Ã©xito.
+          // Auto-Resume: si la App se actualizó con éxito, buscar silenciosamente
+          // si el Backend sigue pendiente ANTES de mostrar el popup de éxito.
           if (otaResult.success && otaResult.component == 'frontend') {
             try {
               final check = await UpdateService().checkUpdate();
               final backendUpdate = check.backendUpdate;
 
               if (backendUpdate != null && ctx.mounted) {
-                // ActualizaciÃ³n integral en progreso: saltamos el cartel de "App actualizada"
+                // Actualización integral en progreso: saltamos el cartel de "App actualizada"
                 // y pasamos directamente a la Fase 2 (Servidor).
                 await showDialog(
                   context: ctx,
@@ -577,14 +577,14 @@ class _MainAppState extends State<MainApp> {
             }
           }
 
-          // Si llegamos aquÃ­, o no hubo auto-resume, o fue un error, o solo frontend.
+          // Si llegamos aquí, o no hubo auto-resume, o fue un error, o solo frontend.
           if (ctx.mounted) {
             await showDialog(
               context: ctx,
               barrierDismissible: otaResult.success,
               builder: (_) => OtaResultDialog(result: otaResult),
             );
-            // Refrescar login por si habÃ­a badges viejos cacheados
+            // Refrescar login por si había badges viejos cacheados
             AppConfig.navigatorKey.currentState?.pushReplacementNamed('/login');
           }
         }
@@ -662,7 +662,7 @@ class _MainAppState extends State<MainApp> {
                 }
 
                 await prefs.setString('pos_api', newUrl);
-                // IMPORTANTE: TambiÃ©n guardamos pos_api_local para que no pise la configuraciÃ³n al reiniciar
+                // IMPORTANTE: También guardamos pos_api_local para que no pise la configuración al reiniciar
                 await prefs.setString('pos_api_local', newUrl);
 
                 if (context.mounted) {
@@ -683,10 +683,10 @@ class _MainAppState extends State<MainApp> {
 
                     if (Platform.isAndroid || Platform.isIOS) {
                       // En celular no cerramos la app porque el OS no la vuelve a abrir sola.
-                      // Simplemente volvemos a llamar a la inicializaciÃ³n.
+                      // Simplemente volvemos a llamar a la inicialización.
                       _initializeApp();
                     } else {
-                      // En Desktop sÃ­ podemos reiniciar el proceso
+                      // En Desktop sí podemos reiniciar el proceso
                       Process.start(Platform.resolvedExecutable,
                           Platform.executableArguments);
                       exit(0);
@@ -695,7 +695,7 @@ class _MainAppState extends State<MainApp> {
                     setState(() {
                       _isInitializing = false;
                       _initError =
-                          'No se pudo conectar a la nueva IP. Verifique la direcciÃ³n.';
+                          'No se pudo conectar a la nueva IP. Verifique la dirección.';
                     });
                   }
                 }
@@ -750,7 +750,7 @@ class _MainAppState extends State<MainApp> {
                         _initializeApp();
                       },
                       icon: const Icon(Icons.refresh_rounded),
-                      label: const Text('Reintentar Conexión'),
+                      label: const Text('Reintentar Conexi�n'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.blue,
                         foregroundColor: Colors.white,
@@ -804,7 +804,7 @@ class _MainAppState extends State<MainApp> {
           child: child!,
         );
 
-        // ProtecciÃ³n GLOBAL anti-overflow para ventanas estrechas
+        // Protección GLOBAL anti-overflow para ventanas estrechas
         return LayoutBuilder(
           builder: (context, constraints) {
             if (Platform.isAndroid || Platform.isIOS) return guardedChild;
@@ -911,9 +911,9 @@ class _MainAppState extends State<MainApp> {
                           return;
                         }
 
-                        // Detectar error de lÃ­mite de plan â†’ mostrar modal de upselling
+                        // Detectar error de límite de plan �  mostrar modal de upselling
                         final isPlanLimitError =
-                            rawError.contains('LÃ­mite de cajas') ||
+                            rawError.contains('Límite de cajas') ||
                                 rawError.contains('plan a PRO') ||
                                 rawError.contains('plan a PREMIUM') ||
                                 rawError.contains('Actualice su plan');
@@ -921,12 +921,12 @@ class _MainAppState extends State<MainApp> {
                         if (isPlanLimitError && ctx.mounted) {
                           PlanUpgradeDialog.show(
                             ctx,
-                            featureName: 'MÃºltiples Cajas SimultÃ¡neas',
+                            featureName: 'Múltiples Cajas Simultáneas',
                             description:
                                 'Su plan actual permite 1 caja activa a la vez. '
-                                'Para operar con varias terminales simultÃ¡neamente '
+                                'Para operar con varias terminales simultáneamente '
                                 'es necesario el Plan Premium.\n\n'
-                                'ComunÃ­quese con soporte para ampliar su licencia.',
+                                'Comuníquese con soporte para ampliar su licencia.',
                             onNavigateToSettings: () => navigatorKey
                                 .currentState
                                 ?.pushNamed('/settings'),
@@ -970,7 +970,7 @@ class _MainAppState extends State<MainApp> {
                 context,
                 featureName: 'Cartera de Cheques',
                 description:
-                    'El mÃ³dulo de Cheques de Terceros es exclusivo del Plan Premium.',
+                    'El módulo de Cheques de Terceros es exclusivo del Plan Premium.',
                 onNavigateToSettings: () =>
                     Navigator.of(context).pushNamed('/settings'),
               );
