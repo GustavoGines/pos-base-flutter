@@ -1,6 +1,7 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:qr_flutter/qr_flutter.dart';
@@ -40,12 +41,15 @@ class _MobileAppQrSectionState extends State<MobileAppQrSection> {
     setState(() => _isLoading = true);
 
     try {
+      final prefs = await SharedPreferences.getInstance();
+      final updateChannel = prefs.getString('update_channel') ?? 'stable';
+
       final uri =
           Uri.parse('${AppConfig.kLicenseServerUrl}/api/check-update').replace(
         queryParameters: {
           'component': 'android',
           'current_version': '0.0.0',
-          'channel': 'stable',
+          'channel': updateChannel,
         },
       );
 

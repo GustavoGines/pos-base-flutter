@@ -54,7 +54,7 @@ class _LicenseLockScreenState extends State<LicenseLockScreen> {
       // La base URL se toma de la misma que usa el sistema por defecto
       await provider.activateLicense(AppConfig.kApiBaseUrl, key);
       if (mounted) {
-        SnackBarService.success(context, '✅ Licencia activada con éxito. El sistema se ha desbloqueado.');
+        SnackBarService.success(context, '✅ Licencia validada correctamente. El sistema verificará sus módulos.');
       }
     } catch (e) {
       if (mounted) {
@@ -73,157 +73,157 @@ class _LicenseLockScreenState extends State<LicenseLockScreen> {
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(16.0),
           child: Container(
-          width: 480,
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-          decoration: BoxDecoration(
-            color: const Color(0xFF1E2532),
-            borderRadius: BorderRadius.circular(24),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.6),
-                blurRadius: 40,
-                offset: const Offset(0, 15),
-              )
-            ],
-            border: Border.all(color: Colors.redAccent.withValues(alpha: 0.2), width: 1.5),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                widget.securityStatus == LicenseSecurityStatus.clockTampered 
-                    ? Icons.security_rounded 
-                    : Icons.lock_person_rounded, 
-                size: 72, 
-                color: Colors.redAccent.shade200
-              ),
-              const SizedBox(height: 20),
-              FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Text(
+            width: 480,
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1E2532),
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.6),
+                  blurRadius: 40,
+                  offset: const Offset(0, 15),
+                )
+              ],
+              border: Border.all(color: Colors.redAccent.withValues(alpha: 0.2), width: 1.5),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
                   widget.securityStatus == LicenseSecurityStatus.clockTampered 
-                      ? 'BLOQUEO POR SEGURIDAD' 
-                      : 'SISTEMA BLOQUEADO',
-                  style: const TextStyle(
-                    fontSize: 26,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.white,
-                    letterSpacing: 1.5,
+                      ? Icons.security_rounded 
+                      : Icons.lock_person_rounded, 
+                  size: 72, 
+                  color: Colors.redAccent.shade200
+                ),
+                const SizedBox(height: 20),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    widget.securityStatus == LicenseSecurityStatus.clockTampered 
+                        ? 'BLOQUEO POR SEGURIDAD' 
+                        : 'SISTEMA BLOQUEADO',
+                    style: const TextStyle(
+                      fontSize: 26,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                      letterSpacing: 1.5,
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 12),
-              Consumer<SettingsProvider>(
-                builder: (context, settings, _) {
-                  final error = settings.errorMessage;
-                  final isConnectionError = error != null && 
-                      (error.toLowerCase().contains('conexión') || 
-                       error.toLowerCase().contains('servidor') ||
-                       error.toLowerCase().contains('json'));
+                const SizedBox(height: 12),
+                Consumer<SettingsProvider>(
+                  builder: (context, settings, _) {
+                    final error = settings.errorMessage;
+                    final isConnectionError = error != null && 
+                        (error.toLowerCase().contains('conexión') || 
+                         error.toLowerCase().contains('servidor') ||
+                         error.toLowerCase().contains('json'));
 
-                  if (error != null && isConnectionError) {
-                    return Container(
-                      margin: const EdgeInsets.only(top: 8, bottom: 16),
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.red.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: Colors.redAccent.withValues(alpha: 0.3)),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.wifi_off_rounded, color: Colors.redAccent, size: 20),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              _sanitizeError(error),
-                              style: const TextStyle(color: Colors.redAccent, fontSize: 13, fontWeight: FontWeight.w500),
+                    if (error != null && isConnectionError) {
+                      return Container(
+                        margin: const EdgeInsets.only(top: 8, bottom: 16),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.red.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.redAccent.withValues(alpha: 0.3)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.wifi_off_rounded, color: Colors.redAccent, size: 20),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                _sanitizeError(error),
+                                style: const TextStyle(color: Colors.redAccent, fontSize: 13, fontWeight: FontWeight.w500),
+                              ),
                             ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }
+                          ],
+                        ),
+                      );
+                    }
 
-                  return Text(
-                    widget.missingMobileAddon 
-                        ? 'Tu licencia actual no incluye el módulo "App Móvil".\nComunicate con GLabs para actualizar tu plan de Sistema POS y habilitar el acceso desde celulares.'
-                        : widget.missingRemoteAddon
-                            ? 'Tu licencia actual no incluye el módulo "Acceso Remoto".\nComunicate con GLabs para actualizar tu plan de Sistema POS y operar fuera del local.'
-                            : widget.securityStatus == LicenseSecurityStatus.clockTampered 
-                                ? 'Se detectó una anomalía en el reloj del sistema.\nPor seguridad, el acceso ha sido revocado. Contacte soporte.'
-                                : widget.securityStatus == LicenseSecurityStatus.offlineExpired
-                                    ? 'Se ha excedido el periodo de gracia offline (72hs).\nEs necesario conectar el equipo a internet para validar la suscripción.'
-                                    : 'Tu licencia ha expirado, ha sido suspendida o es inexistente en este equipo.\nPara continuar operando, por favor ingresá una clave válida.',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(color: Colors.white70, fontSize: 14, height: 1.5),
-                  );
-                },
-              ),
-              const SizedBox(height: 40),
-              
-              // Campo de Activación In-Situ
-              TextField(
-                controller: _licenseKeyCtrl,
-                style: const TextStyle(color: Colors.white),
-                decoration: InputDecoration(
-                  labelText: 'Clave de Licencia',
-                  labelStyle: const TextStyle(color: Colors.white54),
-                  hintText: 'XXXX-XXXX-XXXX-XXXX',
-                  hintStyle: const TextStyle(color: Colors.white12),
-                  prefixIcon: const Icon(Icons.vpn_key, color: Colors.redAccent),
-                  filled: true,
-                  fillColor: Colors.black26,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: Colors.white10),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: ElevatedButton(
-                  onPressed: _isActivating ? null : _activate,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.redAccent,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                  child: _isActivating
-                      ? const CircularProgressIndicator(color: Colors.white)
-                      : const Text('ACTIVAR AHORA', style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.2)),
-                ),
-              ),
-              
-              const SizedBox(height: 48),
-              const Divider(color: Colors.white10),
-              const SizedBox(height: 24),
-              
-              // Acciones Secundarias
-              SizedBox(
-                width: double.infinity,
-                child: TextButton.icon(
-                  onPressed: () {
-                    context.read<AuthProvider>().logout();
-                    widget.navigatorKey.currentState?.pushNamedAndRemoveUntil('/login', (route) => false);
+                    return Text(
+                      widget.missingMobileAddon 
+                          ? 'Tu licencia actual no incluye el módulo "App Móvil".\nComunicate con GLabs para actualizar tu plan de Sistema POS y habilitar el acceso desde celulares.'
+                          : widget.missingRemoteAddon
+                              ? 'Tu licencia actual no incluye el módulo "Acceso Remoto".\nComunicate con GLabs para actualizar tu plan de Sistema POS y operar fuera del local.'
+                              : widget.securityStatus == LicenseSecurityStatus.clockTampered 
+                                  ? 'Se detectó una anomalía en el reloj del sistema.\nPor seguridad, el acceso ha sido revocado. Contacte soporte.'
+                                  : widget.securityStatus == LicenseSecurityStatus.offlineExpired
+                                      ? 'Se ha excedido el periodo de gracia offline (72hs).\nEs necesario conectar el equipo a internet para validar la suscripción.'
+                                      : 'Tu licencia ha expirado, ha sido suspendida o es inexistente en este equipo.\nPara continuar operando, por favor ingresá una clave válida.',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: Colors.white70, fontSize: 14, height: 1.5),
+                    );
                   },
-                  icon: const Icon(Icons.logout_rounded, color: Colors.white54),
-                  label: const Text('CERRAR SESIÓN', style: TextStyle(color: Colors.white54, letterSpacing: 1, fontWeight: FontWeight.bold)),
-                  style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                const SizedBox(height: 40),
+                
+                // Campo de Activación In-Situ
+                TextField(
+                  controller: _licenseKeyCtrl,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: InputDecoration(
+                    labelText: 'Clave de Licencia',
+                    labelStyle: const TextStyle(color: Colors.white54),
+                    hintText: 'XXXX-XXXX-XXXX-XXXX',
+                    hintStyle: const TextStyle(color: Colors.white12),
+                    prefixIcon: const Icon(Icons.vpn_key, color: Colors.redAccent),
+                    filled: true,
+                    fillColor: Colors.black26,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Colors.white10),
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 24),
-              const SizedBox(height: 24),
-            ],
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton(
+                    onPressed: _isActivating ? null : _activate,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.redAccent,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: _isActivating
+                        ? const CircularProgressIndicator(color: Colors.white)
+                        : const Text('ACTIVAR AHORA', style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.2)),
+                  ),
+                ),
+                
+                const SizedBox(height: 48),
+                const Divider(color: Colors.white10),
+                const SizedBox(height: 24),
+                
+                // Acciones Secundarias
+                SizedBox(
+                  width: double.infinity,
+                  child: TextButton.icon(
+                    onPressed: () {
+                      context.read<AuthProvider>().logout();
+                      widget.navigatorKey.currentState?.pushNamedAndRemoveUntil('/login', (route) => false);
+                    },
+                    icon: const Icon(Icons.logout_rounded, color: Colors.white54),
+                    label: const Text('CERRAR SESIÓN', style: TextStyle(color: Colors.white54, letterSpacing: 1, fontWeight: FontWeight.bold)),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                const SizedBox(height: 24),
+              ],
+            ),
           ),
         ),
-      ),
       ),
     );
   }

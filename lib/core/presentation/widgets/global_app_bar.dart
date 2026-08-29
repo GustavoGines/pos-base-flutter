@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:frontend_desktop/features/auth/presentation/widgets/admin_pin_dialog.dart';
 import 'package:frontend_desktop/core/presentation/widgets/shared_user_menu.dart';
 import 'package:provider/provider.dart';

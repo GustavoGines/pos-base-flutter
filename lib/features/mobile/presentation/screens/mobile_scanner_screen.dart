@@ -55,9 +55,6 @@ class _MobileScannerScreenState extends State<MobileScannerScreen> {
     if (_isProcessing) return;
     setState(() => _isProcessing = true);
 
-    // FIX: Extraer providers antes del primer await (Async Gap)
-    final apiClient = context.read<ApiClient>();
-
     try {
       try {
         if (_audioPlayer.state == PlayerState.playing) await _audioPlayer.stop();
@@ -65,6 +62,9 @@ class _MobileScannerScreenState extends State<MobileScannerScreen> {
       } catch (_) {}
 
       // 🔄 FIX: Usar la URL configurada por el usuario (Smart Auto-Fallback)
+      // FIX: Extraer provider antes del primer await
+      final apiClient = context.read<ApiClient>();
+
       final prefs = await SharedPreferences.getInstance();
       final apiUrl = prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
 

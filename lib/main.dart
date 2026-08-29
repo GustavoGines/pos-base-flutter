@@ -216,7 +216,7 @@ void main() async {
   // rescate silencioso al backend para asegurar que la DB estÃ© parcheada.
   // Esta versiÃ³n se usa *Ãºnicamente* para disparar la migraciÃ³n de emergencia
   // al detectar que la app se actualizÃ³, para correr las nuevas migraciones DB del backend
-  const currentAppVersion = '1.7.3';
+  const currentAppVersion = '1.7.4';
   final lastVersion = prefs.getString('app_version') ?? '1.0.0';
   if (lastVersion != currentAppVersion) {
     try {
