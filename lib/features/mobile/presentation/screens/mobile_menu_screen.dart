@@ -79,8 +79,8 @@ class _MobileMenuScreenState extends State<MobileMenuScreen> {
             icon: const Icon(Icons.lock_outline),
             tooltip: 'Bloquear Pantalla',
             onPressed: () {
-              Navigator.pushReplacementNamed(context, '/login');
               context.read<AuthProvider>().logout();
+              Navigator.pushReplacementNamed(context, '/login');
             },
           ),
         ],

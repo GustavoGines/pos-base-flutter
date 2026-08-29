@@ -73,19 +73,19 @@ class _LicenseLockScreenState extends State<LicenseLockScreen> {
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(16.0),
           child: Container(
-            constraints: const BoxConstraints(maxWidth: 500),
-            padding: const EdgeInsets.all(40),
-            decoration: BoxDecoration(
-            color: const Color(0xFF1F2937),
-            borderRadius: BorderRadius.circular(20),
+          width: 480,
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1E2532),
+            borderRadius: BorderRadius.circular(24),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.5),
-                blurRadius: 30,
-                offset: const Offset(0, 10),
+                color: Colors.black.withValues(alpha: 0.6),
+                blurRadius: 40,
+                offset: const Offset(0, 15),
               )
             ],
-            border: Border.all(color: Colors.red.shade900, width: 1),
+            border: Border.all(color: Colors.redAccent.withValues(alpha: 0.2), width: 1.5),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -94,19 +94,22 @@ class _LicenseLockScreenState extends State<LicenseLockScreen> {
                 widget.securityStatus == LicenseSecurityStatus.clockTampered 
                     ? Icons.security_rounded 
                     : Icons.lock_person_rounded, 
-                size: 80, 
-                color: Colors.redAccent
+                size: 72, 
+                color: Colors.redAccent.shade200
               ),
-              const SizedBox(height: 24),
-              Text(
-                widget.securityStatus == LicenseSecurityStatus.clockTampered 
-                    ? 'BLOQUEO POR SEGURIDAD' 
-                    : 'SISTEMA BLOQUEADO',
-                style: const TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                  letterSpacing: 2,
+              const SizedBox(height: 20),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  widget.securityStatus == LicenseSecurityStatus.clockTampered 
+                      ? 'BLOQUEO POR SEGURIDAD' 
+                      : 'SISTEMA BLOQUEADO',
+                  style: const TextStyle(
+                    fontSize: 26,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                    letterSpacing: 1.5,
+                  ),
                 ),
               ),
               const SizedBox(height: 12),
@@ -199,40 +202,21 @@ class _LicenseLockScreenState extends State<LicenseLockScreen> {
               const Divider(color: Colors.white10),
               const SizedBox(height: 24),
               
-              // Acciones de Emergencia
-              Row(
-                children: [
-                   Expanded(
-                     child: OutlinedButton.icon(
-                       onPressed: () {
-                         widget.navigatorKey.currentState?.pushNamed('/close-shift');
-                       },
-                       icon: const Icon(Icons.point_of_sale_rounded),
-                       label: const Text('CERRAR CAJA'),
-                       style: OutlinedButton.styleFrom(
-                         foregroundColor: Colors.orangeAccent,
-                         side: const BorderSide(color: Colors.orangeAccent),
-                         padding: const EdgeInsets.symmetric(vertical: 16),
-                       ),
-                     ),
-                   ),
-                   const SizedBox(width: 16),
-                   Expanded(
-                     child: OutlinedButton.icon(
-                       onPressed: () {
-                         context.read<AuthProvider>().logout();
-                         widget.navigatorKey.currentState?.pushNamedAndRemoveUntil('/login', (route) => false);
-                       },
-                       icon: const Icon(Icons.logout_rounded),
-                       label: const Text('CERRAR SESIÓN'),
-                       style: OutlinedButton.styleFrom(
-                         foregroundColor: Colors.white70,
-                         side: const BorderSide(color: Colors.white24),
-                         padding: const EdgeInsets.symmetric(vertical: 16),
-                       ),
-                     ),
-                   ),
-                ],
+              // Acciones Secundarias
+              SizedBox(
+                width: double.infinity,
+                child: TextButton.icon(
+                  onPressed: () {
+                    context.read<AuthProvider>().logout();
+                    widget.navigatorKey.currentState?.pushNamedAndRemoveUntil('/login', (route) => false);
+                  },
+                  icon: const Icon(Icons.logout_rounded, color: Colors.white54),
+                  label: const Text('CERRAR SESIÓN', style: TextStyle(color: Colors.white54, letterSpacing: 1, fontWeight: FontWeight.bold)),
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
               ),
               const SizedBox(height: 24),
               const SizedBox(height: 24),

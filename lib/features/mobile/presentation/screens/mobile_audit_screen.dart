@@ -58,6 +58,9 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
     // Limpiar cualquier snackbar anterior antes de procesar el nuevo código
     if (mounted) ScaffoldMessenger.of(context).hideCurrentSnackBar();
 
+    // FIX: Extraer provider antes del primer await
+    final posProvider = context.read<PosProvider>();
+
     setState(() {
       _isProcessing = true;
       _scannedProduct = null;
@@ -72,7 +75,6 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
       // Pausar cámara mientras procesamos
       _scannerController.stop();
 
-      final posProvider = context.read<PosProvider>();
       final results = await posProvider.search(query.trim());
 
       if (results.isEmpty) {

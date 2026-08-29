@@ -55,6 +55,9 @@ class _MobileScannerScreenState extends State<MobileScannerScreen> {
     if (_isProcessing) return;
     setState(() => _isProcessing = true);
 
+    // FIX: Extraer providers antes del primer await (Async Gap)
+    final apiClient = context.read<ApiClient>();
+
     try {
       try {
         if (_audioPlayer.state == PlayerState.playing) await _audioPlayer.stop();
@@ -65,7 +68,6 @@ class _MobileScannerScreenState extends State<MobileScannerScreen> {
       final prefs = await SharedPreferences.getInstance();
       final apiUrl = prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
 
-      final apiClient = context.read<ApiClient>();
       final url = Uri.parse('$apiUrl/mobile/scan');
       final payload = jsonEncode({
         'barcode': code,
