@@ -1,4 +1,4 @@
-﻿import 'package:frontend_desktop/core/utils/currency_formatter.dart';
+import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -907,8 +907,12 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final categories = widget.provider.categories;
-    final brands = widget.provider.brands;
+    // IMPORTANTE: usar context.watch (no widget.provider) para que el dropdown
+    // se reconstruya automáticamente cuando el provider notifica cambios
+    // (ej: cuando se crea una categoría/marca nueva desde el diálogo rápido).
+    final provider = context.watch<CatalogProvider>();
+    final categories = provider.categories;
+    final brands = provider.brands;
     return AlertDialog(
       title: Text(_isEditing ? 'Editar Producto' : 'Nuevo Producto'),
       contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 0),

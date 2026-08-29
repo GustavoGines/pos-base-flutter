@@ -1,4 +1,4 @@
-﻿import 'dart:io';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
@@ -216,7 +216,7 @@ void main() async {
   // rescate silencioso al backend para asegurar que la DB estÃ© parcheada.
   // Esta versiÃ³n se usa *Ãºnicamente* para disparar la migraciÃ³n de emergencia
   // al detectar que la app se actualizÃ³, para correr las nuevas migraciones DB del backend
-  const currentAppVersion = '1.7.1';
+  const currentAppVersion = '1.7.2';
   final lastVersion = prefs.getString('app_version') ?? '1.0.0';
   if (lastVersion != currentAppVersion) {
     try {
@@ -750,7 +750,7 @@ class _MainAppState extends State<MainApp> {
                         _initializeApp();
                       },
                       icon: const Icon(Icons.refresh_rounded),
-                      label: const Text('Reintentar ConexiÃ³n'),
+                      label: const Text('Reintentar Conexión'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.blue,
                         foregroundColor: Colors.white,

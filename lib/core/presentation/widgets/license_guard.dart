@@ -67,6 +67,8 @@ class LicenseGuard extends StatelessWidget {
                           builder: (context) => LicenseLockScreen(
                             navigatorKey: navigatorKey,
                             securityStatus: settingsProvider.securityStatus,
+                            missingMobileAddon: missingMobileAddon,
+                            missingRemoteAddon: missingRemoteAddon,
                           ),
                         ),
                       ),

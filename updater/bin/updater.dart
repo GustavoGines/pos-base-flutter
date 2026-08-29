@@ -260,19 +260,82 @@ void main(List<String> args) async {
 
   // ── PASO 5: Lógica post-extracción por componente ────────
   if (component == 'backend') {
+    // ── Resolver la ruta absoluta de php.exe ──────────────────────────────
+    // CRÍTICO: Process.runSync('php', ...) falla si el PATH del proceso hijo
+    // no incluye el directorio de Laragon/PHP (común en contextos de instalador/elevado).
+    // Estrategia: 1) where.exe, 2) rutas conocidas de Laragon, 3) fallback 'php'.
+    String phpExe = 'php';
+    String phpDir = '';
+
+    try {
+      // Intento 1: buscar con where.exe (respeta el PATH del sistema actual)
+      final whereResult = Process.runSync('where.exe', ['php'],
+          runInShell: false);
+      if (whereResult.exitCode == 0) {
+        final found = whereResult.stdout.toString().trim().split('\n').first.trim();
+        if (found.isNotEmpty && File(found).existsSync()) {
+          phpExe = found;
+          phpDir = p.dirname(found);
+          log.log('PHP encontrado via where.exe: $phpExe');
+        }
+      }
+    } catch (_) {}
+
+    if (phpDir.isEmpty) {
+      // Intento 2: escanear rutas conocidas de Laragon
+      final laragonPhpBase = Directory(r'C:\laragon\bin\php');
+      if (laragonPhpBase.existsSync()) {
+        try {
+          final phpDirs = laragonPhpBase
+              .listSync()
+              .whereType<Directory>()
+              .toList()
+            ..sort((a, b) => b.path.compareTo(a.path)); // más reciente primero
+          for (final dir in phpDirs) {
+            final candidate = File(p.join(dir.path, 'php.exe'));
+            if (candidate.existsSync()) {
+              phpExe = candidate.path;
+              phpDir = dir.path;
+              log.log('PHP encontrado en Laragon: $phpExe');
+              break;
+            }
+          }
+        } catch (e) {
+          log.log('Advertencia buscando Laragon PHP: $e');
+        }
+      }
+    }
+
+    if (phpDir.isEmpty) {
+      log.log('Advertencia: PHP no encontrado en rutas conocidas. Usando "php" del PATH.');
+    }
+
+    // Construir entorno con PHP en el PATH para que extensiones funcionen
+    final Map<String, String> phpEnv = {};
+    if (phpDir.isNotEmpty) {
+      final currentPath = Platform.environment['PATH'] ?? '';
+      phpEnv['PATH'] = '$phpDir;$currentPath';
+    }
+
+    final artisanPath = p.join(targetDir, 'artisan');
     final commands = [
-      ['artisan', 'optimize:clear'],
-      ['artisan', 'migrate', '--force'],
-      ['artisan', 'optimize'],
+      [phpExe, artisanPath, 'optimize:clear'],
+      [phpExe, artisanPath, 'migrate', '--force'],
+      [phpExe, artisanPath, 'optimize'],
     ];
 
     bool hasError = false;
 
     for (final cmd in commands) {
-      final cmdString = 'php ${cmd.join(' ')}';
+      final cmdString = cmd.join(' ');
       log.log('Ejecutando: $cmdString');
       try {
-        final result = Process.runSync('php', cmd, workingDirectory: targetDir);
+        final result = Process.runSync(
+          cmd.first,
+          cmd.sublist(1),
+          workingDirectory: targetDir,
+          environment: phpEnv.isNotEmpty ? phpEnv : null,
+        );
         if (result.stdout.toString().trim().isNotEmpty) {
           log.log('  STDOUT: ${result.stdout.toString().trim()}');
         }

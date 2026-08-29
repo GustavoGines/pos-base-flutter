@@ -9,11 +9,15 @@ import '../../config/app_config.dart';
 class LicenseLockScreen extends StatefulWidget {
   final GlobalKey<NavigatorState> navigatorKey;
   final LicenseSecurityStatus securityStatus;
+  final bool missingMobileAddon;
+  final bool missingRemoteAddon;
 
   const LicenseLockScreen({
     super.key,
     required this.navigatorKey,
     this.securityStatus = LicenseSecurityStatus.ok,
+    this.missingMobileAddon = false,
+    this.missingRemoteAddon = false,
   });
 
   @override
@@ -139,11 +143,15 @@ class _LicenseLockScreenState extends State<LicenseLockScreen> {
                   }
 
                   return Text(
-                    widget.securityStatus == LicenseSecurityStatus.clockTampered 
-                        ? 'Se detectó una anomalía en el reloj del sistema.\nPor seguridad, el acceso ha sido revocado. Contacte soporte.'
-                        : widget.securityStatus == LicenseSecurityStatus.offlineExpired
-                            ? 'Se ha excedido el periodo de gracia offline (72hs).\nEs necesario conectar el equipo a internet para validar la suscripción.'
-                            : 'Tu licencia ha expirado, ha sido suspendida o es inexistente en este equipo.\nPara continuar operando, por favor ingresá una clave válida.',
+                    widget.missingMobileAddon 
+                        ? 'Tu licencia actual no incluye el módulo "App Móvil".\nComunicate con GLabs para actualizar tu plan de Sistema POS y habilitar el acceso desde celulares.'
+                        : widget.missingRemoteAddon
+                            ? 'Tu licencia actual no incluye el módulo "Acceso Remoto".\nComunicate con GLabs para actualizar tu plan de Sistema POS y operar fuera del local.'
+                            : widget.securityStatus == LicenseSecurityStatus.clockTampered 
+                                ? 'Se detectó una anomalía en el reloj del sistema.\nPor seguridad, el acceso ha sido revocado. Contacte soporte.'
+                                : widget.securityStatus == LicenseSecurityStatus.offlineExpired
+                                    ? 'Se ha excedido el periodo de gracia offline (72hs).\nEs necesario conectar el equipo a internet para validar la suscripción.'
+                                    : 'Tu licencia ha expirado, ha sido suspendida o es inexistente en este equipo.\nPara continuar operando, por favor ingresá una clave válida.',
                     textAlign: TextAlign.center,
                     style: const TextStyle(color: Colors.white70, fontSize: 14, height: 1.5),
                   );

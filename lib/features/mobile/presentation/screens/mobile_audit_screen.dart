@@ -54,7 +54,10 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
 
   Future<void> _searchProduct(String query) async {
     if (query.trim().isEmpty) return;
-    
+
+    // Limpiar cualquier snackbar anterior antes de procesar el nuevo código
+    if (mounted) ScaffoldMessenger.of(context).hideCurrentSnackBar();
+
     setState(() {
       _isProcessing = true;
       _scannedProduct = null;

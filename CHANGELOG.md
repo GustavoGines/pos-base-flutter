@@ -1,5 +1,14 @@
-﻿# Changelog 📝 Sistema POS (Frontend)
+# Changelog 📝 Sistema POS (Frontend)
 Todos los cambios notables de la aplicación de caja (Flutter/Windows) están documentados aquí.
+
+## [1.7.2] - 2026-08-29
+### Correcciones
+- Corrección de codificación: el botón "Reintentar Conexión" ahora muestra el texto correctamente sin caracteres raros.
+- Corrección en el formulario de productos: las marcas y categorías recién creadas ahora se seleccionan automáticamente en el desplegable del formulario.
+- App móvil: la barra de "Producto no encontrado / CREAR" ahora desaparece al escanear el siguiente código.
+- Mejora en el actualizador OTA: el ejecutable PHP se localiza con ruta absoluta para garantizar la ejecución correcta en todos los entornos Windows.
+
+---
 
 ## [1.7.0] - 2026-08-26
 ### Novedades de esta Gran Actualización (desde v1.4.4)
