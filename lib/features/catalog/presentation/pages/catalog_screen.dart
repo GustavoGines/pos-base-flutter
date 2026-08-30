@@ -968,6 +968,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                   children: [
                     Expanded(
                       child: DropdownButtonFormField<int?>(
+                        key: ValueKey('cat_$_categoryId'),
                         value: _categoryId,
                         decoration: const InputDecoration(labelText: 'Categoría', prefixIcon: Icon(Icons.category_outlined)),
                         items: [
@@ -1032,6 +1033,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                   children: [
                     Expanded(
                       child: DropdownButtonFormField<int?>(
+                        key: ValueKey('brand_$_brandId'),
                         value: _brandId,
                         decoration: const InputDecoration(labelText: 'Marca', prefixIcon: Icon(Icons.branding_watermark_outlined)),
                         items: [

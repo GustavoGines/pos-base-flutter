@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/config/app_config.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
@@ -352,7 +352,8 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                       children: [
                         Expanded(
                           child: DropdownButtonFormField<int?>(isExpanded: true,
-                            initialValue: selectedCategoryId,
+                            key: ValueKey('cat_$selectedCategoryId'),
+                            value: selectedCategoryId,
                             decoration: const InputDecoration(labelText: 'Categoría', isDense: true, border: OutlineInputBorder()),
                             items: [
                               const DropdownMenuItem(value: null, child: Text('Sin Categoría')),
@@ -383,7 +384,8 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                       children: [
                         Expanded(
                           child: DropdownButtonFormField<int?>(isExpanded: true,
-                            initialValue: selectedBrandId,
+                            key: ValueKey('brand_$selectedBrandId'),
+                            value: selectedBrandId,
                             decoration: const InputDecoration(labelText: 'Marca', isDense: true, border: OutlineInputBorder()),
                             items: [
                               const DropdownMenuItem(value: null, child: Text('Sin Marca')),
