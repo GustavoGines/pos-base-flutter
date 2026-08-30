@@ -1,4 +1,4 @@
-﻿import 'dart:io';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
@@ -133,7 +133,7 @@ class LicenseRefreshObserver extends NavigatorObserver {
         contextGetter().read<SettingsProvider>().refreshSettingsSilently();
       });
     } catch (_) {
-      // Context might be unmounted during startup � silently ignore.
+      // Context might be unmounted during startup í silently ignore.
     }
   }
 
@@ -168,7 +168,7 @@ void main() async {
   }
 
   // Pre-cargar perfil de impresora para evitar crashes de AssetManifest en Windows
-  // �a�️ SOLO en Desktop � en mobile no existe impresora conectada y puede colgarse
+  // íaí️ SOLO en Desktop í en mobile no existe impresora conectada y puede colgarse
   if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
     await ReceiptPrinterService.instance.initialize();
   }
@@ -182,7 +182,7 @@ void main() async {
 
   String activeApiUrl = localUrl;
 
-  // ���� Smart Auto-Fallback Network (Mobile/Tablet) ����
+  // íííí Smart Auto-Fallback Network (Mobile/Tablet) íííí
   // Solo hacemos fallback si la URL remota parece válida
   bool hasValidRemote =
       remoteUrl.trim().length > 10 && remoteUrl.contains('http');
@@ -211,7 +211,7 @@ void main() async {
 
   final savedApiUrl = activeApiUrl;
 
-  // ���� RESCUE TRIGGER OTA ����
+  // íííí RESCUE TRIGGER OTA íííí
   // Si la app detecta que acaba de ser actualizada, dispara un endpoint de
   // rescate silencioso al backend para asegurar que la DB esté parcheada.
   // Esta versión se usa *únicamente* para disparar la migración de emergencia
@@ -234,7 +234,7 @@ void main() async {
   final String apiUrl = savedApiUrl;
   final httpClient = ApiClient(http.Client());
 
-  // Auth � creado ANTES de runApp para poder restaurar el token de sesión
+  // Auth í creado ANTES de runApp para poder restaurar el token de sesión
   // antes del primer request HTTP (Crash Recovery de la Vulnerabilidad #3)
   final authRepo = AuthRepository(
       remoteDataSource:
@@ -282,7 +282,7 @@ void main() async {
   final deliveryNoteRepo =
       DeliveryNoteRepository(baseUrl: apiUrl, client: httpClient);
 
-  // Auth � ya instanciado antes de runApp (ver arriba con restoreSessionFromPrefs)
+  // Auth í ya instanciado antes de runApp (ver arriba con restoreSessionFromPrefs)
 
   // Users
   final usersRepo = UsersRepository(
@@ -419,7 +419,7 @@ class _MainAppState extends State<MainApp> {
     Future.microtask(() {
       _initializeApp();
 
-      // ���� GANCHOS DE SEGURIDAD GLOBAL (Single Active Session) ����
+      // íííí GANCHOS DE SEGURIDAD GLOBAL (Single Active Session) íííí
       // Atrapa cualquier Error 401 (SESSION_EXPIRED) del ApiClient de manera centralizada.
       // Así se protege automáticamente toda la aplicación sin tocar pantalla por pantalla.
       final authProv = context.read<AuthProvider>();
@@ -537,7 +537,7 @@ class _MainAppState extends State<MainApp> {
         _initError = null;
       });
 
-      // ���� CHECK DE RESULTADO OTA (Smart Chaining) ����
+      // íííí CHECK DE RESULTADO OTA (Smart Chaining) íííí
       // Si el updater corrió mientras la app estaba cerrada, mostrar el
       // resultado al usuario. Si fue una actualización exitosa del Frontend,
       // encadenar automáticamente la actualización del Backend (Auto-Resume).
@@ -746,12 +746,12 @@ class _MainAppState extends State<MainApp> {
                         color: Colors.redAccent, size: 48),
                     const SizedBox(height: 24),
                     ElevatedButton.icon(
-                      onPressed: () {
-                        _initializeApp();
-                      },
-                      icon: const Icon(Icons.refresh_rounded),
-                      label: const Text('Reintentar Conexi�n'),
-                      style: ElevatedButton.styleFrom(
+                        onPressed: () {
+                          _initializeApp();
+                        },
+                        icon: const Icon(Icons.refresh_rounded),
+                        label: const Text('Reintentar Conexión'),
+                        style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.blue,
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(
@@ -911,7 +911,7 @@ class _MainAppState extends State<MainApp> {
                           return;
                         }
 
-                        // Detectar error de límite de plan �  mostrar modal de upselling
+                        // Detectar error de límite de plan í  mostrar modal de upselling
                         final isPlanLimitError =
                             rawError.contains('Límite de cajas') ||
                                 rawError.contains('plan a PRO') ||

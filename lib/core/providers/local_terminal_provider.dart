@@ -66,7 +66,7 @@ class LocalTerminalProvider extends ChangeNotifier {
     _terminalId = prefs.getString('local_terminal_id') ?? 'caja-1';
     _isInitialized = true;
 
-    // ���� CRÍTICO: sincronizar el singleton de impresión con la config guardada.
+    // áááá CRÍTICO: sincronizar el singleton de impresión con la config guardada.
     // Sin esto, ReceiptPrinterService arranca siempre con defaultUsb() (COM3
     // hardcodeado) ignorando lo que el usuario configuró en Ajustes > Hardware.
     _syncPrinterService();
@@ -96,7 +96,7 @@ class LocalTerminalProvider extends ChangeNotifier {
   }
 
   Future<void> setPrinterFormat(String format) async {
-    // ���� IMPORTANTE: actualizar la memoria ANTES del await para que
+    // áááá IMPORTANTE: actualizar la memoria ANTES del await para que
     // _syncPrinterService() lea el valor nuevo y no el viejo.
     _printerFormat = format;
     _syncPrinterService();
