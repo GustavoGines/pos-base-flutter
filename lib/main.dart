@@ -645,12 +645,11 @@ class _MainAppState extends State<MainApp> {
                 if (!newUrl.startsWith('http')) {
                   if (!newUrl.contains('/')) {
                     // Si es solo una IP/dominio, asumimos la ruta por defecto
-                    if (newUrl.contains('recovarentals')) {
-                      newUrl =
-                          'https://$newUrl/Sistema_POS/pos-backend/public/api';
+                    final isIp = RegExp(r'^([0-9]{1,3}\.){3}[0-9]{1,3}$').hasMatch(newUrl) || newUrl == 'localhost';
+                    if (isIp) {
+                      newUrl = 'http://$newUrl/Sistema_POS/pos-backend/public/api';
                     } else {
-                      newUrl =
-                          'http://$newUrl/Sistema_POS/pos-backend/public/api';
+                      newUrl = 'https://$newUrl/pos-backend/public/api';
                     }
                   } else {
                     newUrl = 'http://$newUrl';

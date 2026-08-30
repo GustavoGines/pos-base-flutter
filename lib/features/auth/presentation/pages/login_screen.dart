@@ -315,10 +315,11 @@ class _LoginScreenState extends State<LoginScreen> {
                 // --- AUTO-FORMATO UX ---
                 if (!newUrl.startsWith('http')) {
                   if (!newUrl.contains('/')) {
-                    if (newUrl.contains('recovarentals')) {
-                      newUrl = 'https://$newUrl/Sistema_POS/pos-backend/public/api';
-                    } else {
+                    final isIp = RegExp(r'^([0-9]{1,3}\.){3}[0-9]{1,3}$').hasMatch(newUrl) || newUrl == 'localhost';
+                    if (isIp) {
                       newUrl = 'http://$newUrl/Sistema_POS/pos-backend/public/api';
+                    } else {
+                      newUrl = 'https://$newUrl/pos-backend/public/api';
                     }
                   } else {
                     newUrl = 'http://$newUrl';

@@ -77,7 +77,7 @@ class _MobileNetworkSettingsScreenState extends State<MobileNetworkSettingsScree
     // --- AUTO-FORMATO UX (Solo si no empieza con http) ---
     if (cleanLocal.isNotEmpty && !cleanLocal.startsWith('http')) {
       if (!cleanLocal.contains('/')) {
-        cleanLocal = 'http://$cleanLocal/pos-backend/public/api';
+        cleanLocal = 'http://$cleanLocal/Sistema_POS/pos-backend/public/api';
       } else {
         cleanLocal = 'http://$cleanLocal';
       }
