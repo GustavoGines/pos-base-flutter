@@ -13,15 +13,15 @@ class LocalTerminalProvider extends ChangeNotifier {
   static const String _catalogViewModeKey = 'local_catalog_view_mode';
   static const String _posSplitRatioKey = 'local_pos_split_ratio';
 
-  // Opciones vÃ¡lidas: 'thermal_80', 'thermal_58', 'a4'
+  // Opciones válidas: 'thermal_80', 'thermal_58', 'a4'
   String _printerFormat = 'thermal_80';
   
-  // Opciones vÃ¡lidas: 'usb', 'network', 'none'
+  // Opciones válidas: 'usb', 'network', 'none'
   String _printerConnection = 'none';
   
   String _printerNameOrIp = '';
   String _scaleComPort = '';
-  String _pdfPaperSize = 'a4'; // Opciones vÃ¡lidas: 'a4', 'letter'
+  String _pdfPaperSize = 'a4'; // Opciones válidas: 'a4', 'letter'
   
   String _lockedPriceTier = 'none';
   String? _lockedPriceTierLabel;
@@ -66,17 +66,17 @@ class LocalTerminalProvider extends ChangeNotifier {
     _terminalId = prefs.getString('local_terminal_id') ?? 'caja-1';
     _isInitialized = true;
 
-    // â”€â”€ CRÃTICO: sincronizar el singleton de impresiÃ³n con la config guardada.
+    // ���� CRÍTICO: sincronizar el singleton de impresión con la config guardada.
     // Sin esto, ReceiptPrinterService arranca siempre con defaultUsb() (COM3
-    // hardcodeado) ignorando lo que el usuario configurÃ³ en Ajustes > Hardware.
+    // hardcodeado) ignorando lo que el usuario configuró en Ajustes > Hardware.
     _syncPrinterService();
 
     notifyListeners();
   }
 
-  /// Propaga la configuraciÃ³n actual al singleton ReceiptPrinterService.
+  /// Propaga la configuración actual al singleton ReceiptPrinterService.
   /// Se llama al cargar los ajustes (arranque) y al cambiar cualquier
-  /// parÃ¡metro de impresora para mantener ambos en sincronÃ­a.
+  /// parámetro de impresora para mantener ambos en sincronía.
   void _syncPrinterService() {
     ReceiptPrinterService.instance.reconfigure(this);
   }
@@ -96,7 +96,7 @@ class LocalTerminalProvider extends ChangeNotifier {
   }
 
   Future<void> setPrinterFormat(String format) async {
-    // â”€â”€ IMPORTANTE: actualizar la memoria ANTES del await para que
+    // ���� IMPORTANTE: actualizar la memoria ANTES del await para que
     // _syncPrinterService() lea el valor nuevo y no el viejo.
     _printerFormat = format;
     _syncPrinterService();

@@ -1,4 +1,4 @@
-import 'dart:io';
+﻿import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
@@ -216,7 +216,7 @@ void main() async {
   // rescate silencioso al backend para asegurar que la DB esté parcheada.
   // Esta versión se usa *únicamente* para disparar la migración de emergencia
   // al detectar que la app se actualizó, para correr las nuevas migraciones DB del backend
-  const currentAppVersion = '1.7.4';
+  const currentAppVersion = '1.7.5';
   final lastVersion = prefs.getString('app_version') ?? '1.0.0';
   if (lastVersion != currentAppVersion) {
     try {

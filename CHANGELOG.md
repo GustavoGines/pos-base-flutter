@@ -1,6 +1,12 @@
 ﻿# Changelog 📝 Sistema POS (Frontend)
 Todos los cambios notables de la aplicación de caja (Flutter/Windows) están documentados aquí.
 
+## [1.7.5] - 2026-08-29
+### Correcciones
+- Se reparó definitivamente un error de codificación que generaba caracteres extraños (como tildes o eñes rotas) en la tabla del catálogo y en los carteles de error en la App Móvil.
+- Se eliminó la inyección automática de la ruta local en la configuración de la App Móvil para facilitar el uso de dominios limpios con Cloudflare Tunnels.
+- Se restauró la selección automática de Marcas y Categorías al crearlas desde el catálogo en la App Móvil.
+
 ## [1.7.4] - 2026-08-29
 ### Novedades de esta Gran Actualización (desde v1.4.4)
 - **Soporte Oficial para la App Móvil:** El sistema ahora cuenta con todo el motor interno preparado para comunicarse en tiempo real con nuestra nueva Aplicación Móvil.

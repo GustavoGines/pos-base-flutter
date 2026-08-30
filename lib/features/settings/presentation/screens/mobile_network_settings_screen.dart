@@ -66,7 +66,6 @@ class _MobileNetworkSettingsScreenState extends State<MobileNetworkSettingsScree
 
   Future<void> _saveSettings() async {
     final localUrl = _localCtrl.text.trim();
-    final remoteUrl = _remoteCtrl.text.trim();
 
     if (localUrl.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('La URL Local es obligatoria')));
@@ -77,13 +76,21 @@ class _MobileNetworkSettingsScreenState extends State<MobileNetworkSettingsScree
     
     // --- AUTO-FORMATO UX (Solo si no empieza con http) ---
     if (cleanLocal.isNotEmpty && !cleanLocal.startsWith('http')) {
-      cleanLocal = 'http://$cleanLocal';
+      if (!cleanLocal.contains('/')) {
+        cleanLocal = 'http://$cleanLocal/pos-backend/public/api';
+      } else {
+        cleanLocal = 'http://$cleanLocal';
+      }
     }
     
     // Remote
     String cleanRemote = _remoteCtrl.text.trim();
     if (cleanRemote.isNotEmpty && !cleanRemote.startsWith('http')) {
-      cleanRemote = 'https://$cleanRemote';
+      if (!cleanRemote.contains('/')) {
+        cleanRemote = 'https://$cleanRemote/pos-backend/public/api';
+      } else {
+        cleanRemote = 'https://$cleanRemote';
+      }
     }
 
     cleanLocal = cleanLocal.endsWith('/') ? cleanLocal.substring(0, cleanLocal.length - 1) : cleanLocal;

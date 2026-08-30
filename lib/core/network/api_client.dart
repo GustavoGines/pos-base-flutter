@@ -1,9 +1,9 @@
-﻿import 'dart:io';
+import 'dart:io';
 import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
-/// ExcepciÃ³n para errores de red genÃ©ricos (servidor caÃ­do, sin conexiÃ³n).
+/// Excepción para errores de red genéricos (servidor caído, sin conexión).
 class NetworkException implements Exception {
   final String message;
   NetworkException(this.message);
@@ -11,31 +11,31 @@ class NetworkException implements Exception {
   String toString() => message;
 }
 
-/// ExcepciÃ³n tipada para SesiÃ³n Ãšnica Activa.
+/// Excepción tipada para Sesión Única Activa.
 /// Se lanza cuando el servidor responde 401 con error_code SESSION_EXPIRED,
 /// lo que significa que otro dispositivo hizo login con el mismo usuario.
-/// Los providers y screens capturan esta excepciÃ³n para mostrar el dialog
-/// de seguridad y forzar la navegaciÃ³n a /login.
+/// Los providers y screens capturan esta excepción para mostrar el dialog
+/// de seguridad y forzar la navegación a /login.
 class SessionExpiredException implements Exception {
   final String message;
   const SessionExpiredException(
       [this.message =
-          'Tu sesiÃ³n fue cerrada porque otro dispositivo iniciÃ³ sesiÃ³n con tu usuario.']);
+          'Tu sesión fue cerrada porque otro dispositivo inició sesión con tu usuario.']);
   @override
   String toString() => message;
 }
 
 /// Cliente HTTP centralizado que:
 ///   1. Inyecta el header X-Session-Token en TODOS los requests (Single Active Session).
-///   2. Intercepta 401 SESSION_EXPIRED â†’ lanza SessionExpiredException tipada.
-///   3. Intercepta 5xx y errores de red â†’ lanza NetworkException amigable.
+///   2. Intercepta 401 SESSION_EXPIRED → lanza SessionExpiredException tipada.
+///   3. Intercepta 5xx y errores de red → lanza NetworkException amigable.
 ///
-/// Al ser un http.BaseClient, cubre automÃ¡ticamente todos los datasources
+/// Al ser un http.BaseClient, cubre automáticamente todos los datasources
 /// sin necesidad de modificar cada uno individualmente.
 class ApiClient extends http.BaseClient {
   final http.Client _inner;
 
-  /// Token de sesiÃ³n activo. Se setea desde AuthProvider al hacer login
+  /// Token de sesión activo. Se setea desde AuthProvider al hacer login
   /// y se limpia al hacer logout. El setter es thread-safe para Dart.
   String? sessionToken;
 
@@ -43,27 +43,27 @@ class ApiClient extends http.BaseClient {
   void Function()? onSessionExpired;
 
   static const String _friendlyErrorMessage =
-      'No se pudo conectar con el servidor principal. Verifique su conexiÃ³n a red o si el servidor estÃ¡ encendido.';
+      'No se pudo conectar con el servidor principal. Verifique su conexión a red o si el servidor está encendido.';
 
   ApiClient(this._inner);
 
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) async {
     try {
-      // â”€â”€ InyecciÃ³n del token de sesiÃ³n â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      // ── Inyección del token de sesión ────────────────────────────────────
       // Se inyecta en CADA request que pase por este cliente.
-      // null = usuario no logueado o logout limpio â†’ no se envÃ­a el header.
+      // null = usuario no logueado o logout limpio → no se envía el header.
       if (sessionToken != null) {
         request.headers['X-Session-Token'] = sessionToken!;
       }
 
-      // Prevenir el reÃºso de sockets muertos (SocketException/ClientException)
-      // que ocurre cuando Apache/Nginx cierra la conexiÃ³n por inactividad.
+      // Prevenir el reúso de sockets muertos (SocketException/ClientException)
+      // que ocurre cuando Apache/Nginx cierra la conexión por inactividad.
       request.headers['Connection'] = 'close';
 
       final response = await _inner.send(request).timeout(const Duration(seconds: 20));
 
-      // â”€â”€ IntercepciÃ³n de 401: SesiÃ³n expirada â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      // ── Intercepción de 401: Sesión expirada ─────────────────────────────
       // El backend devuelve 401 en dos casos:
       //   a) PIN Incorrecto (o error de login normal)
       //   b) SESSION_EXPIRED: el token no existe en BD (fue sobrescrito por otro login)
@@ -91,7 +91,7 @@ class ApiClient extends http.BaseClient {
         );
       }
 
-      // â”€â”€ IntercepciÃ³n de errores del servidor (5xx) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      // ── Intercepción de errores del servidor (5xx) ───────────────────────
       if (response.statusCode >= 500) {
         throw NetworkException(_friendlyErrorMessage);
       }
