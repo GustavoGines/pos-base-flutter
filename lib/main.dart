@@ -153,7 +153,7 @@ void main() async {
 
   // Hacer que la app inicie en pantalla completa (maximizada) pero no Kiosk puro,
   // permitiendo que el usuario la achique o minimice si lo requiere.
-  if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+  if (AppConfig.isDesktop) {
     await windowManager.ensureInitialized();
     WindowOptions windowOptions = const WindowOptions(
       size: Size(1280, 720),
@@ -169,7 +169,7 @@ void main() async {
 
   // Pre-cargar perfil de impresora para evitar crashes de AssetManifest en Windows
   // íaí️ SOLO en Desktop í en mobile no existe impresora conectada y puede colgarse
-  if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+  if (AppConfig.isDesktop) {
     await ReceiptPrinterService.instance.initialize();
   }
 
@@ -187,7 +187,7 @@ void main() async {
   bool hasValidRemote =
       remoteUrl.trim().length > 10 && remoteUrl.contains('http');
 
-  if (hasValidRemote && (Platform.isAndroid || Platform.isIOS)) {
+  if (hasValidRemote && (AppConfig.isMobile)) {
     try {
       // Ping rápido a la red local (2000ms) para ver si estamos en el negocio
       final response = await http
@@ -211,22 +211,30 @@ void main() async {
 
   final savedApiUrl = activeApiUrl;
 
-  // íííí RESCUE TRIGGER OTA íííí
+  // 🔁 RESCUE TRIGGER OTA 🔁
   // Si la app detecta que acaba de ser actualizada, dispara un endpoint de
   // rescate silencioso al backend para asegurar que la DB esté parcheada.
-  // Esta versión se usa *únicamente* para disparar la migración de emergencia
-  // al detectar que la app se actualizó, para correr las nuevas migraciones DB del backend
-  const currentAppVersion = '1.7.5';
-  final lastVersion = prefs.getString('app_version') ?? '1.0.0';
-  if (lastVersion != currentAppVersion) {
-    try {
-      // Llamada silenciosa de rescate (fire and forget)
-      http.get(Uri.parse('$savedApiUrl/system/rescue-migrate')).ignore();
-      await prefs.setString('app_version', currentAppVersion);
-      debugPrint(
-          'Rescue Trigger: Migración solicitada ($lastVersion -> $currentAppVersion)');
-    } catch (e) {
-      debugPrint('Rescue Trigger falló: $e');
+  // SOLO en dispositivos móviles: el desktop tiene su propio mecanismo OTA y no necesita
+  // disparar migraciones al actualizarse.
+  if (AppConfig.isMobile) {
+    const currentAppVersion = '1.8.0';
+    // Token secreto que debe coincidir con RESCUE_MIGRATE_SECRET en el .env del backend.
+    // Protege el endpoint /system/rescue-migrate contra llamadas no autorizadas.
+    const rescueSecret = 'pos-rescue-2026-GGLabs';
+    final lastVersion = prefs.getString('app_version') ?? '1.0.0';
+    if (lastVersion != currentAppVersion) {
+      try {
+        // Llamada silenciosa de rescate (fire and forget) con token de autenticación
+        http.get(
+          Uri.parse('$savedApiUrl/system/rescue-migrate'),
+          headers: {'X-Rescue-Token': rescueSecret},
+        ).ignore();
+        await prefs.setString('app_version', currentAppVersion);
+        debugPrint(
+            'Rescue Trigger: Migración solicitada ($lastVersion -> $currentAppVersion)');
+      } catch (e) {
+        debugPrint('Rescue Trigger falló: $e');
+      }
     }
   }
 
@@ -480,7 +488,7 @@ class _MainAppState extends State<MainApp> {
 
     bool success = false;
     // En mobile limitamos el tiempo total de espera para no colgar la pantalla de splash
-    final bool isMobilePlatform = Platform.isAndroid || Platform.isIOS;
+    final bool isMobilePlatform = AppConfig.isMobile;
     final Duration requestTimeout = isMobilePlatform
         ? const Duration(seconds: 6)
         : const Duration(seconds: 15);
@@ -680,7 +688,7 @@ class _MainAppState extends State<MainApp> {
                   try {
                     await settingsProvider.loadSettings();
 
-                    if (Platform.isAndroid || Platform.isIOS) {
+                    if (AppConfig.isMobile) {
                       // En celular no cerramos la app porque el OS no la vuelve a abrir sola.
                       // Simplemente volvemos a llamar a la inicialización.
                       _initializeApp();
@@ -806,7 +814,7 @@ class _MainAppState extends State<MainApp> {
         // Protección GLOBAL anti-overflow para ventanas estrechas
         return LayoutBuilder(
           builder: (context, constraints) {
-            if (Platform.isAndroid || Platform.isIOS) return guardedChild;
+            if (AppConfig.isMobile) return guardedChild;
             const double minAppWidth = 1024.0;
             const double minAppHeight = 550.0;
 
@@ -881,7 +889,7 @@ class _MainAppState extends State<MainApp> {
         '/login': (context) => const LoginScreen(),
         '/home': (context) => Consumer<CashRegisterProvider>(
               builder: (ctx, cashProv, _) {
-                if (Platform.isAndroid || Platform.isIOS) {
+                if (AppConfig.isMobile) {
                   return const MobileMenuScreen();
                 }
                 final shift = cashProv.currentShift;

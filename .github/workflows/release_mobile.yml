@@ -31,6 +31,11 @@ jobs:
         run: |
           sed -i "s/^version:.*/version: ${{ steps.version.outputs.VERSION }}+${{ github.run_number }}/" pubspec.yaml
 
+      - name: Update currentAppVersion in main.dart
+        run: |
+          sed -i "s/const currentAppVersion = '[^']*'/const currentAppVersion = '${{ steps.version.outputs.VERSION }}'/" lib/main.dart
+          echo "✅ currentAppVersion actualizado a ${{ steps.version.outputs.VERSION }}"
+
       - name: Flutter pub get
         run: flutter pub get
 
@@ -113,3 +118,13 @@ jobs:
               \"is_critical\": false,
               \"token\": \"${{ secrets.LICENSE_SERVER_TOKEN }}\"
             }"
+
+      - name: 🏷️ Publicar GitHub Release con el APK
+        uses: softprops/action-gh-release@v2
+        with:
+          files: pos_mobile_v${{ steps.version.outputs.VERSION }}.apk
+          generate_release_notes: true
+          name: "Mobile v${{ steps.version.outputs.VERSION }}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
