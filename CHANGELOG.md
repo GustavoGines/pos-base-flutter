@@ -1,5 +1,17 @@
-﻿# Changelog 📝 Sistema POS (Frontend)
+# Changelog 📝 Sistema POS (Frontend)
 Todos los cambios notables de la aplicación de caja (Flutter/Windows) están documentados aquí.
+
+## [1.8.0] - 2026-08-31
+### Seguridad
+- Endpoint de rescate OTA del backend protegido con token secreto configurable.
+### Mejorado
+- Pipeline CI/CD: el backend ahora genera GitHub Release con artefacto ZIP en cada versión.
+- `AppConfig` centraliza la detección de plataforma (isMobile, isDesktop, isWeb).
+
+## [1.7.6] - 2026-08-30
+### Correcciones
+- Auto-selección de Categoría y Marca recién creadas al cerrar el gestor desde el formulario de la App Móvil.
+- Auto-formato de URL corregido para IPs y dominios al configurar el servidor.
 
 ## [1.7.5] - 2026-08-29
 ### Correcciones

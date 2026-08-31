@@ -353,7 +353,7 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                         Expanded(
                           child: DropdownButtonFormField<int?>(isExpanded: true,
                             key: ValueKey('cat_$selectedCategoryId'),
-                            value: selectedCategoryId,
+                            initialValue: selectedCategoryId,
                             decoration: const InputDecoration(labelText: 'Categoría', isDense: true, border: OutlineInputBorder()),
                             items: [
                               const DropdownMenuItem(value: null, child: Text('Sin Categoría')),
@@ -385,7 +385,7 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                         Expanded(
                           child: DropdownButtonFormField<int?>(isExpanded: true,
                             key: ValueKey('brand_$selectedBrandId'),
-                            value: selectedBrandId,
+                            initialValue: selectedBrandId,
                             decoration: const InputDecoration(labelText: 'Marca', isDense: true, border: OutlineInputBorder()),
                             items: [
                               const DropdownMenuItem(value: null, child: Text('Sin Marca')),

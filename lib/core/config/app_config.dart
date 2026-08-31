@@ -1,4 +1,6 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'dart:io' show Platform;
 
 /// Configuración centralizada de la aplicación.
 /// Modificar aquí para cambiar el endpoint del servidor en toda la app.
@@ -19,4 +21,20 @@ class AppConfig {
 
   /// Bandera híbrida para Corralones y Madereras
   static const bool isCorralonMode = true;
+
+  // ── Detección de plataforma ──────────────────────────────────────────────
+  // Usar estos getters en lugar de Platform.isAndroid || Platform.isIOS
+  // disperso por el código. Si en el futuro se agrega iOS o Linux,
+  // solo hay que actualizar aquí.
+
+  /// True si la app corre en un dispositivo móvil (Android o iOS).
+  static bool get isMobile =>
+      !kIsWeb && (Platform.isAndroid || Platform.isIOS);
+
+  /// True si la app corre en escritorio (Windows, Linux o macOS).
+  static bool get isDesktop =>
+      !kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS);
+
+  /// True si la app corre en el navegador web.
+  static bool get isWeb => kIsWeb;
 }

@@ -1,6 +1,4 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -58,7 +56,7 @@ class _LoginScreenState extends State<LoginScreen> {
     }
 
     try {
-      final isMobile = !kIsWeb && (Platform.isAndroid || Platform.isIOS);
+      final isMobile = AppConfig.isMobile;
 
       if (isMobile) {
         final update = await MobileUpdateService.checkForUpdate();
@@ -532,7 +530,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   child: Row(
                     children: [
                       // Badge de update de Frontend (App) - Solo en Escritorio
-                    if (_frontendUpdate != null && (kIsWeb || (!Platform.isAndroid && !Platform.isIOS)))
+                    if (_frontendUpdate != null && (!AppConfig.isMobile))
                       ElevatedButton.icon(
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF673AB7),
@@ -560,10 +558,10 @@ class _LoginScreenState extends State<LoginScreen> {
                           style: const TextStyle(fontWeight: FontWeight.bold),
                         ),
                       ),
-                    if (_frontendUpdate != null && _backendUpdate != null && (!Platform.isAndroid && !Platform.isIOS)) const SizedBox(width: 10),
+                    if (_frontendUpdate != null && _backendUpdate != null && (!AppConfig.isMobile)) const SizedBox(width: 10),
 
                     // Badge de update de Backend (Servidor) — informativo, se aplica solo si no es móvil
-                    if (_backendUpdate != null && (!Platform.isAndroid && !Platform.isIOS))
+                    if (_backendUpdate != null && (!AppConfig.isMobile))
                       ElevatedButton.icon(
                         style: ElevatedButton.styleFrom(
                           backgroundColor: _frontendUpdate != null

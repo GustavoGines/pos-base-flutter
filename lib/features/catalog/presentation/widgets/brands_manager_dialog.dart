@@ -20,6 +20,10 @@ class _BrandsManagerDialogState extends State<BrandsManagerDialog> {
   int? _editingId;
   final _editCtrl = TextEditingController();
 
+  /// ID de la última marca creada en esta sesión del dialog.
+  /// Se retorna al cerrar para que el caller pueda auto-seleccionarla.
+  int? _lastCreatedId;
+
   @override
   void dispose() {
     _newNameCtrl.dispose();
@@ -36,7 +40,10 @@ class _BrandsManagerDialogState extends State<BrandsManagerDialog> {
     setState(() => _adding = true);
     final ok = await provider.createBrand(name);
     if (!mounted) return;
-    setState(() => _adding = false);
+    setState(() {
+      _adding = false;
+      if (ok != null) _lastCreatedId = ok;
+    });
     if (ok != null) {
       _newNameCtrl.clear();
       _newFocusNode.requestFocus();
@@ -165,7 +172,7 @@ class _BrandsManagerDialogState extends State<BrandsManagerDialog> {
             ),
             const Spacer(),
             TextButton(
-              onPressed: () => Navigator.of(context).pop(true),
+              onPressed: () => Navigator.of(context).pop(_lastCreatedId),
               child: const Text('Cerrar'),
             ),
           ],
