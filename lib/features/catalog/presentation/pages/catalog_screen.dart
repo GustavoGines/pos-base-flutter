@@ -57,7 +57,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
   }
 
   Future<void> _openCategoriesManager(BuildContext context) async {
-    await showDialog<bool>(
+    await showDialog<int?>(
       context: context,
       builder: (_) => const CategoriesManagerDialog(),
     );
@@ -67,7 +67,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
   }
 
   Future<void> _openBrandsManager(BuildContext context) async {
-    await showDialog<void>(
+    await showDialog<int?>(
       context: context,
       builder: (_) => const BrandsManagerDialog(),
     );
@@ -968,8 +968,8 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                   children: [
                     Expanded(
                       child: DropdownButtonFormField<int?>(
-                        key: ValueKey('cat_$_categoryId'),
-                        initialValue: _categoryId,
+                        // ignore: deprecated_member_use
+                        value: _categoryId,
                         decoration: const InputDecoration(labelText: 'Categoría', prefixIcon: Icon(Icons.category_outlined)),
                         items: [
                           const DropdownMenuItem<int?>(value: null, child: Text('— Sin categoría —')),
@@ -1033,8 +1033,8 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                   children: [
                     Expanded(
                       child: DropdownButtonFormField<int?>(
-                        key: ValueKey('brand_$_brandId'),
-                        initialValue: _brandId,
+                        // ignore: deprecated_member_use
+                        value: _brandId,
                         decoration: const InputDecoration(labelText: 'Marca', prefixIcon: Icon(Icons.branding_watermark_outlined)),
                         items: [
                           const DropdownMenuItem<int?>(value: null, child: Text('— Sin marca —')),

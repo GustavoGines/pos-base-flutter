@@ -352,8 +352,8 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                       children: [
                         Expanded(
                           child: DropdownButtonFormField<int?>(isExpanded: true,
-                            key: ValueKey('cat_$selectedCategoryId'),
-                            initialValue: selectedCategoryId,
+                            // ignore: deprecated_member_use
+                            value: selectedCategoryId,
                             decoration: const InputDecoration(labelText: 'Categoría', isDense: true, border: OutlineInputBorder()),
                             items: [
                               const DropdownMenuItem(value: null, child: Text('Sin Categoría')),
@@ -367,13 +367,17 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                           icon: const Icon(Icons.settings),
                           tooltip: 'Gestionar Categorías',
                           onPressed: () async {
-                            await showDialog(
+                            final newCategoryId = await showDialog<int?>(
                               context: context,
                               builder: (_) => const CategoriesManagerDialog(),
                             );
                             if (context.mounted) {
                                await catalogProv.loadMetadata();
-                               setStateDialog(() {});
+                               setStateDialog(() {
+                                 if (newCategoryId != null) {
+                                   selectedCategoryId = newCategoryId;
+                                 }
+                               });
                             }
                           },
                         ),
@@ -384,8 +388,8 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                       children: [
                         Expanded(
                           child: DropdownButtonFormField<int?>(isExpanded: true,
-                            key: ValueKey('brand_$selectedBrandId'),
-                            initialValue: selectedBrandId,
+                            // ignore: deprecated_member_use
+                            value: selectedBrandId,
                             decoration: const InputDecoration(labelText: 'Marca', isDense: true, border: OutlineInputBorder()),
                             items: [
                               const DropdownMenuItem(value: null, child: Text('Sin Marca')),
@@ -399,13 +403,17 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                           icon: const Icon(Icons.settings),
                           tooltip: 'Gestionar Marcas',
                           onPressed: () async {
-                            await showDialog(
+                            final newBrandId = await showDialog<int?>(
                               context: context,
                               builder: (_) => const BrandsManagerDialog(),
                             );
                             if (context.mounted) {
                                await catalogProv.loadMetadata();
-                               setStateDialog(() {});
+                               setStateDialog(() {
+                                 if (newBrandId != null) {
+                                   selectedBrandId = newBrandId;
+                                 }
+                               });
                             }
                           },
                         ),
