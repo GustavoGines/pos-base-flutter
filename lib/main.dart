@@ -217,7 +217,7 @@ void main() async {
   // SOLO en dispositivos móviles: el desktop tiene su propio mecanismo OTA y no necesita
   // disparar migraciones al actualizarse.
   if (AppConfig.isMobile) {
-    const currentAppVersion = '1.8.1';
+    const currentAppVersion = '1.8.2';
     // Token secreto que debe coincidir con RESCUE_MIGRATE_SECRET en el .env del backend.
     // Protege el endpoint /system/rescue-migrate contra llamadas no autorizadas.
     const rescueSecret = 'pos-rescue-2026-GGLabs';

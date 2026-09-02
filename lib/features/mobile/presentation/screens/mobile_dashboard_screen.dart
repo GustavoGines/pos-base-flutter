@@ -67,7 +67,7 @@ class _MobileDashboardScreenState extends State<MobileDashboardScreen> {
 
       await _pusher!.connect();
     } catch (e) {
-      debugPrint('Error init pusher in dashboard: $e');
+      // Error ignored
     }
   }
 
@@ -87,11 +87,12 @@ class _MobileDashboardScreenState extends State<MobileDashboardScreen> {
       final cashRegisterProvider = context.read<CashRegisterProvider>();
       final alertsProvider = context.read<InventoryAlertsProvider>();
 
-      await salesProvider.loadSales(period: _selectedPeriod);
-      
-      // Recargar métricas secundarias secuencialmente para evitar cuellos de botella en el servidor local
-      await cashRegisterProvider.checkCurrentShiftSilently();
-      await alertsProvider.fetchAlerts();
+      // Ejecutar en paralelo para una carga ultrarrápida en redes 4G
+      await Future.wait([
+        salesProvider.loadSales(period: _selectedPeriod),
+        cashRegisterProvider.checkCurrentShiftSilently(),
+        alertsProvider.fetchAlerts(),
+      ]);
 
       DateTime start = DateTime.now();
       DateTime end = DateTime.now();
