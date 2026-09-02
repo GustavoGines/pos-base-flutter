@@ -1,6 +1,10 @@
 # Changelog - Sistema POS (Frontend)
 Todos los cambios notables de la aplicacion de caja (Flutter/Windows) estan documentados aqui.
 
+## [1.8.3] - 2026-09-02
+### Novedades
+- Compatibilidad del actualizador para multiples rutas de instalacion locales.
+
 ## [1.8.2] - 2026-09-02
 ### Novedades de esta Gran Actualizacion (desde v1.4.4)
 - **Soporte Oficial para App Movil:** Nuevo modulo API y perfiles para control de stock, lectura de codigos de barra y ventas desde el celular.

@@ -1,6 +1,10 @@
 # Changelog - POS Movil (Android)
 Todos los cambios notables de la aplicacion movil de Android estan documentados aqui.
 
+## [1.8.3] - 2026-09-02
+### Novedades
+- Mejoras de estabilidad en el reconocimiento de rutas del backend.
+
 ## [1.8.2] - 2026-09-02
 ### Novedades (desde v1.8.0)
 - **Velocidad de Carga Optimizada en 4G:** El Panel de Ventas movil ahora carga la informacion en paralelo, reduciendo el tiempo de actualizacion de pantalla a mas de la mitad.
