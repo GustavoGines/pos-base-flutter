@@ -1,5 +1,16 @@
-# Changelog 📝 Sistema POS (Frontend)
-Todos los cambios notables de la aplicación de caja (Flutter/Windows) están documentados aquí.
+# Changelog - Sistema POS (Frontend)
+Todos los cambios notables de la aplicacion de caja (Flutter/Windows) estan documentados aqui.
+
+## [1.8.1] - 2026-09-02
+### Novedades de esta Gran Actualizacion (desde v1.4.4)
+- **Soporte Oficial para App Movil:** Nuevo modulo API y perfiles para control de stock, lectura de codigos de barra y ventas desde el celular.
+- **Acceso Remoto y 4G:** Arquitectura y soporte nativo para Cloudflare Tunnels (Smart Auto-Fallback), permitiendo conectar el celular desde cualquier lugar del mundo sin configurar IPs.
+- **Canal de Sincronizacion en Tiempo Real:** Las ventas hechas con el celular (incluso con 4G) se reflejan al instante (1 segundo) en el panel de ventas de la PC de escritorio.
+- **Seguridad y Licencias Anti-Pirateria:** Sistema de validacion de licencias integrado con pantalla de bloqueo y boton de copiado facil de la clave.
+- **Actualizaciones 100% Automaticas:** Sistema continuo, inteligente y completamente automatico tanto para el servidor como para la caja.
+- **Personalizacion Extrema del Terminal:** 4 nuevos modos de vista para productos (Tarjetas grandes, medianas, lista y supermercado) y paneles redimensionables.
+
+
 
 ## [1.8.0] - 2026-08-31
 ### Seguridad
@@ -34,3 +45,4 @@ Todos los cambios notables de la aplicación de caja (Flutter/Windows) están do
 ## [1.4.4] - 2026-08-25
 ### Mejoras
 - Versión base estable con soporte OTA.
+

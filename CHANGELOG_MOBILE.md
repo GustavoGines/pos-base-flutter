@@ -1,7 +1,13 @@
-# Changelog — POS Móvil (Android)
+# Changelog - POS Movil (Android)
+Todos los cambios notables de la aplicacion movil de Android estan documentados aqui.
 
-Todos los cambios notables de la aplicación móvil de Android están documentados aquí.
-El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
+## [1.8.1] - 2026-09-02
+### Novedades
+- Ventas al instante: Ahora al generar una venta usando 4G, el proceso es ultra rapido (3 segundos) y actualiza instantaneamente el panel de la PC.
+- Configuracion de Red: Se corrigio un detalle visual que afectaba las URLs personalizadas en la configuracion inteligente (Auto-Fallback).
+- Licencias y Seguridad: Validacion de licencia optimizada para reconectar de manera inmediata al minimizar y reabrir la app.
+
+
 
 ## [1.8.0] - 2026-08-31
 ### Seguridad
