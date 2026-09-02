@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../../features/settings/presentation/providers/settings_provider.dart';
 import '../../../features/auth/presentation/providers/auth_provider.dart';
@@ -145,18 +146,59 @@ class _LicenseLockScreenState extends State<LicenseLockScreen> {
                       );
                     }
 
-                    return Text(
-                      widget.missingMobileAddon 
-                          ? 'Tu licencia actual no incluye el módulo "App Móvil".\nComunicate con GLabs para actualizar tu plan de Sistema POS y habilitar el acceso desde celulares.'
-                          : widget.missingRemoteAddon
-                              ? 'Tu licencia actual no incluye el módulo "Acceso Remoto".\nComunicate con GLabs para actualizar tu plan de Sistema POS y operar fuera del local.'
-                              : widget.securityStatus == LicenseSecurityStatus.clockTampered 
-                                  ? 'Se detectó una anomalía en el reloj del sistema.\nPor seguridad, el acceso ha sido revocado. Contacte soporte.'
-                                  : widget.securityStatus == LicenseSecurityStatus.offlineExpired
-                                      ? 'Se ha excedido el periodo de gracia offline (72hs).\nEs necesario conectar el equipo a internet para validar la suscripción.'
-                                      : 'Tu licencia ha expirado, ha sido suspendida o es inexistente en este equipo.\nPara continuar operando, por favor ingresá una clave válida.',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(color: Colors.white70, fontSize: 14, height: 1.5),
+                    return Column(
+                      children: [
+                        Text(
+                          widget.missingMobileAddon 
+                              ? 'Tu licencia actual no incluye el módulo "App Móvil".\nComunicate con GLabs para actualizar tu plan de Sistema POS y habilitar el acceso desde celulares.'
+                              : widget.missingRemoteAddon
+                                  ? 'Tu licencia actual no incluye el módulo "Acceso Remoto".\nComunicate con GLabs para actualizar tu plan de Sistema POS y operar fuera del local.'
+                                  : widget.securityStatus == LicenseSecurityStatus.clockTampered 
+                                      ? 'Se detectó una anomalía en el reloj del sistema.\nPor seguridad, el acceso ha sido revocado. Contacte soporte.'
+                                      : widget.securityStatus == LicenseSecurityStatus.offlineExpired
+                                          ? 'Se ha excedido el periodo de gracia offline (72hs).\nEs necesario conectar el equipo a internet para validar la suscripción.'
+                                          : 'Tu licencia ha expirado, ha sido suspendida o es inexistente en este equipo.\nPara continuar operando, por favor ingresá una clave válida.',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(color: Colors.white70, fontSize: 14, height: 1.5),
+                        ),
+                        if (settings.settings?.licenseStatus != null && settings.settings!.licenseStatus!.isNotEmpty) ...[
+                          const SizedBox(height: 24),
+                          const Text('TU LICENCIA ACTUAL:', style: TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
+                          const SizedBox(height: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                            decoration: BoxDecoration(
+                              color: Colors.black26,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: Colors.white24),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.key, color: Colors.white54, size: 20),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(
+                                    settings.settings!.licenseStatus!,
+                                    style: const TextStyle(color: Colors.white, fontFamily: 'monospace', fontSize: 14, fontWeight: FontWeight.w600),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.copy, color: Colors.white),
+                                  onPressed: () async {
+                                    await Clipboard.setData(ClipboardData(text: settings.settings!.licenseStatus!));
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Licencia copiada al portapapeles'), backgroundColor: Colors.green));
+                                    }
+                                  },
+                                  tooltip: 'Copiar licencia',
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ],
                     );
                   },
                 ),
@@ -172,6 +214,16 @@ class _LicenseLockScreenState extends State<LicenseLockScreen> {
                     hintText: 'XXXX-XXXX-XXXX-XXXX',
                     hintStyle: const TextStyle(color: Colors.white12),
                     prefixIcon: const Icon(Icons.vpn_key, color: Colors.redAccent),
+                    suffixIcon: IconButton(
+                      icon: const Icon(Icons.paste, color: Colors.white70),
+                      tooltip: 'Pegar licencia',
+                      onPressed: () async {
+                        final data = await Clipboard.getData('text/plain');
+                        if (data != null && data.text != null && data.text!.isNotEmpty) {
+                          _licenseKeyCtrl.text = data.text!;
+                        }
+                      },
+                    ),
                     filled: true,
                     fillColor: Colors.black26,
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),

@@ -220,6 +220,9 @@ class _LoginScreenState extends State<LoginScreen> {
         
         await settingsProv.loadSettings(isSilent: true);
         
+        // Forzar verificacin remota de la licencia en el login exacto
+        await settingsProv.syncLicenseWithServer(AppConfig.kApiBaseUrl, isSilent: true);
+        
         final assignedId = settingsProv.assignedRegisterId;
         debugPrint('=== LOGIN: Verificando turno activo (registerId: ${assignedId > 0 ? assignedId : "null (fallback a Caja Principal)"}) ===');
         await cashProv.checkCurrentShift(registerId: assignedId > 0 ? assignedId : null);
@@ -317,7 +320,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     if (isIp) {
                       newUrl = 'http://$newUrl/Sistema_POS/pos-backend/public/api';
                     } else {
-                      newUrl = 'https://$newUrl/pos-backend/public/api';
+                      newUrl = 'https://$newUrl/Sistema_POS/pos-backend/public/api';
                     }
                   } else {
                     newUrl = 'http://$newUrl';

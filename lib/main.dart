@@ -657,7 +657,7 @@ class _MainAppState extends State<MainApp> {
                     if (isIp) {
                       newUrl = 'http://$newUrl/Sistema_POS/pos-backend/public/api';
                     } else {
-                      newUrl = 'https://$newUrl/pos-backend/public/api';
+                      newUrl = 'https://$newUrl/Sistema_POS/pos-backend/public/api';
                     }
                   } else {
                     newUrl = 'http://$newUrl';

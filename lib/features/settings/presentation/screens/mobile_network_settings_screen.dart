@@ -87,7 +87,7 @@ class _MobileNetworkSettingsScreenState extends State<MobileNetworkSettingsScree
     String cleanRemote = _remoteCtrl.text.trim();
     if (cleanRemote.isNotEmpty && !cleanRemote.startsWith('http')) {
       if (!cleanRemote.contains('/')) {
-        cleanRemote = 'https://$cleanRemote/pos-backend/public/api';
+        cleanRemote = 'https://$cleanRemote/Sistema_POS/pos-backend/public/api';
       } else {
         cleanRemote = 'https://$cleanRemote';
       }

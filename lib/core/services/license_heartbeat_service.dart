@@ -5,11 +5,13 @@ import '../../features/settings/domain/entities/business_settings.dart';
 
 enum LicenseSecurityStatus { ok, clockTampered, offlineExpired }
 
-class LicenseHeartbeatService extends ChangeNotifier {
+class LicenseHeartbeatService extends ChangeNotifier with WidgetsBindingObserver {
   static final LicenseHeartbeatService _instance =
       LicenseHeartbeatService._internal();
   factory LicenseHeartbeatService() => _instance;
-  LicenseHeartbeatService._internal();
+  LicenseHeartbeatService._internal() {
+    WidgetsBinding.instance.addObserver(this);
+  }
 
   final _storage = const FlutterSecureStorage();
 
@@ -57,10 +59,10 @@ class LicenseHeartbeatService extends ChangeNotifier {
         (_) => _updatePulse(),
       );
 
-      // Timer 2: Ping Silencioso al servidor (cada 30 min)
+      // Timer 2: Ping Silencioso al servidor (cada 3 min)
       _heartbeatTimer?.cancel();
       _heartbeatTimer = Timer.periodic(
-        const Duration(minutes: 30),
+        const Duration(minutes: 3),
         (_) => _triggerSync(),
       );
     }
@@ -155,6 +157,14 @@ class LicenseHeartbeatService extends ChangeNotifier {
 
     await _checkOfflineGrace(settings);
     notifyListeners();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _initialized) {
+      debugPrint('=== App Resumed: Forcing License Sync ===');
+      _triggerSync();
+    }
   }
 
   void stop() {

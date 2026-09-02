@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -1041,6 +1042,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             isPremium: provider.currentPlan.toLowerCase() == 'premium' ||
                 provider.currentPlan.toLowerCase() == 'pro',
             isLifetime: isLifetime,
+            licenseKey: settings?.licenseStatus,
             expiresAt: expiresAt,
             lastSync: settings?.lastLicenseCheck,
             manageUrl: manageUrl,
@@ -1360,6 +1362,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 class AnimatedSubscriptionCard extends StatefulWidget {
   final bool isPremium;
   final bool isLifetime;
+  final String? licenseKey;
   final DateTime? expiresAt;
   final String? lastSync;
   final String? manageUrl;
@@ -1368,6 +1371,7 @@ class AnimatedSubscriptionCard extends StatefulWidget {
     super.key,
     required this.isPremium,
     required this.isLifetime,
+    this.licenseKey,
     this.expiresAt,
     this.lastSync,
     this.manageUrl,
@@ -1522,6 +1526,47 @@ class _AnimatedSubscriptionCardState extends State<AnimatedSubscriptionCard>
                         color: Colors.white.withValues(alpha: 0.85),
                         fontSize: 16),
                   ),
+                  if (widget.licenseKey != null && widget.licenseKey!.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.key, color: Colors.white.withValues(alpha: 0.7), size: 18),
+                          const SizedBox(width: 8),
+                          Text(
+                            widget.licenseKey!,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontFamily: 'monospace',
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          InkWell(
+                            onTap: () async {
+                              await Clipboard.setData(ClipboardData(text: widget.licenseKey!));
+                              if (context.mounted) {
+                                SnackBarService.success(context, 'Licencia copiada al portapapeles');
+                              }
+                            },
+                            borderRadius: BorderRadius.circular(20),
+                            child: Padding(
+                              padding: const EdgeInsets.all(4.0),
+                              child: Icon(Icons.copy, color: Colors.white.withValues(alpha: 0.9), size: 18),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 36),
                   if (!widget.isLifetime && widget.manageUrl != null)
                     MouseRegion(
