@@ -10,6 +10,7 @@ import 'package:frontend_desktop/features/auth/domain/repositories/auth_reposito
 import 'auth_provider_test.mocks.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   late AuthProvider provider;
   late MockAuthRepository mockRepo;
 
