@@ -24,6 +24,12 @@ class UpdateService {
   /// Chequea backend y frontend de forma separada.
   /// Retorna [UpdateCheckResult] con ambos componentes (si hay actualizaciones).
   Future<UpdateCheckResult> checkUpdate({bool throwErrors = false}) async {
+    if (kDebugMode) {
+      final result = UpdateCheckResult();
+      updateNotifier.value = result;
+      return result;
+    }
+
     UpdateInfo? frontendUpdate;
     UpdateInfo? backendUpdate;
 

@@ -56,11 +56,12 @@ class SnackBarService {
     required IconData icon,
     required Duration duration,
   }) {
+    final cleanMessage = message.replaceFirst('Exception: ', '');
     // Intentamos obtener el overlay del contexto, si no, usamos el del navegador global.
     final overlay = Overlay.maybeOf(context) ?? AppConfig.navigatorKey.currentState?.overlay;
     
     if (overlay == null) {
-      debugPrint('SnackBarService: No se encontró Overlay. El mensaje no se mostrará: $message');
+      debugPrint('SnackBarService: No se encontró Overlay. El mensaje no se mostrará: $cleanMessage');
       return;
     }
 
@@ -68,7 +69,7 @@ class SnackBarService {
 
     overlayEntry = OverlayEntry(
       builder: (context) => _ToastWidget(
-        message: message,
+        message: cleanMessage,
         backgroundColor: backgroundColor,
         icon: icon,
         duration: duration,
@@ -137,8 +138,11 @@ class _ToastWidgetState extends State<_ToastWidget> with SingleTickerProviderSta
 
   @override
   Widget build(BuildContext context) {
+    // Para que el Snackbar flote sobre el teclado si está abierto.
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    
     return Positioned(
-      bottom: 40,
+      bottom: 40 + bottomInset,
       left: 0,
       right: 0,
       child: SafeArea(

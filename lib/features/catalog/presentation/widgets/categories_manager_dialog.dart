@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/catalog_provider.dart';
 import '../../domain/entities/category.dart';
+import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 
 /// Dialog de gestión ABM de Categorías.
 /// Estilo consistente con ProductFormDialog y BulkPriceUpdateDialog del sistema.
@@ -97,12 +98,11 @@ class _CategoriesManagerDialogState extends State<CategoriesManagerDialog> {
 
   void _showSnack(String msg, {required bool isError, Duration? duration}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(msg),
-      backgroundColor: isError ? Colors.red.shade700 : const Color(0xFF1E7E34),
-      behavior: SnackBarBehavior.floating,
-      duration: duration ?? const Duration(seconds: 3),
-    ));
+    if (isError) {
+      SnackBarService.error(context, msg, duration: duration);
+    } else {
+      SnackBarService.success(context, msg, duration: duration);
+    }
   }
 
   // ── Build ────────────────────────────────────────────────────────

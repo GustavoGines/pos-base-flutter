@@ -233,7 +233,15 @@ class _FiltersBar extends StatelessWidget {
         color: Colors.white,
         border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
       ),
-      child: Row(
+      child: SizedBox(
+        width: double.infinity,
+        child: Wrap(
+          alignment: WrapAlignment.spaceBetween,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          runSpacing: 12,
+          children: [
+            Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
         children: [
           Icon(Icons.bar_chart, color: Colors.blueGrey.shade700, size: 20),
           const SizedBox(width: 10),
@@ -246,7 +254,11 @@ class _FiltersBar extends StatelessWidget {
               letterSpacing: 1.5,
             ),
           ),
-          const Spacer(),
+              ],
+            ),
+            Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
           const Text(
             'Período: ',
             style: TextStyle(color: Colors.blueGrey, fontSize: 13, fontWeight: FontWeight.w500),
@@ -310,7 +322,10 @@ class _FiltersBar extends StatelessWidget {
             tooltip: 'Actualizar',
             color: Colors.blueGrey.shade600,
           ),
-        ],
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -480,13 +495,26 @@ class _HeroCard extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      Text(title, style: TextStyle(fontSize: 13, color: Colors.grey.shade600)),
-                      const Spacer(),
-                      if (trend != null) _TrendBadge(trend: trend!),
+                      Expanded(
+                        child: Text(
+                          title,
+                          style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (trend != null) ...[
+                        const SizedBox(width: 4),
+                        _TrendBadge(trend: trend!),
+                      ],
                     ],
                   ),
                   const SizedBox(height: 4),
-                  Text(value, style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold, letterSpacing: -0.5)),
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text(value, style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold, letterSpacing: -0.5)),
+                  ),
                   if (subtitle != null) ...[
                     const SizedBox(height: 4),
                     Row(

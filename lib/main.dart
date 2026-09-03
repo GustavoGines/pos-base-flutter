@@ -157,6 +157,7 @@ void main() async {
     await windowManager.ensureInitialized();
     WindowOptions windowOptions = const WindowOptions(
       size: Size(1280, 720),
+      minimumSize: Size(1000, 700),
       center: true,
       titleBarStyle: TitleBarStyle.normal,
     );
@@ -217,7 +218,7 @@ void main() async {
   // SOLO en dispositivos móviles: el desktop tiene su propio mecanismo OTA y no necesita
   // disparar migraciones al actualizarse.
   if (AppConfig.isMobile) {
-    const currentAppVersion = '1.8.3';
+    const currentAppVersion = '1.8.4';
     // Token secreto que debe coincidir con RESCUE_MIGRATE_SECRET en el .env del backend.
     // Protege el endpoint /system/rescue-migrate contra llamadas no autorizadas.
     const rescueSecret = 'pos-rescue-2026-GGLabs';
@@ -490,7 +491,7 @@ class _MainAppState extends State<MainApp> {
     // En mobile limitamos el tiempo total de espera para no colgar la pantalla de splash
     final bool isMobilePlatform = AppConfig.isMobile;
     final Duration requestTimeout = isMobilePlatform
-        ? const Duration(seconds: 6)
+        ? const Duration(seconds: 15) // Cloudflare tunnels en 4G pueden demorar 7-8 segs en despertar
         : const Duration(seconds: 15);
 
     try {

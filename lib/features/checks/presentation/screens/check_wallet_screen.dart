@@ -259,51 +259,60 @@ class _CheckWalletScreenState extends State<CheckWalletScreen> {
                             ),
                           ),
                           const SizedBox(height: 24),
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: [
-                              FilterChip(
-                                label: const Text('Activos (En Cartera)'),
-                                selected: _activeFilter == 'activos',
-                                onSelected: (val) =>
-                                    setState(() => _activeFilter = 'activos'),
-                                selectedColor: Colors.blue.shade100,
-                              ),
-                              const SizedBox(width: 12),
-                              FilterChip(
-                                label: const Text(
-                                    'Salientes (Depositados/Endosados)'),
-                                selected: _activeFilter == 'salientes',
-                                onSelected: (val) =>
-                                    setState(() => _activeFilter = 'salientes'),
-                                selectedColor: Colors.green.shade100,
-                              ),
-                              const SizedBox(width: 12),
-                              FilterChip(
-                                label: const Text('Conflictos (Rechazados)'),
-                                selected: _activeFilter == 'conflictos',
-                                onSelected: (val) => setState(
-                                    () => _activeFilter = 'conflictos'),
-                                selectedColor: Colors.red.shade100,
-                              ),
-                              const Spacer(),
-                              Container(
-                                constraints:
-                                    const BoxConstraints(maxWidth: 350),
-                                child: TextField(
-                                  decoration: InputDecoration(
-                                    hintText: 'Nro, Firmante o Banco...',
-                                    prefixIcon:
-                                        const Icon(Icons.search, size: 20),
-                                    isDense: true,
-                                    border: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(8)),
-                                  ),
-                                  onChanged: (val) => setState(
-                                      () => _searchQuery = val.toLowerCase()),
+                          SizedBox(
+                            width: double.infinity,
+                            child: Wrap(
+                              alignment: WrapAlignment.spaceBetween,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              spacing: 12,
+                              runSpacing: 12,
+                              children: [
+                                Wrap(
+                                  spacing: 12,
+                                  runSpacing: 12,
+                                  children: [
+                                    FilterChip(
+                                      label: const Text('Activos (En Cartera)'),
+                                      selected: _activeFilter == 'activos',
+                                      onSelected: (val) =>
+                                          setState(() => _activeFilter = 'activos'),
+                                      selectedColor: Colors.blue.shade100,
+                                    ),
+                                    FilterChip(
+                                      label: const Text(
+                                          'Salientes (Depositados/Endosados)'),
+                                      selected: _activeFilter == 'salientes',
+                                      onSelected: (val) =>
+                                          setState(() => _activeFilter = 'salientes'),
+                                      selectedColor: Colors.green.shade100,
+                                    ),
+                                    FilterChip(
+                                      label: const Text('Conflictos (Rechazados)'),
+                                      selected: _activeFilter == 'conflictos',
+                                      onSelected: (val) => setState(
+                                          () => _activeFilter = 'conflictos'),
+                                      selectedColor: Colors.red.shade100,
+                                    ),
+                                  ],
                                 ),
-                              ),
-                            ],
+                                Container(
+                                  constraints:
+                                      const BoxConstraints(maxWidth: 350),
+                                  child: TextField(
+                                    decoration: InputDecoration(
+                                      hintText: 'Nro, Firmante o Banco...',
+                                      prefixIcon:
+                                          const Icon(Icons.search, size: 20),
+                                      isDense: true,
+                                      border: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(8)),
+                                    ),
+                                    onChanged: (val) => setState(
+                                        () => _searchQuery = val.toLowerCase()),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                           const SizedBox(height: 16),
                           // Data Table

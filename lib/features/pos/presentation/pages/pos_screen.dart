@@ -121,10 +121,12 @@ class _PosScreenState extends State<PosScreen> {
       final uri = Uri.parse(currentUrl);
       
       final isSecure = currentUrl.startsWith('https');
-      // Si estamos por Cloudflare (api.midominio.com), buscar el websocket en ws.midominio.com
-      final String pusherHost = uri.host.startsWith('api.') 
-          ? uri.host.replaceFirst('api.', 'ws.') 
-          : uri.host;
+      String pusherHost = uri.host;
+      if (pusherHost.startsWith('api.')) {
+        pusherHost = pusherHost.replaceFirst('api.', 'ws.');
+      } else if (pusherHost.startsWith('api-')) {
+        pusherHost = pusherHost.replaceFirst('api-', 'ws-');
+      }
           
       // Cloudflare rutea WSS por el puerto estándar 443. En red local directa usamos el 8080 de Reverb.
       final int pusherPort = isSecure ? 443 : 8080;
@@ -1788,7 +1790,7 @@ class _PosScreenState extends State<PosScreen> {
                   return Row(
                     children: [
                       SizedBox(
-                        width: constraints.maxWidth * ratio,
+                        width: (constraints.maxWidth * ratio) < 340 ? 340 : (constraints.maxWidth * ratio),
                         child: _buildCartPanel(),
                       ),
                       MouseRegion(
@@ -1798,7 +1800,8 @@ class _PosScreenState extends State<PosScreen> {
                           onPanUpdate: (details) {
                             setState(() {
                               ratio += details.delta.dx / constraints.maxWidth;
-                              if (ratio < 0.20) ratio = 0.20;
+                              double minRatio = 340 / constraints.maxWidth;
+                              if (ratio < minRatio) ratio = minRatio;
                               if (ratio > 0.65) ratio = 0.65;
                             });
                           },
@@ -2092,40 +2095,43 @@ class _PosScreenState extends State<PosScreen> {
                             _CartItemStockIndicator(item: item),
                           ],
                         ),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              icon: const Icon(Icons.remove_circle_outline,
-                                  color: Colors.grey),
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(),
-                              onPressed: () {
-                                if (item.quantity > 1) {
-                                  pos.updateQuantity(item, item.quantity - 1);
-                                } else {
-                                  pos.removeFromCart(item);
-                                }
-                              },
-                            ),
-                            const SizedBox(width: 8),
-                            IconButton(
-                              icon: const Icon(Icons.add_circle_outline,
-                                  color: Colors.blue),
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(),
-                              onPressed: () {
-                                pos.updateQuantity(item, item.quantity + 1);
-                              },
-                            ),
-                            const SizedBox(width: 16),
-                            Text('\$${item.subtotal.toCurrency()}',
-                                style: const TextStyle(fontSize: 16)),
-                            IconButton(
-                              icon: const Icon(Icons.delete, color: Colors.red),
-                              onPressed: () => pos.removeFromCart(item),
-                            )
-                          ],
+                        trailing: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.remove_circle_outline,
+                                    color: Colors.grey),
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(),
+                                onPressed: () {
+                                  if (item.quantity > 1) {
+                                    pos.updateQuantity(item, item.quantity - 1);
+                                  } else {
+                                    pos.removeFromCart(item);
+                                  }
+                                },
+                              ),
+                              const SizedBox(width: 8),
+                              IconButton(
+                                icon: const Icon(Icons.add_circle_outline,
+                                    color: Colors.blue),
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(),
+                                onPressed: () {
+                                  pos.updateQuantity(item, item.quantity + 1);
+                                },
+                              ),
+                              const SizedBox(width: 16),
+                              Text('\$${item.subtotal.toCurrency()}',
+                                  style: const TextStyle(fontSize: 16)),
+                              IconButton(
+                                icon: const Icon(Icons.delete, color: Colors.red),
+                                onPressed: () => pos.removeFromCart(item),
+                              )
+                            ],
+                          ),
                         ),
                         onTap: () {
                           _showEditCartItemModal(item, pos);
@@ -3020,14 +3026,18 @@ class _CartItemStockIndicator extends StatelessWidget {
             size: 10,
           ),
           const SizedBox(width: 4),
-          Text(
-            isCritical
-                ? '🔴 Crítico (Quedan: ${projectedStock.toInt()} u)'
-                : '🟠 Quiebre en <3d',
-            style: TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.bold,
-              color: isCritical ? Colors.red.shade700 : Colors.orange.shade800,
+          Flexible(
+            child: Text(
+              isCritical
+                  ? '🔴 Crítico (Quedan: ${projectedStock.toInt()} u)'
+                  : '🟠 Quiebre en <3d',
+              overflow: TextOverflow.ellipsis,
+              maxLines: 1,
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+                color: isCritical ? Colors.red.shade700 : Colors.orange.shade800,
+              ),
             ),
           ),
         ],

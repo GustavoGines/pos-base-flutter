@@ -27,6 +27,7 @@ class MobileUpdateService {
   ///
   /// Retorna [UpdateInfo] si hay actualización disponible, `null` si está al día.
   static Future<UpdateInfo?> checkForUpdate() async {
+    if (kDebugMode) return null;
     if (!Platform.isAndroid) return null;
 
     try {

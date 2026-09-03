@@ -112,18 +112,37 @@ class _UpdateDialogState extends State<UpdateDialog> {
       final prefs = await SharedPreferences.getInstance();
       String? resolvedBackendPath;
 
-      final configuredBackendPath = prefs.getString('backend_install_path');
-      if (configuredBackendPath != null && configuredBackendPath.isNotEmpty) {
-        resolvedBackendPath = configuredBackendPath;
-        debugPrint('[UpdateDialog] Ruta backend (manual): $resolvedBackendPath');
-      } else {
-        final relPath = p.join(
-          File(Platform.resolvedExecutable).parent.parent.path,
-          'pos-backend',
-        );
-        if (Directory(relPath).existsSync()) {
-          resolvedBackendPath = relPath;
-          debugPrint('[UpdateDialog] Ruta backend (auto-detectada): $resolvedBackendPath');
+      // 1. Intentar obtener la ruta real y absoluta directamente desde el backend (Nueva API 1.8.3)
+      try {
+        final currentApiUrl = prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
+        final response = await http
+            .get(Uri.parse('$currentApiUrl/system/install-path'))
+            .timeout(const Duration(seconds: 4));
+            
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body);
+          resolvedBackendPath = data['backend_path'] as String?;
+          debugPrint('[UpdateDialog] Ruta backend (vía API): $resolvedBackendPath');
+        }
+      } catch (e) {
+        debugPrint('[UpdateDialog] Error consultando API de install-path: $e');
+      }
+
+      // 2. Fallbacks tradicionales si la API falla o estamos offline
+      if (resolvedBackendPath == null || resolvedBackendPath.isEmpty) {
+        final configuredBackendPath = prefs.getString('backend_install_path');
+        if (configuredBackendPath != null && configuredBackendPath.isNotEmpty) {
+          resolvedBackendPath = configuredBackendPath;
+          debugPrint('[UpdateDialog] Ruta backend (manual): $resolvedBackendPath');
+        } else {
+          final relPath = p.join(
+            File(Platform.resolvedExecutable).parent.parent.path,
+            'pos-backend',
+          );
+          if (Directory(relPath).existsSync()) {
+            resolvedBackendPath = relPath;
+            debugPrint('[UpdateDialog] Ruta backend (auto-detectada): $resolvedBackendPath');
+          }
         }
       }
 

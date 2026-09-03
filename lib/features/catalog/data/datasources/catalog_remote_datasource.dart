@@ -59,6 +59,31 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
 
   CatalogRemoteDataSourceImpl({required this.baseUrl, required this.client});
 
+  String _parseApiError(String responseBody, String defaultMsg) {
+    try {
+      final decoded = json.decode(responseBody);
+      if (decoded is Map<String, dynamic>) {
+        if (decoded.containsKey('errors')) {
+          final errors = decoded['errors'] as Map<String, dynamic>;
+          if (errors.isNotEmpty) {
+            final firstError = errors.values.first;
+            if (firstError is List && firstError.isNotEmpty) {
+              final msg = firstError.first.toString();
+              if (msg.contains('validation.unique')) return 'El nombre ya existe.';
+              return msg;
+            }
+          }
+        }
+        if (decoded.containsKey('message')) {
+          final msg = decoded['message'].toString();
+          if (msg.contains('validation.unique')) return 'El nombre ya existe.';
+          return msg;
+        }
+      }
+    } catch (_) {}
+    return defaultMsg;
+  }
+
   @override
   Future<Map<String, dynamic>> fetchProducts({int page = 1, String? search, String? sortBy, String? sortDirection, int? perPage}) async {
     try {
@@ -136,7 +161,7 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
       if (response.statusCode == 201) {
         return BrandModel.fromJson(json.decode(response.body));
       } else {
-        throw Exception('Error al crear marca: ${response.body}');
+        throw Exception(_parseApiError(response.body, 'Error al crear marca.'));
       }
     } catch (e) {
       print('=== API Error en createBrand: $e ===');
@@ -155,7 +180,7 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
       if (response.statusCode == 200) {
         return BrandModel.fromJson(json.decode(response.body));
       } else {
-        throw Exception('Error al actualizar marca: ${response.body}');
+        throw Exception(_parseApiError(response.body, 'Error al actualizar marca.'));
       }
     } catch (e) {
       print('=== API Error en updateBrand: $e ===');
@@ -194,7 +219,7 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
       if (response.statusCode == 201) {
         return CategoryModel.fromJson(json.decode(response.body));
       } else {
-        throw Exception('Error al crear categoría: ${response.body}');
+        throw Exception(_parseApiError(response.body, 'Error al crear categoría.'));
       }
     } catch (e) {
       print('=== API Error en createCategory: $e ===');
@@ -213,7 +238,7 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
       if (response.statusCode == 200) {
         return CategoryModel.fromJson(json.decode(response.body));
       } else {
-        throw Exception('Error al actualizar categoría: ${response.body}');
+        throw Exception(_parseApiError(response.body, 'Error al actualizar categoría.'));
       }
     } catch (e) {
       print('=== API Error en updateCategory: $e ===');
@@ -233,7 +258,7 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
         throw Exception(error['message'] ?? 'No se puede eliminar: tiene productos asociados.');
       }
       if (response.statusCode != 204) {
-        throw Exception('Error al eliminar categoría (Status: ${response.statusCode})');
+        throw Exception('Error al eliminar categorÃ­a (Status: ${response.statusCode})');
       }
     } catch (e) {
       print('=== API Error en deleteCategory: $e ===');
@@ -252,7 +277,7 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
       if (response.statusCode == 201) {
         return ProductModel.fromJson(json.decode(response.body));
       } else {
-        throw Exception('Failed to create product: ${response.body}');
+        throw Exception(_parseApiError(response.body, 'Error al crear producto.'));
       }
     } catch (e) {
       print('=== API Error en createProduct: $e ===');
@@ -271,7 +296,7 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
       if (response.statusCode == 200) {
         return ProductModel.fromJson(json.decode(response.body));
       } else {
-        throw Exception('Failed to update product: ${response.body}');
+        throw Exception(_parseApiError(response.body, 'Error al actualizar producto.'));
       }
     } catch (e) {
       print('=== API Error en updateProduct: $e ===');
@@ -399,7 +424,7 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
       if (response.statusCode == 200) {
         return json.decode(response.body) as Map<String, dynamic>;
       } else {
-        throw Exception('Error al previsualizar la actualización de precios: ${response.body}');
+        throw Exception('Error al previsualizar la actualizaciÃ³n de precios: ${response.body}');
       }
     } catch (e) {
       print('=== API Error en bulkPricePreview: $e ===');
@@ -421,7 +446,7 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
     final response = await client.post(Uri.parse('$baseUrl/catalog/bulk-price-history/$historyId/revert'));
     if (response.statusCode == 200) {
       final data = json.decode(response.body);
-      return data['message'] ?? 'Revertido con éxito';
+      return data['message'] ?? 'Revertido con Ã©xito';
     }
     throw Exception('Error al revertir el aumento de precios: ${response.body}');
   }
@@ -469,7 +494,7 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
         final List<dynamic> jsonList = json.decode(response.body);
         return jsonList.map((j) => ProductModel.fromJson(j)).toList();
       } else {
-        throw Exception('Error al cargar alertas críticas (${response.statusCode})');
+        throw Exception('Error al cargar alertas crÃ­ticas (${response.statusCode})');
       }
     } catch (e) {
       print('=== API Error en fetchCriticalAlerts: $e ===');
@@ -496,3 +521,5 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
     }
   }
 }
+
+

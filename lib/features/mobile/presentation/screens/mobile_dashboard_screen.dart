@@ -37,10 +37,12 @@ class _MobileDashboardScreenState extends State<MobileDashboardScreen> {
       final uri = Uri.parse(currentUrl);
       
       final isSecure = currentUrl.startsWith('https');
-      // Si estamos por Cloudflare (api.midominio.com), buscar el websocket en ws.midominio.com
-      final String pusherHost = uri.host.startsWith('api.') 
-          ? uri.host.replaceFirst('api.', 'ws.') 
-          : uri.host;
+      String pusherHost = uri.host;
+      if (pusherHost.startsWith('api.')) {
+        pusherHost = pusherHost.replaceFirst('api.', 'ws.');
+      } else if (pusherHost.startsWith('api-')) {
+        pusherHost = pusherHost.replaceFirst('api-', 'ws-');
+      }
           
       // Cloudflare rutea WSS por el puerto 443. En red local directa usamos el 8080 de Reverb.
       final int pusherPort = isSecure ? 443 : 8080;
