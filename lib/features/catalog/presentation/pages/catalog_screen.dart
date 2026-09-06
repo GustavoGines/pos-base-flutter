@@ -12,6 +12,9 @@ import '../widgets/brands_manager_dialog.dart';
 import '../widgets/print_labels_dialog.dart';
 import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
+import 'package:dart_pusher_channels/dart_pusher_channels.dart';
+import 'dart:convert';
+import 'package:frontend_desktop/core/config/app_config.dart';
 
 class CatalogScreen extends StatefulWidget {
   const CatalogScreen({super.key});
@@ -167,6 +170,14 @@ class _CatalogScreenState extends State<CatalogScreen> {
                           ),
                           const SizedBox(width: 12),
                         ],
+                        IconButton(
+                          icon: const Icon(Icons.refresh, color: Colors.blue),
+                          tooltip: 'Recargar Catálogo',
+                          onPressed: () {
+                            provider.loadProducts();
+                          },
+                        ),
+                        const SizedBox(width: 8),
                         OutlinedButton.icon(
                           icon: const Icon(Icons.label_outline, size: 18),
                           label: const Text('Categorías'),
@@ -746,6 +757,8 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
   int? _brandId;
   late TextEditingController _expiryCtrl;
 
+  PusherChannelsClient? _pusher;
+
   bool get _isEditing => widget.product != null;
 
   @override
@@ -781,10 +794,67 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     _expiryCtrl = TextEditingController(
       text: p?.vencimientoDias != null ? p!.vencimientoDias.toString() : '',
     );
+    _initPusher();
+  }
+
+  Future<void> _initPusher() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final terminalId = prefs.getString('pos_terminal_id') ?? 'caja-1';
+      final currentUrl = prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
+      final uri = Uri.parse(currentUrl);
+      
+      final isSecure = currentUrl.startsWith('https');
+      String pusherHost = uri.host;
+      if (pusherHost.startsWith('api.')) {
+        pusherHost = pusherHost.replaceFirst('api.', 'ws.');
+      } else if (pusherHost.startsWith('api-')) {
+        pusherHost = pusherHost.replaceFirst('api-', 'ws-');
+      }
+          
+      final int pusherPort = isSecure ? 443 : 8080;
+      
+      final options = PusherChannelsOptions.fromHost(
+        scheme: isSecure ? 'wss' : 'ws',
+        host: pusherHost,
+        port: pusherPort,
+        key: 'kz786cdfeldnzispymxq',
+      );
+
+      _pusher = PusherChannelsClient.websocket(
+        options: options,
+        connectionErrorHandler: (error, trace, refresh) {},
+      );
+
+      _pusher!.onConnectionEstablished.listen((_) {
+        final scanChannel = _pusher!.publicChannel('pos.scans.$terminalId');
+        scanChannel.subscribe();
+        scanChannel.bind('App\\Events\\MobileScanned').listen((event) {
+          try {
+            if (event.data == null) return;
+            final data = jsonDecode(event.data.toString());
+            final barcode = data['barcode'];
+            if (mounted && barcode != null && ModalRoute.of(context)?.isCurrent == true) {
+              setState(() {
+                _barcodeCtrl.text = barcode;
+              });
+              SnackBarService.success(context, 'Código escaneado: $barcode');
+            }
+          } catch (e) {
+            debugPrint("Error parsing MobileScanned event: $e");
+          }
+        });
+      });
+
+      await _pusher!.connect();
+    } catch (e) {
+      debugPrint("Error inicializando Pusher en formulario: $e");
+    }
   }
 
   @override
   void dispose() {
+    _pusher?.disconnect();
     _costCtrl.removeListener(_onCostOrMarginChanged);
     _marginCtrl.removeListener(_onCostOrMarginChanged);
     _priceCtrl.removeListener(_onPriceChanged);

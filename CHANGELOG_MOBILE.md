@@ -1,5 +1,11 @@
-ï»¿# Changelog - POS Movil (Android)
+# Changelog - POS Movil (Android)
 Todos los cambios notables de la aplicacion movil de Android estan documentados aqui.
+
+
+## [1.8.5] - 2026-09-06
+### Agregado
+- Formulario nivelado con todos los campos de la PC en la creación y edición de productos.
+- Función de escanear productos y mandarlos directo al formulario de la PC para rellenado ultra rápido.
 
 ## [1.8.4] - 2026-09-03
 ### Gran Actualizacion (Mejoras desde v1.4.4)

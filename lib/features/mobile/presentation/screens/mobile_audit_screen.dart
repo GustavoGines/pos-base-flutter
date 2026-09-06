@@ -241,13 +241,17 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
     final marginCtrl = TextEditingController();
     final priceCtrl = TextEditingController(text: productToEdit != null ? productToEdit.sellingPrice.toInt().toString() : '');
     final stockCtrl = TextEditingController(text: productToEdit != null ? (productToEdit.stock % 1 == 0 ? productToEdit.stock.toInt().toString() : productToEdit.stock.toString()) : '');
+    final minStockCtrl = TextEditingController(text: productToEdit?.minStock?.toString() ?? '');
     final vencimientoCtrl = TextEditingController(text: productToEdit?.vencimientoDias?.toString() ?? '');
     final addStockCtrl = TextEditingController();
+    final internalCodeCtrl = TextEditingController(text: productToEdit?.internalCode ?? '');
 
     bool isSaving = false;
-      int? selectedCategoryId = productToEdit?.category?.id;
+    int? selectedCategoryId = productToEdit?.category?.id;
     int? selectedBrandId = productToEdit?.brand?.id;
     bool isSoldByWeight = productToEdit?.isSoldByWeight ?? false;
+    bool isActive = productToEdit?.active ?? true;
+    String unitType = productToEdit?.unitType ?? 'un';
 
     if (productToEdit != null && productToEdit.costPrice > 0) {
       marginCtrl.text = (((productToEdit.sellingPrice - productToEdit.costPrice) / productToEdit.costPrice) * 100).toInt().toString();
@@ -346,6 +350,11 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                           },
                         ),
                       ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: internalCodeCtrl,
+                      decoration: const InputDecoration(labelText: 'Código Interno', isDense: true, border: OutlineInputBorder()),
                     ),
                     const SizedBox(height: 12),
                     Row(
@@ -476,6 +485,40 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                       ],
                     ),
                     const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          flex: 1,
+                          child: TextField(
+                            controller: minStockCtrl,
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            decoration: const InputDecoration(labelText: 'Stock Mínimo', isDense: true, border: OutlineInputBorder()),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          flex: 1,
+                          child: DropdownButtonFormField<String>(
+                            // ignore: deprecated_member_use
+                            value: unitType,
+                            isExpanded: true,
+                            decoration: const InputDecoration(labelText: 'Unidad', isDense: true, border: OutlineInputBorder()),
+                            items: const [
+                              DropdownMenuItem(value: 'un', child: Text('Unidades')),
+                              DropdownMenuItem(value: 'kg', child: Text('Kilogramos')),
+                              DropdownMenuItem(value: 'lt', child: Text('Litros')),
+                              DropdownMenuItem(value: 'm', child: Text('Metros')),
+                            ],
+                            onChanged: (val) {
+                              if (val != null) {
+                                setStateDialog(() => unitType = val);
+                              }
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
                     TextField(
                       controller: vencimientoCtrl,
                       keyboardType: TextInputType.number,
@@ -486,6 +529,12 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                       title: const Text('Se vende por peso (Balanza)'),
                       value: isSoldByWeight,
                       onChanged: (val) => setStateDialog(() => isSoldByWeight = val),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                    SwitchListTile(
+                      title: const Text('Activo (Visible en Catálogo)'),
+                      value: isActive,
+                      onChanged: (val) => setStateDialog(() => isActive = val),
                       contentPadding: EdgeInsets.zero,
                     ),
                   ],
@@ -506,6 +555,7 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                           final stock = double.tryParse(stockCtrl.text) ?? 0.0;
                           final addStock = double.tryParse(addStockCtrl.text);
                           final vencimientoDias = int.tryParse(vencimientoCtrl.text);
+                          final minStock = double.tryParse(minStockCtrl.text);
 
                           if (name.isEmpty) {
                             SnackBarService.error(context, 'El nombre es obligatorio');
@@ -519,17 +569,22 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                             final payload = {
                               'name': name,
                               'barcode': barcodeCtrl.text.trim().isEmpty ? null : barcodeCtrl.text.trim(),
+                              'internal_code': internalCodeCtrl.text.trim().isEmpty ? null : internalCodeCtrl.text.trim(),
                               'cost_price': cost,
                               'selling_price': price,
                               'stock': stock,
                               'category_id': selectedCategoryId,
                               'brand_id': selectedBrandId,
                               'is_sold_by_weight': isSoldByWeight,
-                              'unit_type': isSoldByWeight ? 'kg' : 'un',
+                              'unit_type': isSoldByWeight ? 'kg' : unitType,
+                              'active': isActive,
                             };
 
                             if (addStock != null && addStock > 0) {
                               payload['add_stock'] = addStock;
+                            }
+                            if (minStock != null) {
+                              payload['min_stock'] = minStock;
                             }
                             if (vencimientoDias != null) {
                               payload['vencimiento_dias'] = vencimientoDias;

@@ -1,5 +1,12 @@
-ï»¿# Changelog - Sistema POS (Frontend)
+# Changelog - Sistema POS (Frontend)
 Todos los cambios notables de la aplicacion de caja (Flutter/Windows) estan documentados aqui.
+
+
+## [1.8.5] - 2026-09-06
+### Agregado
+- Botón de refresco manual en el catálogo.
+- Soporte para escanear códigos de barras desde el móvil hacia el formulario de producto de PC en tiempo real.
+- Formulario móvil nivelado con todos los campos de la PC.
 
 ## [1.8.4] - 2026-09-03
 ### Gran Actualizacion (Mejoras desde v1.4.4)

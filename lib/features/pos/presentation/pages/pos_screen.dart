@@ -152,7 +152,7 @@ class _PosScreenState extends State<PosScreen> {
             if (event.data == null) return;
             final data = jsonDecode(event.data.toString());
             final barcode = data['barcode'];
-            if (mounted && barcode != null) {
+            if (mounted && barcode != null && ModalRoute.of(context)?.isCurrent == true) {
               _searchController.text = barcode;
               _onProductScannedOrSearched(barcode);
             }
