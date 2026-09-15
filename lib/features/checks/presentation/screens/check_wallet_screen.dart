@@ -15,6 +15,9 @@ class CheckWalletScreen extends StatefulWidget {
 class _CheckWalletScreenState extends State<CheckWalletScreen> {
   String _activeFilter = 'activos'; // activos, salientes, conflictos
   String _searchQuery = '';
+  
+  final ScrollController _horizontalScrollController = ScrollController();
+  final ScrollController _verticalScrollController = ScrollController();
 
   @override
   void initState() {
@@ -22,6 +25,13 @@ class _CheckWalletScreenState extends State<CheckWalletScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<CheckProvider>().loadChecks();
     });
+  }
+
+  @override
+  void dispose() {
+    _horizontalScrollController.dispose();
+    _verticalScrollController.dispose();
+    super.dispose();
   }
 
   void _updateStatus(int checkId, String status, {String? note}) {
@@ -361,14 +371,23 @@ class _CheckWalletScreenState extends State<CheckWalletScreen> {
                                       borderRadius: BorderRadius.circular(12)),
                                   child: LayoutBuilder(
                                     builder: (context, constraints) {
-                                      return SingleChildScrollView(
-                                        scrollDirection: Axis.vertical,
+                                      return Scrollbar(
+                                        controller: _verticalScrollController,
+                                        thumbVisibility: true,
                                         child: SingleChildScrollView(
-                                          scrollDirection: Axis.horizontal,
-                                          child: ConstrainedBox(
-                                            constraints: BoxConstraints(
-                                                minWidth: constraints.maxWidth),
-                                            child: DataTable(
+                                          controller: _verticalScrollController,
+                                          scrollDirection: Axis.vertical,
+                                          child: Scrollbar(
+                                            controller: _horizontalScrollController,
+                                            thumbVisibility: true,
+                                            notificationPredicate: (notif) => notif.depth == 0,
+                                            child: SingleChildScrollView(
+                                              controller: _horizontalScrollController,
+                                              scrollDirection: Axis.horizontal,
+                                              child: ConstrainedBox(
+                                                constraints: BoxConstraints(
+                                                    minWidth: constraints.maxWidth),
+                                                child: DataTable(
                                               columns: const [
                                                 DataColumn(
                                                     label: Text('Banco',
@@ -587,17 +606,19 @@ class _CheckWalletScreenState extends State<CheckWalletScreen> {
                                                   ],
                                                 );
                                               }).toList(),
-                                            ),
-                                          ),
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                );
-                              },
-                            ),
-                          ),
-                        ],
+                                            ), // DataTable
+                                          ), // ConstrainedBox
+                                        ), // SingleChildScrollView (horizontal)
+                                      ), // Scrollbar (horizontal)
+                                    ), // SingleChildScrollView (vertical)
+                                  ); // Scrollbar (vertical)
+                                },
+                              ), // LayoutBuilder
+                            ); // Card
+                          },
+                        ), // Builder
+                      ), // Expanded
+                    ],
                       ),
                     ),
                   ),
