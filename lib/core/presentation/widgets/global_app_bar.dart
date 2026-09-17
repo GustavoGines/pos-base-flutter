@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:frontend_desktop/features/auth/presentation/widgets/admin_pin_dialog.dart';
 import 'package:frontend_desktop/core/presentation/widgets/shared_user_menu.dart';
 import 'package:provider/provider.dart';
@@ -155,7 +155,7 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                                   icon: Icons.account_balance_outlined,
                                   isCompact: isCompact,
                                   isIconOnly: isIconOnly,
-                                  isActive: ['/cuentas-corrientes', '/quotes', '/reports', '/checks'].contains(currentRoute),
+                                  isActive: ['/cuentas-corrientes', '/quotes', '/reports', '/checks', '/suppliers'].contains(currentRoute),
                                   activeColor: Colors.orange.shade700,
                                   menuChildren: [
                                     if (canAccessQuotes)
@@ -194,6 +194,13 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                                         'Gestión y visualización de cartera',
                                         'Alertas de vencimiento y cobro',
                                       ],
+                                    ),
+                                    _buildMenuItem(
+                                      context: context,
+                                      label: 'Gestión de Proveedores',
+                                      icon: Icons.local_shipping_outlined,
+                                      color: Colors.brown.shade600,
+                                      route: '/suppliers',
                                     ),
                                     _buildMenuItem(
                                       context: context,

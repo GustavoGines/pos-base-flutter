@@ -1,6 +1,7 @@
 import '../../domain/entities/product.dart';
 import 'category_model.dart';
 import 'brand_model.dart';
+import 'package:frontend_desktop/features/suppliers/models/supplier_model.dart';
 
 class ProductModel extends Product {
   ProductModel({
@@ -24,6 +25,7 @@ class ProductModel extends Product {
     super.unitType,
     CategoryModel? super.category,
     BrandModel? super.brand,
+    super.supplier,
   });
 
   @override
@@ -48,6 +50,7 @@ class ProductModel extends Product {
     String? unitType,
     covariant CategoryModel? category,
     covariant BrandModel? brand,
+    covariant dynamic supplier,
   }) {
     return ProductModel(
       id: id ?? this.id,
@@ -68,8 +71,9 @@ class ProductModel extends Product {
       salesCount: salesCount ?? this.salesCount,
       vencimientoDias: vencimientoDias ?? this.vencimientoDias,
       unitType: unitType ?? this.unitType,
-      category: category ?? (this.category as CategoryModel?),
-      brand: brand ?? (this.brand as BrandModel?),
+      category: category ?? this.category as CategoryModel?,
+      brand: brand ?? this.brand as BrandModel?,
+      supplier: supplier ?? this.supplier,
     );
   }
 
@@ -132,6 +136,9 @@ class ProductModel extends Product {
           : null,
       brand: json['brand'] != null && json['brand'] is Map<String, dynamic>
           ? BrandModel.fromJson(json['brand'] as Map<String, dynamic>)
+          : null,
+      supplier: json['supplier'] != null && json['supplier'] is Map<String, dynamic>
+          ? Supplier.fromJson(json['supplier'] as Map<String, dynamic>)
           : null,
     );
   }

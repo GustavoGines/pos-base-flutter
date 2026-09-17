@@ -15,6 +15,8 @@ import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
 import 'package:dart_pusher_channels/dart_pusher_channels.dart';
 import 'dart:convert';
 import 'package:frontend_desktop/core/config/app_config.dart';
+import '../../../suppliers/providers/supplier_provider.dart';
+import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
 
 class CatalogScreen extends StatefulWidget {
   const CatalogScreen({super.key});
@@ -137,6 +139,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                                 case 4: showDialog(context: context, builder: (_) => PrintLabelsDialog(products: _selectedProducts.values.toList())); break;
                                 case 5: _confirmBulkDelete(provider); break;
                                 case 6: setState(() => _selectedProducts.clear()); break;
+                                case 7: _bulkUpdateSupplier(provider); break;
                               }
                             },
                             child: Container(
@@ -162,6 +165,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                               const PopupMenuItem(value: 2, child: Row(children: [Icon(Icons.power_settings_new, color: Colors.teal, size: 20), SizedBox(width: 12), Text('Cambiar Estado')])),
                               const PopupMenuItem(value: 3, child: Row(children: [Icon(Icons.trending_up, color: Colors.deepOrange, size: 20), SizedBox(width: 12), Text('Actualizar Precios')])),
                               const PopupMenuItem(value: 4, child: Row(children: [Icon(Icons.print_outlined, color: Colors.deepPurple, size: 20), SizedBox(width: 12), Text('Imprimir Etiquetas')])),
+                              const PopupMenuItem(value: 7, child: Row(children: [Icon(Icons.local_shipping_outlined, color: Colors.brown, size: 20), SizedBox(width: 12), Text('Asignar Proveedor')])),
                               const PopupMenuDivider(),
                               const PopupMenuItem(value: 5, child: Row(children: [Icon(Icons.delete_outline, color: Colors.red, size: 20), SizedBox(width: 12), Text('Eliminar Todo')])),
                               const PopupMenuDivider(),
@@ -327,6 +331,8 @@ class _CatalogScreenState extends State<CatalogScreen> {
   }
 
   Widget _buildProductsTable(List<Product> products, CatalogProvider provider) {
+    final canSeeSupplier = context.read<SettingsProvider>().settings?.licensePlanType != 'basic';
+
     // Responsive flex values para que quepan en pantalla chica
     const int fCheck = 1;
     const int fId = 1;
@@ -335,6 +341,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
     const int fInterno = 2;
     const int fCat = 3;
     const int fBrand = 3;
+    const int fProv = 3;
     const int fCosto = 2;
     const int fVenta = 2;
     const int fStock = 2;
@@ -419,6 +426,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
               sortHeader(fInterno, 'Cód. Interno', 'internal_code'),
               sortHeader(fCat, 'Categoría', 'category_id'),
               sortHeader(fBrand, 'Marca', 'brand_id'),
+              if (canSeeSupplier) sortHeader(fProv, 'Proveedor', 'supplier_id'),
               sortHeader(fCosto, 'Costo', 'cost_price'),
               sortHeader(fVenta, 'Venta', 'selling_price'),
 
@@ -431,10 +439,24 @@ class _CatalogScreenState extends State<CatalogScreen> {
           ),
         );
 
-    Widget productRow(Product p, int index) => Container(
+    Widget productRow(Product p, int index) => Material(
           color: _selectedProducts.containsKey(p.id) ? Colors.blue.shade50 : (index.isOdd ? Colors.grey.shade50 : Colors.white),
-          child: Row(
-            children: [
+          child: InkWell(
+            onTap: () {
+              if (_selectedProducts.isNotEmpty) {
+                setState(() {
+                  if (_selectedProducts.containsKey(p.id)) {
+                    _selectedProducts.remove(p.id);
+                  } else {
+                    _selectedProducts[p.id] = p;
+                  }
+                });
+              } else {
+                _showProductForm(context, provider, product: p);
+              }
+            },
+            child: Row(
+              children: [
               cell(
                 fCheck,
                 Checkbox(
@@ -466,6 +488,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                       child: Text(p.brand!.name, style: TextStyle(fontSize: 11, color: Colors.indigo.shade700, fontWeight: FontWeight.w500), overflow: TextOverflow.ellipsis),
                     )
                   : Text('—', style: TextStyle(color: Colors.grey.shade400, fontSize: 13))),
+              if (canSeeSupplier) cell(fProv, Text(p.supplier?.name ?? '—', overflow: TextOverflow.ellipsis)),
               cell(fCosto, Text('\$${p.costPrice.toCurrency()}', overflow: TextOverflow.ellipsis)),
               cell(fVenta, Text('\$${p.sellingPrice.toCurrency()}', style: const TextStyle(fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis)),
 
@@ -543,7 +566,8 @@ class _CatalogScreenState extends State<CatalogScreen> {
               )),
             ],
           ),
-        );
+        ),
+      );
 
     return Column(
       children: [
@@ -656,6 +680,68 @@ class _CatalogScreenState extends State<CatalogScreen> {
     }
   }
 
+  Future<void> _bulkUpdateSupplier(CatalogProvider provider) async {
+    final auth = await AdminPinDialog.verify(context, action: 'Asignar Proveedor en Lote', permissionKey: 'manage_catalog');
+    if (!auth) return;
+
+    // Precargar proveedores
+    if (mounted) {
+      await context.read<SupplierProvider>().fetchSuppliers();
+    }
+
+    if (!mounted) return;
+    
+    final supplierProv = context.read<SupplierProvider>();
+
+    int? newSupplier = await showDialog<int?>(
+      context: context,
+      builder: (ctx) {
+        int? selected;
+        return AlertDialog(
+          title: const Text('Asignar Proveedor'),
+          content: supplierProv.isLoading 
+            ? const SizedBox(height: 50, child: Center(child: CircularProgressIndicator()))
+            : DropdownButtonFormField<int?>(
+            decoration: const InputDecoration(labelText: 'Elige el nuevo proveedor', border: OutlineInputBorder()),
+            items: [
+              const DropdownMenuItem(value: -1, child: Text('— Sin Proveedor —')),
+              ...supplierProv.suppliers.map((s) => DropdownMenuItem(value: s.id, child: Text(s.name))),
+            ],
+            onChanged: (val) => selected = val,
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: Colors.brown.shade600),
+              onPressed: () {
+                 if (selected == null) {
+                    SnackBarService.error(ctx, 'Selecciona un proveedor o "Sin Proveedor"');
+                    return;
+                 }
+                 Navigator.pop(ctx, selected);
+              }, 
+              child: const Text('Asignar')
+            ),
+          ],
+        );
+      },
+    );
+
+    if (newSupplier != null && mounted) {
+      final clear = newSupplier == -1;
+      final finalSup = clear ? null : newSupplier;
+      final msg = await provider.bulkUpdateProducts(_selectedProducts.keys.toList(), supplierId: finalSup, clearSupplier: clear);
+      if (mounted) {
+        if (msg != null) {
+          SnackBarService.success(context, msg);
+          setState(() => _selectedProducts.clear());
+        } else {
+          SnackBarService.error(context, provider.errorMessage ?? 'Error al asignar proveedor');
+        }
+      }
+    }
+  }
+
   Future<void> _bulkToggleActive(CatalogProvider provider) async {
     final auth = await AdminPinDialog.verify(context, action: 'Cambiar Estado por Lote', permissionKey: 'manage_catalog');
     if (!auth) return;
@@ -755,6 +841,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
   String _unitType = 'un';
   int? _categoryId;
   int? _brandId;
+  int? _supplierId;
   late TextEditingController _expiryCtrl;
 
   PusherChannelsClient? _pusher;
@@ -791,6 +878,14 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     _unitType = p?.unitType ?? 'un';
     _categoryId = p?.category?.id;
     _brandId = p?.brand?.id;
+    _supplierId = p?.supplier?.id;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final canSeeSupplier = context.read<SettingsProvider>().settings?.licensePlanType != 'basic';
+      if (canSeeSupplier && context.read<SupplierProvider>().suppliers.isEmpty) {
+        context.read<SupplierProvider>().fetchSuppliers();
+      }
+    });
     _expiryCtrl = TextEditingController(
       text: p?.vencimientoDias != null ? p!.vencimientoDias.toString() : '',
     );
@@ -953,6 +1048,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
       'active': _active,
       if (_categoryId != null) 'category_id': _categoryId,
       if (_brandId != null) 'brand_id': _brandId,
+      'supplier_id': _supplierId,
       if (_expiryCtrl.text.trim().isNotEmpty)
         'vencimiento_dias': int.parse(_expiryCtrl.text.trim()),
     };
@@ -981,13 +1077,18 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     // se reconstruya automáticamente cuando el provider notifica cambios
     // (ej: cuando se crea una categoría/marca nueva desde el diálogo rápido).
     final provider = context.watch<CatalogProvider>();
+    final supplierProv = context.watch<SupplierProvider>();
+    final isPremium = context.watch<SettingsProvider>().settings?.licensePlanType != 'basic';
+    
     final categories = provider.categories;
     final brands = provider.brands;
+    final suppliers = supplierProv.suppliers;
+
     return AlertDialog(
       title: Text(_isEditing ? 'Editar Producto' : 'Nuevo Producto'),
       contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
       content: SizedBox(
-        width: 480,
+        width: 600,
         child: Form(
           key: _formKey,
           child: SingleChildScrollView(
@@ -1033,136 +1134,147 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                   ],
                 ),
                 const SizedBox(height: 12),
-                // Categoría + quick-create
+                // Categoría y Marca en la misma fila para optimizar espacio
                 Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // Categoría
                     Expanded(
-                      child: DropdownButtonFormField<int?>(
-                        // ignore: deprecated_member_use
-                        value: _categoryId,
-                        decoration: const InputDecoration(labelText: 'Categoría', prefixIcon: Icon(Icons.category_outlined)),
-                        items: [
-                          const DropdownMenuItem<int?>(value: null, child: Text('— Sin categoría —')),
-                          ...categories.map((c) => DropdownMenuItem<int?>(value: c.id, child: Text(c.name))),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: DropdownButtonFormField<int?>(
+                              // ignore: deprecated_member_use
+                              value: categories.any((c) => c.id == _categoryId) ? _categoryId : null,
+                              decoration: const InputDecoration(labelText: 'Categoría', prefixIcon: Icon(Icons.category_outlined)),
+                              items: [
+                                const DropdownMenuItem<int?>(value: null, child: Text('— Sin categoría —')),
+                                ...categories.map((c) => DropdownMenuItem<int?>(value: c.id, child: Text(c.name))),
+                              ],
+                              onChanged: (val) => setState(() => _categoryId = val),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Tooltip(
+                            message: 'Crear categoría',
+                            child: IconButton.filledTonal(
+                              icon: const Icon(Icons.add),
+                              onPressed: () async {
+                                final nameCtrl = TextEditingController();
+                                final createdId = await showDialog<int?>(
+                                  context: context,
+                                  builder: (ctx) => AlertDialog(
+                                    title: const Text('Nueva Categoría'),
+                                    content: TextField(
+                                      controller: nameCtrl,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Nombre',
+                                        border: OutlineInputBorder(),
+                                        prefixIcon: Icon(Icons.label_outline),
+                                      ),
+                                      autofocus: true,
+                                    ),
+                                    actions: [
+                                      TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+                                      Consumer<CatalogProvider>(
+                                        builder: (_, p, __) => FilledButton(
+                                          onPressed: p.isLoading
+                                            ? null
+                                            : () async {
+                                                if (nameCtrl.text.trim().isEmpty) return;
+                                                final newId = await p.createCategory(nameCtrl.text.trim());
+                                                if (newId != null && ctx.mounted) Navigator.pop(ctx, newId);
+                                            },
+                                          child: const Text('Crear'),
+                                        )
+                                      ),
+                                    ],
+                                  ),
+                                );
+                                if (createdId != null && mounted) setState(() => _categoryId = createdId);
+                              },
+                            ),
+                          ),
                         ],
-                        onChanged: (val) => setState(() => _categoryId = val),
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    Tooltip(
-                      message: 'Crear nueva categoría rápida',
-                      child: IconButton.filledTonal(
-                        icon: const Icon(Icons.add),
-                        onPressed: () async {
-                          final nameCtrl = TextEditingController();
-                          final createdId = await showDialog<int?>(
-                            context: context,
-                            builder: (ctx) => AlertDialog(
-                              title: const Text('Nueva Categoría'),
-                              content: TextField(
-                                controller: nameCtrl,
-                                decoration: const InputDecoration(
-                                  labelText: 'Nombre de la categoría',
-                                  border: OutlineInputBorder(),
-                                  prefixIcon: Icon(Icons.label_outline),
-                                ),
-                                autofocus: true,
-                              ),
-                              actions: [
-                                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
-                                Consumer<CatalogProvider>(
-                                  builder: (_, p, __) => FilledButton(
-                                    onPressed: p.isLoading
-                                      ? null
-                                      : () async {
-                                          if (nameCtrl.text.trim().isEmpty) return;
-                                          final newId = await p.createCategory(nameCtrl.text.trim());
-                                          if (newId != null && ctx.mounted) {
-                                            Navigator.pop(ctx, newId);
-                                          } else if (ctx.mounted) {
-                                            SnackBarService.error(ctx, p.errorMessage ?? 'Error al crear');
-                                          }
-                                      },
-                                    child: const Text('Crear'),
-                                  )
-                                ),
+                    const SizedBox(width: 16),
+                    // Marca
+                    Expanded(
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: DropdownButtonFormField<int?>(
+                              // ignore: deprecated_member_use
+                              value: brands.any((b) => b.id == _brandId) ? _brandId : null,
+                              decoration: const InputDecoration(labelText: 'Marca', prefixIcon: Icon(Icons.branding_watermark_outlined)),
+                              items: [
+                                const DropdownMenuItem<int?>(value: null, child: Text('— Sin marca —')),
+                                ...brands.map((b) => DropdownMenuItem<int?>(value: b.id, child: Text(b.name))),
                               ],
+                              onChanged: (val) => setState(() => _brandId = val),
                             ),
-                          );
-                          if (createdId != null && mounted) {
-                            setState(() => _categoryId = createdId);
-                          }
-                        },
+                          ),
+                          const SizedBox(width: 8),
+                          Tooltip(
+                            message: 'Crear marca',
+                            child: IconButton.filledTonal(
+                              icon: const Icon(Icons.add),
+                              onPressed: () async {
+                                final nameCtrl = TextEditingController();
+                                final createdId = await showDialog<int?>(
+                                  context: context,
+                                  builder: (ctx) => AlertDialog(
+                                    title: const Text('Nueva Marca'),
+                                    content: TextField(
+                                      controller: nameCtrl,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Nombre',
+                                        border: OutlineInputBorder(),
+                                        prefixIcon: Icon(Icons.branding_watermark_outlined),
+                                      ),
+                                      autofocus: true,
+                                    ),
+                                    actions: [
+                                      TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+                                      Consumer<CatalogProvider>(
+                                        builder: (_, p, __) => FilledButton(
+                                          onPressed: p.isLoading
+                                            ? null
+                                            : () async {
+                                                if (nameCtrl.text.trim().isEmpty) return;
+                                                final newId = await p.createBrand(nameCtrl.text.trim());
+                                                if (newId != null && ctx.mounted) Navigator.pop(ctx, newId);
+                                            },
+                                          child: const Text('Crear'),
+                                        )
+                                      ),
+                                    ],
+                                  ),
+                                );
+                                if (createdId != null && mounted) setState(() => _brandId = createdId);
+                              },
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 12),
-                // Marca + quick-create
-                Row(
-                  children: [
-                    Expanded(
-                      child: DropdownButtonFormField<int?>(
-                        // ignore: deprecated_member_use
-                        value: _brandId,
-                        decoration: const InputDecoration(labelText: 'Marca', prefixIcon: Icon(Icons.branding_watermark_outlined)),
-                        items: [
-                          const DropdownMenuItem<int?>(value: null, child: Text('— Sin marca —')),
-                          ...brands.map((b) => DropdownMenuItem<int?>(value: b.id, child: Text(b.name))),
-                        ],
-                        onChanged: (val) => setState(() => _brandId = val),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Tooltip(
-                      message: 'Crear nueva marca rápida',
-                      child: IconButton.filledTonal(
-                        icon: const Icon(Icons.add),
-                        onPressed: () async {
-                          final nameCtrl = TextEditingController();
-                          final createdId = await showDialog<int?>(
-                            context: context,
-                            builder: (ctx) => AlertDialog(
-                              title: const Text('Nueva Marca'),
-                              content: TextField(
-                                controller: nameCtrl,
-                                decoration: const InputDecoration(
-                                  labelText: 'Nombre de la marca',
-                                  border: OutlineInputBorder(),
-                                  prefixIcon: Icon(Icons.branding_watermark_outlined),
-                                ),
-                                autofocus: true,
-                              ),
-                              actions: [
-                                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
-                                Consumer<CatalogProvider>(
-                                  builder: (_, p, __) => FilledButton(
-                                    onPressed: p.isLoading
-                                      ? null
-                                      : () async {
-                                          if (nameCtrl.text.trim().isEmpty) return;
-                                          final newId = await p.createBrand(nameCtrl.text.trim());
-                                          if (newId != null && ctx.mounted) {
-                                            Navigator.pop(ctx, newId);
-                                          } else if (ctx.mounted) {
-                                            SnackBarService.error(ctx, p.errorMessage ?? 'Error al crear marca');
-                                          }
-                                      },
-                                    child: const Text('Crear'),
-                                  )
-                                ),
-                              ],
-                            ),
-                          );
-                          if (createdId != null && mounted) {
-                            setState(() => _brandId = createdId);
-                          }
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
+                if (isPremium) ...[
+                  DropdownButtonFormField<int?>(
+                    // ignore: deprecated_member_use
+                    value: suppliers.any((s) => s.id == _supplierId) ? _supplierId : null,
+                    decoration: const InputDecoration(labelText: 'Proveedor', prefixIcon: Icon(Icons.local_shipping_outlined)),
+                    items: [
+                      const DropdownMenuItem<int?>(value: null, child: Text('— Sin proveedor —')),
+                      ...suppliers.map((s) => DropdownMenuItem<int?>(value: s.id, child: Text(s.name))),
+                    ],
+                    onChanged: (val) => setState(() => _supplierId = val),
+                  ),
+                  const SizedBox(height: 12),
+                ],
                 Row(
                   children: [
                     // Precio Costo — oculto en Combos (el costo se deriva de sus componentes)
@@ -1286,20 +1398,30 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                   ],
                 ),
                 const SizedBox(height: 8),
-                SwitchListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Producto activo (Visible en POS)'),
-                  value: _active,
-                  onChanged: (v) => setState(() => _active = v),
-                ),
-                SwitchListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Es un Combo / Receta (Armado dinámico)'),
-                  subtitle: const Text('No maneja stock activo propio, descuenta de sus ingredientes.'),
-                  value: _isCombo,
-                  onChanged: (v) => setState(() => _isCombo = v),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: SwitchListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Activo (Visible en POS)'),
+                        value: _active,
+                        onChanged: (v) => setState(() => _active = v),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: SwitchListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Es Combo / Receta'),
+                        subtitle: const Text('No maneja stock propio, usa ingredientes', style: TextStyle(fontSize: 11)),
+                        value: _isCombo,
+                        onChanged: (v) => setState(() => _isCombo = v),
+                      ),
+                    ),
+                  ],
                 ),
                 AnimatedSize(
                   duration: const Duration(milliseconds: 300),

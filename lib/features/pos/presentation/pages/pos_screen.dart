@@ -2485,6 +2485,26 @@ class _PosScreenState extends State<PosScreen> {
                     ],
                   ),
                 ),
+                Consumer<CatalogProvider>(
+                  builder: (context, catalog, child) {
+                    if (catalog.isLoading) {
+                      return const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 16.0),
+                        child: SizedBox(
+                          width: 20, 
+                          height: 20, 
+                          child: CircularProgressIndicator(strokeWidth: 2)
+                        ),
+                      );
+                    }
+                    return IconButton(
+                      icon: const Icon(Icons.refresh, color: Colors.grey),
+                      tooltip: 'Actualizar catálogo',
+                      onPressed: () => context.read<CatalogProvider>().loadProducts(),
+                    );
+                  }
+                ),
+                const SizedBox(width: 8),
                 _buildViewModeSelector(context),
               ],
             ),

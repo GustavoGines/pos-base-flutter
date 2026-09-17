@@ -20,7 +20,7 @@ abstract class CatalogRepository {
   Future<Product> updateProduct(int id, Map<String, dynamic> productData);
   Future<void> deleteProduct(int id);
   Future<Map<String, dynamic>> bulkDeleteProducts(List<int> ids);
-  Future<Map<String, dynamic>> bulkUpdateProducts(List<int> ids, {int? categoryId, bool? active});
+  Future<Map<String, dynamic>> bulkUpdateProducts(List<int> ids, {int? categoryId, bool? active, int? supplierId, bool clearSupplier = false});
   Future<Map<String, dynamic>> bulkPriceUpdate({
     required double percentage,
     required String roundingRule,

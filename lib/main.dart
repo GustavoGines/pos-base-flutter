@@ -57,6 +57,10 @@ import 'features/updater/presentation/widgets/ota_result_dialog.dart';
 import 'features/updater/data/services/update_service.dart';
 import 'features/updater/presentation/widgets/update_dialog.dart';
 
+// Proveedores
+import 'features/suppliers/presentation/screens/suppliers_screen.dart';
+import 'features/suppliers/providers/supplier_provider.dart';
+
 // Repositories & DataSources
 import 'features/reports/data/datasources/reports_remote_datasource.dart';
 import 'features/settings/data/datasources/settings_remote_datasource.dart';
@@ -391,6 +395,10 @@ void main() async {
         ),
         ChangeNotifierProvider(
           create: (_) => CheckProvider(repository: checkRepo),
+          lazy: true,
+        ),
+        ChangeNotifierProvider(
+          create: (_) => SupplierProvider(baseUrl: apiUrl, client: httpClient),
           lazy: true,
         ),
       ],
@@ -995,6 +1003,8 @@ class _MainAppState extends State<MainApp> {
         '/reports': (context) => const ReportsScreen(),
         // [logistics]
         '/delivery-notes': (context) => const LogisticsDashboardScreen(),
+        // [suppliers]
+        '/suppliers': (context) => const SuppliersScreen(),
         // [mobile]
         '/mobile-scanner': (context) => const MobileScannerScreen(),
         '/mobile-audit': (context) => const MobileAuditScreen(),

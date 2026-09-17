@@ -243,12 +243,12 @@ class CatalogProvider with ChangeNotifier {
     }
   }
 
-  Future<String?> bulkUpdateProducts(List<int> ids, {int? categoryId, bool? active}) async {
+  Future<String?> bulkUpdateProducts(List<int> ids, {int? categoryId, bool? active, int? supplierId, bool clearSupplier = false}) async {
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
     try {
-      final result = await repository.bulkUpdateProducts(ids, categoryId: categoryId, active: active);
+      final result = await repository.bulkUpdateProducts(ids, categoryId: categoryId, active: active, supplierId: supplierId, clearSupplier: clearSupplier);
       await loadProducts(page: _currentPage);
       return result['message'] as String?;
     } catch (e) {

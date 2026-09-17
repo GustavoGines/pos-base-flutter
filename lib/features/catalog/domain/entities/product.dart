@@ -1,5 +1,6 @@
 import 'category.dart';
 import 'brand.dart';
+import 'package:frontend_desktop/features/suppliers/models/supplier_model.dart';
 
 class Product {
   final int id;
@@ -23,6 +24,7 @@ class Product {
   final String unitType;
   final Category? category;
   final Brand? brand;
+  final Supplier? supplier;
 
   Product({
     required this.id,
@@ -45,6 +47,7 @@ class Product {
     this.unitType = 'un',
     this.category,
     this.brand,
+    this.supplier,
   });
   Product copyWith({
     int? id,
@@ -67,6 +70,7 @@ class Product {
     String? unitType,
     Category? category,
     Brand? brand,
+    Supplier? supplier,
   }) {
     return Product(
       id: id ?? this.id,
@@ -89,6 +93,7 @@ class Product {
       unitType: unitType ?? this.unitType,
       category: category ?? this.category,
       brand: brand ?? this.brand,
+      supplier: supplier ?? this.supplier,
     );
   }
 

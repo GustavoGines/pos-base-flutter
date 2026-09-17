@@ -123,8 +123,8 @@ class _PaymentDialogState extends State<PaymentDialog> {
     return _lines.fold(0.0, (sum, line) {
       final clean = line.amountCtrl.text
           .replaceAll(r'$', '')
-          .replaceAll('.', '')
           .replaceAll(' ', '')
+          .replaceAll(',', '.') // Convert comma to dot for parsing
           .trim();
       return sum + (double.tryParse(clean) ?? 0.0);
     });
@@ -148,8 +148,8 @@ class _PaymentDialogState extends State<PaymentDialog> {
     for (var line in _lines) {
       final cleanAmount = line.amountCtrl.text
           .replaceAll(r'$', '')
-          .replaceAll('.', '')
           .replaceAll(' ', '')
+          .replaceAll(',', '.') // Convert comma to dot for parsing
           .trim();
       final amount = double.tryParse(cleanAmount) ?? 0.0;
       if (amount <= 0) continue;
