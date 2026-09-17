@@ -122,13 +122,13 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                                     isIconOnly: isIconOnly,
                                   ),
 
-                                // 2. Gestión (Ventas + Catálogo)
+                                // 2. Gestión (Ventas, Presupuestos, Catálogo, Proveedores)
                                 _NavDropdownGroup(
                                   label: 'Gestión',
                                   icon: Icons.dashboard_customize_outlined,
                                   isCompact: isCompact,
                                   isIconOnly: isIconOnly,
-                                  isActive: ['/sales-history', '/catalog'].contains(currentRoute),
+                                  isActive: ['/sales-history', '/catalog', '/quotes', '/suppliers'].contains(currentRoute),
                                   activeColor: Colors.blueAccent,
                                   menuChildren: [
                                     _buildMenuItem(
@@ -139,26 +139,6 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                                       route: '/sales-history',
                                       permissionKey: 'view_global_history',
                                     ),
-                                    _buildMenuItem(
-                                      context: context,
-                                      label: 'Catálogo de Productos',
-                                      icon: Icons.inventory_2_outlined,
-                                      color: Colors.deepPurple,
-                                      route: '/catalog',
-                                      permissionKey: 'manage_catalog',
-                                    ),
-                                  ],
-                                ),
-
-                                // 3. Finanzas (Ctas Ctes, Presupuestos, Reportes)
-                                _NavDropdownGroup(
-                                  label: 'Finanzas',
-                                  icon: Icons.account_balance_outlined,
-                                  isCompact: isCompact,
-                                  isIconOnly: isIconOnly,
-                                  isActive: ['/cuentas-corrientes', '/quotes', '/reports', '/checks', '/suppliers'].contains(currentRoute),
-                                  activeColor: Colors.orange.shade700,
-                                  menuChildren: [
                                     if (canAccessQuotes)
                                       _buildMenuItem(
                                         context: context,
@@ -167,6 +147,39 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                                         color: Colors.indigo.shade700,
                                         route: '/quotes',
                                       ),
+                                    _buildMenuItem(
+                                      context: context,
+                                      label: 'Catálogo de Productos',
+                                      icon: Icons.inventory_2_outlined,
+                                      color: Colors.deepPurple,
+                                      route: '/catalog',
+                                      permissionKey: 'manage_catalog',
+                                    ),
+                                    _buildMenuItem(
+                                      context: context,
+                                      label: 'Proveedores',
+                                      icon: canAccessSuppliers ? Icons.local_shipping_outlined : Icons.lock_outline,
+                                      color: Colors.brown.shade600,
+                                      route: '/suppliers',
+                                      isLocked: !canAccessSuppliers,
+                                      lockedTitle: 'Proveedores PREMIUM',
+                                      lockedFeatures: [
+                                        'Catálogo ilimitado de proveedores',
+                                        'Control de deudas y saldos por proveedor',
+                                      ],
+                                    ),
+                                  ],
+                                ),
+
+                                // 3. Finanzas (Ctas Ctes, Cheques, Gastos, Reportes)
+                                _NavDropdownGroup(
+                                  label: 'Finanzas',
+                                  icon: Icons.account_balance_outlined,
+                                  isCompact: isCompact,
+                                  isIconOnly: isIconOnly,
+                                  isActive: ['/cuentas-corrientes', '/reports', '/checks'].contains(currentRoute),
+                                  activeColor: Colors.orange.shade700,
+                                  menuChildren: [
                                     _buildMenuItem(
                                       context: context,
                                       label: 'Cuentas Corrientes',
@@ -196,19 +209,7 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                                         'Alertas de vencimiento y cobro',
                                       ],
                                     ),
-                                    _buildMenuItem(
-                                      context: context,
-                                      label: 'Gestión de Proveedores',
-                                      icon: canAccessSuppliers ? Icons.local_shipping_outlined : Icons.lock_outline,
-                                      color: Colors.brown.shade600,
-                                      route: '/suppliers',
-                                      isLocked: !canAccessSuppliers,
-                                      lockedTitle: 'Proveedores PREMIUM',
-                                      lockedFeatures: [
-                                        'Catálogo ilimitado de proveedores',
-                                        'Control de deudas y saldos por proveedor',
-                                      ],
-                                    ),
+                                    // Espacio reservado: Gastos / Caja Chica se inyectará aquí en la Fase 3
                                     _buildMenuItem(
                                       context: context,
                                       label: 'Reportes Gerenciales',

@@ -6,7 +6,7 @@ class SupplierFormDialog extends StatefulWidget {
   final int? supplierId;
   final Map<String, dynamic>? initialData;
 
-  const SupplierFormDialog({Key? key, this.supplierId, this.initialData}) : super(key: key);
+  const SupplierFormDialog({super.key, this.supplierId, this.initialData});
 
   @override
   State<SupplierFormDialog> createState() => _SupplierFormDialogState();
@@ -138,7 +138,7 @@ class _SupplierFormDialogState extends State<SupplierFormDialog> {
                     Expanded(
                       flex: 3,
                       child: DropdownButtonFormField<String>(
-                        value: _taxCategory,
+                        initialValue: _taxCategory,
                         decoration: const InputDecoration(labelText: 'Condición IVA'),
                         items: _taxCategories.map((cat) => DropdownMenuItem(value: cat, child: Text(cat))).toList(),
                         onChanged: (val) {
