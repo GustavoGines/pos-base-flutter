@@ -92,14 +92,14 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
                   child: SizedBox(
                     width: 20,
                     height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.blue),
                   ),
                 ),
               );
             }
             return IconButton(
               tooltip: 'Actualizar base de datos',
-              icon: const Icon(Icons.refresh, color: Colors.white),
+              icon: const Icon(Icons.refresh, color: Colors.blueGrey),
               onPressed: () {
                 provider.fetchSuppliers(search: _searchController.text.trim());
               },

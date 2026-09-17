@@ -205,14 +205,14 @@ class _QuotesListScreenState extends State<QuotesListScreen>
                   child: SizedBox(
                     width: 20,
                     height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.blue),
                   ),
                 ),
               );
             }
             return IconButton(
               tooltip: 'Actualizar presupuestos',
-              icon: const Icon(Icons.refresh, color: Colors.white),
+              icon: const Icon(Icons.refresh, color: Colors.blueGrey),
               onPressed: () {
                 provider.loadQuotes();
               },
