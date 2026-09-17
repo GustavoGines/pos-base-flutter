@@ -101,6 +101,7 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                         final bool canAccessQuotes = settings.features.quotes;
                         final bool canAccessCurrentAccounts = settings.features.currentAccounts;
                         final bool canAccessChecks = settings.features.checks;
+                        final bool canAccessSuppliers = settings.settings?.licensePlanType != 'basic';
 
                         return Center(
                           child: SingleChildScrollView(
@@ -198,9 +199,15 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                                     _buildMenuItem(
                                       context: context,
                                       label: 'Gestión de Proveedores',
-                                      icon: Icons.local_shipping_outlined,
+                                      icon: canAccessSuppliers ? Icons.local_shipping_outlined : Icons.lock_outline,
                                       color: Colors.brown.shade600,
                                       route: '/suppliers',
+                                      isLocked: !canAccessSuppliers,
+                                      lockedTitle: 'Proveedores PREMIUM',
+                                      lockedFeatures: [
+                                        'Base de datos B2B ilimitada',
+                                        'Gestión de deuda y cuentas corrientes',
+                                      ],
                                     ),
                                     _buildMenuItem(
                                       context: context,
