@@ -13,6 +13,7 @@ class FeatureFlags extends Equatable {
   final bool checks;
   final bool mobileApp;
   final bool remoteAccess;
+  final bool suppliers;
 
   const FeatureFlags({
     this.fastPos = false,
@@ -27,6 +28,7 @@ class FeatureFlags extends Equatable {
     this.checks = false,
     this.mobileApp = false,
     this.remoteAccess = false,
+    this.suppliers = false,
   });
 
   @override
@@ -43,6 +45,7 @@ class FeatureFlags extends Equatable {
         checks,
         mobileApp,
         remoteAccess,
+        suppliers,
       ];
 }
 
@@ -93,6 +96,7 @@ class BusinessSettings extends Equatable {
     if (features.checks) list.add('checks');
     if (features.mobileApp) list.add('mobile_app');
     if (features.remoteAccess) list.add('remote_access');
+    if (features.suppliers) list.add('suppliers');
     return list;
   }
 

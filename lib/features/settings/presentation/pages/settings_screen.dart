@@ -224,6 +224,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       'predictive_alerts': '🧠 Alertas Inteligentes (Logística Predictiva)',
       'logistics': '🚚 Logística y Remitos',
       'checks': '💵 Gestión de Cheques',
+      'mobile_app': '📱 App Móvil (Inventario y Ventas)',
+      'remote_access': '🌐 Acceso Remoto (Cloudflare / Internet)',
+      'suppliers': '📦 Gestión de Proveedores (B2B)',
     };
     return dictionary[featureCode] ?? featureCode.toUpperCase();
   }

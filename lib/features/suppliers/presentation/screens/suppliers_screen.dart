@@ -84,71 +84,85 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
         currentRoute: '/suppliers',
         title: 'Gestión de Proveedores',
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _openForm(),
-        icon: const Icon(Icons.add),
-        label: const Text('Nuevo Proveedor'),
-      ),
       body: Column(
         children: [
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 24.0),
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 600),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _searchController,
-                        decoration: InputDecoration(
-                          hintText: 'Buscar por nombre o CUIT...',
-                          prefixIcon: const Icon(Icons.search, color: Colors.grey),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(color: Colors.grey.shade300),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                // Izquierda: Buscador y Refresh
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 500),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _searchController,
+                          decoration: InputDecoration(
+                            hintText: 'Buscar por nombre o CUIT...',
+                            prefixIcon: const Icon(Icons.search, color: Colors.grey),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(color: Colors.grey.shade300),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(color: Colors.grey.shade300),
+                            ),
+                            filled: true,
+                            fillColor: Colors.white,
+                            contentPadding: const EdgeInsets.symmetric(vertical: 0),
                           ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(color: Colors.grey.shade300),
-                          ),
-                          filled: true,
-                          fillColor: Colors.white,
-                          contentPadding: const EdgeInsets.symmetric(vertical: 0),
+                          onChanged: (val) {
+                            if (_debounce?.isActive ?? false) _debounce!.cancel();
+                            _debounce = Timer(const Duration(milliseconds: 400), () {
+                              context.read<SupplierProvider>().setSearchQuery(val);
+                            });
+                          },
                         ),
-                        onChanged: (val) {
-                          if (_debounce?.isActive ?? false) _debounce!.cancel();
-                          _debounce = Timer(const Duration(milliseconds: 400), () {
-                            context.read<SupplierProvider>().setSearchQuery(val);
-                          });
+                      ),
+                      const SizedBox(width: 8),
+                      Consumer<SupplierProvider>(
+                        builder: (context, provider, child) {
+                          if (provider.isLoading) {
+                            return const Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 12.0),
+                              child: SizedBox(
+                                width: 24,
+                                height: 24,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.brown),
+                              ),
+                            );
+                          }
+                          return IconButton(
+                            tooltip: 'Actualizar base de datos',
+                            icon: const Icon(Icons.refresh, color: Colors.brown),
+                            onPressed: () {
+                              provider.fetchSuppliers(search: _searchController.text.trim());
+                            },
+                          );
                         },
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Consumer<SupplierProvider>(
-                      builder: (context, provider, child) {
-                        if (provider.isLoading) {
-                          return const Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 12.0),
-                            child: SizedBox(
-                              width: 24,
-                              height: 24,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.brown),
-                            ),
-                          );
-                        }
-                        return IconButton(
-                          tooltip: 'Actualizar base de datos',
-                          icon: const Icon(Icons.refresh, color: Colors.brown),
-                          onPressed: () {
-                            provider.fetchSuppliers(search: _searchController.text.trim());
-                          },
-                        );
-                      },
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
+                // Derecha: Botón Nuevo Proveedor
+                ElevatedButton.icon(
+                  onPressed: () => _openForm(),
+                  icon: const Icon(Icons.add),
+                  label: const Text('Nuevo Proveedor'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue.shade700,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
           Expanded(

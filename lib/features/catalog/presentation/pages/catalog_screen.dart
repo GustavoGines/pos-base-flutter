@@ -331,7 +331,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
   }
 
   Widget _buildProductsTable(List<Product> products, CatalogProvider provider) {
-    final canSeeSupplier = context.read<SettingsProvider>().settings?.licensePlanType != 'basic';
+    final canSeeSupplier = context.read<SettingsProvider>().features.suppliers;
 
     // Responsive flex values para que quepan en pantalla chica
     const int fCheck = 1;
@@ -881,7 +881,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     _supplierId = p?.supplier?.id;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final canSeeSupplier = context.read<SettingsProvider>().settings?.licensePlanType != 'basic';
+      final canSeeSupplier = context.read<SettingsProvider>().features.suppliers;
       if (canSeeSupplier && context.read<SupplierProvider>().suppliers.isEmpty) {
         context.read<SupplierProvider>().fetchSuppliers();
       }
@@ -1078,7 +1078,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     // (ej: cuando se crea una categoría/marca nueva desde el diálogo rápido).
     final provider = context.watch<CatalogProvider>();
     final supplierProv = context.watch<SupplierProvider>();
-    final isPremium = context.watch<SettingsProvider>().settings?.licensePlanType != 'basic';
+    final canSeeSupplier = context.watch<SettingsProvider>().features.suppliers;
     
     final categories = provider.categories;
     final brands = provider.brands;
@@ -1262,7 +1262,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                   ],
                 ),
                 const SizedBox(height: 12),
-                if (isPremium) ...[
+                if (canSeeSupplier) ...[
                   DropdownButtonFormField<int?>(
                     // ignore: deprecated_member_use
                     value: suppliers.any((s) => s.id == _supplierId) ? _supplierId : null,

@@ -101,7 +101,7 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                         final bool canAccessQuotes = settings.features.quotes;
                         final bool canAccessCurrentAccounts = settings.features.currentAccounts;
                         final bool canAccessChecks = settings.features.checks;
-                        final bool canAccessSuppliers = settings.settings?.licensePlanType != 'basic';
+                        final bool canAccessSuppliers = settings.features.suppliers;
 
                         return Center(
                           child: SingleChildScrollView(
