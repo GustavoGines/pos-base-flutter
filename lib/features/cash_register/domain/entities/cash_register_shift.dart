@@ -20,6 +20,11 @@ class CashRegisterShift {
   final double? ccSales;
   final int? ccSalesCount;
   final String status;
+  
+  // Egresos e Ingresos Extra
+  final double? totalExpenses;
+  final double? totalWithdrawals;
+  final double? totalDeposits;
 
   // Relaciones
   final String? userName;
@@ -49,6 +54,9 @@ class CashRegisterShift {
     this.checkDetails,
     this.ccSales,
     this.ccSalesCount,
+    this.totalExpenses,
+    this.totalWithdrawals,
+    this.totalDeposits,
     this.userName,
     this.cashRegisterName,
     this.closedByUserId,

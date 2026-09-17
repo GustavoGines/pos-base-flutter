@@ -97,6 +97,8 @@ class _TrashScreenState extends State<TrashScreen> {
                     ),
                     _buildNavTile(provider, 'Clientes', 'customers', Icons.people_outline),
                     _buildNavTile(provider, 'Productos', 'products', Icons.inventory_2_outlined),
+                    _buildNavTile(provider, 'Proveedores', 'suppliers', Icons.local_shipping_outlined),
+                    _buildNavTile(provider, 'Gastos / Movs', 'cash_movements', Icons.account_balance_wallet_outlined),
                   ],
                 ),
               ),
@@ -132,13 +134,16 @@ class _TrashScreenState extends State<TrashScreen> {
                               ),
                               child: ListTile(
                                 contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-                                leading: CircleAvatar(
-                                  backgroundColor: Colors.red.shade50,
-                                  child: Icon(
-                                    provider.currentType == 'customers' ? Icons.person : Icons.inventory_2, 
-                                    color: Colors.red.shade300
-                                  )
-                                ),
+                                  leading: CircleAvatar(
+                                    backgroundColor: Colors.red.shade50,
+                                    child: Icon(
+                                      provider.currentType == 'customers' ? Icons.person : 
+                                      provider.currentType == 'products' ? Icons.inventory_2 :
+                                      provider.currentType == 'suppliers' ? Icons.local_shipping :
+                                      Icons.account_balance_wallet,
+                                      color: Colors.red.shade300
+                                    )
+                                  ),
                                 title: Text(item.title, style: const TextStyle(fontWeight: FontWeight.bold)),
                                 subtitle: Text('${item.subtitle} • Eliminado el: ${item.deletedAt.day}/${item.deletedAt.month}/${item.deletedAt.year}', style: TextStyle(color: Colors.grey.shade600)),
                                 trailing: Row(

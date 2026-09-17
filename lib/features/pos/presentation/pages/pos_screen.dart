@@ -18,6 +18,7 @@ import '../widgets/checkout_dialog.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
+import '../../cash_movements/presentation/widgets/movement_form_dialog.dart' as frontend_desktop_cash_movements_dialog;
 import 'package:flutter_libserialport/flutter_libserialport.dart';
 import 'package:frontend_desktop/features/quotes/presentation/providers/quote_provider.dart';
 import 'package:frontend_desktop/features/reports/presentation/providers/inventory_alerts_provider.dart';
@@ -1658,6 +1659,22 @@ class _PosScreenState extends State<PosScreen> {
         extraAction: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
+            TextButton.icon(
+              onPressed: () {
+                showDialog(
+                  context: context,
+                  barrierDismissible: false,
+                  builder: (context) => const frontend_desktop_cash_movements_dialog.MovementFormDialog(),
+                );
+              },
+              icon: const Icon(Icons.account_balance_wallet, color: Colors.white),
+              label: const Text('Movimiento', style: TextStyle(color: Colors.white)),
+              style: TextButton.styleFrom(
+                backgroundColor: Colors.white.withOpacity(0.1),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+            ),
+            const SizedBox(width: 12),
             Consumer<PosProvider>(
               builder: (ctx, pos, _) {
                 final count = pos.pendingCount;

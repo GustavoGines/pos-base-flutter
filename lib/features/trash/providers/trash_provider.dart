@@ -16,12 +16,24 @@ class TrashItem {
   });
 
   factory TrashItem.fromJson(Map<String, dynamic> json, String type) {
+    String title = json['name'] ?? 'Sin nombre';
+    String subtitle = '';
+
+    if (type == 'customers') {
+      subtitle = 'DNI: ${json['document_number'] ?? '-'}';
+    } else if (type == 'products') {
+      subtitle = 'Cód: ${json['barcode'] ?? json['internal_code'] ?? '-'}';
+    } else if (type == 'suppliers') {
+      subtitle = 'CUIT: ${json['cuit'] ?? '-'}';
+    } else if (type == 'cash_movements') {
+      title = '${json['category']} (\$${json['amount']})';
+      subtitle = json['description'] ?? 'Movimiento de caja';
+    }
+
     return TrashItem(
       id: json['id'],
-      title: json['name'] ?? 'Sin nombre',
-      subtitle: type == 'customers' 
-          ? 'DNI: ${json['document_number'] ?? '-'}' 
-          : 'Cód: ${json['barcode'] ?? json['internal_code'] ?? '-'}',
+      title: title,
+      subtitle: subtitle,
       deletedAt: DateTime.parse(json['deleted_at']).toLocal(),
     );
   }

@@ -124,6 +124,9 @@ class CashShiftSummaryScreen extends StatelessWidget {
                   const Divider(),
                   _buildRow('Fondo Inicial', '\$${closedShift.openingBalance.toCurrency()}'),
                   _buildRow('Ventas en Efectivo', '\$${(closedShift.cashSales ?? 0).toCurrency()}'),
+                  _buildRow('Ingresos Extra', '\$${(closedShift.totalDeposits ?? 0).toCurrency()}'),
+                  _buildRow('Gastos (Salida)', '-\$${(closedShift.totalExpenses ?? 0).toCurrency()}', isRed: true),
+                  _buildRow('Retiros de Dueño (Salida)', '-\$${(closedShift.totalWithdrawals ?? 0).toCurrency()}', isRed: true),
                   _buildRow('Ventas con Tarjeta', '\$${(closedShift.cardSales ?? 0).toCurrency()}'),
                   _buildRow('Ventas por Transf.', '\$${(closedShift.transferSales ?? 0).toCurrency()}'),
                   _buildRow('Total Recargos (Tarj/Billeteras)', '\$${(closedShift.totalSurcharge ?? 0).toCurrency()}'),
@@ -197,14 +200,14 @@ class CashShiftSummaryScreen extends StatelessWidget {
     ));
   }
 
-  Widget _buildRow(String label, String value, {bool bold = false}) {
+  Widget _buildRow(String label, String value, {bool bold = false, bool isRed = false}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: TextStyle(fontSize: 16, color: Colors.black87, fontWeight: bold ? FontWeight.bold : FontWeight.w500)),
-          Text(value, style: TextStyle(fontSize: 16, color: Colors.black, fontWeight: bold ? FontWeight.w900 : FontWeight.w700)),
+          Text(label, style: TextStyle(fontSize: 16, color: isRed ? Colors.red.shade700 : Colors.black87, fontWeight: bold ? FontWeight.bold : FontWeight.w500)),
+          Text(value, style: TextStyle(fontSize: 16, color: isRed ? Colors.red.shade900 : Colors.black, fontWeight: bold ? FontWeight.w900 : FontWeight.w700)),
         ],
       ),
     );

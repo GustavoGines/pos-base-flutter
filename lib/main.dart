@@ -61,6 +61,10 @@ import 'features/updater/presentation/widgets/update_dialog.dart';
 import 'features/suppliers/presentation/screens/suppliers_screen.dart';
 import 'features/suppliers/providers/supplier_provider.dart';
 
+// Movimientos de Caja
+import 'features/cash_movements/presentation/screens/cash_movements_screen.dart';
+import 'features/cash_movements/providers/cash_movement_provider.dart';
+
 // Repositories & DataSources
 import 'features/reports/data/datasources/reports_remote_datasource.dart';
 import 'features/settings/data/datasources/settings_remote_datasource.dart';
@@ -399,6 +403,10 @@ void main() async {
         ),
         ChangeNotifierProvider(
           create: (_) => SupplierProvider(baseUrl: apiUrl, client: httpClient),
+          lazy: true,
+        ),
+        ChangeNotifierProvider(
+          create: (_) => CashMovementProvider(baseUrl: apiUrl, client: httpClient),
           lazy: true,
         ),
       ],
