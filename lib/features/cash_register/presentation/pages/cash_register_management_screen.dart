@@ -208,15 +208,37 @@ class _CashRegisterManagementScreenState extends State<CashRegisterManagementScr
                             Text('${registers.length} terminales enlazadas en esta red.', style: const TextStyle(color: Colors.grey)),
                           ],
                         ),
-                        FilledButton.icon(
-                          onPressed: () => _showCreateEditModal(),
-                          icon: const Icon(Icons.add),
-                          label: const Text('Nueva Caja'),
-                          style: FilledButton.styleFrom(
-                            backgroundColor: Colors.indigo.shade600,
-                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                          ),
+                        Row(
+                          children: [
+                            if (provider.isLoading)
+                              const Padding(
+                                padding: EdgeInsets.symmetric(horizontal: 16.0),
+                                child: SizedBox(
+                                  width: 24,
+                                  height: 24,
+                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.indigo),
+                                ),
+                              )
+                            else
+                              IconButton(
+                                tooltip: 'Actualizar terminales',
+                                icon: const Icon(Icons.refresh, color: Colors.indigo),
+                                onPressed: () {
+                                  provider.loadRegisters();
+                                },
+                              ),
+                            const SizedBox(width: 8),
+                            FilledButton.icon(
+                              onPressed: () => _showCreateEditModal(),
+                              icon: const Icon(Icons.add),
+                              label: const Text('Nueva Caja'),
+                              style: FilledButton.styleFrom(
+                                backgroundColor: Colors.indigo.shade600,
+                                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),

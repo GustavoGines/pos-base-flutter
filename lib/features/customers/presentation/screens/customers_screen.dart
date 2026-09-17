@@ -131,6 +131,28 @@ class _CustomersScreenState extends State<CustomersScreen> {
                             ),
                           ),
                           const SizedBox(width: 8),
+                          Consumer<CustomerProvider>(
+                            builder: (context, provider, child) {
+                              if (provider.isLoading) {
+                                return const Padding(
+                                  padding: EdgeInsets.symmetric(horizontal: 12.0),
+                                  child: SizedBox(
+                                    width: 24,
+                                    height: 24,
+                                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.blue),
+                                  ),
+                                );
+                              }
+                              return IconButton(
+                                tooltip: 'Actualizar lista',
+                                icon: const Icon(Icons.refresh, color: Colors.blueGrey),
+                                onPressed: () {
+                                  // As the TextField handles the state in onChanged, we can just call fetchCustomers
+                                  provider.fetchCustomers(search: provider.searchQuery);
+                                },
+                              );
+                            },
+                          ),
                           Tooltip(
                             message: 'Nuevo Cliente',
                             child: IconButton.filled(

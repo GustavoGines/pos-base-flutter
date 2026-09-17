@@ -305,20 +305,43 @@ class _CheckWalletScreenState extends State<CheckWalletScreen> {
                                     ),
                                   ],
                                 ),
-                                Container(
-                                  constraints:
-                                      const BoxConstraints(maxWidth: 350),
-                                  child: TextField(
-                                    decoration: InputDecoration(
-                                      hintText: 'Nro, Firmante o Banco...',
-                                      prefixIcon:
-                                          const Icon(Icons.search, size: 20),
-                                      isDense: true,
-                                      border: OutlineInputBorder(
-                                          borderRadius: BorderRadius.circular(8)),
-                                    ),
-                                    onChanged: (val) => setState(
-                                        () => _searchQuery = val.toLowerCase()),
+                                ConstrainedBox(
+                                  constraints: const BoxConstraints(maxWidth: 400),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Expanded(
+                                        child: TextField(
+                                          decoration: InputDecoration(
+                                            hintText: 'Nro, Firmante o Banco...',
+                                            prefixIcon: const Icon(Icons.search, size: 20),
+                                            isDense: true,
+                                            border: OutlineInputBorder(
+                                                borderRadius: BorderRadius.circular(8)),
+                                          ),
+                                          onChanged: (val) => setState(
+                                              () => _searchQuery = val.toLowerCase()),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      if (provider.isLoading)
+                                        const Padding(
+                                          padding: EdgeInsets.symmetric(horizontal: 12.0),
+                                          child: SizedBox(
+                                            width: 20,
+                                            height: 20,
+                                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.green),
+                                          ),
+                                        )
+                                      else
+                                        IconButton(
+                                          tooltip: 'Actualizar cartera',
+                                          icon: const Icon(Icons.refresh, color: Colors.green),
+                                          onPressed: () {
+                                            provider.loadChecks();
+                                          },
+                                        ),
+                                    ],
                                   ),
                                 ),
                               ],

@@ -269,6 +269,23 @@ class _FiltersPanel extends StatelessWidget {
                   letterSpacing: 1.5,
                 ),
               ),
+              const Spacer(),
+              if (provider.isLoading)
+                const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.blueGrey),
+                )
+              else
+                IconButton(
+                  tooltip: 'Actualizar ventas',
+                  icon: const Icon(Icons.refresh, color: Colors.blueGrey, size: 20),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  onPressed: () {
+                    onPeriodChanged(provider.currentPeriod);
+                  },
+                ),
             ],
           ),
           const SizedBox(height: 12),
