@@ -205,8 +205,8 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                                       isLocked: !canAccessSuppliers,
                                       lockedTitle: 'Proveedores PREMIUM',
                                       lockedFeatures: [
-                                        'Base de datos B2B ilimitada',
-                                        'Gestión de deuda y cuentas corrientes',
+                                        'Catálogo ilimitado de proveedores',
+                                        'Control de deudas y saldos por proveedor',
                                       ],
                                     ),
                                     _buildMenuItem(
