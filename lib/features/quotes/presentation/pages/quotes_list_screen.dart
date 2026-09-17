@@ -193,9 +193,32 @@ class _QuotesListScreenState extends State<QuotesListScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.grey.shade50,
-      appBar: const GlobalAppBar(
+      appBar: GlobalAppBar(
         currentRoute: '/quotes',
         title: 'Historial de Presupuestos',
+        extraAction: Consumer<QuoteProvider>(
+          builder: (context, provider, child) {
+            if (provider.isLoading) {
+              return const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16.0),
+                child: Center(
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                  ),
+                ),
+              );
+            }
+            return IconButton(
+              tooltip: 'Actualizar presupuestos',
+              icon: const Icon(Icons.refresh, color: Colors.white),
+              onPressed: () {
+                provider.loadQuotes();
+              },
+            );
+          },
+        ),
       ),
       body: Column(
         children: [
