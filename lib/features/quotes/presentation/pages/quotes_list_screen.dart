@@ -193,32 +193,9 @@ class _QuotesListScreenState extends State<QuotesListScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.grey.shade50,
-      appBar: GlobalAppBar(
+      appBar: const GlobalAppBar(
         currentRoute: '/quotes',
         title: 'Historial de Presupuestos',
-        extraAction: Consumer<QuoteProvider>(
-          builder: (context, provider, child) {
-            if (provider.isLoading) {
-              return const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 16.0),
-                child: Center(
-                  child: SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.blue),
-                  ),
-                ),
-              );
-            }
-            return IconButton(
-              tooltip: 'Actualizar presupuestos',
-              icon: const Icon(Icons.refresh, color: Colors.blueGrey),
-              onPressed: () {
-                provider.loadQuotes();
-              },
-            );
-          },
-        ),
       ),
       body: Column(
         children: [
@@ -348,6 +325,26 @@ class _QuotesListScreenState extends State<QuotesListScreen>
                         unselectedLabelStyle: const TextStyle(fontSize: 15),
                       ),
                     ),
+
+                    // Botón refresh
+                    if (provider.isLoading)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 12.0),
+                        child: SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.indigo),
+                        ),
+                      )
+                    else
+                      IconButton(
+                        tooltip: 'Actualizar presupuestos',
+                        icon: const Icon(Icons.refresh, color: Colors.indigo),
+                        onPressed: () {
+                          provider.loadQuotes();
+                        },
+                      ),
+                    const SizedBox(width: 8),
 
                     // Botón nuevo
                     FilledButton.icon(

@@ -80,32 +80,9 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: GlobalAppBar(
+      appBar: const GlobalAppBar(
         currentRoute: '/suppliers',
         title: 'Gestión de Proveedores',
-        extraAction: Consumer<SupplierProvider>(
-          builder: (context, provider, child) {
-            if (provider.isLoading) {
-              return const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 16.0),
-                child: Center(
-                  child: SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.blue),
-                  ),
-                ),
-              );
-            }
-            return IconButton(
-              tooltip: 'Actualizar base de datos',
-              icon: const Icon(Icons.refresh, color: Colors.blueGrey),
-              onPressed: () {
-                provider.fetchSuppliers(search: _searchController.text.trim());
-              },
-            );
-          },
-        ),
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _openForm(),
@@ -119,29 +96,57 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
             child: Center(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 600),
-                child: TextField(
-                  controller: _searchController,
-                  decoration: InputDecoration(
-                    hintText: 'Buscar por nombre o CUIT...',
-                    prefixIcon: const Icon(Icons.search, color: Colors.grey),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: Colors.grey.shade300),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _searchController,
+                        decoration: InputDecoration(
+                          hintText: 'Buscar por nombre o CUIT...',
+                          prefixIcon: const Icon(Icons.search, color: Colors.grey),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: Colors.grey.shade300),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: Colors.grey.shade300),
+                          ),
+                          filled: true,
+                          fillColor: Colors.white,
+                          contentPadding: const EdgeInsets.symmetric(vertical: 0),
+                        ),
+                        onChanged: (val) {
+                          if (_debounce?.isActive ?? false) _debounce!.cancel();
+                          _debounce = Timer(const Duration(milliseconds: 400), () {
+                            context.read<SupplierProvider>().setSearchQuery(val);
+                          });
+                        },
+                      ),
                     ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: Colors.grey.shade300),
+                    const SizedBox(width: 8),
+                    Consumer<SupplierProvider>(
+                      builder: (context, provider, child) {
+                        if (provider.isLoading) {
+                          return const Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 12.0),
+                            child: SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.brown),
+                            ),
+                          );
+                        }
+                        return IconButton(
+                          tooltip: 'Actualizar base de datos',
+                          icon: const Icon(Icons.refresh, color: Colors.brown),
+                          onPressed: () {
+                            provider.fetchSuppliers(search: _searchController.text.trim());
+                          },
+                        );
+                      },
                     ),
-                    filled: true,
-                    fillColor: Colors.white,
-                    contentPadding: const EdgeInsets.symmetric(vertical: 0),
-                  ),
-                  onChanged: (val) {
-                    if (_debounce?.isActive ?? false) _debounce!.cancel();
-                    _debounce = Timer(const Duration(milliseconds: 400), () {
-                      context.read<SupplierProvider>().setSearchQuery(val);
-                    });
-                  },
+                  ],
                 ),
               ),
             ),
