@@ -80,9 +80,32 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: const GlobalAppBar(
+      appBar: GlobalAppBar(
         currentRoute: '/suppliers',
         title: 'Gestión de Proveedores',
+        extraAction: Consumer<SupplierProvider>(
+          builder: (context, provider, child) {
+            if (provider.isLoading) {
+              return const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16.0),
+                child: Center(
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                  ),
+                ),
+              );
+            }
+            return IconButton(
+              tooltip: 'Actualizar base de datos',
+              icon: const Icon(Icons.refresh, color: Colors.white),
+              onPressed: () {
+                provider.fetchSuppliers(search: _searchController.text.trim());
+              },
+            );
+          },
+        ),
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _openForm(),
