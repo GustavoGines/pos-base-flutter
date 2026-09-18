@@ -197,7 +197,7 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
 
       await provider.createMovement(data, adminPin: adminPin);
       
-      if (_category == 'Pago a Proveedor') {
+      if (mounted && _selectedSupplierId != null) {
         context.read<SupplierProvider>().fetchSuppliers();
       }
       
