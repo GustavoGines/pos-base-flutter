@@ -1,10 +1,9 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/presentation/widgets/global_app_bar.dart';
 import '../../providers/cash_movement_provider.dart';
 import '../widgets/movement_form_dialog.dart';
-import '../../../../core/theme/app_colors.dart';
 
 class CashMovementsScreen extends StatefulWidget {
   const CashMovementsScreen({Key? key}) : super(key: key);
@@ -22,7 +21,7 @@ class _CashMovementsScreenState extends State<CashMovementsScreen> {
     });
   }
 
-  void _showMovementForm() {
+  void _showFormDialog() {
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -33,7 +32,7 @@ class _CashMovementsScreenState extends State<CashMovementsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: const GlobalAppBar(title: 'Movimientos de Caja (Gastos)'),
+      appBar: GlobalAppBar(currentRoute: '/cash-movements'),
       body: Consumer<CashMovementProvider>(
         builder: (context, provider, child) {
           if (provider.isLoading) {
@@ -45,12 +44,12 @@ class _CashMovementsScreenState extends State<CashMovementsScreen> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.account_balance_wallet_outlined, size: 64, color: Colors.grey.shade400),
+                  Icon(Icons.receipt_long, size: 64, color: Colors.grey.shade400),
                   const SizedBox(height: 16),
-                  const Text('No hay movimientos registrados en el turno actual.'),
+                  Text('No hay movimientos en este turno.', style: TextStyle(color: Colors.grey.shade600)),
                   const SizedBox(height: 16),
                   ElevatedButton.icon(
-                    onPressed: _showMovementForm,
+                    onPressed: _showFormDialog,
                     icon: const Icon(Icons.add),
                     label: const Text('Registrar Movimiento'),
                   ),
@@ -61,21 +60,20 @@ class _CashMovementsScreenState extends State<CashMovementsScreen> {
 
           return Column(
             children: [
-              Padding(
-                padding: const EdgeInsets.all(16.0),
+              // Header
+              Container(
+                padding: const EdgeInsets.all(24),
+                color: Colors.white,
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      'Historial del Turno',
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
+                    Text('Historial de Caja (Turno Actual)', style: Theme.of(context).textTheme.headlineSmall),
                     ElevatedButton.icon(
-                      onPressed: _showMovementForm,
+                      onPressed: _showFormDialog,
                       icon: const Icon(Icons.add),
                       label: const Text('Nuevo Movimiento'),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primaryColor,
+                        backgroundColor: Colors.blue.shade700,
                         foregroundColor: Colors.white,
                       ),
                     ),
@@ -94,14 +92,14 @@ class _CashMovementsScreenState extends State<CashMovementsScreen> {
                       final amountColor = isExpenseOrWithdrawal ? Colors.red.shade700 : Colors.green.shade700;
                       final amountPrefix = isExpenseOrWithdrawal ? '-' : '+';
                       
-                      String subtitle = 'Categoría: $'{movement.category}';
+                      String subtitle = 'Categoría: ${movement.category}';
                       if (movement.description != null && movement.description!.isNotEmpty) {
-                        subtitle += ' | $'{movement.description}';
+                        subtitle += ' | ${movement.description}';
                       }
                       
-                      String authorInfo = 'Registrado por: $'{movement.user?['name'] ?? 'Cajero'}';
+                      String authorInfo = 'Registrado por: ${movement.user?['name'] ?? 'Cajero'}';
                       if (movement.authorizer != null) {
-                        authorInfo += ' (Aut: $'{movement.authorizer?['name'] ?? 'Admin'})';
+                        authorInfo += ' (Aut: ${movement.authorizer?['name'] ?? 'Admin'})';
                       }
 
                       return ListTile(
@@ -113,7 +111,7 @@ class _CashMovementsScreenState extends State<CashMovementsScreen> {
                           ),
                         ),
                         title: Text(
-                          '$amountPrefix $'{NumberFormat.currency(symbol: '\$').format(movement.amount)}',
+                          '$amountPrefix ${NumberFormat.currency(symbol: '\$').format(movement.amount)}',
                           style: TextStyle(
                             color: amountColor,
                             fontWeight: FontWeight.bold,
@@ -133,7 +131,7 @@ class _CashMovementsScreenState extends State<CashMovementsScreen> {
                             if (movement.supplier != null) ...[
                               const SizedBox(height: 2),
                               Text(
-                                'Proveedor: $'{movement.supplier?['name'] ?? ''}',
+                                'Proveedor: ${movement.supplier?['name'] ?? ''}',
                                 style: TextStyle(color: Colors.blue.shade700, fontSize: 12),
                               ),
                             ]

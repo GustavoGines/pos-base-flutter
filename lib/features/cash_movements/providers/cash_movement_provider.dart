@@ -1,4 +1,4 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import '../models/cash_movement_model.dart';
@@ -46,7 +46,7 @@ class CashMovementProvider extends ChangeNotifier {
       }
     } catch (e) {
       debugPrint('Error fetchMovements: $e');
-      throw e;
+      rethrow;
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -77,7 +77,7 @@ class CashMovementProvider extends ChangeNotifier {
       }
     } catch (e) {
       debugPrint('Error createMovement: $e');
-      throw e;
+      rethrow;
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -104,7 +104,7 @@ class CashMovementProvider extends ChangeNotifier {
       }
     } catch (e) {
       debugPrint('Error deleteMovement: $e');
-      throw e;
+      rethrow;
     } finally {
       _isLoading = false;
       notifyListeners();
