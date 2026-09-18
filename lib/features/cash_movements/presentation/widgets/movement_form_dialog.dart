@@ -271,7 +271,7 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                 ),
                 const SizedBox(height: 16),
                 
-                if (_category == 'Pago a Proveedor' || _category == 'Cobro de Saldo a Favor')
+                if (_category == 'Pago a Proveedor' || _category == 'Cobro de Saldo a Favor') ...[
                   DropdownButtonFormField<int>(
                     initialValue: _selectedSupplierId,
                     decoration: const InputDecoration(labelText: 'Seleccionar Proveedor'),
@@ -282,6 +282,66 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                     onChanged: (val) => setState(() => _selectedSupplierId = val),
                     validator: (val) => val == null ? 'Debe seleccionar un proveedor' : null,
                   ),
+                  if (_selectedSupplierId != null) Builder(
+                    builder: (context) {
+                      final supps = supplierProv.suppliers.where((s) => s.id == _selectedSupplierId);
+                      if (supps.isEmpty) return const SizedBox.shrink();
+                      final supplier = supps.first;
+                      
+                      final isDebt = supplier.balance > 0;
+                      final balanceColor = supplier.balance == 0 ? Colors.grey.shade700 : (isDebt ? Colors.red.shade700 : Colors.green.shade700);
+                      final balanceBg = supplier.balance == 0 ? Colors.grey.shade50 : (isDebt ? Colors.red.shade50 : Colors.green.shade50);
+                      final balanceLabel = supplier.balance == 0 ? 'Cuenta al día' : (isDebt ? 'Deuda Actual' : 'Saldo a Favor');
+                      
+                      return Container(
+                        margin: const EdgeInsets.only(top: 12),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: balanceBg,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: supplier.balance == 0 ? Colors.grey.shade300 : (isDebt ? Colors.red.shade200 : Colors.green.shade200)),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(balanceLabel, style: TextStyle(color: balanceColor, fontWeight: FontWeight.bold)),
+                                if (supplier.contactName != null && supplier.contactName!.isNotEmpty)
+                                  Text('Contacto: ${supplier.contactName}', style: TextStyle(fontSize: 12, color: balanceColor)),
+                              ],
+                            ),
+                            Row(
+                              children: [
+                                Text(
+                                  NumberFormat.currency(symbol: '\$').format(supplier.balance.abs()),
+                                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: balanceColor),
+                                ),
+                                if (supplier.balance != 0) ...[
+                                  const SizedBox(width: 12),
+                                  TextButton(
+                                    style: TextButton.styleFrom(
+                                      backgroundColor: isDebt ? Colors.red.shade100 : Colors.green.shade100,
+                                      foregroundColor: balanceColor,
+                                      visualDensity: VisualDensity.compact,
+                                    ),
+                                    onPressed: () {
+                                      setState(() {
+                                        _paymentAmountController.text = supplier.balance.abs().toString();
+                                      });
+                                    },
+                                    child: Text(isDebt ? 'Pagar Total' : 'Cobrar Total', style: const TextStyle(fontWeight: FontWeight.bold)),
+                                  ),
+                                ]
+                              ],
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+                  ),
+                ],
                   
                 const SizedBox(height: 16),
                 Row(
