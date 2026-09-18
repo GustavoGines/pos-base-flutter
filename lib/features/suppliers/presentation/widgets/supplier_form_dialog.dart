@@ -110,7 +110,7 @@ class _SupplierFormDialogState extends State<SupplierFormDialog> {
     final isEditing = widget.supplierId != null;
 
     return AlertDialog(
-      title: Text(isEditing ? 'Editar Proveedor' : 'Nuevo Proveedor'),
+      title: Text(isEditing ? 'Editar Proveedor' : 'Nuevo Proveedor', style: const TextStyle(fontWeight: FontWeight.bold)),
       content: SingleChildScrollView(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 500),
@@ -121,7 +121,12 @@ class _SupplierFormDialogState extends State<SupplierFormDialog> {
               children: [
                 TextFormField(
                   controller: _nameController,
-                  decoration: const InputDecoration(labelText: 'Razón Social / Nombre *'),
+                  decoration: const InputDecoration(
+                    labelText: 'Razón Social / Nombre *',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.business),
+                    isDense: true,
+                  ),
                   validator: (val) => val == null || val.isEmpty ? 'El nombre es obligatorio' : null,
                 ),
                 const SizedBox(height: 16),
@@ -131,16 +136,26 @@ class _SupplierFormDialogState extends State<SupplierFormDialog> {
                       flex: 2,
                       child: TextFormField(
                         controller: _cuitController,
-                        decoration: const InputDecoration(labelText: 'CUIT'),
+                        decoration: const InputDecoration(
+                          labelText: 'CUIT',
+                          border: OutlineInputBorder(),
+                          prefixIcon: Icon(Icons.badge_outlined),
+                          isDense: true,
+                        ),
                       ),
                     ),
                     const SizedBox(width: 16),
                     Expanded(
                       flex: 3,
                       child: DropdownButtonFormField<String>(
-                        initialValue: _taxCategory,
-                        decoration: const InputDecoration(labelText: 'Condición IVA'),
-                        items: _taxCategories.map((cat) => DropdownMenuItem(value: cat, child: Text(cat))).toList(),
+                        // ignore: deprecated_member_use
+                        value: _taxCategory,
+                        decoration: const InputDecoration(
+                          labelText: 'Condición IVA',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                        items: _taxCategories.map((cat) => DropdownMenuItem(value: cat, child: Text(cat, overflow: TextOverflow.ellipsis))).toList(),
                         onChanged: (val) {
                           if (val != null) setState(() => _taxCategory = val);
                         },
@@ -151,7 +166,12 @@ class _SupplierFormDialogState extends State<SupplierFormDialog> {
                 const SizedBox(height: 16),
                 TextFormField(
                   controller: _contactNameController,
-                  decoration: const InputDecoration(labelText: 'Nombre del Contacto'),
+                  decoration: const InputDecoration(
+                    labelText: 'Nombre del Contacto',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.person_outline),
+                    isDense: true,
+                  ),
                 ),
                 const SizedBox(height: 16),
                 Row(
@@ -159,14 +179,24 @@ class _SupplierFormDialogState extends State<SupplierFormDialog> {
                     Expanded(
                       child: TextFormField(
                         controller: _phoneController,
-                        decoration: const InputDecoration(labelText: 'Teléfono / WhatsApp'),
+                        decoration: const InputDecoration(
+                          labelText: 'Teléfono / WhatsApp',
+                          border: OutlineInputBorder(),
+                          prefixIcon: Icon(Icons.phone_outlined),
+                          isDense: true,
+                        ),
                       ),
                     ),
                     const SizedBox(width: 16),
                     Expanded(
                       child: TextFormField(
                         controller: _emailController,
-                        decoration: const InputDecoration(labelText: 'Email'),
+                        decoration: const InputDecoration(
+                          labelText: 'Email',
+                          border: OutlineInputBorder(),
+                          prefixIcon: Icon(Icons.email_outlined),
+                          isDense: true,
+                        ),
                       ),
                     ),
                   ],
@@ -174,15 +204,22 @@ class _SupplierFormDialogState extends State<SupplierFormDialog> {
                 const SizedBox(height: 16),
                 TextFormField(
                   controller: _addressController,
-                  decoration: const InputDecoration(labelText: 'Dirección'),
-                  maxLines: 2,
+                  decoration: const InputDecoration(
+                    labelText: 'Dirección',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.location_on_outlined),
+                    isDense: true,
+                  ),
+                  minLines: 1,
+                  maxLines: 3,
                 ),
                 const SizedBox(height: 16),
                 SwitchListTile(
-                  title: const Text('Proveedor Activo'),
+                  title: const Text('Proveedor Activo', style: TextStyle(fontWeight: FontWeight.bold)),
                   value: _isActive,
                   onChanged: (val) => setState(() => _isActive = val),
                   contentPadding: EdgeInsets.zero,
+                  activeColor: Colors.blueAccent,
                 ),
               ],
             ),
@@ -194,11 +231,12 @@ class _SupplierFormDialogState extends State<SupplierFormDialog> {
           onPressed: _isLoading ? null : () => Navigator.pop(context),
           child: const Text('Cancelar'),
         ),
-        ElevatedButton(
+        FilledButton.icon(
           onPressed: _isLoading ? null : _save,
-          child: _isLoading 
-            ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-            : const Text('Guardar'),
+          icon: _isLoading 
+            ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+            : const Icon(Icons.save),
+          label: const Text('Guardar'),
         ),
       ],
     );
