@@ -62,7 +62,7 @@ class _MobileDashboardScreenState extends State<MobileDashboardScreen> {
       final channel = _pusher!.publicChannel('dashboard');
 
       _pusher!.onConnectionEstablished.listen((_) {
-        channel.subscribeIfNot();
+        channel.subscribe();
       });
 
       channel.bind('App\\Events\\DashboardUpdated').listen((event) {

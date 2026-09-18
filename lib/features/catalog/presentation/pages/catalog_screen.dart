@@ -81,7 +81,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
       final scanChannel = _pusher!.publicChannel('pos.scans.$terminalId');
 
       _pusher!.onConnectionEstablished.listen((_) {
-        scanChannel.subscribeIfNot();
+        scanChannel.subscribe();
       });
 
       scanChannel.bind('App\\Events\\MobileScanned').listen((event) {
@@ -987,7 +987,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
       final scanChannel = _pusher!.publicChannel('pos.scans.$terminalId');
 
       _pusher!.onConnectionEstablished.listen((_) {
-        scanChannel.subscribeIfNot();
+        scanChannel.subscribe();
       });
 
       scanChannel.bind('App\\Events\\MobileScanned').listen((event) {

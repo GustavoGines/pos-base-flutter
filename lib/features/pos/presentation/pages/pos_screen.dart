@@ -150,8 +150,8 @@ class _PosScreenState extends State<PosScreen> {
       final printerChannel = _pusher!.publicChannel('pos.printers.$terminalId');
 
       _pusher!.onConnectionEstablished.listen((_) {
-        scanChannel.subscribeIfNot();
-        printerChannel.subscribeIfNot();
+        scanChannel.subscribe();
+        printerChannel.subscribe();
       });
 
       scanChannel.bind('App\\Events\\MobileScanned').listen((event) {
