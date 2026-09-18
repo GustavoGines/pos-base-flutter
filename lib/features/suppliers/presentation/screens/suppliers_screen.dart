@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 import '../../providers/supplier_provider.dart';
 import '../widgets/supplier_form_dialog.dart';
 import '../../../../core/presentation/widgets/global_app_bar.dart';
+import '../../cash_register/presentation/providers/cash_register_provider.dart';
+import '../../cash_movements/presentation/widgets/movement_form_dialog.dart';
 
 class SuppliersScreen extends StatefulWidget {
   const SuppliersScreen({super.key});
@@ -13,7 +15,7 @@ class SuppliersScreen extends StatefulWidget {
 }
 
 class _SuppliersScreenState extends State<SuppliersScreen> {
-  final TextEditingController _searchController = TextEditingController();
+  final _searchController = TextEditingController();
   Timer? _debounce;
 
   @override
@@ -26,9 +28,28 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
 
   @override
   void dispose() {
-    _debounce?.cancel();
     _searchController.dispose();
+    _debounce?.cancel();
     super.dispose();
+  }
+
+  void _openPaymentForm(int supplierId, double balance) {
+    final cashProv = context.read<CashRegisterProvider>();
+    if (cashProv.currentShift == null || !cashProv.currentShift!.isOpen) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Para registrar un pago, debes abrir un turno de caja en el POS.'), backgroundColor: Colors.orange),
+      );
+      return;
+    }
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => MovementFormDialog(
+        initialSupplierId: supplierId,
+        initialType: balance > 0 ? 'expense' : 'deposit',
+        initialCategory: balance > 0 ? 'Pago a Proveedor' : 'Reembolso de Proveedor',
+      ),
+    );
   }
 
   void _openForm([int? id, Map<String, dynamic>? initialData]) {
@@ -260,27 +281,46 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
                                 ),
                               const SizedBox(height: 12),
                               // Caja inferior: Saldo / Deuda
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                decoration: BoxDecoration(
-                                  color: supplier.balance > 0 ? Colors.red.shade50 : Colors.green.shade50,
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: supplier.balance > 0 ? Colors.red.shade100 : Colors.green.shade100),
-                                ),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text('Saldo actual:', style: TextStyle(color: supplier.balance > 0 ? Colors.red.shade900 : Colors.green.shade900, fontSize: 13)),
-                                    Text(
-                                      '\$${supplier.balance.toStringAsFixed(2)}',
-                                      style: TextStyle(
-                                        color: supplier.balance > 0 ? Colors.red.shade700 : Colors.green.shade700,
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 16,
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                      decoration: BoxDecoration(
+                                        color: supplier.balance > 0 ? Colors.red.shade50 : (supplier.balance < 0 ? Colors.green.shade50 : Colors.grey.shade50),
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(color: supplier.balance > 0 ? Colors.red.shade100 : (supplier.balance < 0 ? Colors.green.shade100 : Colors.grey.shade200)),
+                                      ),
+                                      child: Row(
+                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Text('Saldo actual:', style: TextStyle(color: supplier.balance > 0 ? Colors.red.shade900 : (supplier.balance < 0 ? Colors.green.shade900 : Colors.black87), fontSize: 13)),
+                                          Text(
+                                            '\$${supplier.balance.toStringAsFixed(2)}',
+                                            style: TextStyle(
+                                              color: supplier.balance > 0 ? Colors.red.shade700 : (supplier.balance < 0 ? Colors.green.shade700 : Colors.black87),
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 16,
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                     ),
-                                  ],
-                                ),
+                                  ),
+                                  if (supplier.balance != 0) ...[
+                                    const SizedBox(width: 8),
+                                    IconButton(
+                                      tooltip: supplier.balance > 0 ? 'Abonar / Pagar Deuda' : 'Registrar Reembolso',
+                                      style: IconButton.styleFrom(
+                                        backgroundColor: supplier.balance > 0 ? Colors.red.shade50 : Colors.green.shade50,
+                                        foregroundColor: supplier.balance > 0 ? Colors.red.shade700 : Colors.green.shade700,
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                      ),
+                                      icon: const Icon(Icons.payments_outlined),
+                                      onPressed: () => _openPaymentForm(supplier.id, supplier.balance),
+                                    ),
+                                  ]
+                                ],
                               ),
                             ],
                           ),

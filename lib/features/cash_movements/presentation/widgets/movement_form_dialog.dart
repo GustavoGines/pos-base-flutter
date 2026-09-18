@@ -22,7 +22,16 @@ class PaymentItem {
 }
 
 class MovementFormDialog extends StatefulWidget {
-  const MovementFormDialog({super.key});
+  final int? initialSupplierId;
+  final String? initialType;
+  final String? initialCategory;
+
+  const MovementFormDialog({
+    super.key,
+    this.initialSupplierId,
+    this.initialType,
+    this.initialCategory,
+  });
 
   @override
   State<MovementFormDialog> createState() => _MovementFormDialogState();
@@ -31,8 +40,8 @@ class MovementFormDialog extends StatefulWidget {
 class _MovementFormDialogState extends State<MovementFormDialog> {
   final _formKey = GlobalKey<FormState>();
   
-  String _type = 'expense';
-  String _category = 'Mercadería';
+  late String _type;
+  late String _category;
   
   final _descriptionController = TextEditingController();
   final _receiptController = TextEditingController();
@@ -46,19 +55,27 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
   int? _currentCheckId;
   final _paymentAmountController = TextEditingController();
 
-  final List<String> _categories = [
-    'Mercadería',
-    'Servicios',
-    'Sueldos',
-    'Limpieza',
-    'Impuestos',
-    'Pago a Proveedor',
-    'Otros'
-  ];
+  List<String> get _currentCategories {
+    if (_type == 'deposit') {
+      return ['Ingreso Extra', 'Reembolso de Proveedor', 'Otros'];
+    }
+    return [
+      'Mercadería',
+      'Sueldos',
+      'Limpieza',
+      'Impuestos',
+      'Pago a Proveedor',
+      'Otros'
+    ];
+  }
 
   @override
   void initState() {
     super.initState();
+    _type = widget.initialType ?? 'expense';
+    _category = widget.initialCategory ?? 'Mercadería';
+    _selectedSupplierId = widget.initialSupplierId;
+    
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<SupplierProvider>().fetchSuppliers();
       context.read<CheckProvider>().loadChecks();
@@ -198,30 +215,26 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                         ],
                         onChanged: (val) => setState(() {
                           _type = val!;
-                          if (_type == 'deposit') _category = 'Otros';
+                          if (!_currentCategories.contains(_category)) {
+                            _category = _currentCategories.first;
+                          }
                         }),
                       ),
                     ),
                     const SizedBox(width: 16),
                     Expanded(
-                      child: _type == 'deposit'
-                          ? TextFormField(
-                              initialValue: 'Ingreso Extra',
-                              enabled: false,
-                              decoration: const InputDecoration(labelText: 'Categoría'),
-                            )
-                          : DropdownButtonFormField<String>(
-                              initialValue: _category,
-                              decoration: const InputDecoration(labelText: 'Categoría'),
-                              items: _categories.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
-                              onChanged: (val) => setState(() => _category = val!),
-                            ),
+                      child: DropdownButtonFormField<String>(
+                        value: _category,
+                        decoration: const InputDecoration(labelText: 'Categoría'),
+                        items: _currentCategories.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
+                        onChanged: (val) => setState(() => _category = val!),
+                      ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 16),
                 
-                if (_category == 'Pago a Proveedor')
+                if (_category == 'Pago a Proveedor' || _category == 'Reembolso de Proveedor')
                   DropdownButtonFormField<int>(
                     initialValue: _selectedSupplierId,
                     decoration: const InputDecoration(labelText: 'Seleccionar Proveedor'),
