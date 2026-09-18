@@ -83,13 +83,29 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
       _payments.add(PaymentItem(method: 'cash', amount: widget.initialAmount!));
     }
 
+    _paymentAmountController.addListener(() {
+      setState(() {}); // Re-render to update live total
+    });
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<SupplierProvider>().fetchSuppliers();
       context.read<CheckProvider>().loadChecks();
     });
   }
 
-  double get _totalAmount => _payments.fold(0.0, (sum, item) => sum + item.amount);
+  @override
+  void dispose() {
+    _descriptionController.dispose();
+    _receiptController.dispose();
+    _paymentAmountController.dispose();
+    super.dispose();
+  }
+
+  double get _totalAmount {
+    final listSum = _payments.fold(0.0, (sum, item) => sum + item.amount);
+    final pendingSum = double.tryParse(_paymentAmountController.text) ?? 0;
+    return listSum + pendingSum;
+  }
 
   void _addPayment() {
     final amount = double.tryParse(_paymentAmountController.text) ?? 0;
@@ -128,6 +144,13 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+    
+    // Auto-agregar el pago si el usuario lo escribió pero olvidó presionar "Agregar"
+    final pendingAmount = double.tryParse(_paymentAmountController.text) ?? 0;
+    if (pendingAmount > 0) {
+      _addPayment();
+    }
+
     if (_payments.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Agregue al menos un método de pago.')));
       return;
@@ -404,9 +427,16 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                   width: double.infinity,
                   padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
                   decoration: BoxDecoration(
-                    color: _type == 'deposit' ? Colors.green.shade50 : Colors.red.shade50,
+                    color: _totalAmount > 0 
+                      ? (_type == 'deposit' ? Colors.green.shade50 : Colors.red.shade50)
+                      : Colors.grey.shade50,
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: _type == 'deposit' ? Colors.green.shade200 : Colors.red.shade200, width: 2),
+                    border: Border.all(
+                      color: _totalAmount > 0 
+                        ? (_type == 'deposit' ? Colors.green.shade200 : Colors.red.shade200)
+                        : Colors.grey.shade300, 
+                      width: 2
+                    ),
                   ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -416,7 +446,9 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                         style: TextStyle(
                           fontSize: 18, 
                           fontWeight: FontWeight.bold, 
-                          color: _type == 'deposit' ? Colors.green.shade900 : Colors.red.shade900
+                          color: _totalAmount > 0 
+                            ? (_type == 'deposit' ? Colors.green.shade900 : Colors.red.shade900)
+                            : Colors.grey.shade600
                         ),
                       ),
                       Text(
@@ -424,7 +456,9 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                         style: TextStyle(
                           fontSize: 28, 
                           fontWeight: FontWeight.w900, 
-                          color: _type == 'deposit' ? Colors.green.shade700 : Colors.red.shade700
+                          color: _totalAmount > 0 
+                            ? (_type == 'deposit' ? Colors.green.shade700 : Colors.red.shade700)
+                            : Colors.grey.shade600
                         ),
                       ),
                     ],
