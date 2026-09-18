@@ -296,31 +296,34 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                             ],
                           ),
                         ),
-                        if (_selectedSupplierId != null) ...[
-                          const SizedBox(width: 8),
-                          FilledButton.tonal(
-                            style: FilledButton.styleFrom(
-                              backgroundColor: Colors.blue.shade100,
-                              foregroundColor: Colors.blue.shade900,
-                              visualDensity: VisualDensity.compact,
-                            ),
-                            onPressed: () {
-                              final supps = supplierProv.suppliers.where((s) => s.id == _selectedSupplierId);
-                              if (supps.isEmpty) return;
-                              final supplier = supps.first;
-                              Navigator.of(context).pop();
-                              showDialog(
-                                context: context,
-                                barrierDismissible: false,
-                                builder: (_) => SupplierInvoiceFormDialog(
-                                  supplierId: supplier.id,
-                                  supplierName: supplier.name,
-                                ),
-                              );
-                            },
-                            child: const Text('Cargar Factura', style: TextStyle(fontSize: 12)),
+                        const SizedBox(width: 8),
+                        FilledButton.tonal(
+                          style: FilledButton.styleFrom(
+                            backgroundColor: Colors.blue.shade100,
+                            foregroundColor: Colors.blue.shade900,
+                            visualDensity: VisualDensity.compact,
                           ),
-                        ]
+                          onPressed: () {
+                            Navigator.of(context).pop();
+                            if (_selectedSupplierId != null) {
+                              final supps = supplierProv.suppliers.where((s) => s.id == _selectedSupplierId);
+                              if (supps.isNotEmpty) {
+                                final supplier = supps.first;
+                                showDialog(
+                                  context: context,
+                                  barrierDismissible: false,
+                                  builder: (_) => SupplierInvoiceFormDialog(
+                                    supplierId: supplier.id,
+                                    supplierName: supplier.name,
+                                  ),
+                                );
+                              }
+                            } else {
+                              Navigator.of(context).pushReplacementNamed('/suppliers');
+                            }
+                          },
+                          child: Text(_selectedSupplierId != null ? 'Cargar Factura' : 'Ir a Proveedores', style: const TextStyle(fontSize: 12)),
+                        ),
                       ],
                     ),
                   ),
