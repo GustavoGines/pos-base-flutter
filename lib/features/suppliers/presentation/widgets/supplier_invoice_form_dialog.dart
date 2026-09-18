@@ -64,6 +64,12 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
           
           // Si después de la factura aún debe dinero, sugerimos pagar el mínimo entre la factura y la deuda total
           final amountToPay = newBalance > 0 ? (invoiceAmount < newBalance ? invoiceAmount : newBalance) : 0.0;
+          final discount = invoiceAmount - amountToPay;
+          
+          String? helperText;
+          if (discount > 0 && amountToPay > 0) {
+            helperText = '💡 Se han descontado \$${discount.toStringAsFixed(2).replaceAll('.00', '')} que tenías a favor. Solo debes abonar la diferencia real.';
+          }
 
           if (amountToPay > 0) {
             final cashProv = context.read<CashRegisterProvider>();
@@ -76,6 +82,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                   initialType: 'expense',
                   initialCategory: 'Pago a Proveedor',
                   initialAmount: amountToPay,
+                  helperText: helperText,
                 ),
               );
             } else {

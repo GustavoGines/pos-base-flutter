@@ -28,6 +28,7 @@ class MovementFormDialog extends StatefulWidget {
   final String? initialType;
   final String? initialCategory;
   final double? initialAmount;
+  final String? helperText;
 
   const MovementFormDialog({
     super.key,
@@ -35,6 +36,7 @@ class MovementFormDialog extends StatefulWidget {
     this.initialType,
     this.initialCategory,
     this.initialAmount,
+    this.helperText,
   });
 
   @override
@@ -395,6 +397,30 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                   ),
                 ],
                   
+                if (widget.helperText != null)
+                  Container(
+                    margin: const EdgeInsets.only(top: 16),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.green.shade200),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.info_outline, color: Colors.green.shade700, size: 20),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            widget.helperText!,
+                            style: TextStyle(color: Colors.green.shade900, fontSize: 13),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
                 const SizedBox(height: 16),
                 Row(
                   children: [
