@@ -47,7 +47,7 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
       builder: (_) => MovementFormDialog(
         initialSupplierId: supplierId,
         initialType: balance > 0 ? 'expense' : 'deposit',
-        initialCategory: balance > 0 ? 'Pago a Proveedor' : 'Reembolso de Proveedor',
+        initialCategory: balance > 0 ? 'Pago a Proveedor' : 'Cobro de Saldo a Favor',
       ),
     );
   }
@@ -310,7 +310,7 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
                                   if (supplier.balance != 0) ...[
                                     const SizedBox(width: 8),
                                     IconButton(
-                                      tooltip: supplier.balance > 0 ? 'Abonar / Pagar Deuda' : 'Registrar Reembolso',
+                                      tooltip: supplier.balance > 0 ? 'Abonar / Pagar Deuda' : 'Cobrar Saldo a Favor',
                                       style: IconButton.styleFrom(
                                         backgroundColor: supplier.balance > 0 ? Colors.red.shade50 : Colors.green.shade50,
                                         foregroundColor: supplier.balance > 0 ? Colors.red.shade700 : Colors.green.shade700,

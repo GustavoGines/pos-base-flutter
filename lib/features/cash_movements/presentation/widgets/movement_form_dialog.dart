@@ -57,7 +57,7 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
 
   List<String> get _currentCategories {
     if (_type == 'deposit') {
-      return ['Ingreso Extra', 'Reembolso de Proveedor', 'Otros'];
+      return ['Ingreso Extra', 'Cobro de Saldo a Favor', 'Otros'];
     }
     return [
       'Mercadería',
@@ -235,7 +235,7 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                 ),
                 const SizedBox(height: 16),
                 
-                if (_category == 'Pago a Proveedor' || _category == 'Reembolso de Proveedor')
+                if (_category == 'Pago a Proveedor' || _category == 'Cobro de Saldo a Favor')
                   DropdownButtonFormField<int>(
                     initialValue: _selectedSupplierId,
                     decoration: const InputDecoration(labelText: 'Seleccionar Proveedor'),
@@ -294,11 +294,12 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                       physics: const NeverScrollableScrollPhysics(),
                       itemCount: _payments.length,
                       separatorBuilder: (_, __) => const Divider(height: 1),
-                      itemBuilder: (context, index) {
-                        final p = _payments[index];
-                        return ListTile(
-                          dense: true,
-                          title: Text(p.method.toUpperCase()),
+                        itemBuilder: (context, index) {
+                          final p = _payments[index];
+                          final String methodLabel = p.method == 'cash' ? 'EFECTIVO' : (p.method == 'transfer' ? 'TRANSFERENCIA' : (p.method == 'check' ? 'CHEQUE' : p.method.toUpperCase()));
+                          return ListTile(
+                            dense: true,
+                            title: Text(methodLabel),
                           subtitle: p.checkObj != null 
                               ? Text('Cheque Nº ${p.checkObj!.checkNumber} - ${p.checkObj!.bankName}') 
                               : null,
