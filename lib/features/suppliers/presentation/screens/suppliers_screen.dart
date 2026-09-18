@@ -6,6 +6,7 @@ import '../widgets/supplier_form_dialog.dart';
 import '../../../../core/presentation/widgets/global_app_bar.dart';
 import '../../../cash_register/presentation/providers/cash_register_provider.dart';
 import '../../../cash_movements/presentation/widgets/movement_form_dialog.dart';
+import '../widgets/supplier_invoice_form_dialog.dart';
 
 class SuppliersScreen extends StatefulWidget {
   const SuppliersScreen({super.key});
@@ -48,6 +49,17 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
         initialSupplierId: supplierId,
         initialType: balance > 0 ? 'expense' : 'deposit',
         initialCategory: balance > 0 ? 'Pago a Proveedor' : 'Cobro de Saldo a Favor',
+      ),
+    );
+  }
+
+  void _openInvoiceForm(int supplierId, String supplierName) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => SupplierInvoiceFormDialog(
+        supplierId: supplierId,
+        supplierName: supplierName,
       ),
     );
   }
@@ -319,7 +331,18 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
                                       icon: const Icon(Icons.payments_outlined),
                                       onPressed: () => _openPaymentForm(supplier.id, supplier.balance),
                                     ),
-                                  ]
+                                  ],
+                                  const SizedBox(width: 8),
+                                  IconButton(
+                                    tooltip: 'Cargar Factura / Remito',
+                                    style: IconButton.styleFrom(
+                                      backgroundColor: Colors.blue.shade50,
+                                      foregroundColor: Colors.blue.shade700,
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                    ),
+                                    icon: const Icon(Icons.receipt_long),
+                                    onPressed: () => _openInvoiceForm(supplier.id, supplier.name),
+                                  ),
                                 ],
                               ),
                             ],
