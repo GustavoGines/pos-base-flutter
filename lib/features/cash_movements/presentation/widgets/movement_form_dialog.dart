@@ -375,7 +375,7 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                                   NumberFormat.currency(symbol: '\$').format(supplier.balance.abs()),
                                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: balanceColor),
                                 ),
-                                if (supplier.balance != 0) ...[
+                                if ((_type == 'expense' && isDebt) || (_type == 'deposit' && !isDebt && supplier.balance != 0)) ...[
                                   const SizedBox(width: 12),
                                   TextButton(
                                     style: TextButton.styleFrom(
