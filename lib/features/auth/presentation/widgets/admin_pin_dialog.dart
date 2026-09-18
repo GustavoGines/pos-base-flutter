@@ -27,14 +27,14 @@ class AdminPinDialog extends StatefulWidget {
     // Cajero con permiso específico también pasa directo
     if (permissionKey != null && auth.hasPermission(permissionKey)) return true;
 
-    // Sin permiso → pedir PIN de Admin
-    final result = await showDialog<bool>(
+    // Sin permiso -> pedir PIN de Admin
+    final result = await showDialog<String>(
       context: context,
       barrierDismissible: true,
       builder: (_) => AdminPinDialog(actionDescription: action),
     );
 
-    return result ?? false;
+    return result != null;
   }
 
   @override
@@ -154,6 +154,7 @@ class _AdminPinDialogState extends State<AdminPinDialog> {
     }
 
     if (mounted) {
+      final String verifiedPin = _pin;
       setState(() {
         _isLoading = false;
         _pin = '';
@@ -161,7 +162,7 @@ class _AdminPinDialogState extends State<AdminPinDialog> {
       _focusNode.requestFocus();
 
       if (isAuthorized) {
-        Navigator.of(context).pop(true);
+        Navigator.of(context).pop(verifiedPin);
       }
     }
   }

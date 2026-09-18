@@ -6,6 +6,7 @@ import '../../../suppliers/providers/supplier_provider.dart';
 import '../../../checks/presentation/providers/check_provider.dart';
 import '../../../checks/domain/entities/third_party_check.dart';
 import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
+import '../../../auth/presentation/providers/auth_provider.dart';
 
 class PaymentItem {
   final String method;
@@ -127,6 +128,12 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
     }
 
     if (_type == 'withdrawal') {
+      final auth = context.read<AuthProvider>();
+      if (auth.isAdmin) {
+        await _executeSubmit();
+        return;
+      }
+
       final pin = await showDialog<String>(
         context: context,
         barrierDismissible: false,
