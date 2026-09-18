@@ -1670,7 +1670,7 @@ class _PosScreenState extends State<PosScreen> {
               icon: const Icon(Icons.account_balance_wallet, color: Colors.white),
               label: const Text('Movimiento', style: TextStyle(color: Colors.white)),
               style: TextButton.styleFrom(
-                backgroundColor: Colors.white.withOpacity(0.1),
+                backgroundColor: Colors.white.withValues(alpha: 0.1),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
               ),
             ),
