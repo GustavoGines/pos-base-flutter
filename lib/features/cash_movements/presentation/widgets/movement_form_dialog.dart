@@ -113,7 +113,7 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
       final pin = await showDialog<String>(
         context: context,
         barrierDismissible: false,
-        builder: (context) => const AdminPinDialog(reason: 'Autorizar Retiro de Caja'),
+        builder: (context) => const AdminPinDialog(actionDescription: 'Autorizar Retiro de Caja'),
       );
 
       if (pin == null) return;
@@ -286,12 +286,12 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                           dense: true,
                           title: Text(p.method.toUpperCase()),
                           subtitle: p.checkObj != null 
-                              ? Text('Cheque Nº $'{p.checkObj!.checkNumber} - $'{p.checkObj!.bankName}') 
+                              ? Text('Cheque Nº ${p.checkObj!.checkNumber} - ${p.checkObj!.bankName}') 
                               : null,
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Text('\$ $'{p.amount}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                              Text('\$ ${p.amount}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                               IconButton(
                                 icon: const Icon(Icons.delete, color: Colors.red, size: 20),
                                 onPressed: () => _removePayment(index),
@@ -338,7 +338,7 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                               controller: _paymentAmountController,
                               decoration: const InputDecoration(labelText: 'Monto', prefixText: '\$', isDense: true),
                               keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                              enabled: _currentPaymentMethod != 'check', // En cheque, el monto se autocompleta
+                              enabled: _currentPaymentMethod != 'check',
                             ),
                           ),
                           const SizedBox(width: 8),
@@ -355,7 +355,7 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                           decoration: const InputDecoration(labelText: 'Seleccionar Cheque en Cartera', isDense: true),
                           items: availableChecks.map((c) => DropdownMenuItem(
                             value: c.id,
-                            child: Text('Nº $'{c.checkNumber} (\$ $'{c.amount}) - $'{c.bankName}'),
+                            child: Text('Nº ${c.checkNumber} (\$ ${c.amount}) - ${c.bankName}'),
                           )).toList(),
                           onChanged: (val) {
                             setState(() {
@@ -376,7 +376,7 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                 Align(
                   alignment: Alignment.centerRight,
                   child: Text(
-                    'TOTAL: $'{NumberFormat.currency(symbol: '\$').format(_totalAmount)}',
+                    'TOTAL: ${NumberFormat.currency(symbol: '\$').format(_totalAmount)}',
                     style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.indigo),
                   ),
                 ),
