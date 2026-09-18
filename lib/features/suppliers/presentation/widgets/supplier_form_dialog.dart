@@ -219,7 +219,7 @@ class _SupplierFormDialogState extends State<SupplierFormDialog> {
                   value: _isActive,
                   onChanged: (val) => setState(() => _isActive = val),
                   contentPadding: EdgeInsets.zero,
-                  activeColor: Colors.blueAccent,
+                  activeTrackColor: Colors.blueAccent.withOpacity(0.5), activeThumbColor: Colors.blueAccent,
                 ),
               ],
             ),

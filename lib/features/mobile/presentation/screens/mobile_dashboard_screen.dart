@@ -59,12 +59,14 @@ class _MobileDashboardScreenState extends State<MobileDashboardScreen> {
         connectionErrorHandler: (error, trace, refresh) {},
       );
 
+      final channel = _pusher!.publicChannel('dashboard');
+
       _pusher!.onConnectionEstablished.listen((_) {
-        final channel = _pusher!.publicChannel('dashboard');
-        channel.subscribe();
-        channel.bind('App\\Events\\DashboardUpdated').listen((event) {
-          if (mounted) _loadData();
-        });
+        channel.subscribeIfNot();
+      });
+
+      channel.bind('App\\Events\\DashboardUpdated').listen((event) {
+        if (mounted) _loadData();
       });
 
       await _pusher!.connect();

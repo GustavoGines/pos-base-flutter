@@ -78,25 +78,27 @@ class _CatalogScreenState extends State<CatalogScreen> {
         connectionErrorHandler: (error, trace, refresh) {},
       );
 
+      final scanChannel = _pusher!.publicChannel('pos.scans.$terminalId');
+
       _pusher!.onConnectionEstablished.listen((_) {
-        final scanChannel = _pusher!.publicChannel('pos.scans.$terminalId');
-        scanChannel.subscribe();
-        scanChannel.bind('App\\Events\\MobileScanned').listen((event) {
-          try {
-            if (event.data == null) return;
-            final data = jsonDecode(event.data.toString());
-            final barcode = data['barcode'];
-            if (mounted && barcode != null && ModalRoute.of(context)?.isCurrent == true) {
-              setState(() {
-                _searchController.text = barcode;
-              });
-              context.read<CatalogProvider>().loadProducts(page: 1, search: barcode);
-              SnackBarService.success(context, 'Buscando código escaneado: $barcode');
-            }
-          } catch (e) {
-            debugPrint("Error parsing MobileScanned event: $e");
+        scanChannel.subscribeIfNot();
+      });
+
+      scanChannel.bind('App\\Events\\MobileScanned').listen((event) {
+        try {
+          if (event.data == null) return;
+          final data = jsonDecode(event.data.toString());
+          final barcode = data['barcode'];
+          if (mounted && barcode != null && ModalRoute.of(context)?.isCurrent == true) {
+            setState(() {
+              _searchController.text = barcode;
+            });
+            context.read<CatalogProvider>().loadProducts(page: 1, search: barcode);
+            SnackBarService.success(context, 'Buscando código escaneado: $barcode');
           }
-        });
+        } catch (e) {
+          debugPrint("Error parsing MobileScanned event: $e");
+        }
       });
 
       await _pusher!.connect();
@@ -943,7 +945,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final canSeeSupplier = context.read<SettingsProvider>().features.suppliers;
-      if (canSeeSupplier && context.read<SupplierProvider>().suppliers.isEmpty) {
+      if (canSeeSupplier) {
         context.read<SupplierProvider>().fetchSuppliers();
       }
     });
@@ -982,24 +984,26 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
         connectionErrorHandler: (error, trace, refresh) {},
       );
 
+      final scanChannel = _pusher!.publicChannel('pos.scans.$terminalId');
+
       _pusher!.onConnectionEstablished.listen((_) {
-        final scanChannel = _pusher!.publicChannel('pos.scans.$terminalId');
-        scanChannel.subscribe();
-        scanChannel.bind('App\\Events\\MobileScanned').listen((event) {
-          try {
-            if (event.data == null) return;
-            final data = jsonDecode(event.data.toString());
-            final barcode = data['barcode'];
-            if (mounted && barcode != null && ModalRoute.of(context)?.isCurrent == true) {
-              setState(() {
-                _barcodeCtrl.text = barcode;
-              });
-              SnackBarService.success(context, 'Código escaneado: $barcode');
-            }
-          } catch (e) {
-            debugPrint("Error parsing MobileScanned event: $e");
+        scanChannel.subscribeIfNot();
+      });
+
+      scanChannel.bind('App\\Events\\MobileScanned').listen((event) {
+        try {
+          if (event.data == null) return;
+          final data = jsonDecode(event.data.toString());
+          final barcode = data['barcode'];
+          if (mounted && barcode != null && ModalRoute.of(context)?.isCurrent == true) {
+            setState(() {
+              _barcodeCtrl.text = barcode;
+            });
+            SnackBarService.success(context, 'Código escaneado: $barcode');
           }
-        });
+        } catch (e) {
+          debugPrint("Error parsing MobileScanned event: $e");
+        }
       });
 
       await _pusher!.connect();
@@ -1324,15 +1328,31 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                 ),
                 const SizedBox(height: 12),
                 if (canSeeSupplier) ...[
-                  DropdownButtonFormField<int?>(
-                    // ignore: deprecated_member_use
-                    value: suppliers.any((s) => s.id == _supplierId) ? _supplierId : null,
-                    decoration: const InputDecoration(labelText: 'Proveedor', prefixIcon: Icon(Icons.local_shipping_outlined)),
-                    items: [
-                      const DropdownMenuItem<int?>(value: null, child: Text('— Sin proveedor —')),
-                      ...suppliers.map((s) => DropdownMenuItem<int?>(value: s.id, child: Text(s.name))),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Expanded(
+                        child: DropdownButtonFormField<int?>(
+                          // ignore: deprecated_member_use
+                          value: suppliers.any((s) => s.id == _supplierId) ? _supplierId : null,
+                          decoration: const InputDecoration(labelText: 'Proveedor', prefixIcon: Icon(Icons.local_shipping_outlined)),
+                          items: [
+                            const DropdownMenuItem<int?>(value: null, child: Text('— Sin proveedor —')),
+                            ...suppliers.map((s) => DropdownMenuItem<int?>(value: s.id, child: Text(s.name))),
+                          ],
+                          onChanged: (val) => setState(() => _supplierId = val),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        icon: const Icon(Icons.refresh),
+                        color: Colors.blue,
+                        tooltip: 'Recargar Proveedores',
+                        onPressed: () {
+                          context.read<SupplierProvider>().fetchSuppliers();
+                        },
+                      ),
                     ],
-                    onChanged: (val) => setState(() => _supplierId = val),
                   ),
                   const SizedBox(height: 12),
                 ],

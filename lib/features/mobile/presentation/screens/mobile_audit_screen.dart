@@ -290,7 +290,7 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
     }
 
     final canSeeSupplier = context.read<SettingsProvider>().features.suppliers;
-    if (canSeeSupplier && context.read<SupplierProvider>().suppliers.isEmpty) {
+    if (canSeeSupplier) {
       context.read<SupplierProvider>().fetchSuppliers();
     }
 
@@ -439,16 +439,30 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                     
                     if (context.read<SettingsProvider>().features.suppliers) ...[
                       const SizedBox(height: 12),
-                      DropdownButtonFormField<int?>(
-                        isExpanded: true,
-                        // ignore: deprecated_member_use
-                        value: context.read<SupplierProvider>().suppliers.any((s) => s.id == selectedSupplierId) ? selectedSupplierId : null,
-                        decoration: const InputDecoration(labelText: 'Proveedor (Opcional)', isDense: true, border: OutlineInputBorder()),
-                        items: [
-                          const DropdownMenuItem(value: null, child: Text('Sin Proveedor')),
-                          ...context.read<SupplierProvider>().suppliers.map((s) => DropdownMenuItem(value: s.id, child: Text(s.name, overflow: TextOverflow.ellipsis))),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: DropdownButtonFormField<int?>(
+                              isExpanded: true,
+                              // ignore: deprecated_member_use
+                              value: context.read<SupplierProvider>().suppliers.any((s) => s.id == selectedSupplierId) ? selectedSupplierId : null,
+                              decoration: const InputDecoration(labelText: 'Proveedor (Opcional)', isDense: true, border: OutlineInputBorder()),
+                              items: [
+                                const DropdownMenuItem(value: null, child: Text('Sin Proveedor')),
+                                ...context.read<SupplierProvider>().suppliers.map((s) => DropdownMenuItem(value: s.id, child: Text(s.name, overflow: TextOverflow.ellipsis))),
+                              ],
+                              onChanged: (val) => setStateDialog(() => selectedSupplierId = val),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          IconButton.filledTonal(
+                            icon: const Icon(Icons.refresh),
+                            tooltip: 'Recargar Proveedores',
+                            onPressed: () {
+                              context.read<SupplierProvider>().fetchSuppliers();
+                            },
+                          ),
                         ],
-                        onChanged: (val) => setStateDialog(() => selectedSupplierId = val),
                       ),
                     ],
                     

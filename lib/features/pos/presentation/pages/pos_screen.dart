@@ -144,63 +144,65 @@ class _PosScreenState extends State<PosScreen> {
         connectionErrorHandler: (error, trace, refresh) {},
       );
 
-      _pusher!.onConnectionEstablished.listen((_) {
-        // Escáner Inalámbrico
-        final scanChannel = _pusher!.publicChannel('pos.scans.$terminalId');
-        scanChannel.subscribe();
-        scanChannel.bind('App\\Events\\MobileScanned').listen((event) {
-          try {
-            if (event.data == null) return;
-            final data = jsonDecode(event.data.toString());
-            final barcode = data['barcode'];
-            if (mounted && barcode != null && ModalRoute.of(context)?.isCurrent == true) {
-              _searchController.text = barcode;
-              _onProductScannedOrSearched(barcode);
-            }
-          } catch (e) {
-            debugPrint("Error parsing MobileScanned event: $e");
-          }
-        });
+      // Escáner Inalámbrico
+      final scanChannel = _pusher!.publicChannel('pos.scans.$terminalId');
+      // Impresora Inalámbrica (Mobile Label Printing)
+      final printerChannel = _pusher!.publicChannel('pos.printers.$terminalId');
 
-        // Impresora Inalámbrica (Mobile Label Printing)
-        final printerChannel = _pusher!.publicChannel('pos.printers.$terminalId');
-        printerChannel.subscribe();
-        printerChannel.bind('App\\Events\\PrintLabelRequested').listen((event) async {
-          try {
-            if (event.data == null) return;
-            final data = jsonDecode(event.data.toString());
-            final productId = data['productId'];
-            if (mounted && productId != null) {
-               // Encontrar producto por id e imprimir
-               final catalog = Provider.of<CatalogProvider>(context, listen: false);
-               Product? product;
-               try {
-                  product = catalog.products.firstWhere((p) => p.id == productId);
-               } catch (_) {
-                 final auth = Provider.of<AuthProvider>(context, listen: false);
-                 final prefs = await SharedPreferences.getInstance();
-                 final String apiUrl = prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
-                 final response = await http.get(
-                   Uri.parse('$apiUrl/catalog/products/$productId'),
-                   headers: {
-                     'Accept': 'application/json',
-                     'Authorization': 'Bearer ${auth.sessionToken}',
-                   }
-                 );
-                 if (response.statusCode == 200) {
-                    product = ProductModel.fromJson(jsonDecode(response.body));
-                 }
-               }
-               
-               if (product != null) {
-                 await ReceiptPrinterService.instance.printLabel(product);
-                 if (mounted) SnackBarService.success(context, 'Etiqueta impresa remotamente');
-               }
-            }
-          } catch (e) {
-            debugPrint("Error parsing PrintLabelRequested event: $e");
+      _pusher!.onConnectionEstablished.listen((_) {
+        scanChannel.subscribeIfNot();
+        printerChannel.subscribeIfNot();
+      });
+
+      scanChannel.bind('App\\Events\\MobileScanned').listen((event) {
+        try {
+          if (event.data == null) return;
+          final data = jsonDecode(event.data.toString());
+          final barcode = data['barcode'];
+          if (mounted && barcode != null && ModalRoute.of(context)?.isCurrent == true) {
+            _searchController.text = barcode;
+            _onProductScannedOrSearched(barcode);
           }
-        });
+        } catch (e) {
+          debugPrint("Error parsing MobileScanned event: $e");
+        }
+      });
+
+      printerChannel.bind('App\\Events\\PrintLabelRequested').listen((event) async {
+        try {
+          if (event.data == null) return;
+          final data = jsonDecode(event.data.toString());
+          final productId = data['productId'];
+          if (mounted && productId != null) {
+             // Encontrar producto por id e imprimir
+             final catalog = Provider.of<CatalogProvider>(context, listen: false);
+             Product? product;
+             try {
+                product = catalog.products.firstWhere((p) => p.id == productId);
+             } catch (_) {
+               final auth = Provider.of<AuthProvider>(context, listen: false);
+               final prefs = await SharedPreferences.getInstance();
+               final String apiUrl = prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
+               final response = await http.get(
+                 Uri.parse('$apiUrl/catalog/products/$productId'),
+                 headers: {
+                   'Accept': 'application/json',
+                   'Authorization': 'Bearer ${auth.sessionToken}',
+                 }
+               );
+               if (response.statusCode == 200) {
+                  product = ProductModel.fromJson(jsonDecode(response.body));
+               }
+             }
+             
+             if (product != null) {
+               await ReceiptPrinterService.instance.printLabel(product);
+               if (mounted) SnackBarService.success(context, 'Etiqueta impresa remotamente');
+             }
+          }
+        } catch (e) {
+          debugPrint("Error parsing PrintLabelRequested event: $e");
+        }
       });
 
       await _pusher!.connect();

@@ -55,7 +55,7 @@ class SupplierProvider extends ChangeNotifier {
         throw Exception(_parseError(response));
       }
     } catch (e) {
-      _suppliers = [];
+      // No borramos la lista previa en caso de error de red
       throw Exception(e.toString().replaceAll('Exception: ', ''));
     } finally {
       _isLoading = false;
