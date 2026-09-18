@@ -272,7 +272,7 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                 ),
                 const SizedBox(height: 16),
                 
-                if (_category == 'Pago a Proveedor')
+                if (_category == 'Pago a Proveedor' && widget.initialSupplierId == null)
                   Container(
                     margin: const EdgeInsets.only(bottom: 16),
                     padding: const EdgeInsets.all(12),
