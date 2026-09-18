@@ -1667,11 +1667,21 @@ class _PosScreenState extends State<PosScreen> {
                   builder: (context) => const frontend_desktop_cash_movements_dialog.MovementFormDialog(),
                 );
               },
-              icon: const Icon(Icons.account_balance_wallet, color: Colors.white),
-              label: const Text('Movimiento', style: TextStyle(color: Colors.white)),
+              icon: const Icon(Icons.account_balance_wallet_outlined, size: 18, color: Color(0xFF1E88E5)),
+              label: const Text(
+                'Movimientos', 
+                style: TextStyle(
+                  color: Color(0xFF1E88E5), 
+                  fontWeight: FontWeight.w600,
+                )
+              ),
               style: TextButton.styleFrom(
-                backgroundColor: Colors.white.withValues(alpha: 0.1),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                backgroundColor: const Color(0xFF1E88E5).withValues(alpha: 0.1),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                  side: BorderSide(color: const Color(0xFF1E88E5).withValues(alpha: 0.3)),
+                ),
               ),
             ),
             const SizedBox(width: 12),
