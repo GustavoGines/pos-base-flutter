@@ -20,6 +20,7 @@ class SupplierInvoiceFormDialog extends StatefulWidget {
 
 class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
   final _formKey = GlobalKey<FormState>();
+  String _type = 'invoice'; // 'invoice' or 'credit_note'
   final _amountController = TextEditingController();
   final _invoiceNumberController = TextEditingController();
   final _descriptionController = TextEditingController(text: 'Mercadería');
@@ -42,6 +43,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
 
     try {
       final data = {
+        'type': _type,
         'amount': double.parse(_amountController.text),
         'invoice_number': _invoiceNumberController.text.trim(),
         'description': _descriptionController.text.trim(),
@@ -101,7 +103,27 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                 'Proveedor: ${widget.supplierName}',
                 style: const TextStyle(color: Colors.black54),
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<String>(
+                initialValue: _type,
+                decoration: const InputDecoration(labelText: 'Tipo de Comprobante'),
+                items: const [
+                  DropdownMenuItem(value: 'invoice', child: Text('Factura / Remito (Suma Deuda)')),
+                  DropdownMenuItem(value: 'credit_note', child: Text('Nota de Crédito (Saldo a Favor)')),
+                ],
+                onChanged: (val) {
+                  setState(() {
+                    _type = val!;
+                    if (_type == 'credit_note') {
+                      _payNow = false;
+                      _descriptionController.text = 'Devolución de mercadería';
+                    } else {
+                      _descriptionController.text = 'Mercadería';
+                    }
+                  });
+                },
+              ),
+              const SizedBox(height: 16),
 
               TextFormField(
                 controller: _amountController,
@@ -137,23 +159,24 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
               ),
               
               const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: Colors.blue.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.blue.shade100),
+              if (_type == 'invoice')
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.blue.shade100),
+                  ),
+                  child: CheckboxListTile(
+                    title: const Text('¿Abonar parte de esta factura ahora?', style: TextStyle(fontWeight: FontWeight.w500)),
+                    subtitle: const Text('Abre la caja para registrar un pago a proveedor.', style: TextStyle(fontSize: 12)),
+                    value: _payNow,
+                    onChanged: (val) => setState(() => _payNow = val ?? false),
+                    contentPadding: EdgeInsets.zero,
+                    controlAffinity: ListTileControlAffinity.leading,
+                    dense: true,
+                  ),
                 ),
-                child: CheckboxListTile(
-                  title: const Text('¿Abonar parte de esta factura ahora?', style: TextStyle(fontWeight: FontWeight.w500)),
-                  subtitle: const Text('Abre la caja para registrar un pago a proveedor.', style: TextStyle(fontSize: 12)),
-                  value: _payNow,
-                  onChanged: (val) => setState(() => _payNow = val ?? false),
-                  contentPadding: EdgeInsets.zero,
-                  controlAffinity: ListTileControlAffinity.leading,
-                  dense: true,
-                ),
-              ),
 
               const SizedBox(height: 24),
               Row(
