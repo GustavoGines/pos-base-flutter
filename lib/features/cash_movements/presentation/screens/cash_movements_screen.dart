@@ -92,64 +92,122 @@ class _CashMovementsScreenState extends State<CashMovementsScreen> {
                       final amountColor = isExpenseOrWithdrawal ? Colors.red.shade700 : Colors.green.shade700;
                       final amountPrefix = isExpenseOrWithdrawal ? '-' : '+';
                       
-                      String subtitle = 'Categoría: ${movement.category}';
+                      String subtitle = movement.category;
                       if (movement.description != null && movement.description!.isNotEmpty) {
                         subtitle += ' | ${movement.description}';
                       }
                       
-                      String authorInfo = 'Registrado por: ${movement.user?['name'] ?? 'Cajero'}';
+                      String authorInfo = movement.user?['name'] ?? 'Cajero';
                       if (movement.authorizer != null) {
                         authorInfo += ' (Aut: ${movement.authorizer?['name'] ?? 'Admin'})';
                       }
 
+                      // Mapeo al Español
+                      String methodLabel = movement.paymentMethod.toUpperCase();
+                      IconData methodIcon = Icons.payments_outlined;
+                      if (movement.paymentMethod == 'cash') {
+                        methodLabel = 'Efectivo';
+                        methodIcon = Icons.payments_outlined;
+                      } else if (movement.paymentMethod == 'transfer') {
+                        methodLabel = 'Transferencia';
+                        methodIcon = Icons.account_balance_outlined;
+                      } else if (movement.paymentMethod == 'check') {
+                        methodLabel = 'Cheque';
+                        methodIcon = Icons.fact_check_outlined;
+                      }
+
                       return ListTile(
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                         leading: CircleAvatar(
                           backgroundColor: isExpenseOrWithdrawal ? Colors.red.shade50 : Colors.green.shade50,
+                          radius: 24,
                           child: Icon(
                             isExpenseOrWithdrawal ? Icons.arrow_downward : Icons.arrow_upward,
                             color: amountColor,
+                            size: 22,
                           ),
                         ),
-                        title: Text(
-                          '$amountPrefix ${NumberFormat.currency(symbol: '\$').format(movement.amount)}',
-                          style: TextStyle(
-                            color: amountColor,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                          ),
+                        title: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                subtitle,
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                              ),
+                            ),
+                            Text(
+                              '$amountPrefix ${NumberFormat.currency(symbol: '\$').format(movement.amount)}',
+                              style: TextStyle(
+                                color: amountColor,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
+                            ),
+                          ],
                         ),
                         subtitle: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const SizedBox(height: 4),
-                            Text(subtitle),
-                            const SizedBox(height: 2),
-                            Text(
-                              authorInfo,
-                              style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                            const SizedBox(height: 6),
+                            Row(
+                              children: [
+                                Icon(Icons.person_outline, size: 14, color: Colors.grey.shade600),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'Registrado por: $authorInfo',
+                                  style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                                ),
+                              ],
                             ),
                             if (movement.supplier != null) ...[
-                              const SizedBox(height: 2),
-                              Text(
-                                'Proveedor: ${movement.supplier?['name'] ?? ''}',
-                                style: TextStyle(color: Colors.blue.shade700, fontSize: 12),
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  Icon(Icons.storefront, size: 14, color: Colors.blue.shade700),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    'Proveedor: ${movement.supplier?['name'] ?? ''}',
+                                    style: TextStyle(color: Colors.blue.shade700, fontSize: 12, fontWeight: FontWeight.w600),
+                                  ),
+                                ],
                               ),
-                            ]
-                          ],
-                        ),
-                        trailing: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Text(
-                              DateFormat('HH:mm').format(movement.createdAt.toLocal()),
-                              style: const TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              movement.paymentMethod.toUpperCase(),
-                              style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
-                            ),
+                            ],
+                            const SizedBox(height: 10),
+                            Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey.shade100,
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(color: Colors.grey.shade300),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(methodIcon, size: 12, color: Colors.grey.shade700),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        methodLabel,
+                                        style: TextStyle(color: Colors.grey.shade700, fontSize: 11, fontWeight: FontWeight.bold),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const Spacer(),
+                                Row(
+                                  children: [
+                                    Icon(Icons.access_time, size: 12, color: Colors.grey.shade500),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      DateFormat('HH:mm').format(movement.createdAt.toLocal()),
+                                      style: TextStyle(color: Colors.grey.shade500, fontSize: 12, fontWeight: FontWeight.w500),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            )
                           ],
                         ),
                       );
