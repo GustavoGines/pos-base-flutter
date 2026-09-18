@@ -177,9 +177,16 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                                   icon: Icons.account_balance_outlined,
                                   isCompact: isCompact,
                                   isIconOnly: isIconOnly,
-                                  isActive: ['/cuentas-corrientes', '/reports', '/checks'].contains(currentRoute),
+                                  isActive: ['/cuentas-corrientes', '/reports', '/checks', '/cash-movements'].contains(currentRoute),
                                   activeColor: Colors.orange.shade700,
                                   menuChildren: [
+                                    _buildMenuItem(
+                                      context: context,
+                                      label: 'Gastos y Mov. de Caja',
+                                      icon: Icons.receipt_long_outlined,
+                                      color: Colors.blue.shade700,
+                                      route: '/cash-movements',
+                                    ),
                                     _buildMenuItem(
                                       context: context,
                                       label: 'Cuentas Corrientes',
