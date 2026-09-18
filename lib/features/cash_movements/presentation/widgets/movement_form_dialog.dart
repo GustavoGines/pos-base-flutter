@@ -1,9 +1,25 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:intl/intl.dart';
 import '../../providers/cash_movement_provider.dart';
 import '../../../suppliers/providers/supplier_provider.dart';
 import '../../../checks/presentation/providers/check_provider.dart';
+import '../../../checks/domain/entities/third_party_check.dart';
 import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
+
+class PaymentItem {
+  final String method;
+  final double amount;
+  final int? checkId;
+  final ThirdPartyCheck? checkObj;
+
+  PaymentItem({
+    required this.method,
+    required this.amount,
+    this.checkId,
+    this.checkObj,
+  });
+}
 
 class MovementFormDialog extends StatefulWidget {
   const MovementFormDialog({Key? key}) : super(key: key);
@@ -17,16 +33,18 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
   
   String _type = 'expense';
   String _category = 'Mercadería';
-  String _paymentMethod = 'cash';
   
-  final _amountController = TextEditingController();
   final _descriptionController = TextEditingController();
   final _receiptController = TextEditingController();
   
   int? _selectedSupplierId;
-  int? _selectedCheckId;
-  
   bool _isLoading = false;
+
+  // Pagos mixtos
+  final List<PaymentItem> _payments = [];
+  String _currentPaymentMethod = 'cash';
+  int? _currentCheckId;
+  final _paymentAmountController = TextEditingController();
 
   final List<String> _categories = [
     'Mercadería',
@@ -47,8 +65,49 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
     });
   }
 
+  double get _totalAmount => _payments.fold(0.0, (sum, item) => sum + item.amount);
+
+  void _addPayment() {
+    final amount = double.tryParse(_paymentAmountController.text) ?? 0;
+    if (amount <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ingrese un monto válido.')));
+      return;
+    }
+    
+    ThirdPartyCheck? checkObj;
+    if (_currentPaymentMethod == 'check') {
+      if (_currentCheckId == null) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Seleccione un cheque.')));
+        return;
+      }
+      final checks = context.read<CheckProvider>().checks;
+      checkObj = checks.firstWhere((c) => c.id == _currentCheckId);
+    }
+
+    setState(() {
+      _payments.add(PaymentItem(
+        method: _currentPaymentMethod,
+        amount: amount,
+        checkId: _currentCheckId,
+        checkObj: checkObj,
+      ));
+      _paymentAmountController.clear();
+      _currentCheckId = null;
+    });
+  }
+
+  void _removePayment(int index) {
+    setState(() {
+      _payments.removeAt(index);
+    });
+  }
+
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+    if (_payments.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Agregue al menos un método de pago.')));
+      return;
+    }
 
     if (_type == 'withdrawal') {
       final pin = await showDialog<String>(
@@ -57,7 +116,7 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
         builder: (context) => const AdminPinDialog(reason: 'Autorizar Retiro de Caja'),
       );
 
-      if (pin == null) return; // Cancelado
+      if (pin == null) return;
       await _executeSubmit(adminPin: pin);
     } else {
       await _executeSubmit();
@@ -76,13 +135,11 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
         'description': _descriptionController.text,
         'receipt_number': _receiptController.text,
         'supplier_id': _selectedSupplierId,
-        'payments': [
-          {
-            'amount': double.parse(_amountController.text),
-            'payment_method': _paymentMethod,
-            'check_id': _selectedCheckId,
-          }
-        ]
+        'payments': _payments.map((p) => {
+          'amount': p.amount,
+          'payment_method': p.method,
+          'check_id': p.checkId,
+        }).toList()
       };
 
       await provider.createMovement(data, adminPin: adminPin);
@@ -114,122 +171,217 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
   Widget build(BuildContext context) {
     final supplierProv = context.watch<SupplierProvider>();
     final checkProv = context.watch<CheckProvider>();
+    final availableChecks = checkProv.checks.where((c) => c.status == 'in_wallet').toList();
 
     return AlertDialog(
       title: const Text('Registrar Movimiento de Caja'),
-      content: SingleChildScrollView(
-        child: Form(
-          key: _formKey,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              DropdownButtonFormField<String>(
-                value: _type,
-                decoration: const InputDecoration(labelText: 'Tipo de Movimiento'),
-                items: const [
-                  DropdownMenuItem(value: 'expense', child: Text('Gasto (Salida)')),
-                  DropdownMenuItem(value: 'withdrawal', child: Text('Retiro de Dueño (Salida)')),
-                  DropdownMenuItem(value: 'deposit', child: Text('Ingreso Extra (Entrada)')),
-                ],
-                onChanged: (val) => setState(() {
-                  _type = val!;
-                  if (_type == 'deposit') _category = 'Otros'; // Reset category if deposit
-                }),
-              ),
-              const SizedBox(height: 16),
-              if (_type != 'deposit')
-                DropdownButtonFormField<String>(
-                  value: _category,
-                  decoration: const InputDecoration(labelText: 'Categoría'),
-                  items: _categories.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
-                  onChanged: (val) => setState(() => _category = val!),
+      content: SizedBox(
+        width: 600,
+        child: SingleChildScrollView(
+          child: Form(
+            key: _formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // DATOS GENERALES
+                Row(
+                  children: [
+                    Expanded(
+                      child: DropdownButtonFormField<String>(
+                        value: _type,
+                        decoration: const InputDecoration(labelText: 'Tipo de Movimiento'),
+                        items: const [
+                          DropdownMenuItem(value: 'expense', child: Text('Gasto (Salida)')),
+                          DropdownMenuItem(value: 'withdrawal', child: Text('Retiro de Dueño (Salida)')),
+                          DropdownMenuItem(value: 'deposit', child: Text('Ingreso Extra (Entrada)')),
+                        ],
+                        onChanged: (val) => setState(() {
+                          _type = val!;
+                          if (_type == 'deposit') _category = 'Otros';
+                        }),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: _type == 'deposit'
+                          ? TextFormField(
+                              initialValue: 'Ingreso Extra',
+                              enabled: false,
+                              decoration: const InputDecoration(labelText: 'Categoría'),
+                            )
+                          : DropdownButtonFormField<String>(
+                              value: _category,
+                              decoration: const InputDecoration(labelText: 'Categoría'),
+                              items: _categories.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
+                              onChanged: (val) => setState(() => _category = val!),
+                            ),
+                    ),
+                  ],
                 ),
-              if (_type == 'deposit')
-                TextFormField(
-                  initialValue: 'Ingreso Extra',
-                  enabled: false,
-                  decoration: const InputDecoration(labelText: 'Categoría'),
-                ),
-              const SizedBox(height: 16),
-              
-              if (_category == 'Pago a Proveedor')
-                DropdownButtonFormField<int>(
-                  value: _selectedSupplierId,
-                  decoration: const InputDecoration(labelText: 'Seleccionar Proveedor'),
-                  items: supplierProv.suppliers.map((s) => DropdownMenuItem(
-                    value: s.id,
-                    child: Text(s.name),
-                  )).toList(),
-                  onChanged: (val) => setState(() => _selectedSupplierId = val),
-                  validator: (val) => val == null ? 'Debe seleccionar un proveedor' : null,
+                const SizedBox(height: 16),
+                
+                if (_category == 'Pago a Proveedor')
+                  DropdownButtonFormField<int>(
+                    value: _selectedSupplierId,
+                    decoration: const InputDecoration(labelText: 'Seleccionar Proveedor'),
+                    items: supplierProv.suppliers.map((s) => DropdownMenuItem(
+                      value: s.id,
+                      child: Text(s.name),
+                    )).toList(),
+                    onChanged: (val) => setState(() => _selectedSupplierId = val),
+                    validator: (val) => val == null ? 'Debe seleccionar un proveedor' : null,
+                  ),
+                  
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextFormField(
+                        controller: _descriptionController,
+                        decoration: const InputDecoration(labelText: 'Detalle / Descripción'),
+                        validator: (val) {
+                          if (_category == 'Otros' && (val == null || val.isEmpty)) {
+                            return 'Requerido para la categoría "Otros"';
+                          }
+                          return null;
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: TextFormField(
+                        controller: _receiptController,
+                        decoration: const InputDecoration(labelText: 'Nº Comprobante (Opc.)'),
+                      ),
+                    ),
+                  ],
                 ),
                 
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _amountController,
-                decoration: const InputDecoration(labelText: 'Monto Total', prefixText: '\$'),
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                validator: (val) {
-                  if (val == null || val.isEmpty) return 'Requerido';
-                  if (double.tryParse(val) == null) return 'Monto inválido';
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-              
-              DropdownButtonFormField<String>(
-                value: _paymentMethod,
-                decoration: const InputDecoration(labelText: 'Método de Pago'),
-                items: const [
-                  DropdownMenuItem(value: 'cash', child: Text('Efectivo')),
-                  DropdownMenuItem(value: 'transfer', child: Text('Transferencia')),
-                  DropdownMenuItem(value: 'check', child: Text('Cheque de Terceros')),
-                ],
-                onChanged: (val) => setState(() => _paymentMethod = val!),
-              ),
-              
-              if (_paymentMethod == 'check') ...[
-                const SizedBox(height: 16),
-                DropdownButtonFormField<int>(
-                  value: _selectedCheckId,
-                  decoration: const InputDecoration(labelText: 'Seleccionar Cheque (En Cartera)'),
-                  items: checkProv.checks
-                      .where((c) => c.status == 'in_wallet')
-                      .map((c) => DropdownMenuItem(
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 24.0),
+                  child: Divider(),
+                ),
+                
+                // PAGOS MIXTOS
+                Text('Métodos de Pago', style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 8),
+                
+                // Lista de pagos agregados
+                if (_payments.isNotEmpty)
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 16),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey.shade300),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: _payments.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      itemBuilder: (context, index) {
+                        final p = _payments[index];
+                        return ListTile(
+                          dense: true,
+                          title: Text(p.method.toUpperCase()),
+                          subtitle: p.checkObj != null 
+                              ? Text('Cheque Nº $'{p.checkObj!.checkNumber} - $'{p.checkObj!.bankName}') 
+                              : null,
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text('\$ $'{p.amount}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                              IconButton(
+                                icon: const Icon(Icons.delete, color: Colors.red, size: 20),
+                                onPressed: () => _removePayment(index),
+                              )
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+
+                // Agregar nuevo pago
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            flex: 2,
+                            child: DropdownButtonFormField<String>(
+                              value: _currentPaymentMethod,
+                              decoration: const InputDecoration(labelText: 'Método', isDense: true),
+                              items: const [
+                                DropdownMenuItem(value: 'cash', child: Text('Efectivo')),
+                                DropdownMenuItem(value: 'transfer', child: Text('Transf.')),
+                                DropdownMenuItem(value: 'check', child: Text('Cheque')),
+                              ],
+                              onChanged: (val) => setState(() {
+                                _currentPaymentMethod = val!;
+                                _currentCheckId = null;
+                                _paymentAmountController.clear();
+                              }),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            flex: 2,
+                            child: TextFormField(
+                              controller: _paymentAmountController,
+                              decoration: const InputDecoration(labelText: 'Monto', prefixText: '\$', isDense: true),
+                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                              enabled: _currentPaymentMethod != 'check', // En cheque, el monto se autocompleta
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          ElevatedButton(
+                            onPressed: _addPayment,
+                            child: const Text('Agregar'),
+                          ),
+                        ],
+                      ),
+                      if (_currentPaymentMethod == 'check') ...[
+                        const SizedBox(height: 8),
+                        DropdownButtonFormField<int>(
+                          value: _currentCheckId,
+                          decoration: const InputDecoration(labelText: 'Seleccionar Cheque en Cartera', isDense: true),
+                          items: availableChecks.map((c) => DropdownMenuItem(
                             value: c.id,
-                            child: Text('Nº $'{c.checkNumber} - $'{c.bankName} (\$ $'{c.amount})'),
-                          ))
-                      .toList(),
-                  onChanged: (val) {
-                    setState(() {
-                      _selectedCheckId = val;
-                      if (val != null) {
-                        final check = checkProv.checks.firstWhere((c) => c.id == val);
-                        _amountController.text = check.amount.toString();
-                      }
-                    });
-                  },
-                  validator: (val) => val == null ? 'Debe seleccionar un cheque' : null,
+                            child: Text('Nº $'{c.checkNumber} (\$ $'{c.amount}) - $'{c.bankName}'),
+                          )).toList(),
+                          onChanged: (val) {
+                            setState(() {
+                              _currentCheckId = val;
+                              if (val != null) {
+                                final check = availableChecks.firstWhere((c) => c.id == val);
+                                _paymentAmountController.text = check.amount.toString();
+                              }
+                            });
+                          },
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                
+                const SizedBox(height: 24),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: Text(
+                    'TOTAL: $'{NumberFormat.currency(symbol: '\$').format(_totalAmount)}',
+                    style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.indigo),
+                  ),
                 ),
               ],
-              
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _descriptionController,
-                decoration: const InputDecoration(labelText: 'Detalle / Descripción'),
-                validator: (val) {
-                  if (_category == 'Otros' && (val == null || val.isEmpty)) {
-                    return 'Requerido para la categoría "Otros"';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _receiptController,
-                decoration: const InputDecoration(labelText: 'Nº Comprobante / Recibo (Opcional)'),
-              ),
-            ],
+            ),
           ),
         ),
       ),
@@ -238,11 +390,12 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
           onPressed: _isLoading ? null : () => Navigator.of(context).pop(),
           child: const Text('Cancelar'),
         ),
-        ElevatedButton(
+        FilledButton.icon(
           onPressed: _isLoading ? null : _submit,
-          child: _isLoading 
-            ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-            : const Text('Guardar'),
+          icon: _isLoading 
+            ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+            : const Icon(Icons.save),
+          label: const Text('Procesar Movimiento'),
         ),
       ],
     );
