@@ -480,11 +480,11 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                           subtitle: p.checkObj != null 
                               ? Text('Cheque Nº ${p.checkObj!.checkNumber} - ${p.checkObj!.bankName}') 
                               : null,
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text('\$ ${p.amount}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                              IconButton(
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(NumberFormat.currency(symbol: '\$').format(p.amount), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                                IconButton(
                                 icon: const Icon(Icons.delete, color: Colors.red, size: 20),
                                 onPressed: () => _removePayment(index),
                               )
