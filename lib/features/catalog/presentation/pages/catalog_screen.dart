@@ -29,6 +29,8 @@ class _CatalogScreenState extends State<CatalogScreen> {
   final _searchController = TextEditingController();
   Timer? _debounceTimer;
   final Map<int, Product> _selectedProducts = {};
+  
+  PusherChannelsClient? _pusher;
 
   @override
   void initState() {
@@ -43,10 +45,69 @@ class _CatalogScreenState extends State<CatalogScreen> {
         _showProductForm(context, context.read<CatalogProvider>(), product: args);
       }
     });
+
+    _initPusher();
+  }
+
+  Future<void> _initPusher() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final terminalId = prefs.getString('pos_terminal_id') ?? 'caja-1';
+      final currentUrl = prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
+      final uri = Uri.parse(currentUrl);
+      
+      final isSecure = currentUrl.startsWith('https');
+      String pusherHost = uri.host;
+      if (pusherHost.startsWith('api.')) {
+        pusherHost = pusherHost.replaceFirst('api.', 'ws.');
+      } else if (pusherHost.startsWith('api-')) {
+        pusherHost = pusherHost.replaceFirst('api-', 'ws-');
+      }
+          
+      final int pusherPort = isSecure ? 443 : 8080;
+      
+      final options = PusherChannelsOptions.fromHost(
+        scheme: isSecure ? 'wss' : 'ws',
+        host: pusherHost,
+        port: pusherPort,
+        key: 'kz786cdfeldnzispymxq',
+      );
+
+      _pusher = PusherChannelsClient.websocket(
+        options: options,
+        connectionErrorHandler: (error, trace, refresh) {},
+      );
+
+      _pusher!.onConnectionEstablished.listen((_) {
+        final scanChannel = _pusher!.publicChannel('pos.scans.$terminalId');
+        scanChannel.subscribe();
+        scanChannel.bind('App\\Events\\MobileScanned').listen((event) {
+          try {
+            if (event.data == null) return;
+            final data = jsonDecode(event.data.toString());
+            final barcode = data['barcode'];
+            if (mounted && barcode != null && ModalRoute.of(context)?.isCurrent == true) {
+              setState(() {
+                _searchController.text = barcode;
+              });
+              context.read<CatalogProvider>().loadProducts(page: 1, search: barcode);
+              SnackBarService.success(context, 'Buscando código escaneado: $barcode');
+            }
+          } catch (e) {
+            debugPrint("Error parsing MobileScanned event: $e");
+          }
+        });
+      });
+
+      await _pusher!.connect();
+    } catch (e) {
+      debugPrint("Error inicializando Pusher en CatalogScreen: $e");
+    }
   }
 
   @override
   void dispose() {
+    _pusher?.disconnect();
     _debounceTimer?.cancel();
     _searchController.dispose();
     super.dispose();
