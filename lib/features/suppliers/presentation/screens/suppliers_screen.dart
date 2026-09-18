@@ -4,8 +4,8 @@ import 'package:provider/provider.dart';
 import '../../providers/supplier_provider.dart';
 import '../widgets/supplier_form_dialog.dart';
 import '../../../../core/presentation/widgets/global_app_bar.dart';
-import '../../cash_register/presentation/providers/cash_register_provider.dart';
-import '../../cash_movements/presentation/widgets/movement_form_dialog.dart';
+import '../../../cash_register/presentation/providers/cash_register_provider.dart';
+import '../../../cash_movements/presentation/widgets/movement_form_dialog.dart';
 
 class SuppliersScreen extends StatefulWidget {
   const SuppliersScreen({super.key});

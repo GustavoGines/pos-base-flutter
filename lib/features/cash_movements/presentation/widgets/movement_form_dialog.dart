@@ -224,7 +224,8 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                     const SizedBox(width: 16),
                     Expanded(
                       child: DropdownButtonFormField<String>(
-                        value: _category,
+                        key: ValueKey(_type),
+                        initialValue: _category,
                         decoration: const InputDecoration(labelText: 'Categoría'),
                         items: _currentCategories.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
                         onChanged: (val) => setState(() => _category = val!),
