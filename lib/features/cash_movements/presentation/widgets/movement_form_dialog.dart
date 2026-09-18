@@ -22,7 +22,7 @@ class PaymentItem {
 }
 
 class MovementFormDialog extends StatefulWidget {
-  const MovementFormDialog({Key? key}) : super(key: key);
+  const MovementFormDialog({super.key});
 
   @override
   State<MovementFormDialog> createState() => _MovementFormDialogState();
@@ -189,7 +189,7 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                   children: [
                     Expanded(
                       child: DropdownButtonFormField<String>(
-                        value: _type,
+                        initialValue: _type,
                         decoration: const InputDecoration(labelText: 'Tipo de Movimiento'),
                         items: const [
                           DropdownMenuItem(value: 'expense', child: Text('Gasto (Salida)')),
@@ -211,7 +211,7 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                               decoration: const InputDecoration(labelText: 'Categoría'),
                             )
                           : DropdownButtonFormField<String>(
-                              value: _category,
+                              initialValue: _category,
                               decoration: const InputDecoration(labelText: 'Categoría'),
                               items: _categories.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
                               onChanged: (val) => setState(() => _category = val!),
@@ -223,7 +223,7 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                 
                 if (_category == 'Pago a Proveedor')
                   DropdownButtonFormField<int>(
-                    value: _selectedSupplierId,
+                    initialValue: _selectedSupplierId,
                     decoration: const InputDecoration(labelText: 'Seleccionar Proveedor'),
                     items: supplierProv.suppliers.map((s) => DropdownMenuItem(
                       value: s.id,
@@ -317,7 +317,7 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                           Expanded(
                             flex: 2,
                             child: DropdownButtonFormField<String>(
-                              value: _currentPaymentMethod,
+                              initialValue: _currentPaymentMethod,
                               decoration: const InputDecoration(labelText: 'Método', isDense: true),
                               items: const [
                                 DropdownMenuItem(value: 'cash', child: Text('Efectivo')),
@@ -351,7 +351,7 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                       if (_currentPaymentMethod == 'check') ...[
                         const SizedBox(height: 8),
                         DropdownButtonFormField<int>(
-                          value: _currentCheckId,
+                          initialValue: _currentCheckId,
                           decoration: const InputDecoration(labelText: 'Seleccionar Cheque en Cartera', isDense: true),
                           items: availableChecks.map((c) => DropdownMenuItem(
                             value: c.id,

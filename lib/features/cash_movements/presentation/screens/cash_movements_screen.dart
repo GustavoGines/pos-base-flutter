@@ -6,7 +6,7 @@ import '../../providers/cash_movement_provider.dart';
 import '../widgets/movement_form_dialog.dart';
 
 class CashMovementsScreen extends StatefulWidget {
-  const CashMovementsScreen({Key? key}) : super(key: key);
+  const CashMovementsScreen({super.key});
 
   @override
   State<CashMovementsScreen> createState() => _CashMovementsScreenState();
