@@ -54,23 +54,35 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
 
       if (success && mounted) {
         Navigator.of(context).pop();
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Factura cargada correctamente. Deuda actualizada.')));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Operación registrada correctamente. Deuda actualizada.')));
 
         if (_payNow) {
-          final cashProv = context.read<CashRegisterProvider>();
-          if (cashProv.currentShift != null && cashProv.currentShift!.isOpen) {
-             showDialog(
-              context: context,
-              barrierDismissible: false,
-              builder: (_) => MovementFormDialog(
-                initialSupplierId: widget.supplierId,
-                initialType: 'expense',
-                initialCategory: 'Pago a Proveedor',
-                initialAmount: double.parse(_amountController.text),
-              ),
-            );
+          // Calcular inteligentemente cuánto sugerir pagar, considerando si había saldo a favor
+          final supplier = provider.suppliers.firstWhere((s) => s.id == widget.supplierId);
+          final newBalance = supplier.balance;
+          final invoiceAmount = double.parse(_amountController.text);
+          
+          // Si después de la factura aún debe dinero, sugerimos pagar el mínimo entre la factura y la deuda total
+          final amountToPay = newBalance > 0 ? (invoiceAmount < newBalance ? invoiceAmount : newBalance) : 0.0;
+
+          if (amountToPay > 0) {
+            final cashProv = context.read<CashRegisterProvider>();
+            if (cashProv.currentShift != null && cashProv.currentShift!.isOpen) {
+               showDialog(
+                context: context,
+                barrierDismissible: false,
+                builder: (_) => MovementFormDialog(
+                  initialSupplierId: widget.supplierId,
+                  initialType: 'expense',
+                  initialCategory: 'Pago a Proveedor',
+                  initialAmount: amountToPay,
+                ),
+              );
+            } else {
+               ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No se puede abonar ahora porque no hay turno de caja abierto.'), backgroundColor: Colors.red));
+            }
           } else {
-             ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('No se puede abonar ahora porque no hay turno de caja abierto.'.toString()), backgroundColor: Colors.red));
+             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('La factura fue cubierta totalmente con el Saldo a Favor del proveedor.', style: TextStyle(color: Colors.white)), backgroundColor: Colors.green));
           }
         }
       }
