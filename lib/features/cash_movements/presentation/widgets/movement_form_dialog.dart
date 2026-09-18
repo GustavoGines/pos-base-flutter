@@ -7,6 +7,7 @@ import '../../../checks/presentation/providers/check_provider.dart';
 import '../../../checks/domain/entities/third_party_check.dart';
 import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
+import '../../../suppliers/presentation/widgets/supplier_invoice_form_dialog.dart';
 
 class PaymentItem {
   final String method;
@@ -271,6 +272,57 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                 ),
                 const SizedBox(height: 16),
                 
+                if (_category == 'Pago a Proveedor')
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 16),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.blue.shade200),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.lightbulb_outline, color: Colors.blue.shade700),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('¿Ingresó mercadería nueva?', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue.shade900)),
+                              Text('Para mantener sus cuentas al día, registre primero el comprobante.', style: TextStyle(fontSize: 12, color: Colors.blue.shade800)),
+                            ],
+                          ),
+                        ),
+                        if (_selectedSupplierId != null) ...[
+                          const SizedBox(width: 8),
+                          FilledButton.tonal(
+                            style: FilledButton.styleFrom(
+                              backgroundColor: Colors.blue.shade100,
+                              foregroundColor: Colors.blue.shade900,
+                              visualDensity: VisualDensity.compact,
+                            ),
+                            onPressed: () {
+                              final supps = supplierProv.suppliers.where((s) => s.id == _selectedSupplierId);
+                              if (supps.isEmpty) return;
+                              final supplier = supps.first;
+                              Navigator.of(context).pop();
+                              showDialog(
+                                context: context,
+                                barrierDismissible: false,
+                                builder: (_) => SupplierInvoiceFormDialog(
+                                  supplierId: supplier.id,
+                                  supplierName: supplier.name,
+                                ),
+                              );
+                            },
+                            child: const Text('Cargar Factura', style: TextStyle(fontSize: 12)),
+                          ),
+                        ]
+                      ],
+                    ),
+                  ),
+
                 if (_category == 'Pago a Proveedor' || _category == 'Cobro de Saldo a Favor') ...[
                   DropdownButtonFormField<int>(
                     initialValue: _selectedSupplierId,
