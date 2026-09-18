@@ -102,6 +102,7 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                         final bool canAccessCurrentAccounts = settings.features.currentAccounts;
                         final bool canAccessChecks = settings.features.checks;
                         final bool canAccessSuppliers = settings.features.suppliers;
+                        final bool canAccessExpenses = settings.features.expenses;
 
                         return Center(
                           child: SingleChildScrollView(
@@ -183,9 +184,16 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                                     _buildMenuItem(
                                       context: context,
                                       label: 'Gastos y Mov. de Caja',
-                                      icon: Icons.receipt_long_outlined,
+                                      icon: canAccessExpenses ? Icons.receipt_long_outlined : Icons.lock_outline,
                                       color: Colors.blue.shade700,
                                       route: '/cash-movements',
+                                      isLocked: !canAccessExpenses,
+                                      lockedTitle: 'Gestión de Gastos PREMIUM',
+                                      lockedFeatures: [
+                                        'Registro y control de gastos operativos',
+                                        'Movimientos mixtos de caja chica',
+                                        'Impacto directo en reportes y arqueos Z',
+                                      ],
                                     ),
                                     _buildMenuItem(
                                       context: context,

@@ -85,7 +85,7 @@ class CashRegisterShiftModel extends CashRegisterShift {
         closedByUserName: json['closed_by_user'] != null ? json['closed_by_user']['name'] : null,
       );
     } catch (e, stack) {
-      debugPrint('Error parsing CashRegisterShiftModel: $e\n$stack');
+      print('Error parsing CashRegisterShiftModel: $e\n$stack');
       rethrow;
     }
   }

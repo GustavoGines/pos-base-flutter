@@ -227,6 +227,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       'mobile_app': '📱 App Móvil (Inventario y Ventas)',
       'remote_access': '🌐 Acceso Remoto (Cloudflare / Internet)',
       'suppliers': '📦 Gestión de Proveedores (B2B)',
+      'expenses': '💸 Gestión de Gastos y Movimientos',
     };
     return dictionary[featureCode] ?? featureCode.toUpperCase();
   }

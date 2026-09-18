@@ -14,6 +14,7 @@ class FeatureFlags extends Equatable {
   final bool mobileApp;
   final bool remoteAccess;
   final bool suppliers;
+  final bool expenses;
 
   const FeatureFlags({
     this.fastPos = false,
@@ -29,6 +30,7 @@ class FeatureFlags extends Equatable {
     this.mobileApp = false,
     this.remoteAccess = false,
     this.suppliers = false,
+    this.expenses = false,
   });
 
   @override
@@ -46,6 +48,7 @@ class FeatureFlags extends Equatable {
         mobileApp,
         remoteAccess,
         suppliers,
+        expenses,
       ];
 }
 
