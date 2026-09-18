@@ -1659,28 +1659,25 @@ class _PosScreenState extends State<PosScreen> {
         extraAction: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            TextButton.icon(
-              onPressed: () {
-                showDialog(
-                  context: context,
-                  barrierDismissible: false,
-                  builder: (context) => const frontend_desktop_cash_movements_dialog.MovementFormDialog(),
-                );
-              },
-              icon: const Icon(Icons.account_balance_wallet_outlined, size: 18, color: Color(0xFF1E88E5)),
-              label: const Text(
-                'Movimientos', 
-                style: TextStyle(
-                  color: Color(0xFF1E88E5), 
-                  fontWeight: FontWeight.w600,
-                )
-              ),
-              style: TextButton.styleFrom(
-                backgroundColor: const Color(0xFF1E88E5).withValues(alpha: 0.1),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20),
-                  side: BorderSide(color: const Color(0xFF1E88E5).withValues(alpha: 0.3)),
+            Tooltip(
+              message: 'Gastos y Mov. de Caja',
+              child: InkWell(
+                onTap: () {
+                  showDialog(
+                    context: context,
+                    barrierDismissible: false,
+                    builder: (context) => const frontend_desktop_cash_movements_dialog.MovementFormDialog(),
+                  );
+                },
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1E88E5).withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFF1E88E5).withValues(alpha: 0.3)),
+                  ),
+                  child: const Icon(Icons.account_balance_wallet_outlined, size: 22, color: Color(0xFF1E88E5)),
                 ),
               ),
             ),
