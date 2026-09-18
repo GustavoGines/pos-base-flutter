@@ -10,6 +10,8 @@ import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import 'package:frontend_desktop/features/catalog/presentation/widgets/categories_manager_dialog.dart';
 import 'package:frontend_desktop/features/catalog/presentation/widgets/brands_manager_dialog.dart';
+import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
+import 'package:frontend_desktop/features/suppliers/providers/supplier_provider.dart';
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -249,6 +251,7 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
     bool isSaving = false;
     int? selectedCategoryId = productToEdit?.category?.id;
     int? selectedBrandId = productToEdit?.brand?.id;
+    int? selectedSupplierId = productToEdit?.supplier?.id;
     bool isSoldByWeight = productToEdit?.isSoldByWeight ?? false;
     bool isActive = productToEdit?.active ?? true;
     String unitType = productToEdit?.unitType ?? 'un';
@@ -284,6 +287,11 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
           );
         },
       );
+    }
+
+    final canSeeSupplier = context.read<SettingsProvider>().features.suppliers;
+    if (canSeeSupplier && context.read<SupplierProvider>().suppliers.isEmpty) {
+      context.read<SupplierProvider>().fetchSuppliers();
     }
 
     await showDialog(
@@ -428,6 +436,22 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                         ),
                       ],
                     ),
+                    
+                    if (context.read<SettingsProvider>().features.suppliers) ...[
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<int?>(
+                        isExpanded: true,
+                        // ignore: deprecated_member_use
+                        value: context.read<SupplierProvider>().suppliers.any((s) => s.id == selectedSupplierId) ? selectedSupplierId : null,
+                        decoration: const InputDecoration(labelText: 'Proveedor (Opcional)', isDense: true, border: OutlineInputBorder()),
+                        items: [
+                          const DropdownMenuItem(value: null, child: Text('Sin Proveedor')),
+                          ...context.read<SupplierProvider>().suppliers.map((s) => DropdownMenuItem(value: s.id, child: Text(s.name, overflow: TextOverflow.ellipsis))),
+                        ],
+                        onChanged: (val) => setStateDialog(() => selectedSupplierId = val),
+                      ),
+                    ],
+                    
                     const SizedBox(height: 12),
                     
                     // Fila de Costo, Margen, Venta
@@ -575,6 +599,7 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                               'stock': stock,
                               'category_id': selectedCategoryId,
                               'brand_id': selectedBrandId,
+                              'supplier_id': selectedSupplierId,
                               'is_sold_by_weight': isSoldByWeight,
                               'unit_type': isSoldByWeight ? 'kg' : unitType,
                               'active': isActive,
