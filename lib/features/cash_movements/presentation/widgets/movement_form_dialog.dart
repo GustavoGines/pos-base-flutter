@@ -26,12 +26,14 @@ class MovementFormDialog extends StatefulWidget {
   final int? initialSupplierId;
   final String? initialType;
   final String? initialCategory;
+  final double? initialAmount;
 
   const MovementFormDialog({
     super.key,
     this.initialSupplierId,
     this.initialType,
     this.initialCategory,
+    this.initialAmount,
   });
 
   @override
@@ -77,6 +79,10 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
     _category = widget.initialCategory ?? 'Mercadería';
     _selectedSupplierId = widget.initialSupplierId;
     
+    if (widget.initialAmount != null && widget.initialAmount! > 0) {
+      _payments.add(PaymentItem(method: 'cash', amount: widget.initialAmount!));
+    }
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<SupplierProvider>().fetchSuppliers();
       context.read<CheckProvider>().loadChecks();
@@ -394,12 +400,34 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                   ),
                 ),
                 
-                const SizedBox(height: 24),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: Text(
-                    'TOTAL: ${NumberFormat.currency(symbol: '\$').format(_totalAmount)}',
-                    style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.indigo),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
+                  decoration: BoxDecoration(
+                    color: _type == 'deposit' ? Colors.green.shade50 : Colors.red.shade50,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: _type == 'deposit' ? Colors.green.shade200 : Colors.red.shade200, width: 2),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        _type == 'deposit' ? 'TOTAL INGRESO:' : 'TOTAL EGRESO:',
+                        style: TextStyle(
+                          fontSize: 18, 
+                          fontWeight: FontWeight.bold, 
+                          color: _type == 'deposit' ? Colors.green.shade900 : Colors.red.shade900
+                        ),
+                      ),
+                      Text(
+                        NumberFormat.currency(symbol: '\$').format(_totalAmount),
+                        style: TextStyle(
+                          fontSize: 28, 
+                          fontWeight: FontWeight.w900, 
+                          color: _type == 'deposit' ? Colors.green.shade700 : Colors.red.shade700
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],

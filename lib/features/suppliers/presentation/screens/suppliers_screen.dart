@@ -49,6 +49,7 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
         initialSupplierId: supplierId,
         initialType: balance > 0 ? 'expense' : 'deposit',
         initialCategory: balance > 0 ? 'Pago a Proveedor' : 'Cobro de Saldo a Favor',
+        initialAmount: balance.abs(),
       ),
     );
   }

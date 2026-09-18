@@ -64,6 +64,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                 initialSupplierId: widget.supplierId,
                 initialType: 'expense',
                 initialCategory: 'Pago a Proveedor',
+                initialAmount: double.parse(_amountController.text),
               ),
             );
           } else {
