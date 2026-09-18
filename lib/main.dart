@@ -97,6 +97,7 @@ import 'features/users/data/datasources/users_remote_datasource.dart';
 import 'features/users/data/repositories/users_repository.dart';
 import 'features/users/presentation/providers/users_provider.dart';
 import 'features/users/presentation/pages/users_manager_screen.dart';
+import 'features/cash_movements/presentation/screens/cash_movements_screen.dart';
 
 class FadePageRouteTransitionsBuilder extends PageTransitionsBuilder {
   const FadePageRouteTransitionsBuilder();
@@ -1012,6 +1013,8 @@ class _MainAppState extends State<MainApp> {
         '/delivery-notes': (context) => const LogisticsDashboardScreen(),
         // [suppliers]
         '/suppliers': (context) => const SuppliersScreen(),
+        // [cash movements]
+        '/cash-movements': (context) => const CashMovementsScreen(),
         // [mobile]
         '/mobile-scanner': (context) => const MobileScannerScreen(),
         '/mobile-audit': (context) => const MobileAuditScreen(),
