@@ -324,6 +324,7 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
 
           if (isSupplierPayment && supplierName != null) {
             await CashMovementPdfService.printSupplierPayment(
+              context: context,
               type: _type,
               supplierName: supplierName,
               supplierCuit: supplierCuit,
@@ -340,6 +341,7 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
             );
           } else {
             await CashMovementPdfService.printGenericMovement(
+              context: context,
               type: _type,
               category: _category,
               totalAmount: _totalAmount,

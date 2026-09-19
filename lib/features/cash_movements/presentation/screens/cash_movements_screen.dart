@@ -58,6 +58,7 @@ class _CashMovementsScreenState extends State<CashMovementsScreen> {
       if (isA4) {
         if (isSupplierPayment) {
           await CashMovementPdfService.printSupplierPayment(
+            context: context,
             type: movement.type,
             supplierName: movement.supplier!['name'],
             supplierCuit: movement.supplier!['tax_id'],
@@ -74,6 +75,7 @@ class _CashMovementsScreenState extends State<CashMovementsScreen> {
           );
         } else {
           await CashMovementPdfService.printGenericMovement(
+            context: context,
             type: movement.type,
             category: movement.category,
             totalAmount: movement.amount,

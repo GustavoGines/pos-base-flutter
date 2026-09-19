@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'package:flutter/material.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:intl/intl.dart';
@@ -12,8 +13,8 @@ class CashMovementPdfService {
   static const _bgLight = PdfColor.fromInt(0xFFF5F7FA);
   static const _textGrey = PdfColor.fromInt(0xFF6B7280);
 
-  /// Genera y opcionalmente imprime/muestra el comprobante genérico.
   static Future<void> printGenericMovement({
+    required BuildContext context,
     required String type,
     required String category,
     required double totalAmount,
@@ -40,10 +41,28 @@ class CashMovementPdfService {
       paperSize: paperSize,
     );
 
-    await Printing.layoutPdf(
-      onLayout: (PdfPageFormat format) async => pdfBytes,
-      name: 'Comprobante_Caja_${movementIds.isNotEmpty ? movementIds.first : '00'}',
-    );
+    if (context.mounted) {
+      await showDialog(
+        context: context,
+        builder: (ctx) => Dialog(
+          child: SizedBox(
+            width: 800,
+            height: 600,
+            child: Scaffold(
+              appBar: AppBar(title: const Text('Vista Previa de Comprobante')),
+              body: PdfPreview(
+                allowPrinting: true,
+                allowSharing: true,
+                canChangeOrientation: false,
+                canChangePageFormat: false,
+                pdfFileName: 'Comprobante_Caja_${movementIds.isNotEmpty ? movementIds.first : '00'}.pdf',
+                build: (format) async => pdfBytes,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
   }
 
   static Future<Uint8List> _generateGenericPdfBytes({
@@ -116,8 +135,8 @@ class CashMovementPdfService {
     return pdf.save();
   }
 
-  /// Genera y opcionalmente imprime/muestra el comprobante de proveedor.
   static Future<void> printSupplierPayment({
+    required BuildContext context,
     required String type,
     required String supplierName,
     required double totalAmount,
@@ -148,10 +167,28 @@ class CashMovementPdfService {
       paperSize: paperSize,
     );
 
-    await Printing.layoutPdf(
-      onLayout: (PdfPageFormat format) async => pdfBytes,
-      name: 'Comprobante_Proveedor_${movementIds.isNotEmpty ? movementIds.first : '00'}',
-    );
+    if (context.mounted) {
+      await showDialog(
+        context: context,
+        builder: (ctx) => Dialog(
+          child: SizedBox(
+            width: 800,
+            height: 600,
+            child: Scaffold(
+              appBar: AppBar(title: const Text('Vista Previa de Pago a Proveedor')),
+              body: PdfPreview(
+                allowPrinting: true,
+                allowSharing: true,
+                canChangeOrientation: false,
+                canChangePageFormat: false,
+                pdfFileName: 'Comprobante_Proveedor_${movementIds.isNotEmpty ? movementIds.first : '00'}.pdf',
+                build: (format) async => pdfBytes,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
   }
 
   static Future<Uint8List> _generateSupplierPdfBytes({
