@@ -90,13 +90,14 @@ class _TrashScreenState extends State<TrashScreen> {
           return Row(
             children: [
               // Panel Izquierdo
-              Container(
-                width: 280,
+              Material(
                 color: Colors.white,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Container(
+                child: SizedBox(
+                  width: 280,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Container(
                       padding: const EdgeInsets.all(24),
                       color: Colors.blueGrey.shade50,
                       child: const Column(

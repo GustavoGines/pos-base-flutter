@@ -46,7 +46,7 @@ class CashMovementProvider extends ChangeNotifier {
       }
     } catch (e) {
       debugPrint('Error fetchMovements: $e');
-      rethrow;
+      
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -94,7 +94,7 @@ class CashMovementProvider extends ChangeNotifier {
       }
     } catch (e) {
       debugPrint('Error createMovement: $e');
-      rethrow;
+      
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -121,7 +121,7 @@ class CashMovementProvider extends ChangeNotifier {
       }
     } catch (e) {
       debugPrint('Error deleteMovement: $e');
-      rethrow;
+      
     } finally {
       _isLoading = false;
       notifyListeners();
