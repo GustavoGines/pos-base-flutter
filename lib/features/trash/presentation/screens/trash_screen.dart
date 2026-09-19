@@ -149,12 +149,14 @@ class _TrashScreenState extends State<TrashScreen> {
                                 trailing: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    TextButton.icon(
-                                      icon: const Icon(Icons.restore, color: Colors.green),
-                                      label: const Text('Restaurar', style: TextStyle(color: Colors.green)),
-                                      onPressed: () => _confirmAction(true, item),
-                                    ),
-                                    const SizedBox(width: 8),
+                                    if (provider.currentType != 'cash_movements') ...[
+                                      TextButton.icon(
+                                        icon: const Icon(Icons.restore, color: Colors.green),
+                                        label: const Text('Restaurar', style: TextStyle(color: Colors.green)),
+                                        onPressed: () => _confirmAction(true, item),
+                                      ),
+                                      const SizedBox(width: 8),
+                                    ],
                                     TextButton.icon(
                                       icon: const Icon(Icons.delete_forever, color: Colors.red),
                                       label: const Text('Destruir', style: TextStyle(color: Colors.red)),

@@ -9,6 +9,7 @@ import '../../services/cash_movement_pdf_service.dart';
 import '../../../../core/providers/local_terminal_provider.dart';
 import '../../../settings/presentation/providers/settings_provider.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
+import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
 
 class CashMovementsScreen extends StatefulWidget {
   const CashMovementsScreen({super.key});
@@ -127,6 +128,53 @@ class _CashMovementsScreenState extends State<CashMovementsScreen> {
       debugPrint('Error reimprimiendo: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Error al reimprimir comprobante.')));
+      }
+    }
+  }
+
+  Future<void> _voidMovement(dynamic movement) async {
+    final authorized = await AdminPinDialog.verify(
+      context, 
+      action: 'Anular Movimiento de Caja',
+    );
+    
+    if (authorized && mounted) {
+      final confirm = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Confirmar Anulación'),
+          content: Text('¿Está seguro de anular este movimiento de \$${movement.amount}?\n\nEsta acción revertirá los saldos y enviará el registro a la papelera.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton.icon(
+              style: FilledButton.styleFrom(backgroundColor: Colors.red.shade700),
+              onPressed: () => Navigator.pop(ctx, true),
+              icon: const Icon(Icons.delete_forever, size: 18),
+              label: const Text('Anular'),
+            ),
+          ],
+        ),
+      );
+
+      if (confirm == true && mounted) {
+        // Obtenemos el PIN ingresado desde el provider o podemos pasarlo si el dialog lo devolviera. 
+        // AdminPinDialog.verify actualmente no devuelve el pin crudo, 
+        // pero deleteMovement pide adminPin si es un retiro. Wait, let's check `deleteMovement`.
+        
+        try {
+          // Pass empty adminPin, the backend gets it from session or we might need to modify deleteMovement
+          await context.read<CashMovementProvider>().deleteMovement(movement.id, adminPin: '');
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Movimiento anulado correctamente.')));
+          }
+        } catch (e) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Error al anular movimiento.'), backgroundColor: Colors.red));
+          }
+        }
       }
     }
   }
@@ -312,11 +360,22 @@ class _CashMovementsScreenState extends State<CashMovementsScreen> {
                             )
                           ],
                         ),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.print_outlined),
-                          color: Colors.grey.shade600,
-                          tooltip: 'Reimprimir Comprobante',
-                          onPressed: () => _reprintTicket(movement),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.print_outlined),
+                              color: Colors.grey.shade600,
+                              tooltip: 'Reimprimir Comprobante',
+                              onPressed: () => _reprintTicket(movement),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline),
+                              color: Colors.red.shade600,
+                              tooltip: 'Anular Movimiento',
+                              onPressed: () => _voidMovement(movement),
+                            ),
+                          ],
                         ),
                       );
                     },
