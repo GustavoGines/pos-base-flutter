@@ -18,7 +18,7 @@ import '../../../updater/presentation/widgets/update_dialog.dart';
 import '../../../pos/presentation/providers/pos_provider.dart';
 import '../widgets/mobile_app_qr_section.dart';
 
-enum SettingsSection { general, prices, hardware, subscription, network, mobileApp }
+enum SettingsSection { general, prices, subscription, network, mobileApp }
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -426,11 +426,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             section: SettingsSection.prices,
           ),
           _buildSidebarItem(
-            icon: Icons.print_outlined,
-            title: 'Hardware',
-            section: SettingsSection.hardware,
-          ),
-          _buildSidebarItem(
             icon: Icons.verified_user_outlined,
             title: 'Suscripción',
             section: SettingsSection.subscription,
@@ -523,8 +518,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         return _buildGeneralSection(provider);
       case SettingsSection.prices:
         return _buildPricesSection(provider);
-      case SettingsSection.hardware:
-        return _buildHardwareSection();
       case SettingsSection.subscription:
         return _buildSubscriptionSection(provider);
       case SettingsSection.network:
@@ -891,143 +884,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _buildHardwareSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildSectionHeader(
-          'Hardware Migrado a Local',
-          'La configuración de impresoras y balanzas es ahora independiente por caja.',
-        ),
-        const SizedBox(height: 32),
-        Container(
-          padding: const EdgeInsets.all(28),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [
-                Color(0xFF673AB7).withValues(alpha: 0.08),
-                Color(0xFF3F51B5).withValues(alpha: 0.06)
-              ],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: Color(0xFF673AB7).withValues(alpha: 0.2)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Color(0xFF673AB7).withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Icon(Icons.computer_outlined,
-                        color: Color(0xFF673AB7), size: 28),
-                  ),
-                  const SizedBox(width: 16),
-                  const Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Arquitectura Multi-Caja Activa',
-                          style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFF311B92)),
-                        ),
-                        SizedBox(height: 4),
-                        Text(
-                          'Cada terminal configura su propio hardware de forma independiente.',
-                          style:
-                              TextStyle(fontSize: 13, color: Color(0xFF4527A0)),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 24),
-              const Divider(color: Color(0xFFD1C4E9)),
-              const SizedBox(height: 16),
-              _buildMigrationInfoRow(
-                Icons.print_outlined,
-                'Impresora Térmica',
-                'Configurá la conexión (USB/Red) desde el ícono ⚙️ en la pantalla del POS.',
-              ),
-              const SizedBox(height: 12),
-              _buildMigrationInfoRow(
-                Icons.scale_outlined,
-                'Balanza (Puerto COM)',
-                'El puerto COM de la balanza se asigna desde el mismo modal de ajustes del POS.',
-              ),
-              const SizedBox(height: 12),
-              _buildMigrationInfoRow(
-                Icons.straighten_outlined,
-                'Formato de Papel',
-                'Seleccioná entre 58mm, 80mm o A4 individualmente para cada caja física.',
-              ),
-              const SizedBox(height: 24),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                      color: Color(0xFF673AB7).withValues(alpha: 0.3)),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.info_outline_rounded,
-                        color: Color(0xFF673AB7), size: 20),
-                    const SizedBox(width: 12),
-                    const Expanded(
-                      child: Text(
-                        'Estos ajustes se guardan en esta PC únicamente (SharedPreferences) y no se sincronizan con la nube.',
-                        style:
-                            TextStyle(fontSize: 12, color: Color(0xFF4527A0)),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
 
-  Widget _buildMigrationInfoRow(IconData icon, String title, String subtitle) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(icon, size: 20, color: const Color(0xFF7E57C2)),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(title,
-                  style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                      color: Color(0xFF311B92))),
-              const SizedBox(height: 2),
-              Text(subtitle,
-                  style:
-                      const TextStyle(fontSize: 12, color: Color(0xFF5E35B1))),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
 
   Widget _buildSubscriptionSection(SettingsProvider provider) {
     final settings = provider.settings;

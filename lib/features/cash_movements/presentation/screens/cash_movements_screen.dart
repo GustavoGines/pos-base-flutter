@@ -4,6 +4,11 @@ import 'package:intl/intl.dart';
 import '../../../../core/presentation/widgets/global_app_bar.dart';
 import '../../providers/cash_movement_provider.dart';
 import '../widgets/movement_form_dialog.dart';
+import '../../../../core/utils/receipt_printer_service.dart';
+import '../../services/cash_movement_pdf_service.dart';
+import '../../../../core/providers/local_terminal_provider.dart';
+import '../../../settings/presentation/providers/settings_provider.dart';
+import '../../../auth/presentation/providers/auth_provider.dart';
 
 class CashMovementsScreen extends StatefulWidget {
   const CashMovementsScreen({super.key});
@@ -27,6 +32,101 @@ class _CashMovementsScreenState extends State<CashMovementsScreen> {
       barrierDismissible: false,
       builder: (context) => const MovementFormDialog(),
     );
+  }
+
+  Future<void> _reprintTicket(dynamic movement) async {
+    final localTerminal = context.read<LocalTerminalProvider>();
+    final settingsProv = context.read<SettingsProvider>();
+    final authProv = context.read<AuthProvider>();
+    
+    if (localTerminal.printerConnection.toLowerCase() == 'none' && !localTerminal.printerFormat.startsWith('a4')) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No hay impresora configurada.')));
+      return;
+    }
+
+    final isA4 = localTerminal.printerFormat.startsWith('a4');
+    final settings = settingsProv.settings;
+    
+    final isSupplierPayment = (movement.category == 'Pago a Proveedor' || movement.category == 'Cobro de Saldo a Favor') && movement.supplier != null;
+    
+    // Armamos la lista de pagos simplificada. Si el modelo no los tiene desglosados, usamos el total.
+    final List<Map<String, dynamic>> payments = [
+      {'payment_method': movement.paymentMethod, 'amount': movement.amount}
+    ];
+
+    try {
+      if (isA4) {
+        if (isSupplierPayment) {
+          await CashMovementPdfService.printSupplierPayment(
+            type: movement.type,
+            supplierName: movement.supplier!['name'],
+            supplierCuit: movement.supplier!['tax_id'],
+            totalAmount: movement.amount,
+            balanceBefore: 0.0, // Históricamente no guardamos el saldo exacto del momento en la DB
+            payments: payments,
+            businessName: settings?.companyName ?? 'MI NEGOCIO',
+            businessTaxId: settings?.taxId,
+            movementIds: [movement.id],
+            description: movement.description,
+            receiptNumber: movement.receiptNumber,
+            cashierName: movement.user?['name'] ?? authProv.currentUser?['name'],
+            paperSize: localTerminal.pdfPaperSize,
+          );
+        } else {
+          await CashMovementPdfService.printGenericMovement(
+            type: movement.type,
+            category: movement.category,
+            totalAmount: movement.amount,
+            payments: payments,
+            businessName: settings?.companyName ?? 'MI NEGOCIO',
+            businessTaxId: settings?.taxId,
+            movementIds: [movement.id],
+            description: movement.description,
+            receiptNumber: movement.receiptNumber,
+            cashierName: movement.user?['name'] ?? authProv.currentUser?['name'],
+            paperSize: localTerminal.pdfPaperSize,
+          );
+        }
+      } else {
+        // Térmica
+        if (isSupplierPayment) {
+          await ReceiptPrinterService.instance.printSupplierPaymentTicket(
+            type: movement.type,
+            supplierName: movement.supplier!['name'],
+            supplierCuit: movement.supplier!['tax_id'],
+            totalAmount: movement.amount,
+            balanceBefore: 0.0,
+            payments: payments,
+            settings: settings!,
+            localTerminal: localTerminal,
+            movementIds: [movement.id],
+            description: movement.description,
+            receiptNumber: movement.receiptNumber,
+            cashierName: movement.user?['name'] ?? authProv.currentUser?['name'],
+            openDrawer: false, // Reimpresión no abre cajón
+          );
+        } else {
+          await ReceiptPrinterService.instance.printCashMovementTicket(
+            type: movement.type,
+            category: movement.category,
+            totalAmount: movement.amount,
+            payments: payments,
+            settings: settings!,
+            localTerminal: localTerminal,
+            movementIds: [movement.id],
+            description: movement.description,
+            receiptNumber: movement.receiptNumber,
+            cashierName: movement.user?['name'] ?? authProv.currentUser?['name'],
+            openDrawer: false, // Reimpresión no abre cajón
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('Error reimprimiendo: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Error al reimprimir comprobante.')));
+      }
+    }
   }
 
   @override
@@ -209,6 +309,12 @@ class _CashMovementsScreenState extends State<CashMovementsScreen> {
                               ],
                             )
                           ],
+                        ),
+                        trailing: IconButton(
+                          icon: const Icon(Icons.print_outlined),
+                          color: Colors.grey.shade600,
+                          tooltip: 'Reimprimir Comprobante',
+                          onPressed: () => _reprintTicket(movement),
                         ),
                       );
                     },

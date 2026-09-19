@@ -53,7 +53,9 @@ class CashMovementProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> createMovement(Map<String, dynamic> data, {String? adminPin}) async {
+  /// Crea un movimiento de caja y retorna los IDs generados.
+  /// Programación Defensiva: si el backend es viejo y no envía IDs, retorna lista vacía.
+  Future<List<int>> createMovement(Map<String, dynamic> data, {String? adminPin}) async {
     _isLoading = true;
     notifyListeners();
 
@@ -70,8 +72,23 @@ class CashMovementProvider extends ChangeNotifier {
       );
 
       if (response.statusCode == 201) {
+        // Extraer IDs de los movimientos creados (Programación Defensiva)
+        List<int> createdIds = [];
+        try {
+          final body = json.decode(response.body);
+          if (body is Map && body['movements'] is List) {
+            createdIds = (body['movements'] as List)
+                .map((m) => m['id'] as int)
+                .toList();
+          }
+        } catch (_) {
+          // Backend viejo: no envía IDs, no pasa nada
+          debugPrint('createMovement: backend no retornó IDs (versión antigua)');
+        }
+
         // Recargar movimientos tras éxito
         await fetchMovements();
+        return createdIds;
       } else {
         throw Exception(_parseError(response));
       }

@@ -874,6 +874,392 @@ class ReceiptPrinterService {
     }
   }
 
+  // ══════════════════════════════════════════════════════════════════
+  //  COMPROBANTE DE CAJA (Gastos, Retiros, Ingresos genéricos)
+  // ══════════════════════════════════════════════════════════════════
+
+  /// Imprime un comprobante de movimiento de caja genérico.
+  /// Incluye: tipo, categoría, pagos, firma conforme y drawer kick.
+  Future<void> printCashMovementTicket({
+    required String type,
+    required String category,
+    required double totalAmount,
+    required List<Map<String, dynamic>> payments,
+    required BusinessSettings settings,
+    required LocalTerminalProvider localTerminal,
+    List<int> movementIds = const [],
+    String? description,
+    String? receiptNumber,
+    String? cashierName,
+    bool openDrawer = true,
+  }) async {
+    if (localTerminal.printerConnection.toLowerCase() == 'none') return;
+    if (config.connectionType == PrinterConnectionType.usb &&
+        (config.comPort == null || config.comPort!.trim().isEmpty)) return;
+
+    final profile = await _getProfile();
+    final generator = Generator(config.paperSize, profile);
+    List<int> bytes = [];
+
+    bytes += generator.reset();
+
+    // ── Encabezado del negocio ──
+    bytes += generator.text(
+      _cleanText(settings.companyName?.toUpperCase() ?? 'MI NEGOCIO'),
+      styles: const PosStyles(
+        bold: true,
+        align: PosAlign.center,
+        height: PosTextSize.size2,
+        width: PosTextSize.size2,
+      ),
+    );
+    bytes += generator.feed(1);
+
+    if (settings.address != null && settings.address!.isNotEmpty) {
+      bytes += generator.text(
+        _cleanText(settings.address!),
+        styles: const PosStyles(align: PosAlign.center),
+      );
+    }
+    if (settings.taxId != null && settings.taxId!.isNotEmpty) {
+      bytes += generator.text(
+        'CUIT: ${settings.taxId}',
+        styles: const PosStyles(align: PosAlign.center, bold: true),
+      );
+    }
+    bytes += generator.hr(ch: '=');
+
+    // ── Título del comprobante ──
+    final String titulo;
+    switch (type) {
+      case 'withdrawal':
+        titulo = 'COMPROBANTE DE RETIRO';
+        break;
+      case 'deposit':
+        titulo = 'COMPROBANTE DE INGRESO';
+        break;
+      default:
+        titulo = 'COMPROBANTE DE GASTO';
+    }
+
+    bytes += generator.text(
+      titulo,
+      styles: const PosStyles(
+        align: PosAlign.center,
+        bold: true,
+        height: PosTextSize.size1,
+        width: PosTextSize.size2,
+      ),
+    );
+    bytes += generator.hr(ch: '-');
+
+    // ── Fecha, Nº de comprobante, cajero ──
+    final now = DateTime.now();
+    bytes += generator.text(
+      'FECHA: ${_formatDate(now)}',
+      styles: const PosStyles(bold: true, align: PosAlign.left),
+    );
+
+    if (movementIds.isNotEmpty) {
+      final idStr = movementIds.length == 1
+          ? 'MOV-${movementIds.first.toString().padLeft(6, '0')}'
+          : 'MOV-${movementIds.first.toString().padLeft(6, '0')}/${movementIds.last.toString().padLeft(6, '0')}';
+      bytes += generator.text(
+        'N$idStr',
+        styles: const PosStyles(bold: true, align: PosAlign.right),
+      );
+    }
+
+    if (cashierName != null) {
+      bytes += generator.text(
+        'CAJERO: ${_cleanText(cashierName).toUpperCase()}',
+        styles: const PosStyles(align: PosAlign.left),
+      );
+    }
+    bytes += generator.hr(ch: '-');
+
+    // ── Categoría y descripción ──
+    bytes += _labelValue(generator, 'CATEGORIA:', _cleanText(category.toUpperCase()));
+
+    if (description != null && description.isNotEmpty) {
+      bytes += generator.text(
+        'DETALLE: ${_cleanText(description)}',
+        styles: const PosStyles(align: PosAlign.left),
+      );
+    }
+
+    if (receiptNumber != null && receiptNumber.isNotEmpty) {
+      bytes += _labelValue(generator, 'COMPROBANTE:', receiptNumber);
+    }
+
+    // ── Desglose de pagos ──
+    if (payments.length > 1) {
+      bytes += generator.hr(ch: '-');
+      bytes += generator.text('DESGLOSE DE PAGOS:', styles: const PosStyles(bold: true));
+      for (final p in payments) {
+        final methodName = _cleanText(_mapPaymentMethod(p['payment_method'] as String? ?? 'cash'));
+        final amount = (p['amount'] as num?)?.toDouble() ?? 0.0;
+        bytes += _labelValue(generator, methodName, '\$${_formatPrice(amount)}');
+      }
+    }
+
+    // ── Total ──
+    bytes += generator.hr(ch: '=');
+    bytes += generator.row([
+      PosColumn(
+        text: type == 'deposit' ? 'TOTAL INGRESO:' : 'TOTAL EGRESO:',
+        width: 7,
+        styles: const PosStyles(bold: true, height: PosTextSize.size2),
+      ),
+      PosColumn(
+        text: '\$${_formatPrice(totalAmount)}',
+        width: 5,
+        styles: const PosStyles(
+          align: PosAlign.right,
+          bold: true,
+          height: PosTextSize.size2,
+        ),
+      ),
+    ]);
+
+    // ── Espacio para firmas ──
+    bytes += generator.feed(2);
+    bytes += generator.hr(ch: '.');
+    bytes += generator.text(
+      'Firma quien entrega',
+      styles: const PosStyles(align: PosAlign.center),
+    );
+    bytes += generator.feed(2);
+    bytes += generator.hr(ch: '.');
+    bytes += generator.text(
+      'Firma quien recibe',
+      styles: const PosStyles(align: PosAlign.center),
+    );
+
+    bytes += generator.feed(2);
+    bytes += generator.text(
+      '*** DOCUMENTO NO FISCAL ***',
+      styles: const PosStyles(align: PosAlign.center, bold: true),
+    );
+
+    bytes += generator.feed(3);
+    bytes += generator.cut();
+
+    // ── Drawer Kick ──
+    if (openDrawer) {
+      bytes += _drawerKickBytes(generator);
+    }
+
+    await _send(Uint8List.fromList(bytes));
+  }
+
+  // ══════════════════════════════════════════════════════════════════
+  //  COMPROBANTE DE PAGO A PROVEEDOR
+  // ══════════════════════════════════════════════════════════════════
+
+  /// Imprime un comprobante de pago/cobro a proveedor con saldos.
+  Future<void> printSupplierPaymentTicket({
+    required String type,
+    required String supplierName,
+    required double totalAmount,
+    required double balanceBefore,
+    required List<Map<String, dynamic>> payments,
+    required BusinessSettings settings,
+    required LocalTerminalProvider localTerminal,
+    List<int> movementIds = const [],
+    String? supplierCuit,
+    String? description,
+    String? receiptNumber,
+    String? cashierName,
+    bool openDrawer = true,
+  }) async {
+    if (localTerminal.printerConnection.toLowerCase() == 'none') return;
+    if (config.connectionType == PrinterConnectionType.usb &&
+        (config.comPort == null || config.comPort!.trim().isEmpty)) return;
+
+    final profile = await _getProfile();
+    final generator = Generator(config.paperSize, profile);
+    List<int> bytes = [];
+
+    bytes += generator.reset();
+
+    // ── Encabezado del negocio ──
+    bytes += generator.text(
+      _cleanText(settings.companyName?.toUpperCase() ?? 'MI NEGOCIO'),
+      styles: const PosStyles(
+        bold: true,
+        align: PosAlign.center,
+        height: PosTextSize.size2,
+        width: PosTextSize.size2,
+      ),
+    );
+    bytes += generator.feed(1);
+
+    if (settings.taxId != null && settings.taxId!.isNotEmpty) {
+      bytes += generator.text(
+        'CUIT: ${settings.taxId}',
+        styles: const PosStyles(align: PosAlign.center, bold: true),
+      );
+    }
+    bytes += generator.hr(ch: '=');
+
+    // ── Título ──
+    final titulo = type == 'deposit'
+        ? 'COBRO DE SALDO A FAVOR'
+        : 'PAGO A PROVEEDOR';
+
+    bytes += generator.text(
+      titulo,
+      styles: const PosStyles(
+        align: PosAlign.center,
+        bold: true,
+        height: PosTextSize.size1,
+        width: PosTextSize.size2,
+      ),
+    );
+    bytes += generator.hr(ch: '-');
+
+    // ── Fecha y número ──
+    final now = DateTime.now();
+    bytes += generator.text(
+      'FECHA: ${_formatDate(now)}',
+      styles: const PosStyles(bold: true),
+    );
+
+    if (movementIds.isNotEmpty) {
+      final idStr = movementIds.length == 1
+          ? 'MOV-${movementIds.first.toString().padLeft(6, '0')}'
+          : 'MOV-${movementIds.first.toString().padLeft(6, '0')}/${movementIds.last.toString().padLeft(6, '0')}';
+      bytes += generator.text(
+        'N$idStr',
+        styles: const PosStyles(bold: true, align: PosAlign.right),
+      );
+    }
+
+    if (cashierName != null) {
+      bytes += generator.text(
+        'CAJERO: ${_cleanText(cashierName).toUpperCase()}',
+      );
+    }
+    bytes += generator.hr(ch: '-');
+
+    // ── Datos del proveedor ──
+    bytes += generator.text(
+      'PROVEEDOR:',
+      styles: const PosStyles(bold: true),
+    );
+    bytes += generator.text(
+      _cleanText(supplierName.toUpperCase()),
+      styles: const PosStyles(
+        bold: true,
+        height: PosTextSize.size2,
+      ),
+    );
+    if (supplierCuit != null && supplierCuit.isNotEmpty) {
+      bytes += generator.text('CUIT: $supplierCuit');
+    }
+
+    if (description != null && description.isNotEmpty) {
+      bytes += generator.text('DETALLE: ${_cleanText(description)}');
+    }
+    if (receiptNumber != null && receiptNumber.isNotEmpty) {
+      bytes += _labelValue(generator, 'COMPROBANTE:', receiptNumber);
+    }
+
+    // ── Desglose de pagos ──
+    if (payments.length > 1) {
+      bytes += generator.hr(ch: '-');
+      bytes += generator.text('DESGLOSE DE PAGOS:', styles: const PosStyles(bold: true));
+      for (final p in payments) {
+        final methodName = _cleanText(_mapPaymentMethod(p['payment_method'] as String? ?? 'cash'));
+        final amount = (p['amount'] as num?)?.toDouble() ?? 0.0;
+        bytes += _labelValue(generator, methodName, '\$${_formatPrice(amount)}');
+      }
+    }
+
+    // ── Total abonado ──
+    bytes += generator.hr(ch: '=');
+    bytes += generator.row([
+      PosColumn(
+        text: type == 'deposit' ? 'TOTAL COBRADO:' : 'TOTAL ABONADO:',
+        width: 7,
+        styles: const PosStyles(bold: true, height: PosTextSize.size2),
+      ),
+      PosColumn(
+        text: '\$${_formatPrice(totalAmount)}',
+        width: 5,
+        styles: const PosStyles(
+          align: PosAlign.right,
+          bold: true,
+          height: PosTextSize.size2,
+        ),
+      ),
+    ]);
+
+    // ── Estado de cuenta ──
+    bytes += generator.hr(ch: '-');
+    bytes += generator.text(
+      'ESTADO DE CUENTA:',
+      styles: const PosStyles(bold: true),
+    );
+
+    final balanceAfter = type == 'expense'
+        ? balanceBefore - totalAmount
+        : balanceBefore + totalAmount;
+
+    bytes += _labelValue(generator, 'SALDO ANTERIOR:', '\$${_formatPrice(balanceBefore.abs())}');
+    bytes += _labelValue(generator, type == 'expense' ? 'ABONADO:' : 'COBRADO:', '-\$${_formatPrice(totalAmount)}');
+    bytes += generator.hr(ch: '-');
+
+    final balanceLabel = balanceAfter > 0
+        ? 'DEUDA RESTANTE:'
+        : (balanceAfter < 0 ? 'SALDO A FAVOR:' : 'CUENTA AL DIA');
+    bytes += _labelValue(generator, balanceLabel, '\$${_formatPrice(balanceAfter.abs())}');
+
+    // ── Espacio para firma del proveedor ──
+    bytes += generator.feed(2);
+    bytes += generator.hr(ch: '.');
+    bytes += generator.text(
+      'Firma del Proveedor',
+      styles: const PosStyles(align: PosAlign.center),
+    );
+    bytes += generator.feed(2);
+    bytes += generator.hr(ch: '.');
+    bytes += generator.text(
+      'Firma del Responsable',
+      styles: const PosStyles(align: PosAlign.center),
+    );
+
+    bytes += generator.feed(2);
+    bytes += generator.text(
+      '*** DOCUMENTO NO FISCAL ***',
+      styles: const PosStyles(align: PosAlign.center, bold: true),
+    );
+
+    bytes += generator.feed(3);
+    bytes += generator.cut();
+
+    if (openDrawer) {
+      bytes += _drawerKickBytes(generator);
+    }
+
+    await _send(Uint8List.fromList(bytes));
+  }
+
+  /// Mapea los valores internos del método de pago a texto legible en español.
+  String _mapPaymentMethod(String method) {
+    switch (method.toLowerCase()) {
+      case 'cash':
+        return 'EFECTIVO';
+      case 'transfer':
+        return 'TRANSFERENCIA';
+      case 'check':
+        return 'CHEQUE';
+      default:
+        return method.toUpperCase();
+    }
+  }
+
   Future<void> printZCloseTicket({
     required CashRegisterShift shift,
     required BusinessSettings settings, // Info visual

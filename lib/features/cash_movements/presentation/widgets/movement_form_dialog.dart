@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../providers/cash_movement_provider.dart';
 import '../../../suppliers/providers/supplier_provider.dart';
 import '../../../checks/presentation/providers/check_provider.dart';
@@ -8,6 +9,10 @@ import '../../../checks/domain/entities/third_party_check.dart';
 import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
 import '../../../suppliers/presentation/widgets/supplier_invoice_form_dialog.dart';
+import '../../../../core/utils/receipt_printer_service.dart';
+import '../../../../core/providers/local_terminal_provider.dart';
+import '../../../settings/presentation/providers/settings_provider.dart';
+import '../../services/cash_movement_pdf_service.dart';
 
 class PaymentItem {
   final String method;
@@ -61,6 +66,9 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
   int? _currentCheckId;
   final _paymentAmountController = TextEditingController();
 
+  // Impresión
+  bool _printReceipt = true;
+
   List<String> get _currentCategories {
     if (_type == 'deposit') {
       return ['Ingreso Extra', 'Cobro de Saldo a Favor', 'Otros'];
@@ -93,7 +101,25 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<SupplierProvider>().fetchSuppliers();
       context.read<CheckProvider>().loadChecks();
+      // Cargar preferencia de impresión y verificar si hay impresora
+      _loadPrintPreference();
     });
+  }
+
+  Future<void> _loadPrintPreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    final localTerminal = context.read<LocalTerminalProvider>();
+    final hasPrinter = localTerminal.printerConnection.toLowerCase() != 'none';
+    if (mounted) {
+      setState(() {
+        _printReceipt = hasPrinter && (prefs.getBool('auto_print_cash_movement') ?? true);
+      });
+    }
+  }
+
+  Future<void> _savePrintPreference(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('auto_print_cash_movement', value);
   }
 
   @override
@@ -184,6 +210,24 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
 
     try {
       final provider = context.read<CashMovementProvider>();
+      final localTerminal = context.read<LocalTerminalProvider>();
+      final settingsProvider = context.read<SettingsProvider>();
+      final supplierProvider = context.read<SupplierProvider>();
+      final settings = settingsProvider.settings!;
+      final authProvider = context.read<AuthProvider>();
+      
+      // ══ CAPTURA TEMPRANA: Saldo del proveedor ANTES del POST ══
+      double? balanceBeforePayment;
+      String? supplierName;
+      String? supplierCuit;
+      if (_selectedSupplierId != null) {
+        final supps = supplierProvider.suppliers.where((s) => s.id == _selectedSupplierId);
+        if (supps.isNotEmpty) {
+          balanceBeforePayment = supps.first.balance;
+          supplierName = supps.first.name;
+          supplierCuit = supps.first.cuit;
+        }
+      }
       
       final data = {
         'type': _type,
@@ -198,10 +242,132 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
         }).toList()
       };
 
-      await provider.createMovement(data, adminPin: adminPin);
+      // ══ 1. GUARDAR EN BASE DE DATOS (prioridad absoluta) ══
+      final createdIds = await provider.createMovement(data, adminPin: adminPin);
       
       if (mounted && _selectedSupplierId != null) {
-        context.read<SupplierProvider>().fetchSuppliers();
+        supplierProvider.fetchSuppliers();
+      }
+
+      // ══ 2. IMPRESIÓN (no bloqueante) ══
+      final bool isA4 = localTerminal.printerFormat.startsWith('a4');
+      final bool hasCash = _payments.any((p) => p.method == 'cash');
+      final bool isSupplierPayment = (_category == 'Pago a Proveedor' || _category == 'Cobro de Saldo a Favor')
+          && _selectedSupplierId != null;
+
+      if (_printReceipt && !isA4) {
+        // ── Impresión Térmica ──
+        try {
+          final paymentMaps = _payments.map((p) => <String, dynamic>{
+            'payment_method': p.method,
+            'amount': p.amount,
+          }).toList();
+
+          if (isSupplierPayment && supplierName != null) {
+            await ReceiptPrinterService.instance.printSupplierPaymentTicket(
+              type: _type,
+              supplierName: supplierName,
+              supplierCuit: supplierCuit,
+              totalAmount: _totalAmount,
+              balanceBefore: balanceBeforePayment ?? 0.0,
+              payments: paymentMaps,
+              settings: settings,
+              localTerminal: localTerminal,
+              movementIds: createdIds,
+              description: _descriptionController.text,
+              receiptNumber: _receiptController.text,
+              cashierName: authProvider.currentUser?['name'],
+              openDrawer: hasCash,
+            );
+          } else {
+            await ReceiptPrinterService.instance.printCashMovementTicket(
+              type: _type,
+              category: _category,
+              totalAmount: _totalAmount,
+              payments: paymentMaps,
+              settings: settings,
+              localTerminal: localTerminal,
+              movementIds: createdIds,
+              description: _descriptionController.text,
+              receiptNumber: _receiptController.text,
+              cashierName: authProvider.currentUser?['name'],
+              openDrawer: hasCash,
+            );
+          }
+        } catch (printError) {
+          // ── Error de impresión: NUNCA bloquea la transacción ──
+          debugPrint('Error de impresion (no bloqueante): $printError');
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: const Text('Movimiento guardado, pero la impresora no respondio.'),
+                backgroundColor: Colors.orange.shade700,
+                duration: const Duration(seconds: 4),
+              ),
+            );
+          }
+        }
+      } else if (!_printReceipt && hasCash) {
+        // ── Drawer Kick Aislado: no se imprime, pero hay efectivo ──
+        try {
+          await ReceiptPrinterService.instance.openCashDrawer(localTerminal);
+        } catch (_) {
+          // Silenciar — la gaveta no es crítica
+        }
+      } else if (_printReceipt && isA4) {
+        // ── Impresión A4/Carta (PDF) ──
+        try {
+          final paymentMaps = _payments.map((p) => <String, dynamic>{
+            'payment_method': p.method,
+            'amount': p.amount,
+          }).toList();
+
+          if (isSupplierPayment && supplierName != null) {
+            await CashMovementPdfService.printSupplierPayment(
+              type: _type,
+              supplierName: supplierName,
+              supplierCuit: supplierCuit,
+              totalAmount: _totalAmount,
+              balanceBefore: balanceBeforePayment ?? 0.0,
+              payments: paymentMaps,
+              businessName: settings.companyName ?? 'MI NEGOCIO',
+              businessTaxId: settings.taxId,
+              movementIds: createdIds,
+              description: _descriptionController.text,
+              receiptNumber: _receiptController.text,
+              cashierName: authProvider.currentUser?['name'],
+              paperSize: localTerminal.pdfPaperSize,
+            );
+          } else {
+            await CashMovementPdfService.printGenericMovement(
+              type: _type,
+              category: _category,
+              totalAmount: _totalAmount,
+              payments: paymentMaps,
+              businessName: settings.companyName ?? 'MI NEGOCIO',
+              businessTaxId: settings.taxId,
+              movementIds: createdIds,
+              description: _descriptionController.text,
+              receiptNumber: _receiptController.text,
+              cashierName: authProvider.currentUser?['name'],
+              paperSize: localTerminal.pdfPaperSize,
+            );
+          }
+          if (hasCash) {
+            await ReceiptPrinterService.instance.openCashDrawer(localTerminal);
+          }
+        } catch (printError) {
+          debugPrint('Error de impresion PDF (no bloqueante): $printError');
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: const Text('Movimiento guardado, pero falló la generación del PDF.'),
+                backgroundColor: Colors.orange.shade700,
+                duration: const Duration(seconds: 4),
+              ),
+            );
+          }
+        }
       }
       
       if (mounted) {
@@ -564,6 +730,25 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                   ),
                 ),
                 
+                // ── Checkbox de Impresión ──
+                if (context.watch<LocalTerminalProvider>().printerConnection.toLowerCase() != 'none')
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12, bottom: 4),
+                    child: CheckboxListTile(
+                      value: _printReceipt,
+                      onChanged: (val) {
+                        setState(() => _printReceipt = val ?? true);
+                        _savePrintPreference(val ?? true);
+                      },
+                      title: const Text('Imprimir comprobante', style: TextStyle(fontWeight: FontWeight.w500)),
+                      subtitle: const Text('Imprime un vale con espacio para firma', style: TextStyle(fontSize: 12)),
+                      secondary: Icon(Icons.print, color: _printReceipt ? Colors.blue : Colors.grey),
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      controlAffinity: ListTileControlAffinity.leading,
+                    ),
+                  ),
+
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
