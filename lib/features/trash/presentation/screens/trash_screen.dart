@@ -117,6 +117,7 @@ class _TrashScreenState extends State<TrashScreen> {
                   ],
                 ),
               ),
+              ),
               
               // Panel Derecho
               Expanded(
@@ -194,17 +195,20 @@ class _TrashScreenState extends State<TrashScreen> {
 
   Widget _buildNavTile(TrashProvider provider, String title, String type, IconData icon) {
     final isActive = provider.currentType == type;
-    return ListTile(
-      selected: isActive,
-      selectedTileColor: Colors.blue.shade50,
-      leading: Icon(icon, color: isActive ? Colors.blue.shade700 : Colors.blueGrey),
-      title: Text(title, style: TextStyle(
-        fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-        color: isActive ? Colors.blue.shade900 : Colors.blueGrey.shade700
-      )),
-      onTap: () {
-        if (!isActive) provider.fetchTrash(type);
-      },
+    return Material(
+      color: Colors.transparent,
+      child: ListTile(
+        selected: isActive,
+        selectedTileColor: Colors.blue.shade50,
+        leading: Icon(icon, color: isActive ? Colors.blue.shade700 : Colors.blueGrey),
+        title: Text(title, style: TextStyle(
+          fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+          color: isActive ? Colors.blue.shade900 : Colors.blueGrey.shade700
+        )),
+        onTap: () {
+          if (!isActive) provider.fetchTrash(type);
+        },
+      ),
     );
   }
 }
