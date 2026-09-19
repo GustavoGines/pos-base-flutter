@@ -77,37 +77,38 @@ class TrashProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> restoreItem(int id) async {
+  String _parseError(http.Response response) {
     try {
-      final response = await client.post(
-        Uri.parse('$baseUrl/trash/$_currentType/$id/restore'),
-        headers: {'Accept': 'application/json'},
-      );
-      if (response.statusCode == 200) {
-        _items.removeWhere((item) => item.id == id);
-        notifyListeners();
-        return true;
-      }
-      return false;
-    } catch (e) {
-      return false;
+      final errData = json.decode(response.body);
+      return errData['message'] ?? errData['error'] ?? 'Error del servidor';
+    } catch (_) {
+      return 'Error ${response.statusCode}';
     }
   }
 
-  Future<bool> forceDeleteItem(int id) async {
-    try {
-      final response = await client.delete(
-        Uri.parse('$baseUrl/trash/$_currentType/$id/force'),
-        headers: {'Accept': 'application/json'},
-      );
-      if (response.statusCode == 204) {
-        _items.removeWhere((item) => item.id == id);
-        notifyListeners();
-        return true;
-      }
-      return false;
-    } catch (e) {
-      return false;
+  Future<void> restoreItem(int id) async {
+    final response = await client.post(
+      Uri.parse('$baseUrl/trash/$_currentType/$id/restore'),
+      headers: {'Accept': 'application/json'},
+    );
+    if (response.statusCode == 200 || response.statusCode == 204) {
+      _items.removeWhere((item) => item.id == id);
+      notifyListeners();
+    } else {
+      throw Exception(_parseError(response));
+    }
+  }
+
+  Future<void> forceDeleteItem(int id) async {
+    final response = await client.delete(
+      Uri.parse('$baseUrl/trash/$_currentType/$id/force'),
+      headers: {'Accept': 'application/json'},
+    );
+    if (response.statusCode == 200 || response.statusCode == 204) {
+      _items.removeWhere((item) => item.id == id);
+      notifyListeners();
+    } else {
+      throw Exception(_parseError(response));
     }
   }
 }

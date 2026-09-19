@@ -43,17 +43,31 @@ class _TrashScreenState extends State<TrashScreen> {
             onPressed: () async {
               Navigator.pop(ctx);
               final provider = context.read<TrashProvider>();
-              final success = isRestore 
-                  ? await provider.restoreItem(item.id)
-                  : await provider.forceDeleteItem(item.id);
-                  
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(success ? 'Acción completada exitosamente' : 'Error al procesar la solicitud'),
-                    backgroundColor: success ? Colors.green : Colors.red,
-                  )
-                );
+              try {
+                if (isRestore) {
+                  await provider.restoreItem(item.id);
+                } else {
+                  await provider.forceDeleteItem(item.id);
+                }
+                
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Acción completada exitosamente'),
+                      backgroundColor: Colors.green,
+                    )
+                  );
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(e.toString().replaceAll('Exception: ', '')),
+                      backgroundColor: Colors.red.shade700,
+                      duration: const Duration(seconds: 5),
+                    )
+                  );
+                }
               }
             },
             child: Text(isRestore ? 'Restaurar' : 'Eliminar'),
