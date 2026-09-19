@@ -109,7 +109,7 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
   Future<void> _loadPrintPreference() async {
     final prefs = await SharedPreferences.getInstance();
     final localTerminal = context.read<LocalTerminalProvider>();
-    final hasPrinter = localTerminal.printerConnection.toLowerCase() != 'none';
+    final hasPrinter = localTerminal.printerConnection.toLowerCase() != 'none' || localTerminal.printerFormat.toLowerCase().startsWith('a4');
     if (mounted) {
       setState(() {
         _printReceipt = hasPrinter && (prefs.getBool('auto_print_cash_movement') ?? true);
@@ -731,7 +731,8 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                 ),
                 
                 // ── Checkbox de Impresión ──
-                if (context.watch<LocalTerminalProvider>().printerConnection.toLowerCase() != 'none')
+                if (context.watch<LocalTerminalProvider>().printerConnection.toLowerCase() != 'none' || 
+                    context.watch<LocalTerminalProvider>().printerFormat.toLowerCase().startsWith('a4'))
                   Padding(
                     padding: const EdgeInsets.only(top: 12, bottom: 4),
                     child: CheckboxListTile(
