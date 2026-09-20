@@ -7,8 +7,10 @@ import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
 import 'package:frontend_desktop/features/checks/presentation/providers/check_provider.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
+
 import '../providers/reports_provider.dart';
 import '../widgets/internal_consumption_report_view.dart';
+import '../widgets/expense_analysis_tab.dart';
 
 class ReportsScreen extends StatefulWidget {
   const ReportsScreen({super.key});
@@ -148,6 +150,8 @@ class _ReportsScreenState extends State<ReportsScreen>
                         // 🔒 CANDADO 3: Balance Mensual y Consumo Interno solo para plan con advanced_reports
                         if (hasAdvancedReports) ...[
                           const Tab(icon: Icon(Icons.calendar_month, size: 18), text: 'Balance Mensual'),
+                          if (features.expenses)
+                            const Tab(icon: Icon(Icons.pie_chart, size: 18), text: 'Análisis de Gastos'),
                           if (hasCurrentAccounts)
                             const Tab(icon: Icon(Icons.inventory_2, size: 18), text: 'Consumo Interno'),
                         ]
@@ -195,6 +199,8 @@ class _ReportsScreenState extends State<ReportsScreen>
                     // Tab 2: Balance Mensual (solo con advanced_reports)
                     if (hasAdvancedReports)
                       _MonthlyBalanceTab(provider: provider),
+                    if (hasAdvancedReports && features.expenses)
+                      const ExpenseAnalysisTab(),
                     // Tab 3: Consumo Interno (solo con advanced_reports Y currentAccounts)
                     if (hasAdvancedReports && hasCurrentAccounts)
                       const InternalConsumptionReportView(),

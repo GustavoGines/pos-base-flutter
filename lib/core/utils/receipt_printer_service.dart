@@ -893,9 +893,13 @@ class ReceiptPrinterService {
     String? cashierName,
     bool openDrawer = true,
   }) async {
-    if (localTerminal.printerConnection.toLowerCase() == 'none') return;
+    if (localTerminal.printerConnection.toLowerCase() == 'none') {
+      return;
+    }
     if (config.connectionType == PrinterConnectionType.usb &&
-        (config.comPort == null || config.comPort!.trim().isEmpty)) return;
+        (config.comPort == null || config.comPort!.trim().isEmpty)) {
+      return;
+    }
 
     final profile = await _getProfile();
     final generator = Generator(config.paperSize, profile);
@@ -1073,9 +1077,13 @@ class ReceiptPrinterService {
     String? cashierName,
     bool openDrawer = true,
   }) async {
-    if (localTerminal.printerConnection.toLowerCase() == 'none') return;
+    if (localTerminal.printerConnection.toLowerCase() == 'none') {
+      return;
+    }
     if (config.connectionType == PrinterConnectionType.usb &&
-        (config.comPort == null || config.comPort!.trim().isEmpty)) return;
+        (config.comPort == null || config.comPort!.trim().isEmpty)) {
+      return;
+    }
 
     final profile = await _getProfile();
     final generator = Generator(config.paperSize, profile);

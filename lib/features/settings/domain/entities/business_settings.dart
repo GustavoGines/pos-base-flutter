@@ -100,6 +100,7 @@ class BusinessSettings extends Equatable {
     if (features.mobileApp) list.add('mobile_app');
     if (features.remoteAccess) list.add('remote_access');
     if (features.suppliers) list.add('suppliers');
+    if (features.expenses) list.add('expenses');
     return list;
   }
 

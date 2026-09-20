@@ -148,7 +148,23 @@ class SupplierProvider extends ChangeNotifier {
       throw Exception(e.toString().replaceAll('Exception: ', ''));
     }
   }
-  
+  Future<Map<String, dynamic>> fetchCurrentAccount(int supplierId) async {
+    try {
+      final response = await client.get(
+        Uri.parse('$baseUrl/suppliers/$supplierId/current-account'),
+        headers: {'Accept': 'application/json'},
+      );
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      } else {
+        throw Exception(_parseError(response));
+      }
+    } catch (e) {
+      throw Exception(e.toString().replaceAll('Exception: ', ''));
+    }
+  }
+
   void setSearchQuery(String query) {
     _searchQuery = query;
     fetchSuppliers(search: query);

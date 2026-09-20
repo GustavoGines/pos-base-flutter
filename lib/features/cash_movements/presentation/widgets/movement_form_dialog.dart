@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../providers/cash_movement_provider.dart';
+import '../../providers/expense_category_provider.dart';
+
 import '../../../suppliers/providers/supplier_provider.dart';
 import '../../../checks/presentation/providers/check_provider.dart';
 import '../../../checks/domain/entities/third_party_check.dart';
@@ -58,6 +60,7 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
   final _receiptController = TextEditingController();
   
   int? _selectedSupplierId;
+  int? _expenseCategoryId;
   bool _isLoading = false;
 
   // Pagos mixtos
@@ -73,14 +76,13 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
     if (_type == 'deposit') {
       return ['Ingreso Extra', 'Cobro de Saldo a Favor', 'Otros'];
     }
-    return [
-      'Mercadería',
-      'Sueldos',
-      'Limpieza',
-      'Impuestos',
-      'Pago a Proveedor',
-      'Otros'
-    ];
+    if (_type == 'withdrawal') {
+      return ['Retiro', 'Adelanto de Sueldo', 'Otros'];
+    }
+    if (_type == 'supplier_payment') {
+      return ['Pago a Proveedor'];
+    }
+    return ['Otros']; // Fallback
   }
 
   @override
@@ -101,6 +103,7 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<SupplierProvider>().fetchSuppliers();
       context.read<CheckProvider>().loadChecks();
+      context.read<ExpenseCategoryProvider>().fetchCategories();
       // Cargar preferencia de impresión y verificar si hay impresora
       _loadPrintPreference();
     });
@@ -232,6 +235,7 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
       final data = {
         'type': _type,
         'category': _category,
+        'expense_category_id': _expenseCategoryId,
         'description': _descriptionController.text,
         'receipt_number': _receiptController.text,
         'supplier_id': _selectedSupplierId,
@@ -252,7 +256,7 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
       // ══ 2. IMPRESIÓN (no bloqueante) ══
       final bool isA4 = localTerminal.printerFormat.startsWith('a4');
       final bool hasCash = _payments.any((p) => p.method == 'cash');
-      final bool isSupplierPayment = (_category == 'Pago a Proveedor' || _category == 'Cobro de Saldo a Favor')
+      final bool isSupplierPayment = (_type == 'supplier_payment' || _category == 'Cobro de Saldo a Favor')
           && _selectedSupplierId != null;
 
       if (_printReceipt && !isA4) {
@@ -399,8 +403,8 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
 
     return AlertDialog(
       title: const Text('Registrar Movimiento de Caja'),
-      content: SizedBox(
-        width: 600,
+      content: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: 600, maxHeight: MediaQuery.of(context).size.height * 0.8),
         child: SingleChildScrollView(
           child: Form(
             key: _formKey,
@@ -410,19 +414,22 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
               children: [
                 // DATOS GENERALES
                 Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Expanded(
                       child: DropdownButtonFormField<String>(
                         initialValue: _type,
                         decoration: const InputDecoration(labelText: 'Tipo de Movimiento'),
                         items: const [
-                          DropdownMenuItem(value: 'expense', child: Text('Gasto (Salida)')),
+                          DropdownMenuItem(value: 'expense', child: Text('Gasto Operativo (Salida)')),
+                          DropdownMenuItem(value: 'supplier_payment', child: Text('Pago a Proveedor (Salida)')),
                           DropdownMenuItem(value: 'withdrawal', child: Text('Retiro de Dueño (Salida)')),
                           DropdownMenuItem(value: 'deposit', child: Text('Ingreso Extra (Entrada)')),
                         ],
                         onChanged: (val) => setState(() {
                           _type = val!;
-                          if (!_currentCategories.contains(_category)) {
+                          if (_type != 'expense') {
+                            _expenseCategoryId = null;
                             _category = _currentCategories.first;
                           }
                         }),
@@ -430,19 +437,41 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                     ),
                     const SizedBox(width: 16),
                     Expanded(
-                      child: DropdownButtonFormField<String>(
-                        key: ValueKey(_type),
-                        initialValue: _category,
-                        decoration: const InputDecoration(labelText: 'Categoría'),
-                        items: _currentCategories.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
-                        onChanged: (val) => setState(() => _category = val!),
-                      ),
+                      child: _type == 'expense'
+                          ? Consumer<ExpenseCategoryProvider>(
+                              builder: (context, provider, _) {
+                                if (provider.isLoading) {
+                                  return const Center(child: CircularProgressIndicator());
+                                }
+                                final activeCategories = provider.categories.where((c) => c.isActive).toList();
+                                return DropdownButtonFormField<int>(
+                                  initialValue: _expenseCategoryId,
+                                  decoration: const InputDecoration(labelText: 'Categoría de Gasto'),
+                                  items: activeCategories.map((c) => DropdownMenuItem(
+                                    value: c.id,
+                                    child: Text(c.name),
+                                  )).toList(),
+                                  onChanged: (val) => setState(() {
+                                    _expenseCategoryId = val;
+                                    _category = activeCategories.firstWhere((c) => c.id == val).name;
+                                  }),
+                                  validator: (val) => val == null ? 'Seleccione una categoría' : null,
+                                );
+                              },
+                            )
+                          : DropdownButtonFormField<String>(
+                              key: ValueKey(_type),
+                              initialValue: _category,
+                              decoration: const InputDecoration(labelText: 'Categoría'),
+                              items: _currentCategories.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
+                              onChanged: (val) => setState(() => _category = val!),
+                            ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 16),
                 
-                if (_category == 'Pago a Proveedor' && widget.initialSupplierId == null)
+                if (_type == 'supplier_payment' && widget.initialSupplierId == null)
                   Container(
                     margin: const EdgeInsets.only(bottom: 16),
                     padding: const EdgeInsets.all(12),
@@ -496,7 +525,7 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                     ),
                   ),
 
-                if (_category == 'Pago a Proveedor' || _category == 'Cobro de Saldo a Favor') ...[
+                if (_type == 'supplier_payment' || _category == 'Cobro de Saldo a Favor') ...[
                   DropdownButtonFormField<int>(
                     initialValue: _selectedSupplierId,
                     decoration: const InputDecoration(labelText: 'Seleccionar Proveedor'),

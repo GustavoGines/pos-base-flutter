@@ -17,6 +17,7 @@ import '../../../updater/data/services/update_service.dart';
 import '../../../updater/presentation/widgets/update_dialog.dart';
 import '../../../pos/presentation/providers/pos_provider.dart';
 import '../widgets/mobile_app_qr_section.dart';
+import 'expense_categories_screen.dart';
 
 enum SettingsSection { general, prices, subscription, network, mobileApp }
 
@@ -554,6 +555,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
         const SizedBox(height: 24),
         _buildTextField('Mensaje Pie de Ticket', _footerCtrl,
             icon: Icons.message_outlined, maxLines: 3),
+        const SizedBox(height: 32),
+        const Divider(),
+        const SizedBox(height: 16),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(12)),
+            child: Icon(Icons.category_outlined, color: Colors.blue.shade800),
+          ),
+          title: const Text('Categorías de Gastos', style: TextStyle(fontWeight: FontWeight.bold)),
+          subtitle: const Text('Gestioná los conceptos para los retiros y gastos de caja.'),
+          trailing: FilledButton.tonal(
+            onPressed: () {
+              Navigator.push(context, MaterialPageRoute(builder: (_) => const ExpenseCategoriesScreen()));
+            },
+            child: const Text('Configurar'),
+          ),
+        ),
       ],
     );
   }

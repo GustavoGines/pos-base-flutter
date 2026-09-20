@@ -7,6 +7,7 @@ import '../../../../core/presentation/widgets/global_app_bar.dart';
 import '../../../cash_register/presentation/providers/cash_register_provider.dart';
 import '../../../cash_movements/presentation/widgets/movement_form_dialog.dart';
 import '../widgets/supplier_invoice_form_dialog.dart';
+import 'supplier_current_account_screen.dart';
 
 class SuppliersScreen extends StatefulWidget {
   const SuppliersScreen({super.key});
@@ -215,8 +216,8 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
                 return GridView.builder(
                   padding: const EdgeInsets.all(16).copyWith(bottom: 80),
                   gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                    maxCrossAxisExtent: 400, // Ancho máximo de cada tarjeta
-                    mainAxisExtent: 170, // Alto fijo de la tarjeta
+                    maxCrossAxisExtent: 450, // Ancho máximo de cada tarjeta
+                    mainAxisExtent: 220, // Alto fijo de la tarjeta para permitir wrap de botones sin overflow
                     crossAxisSpacing: 16,
                     mainAxisSpacing: 16,
                   ),
@@ -294,20 +295,23 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
                                 ),
                               const SizedBox(height: 12),
                               // Caja inferior: Saldo / Deuda
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                      decoration: BoxDecoration(
-                                        color: supplier.balance > 0 ? Colors.red.shade50 : (supplier.balance < 0 ? Colors.green.shade50 : Colors.grey.shade50),
-                                        borderRadius: BorderRadius.circular(8),
-                                        border: Border.all(color: supplier.balance > 0 ? Colors.red.shade100 : (supplier.balance < 0 ? Colors.green.shade100 : Colors.grey.shade200)),
-                                      ),
+                              LayoutBuilder(
+                                builder: (context, constraints) {
+                                  final isTight = constraints.maxWidth < 320;
+                                  
+                                  final balanceWidget = Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: supplier.balance > 0 ? Colors.red.shade50 : (supplier.balance < 0 ? Colors.green.shade50 : Colors.grey.shade50),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(color: supplier.balance > 0 ? Colors.red.shade100 : (supplier.balance < 0 ? Colors.green.shade100 : Colors.grey.shade200)),
+                                    ),
+                                    child: FittedBox(
+                                      fit: BoxFit.scaleDown,
+                                      alignment: Alignment.centerLeft,
                                       child: Row(
-                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                         children: [
-                                          Text('Saldo actual:', style: TextStyle(color: supplier.balance > 0 ? Colors.red.shade900 : (supplier.balance < 0 ? Colors.green.shade900 : Colors.black87), fontSize: 13)),
+                                          Text('Saldo actual: ', style: TextStyle(color: supplier.balance > 0 ? Colors.red.shade900 : (supplier.balance < 0 ? Colors.green.shade900 : Colors.black87), fontSize: 13)),
                                           Text(
                                             '\$${supplier.balance.toStringAsFixed(2)}',
                                             style: TextStyle(
@@ -319,32 +323,75 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
                                         ],
                                       ),
                                     ),
-                                  ),
-                                  if (supplier.balance != 0) ...[
-                                    const SizedBox(width: 8),
-                                    IconButton(
-                                      tooltip: supplier.balance > 0 ? 'Abonar / Pagar Deuda' : 'Cobrar Saldo a Favor',
-                                      style: IconButton.styleFrom(
-                                        backgroundColor: supplier.balance > 0 ? Colors.red.shade50 : Colors.green.shade50,
-                                        foregroundColor: supplier.balance > 0 ? Colors.red.shade700 : Colors.green.shade700,
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                  );
+
+                                  final buttonsWidget = Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    mainAxisAlignment: MainAxisAlignment.end,
+                                    children: [
+                                      if (supplier.balance != 0) ...[
+                                        IconButton(
+                                          tooltip: supplier.balance > 0 ? 'Abonar / Pagar Deuda' : 'Cobrar Saldo a Favor',
+                                          style: IconButton.styleFrom(
+                                            backgroundColor: supplier.balance > 0 ? Colors.red.shade50 : Colors.green.shade50,
+                                            foregroundColor: supplier.balance > 0 ? Colors.red.shade700 : Colors.green.shade700,
+                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                          ),
+                                          icon: const Icon(Icons.payments_outlined),
+                                          onPressed: () => _openPaymentForm(supplier.id, supplier.balance),
+                                        ),
+                                        const SizedBox(width: 8),
+                                      ],
+                                      IconButton(
+                                        tooltip: 'Cargar Factura / Remito',
+                                        style: IconButton.styleFrom(
+                                          backgroundColor: Colors.blue.shade50,
+                                          foregroundColor: Colors.blue.shade700,
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                        ),
+                                        icon: const Icon(Icons.receipt_long),
+                                        onPressed: () => _openInvoiceForm(supplier.id, supplier.name),
                                       ),
-                                      icon: const Icon(Icons.payments_outlined),
-                                      onPressed: () => _openPaymentForm(supplier.id, supplier.balance),
-                                    ),
-                                  ],
-                                  const SizedBox(width: 8),
-                                  IconButton(
-                                    tooltip: 'Cargar Factura / Remito',
-                                    style: IconButton.styleFrom(
-                                      backgroundColor: Colors.blue.shade50,
-                                      foregroundColor: Colors.blue.shade700,
-                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                    ),
-                                    icon: const Icon(Icons.receipt_long),
-                                    onPressed: () => _openInvoiceForm(supplier.id, supplier.name),
-                                  ),
-                                ],
+                                      const SizedBox(width: 8),
+                                      IconButton(
+                                        tooltip: 'Ver Cuenta Corriente',
+                                        style: IconButton.styleFrom(
+                                          backgroundColor: Colors.indigo.shade50,
+                                          foregroundColor: Colors.indigo.shade700,
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                        ),
+                                        icon: const Icon(Icons.history_edu),
+                                        onPressed: () {
+                                          Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                              builder: (_) => SupplierCurrentAccountScreen(supplierId: supplier.id, supplierName: supplier.name),
+                                            ),
+                                          );
+                                        },
+                                      ),
+                                    ],
+                                  );
+
+                                  if (isTight) {
+                                    return Column(
+                                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                                      children: [
+                                        balanceWidget,
+                                        const SizedBox(height: 8),
+                                        buttonsWidget,
+                                      ],
+                                    );
+                                  } else {
+                                    return Row(
+                                      children: [
+                                        Expanded(child: balanceWidget),
+                                        const SizedBox(width: 8),
+                                        buttonsWidget,
+                                      ],
+                                    );
+                                  }
+                                },
                               ),
                             ],
                           ),
