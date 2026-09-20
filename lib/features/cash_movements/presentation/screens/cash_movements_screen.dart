@@ -11,6 +11,7 @@ import '../../../../core/providers/local_terminal_provider.dart';
 import '../../../settings/presentation/providers/settings_provider.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
 import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
+import '../../../settings/presentation/pages/expense_categories_screen.dart';
 
 class CashMovementsScreen extends StatefulWidget {
   const CashMovementsScreen({super.key});
@@ -243,25 +244,67 @@ class _CashMovementsScreenState extends State<CashMovementsScreen> {
               Container(
                 padding: const EdgeInsets.all(24),
                 color: Colors.white,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Historial de Caja (Turno Actual)', style: Theme.of(context).textTheme.headlineSmall),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('Historial de Caja (Turno Actual)', style: Theme.of(context).textTheme.headlineSmall),
+                        Row(
+                          children: [
+                            TextButton.icon(
+                              onPressed: () {
+                                Navigator.push(context, MaterialPageRoute(builder: (_) => const ExpenseCategoriesScreen()));
+                              },
+                              icon: const Icon(Icons.category),
+                              label: const Text('Categorías de Gasto'),
+                            ),
+                            const SizedBox(width: 16),
+                            OutlinedButton.icon(
+                              onPressed: _exportExcel,
+                              icon: const Icon(Icons.table_chart, color: Colors.green),
+                              label: const Text('Exportar Excel', style: TextStyle(color: Colors.green)),
+                            ),
+                            const SizedBox(width: 16),
+                            ElevatedButton.icon(
+                              onPressed: _showFormDialog,
+                              icon: const Icon(Icons.add),
+                              label: const Text('Nuevo Movimiento'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.blue.shade700,
+                                foregroundColor: Colors.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    // Filtros Avanzados
                     Row(
                       children: [
-                        OutlinedButton.icon(
-                          onPressed: _exportExcel,
-                          icon: const Icon(Icons.table_chart, color: Colors.green),
-                          label: const Text('Exportar Excel', style: TextStyle(color: Colors.green)),
-                        ),
-                        const SizedBox(width: 16),
-                        ElevatedButton.icon(
-                          onPressed: _showFormDialog,
-                          icon: const Icon(Icons.add),
-                          label: const Text('Nuevo Movimiento'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.blue.shade700,
-                            foregroundColor: Colors.white,
+                        const Text('Filtrar por Categoría: ', style: TextStyle(fontWeight: FontWeight.bold)),
+                        const SizedBox(width: 8),
+                        SizedBox(
+                          width: 250,
+                          child: DropdownButtonFormField<String>(
+                            decoration: const InputDecoration(
+                              isDense: true,
+                              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              border: OutlineInputBorder(),
+                            ),
+                            value: provider.currentCategoryFilter,
+                            items: const [
+                              DropdownMenuItem(value: null, child: Text('Todas')),
+                              DropdownMenuItem(value: 'Venta', child: Text('Ventas')),
+                              DropdownMenuItem(value: 'Pago a Proveedor', child: Text('Pago a Proveedor')),
+                              DropdownMenuItem(value: 'Ingreso Manual', child: Text('Ingresos Manuales')),
+                              DropdownMenuItem(value: 'Gasto', child: Text('Gastos')), // Just a common value
+                            ],
+                            onChanged: (val) {
+                              provider.fetchMovements(refresh: true, category: val);
+                            },
                           ),
                         ),
                       ],

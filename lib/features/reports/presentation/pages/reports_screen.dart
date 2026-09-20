@@ -1438,7 +1438,7 @@ class _MonthlyBalanceTabState extends State<_MonthlyBalanceTab> {
                 const SizedBox(width: 16),
                 Expanded(
                     child: _HeroCard(
-                  title: 'Costo Total',
+                  title: 'Egresos Totales',
                   value: '\$${provider.balanceTotalCost.toCurrency()}',
                   icon: Icons.shopping_cart_checkout,
                   color: Colors.red.shade600,
@@ -1447,7 +1447,7 @@ class _MonthlyBalanceTabState extends State<_MonthlyBalanceTab> {
                 const SizedBox(width: 16),
                 Expanded(
                     child: _HeroCard(
-                  title: 'Ganancia Neta',
+                  title: 'Flujo de Caja Neto',
                   value: '\$${provider.balanceTotalProfit.toCurrency()}',
                   icon: Icons.trending_up,
                   color: Colors.green.shade600,

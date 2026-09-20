@@ -33,13 +33,19 @@ class CashMovementProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> fetchMovements({bool refresh = false}) async {
+  String? _currentCategoryFilter;
+  String? get currentCategoryFilter => _currentCategoryFilter;
+
+  Future<void> fetchMovements({bool refresh = false, String? category}) async {
     if (_isLoading) return;
 
     if (refresh) {
       _currentPage = 1;
       _movements = [];
       _hasMore = true;
+      if (category != null || _currentCategoryFilter != null) {
+        _currentCategoryFilter = category;
+      }
     }
 
     if (!_hasMore) return;
@@ -48,7 +54,11 @@ class CashMovementProvider extends ChangeNotifier {
     notifyListeners();
     
     try {
-      final response = await client.get(Uri.parse('$baseUrl/cash-movements?page=$_currentPage'), headers: {
+      String url = '$baseUrl/cash-movements?page=$_currentPage';
+      if (_currentCategoryFilter != null && _currentCategoryFilter!.isNotEmpty) {
+        url += '&category=${Uri.encodeComponent(_currentCategoryFilter!)}';
+      }
+      final response = await client.get(Uri.parse(url), headers: {
         'Accept': 'application/json',
       });
 

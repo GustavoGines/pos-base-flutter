@@ -629,8 +629,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
             TicketLine('EFECTIVO RECIBIDO:',
                 rightText: '\$${_actualTendered.toCurrency()}'),
           if (hasTendered)
-            TicketLine('SU VUELTO:',
-                rightText: '\$${_change.toCurrency()}', isBold: true),
+            TicketLine(_change >= 0 ? 'SU VUELTO:' : 'FALTANTE:',
+                rightText: '\$${_change.abs().toCurrency()}', isBold: true),
         ] else ...[
           // Venta simple: un pago, sin recargos
           if (_shippingCostToApply > 0.01)
@@ -650,8 +650,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
             TicketLine('EFECTIVO RECIBIDO:',
                 rightText: '\$${_actualTendered.toCurrency()}'),
           if (hasTendered)
-            TicketLine('SU VUELTO:',
-                rightText: '\$${_change.toCurrency()}', isBold: true),
+            TicketLine(_change >= 0 ? 'SU VUELTO:' : 'FALTANTE:',
+                rightText: '\$${_change.abs().toCurrency()}', isBold: true),
         ],
         const TicketLine.space(),
         TicketLine(
@@ -1473,7 +1473,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
-                            Text('Vuelto',
+                            Text(_change >= 0 ? 'Vuelto' : 'Faltante',
                                 style: TextStyle(
                                     fontSize: 12,
                                     color: _change >= 0

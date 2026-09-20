@@ -1,12 +1,15 @@
-// lib/core/utils/currency_formatter.dart
+import 'package:intl/intl.dart';
+
 extension CurrencyFormatter on num {
-  /// Devuelve el valor con 2 decimales solo si es estrictamente fraccionario,
-  /// de lo contrario devuelve el entero (ej. 1500.00 -> 1500)
+  /// Devuelve el valor formateado con separadores de miles y 2 decimales
+  /// usando el paquete intl
   String toCurrency() {
-    if (this == toInt()) {
-      return toInt().toString();
-    }
-    return toStringAsFixed(2);
+    final format = NumberFormat.currency(
+      locale: 'es_AR', // Or your default locale
+      symbol: '',      // Already prefixed with \$ in UI usually
+      decimalDigits: this == toInt() ? 0 : 2,
+    );
+    return format.format(this).trim();
   }
 
   /// Alias para cantidades
