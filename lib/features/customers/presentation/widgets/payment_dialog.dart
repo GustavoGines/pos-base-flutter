@@ -38,8 +38,9 @@ class _PaymentLine {
 
 class PaymentDialog extends StatefulWidget {
   final Customer customer;
+  final bool isRefund;
 
-  const PaymentDialog({super.key, required this.customer});
+  const PaymentDialog({super.key, required this.customer, this.isRefund = false});
 
   @override
   State<PaymentDialog> createState() => _PaymentDialogState();
@@ -61,8 +62,14 @@ class _PaymentDialogState extends State<PaymentDialog> {
     super.initState();
     _descriptionController.text = '';
 
-    if (widget.customer.balance > 0) {
-      _targetAmount = widget.customer.balance.abs();
+    if (widget.isRefund) {
+      if (widget.customer.balance < 0) {
+        _targetAmount = widget.customer.balance.abs();
+      }
+    } else {
+      if (widget.customer.balance > 0) {
+        _targetAmount = widget.customer.balance;
+      }
     }
     _addLine(initialAmount: _targetAmount);
 
@@ -85,8 +92,13 @@ class _PaymentDialogState extends State<PaymentDialog> {
     if (_lines.length <= 1) return;
     line.amountCtrl.removeListener(_onAmountChanged);
     line.dispose();
-    _lines.remove(line);
-    setState(() {});
+    Future.microtask(() {
+      if (mounted) {
+        setState(() {
+          _lines.remove(line);
+        });
+      }
+    });
   }
 
   void _onAmountChanged() => setState(() {});
@@ -208,24 +220,27 @@ class _PaymentDialogState extends State<PaymentDialog> {
             description: _descriptionController.text.trim(),
             saleIds: _paymentType == 'specific' ? _selectedSaleIds : const [],
             cashShiftId: context.read<CashRegisterProvider>().currentShift?.id,
+            isRefund: widget.isRefund,
           );
 
       if (success && mounted) {
-        Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('Pago registrado correctamente'),
-              backgroundColor: Colors.green),
-        );
+        // Prevent synchronous pop while mouse_tracker is handling device updates
+        Future.microtask(() {
+          if (mounted) {
+            Navigator.pop(context);
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                  content: Text(widget.isRefund ? 'Reintegro registrado correctamente' : 'Pago registrado correctamente'),
+                  backgroundColor: Colors.green),
+            );
+          }
+        });
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(e.toString()), backgroundColor: Colors.red),
         );
-      }
-    } finally {
-      if (mounted) {
         setState(() => _isSubmitting = false);
       }
     }
@@ -239,7 +254,7 @@ class _PaymentDialogState extends State<PaymentDialog> {
     final isSpecific = _paymentType == 'specific';
 
     return AlertDialog(
-      title: Text('Registrar Pago - ${widget.customer.name}'),
+      title: Text(widget.isRefund ? 'Registrar Reintegro - ${widget.customer.name}' : 'Registrar Pago - ${widget.customer.name}'),
       content: SizedBox(
         width: 600,
         child: Form(
@@ -262,12 +277,12 @@ class _PaymentDialogState extends State<PaymentDialog> {
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('Deuda Total',
-                              style: TextStyle(
+                          Text(widget.isRefund ? 'Saldo a Favor' : 'Deuda Total',
+                              style: const TextStyle(
                                   color: Colors.blueGrey,
                                   fontWeight: FontWeight.bold)),
                           const SizedBox(height: 4),
-                          Text('\$ ${widget.customer.balance.toCurrency()}',
+                          Text('\$ ${widget.customer.balance.abs().toCurrency()}',
                               style: TextStyle(
                                   fontSize: 20,
                                   fontWeight: FontWeight.bold,
@@ -277,8 +292,8 @@ class _PaymentDialogState extends State<PaymentDialog> {
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
-                          const Text('Objetivo a Pagar',
-                              style: TextStyle(
+                          Text(widget.isRefund ? 'Monto a Devolver' : 'Objetivo a Pagar',
+                              style: const TextStyle(
                                   color: Colors.teal,
                                   fontWeight: FontWeight.bold)),
                           const SizedBox(height: 4),
@@ -293,10 +308,11 @@ class _PaymentDialogState extends State<PaymentDialog> {
                   ),
                 ),
                 const SizedBox(height: 24),
-                const Text('Tipo de Abono',
-                    style: TextStyle(fontWeight: FontWeight.bold)),
-                const SizedBox(height: 8),
-                SegmentedButton<String>(
+                if (!widget.isRefund) ...[
+                  const Text('Tipo de Abono',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  SegmentedButton<String>(
                   segments: const [
                     ButtonSegment(
                         value: 'general', label: Text('Abono General')),
@@ -305,18 +321,21 @@ class _PaymentDialogState extends State<PaymentDialog> {
                   ],
                   selected: {_paymentType},
                   onSelectionChanged: (Set<String> newSelection) {
-                    setState(() {
-                      _paymentType = newSelection.first;
-                      if (_paymentType == 'specific') {
-                        _calculateSelectedAmount();
-                      } else {
-                        _targetAmount = widget.customer.balance.abs();
-                        if (_lines.length == 1) {
-                          _lines[0].amountCtrl.text = _targetAmount > 0
-                              ? _targetAmount.toStringAsFixed(2)
-                              : '';
+                    Future.microtask(() {
+                      if (!mounted) return;
+                      setState(() {
+                        _paymentType = newSelection.first;
+                        if (_paymentType == 'specific') {
+                          _calculateSelectedAmount();
+                        } else {
+                          _targetAmount = widget.customer.balance.abs();
+                          if (_lines.length == 1) {
+                            _lines[0].amountCtrl.text = _targetAmount > 0
+                                ? _targetAmount.toStringAsFixed(2)
+                                : '';
+                          }
                         }
-                      }
+                      });
                     });
                   },
                 ),
@@ -362,13 +381,16 @@ class _PaymentDialogState extends State<PaymentDialog> {
                                         color: Colors.redAccent)),
                                 value: isSelected,
                                 onChanged: (bool? val) {
-                                  setState(() {
-                                    if (val == true) {
-                                      _selectedSaleIds.add(saleId);
-                                    } else {
-                                      _selectedSaleIds.remove(saleId);
-                                    }
-                                    _calculateSelectedAmount();
+                                  Future.microtask(() {
+                                    if (!mounted) return;
+                                    setState(() {
+                                      if (val == true) {
+                                        _selectedSaleIds.add(saleId);
+                                      } else {
+                                        _selectedSaleIds.remove(saleId);
+                                      }
+                                      _calculateSelectedAmount();
+                                    });
                                   });
                                 },
                               );
@@ -376,6 +398,7 @@ class _PaymentDialogState extends State<PaymentDialog> {
                           ),
                   ),
                   const SizedBox(height: 16),
+                ],
                 ],
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -425,7 +448,11 @@ class _PaymentDialogState extends State<PaymentDialog> {
                                 ],
                                 onChanged: (val) {
                                   if (val != null) {
-                                    setState(() => line.method = val);
+                                    Future.microtask(() {
+                                      if (mounted) {
+                                        setState(() => line.method = val);
+                                      }
+                                    });
                                   }
                                 },
                               ),
@@ -452,7 +479,6 @@ class _PaymentDialogState extends State<PaymentDialog> {
                                 icon: const Icon(Icons.remove_circle_outline,
                                     color: Colors.red),
                                 onPressed: () => _removeLine(line),
-                                tooltip: 'Eliminar',
                               )
                             else
                               const SizedBox(width: 48), // Padding para alinear
@@ -602,8 +628,8 @@ class _PaymentDialogState extends State<PaymentDialog> {
                   height: 20,
                   child: CircularProgressIndicator(
                       color: Colors.white, strokeWidth: 2))
-              : const Text('Confirmar Pago',
-                  style: TextStyle(color: Colors.white)),
+              : Text(widget.isRefund ? 'Confirmar Reintegro' : 'Confirmar Pago',
+                  style: const TextStyle(color: Colors.white)),
         ),
       ],
     );

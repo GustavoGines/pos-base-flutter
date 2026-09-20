@@ -37,6 +37,9 @@ class _ReportsScreenState extends State<ReportsScreen>
     int tabCount = 2;
     if (hasAdvancedReports) {
       tabCount += 1; // Balance Mensual
+      if (features.expenses) {
+        tabCount += 1; // Análisis de Gastos
+      }
       if (hasCurrentAccounts) {
         tabCount += 1; // Consumo Interno
       }

@@ -144,7 +144,6 @@ class _CustomersScreenState extends State<CustomersScreen> {
                                 );
                               }
                               return IconButton(
-                                tooltip: 'Actualizar lista',
                                 icon: const Icon(Icons.refresh, color: Colors.blueGrey),
                                 onPressed: () {
                                   // As the TextField handles the state in onChanged, we can just call fetchCustomers
@@ -153,22 +152,19 @@ class _CustomersScreenState extends State<CustomersScreen> {
                               );
                             },
                           ),
-                          Tooltip(
-                            message: 'Nuevo Cliente',
-                            child: IconButton.filled(
-                              onPressed: () {
-                                showDialog(
-                                  context: context,
-                                  barrierDismissible: false,
-                                  builder: (_) => const CustomerFormDialog(),
-                                );
-                              },
-                              icon: const Icon(Icons.person_add_alt_1_rounded, size: 20),
-                              style: IconButton.styleFrom(
-                                backgroundColor: Theme.of(context).colorScheme.primary,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                padding: const EdgeInsets.all(12),
-                              ),
+                          IconButton.filled(
+                            onPressed: () {
+                              showDialog(
+                                context: context,
+                                barrierDismissible: false,
+                                builder: (_) => const CustomerFormDialog(),
+                              );
+                            },
+                            icon: const Icon(Icons.person_add_alt_1_rounded, size: 20),
+                            style: IconButton.styleFrom(
+                              backgroundColor: Theme.of(context).colorScheme.primary,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              padding: const EdgeInsets.all(12),
                             ),
                           )
                         ],
@@ -578,19 +574,14 @@ class _CustomerDetailPanel extends StatelessWidget {
                                                   ),
                                                   if (isClickable) ...[
                                                     const SizedBox(width: 6),
-                                                    Tooltip(
-                                                      message: isPayment
-                                                          ? 'Ver detalle del abono'
-                                                          : 'Ver detalle del ticket',
-                                                      child: Icon(
-                                                        isPayment
-                                                            ? Icons.info_outline_rounded
-                                                            : Icons.receipt_long_outlined,
-                                                        size: 15,
-                                                        color: isPayment
-                                                            ? Colors.green.shade400
-                                                            : Colors.indigo.shade400,
-                                                      ),
+                                                    Icon(
+                                                      isPayment
+                                                          ? Icons.info_outline_rounded
+                                                          : Icons.receipt_long_outlined,
+                                                      size: 15,
+                                                      color: isPayment
+                                                          ? Colors.green.shade400
+                                                          : Colors.indigo.shade400,
                                                     ),
                                                   ],
                                                 ],
@@ -702,6 +693,21 @@ class _CustomerDetailPanel extends StatelessWidget {
                     style: TextStyle(
                         color: Colors.green.shade800, fontSize: 13, fontWeight: FontWeight.w500),
                   ),
+                ),
+                const SizedBox(width: 16),
+                FilledButton.icon(
+                  icon: const Icon(Icons.payments_outlined, size: 18),
+                  label: const Text('DEVOLVER SALDO'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Colors.green.shade700,
+                  ),
+                  onPressed: () {
+                    showDialog(
+                      context: context,
+                      barrierDismissible: false,
+                      builder: (_) => PaymentDialog(customer: customer, isRefund: true),
+                    );
+                  },
                 ),
               ],
             ),

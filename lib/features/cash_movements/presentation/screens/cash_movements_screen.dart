@@ -133,12 +133,19 @@ class _CashMovementsScreenState extends State<CashMovementsScreen> {
   }
 
   Future<void> _voidMovement(dynamic movement) async {
-    final authorized = await AdminPinDialog.verify(
-      context, 
-      action: 'Anular Movimiento de Caja',
-    );
+    final auth = context.read<AuthProvider>();
+    String adminPin = '';
+
+    if (!auth.isAdmin && !auth.hasPermission('anular_gastos')) {
+      final pin = await showDialog<String>(
+        context: context,
+        builder: (_) => const AdminPinDialog(actionDescription: 'Anular Movimiento de Caja'),
+      );
+      if (pin == null) return;
+      adminPin = pin;
+    }
     
-    if (authorized && mounted) {
+    if (mounted) {
       final confirm = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
@@ -160,13 +167,8 @@ class _CashMovementsScreenState extends State<CashMovementsScreen> {
       );
 
       if (confirm == true && mounted) {
-        // Obtenemos el PIN ingresado desde el provider o podemos pasarlo si el dialog lo devolviera. 
-        // AdminPinDialog.verify actualmente no devuelve el pin crudo, 
-        // pero deleteMovement pide adminPin si es un retiro. Wait, let's check `deleteMovement`.
-        
         try {
-          // Pass empty adminPin, the backend gets it from session or we might need to modify deleteMovement
-          await context.read<CashMovementProvider>().deleteMovement(movement.id, adminPin: '');
+          await context.read<CashMovementProvider>().deleteMovement(movement.id, adminPin: adminPin);
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Movimiento anulado correctamente.')));
           }

@@ -150,6 +150,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
         'product_id': i.product.id,
         'quantity': i.quantity,
         'unit_cost': i.newCost,
+        'subtotal': i.quantity * i.newCost,
         'update_price': i.updatePrice,
         'new_selling_price': i.updatePrice ? i.manualPrice : null,
       }).toList();

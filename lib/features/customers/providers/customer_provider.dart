@@ -175,6 +175,7 @@ class CustomerProvider extends ChangeNotifier {
     List<int> saleIds = const [],
     Map<String, dynamic>? checkDetails,
     int? cashShiftId,
+    bool isRefund = false,
   }) async {
     try {
       final Map<String, dynamic> bodyPayload = {};
@@ -203,6 +204,8 @@ class CustomerProvider extends ChangeNotifier {
       if (cashShiftId != null) {
         bodyPayload['cash_shift_id'] = cashShiftId;
       }
+
+      bodyPayload['is_refund'] = isRefund;
 
       final response = await client.post(
         Uri.parse('$baseUrl/customers/$customerId/payments'),

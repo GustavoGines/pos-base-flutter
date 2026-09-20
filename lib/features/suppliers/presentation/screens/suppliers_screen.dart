@@ -43,38 +43,44 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
       );
       return;
     }
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => MovementFormDialog(
-        initialSupplierId: supplierId,
-        initialType: balance > 0 ? 'expense' : 'deposit',
-        initialCategory: balance > 0 ? 'Pago a Proveedor' : 'Cobro de Saldo a Favor',
-        initialAmount: balance.abs(),
-      ),
-    );
+    Future.microtask(() {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => MovementFormDialog(
+          initialSupplierId: supplierId,
+          initialType: balance > 0 ? 'supplier_payment' : 'deposit',
+          initialCategory: balance > 0 ? 'Pago a Proveedor' : 'Cobro de Saldo a Favor',
+          initialAmount: balance.abs(),
+        ),
+      );
+    });
   }
 
   void _openInvoiceForm(int supplierId, String supplierName) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => SupplierInvoiceFormDialog(
-        supplierId: supplierId,
-        supplierName: supplierName,
-      ),
-    );
+    Future.microtask(() {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => SupplierInvoiceFormDialog(
+          supplierId: supplierId,
+          supplierName: supplierName,
+        ),
+      );
+    });
   }
 
   void _openForm([int? id, Map<String, dynamic>? initialData]) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => SupplierFormDialog(
-        supplierId: id,
-        initialData: initialData,
-      ),
-    );
+    Future.microtask(() {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => SupplierFormDialog(
+          supplierId: id,
+          initialData: initialData,
+        ),
+      );
+    });
   }
 
   Future<void> _deleteSupplier(int id, String name) async {
@@ -331,7 +337,6 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
                                     children: [
                                       if (supplier.balance != 0) ...[
                                         IconButton(
-                                          tooltip: supplier.balance > 0 ? 'Abonar / Pagar Deuda' : 'Cobrar Saldo a Favor',
                                           style: IconButton.styleFrom(
                                             backgroundColor: supplier.balance > 0 ? Colors.red.shade50 : Colors.green.shade50,
                                             foregroundColor: supplier.balance > 0 ? Colors.red.shade700 : Colors.green.shade700,
@@ -343,7 +348,6 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
                                         const SizedBox(width: 8),
                                       ],
                                       IconButton(
-                                        tooltip: 'Cargar Factura / Remito',
                                         style: IconButton.styleFrom(
                                           backgroundColor: Colors.blue.shade50,
                                           foregroundColor: Colors.blue.shade700,
@@ -354,7 +358,6 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
                                       ),
                                       const SizedBox(width: 8),
                                       IconButton(
-                                        tooltip: 'Ver Cuenta Corriente',
                                         style: IconButton.styleFrom(
                                           backgroundColor: Colors.indigo.shade50,
                                           foregroundColor: Colors.indigo.shade700,

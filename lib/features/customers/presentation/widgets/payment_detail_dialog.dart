@@ -105,7 +105,6 @@ class PaymentDetailDialog extends StatelessWidget {
                   IconButton(
                     onPressed: () => Navigator.pop(context),
                     icon: const Icon(Icons.close, color: Colors.white70),
-                    tooltip: 'Cerrar',
                   ),
                 ],
               ),
