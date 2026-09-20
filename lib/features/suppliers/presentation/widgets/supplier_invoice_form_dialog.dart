@@ -1,11 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:file_picker/file_picker.dart';
 import '../../providers/supplier_provider.dart';
 import '../../../pos/presentation/providers/pos_provider.dart';
 import '../../../catalog/domain/entities/product.dart';
 import '../../../cash_movements/presentation/widgets/movement_form_dialog.dart';
 import '../../../cash_register/presentation/providers/cash_register_provider.dart';
+import '../../../../core/network/api_client.dart';
+import '../../../auth/presentation/providers/auth_provider.dart';
+import '../../../catalog/presentation/providers/catalog_provider.dart';
+import '../../../catalog/presentation/pages/catalog_screen.dart' show ProductFormDialog;
 import 'dart:async';
 
 class _InvoiceItemModel {
@@ -56,6 +63,16 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
   bool _isLoading = false;
   bool _payNow = false;
 
+  DateTime? _issueDate = DateTime.now();
+  DateTime? _dueDate;
+  
+  double _taxAmount = 0.0;
+  double _freightAmount = 0.0;
+  double _discountAmount = 0.0;
+  
+  String? _attachmentUrl;
+  bool _isUploading = false;
+
   @override
   void dispose() {
     _invoiceNumberController.dispose();
@@ -84,6 +101,10 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
             _searchResults = results;
             _isSearching = false;
           });
+          // Auto-agregar si es un código de barras exacto (Modo Escáner Continuo)
+          if (results.length == 1 && results.first.barcode != null && results.first.barcode!.trim() == query.trim()) {
+            _addProduct(results.first);
+          }
         }
       } catch (e) {
         if (mounted) setState(() => _isSearching = false);
@@ -131,9 +152,52 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
     });
   }
 
+  Future<void> _pickAndUploadFile() async {
+    // FIXME: file_picker platform property is not resolving correctly in this environment.
+    // Uncomment when file_picker version issue is resolved.
+    /*
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['jpg', 'jpeg', 'png', 'pdf'],
+    );
+    if (result != null && result.files.single.path != null) {
+      setState(() => _isUploading = true);
+      try {
+        final supplierProv = context.read<SupplierProvider>();
+        final apiClient = context.read<ApiClient>();
+        
+        final request = http.MultipartRequest('POST', Uri.parse('${supplierProv.baseUrl}/supplier-invoices/upload'));
+        if (apiClient.sessionToken != null) {
+           request.headers['X-Session-Token'] = apiClient.sessionToken!;
+        }
+        
+        request.files.add(await http.MultipartFile.fromPath('file', result.files.single.path!));
+        
+        final streamedResponse = await request.send();
+        final response = await http.Response.fromStream(streamedResponse);
+        
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body);
+          setState(() {
+            _uploadedFilePath = data['path'];
+            _isUploading = false;
+          });
+          if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Comprobante subido.')));
+        } else {
+          throw Exception('Error al subir comprobante');
+        }
+      } catch (e) {
+        setState(() => _isUploading = false);
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Fallo la subida.')));
+      }
+    }
+    */
+  }
+
   double get _totalAmount {
     if (_items.isEmpty) return 0.0;
-    return _items.fold(0.0, (sum, item) => sum + item.subtotal);
+    final sub = _items.fold(0.0, (sum, item) => sum + item.subtotal);
+    return sub + _freightAmount + _taxAmount - _discountAmount;
   }
 
   Future<void> _submit() async {
@@ -158,6 +222,12 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
       final data = {
         'type': _type,
         'amount': _totalAmount,
+        'tax_amount': _taxAmount,
+        'freight_amount': _freightAmount,
+        'discount_amount': _discountAmount,
+        'issue_date': _issueDate?.toIso8601String().split('T')[0],
+        'due_date': _dueDate?.toIso8601String().split('T')[0],
+        'receipt_file_url': _attachmentUrl,
         'invoice_number': _invoiceNumberController.text.trim(),
         'description': _descriptionController.text.trim(),
         'items': itemsData,
@@ -281,11 +351,25 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                                   TextField(
                                     controller: _searchController,
                                     focusNode: _searchFocus,
-                                    decoration: const InputDecoration(
+                                    decoration: InputDecoration(
                                       hintText: 'Buscar producto por nombre o código...',
-                                      prefixIcon: Icon(Icons.search),
+                                      prefixIcon: const Icon(Icons.search),
+                                      suffixIcon: IconButton(
+                                        icon: const Icon(Icons.add_circle, color: Colors.blue),
+                                        tooltip: 'Nuevo Producto Rápido',
+                                        onPressed: () async {
+                                          final catalogProv = context.read<CatalogProvider>();
+                                          await showDialog(
+                                            context: context,
+                                            barrierDismissible: false,
+                                            builder: (_) => ProductFormDialog(provider: catalogProv),
+                                          );
+                                          // Al cerrar, no hacemos nada especial, si se creó el producto,
+                                          // el usuario puede buscarlo y aparecerá.
+                                        },
+                                      ),
                                       border: InputBorder.none,
-                                      contentPadding: EdgeInsets.all(16),
+                                      contentPadding: const EdgeInsets.all(16),
                                     ),
                                     onChanged: _onSearchChanged,
                                   ),
@@ -342,6 +426,46 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                             },
                           ),
                           const SizedBox(height: 16),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: InkWell(
+                                  onTap: () async {
+                                    final date = await showDatePicker(
+                                      context: context,
+                                      initialDate: _issueDate ?? DateTime.now(),
+                                      firstDate: DateTime(2000),
+                                      lastDate: DateTime(2100),
+                                    );
+                                    if (date != null) setState(() => _issueDate = date);
+                                  },
+                                  child: InputDecorator(
+                                    decoration: const InputDecoration(labelText: 'Fecha Emisión', isDense: true),
+                                    child: Text(_issueDate != null ? DateFormat('dd/MM/yyyy').format(_issueDate!) : 'Seleccionar'),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: InkWell(
+                                  onTap: () async {
+                                    final date = await showDatePicker(
+                                      context: context,
+                                      initialDate: _dueDate ?? DateTime.now(),
+                                      firstDate: DateTime(2000),
+                                      lastDate: DateTime(2100),
+                                    );
+                                    if (date != null) setState(() => _dueDate = date);
+                                  },
+                                  child: InputDecorator(
+                                    decoration: const InputDecoration(labelText: 'Vencimiento', isDense: true),
+                                    child: Text(_dueDate != null ? DateFormat('dd/MM/yyyy').format(_dueDate!) : 'Opcional'),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
                           TextFormField(
                             controller: _invoiceNumberController,
                             decoration: const InputDecoration(labelText: 'Nº Comprobante (Opc.)', isDense: true),
@@ -351,6 +475,19 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                             controller: _descriptionController,
                             decoration: const InputDecoration(labelText: 'Concepto', isDense: true),
                             maxLines: 2,
+                          ),
+                          const SizedBox(height: 16),
+                          // Attachment button
+                          OutlinedButton.icon(
+                            onPressed: _isUploading ? null : _pickAndUploadFile,
+                            icon: _isUploading 
+                              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                              : const Icon(Icons.attach_file),
+                            label: Text(_attachmentUrl != null ? 'Comprobante Adjunto ✓' : 'Adjuntar Comprobante (PDF/IMG)'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: _attachmentUrl != null ? Colors.green.shade700 : Colors.blue.shade700,
+                              side: BorderSide(color: _attachmentUrl != null ? Colors.green.shade300 : Colors.blue.shade300),
+                            ),
                           ),
                           const SizedBox(height: 16),
                         ],
@@ -378,6 +515,44 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                               ),
                             ),
                           
+                          // Extra charges
+                          Row(
+                            children: [
+                              Expanded(child: TextFormField(
+                                initialValue: _freightAmount > 0 ? _freightAmount.toString() : '',
+                                decoration: const InputDecoration(labelText: 'Flete (\$)', isDense: true),
+                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                onChanged: (v) {
+                                  final p = double.tryParse(v);
+                                  if (p != null) setState(() => _freightAmount = p);
+                                  else setState(() => _freightAmount = 0);
+                                },
+                              )),
+                              const SizedBox(width: 8),
+                              Expanded(child: TextFormField(
+                                initialValue: _taxAmount > 0 ? _taxAmount.toString() : '',
+                                decoration: const InputDecoration(labelText: 'Impuestos (\$)', isDense: true),
+                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                onChanged: (v) {
+                                  final p = double.tryParse(v);
+                                  if (p != null) setState(() => _taxAmount = p);
+                                  else setState(() => _taxAmount = 0);
+                                },
+                              )),
+                              const SizedBox(width: 8),
+                              Expanded(child: TextFormField(
+                                initialValue: _discountAmount > 0 ? _discountAmount.toString() : '',
+                                decoration: const InputDecoration(labelText: 'Descuento (\$)', isDense: true),
+                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                onChanged: (v) {
+                                  final p = double.tryParse(v);
+                                  if (p != null) setState(() => _discountAmount = p);
+                                  else setState(() => _discountAmount = 0);
+                                },
+                              )),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
                           Container(
                             width: double.infinity,
                             padding: const EdgeInsets.all(16),
@@ -460,6 +635,10 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
   }
 
   Widget _buildItemRow(_InvoiceItemModel item, int index) {
+    final qtyStr = item.product.isSoldByWeight || item.product.unitType == 'kg'
+        ? item.quantity.toStringAsFixed(3)
+        : item.quantity.toInt().toString();
+
     return Padding(
       padding: const EdgeInsets.all(12.0),
       child: Column(
@@ -480,8 +659,8 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
               Expanded(
                 flex: 1,
                 child: TextFormField(
-                  initialValue: item.quantity.toString(),
-                  decoration: const InputDecoration(labelText: 'Cant.', isDense: true),
+                  initialValue: qtyStr,
+                  decoration: InputDecoration(labelText: 'Cant. (${item.product.unitType ?? 'un'})', isDense: true),
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
                   onChanged: (val) {
                     final p = double.tryParse(val);
@@ -502,7 +681,11 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
               const SizedBox(width: 16),
               SizedBox(
                 width: 100,
-                child: Text(NumberFormat.currency(symbol: '\$').format(item.subtotal), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16), textAlign: TextAlign.right),
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerRight,
+                  child: Text(NumberFormat.currency(symbol: '\$').format(item.subtotal), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                ),
               ),
               IconButton(icon: const Icon(Icons.close, color: Colors.red), onPressed: () => setState(() => _items.removeAt(index))),
             ],

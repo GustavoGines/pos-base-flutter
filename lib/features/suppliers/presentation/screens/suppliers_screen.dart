@@ -222,8 +222,8 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
                 return GridView.builder(
                   padding: const EdgeInsets.all(16).copyWith(bottom: 80),
                   gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                    maxCrossAxisExtent: 450, // Ancho máximo de cada tarjeta
-                    mainAxisExtent: 220, // Alto fijo de la tarjeta para permitir wrap de botones sin overflow
+                    maxCrossAxisExtent: 400, // Compactado para mostrar más columnas en monitores ultra-wide
+                    mainAxisExtent: 180, // Alto reducido para no desperdiciar espacio vertical
                     crossAxisSpacing: 16,
                     mainAxisSpacing: 16,
                   ),

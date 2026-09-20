@@ -10,9 +10,13 @@ class CashMovementProvider extends ChangeNotifier {
   
   bool _isLoading = false;
   List<CashMovementModel> _movements = [];
+  int _currentPage = 1;
+  int _lastPage = 1;
+  bool _hasMore = true;
 
   bool get isLoading => _isLoading;
   List<CashMovementModel> get movements => _movements;
+  bool get hasMore => _hasMore;
 
   CashMovementProvider({required this.baseUrl, required this.client});
 
@@ -29,24 +33,49 @@ class CashMovementProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> fetchMovements() async {
+  Future<void> fetchMovements({bool refresh = false}) async {
+    if (_isLoading) return;
+
+    if (refresh) {
+      _currentPage = 1;
+      _movements = [];
+      _hasMore = true;
+    }
+
+    if (!_hasMore) return;
+
     _isLoading = true;
     notifyListeners();
     
     try {
-      final response = await client.get(Uri.parse('$baseUrl/cash-movements'), headers: {
+      final response = await client.get(Uri.parse('$baseUrl/cash-movements?page=$_currentPage'), headers: {
         'Accept': 'application/json',
       });
 
       if (response.statusCode == 200) {
-        final List<dynamic> data = json.decode(response.body);
-        _movements = data.map((e) => CashMovementModel.fromJson(e)).toList();
+        final Map<String, dynamic> body = json.decode(response.body);
+        final List<dynamic> data = body['data'] ?? [];
+        
+        final newMovements = data.map((e) => CashMovementModel.fromJson(e)).toList();
+        
+        if (refresh) {
+          _movements = newMovements;
+        } else {
+          _movements.addAll(newMovements);
+        }
+
+        _currentPage = body['current_page'] ?? 1;
+        _lastPage = body['last_page'] ?? 1;
+        _hasMore = _currentPage < _lastPage;
+        
+        if (_hasMore) {
+           _currentPage++;
+        }
       } else {
         throw Exception(_parseError(response));
       }
     } catch (e) {
       debugPrint('Error fetchMovements: $e');
-      
     } finally {
       _isLoading = false;
       notifyListeners();

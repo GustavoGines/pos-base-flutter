@@ -22,7 +22,9 @@ class _SupplierCurrentAccountScreenState extends State<SupplierCurrentAccountScr
   bool _isLoading = true;
   String? _error;
   List<dynamic> _history = [];
+  List<dynamic> _filteredHistory = [];
   double _currentBalance = 0;
+  String _filterType = 'all';
 
   @override
   void initState() {
@@ -44,6 +46,7 @@ class _SupplierCurrentAccountScreenState extends State<SupplierCurrentAccountScr
           _history = data['history'] ?? [];
           _currentBalance = double.tryParse(data['supplier']['balance'].toString()) ?? 0;
           _isLoading = false;
+          _applyFilter();
         });
       }
     } catch (e) {
@@ -53,6 +56,18 @@ class _SupplierCurrentAccountScreenState extends State<SupplierCurrentAccountScr
           _isLoading = false;
         });
       }
+    }
+  }
+
+  void _applyFilter() {
+    if (_filterType == 'all') {
+      _filteredHistory = List.from(_history);
+    } else if (_filterType == 'invoices') {
+      _filteredHistory = _history.where((item) => item['type'] == 'invoice').toList();
+    } else if (_filterType == 'payments') {
+      _filteredHistory = _history.where((item) => item['type'] == 'supplier_payment' || item['type'] == 'payment').toList();
+    } else if (_filterType == 'credit_notes') {
+      _filteredHistory = _history.where((item) => item['type'] == 'credit_note').toList();
     }
   }
 
@@ -116,10 +131,39 @@ class _SupplierCurrentAccountScreenState extends State<SupplierCurrentAccountScr
           ),
         ),
 
+        // Filtros
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              const Text('Filtrar por: ', style: TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(width: 8),
+              DropdownButton<String>(
+                value: _filterType,
+                items: const [
+                  DropdownMenuItem(value: 'all', child: Text('Todos los movimientos')),
+                  DropdownMenuItem(value: 'invoices', child: Text('Solo Remitos/Facturas')),
+                  DropdownMenuItem(value: 'payments', child: Text('Solo Pagos')),
+                  DropdownMenuItem(value: 'credit_notes', child: Text('Notas de Crédito')),
+                ],
+                onChanged: (val) {
+                  if (val != null) {
+                    setState(() {
+                      _filterType = val;
+                      _applyFilter();
+                    });
+                  }
+                },
+              ),
+            ],
+          ),
+        ),
+
         // Historial
         Expanded(
-          child: _history.isEmpty
-            ? const Center(child: Text('No hay movimientos registrados para este proveedor.'))
+          child: _filteredHistory.isEmpty
+            ? const Center(child: Text('No hay movimientos registrados para el filtro actual.'))
             : Container(
                 margin: const EdgeInsets.symmetric(horizontal: 16).copyWith(bottom: 16),
                 decoration: BoxDecoration(
@@ -128,10 +172,10 @@ class _SupplierCurrentAccountScreenState extends State<SupplierCurrentAccountScr
                   color: Colors.white,
                 ),
                 child: ListView.separated(
-                  itemCount: _history.length,
+                  itemCount: _filteredHistory.length,
                   separatorBuilder: (_, __) => const Divider(height: 1),
                   itemBuilder: (context, index) {
-                    final item = _history[index];
+                    final item = _filteredHistory[index];
                     final date = DateTime.tryParse(item['date'].toString()) ?? DateTime.now();
                     final formattedDate = DateFormat('dd/MM/yyyy HH:mm').format(date);
                     

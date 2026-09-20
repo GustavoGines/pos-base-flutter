@@ -1,4 +1,4 @@
-﻿class CashMovementModel {
+class CashMovementModel {
   final int id;
   final int cashShiftId;
   final int userId;
@@ -50,7 +50,7 @@
       amount: double.tryParse(json['amount'].toString()) ?? 0.0,
       paymentMethod: json['payment_method'],
       type: json['type'],
-      category: json['category'],
+      category: json['category'] ?? 'Sin categoría',
       description: json['description'],
       receiptNumber: json['receipt_number'],
       createdAt: DateTime.parse(json['created_at']),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/presentation/widgets/global_app_bar.dart';
 import '../../providers/cash_movement_provider.dart';
 import '../widgets/movement_form_dialog.dart';
@@ -19,12 +20,30 @@ class CashMovementsScreen extends StatefulWidget {
 }
 
 class _CashMovementsScreenState extends State<CashMovementsScreen> {
+  final ScrollController _scrollController = ScrollController();
+
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_onScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<CashMovementProvider>().fetchMovements();
+      context.read<CashMovementProvider>().fetchMovements(refresh: true);
     });
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200) {
+      final provider = context.read<CashMovementProvider>();
+      if (!provider.isLoading && provider.hasMore) {
+        provider.fetchMovements();
+      }
+    }
   }
 
   void _showFormDialog() {
@@ -181,13 +200,21 @@ class _CashMovementsScreenState extends State<CashMovementsScreen> {
     }
   }
 
+  Future<void> _exportExcel() async {
+    final prov = context.read<CashMovementProvider>();
+    final url = Uri.parse('${prov.baseUrl}/cash-movements/export');
+    if (!await launchUrl(url)) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No se pudo abrir el enlace de exportación.')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: GlobalAppBar(currentRoute: '/cash-movements'),
       body: Consumer<CashMovementProvider>(
         builder: (context, provider, child) {
-          if (provider.isLoading) {
+          if (provider.isLoading && provider.movements.isEmpty) {
             return const Center(child: CircularProgressIndicator());
           }
 
@@ -220,14 +247,24 @@ class _CashMovementsScreenState extends State<CashMovementsScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text('Historial de Caja (Turno Actual)', style: Theme.of(context).textTheme.headlineSmall),
-                    ElevatedButton.icon(
-                      onPressed: _showFormDialog,
-                      icon: const Icon(Icons.add),
-                      label: const Text('Nuevo Movimiento'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blue.shade700,
-                        foregroundColor: Colors.white,
-                      ),
+                    Row(
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: _exportExcel,
+                          icon: const Icon(Icons.table_chart, color: Colors.green),
+                          label: const Text('Exportar Excel', style: TextStyle(color: Colors.green)),
+                        ),
+                        const SizedBox(width: 16),
+                        ElevatedButton.icon(
+                          onPressed: _showFormDialog,
+                          icon: const Icon(Icons.add),
+                          label: const Text('Nuevo Movimiento'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.blue.shade700,
+                            foregroundColor: Colors.white,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -236,9 +273,16 @@ class _CashMovementsScreenState extends State<CashMovementsScreen> {
                 child: Card(
                   margin: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
                   child: ListView.separated(
-                    itemCount: provider.movements.length,
+                    controller: _scrollController,
+                    itemCount: provider.movements.length + (provider.hasMore ? 1 : 0),
                     separatorBuilder: (_, __) => const Divider(height: 1),
                     itemBuilder: (context, index) {
+                      if (index == provider.movements.length) {
+                        return const Padding(
+                          padding: EdgeInsets.all(16.0),
+                          child: Center(child: CircularProgressIndicator()),
+                        );
+                      }
                       final movement = provider.movements[index];
                       final isExpenseOrWithdrawal = movement.type == 'expense' || movement.type == 'withdrawal';
                       final amountColor = isExpenseOrWithdrawal ? Colors.red.shade700 : Colors.green.shade700;
