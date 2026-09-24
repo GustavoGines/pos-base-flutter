@@ -1062,11 +1062,66 @@ class ReceiptPrinterService {
   // ══════════════════════════════════════════════════════════════════
 
   /// Imprime un comprobante de pago/cobro a proveedor con saldos.
+  Future<void> printSupplierStatementTicket({
+    required String supplierName,
+    required double currentBalance,
+    required BusinessSettings settings,
+    required LocalTerminalProvider localTerminal,
+    String? supplierCuit,
+  }) async {
+    if (localTerminal.printerConnection.toLowerCase() == 'none') {
+      return;
+    }
+    if (config.connectionType == PrinterConnectionType.usb &&
+        (config.comPort == null || config.comPort!.trim().isEmpty)) {
+      return;
+    }
+
+    final profile = await _getProfile();
+    final generator = Generator(config.paperSize, profile);
+    List<int> bytes = [];
+
+    bytes += generator.reset();
+
+    // ── Encabezado ──
+    bytes += generator.text(
+      _cleanText(settings.companyName?.toUpperCase() ?? 'MI NEGOCIO'),
+      styles: const PosStyles(bold: true, align: PosAlign.center, height: PosTextSize.size2, width: PosTextSize.size2),
+    );
+    bytes += generator.feed(1);
+    bytes += generator.hr(ch: '=');
+
+    bytes += generator.text('ESTADO DE CUENTA', styles: const PosStyles(align: PosAlign.center, bold: true, height: PosTextSize.size1, width: PosTextSize.size2));
+    bytes += generator.hr(ch: '-');
+
+    bytes += generator.text('PROVEEDOR: ${_cleanText(supplierName)}', styles: const PosStyles(bold: true));
+    if (supplierCuit != null && supplierCuit.isNotEmpty) {
+      bytes += generator.text('CUIT: $supplierCuit');
+    }
+    bytes += generator.text('FECHA: ${_formatDate(DateTime.now())}');
+    
+    bytes += generator.feed(1);
+    bytes += generator.text('SALDO ACTUAL:', styles: const PosStyles(bold: true));
+    
+    final balanceText = currentBalance < 0 ? 'A FAVOR: \$${currentBalance.abs().toCurrency()}' : 'DEUDA: \$${currentBalance.toCurrency()}';
+    bytes += generator.text(
+      balanceText,
+      styles: const PosStyles(align: PosAlign.center, bold: true, height: PosTextSize.size2, width: PosTextSize.size2),
+    );
+
+    bytes += generator.feed(1);
+    bytes += generator.hr(ch: '=');
+    bytes += generator.feed(2);
+    bytes += generator.cut();
+
+    await _send(Uint8List.fromList(bytes));
+  }
+
   Future<void> printSupplierPaymentTicket({
     required String type,
     required String supplierName,
     required double totalAmount,
-    required double balanceBefore,
+    double? balanceBefore,
     required List<Map<String, dynamic>> payments,
     required BusinessSettings settings,
     required LocalTerminalProvider localTerminal,
@@ -1205,24 +1260,27 @@ class ReceiptPrinterService {
     ]);
 
     // ── Estado de cuenta ──
-    bytes += generator.hr(ch: '-');
-    bytes += generator.text(
-      'ESTADO DE CUENTA:',
-      styles: const PosStyles(bold: true),
-    );
+    if (balanceBefore != null) {
+      bytes += generator.hr(ch: '-');
+      bytes += generator.text(
+        'ESTADO DE CUENTA:',
+        styles: const PosStyles(bold: true),
+      );
 
-    final balanceAfter = type == 'expense'
-        ? balanceBefore - totalAmount
-        : balanceBefore + totalAmount;
+      final isExpense = type == 'expense' || type == 'supplier_payment';
+      final balanceAfter = isExpense
+          ? balanceBefore - totalAmount
+          : balanceBefore + totalAmount;
 
-    bytes += _labelValue(generator, 'SALDO ANTERIOR:', '\$${_formatPrice(balanceBefore.abs())}');
-    bytes += _labelValue(generator, type == 'expense' ? 'ABONADO:' : 'COBRADO:', '-\$${_formatPrice(totalAmount)}');
-    bytes += generator.hr(ch: '-');
+      bytes += _labelValue(generator, 'SALDO ANTERIOR:', '\$${_formatPrice(balanceBefore.abs())}');
+      bytes += _labelValue(generator, isExpense ? 'ABONADO:' : 'DEUDA GENERADA:', '${isExpense ? '-' : '+'}\$${_formatPrice(totalAmount)}');
+      bytes += generator.hr(ch: '-');
 
-    final balanceLabel = balanceAfter > 0
-        ? 'DEUDA RESTANTE:'
-        : (balanceAfter < 0 ? 'SALDO A FAVOR:' : 'CUENTA AL DIA');
-    bytes += _labelValue(generator, balanceLabel, '\$${_formatPrice(balanceAfter.abs())}');
+      final balanceLabel = balanceAfter > 0
+          ? 'DEUDA RESTANTE:'
+          : (balanceAfter < 0 ? 'SALDO A FAVOR:' : 'CUENTA AL DIA');
+      bytes += _labelValue(generator, balanceLabel, '\$${_formatPrice(balanceAfter.abs())}');
+    }
 
     // ── Espacio para firma del proveedor ──
     bytes += generator.feed(2);
@@ -1272,6 +1330,7 @@ class ReceiptPrinterService {
     required CashRegisterShift shift,
     required BusinessSettings settings, // Info visual
     required LocalTerminalProvider localTerminal,
+    required bool isPremium,
   }) async {
     if (localTerminal.printerConnection.toLowerCase() == 'none') return;
     
@@ -1320,31 +1379,88 @@ class ReceiptPrinterService {
     );
     bytes += generator.hr(ch: '-');
     const currency = '\$';
+    
     bytes += _labelValue(
       generator,
-      'Saldo inicial:',
+      'Fondo inicial:',
       '$currency${shift.openingBalance.toCurrency()}',
     );
     bytes += _labelValue(
       generator,
-      'Ventas del turno:',
-      '$currency${(shift.totalSales ?? 0.0).toCurrency()}',
+      'Ventas en Efectivo:',
+      '$currency${(shift.cashSales ?? 0.0).toCurrency()}',
+    );
+    if (isPremium || (shift.totalDeposits ?? 0) > 0) {
+      bytes += _labelValue(
+        generator,
+        'Ingresos Extra:',
+        '$currency${(shift.totalDeposits ?? 0.0).toCurrency()}',
+      );
+    }
+    if (isPremium || (shift.totalExpenses ?? 0) > 0) {
+      bytes += _labelValue(
+        generator,
+        'Gastos (Salida):',
+        '-$currency${(shift.totalExpenses ?? 0.0).toCurrency()}',
+      );
+    }
+    if (isPremium || (shift.totalWithdrawals ?? 0) > 0) {
+      bytes += _labelValue(
+        generator,
+        'Retiros Dueño:',
+        '-$currency${(shift.totalWithdrawals ?? 0.0).toCurrency()}',
+      );
+    }
+    if (isPremium || (shift.totalSupplierPayments ?? 0) > 0) {
+      bytes += _labelValue(
+        generator,
+        'Pagos Prov.:',
+        '-$currency${(shift.totalSupplierPayments ?? 0.0).toCurrency()}',
+      );
+    }
+    if ((shift.totalRefunds ?? 0) > 0) {
+      bytes += _labelValue(
+        generator,
+        'Reintegros:',
+        '-$currency${(shift.totalRefunds ?? 0.0).toCurrency()}',
+      );
+    }
+    
+    bytes += generator.hr(ch: '-');
+    bytes += _labelValue(
+      generator,
+      'Ventas Tarjeta:',
+      '$currency${(shift.cardSales ?? 0.0).toCurrency()}',
     );
     bytes += _labelValue(
       generator,
-      'Total Recargos:',
+      'Ventas Transf.:',
+      '$currency${(shift.transferSales ?? 0.0).toCurrency()}',
+    );
+    bytes += _labelValue(
+      generator,
+      'Recargos Cobrados:',
       '$currency${(shift.totalSurcharge ?? 0.0).toCurrency()}',
     );
+    if (isPremium || (shift.checkSales ?? 0) > 0) {
+      bytes += _labelValue(
+        generator,
+        'Ventas Cheques:',
+        '$currency${(shift.checkSales ?? 0.0).toCurrency()}',
+      );
+    }
+    bytes += generator.hr(ch: '-');
+
     bytes += _labelValue(
       generator,
       'Efectivo esperado:',
-      '$currency${((shift.openingBalance) + (shift.cashSales ?? 0.0)).toCurrency()}',
+      '$currency${(shift.expectedBalance ?? 0.0).toCurrency()}',
     );
     bytes += generator.hr(ch: '=');
     bytes += _labelValue(
       generator,
       'Efectivo contado:',
-      '$currency${(shift.closingBalance ?? 0.0).toCurrency()}',
+      '$currency${(shift.actualBalance ?? 0.0).toCurrency()}',
     );
 
     final diff = shift.difference ?? 0.0;

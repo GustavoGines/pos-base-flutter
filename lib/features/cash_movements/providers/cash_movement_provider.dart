@@ -18,6 +18,14 @@ class CashMovementProvider extends ChangeNotifier {
   List<CashMovementModel> get movements => _movements;
   bool get hasMore => _hasMore;
 
+  double _kpiTotalIn = 0;
+  double _kpiTotalOut = 0;
+  double _kpiNet = 0;
+  
+  double get kpiTotalIn => _kpiTotalIn;
+  double get kpiTotalOut => _kpiTotalOut;
+  double get kpiNet => _kpiNet;
+
   CashMovementProvider({required this.baseUrl, required this.client});
 
   String _parseError(http.Response response) {
@@ -35,16 +43,48 @@ class CashMovementProvider extends ChangeNotifier {
 
   String? _currentCategoryFilter;
   String? get currentCategoryFilter => _currentCategoryFilter;
+  bool _currentAllFilter = false;
+  bool get currentAllFilter => _currentAllFilter;
+  
+  DateTime? _startDate;
+  DateTime? get startDate => _startDate;
+  
+  DateTime? _endDate;
+  DateTime? get endDate => _endDate;
 
-  Future<void> fetchMovements({bool refresh = false, String? category}) async {
-    if (_isLoading) return;
+  int _fetchId = 0;
+
+  Future<void> fetchMovements({
+    bool refresh = false, 
+    String? category, 
+    bool? all, 
+    bool clearCategory = false,
+    DateTime? startDate,
+    DateTime? endDate,
+    bool clearDates = false,
+  }) async {
+    if (_isLoading && !refresh) return;
+
+    final currentFetchId = ++_fetchId;
 
     if (refresh) {
       _currentPage = 1;
       _movements = [];
       _hasMore = true;
-      if (category != null || _currentCategoryFilter != null) {
+      if (clearCategory) {
+        _currentCategoryFilter = null;
+      } else if (category != null) {
         _currentCategoryFilter = category;
+      }
+      if (all != null) {
+        _currentAllFilter = all;
+      }
+      if (clearDates) {
+        _startDate = null;
+        _endDate = null;
+      } else {
+        if (startDate != null) _startDate = startDate;
+        if (endDate != null) _endDate = endDate;
       }
     }
 
@@ -58,9 +98,20 @@ class CashMovementProvider extends ChangeNotifier {
       if (_currentCategoryFilter != null && _currentCategoryFilter!.isNotEmpty) {
         url += '&category=${Uri.encodeComponent(_currentCategoryFilter!)}';
       }
+      if (_currentAllFilter) {
+        url += '&all=1';
+        if (_startDate != null && _endDate != null) {
+          // Format as YYYY-MM-DD
+          final sd = "${_startDate!.year}-${_startDate!.month.toString().padLeft(2, '0')}-${_startDate!.day.toString().padLeft(2, '0')}";
+          final ed = "${_endDate!.year}-${_endDate!.month.toString().padLeft(2, '0')}-${_endDate!.day.toString().padLeft(2, '0')}";
+          url += '&start_date=$sd&end_date=$ed';
+        }
+      }
       final response = await client.get(Uri.parse(url), headers: {
         'Accept': 'application/json',
       });
+
+      if (currentFetchId != _fetchId) return;
 
       if (response.statusCode == 200) {
         final Map<String, dynamic> body = json.decode(response.body);
@@ -78,6 +129,10 @@ class CashMovementProvider extends ChangeNotifier {
         _lastPage = body['last_page'] ?? 1;
         _hasMore = _currentPage < _lastPage;
         
+        _kpiTotalIn = double.tryParse(body['kpi_total_in']?.toString() ?? '0') ?? 0.0;
+        _kpiTotalOut = double.tryParse(body['kpi_total_out']?.toString() ?? '0') ?? 0.0;
+        _kpiNet = double.tryParse(body['kpi_net']?.toString() ?? '0') ?? 0.0;
+
         if (_hasMore) {
            _currentPage++;
         }
@@ -87,8 +142,10 @@ class CashMovementProvider extends ChangeNotifier {
     } catch (e) {
       debugPrint('Error fetchMovements: $e');
     } finally {
-      _isLoading = false;
-      notifyListeners();
+      if (currentFetchId == _fetchId) {
+        _isLoading = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -126,7 +183,7 @@ class CashMovementProvider extends ChangeNotifier {
         }
 
         // Recargar movimientos tras éxito
-        await fetchMovements();
+        await fetchMovements(refresh: true);
         return createdIds;
       } else {
         throw Exception(_parseError(response));
@@ -154,7 +211,7 @@ class CashMovementProvider extends ChangeNotifier {
       );
 
       if (response.statusCode == 200) {
-        await fetchMovements();
+        await fetchMovements(refresh: true);
       } else {
         throw Exception(_parseError(response));
       }

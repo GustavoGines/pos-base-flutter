@@ -34,8 +34,8 @@ class _InternalConsumptionReportViewState extends State<InternalConsumptionRepor
       confirmText: 'APLICAR',
       saveText: 'APLICAR',
       builder: (context, child) => Center(
-        child: Container(
-          constraints: const BoxConstraints(maxWidth: 400, maxHeight: 600),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 500, maxHeight: 600),
           child: Theme(
             data: ThemeData.light().copyWith(
               colorScheme: ColorScheme.light(

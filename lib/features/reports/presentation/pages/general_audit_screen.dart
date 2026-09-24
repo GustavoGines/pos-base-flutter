@@ -6,6 +6,7 @@ import '../../../../core/presentation/widgets/global_app_bar.dart';
 import '../../../../features/auth/presentation/providers/auth_provider.dart';
 import '../../../../features/cash_register/presentation/providers/cash_register_provider.dart';
 import '../../../../features/cash_register/domain/entities/cash_register_shift.dart';
+import '../../../../features/cash_register/presentation/pages/cash_shift_summary_screen.dart';
 
 class GeneralAuditScreen extends StatelessWidget {
   const GeneralAuditScreen({super.key});
@@ -302,6 +303,16 @@ class _ShiftAuditTabState extends State<_ShiftAuditTab> {
   }
 
   void _showShiftDetail(BuildContext context, CashRegisterShift shift) {
+    if (!shift.isOpen) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => CashShiftSummaryScreen(closedShift: shift, isFromAudit: true),
+        ),
+      );
+      return;
+    }
+
     final currencyFormat =
         NumberFormat.currency(locale: 'es_AR', symbol: '\$', decimalDigits: 0);
     final isClosed = !shift.isOpen;

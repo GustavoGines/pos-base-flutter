@@ -25,6 +25,8 @@ class CashRegisterShiftModel extends CashRegisterShift {
     super.totalExpenses,
     super.totalWithdrawals,
     super.totalDeposits,
+    super.totalSupplierPayments,
+    super.totalRefunds,
     required super.status,
     super.userName,
     super.cashRegisterName,
@@ -78,6 +80,8 @@ class CashRegisterShiftModel extends CashRegisterShift {
         totalExpenses: _parseDouble(json['total_expenses']),
         totalWithdrawals: _parseDouble(json['total_withdrawals']),
         totalDeposits: _parseDouble(json['total_deposits']),
+        totalSupplierPayments: _parseDouble(json['total_supplier_payments']),
+        totalRefunds: _parseDouble(json['total_refunds']),
         status: json['status'],
         userName: json['user'] != null ? json['user']['name'] : null,
         cashRegisterName: json['cash_register'] != null ? json['cash_register']['name'] : null,
@@ -90,3 +94,4 @@ class CashRegisterShiftModel extends CashRegisterShift {
     }
   }
 }
+

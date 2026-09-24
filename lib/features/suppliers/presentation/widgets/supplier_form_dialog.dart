@@ -83,15 +83,17 @@ class _SupplierFormDialogState extends State<SupplierFormDialog> {
 
     try {
       final provider = context.read<SupplierProvider>();
+      int? returnedId;
       if (widget.supplierId == null) {
-        await provider.createSupplier(data);
+        returnedId = await provider.createSupplier(data);
       } else {
         await provider.updateSupplier(widget.supplierId!, data);
+        returnedId = widget.supplierId;
       }
       if (mounted) {
-        Navigator.pop(context);
+        Navigator.pop(context, returnedId);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Proveedor guardado exitosamente'), backgroundColor: Colors.green),
+          const SnackBar(content: Text('Proveedor guardado exitosamente'), backgroundColor: Colors.green),
         );
       }
     } catch (e) {

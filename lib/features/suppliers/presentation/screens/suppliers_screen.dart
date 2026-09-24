@@ -337,6 +337,7 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
                                     children: [
                                       if (supplier.balance != 0) ...[
                                         IconButton(
+                                          tooltip: supplier.balance > 0 ? 'Pagar Saldo' : 'Devolución de Saldo a Favor',
                                           style: IconButton.styleFrom(
                                             backgroundColor: supplier.balance > 0 ? Colors.red.shade50 : Colors.green.shade50,
                                             foregroundColor: supplier.balance > 0 ? Colors.red.shade700 : Colors.green.shade700,
@@ -348,6 +349,7 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
                                         const SizedBox(width: 8),
                                       ],
                                       IconButton(
+                                        tooltip: 'Cargar Remito / Factura',
                                         style: IconButton.styleFrom(
                                           backgroundColor: Colors.blue.shade50,
                                           foregroundColor: Colors.blue.shade700,
@@ -358,6 +360,7 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
                                       ),
                                       const SizedBox(width: 8),
                                       IconButton(
+                                        tooltip: 'Ver Cuenta Corriente',
                                         style: IconButton.styleFrom(
                                           backgroundColor: Colors.indigo.shade50,
                                           foregroundColor: Colors.indigo.shade700,

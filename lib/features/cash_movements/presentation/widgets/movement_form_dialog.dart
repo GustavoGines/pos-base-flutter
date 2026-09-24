@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../../../core/presentation/widgets/print_format_selector.dart';
 import '../../providers/cash_movement_provider.dart';
 import '../../providers/expense_category_provider.dart';
 
@@ -90,6 +91,9 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
     super.initState();
     _type = widget.initialType ?? 'expense';
     _category = widget.initialCategory ?? 'Mercadería';
+    if (!_currentCategories.contains(_category) && _currentCategories.isNotEmpty) {
+      _category = _currentCategories.first;
+    }
     _selectedSupplierId = widget.initialSupplierId;
 
     if (widget.initialAmount != null && widget.initialAmount! > 0) {
@@ -243,7 +247,7 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
       final data = {
         'type': _type,
         'category': _category,
-        'expense_category_id': _expenseCategoryId,
+        'expense_category_id': (_expenseCategoryId == -1) ? null : _expenseCategoryId,
         'description': _descriptionController.text,
         'receipt_number': _receiptController.text,
         'supplier_id': _selectedSupplierId,
@@ -265,13 +269,24 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
       }
 
       // ══ 2. IMPRESIÓN (no bloqueante) ══
-      final bool isA4 = localTerminal.printerFormat.startsWith('a4');
+      String format = localTerminal.printerFormat;
+      if (_printReceipt) {
+        final selectedFormat = await PrintFormatSelector.show(context);
+        if (selectedFormat != null) {
+          format = selectedFormat;
+        } else {
+          // Si el usuario cancela, desactivamos la impresion
+          format = 'none';
+        }
+      }
+      final bool isA4 = format.startsWith('a4');
+      final bool shouldPrint = _printReceipt && format != 'none';
       final bool hasCash = _payments.any((p) => p.method == 'cash');
       final bool isSupplierPayment = (_type == 'supplier_payment' ||
               _category == 'Cobro de Saldo a Favor') &&
           _selectedSupplierId != null;
 
-      if (_printReceipt && !isA4) {
+      if (shouldPrint && !isA4) {
         // ── Impresión Térmica ──
         try {
           final paymentMaps = _payments
@@ -326,14 +341,14 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
             );
           }
         }
-      } else if (!_printReceipt && hasCash) {
+      } else if (!shouldPrint && hasCash) {
         // ── Drawer Kick Aislado: no se imprime, pero hay efectivo ──
         try {
           await ReceiptPrinterService.instance.openCashDrawer(localTerminal);
         } catch (_) {
           // Silenciar — la gaveta no es crítica
         }
-      } else if (_printReceipt && isA4) {
+      } else if (shouldPrint && isA4) {
         // ── Impresión A4/Carta (PDF) ──
         try {
           final paymentMaps = _payments
@@ -479,38 +494,37 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                                       .where((c) => c.isActive)
                                       .toList();
 
-                                  if (activeCategories.isEmpty) {
-                                    return DropdownButtonFormField<int>(
-                                      value: null,
-                                      decoration: const InputDecoration(
-                                          labelText: 'Categoría de Gasto'),
-                                      items: const [
-                                        DropdownMenuItem(
-                                            value: null,
-                                            child: Text(
-                                                'No hay categorías registradas'))
-                                      ],
-                                      onChanged: null, // Disable
-                                      validator: (val) =>
-                                          'Agregue categorías de gasto en Ajustes',
-                                    );
-                                  }
-
-                                  return DropdownButtonFormField<int>(
+                                  // Verificar si ya existe una categoría llamada "Otros"
+                                  final hasOtros = activeCategories.any((c) => c.name.toLowerCase() == 'otros');
+                                  
+                                  return DropdownButtonFormField<int?>(
                                     initialValue: _expenseCategoryId,
                                     decoration: const InputDecoration(
                                         labelText: 'Categoría de Gasto'),
-                                    items: activeCategories
-                                        .map((c) => DropdownMenuItem(
-                                              value: c.id,
-                                              child: Text(c.name),
-                                            ))
-                                        .toList(),
+                                    items: [
+                                      const DropdownMenuItem<int?>(
+                                        value: null,
+                                        child: Text('Seleccione una categoría'),
+                                      ),
+                                      ...activeCategories.map((c) => DropdownMenuItem<int?>(
+                                            value: c.id,
+                                            child: Text(c.name),
+                                          )),
+                                      if (!hasOtros)
+                                        const DropdownMenuItem<int?>(
+                                          value: -1,
+                                          child: Text('Otros'),
+                                        ),
+                                    ],
                                     onChanged: (val) => setState(() {
                                       _expenseCategoryId = val;
-                                      _category = activeCategories
-                                          .firstWhere((c) => c.id == val)
-                                          .name;
+                                      if (val == -1) {
+                                        _category = 'Otros';
+                                      } else if (val != null) {
+                                        _category = activeCategories
+                                            .firstWhere((c) => c.id == val)
+                                            .name;
+                                      }
                                     }),
                                     validator: (val) => val == null
                                         ? 'Seleccione una categoría'
@@ -608,7 +622,7 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                       _category == 'Cobro de Saldo a Favor') ...[
                     supplierProv.suppliers.isEmpty
                         ? DropdownButtonFormField<int>(
-                            value: null,
+                            initialValue: null,
                             decoration: const InputDecoration(
                                 labelText: 'Seleccionar Proveedor'),
                             items: const [
@@ -697,10 +711,12 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                                         fontWeight: FontWeight.w900,
                                         color: balanceColor),
                                   ),
-                                  if ((_type == 'expense' && isDebt) ||
+                                  if (((_type == 'expense' && isDebt) ||
+                                      (_type == 'supplier_payment' && isDebt) ||
                                       (_type == 'deposit' &&
                                           !isDebt &&
-                                          supplier.balance != 0)) ...[
+                                          supplier.balance != 0)) &&
+                                      supplier.balance.abs() > _payments.fold(0.0, (sum, item) => sum + item.amount)) ...[
                                     const SizedBox(width: 12),
                                     TextButton(
                                       style: TextButton.styleFrom(
@@ -712,14 +728,16 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                                       ),
                                       onPressed: () {
                                         setState(() {
-                                          _paymentAmountController.text =
-                                              supplier.balance.abs().toString();
+                                          final listSum = _payments.fold(0.0, (sum, item) => sum + item.amount);
+                                          final remaining = supplier.balance.abs() - listSum;
+                                          _paymentAmountController.text = 
+                                              (remaining % 1 == 0 ? remaining.toInt().toString() : remaining.toStringAsFixed(2));
                                         });
                                       },
                                       child: Text(
                                           isDebt
-                                              ? 'Pagar Total'
-                                              : 'Cobrar Total',
+                                              ? (_payments.isEmpty ? 'Pagar Total' : 'Pagar Restante')
+                                              : (_payments.isEmpty ? 'Cobrar Total' : 'Cobrar Restante'),
                                           style: const TextStyle(
                                               fontWeight: FontWeight.bold)),
                                     ),
@@ -764,12 +782,14 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                       Expanded(
                         child: TextFormField(
                           controller: _descriptionController,
-                          decoration: const InputDecoration(
-                              labelText: 'Detalle / Descripción'),
+                          decoration: InputDecoration(
+                            labelText: _category.toLowerCase() == 'otros' 
+                                ? 'Detalle / Descripción *' 
+                                : 'Detalle / Descripción (Opcional)',
+                          ),
                           validator: (val) {
-                            if (_category == 'Otros' &&
-                                (val == null || val.isEmpty)) {
-                              return 'Requerido para la categoría "Otros"';
+                            if (_category.toLowerCase() == 'otros' && (val == null || val.trim().isEmpty)) {
+                              return 'Especifique el detalle de "Otros"';
                             }
                             return null;
                           },
@@ -905,7 +925,7 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                           const SizedBox(height: 8),
                           availableChecks.isEmpty
                               ? DropdownButtonFormField<int>(
-                                  value: null,
+                                  initialValue: null,
                                   decoration: const InputDecoration(
                                       labelText:
                                           'Seleccionar Cheque en Cartera',

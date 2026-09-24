@@ -25,6 +25,8 @@ class CashRegisterShift {
   final double? totalExpenses;
   final double? totalWithdrawals;
   final double? totalDeposits;
+  final double? totalSupplierPayments;
+  final double? totalRefunds;
 
   // Relaciones
   final String? userName;
@@ -57,6 +59,8 @@ class CashRegisterShift {
     this.totalExpenses,
     this.totalWithdrawals,
     this.totalDeposits,
+    this.totalSupplierPayments,
+    this.totalRefunds,
     this.userName,
     this.cashRegisterName,
     this.closedByUserId,
@@ -65,3 +69,4 @@ class CashRegisterShift {
 
   bool get isOpen => status == 'open';
 }
+

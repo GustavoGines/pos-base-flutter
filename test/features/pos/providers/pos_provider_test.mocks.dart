@@ -597,6 +597,7 @@ class MockReceiptPrinterService extends _i1.Mock
     required _i14.CashRegisterShift? shift,
     required _i13.BusinessSettings? settings,
     required _i11.LocalTerminalProvider? localTerminal,
+    required bool isPremium,
   }) =>
       (super.noSuchMethod(
         Invocation.method(
@@ -606,6 +607,7 @@ class MockReceiptPrinterService extends _i1.Mock
             #shift: shift,
             #settings: settings,
             #localTerminal: localTerminal,
+            #isPremium: isPremium,
           },
         ),
         returnValue: _i6.Future<void>.value(),

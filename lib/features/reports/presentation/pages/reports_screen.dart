@@ -75,8 +75,8 @@ class _ReportsScreenState extends State<ReportsScreen>
       saveText: 'APLICAR',
       // 🎨 Rediseño Premium: tema indigo alineado con el Dashboard
       builder: (context, child) => Center(
-        child: Container(
-          constraints: const BoxConstraints(maxWidth: 400, maxHeight: 600),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 500, maxHeight: 600),
           child: Theme(
             data: ThemeData.light().copyWith(
               colorScheme: ColorScheme.light(
@@ -749,11 +749,11 @@ class _TableHeader extends StatelessWidget {
       child: Row(
         children: [
           Expanded(flex: 3, child: Text(isBrand ? 'Marca' : 'Categoría', style: style)),
-          const SizedBox(width: 45, child: Text('Cant.', style: style, textAlign: TextAlign.right)),
-          SizedBox(width: 90, child: Text('Facturación', style: style, textAlign: TextAlign.right)),
-          SizedBox(width: 90, child: Text('Ganancia', style: style, textAlign: TextAlign.right)),
-          SizedBox(width: 70, child: Text('Margen', style: style, textAlign: TextAlign.right)),
-          SizedBox(width: 24), // Espacio para el icono de expandir
+          const SizedBox(width: 60, child: Text('Cant.', style: style, textAlign: TextAlign.right)),
+          const SizedBox(width: 120, child: Text('Facturación', style: style, textAlign: TextAlign.right)),
+          const SizedBox(width: 120, child: Text('Ganancia', style: style, textAlign: TextAlign.right)),
+          const SizedBox(width: 75, child: Text('Margen', style: style, textAlign: TextAlign.right)),
+          const SizedBox(width: 24), // Espacio para el icono de expandir
         ],
       ),
     );
@@ -788,10 +788,10 @@ class _TableRow extends StatelessWidget {
         child: Row(
           children: [
             Expanded(flex: 3, child: Text(category, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500))),
-            SizedBox(width: 45, child: Text(qty, style: const TextStyle(fontSize: 13), textAlign: TextAlign.right)),
-            SizedBox(width: 90, child: Text(revenue, style: const TextStyle(fontSize: 13), textAlign: TextAlign.right)),
-            SizedBox(width: 90, child: Text(profit, style: TextStyle(fontSize: 13, color: profitColor, fontWeight: FontWeight.bold), textAlign: TextAlign.right)),
-            SizedBox(width: 70, child: Text(margin, style: const TextStyle(fontSize: 13), textAlign: TextAlign.right)),
+            SizedBox(width: 60, child: Text(qty, style: const TextStyle(fontSize: 13), textAlign: TextAlign.right)),
+            SizedBox(width: 120, child: Text(revenue, style: const TextStyle(fontSize: 13), textAlign: TextAlign.right)),
+            SizedBox(width: 120, child: Text(profit, style: TextStyle(fontSize: 13, color: profitColor, fontWeight: FontWeight.bold), textAlign: TextAlign.right)),
+            SizedBox(width: 75, child: Text(margin, style: const TextStyle(fontSize: 13), textAlign: TextAlign.right)),
             const SizedBox(width: 24),
           ],
         ),
@@ -807,10 +807,10 @@ class _TableRow extends StatelessWidget {
         title: Row(
           children: [
             Expanded(flex: 3, child: Text(category, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500))),
-            SizedBox(width: 45, child: Text(qty, style: const TextStyle(fontSize: 13), textAlign: TextAlign.right)),
-            SizedBox(width: 90, child: Text(revenue, style: const TextStyle(fontSize: 13), textAlign: TextAlign.right)),
-            SizedBox(width: 90, child: Text(profit, style: TextStyle(fontSize: 13, color: profitColor, fontWeight: FontWeight.bold), textAlign: TextAlign.right)),
-            SizedBox(width: 70, child: Text(margin, style: const TextStyle(fontSize: 13), textAlign: TextAlign.right)),
+            SizedBox(width: 60, child: Text(qty, style: const TextStyle(fontSize: 13), textAlign: TextAlign.right)),
+            SizedBox(width: 120, child: Text(revenue, style: const TextStyle(fontSize: 13), textAlign: TextAlign.right)),
+            SizedBox(width: 120, child: Text(profit, style: TextStyle(fontSize: 13, color: profitColor, fontWeight: FontWeight.bold), textAlign: TextAlign.right)),
+            SizedBox(width: 75, child: Text(margin, style: const TextStyle(fontSize: 13), textAlign: TextAlign.right)),
           ],
         ),
         children: products.map((prod) {
@@ -839,10 +839,10 @@ class _TableRow extends StatelessWidget {
                     ],
                   ),
                 ),
-                SizedBox(width: 45, child: Text(pQty.toQty(), style: TextStyle(fontSize: 12, color: Colors.blueGrey.shade700), textAlign: TextAlign.right)),
-                SizedBox(width: 90, child: Text('\$${pRev.toCurrency()}', style: TextStyle(fontSize: 12, color: Colors.blueGrey.shade700), textAlign: TextAlign.right)),
-                SizedBox(width: 90, child: Text('\$${pProf.toCurrency()}', style: TextStyle(fontSize: 12, color: pColor, fontWeight: FontWeight.w600), textAlign: TextAlign.right)),
-                SizedBox(width: 70, child: Text(marginStr, style: TextStyle(fontSize: 12, color: Colors.blueGrey.shade700), textAlign: TextAlign.right)),
+                SizedBox(width: 60, child: Text(pQty.toQty(), style: TextStyle(fontSize: 12, color: Colors.blueGrey.shade700), textAlign: TextAlign.right)),
+                SizedBox(width: 120, child: Text('\$${pRev.toCurrency()}', style: TextStyle(fontSize: 12, color: Colors.blueGrey.shade700), textAlign: TextAlign.right)),
+                SizedBox(width: 120, child: Text('\$${pProf.toCurrency()}', style: TextStyle(fontSize: 12, color: pColor, fontWeight: FontWeight.w600), textAlign: TextAlign.right)),
+                SizedBox(width: 75, child: Text(marginStr, style: TextStyle(fontSize: 12, color: Colors.blueGrey.shade700), textAlign: TextAlign.right)),
               ],
             ),
           );
@@ -1443,6 +1443,15 @@ class _MonthlyBalanceTabState extends State<_MonthlyBalanceTab> {
                   icon: Icons.shopping_cart_checkout,
                   color: Colors.red.shade600,
                   bgColor: Colors.red.shade50,
+                )),
+                const SizedBox(width: 16),
+                Expanded(
+                    child: _HeroCard(
+                  title: 'Ganancia Bruta Real',
+                  value: '\$${(provider.balanceTotalRevenue - provider.balanceTotalCost).toCurrency()}',
+                  icon: Icons.price_check,
+                  color: Colors.teal.shade600,
+                  bgColor: Colors.teal.shade50,
                 )),
                 const SizedBox(width: 16),
                 Expanded(

@@ -35,7 +35,7 @@ class PaymentLine {
       double? defaultCardSurcharge,
       bool disableSurcharge = false})
       : controller = TextEditingController(
-            text: initialAmount > 0 ? initialAmount.toCurrency() : ''),
+            text: initialAmount > 0 ? initialAmount.toInputFormat() : ''),
         percentageController = TextEditingController(),
         percentageFocus = FocusNode(),
         checkBankController = TextEditingController(),
@@ -164,7 +164,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         : posProvider.lastUsedShippingCost;
 
     _shippingCostCtrl = TextEditingController(
-        text: initialShipping > 0 ? initialShipping.toCurrency() : '');
+        text: initialShipping > 0 ? initialShipping.toInputFormat() : '');
     // Sincronizar la memoria local del diálogo con el último flete usado
     // (No llamamos a setShippingCost del provider para no alterar el total del fondo prematuramente)
     _shippingCostCtrl.addListener(() {
@@ -236,7 +236,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
 
     // Actualizar el texto solo si el valor difiere (evita recursión del listener)
     final currentText = _cashTenderedCtrl.text;
-    final newText = req > 0 ? req.toCurrency() : '';
+    final newText = req > 0 ? req.toInputFormat() : '';
     if (currentText != newText) {
       _cashTenderedCtrl.text = newText;
       // Mover cursor al final del texto

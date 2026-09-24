@@ -11,6 +11,9 @@ import '../providers/quote_provider.dart';
 import '../../data/quote_repository.dart';
 import '../../services/quote_pdf_service.dart';
 import 'quote_screen.dart';
+import 'package:frontend_desktop/core/presentation/widgets/print_format_selector.dart';
+import 'package:frontend_desktop/core/utils/receipt_printer_service.dart';
+import 'package:frontend_desktop/core/providers/local_terminal_provider.dart';
 
 // ─── Utilidades de estado ────────────────────────────────────────────────────
 
@@ -711,20 +714,38 @@ class _QuoteActionSheetState extends State<_QuoteActionSheet> {
     }
   }
 
-  // ── Vista previa PDF ──────────────────────────────────────────────────────
-  Future<void> _handlePdfPreview() async {
+  // ── Imprimir Presupuesto ───────────────────────────────────────────────────
+  Future<void> _handlePrint() async {
+    final format = await PrintFormatSelector.show(context);
+    if (format == null) return;
+    if (!mounted) return;
+
     final settings = context.read<SettingsProvider>().settings;
     final vendorName = context.read<AuthProvider>().currentUser?['name'] ?? 'VENDEDOR';
 
-    if (!mounted) return;
-    await QuotePdfService.preview(
-      context: context,
-      quote: widget.quote,
-      businessName: settings?.companyName ?? 'Mi Negocio',
-      businessAddress: settings?.address,
-      businessPhone: settings?.phone,
-      vendorName: vendorName,
-    );
+    if (format == 'a4') {
+      await QuotePdfService.preview(
+        context: context,
+        quote: widget.quote,
+        businessName: settings?.companyName ?? 'Mi Negocio',
+        businessAddress: settings?.address,
+        businessPhone: settings?.phone,
+        vendorName: vendorName,
+      );
+    } else if (format == 'thermal') {
+      if (settings != null) {
+        try {
+          await ReceiptPrinterService.instance.printQuoteTicket(
+            quote: widget.quote,
+            settings: settings,
+            localTerminal: context.read<LocalTerminalProvider>(),
+            vendorName: vendorName,
+          );
+        } catch (e) {
+          if (mounted) SnackBarService.error(context, e.toString());
+        }
+      }
+    }
   }
 
   // ── WhatsApp ──────────────────────────────────────────────────────────────
@@ -1094,9 +1115,9 @@ class _QuoteActionSheetState extends State<_QuoteActionSheet> {
                     style: OutlinedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 14),
                     ),
-                    onPressed: _handlePdfPreview,
-                    icon: const Icon(Icons.picture_as_pdf_rounded),
-                    label: const Text('Ver PDF'),
+                    onPressed: _handlePrint,
+                    icon: const Icon(Icons.print_outlined),
+                    label: const Text('Imprimir'),
                   ),
                 ),
                 const SizedBox(width: 12),

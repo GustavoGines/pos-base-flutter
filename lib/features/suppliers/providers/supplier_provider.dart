@@ -63,7 +63,7 @@ class SupplierProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> createSupplier(Map<String, dynamic> data) async {
+  Future<int?> createSupplier(Map<String, dynamic> data) async {
     try {
       final response = await client.post(
         Uri.parse('$baseUrl/suppliers'),
@@ -75,8 +75,10 @@ class SupplierProvider extends ChangeNotifier {
       );
 
       if (response.statusCode == 201) {
+        final Map<String, dynamic> body = json.decode(response.body);
+        final newId = body['id'] as int?;
         await fetchSuppliers(search: _searchQuery);
-        return true;
+        return newId;
       } else {
         throw Exception(_parseError(response));
       }

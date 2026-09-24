@@ -17,7 +17,7 @@ import '../../../updater/data/services/update_service.dart';
 import '../../../updater/presentation/widgets/update_dialog.dart';
 import '../../../pos/presentation/providers/pos_provider.dart';
 import '../widgets/mobile_app_qr_section.dart';
-import 'expense_categories_screen.dart';
+import '../../../cash_movements/presentation/widgets/expense_categories_dialog.dart';
 
 enum SettingsSection { general, prices, subscription, network, mobileApp }
 
@@ -569,7 +569,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           subtitle: const Text('Gestioná los conceptos para los retiros y gastos de caja.'),
           trailing: FilledButton.tonal(
             onPressed: () {
-              Navigator.push(context, MaterialPageRoute(builder: (_) => const ExpenseCategoriesScreen()));
+              ExpenseCategoriesDialog.show(context);
             },
             child: const Text('Configurar'),
           ),

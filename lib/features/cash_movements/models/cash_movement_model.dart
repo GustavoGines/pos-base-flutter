@@ -11,6 +11,7 @@ class CashMovementModel {
   final String category;
   final String? description;
   final String? receiptNumber;
+  final String? receiptFileUrl;
   final DateTime createdAt;
   
   // Relaciones
@@ -32,6 +33,7 @@ class CashMovementModel {
     required this.category,
     this.description,
     this.receiptNumber,
+    this.receiptFileUrl,
     required this.createdAt,
     this.user,
     this.authorizer,
@@ -53,6 +55,7 @@ class CashMovementModel {
       category: json['category'] ?? 'Sin categoría',
       description: json['description'],
       receiptNumber: json['receipt_number'],
+      receiptFileUrl: json['receipt_file_url'],
       createdAt: DateTime.parse(json['created_at']),
       user: json['user'],
       authorizer: json['authorizer'],

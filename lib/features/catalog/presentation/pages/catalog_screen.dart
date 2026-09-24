@@ -9,6 +9,7 @@ import '../../domain/entities/product.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import '../widgets/categories_manager_dialog.dart';
 import '../widgets/brands_manager_dialog.dart';
+import '../../../suppliers/presentation/widgets/supplier_form_dialog.dart';
 import '../widgets/print_labels_dialog.dart';
 import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
@@ -918,8 +919,8 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     _nameCtrl = TextEditingController(text: p?.name ?? '');
     _barcodeCtrl = TextEditingController(text: p?.barcode ?? '');
     _internalCodeCtrl = TextEditingController(text: p?.internalCode ?? '');
-    _costCtrl = TextEditingController(text: p != null ? p.costPrice.toCurrency() : '');
-    _priceCtrl = TextEditingController(text: p != null ? p.sellingPrice.toCurrency() : '');
+    _costCtrl = TextEditingController(text: p != null ? p.costPrice.toInputFormat() : '');
+    _priceCtrl = TextEditingController(text: p != null ? p.sellingPrice.toInputFormat() : '');
     _marginCtrl = TextEditingController();
     _stockCtrl = TextEditingController(text: p != null ? p.stock.toStringAsFixed(p.isSoldByWeight ? 3 : 0) : '0');
     
@@ -1344,13 +1345,32 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                         ),
                       ),
                       const SizedBox(width: 8),
-                      IconButton(
-                        icon: const Icon(Icons.refresh),
-                        color: Colors.blue,
-                        tooltip: 'Recargar Proveedores',
-                        onPressed: () {
-                          context.read<SupplierProvider>().fetchSuppliers();
-                        },
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.add_circle_outline),
+                            color: Colors.green,
+                            tooltip: 'Crear Nuevo Proveedor',
+                            onPressed: () async {
+                              final createdId = await showDialog<int>(
+                                context: context,
+                                builder: (ctx) => const SupplierFormDialog(),
+                              );
+                              if (createdId != null && mounted) {
+                                setState(() => _supplierId = createdId);
+                              }
+                            },
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.refresh),
+                            color: Colors.blue,
+                            tooltip: 'Recargar Proveedores',
+                            onPressed: () {
+                              context.read<SupplierProvider>().fetchSuppliers();
+                            },
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -1672,7 +1692,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                     Expanded(
                       flex: 4,
                       child: TextFormField(
-                        initialValue: (tier['unit_price'] as num).toCurrency(),
+                        initialValue: (tier['unit_price'] as num).toInputFormat(),
                         decoration: const InputDecoration(labelText: 'Precio Unitario (\$)', isDense: true, prefixText: '\$ ', border: OutlineInputBorder()),
                         keyboardType: const TextInputType.numberWithOptions(decimal: true),
                         onChanged: (v) => _priceTiers[idx]['unit_price'] = double.tryParse(v.replaceAll(',', '.')) ?? 0.0,

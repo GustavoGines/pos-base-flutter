@@ -140,7 +140,7 @@ class CashMovementPdfService {
     required String type,
     required String supplierName,
     required double totalAmount,
-    required double balanceBefore,
+    double? balanceBefore,
     required List<Map<String, dynamic>> payments,
     required String businessName,
     String? businessTaxId,
@@ -195,7 +195,7 @@ class CashMovementPdfService {
     required String type,
     required String supplierName,
     required double totalAmount,
-    required double balanceBefore,
+    double? balanceBefore,
     required List<Map<String, dynamic>> payments,
     required String businessName,
     String? businessTaxId,
@@ -264,7 +264,8 @@ class CashMovementPdfService {
               _buildPaymentBreakdown(payments, totalAmount, type == 'deposit'),
               
               pw.SizedBox(height: 20),
-              _buildSupplierBalance(balanceBefore, totalAmount, type == 'expense'),
+              if (balanceBefore != null)
+                _buildSupplierBalance(balanceBefore, totalAmount, type == 'expense' || type == 'supplier_payment'),
 
               pw.Spacer(),
               _buildSignatures(),
@@ -404,6 +405,7 @@ class CashMovementPdfService {
   }
 
   static pw.Widget _buildSupplierBalance(double balanceBefore, double totalAmount, bool isExpense) {
+    // Si es un egreso (pago a proveedor), RESTA la deuda. Si es un ingreso (cobro de saldo a favor), SUMA a la deuda.
     final balanceAfter = isExpense ? balanceBefore - totalAmount : balanceBefore + totalAmount;
     final balanceLabel = balanceAfter > 0 ? 'DEUDA RESTANTE:' : (balanceAfter < 0 ? 'SALDO A FAVOR:' : 'CUENTA AL DÍA');
 
@@ -428,8 +430,8 @@ class CashMovementPdfService {
           pw.Row(
             mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
             children: [
-              pw.Text(isExpense ? 'Abonado:' : 'Cobrado:', style: const pw.TextStyle(fontSize: 12)),
-              pw.Text('- ${_currencyFmt.format(totalAmount)}', style: const pw.TextStyle(fontSize: 12)),
+              pw.Text(isExpense ? 'Abonado:' : 'Deuda Generada:', style: const pw.TextStyle(fontSize: 12)),
+              pw.Text('${isExpense ? '-' : '+'} ${_currencyFmt.format(totalAmount)}', style: const pw.TextStyle(fontSize: 12)),
             ]
           ),
           pw.Divider(color: PdfColors.grey300),
@@ -441,7 +443,7 @@ class CashMovementPdfService {
             ]
           ),
         ],
-      )
+      ),
     );
   }
 

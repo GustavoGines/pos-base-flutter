@@ -6,41 +6,73 @@ import 'package:frontend_desktop/core/providers/local_terminal_provider.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
 import '../../../settings/presentation/providers/settings_provider.dart';
 import '../providers/cash_register_provider.dart';
+import '../../services/z_close_pdf_service.dart';
+import 'package:frontend_desktop/core/presentation/widgets/print_format_selector.dart';
 import 'package:intl/intl.dart';
 
 class CashShiftSummaryScreen extends StatelessWidget {
   final CashRegisterShift closedShift;
+  final bool isFromAudit;
 
-  const CashShiftSummaryScreen({super.key, required this.closedShift});
+  const CashShiftSummaryScreen({super.key, required this.closedShift, this.isFromAudit = false});
 
   void _exit(BuildContext context) {
+    if (isFromAudit) {
+      Navigator.of(context).pop();
+      return;
+    }
     try {
       context.read<AuthProvider>().logout();
     } catch (_) {}
     Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
   }
 
-  void _print(BuildContext context) async {
-    final settings = context.read<SettingsProvider>().settings;
+  void _printOnly(BuildContext context) async {
+    final settingsProvider = context.read<SettingsProvider>();
+    final isPremium = settingsProvider.currentPlan.toLowerCase() == 'premium' ||
+        settingsProvider.currentPlan.toLowerCase() == 'pro';
+    final settings = settingsProvider.settings;
     final printer = context.read<CashRegisterProvider>().printerService;
     
     if (settings != null && printer != null) {
       final localTerminal = context.read<LocalTerminalProvider>();
-      await printer.printZCloseTicket(
-        shift: closedShift,
-        settings: settings,
-        localTerminal: localTerminal,
-      ).catchError((e) {
-        debugPrint('Error printing summary: $e');
-      });
+      
+      final format = await PrintFormatSelector.show(context);
+      if (format == null) return; // Canceló
+      
+      if (format == 'a4') {
+        if (context.mounted) {
+          await ZClosePdfService.printZClose(
+            context: context,
+            shift: closedShift,
+            businessName: settings.companyName ?? 'MI NEGOCIO',
+            businessTaxId: settings.taxId,
+            isPremium: isPremium,
+          );
+        }
+      } else if (format == 'thermal') {
+        await printer.printZCloseTicket(
+          shift: closedShift,
+          settings: settings,
+          localTerminal: localTerminal,
+          isPremium: isPremium,
+        ).catchError((e) {
+          debugPrint('Error printing summary: $e');
+        });
+      }
     }
-    if (context.mounted) {
+    // Si viene del flujo de cierre de caja (no auditoría), hacer logout
+    if (!isFromAudit && context.mounted) {
       _exit(context);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final settingsProvider = context.watch<SettingsProvider>();
+    final isPremium = settingsProvider.currentPlan.toLowerCase() == 'premium' ||
+        settingsProvider.currentPlan.toLowerCase() == 'pro';
+    
     final diff = closedShift.difference ?? 0.0;
     final isNegative = diff < 0;
 
@@ -49,7 +81,7 @@ class CashShiftSummaryScreen extends StatelessWidget {
       appBar: AppBar(
         title: const Text('Resumen de Cierre de Caja'),
         centerTitle: true,
-        automaticallyImplyLeading: false, // Bloquear volver atrás
+        automaticallyImplyLeading: isFromAudit, // Solo mostrar flecha atrás si viene de Auditoría
       ),
       body: Center(
         child: SingleChildScrollView(
@@ -124,21 +156,28 @@ class CashShiftSummaryScreen extends StatelessWidget {
                   const Divider(),
                   _buildRow('Fondo Inicial', '\$${closedShift.openingBalance.toCurrency()}'),
                   _buildRow('Ventas en Efectivo', '\$${(closedShift.cashSales ?? 0).toCurrency()}'),
-                  _buildRow('Ingresos Extra', '\$${(closedShift.totalDeposits ?? 0).toCurrency()}'),
-                  _buildRow('Gastos (Salida)', '-\$${(closedShift.totalExpenses ?? 0).toCurrency()}', isRed: true),
-                  _buildRow('Retiros de Dueño (Salida)', '-\$${(closedShift.totalWithdrawals ?? 0).toCurrency()}', isRed: true),
+                  if (isPremium || (closedShift.totalDeposits ?? 0) > 0)
+                    _buildRow('Ingresos Extra', '\$${(closedShift.totalDeposits ?? 0).toCurrency()}'),
+                  if (isPremium || (closedShift.totalExpenses ?? 0) > 0)
+                    _buildRow('Gastos (Salida)', '-\$${(closedShift.totalExpenses ?? 0).toCurrency()}', isRed: true),
+                  if (isPremium || (closedShift.totalWithdrawals ?? 0) > 0)
+                    _buildRow('Retiros de Dueño (Salida)', '-\$${(closedShift.totalWithdrawals ?? 0).toCurrency()}', isRed: true),
+                  if (isPremium || (closedShift.totalSupplierPayments ?? 0) > 0)
+                    _buildRow('Pagos Proveedores (Salida)', '-\$${(closedShift.totalSupplierPayments ?? 0).toCurrency()}', isRed: true),
+                  if ((closedShift.totalRefunds ?? 0) > 0)
+                    _buildRow('Reintegros (Salida)', '-\$${(closedShift.totalRefunds ?? 0).toCurrency()}', isRed: true),
                   _buildRow('Ventas con Tarjeta', '\$${(closedShift.cardSales ?? 0).toCurrency()}'),
                   _buildRow('Ventas por Transf.', '\$${(closedShift.transferSales ?? 0).toCurrency()}'),
                   _buildRow('Total Recargos (Tarj/Billeteras)', '\$${(closedShift.totalSurcharge ?? 0).toCurrency()}'),
 
-                  // Cuenta Corriente: sección informativa (no entra en saldo físico)
-                  if ((closedShift.ccSalesCount ?? 0) > 0) ...[
+                  // Cuenta Corriente: sección informativa
+                  if ((isPremium || (closedShift.ccSalesCount ?? 0) > 0) && (closedShift.ccSalesCount ?? 0) > 0) ...[
                     const Divider(height: 8),
                     _buildCcSection(closedShift),
                   ],
 
                   // Cheques: Solo visible si feature habilitada
-                  if (context.read<SettingsProvider>().settings?.features.checks == true) ...[
+                  if (isPremium && context.read<SettingsProvider>().settings?.features.checks == true) ...[
                     const Divider(height: 8),
                     _buildCheckSection(closedShift),
                   ],
@@ -177,19 +216,25 @@ class CashShiftSummaryScreen extends StatelessWidget {
                   const SizedBox(height: 32),
                   ElevatedButton.icon(
                     icon: const Icon(Icons.print, size: 28),
-                    label: const Text('Imprimir Cierre Z y Salir', style: TextStyle(fontSize: 18)),
+                    label: Text(
+                      isFromAudit ? 'Reimprimir Cierre Z' : 'Imprimir Cierre Z y Salir',
+                      style: const TextStyle(fontSize: 18),
+                    ),
                     style: ElevatedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 20),
                       backgroundColor: Colors.blue.shade800,
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
-                    onPressed: () => _print(context),
+                    onPressed: () => _printOnly(context),
                   ),
                   const SizedBox(height: 12),
                   TextButton(
                     onPressed: () => _exit(context),
-                    child: const Text('Continuar sin imprimir', style: TextStyle(color: Colors.grey)),
+                    child: Text(
+                      isFromAudit ? 'Volver a Auditoría' : 'Continuar sin imprimir',
+                      style: const TextStyle(color: Colors.grey),
+                    ),
                   ),
                 ],
               ),

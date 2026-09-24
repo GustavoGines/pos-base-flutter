@@ -2,15 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'dart:convert';
+import 'package:file_picker/file_picker.dart' as fp;
 import 'package:http/http.dart' as http;
-import 'package:file_picker/file_picker.dart';
+import '../../../../core/network/api_client.dart';
+
+
 import '../../providers/supplier_provider.dart';
 import '../../../pos/presentation/providers/pos_provider.dart';
 import '../../../catalog/domain/entities/product.dart';
 import '../../../cash_movements/presentation/widgets/movement_form_dialog.dart';
 import '../../../cash_register/presentation/providers/cash_register_provider.dart';
-import '../../../../core/network/api_client.dart';
-import '../../../auth/presentation/providers/auth_provider.dart';
+
+
 import '../../../catalog/presentation/providers/catalog_provider.dart';
 import '../../../catalog/presentation/pages/catalog_screen.dart' show ProductFormDialog;
 import 'dart:async';
@@ -71,6 +74,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
   double _discountAmount = 0.0;
   
   String? _attachmentUrl;
+  // ignore: prefer_final_fields
   bool _isUploading = false;
 
   @override
@@ -153,11 +157,8 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
   }
 
   Future<void> _pickAndUploadFile() async {
-    // FIXME: file_picker platform property is not resolving correctly in this environment.
-    // Uncomment when file_picker version issue is resolved.
-    /*
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
+    final result = await fp.FilePicker.pickFiles(
+      type: fp.FileType.custom,
       allowedExtensions: ['jpg', 'jpeg', 'png', 'pdf'],
     );
     if (result != null && result.files.single.path != null) {
@@ -179,7 +180,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
         if (response.statusCode == 200) {
           final data = json.decode(response.body);
           setState(() {
-            _uploadedFilePath = data['path'];
+            _attachmentUrl = data['path'];
             _isUploading = false;
           });
           if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Comprobante subido.')));
@@ -191,7 +192,6 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
         if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Fallo la subida.')));
       }
     }
-    */
   }
 
   double get _totalAmount {
@@ -249,6 +249,8 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
           String? helperText;
           if (discount > 0 && amountToPay > 0) {
             helperText = '💡 Se han descontado \$${discount.toStringAsFixed(2).replaceAll('.00', '')} que tenías a favor.';
+          } else {
+            helperText = '💡 Este importe corresponde únicamente a la mercadería que acabas de cargar hoy. (Para saldar la deuda total, usa el botón rojo "Pagar Total" de arriba).';
           }
 
           if (amountToPay > 0) {
@@ -261,6 +263,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                   initialSupplierId: widget.supplierId,
                   initialType: 'supplier_payment',
                   initialAmount: amountToPay,
+                  initialCategory: 'Pago a Proveedor',
                   helperText: helperText,
                 ),
               );
@@ -340,12 +343,15 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             // Buscador
-                            Container(
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: Colors.grey.shade300),
-                              ),
+                            Material(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(8),
+                              clipBehavior: Clip.antiAlias,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: Colors.grey.shade300),
+                                ),
                               child: Column(
                                 children: [
                                   TextField(
@@ -396,6 +402,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                                 ],
                               ),
                             ),
+                          ),
                             const SizedBox(height: 16),
                             
                             // Tabla de Items
@@ -483,7 +490,10 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                             icon: _isUploading 
                               ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
                               : const Icon(Icons.attach_file),
-                            label: Text(_attachmentUrl != null ? 'Comprobante Adjunto ✓' : 'Adjuntar Comprobante (PDF/IMG)'),
+                            label: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text(_attachmentUrl != null ? 'Comprobante Adjunto ✓' : 'Adjuntar Archivo'),
+                            ),
                             style: OutlinedButton.styleFrom(
                               foregroundColor: _attachmentUrl != null ? Colors.green.shade700 : Colors.blue.shade700,
                               side: BorderSide(color: _attachmentUrl != null ? Colors.green.shade300 : Colors.blue.shade300),
@@ -498,58 +508,73 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                         children: [
                           if (_type == 'invoice')
                             Container(
-                              padding: const EdgeInsets.all(8),
                               margin: const EdgeInsets.only(bottom: 16),
-                              decoration: BoxDecoration(
+                              child: Material(
                                 color: Colors.green.shade50,
                                 borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: Colors.green.shade200),
-                              ),
-                              child: CheckboxListTile(
-                                title: const Text('Abonar en el acto', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                                subtitle: const Text('Abre un movimiento de caja al guardar.', style: TextStyle(fontSize: 12)),
-                                value: _payNow,
-                                onChanged: (val) => setState(() => _payNow = val ?? false),
-                                contentPadding: EdgeInsets.zero,
-                                controlAffinity: ListTileControlAffinity.leading,
+                                clipBehavior: Clip.antiAlias,
+                                child: Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    border: Border.all(color: Colors.green.shade200),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: CheckboxListTile(
+                                    title: const Text('Abonar en el acto', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                                    subtitle: const Text('Abre un movimiento de caja al guardar.', style: TextStyle(fontSize: 12)),
+                                    value: _payNow,
+                                    onChanged: (val) => setState(() => _payNow = val ?? false),
+                                    contentPadding: EdgeInsets.zero,
+                                    controlAffinity: ListTileControlAffinity.leading,
+                                  ),
+                                ),
                               ),
                             ),
                           
                           // Extra charges
-                          Row(
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
                             children: [
-                              Expanded(child: TextFormField(
-                                initialValue: _freightAmount > 0 ? _freightAmount.toString() : '',
-                                decoration: const InputDecoration(labelText: 'Flete (\$)', isDense: true),
-                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                onChanged: (v) {
-                                  final p = double.tryParse(v);
-                                  if (p != null) setState(() => _freightAmount = p);
-                                  else setState(() => _freightAmount = 0);
-                                },
-                              )),
-                              const SizedBox(width: 8),
-                              Expanded(child: TextFormField(
-                                initialValue: _taxAmount > 0 ? _taxAmount.toString() : '',
-                                decoration: const InputDecoration(labelText: 'Impuestos (\$)', isDense: true),
-                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                onChanged: (v) {
-                                  final p = double.tryParse(v);
-                                  if (p != null) setState(() => _taxAmount = p);
-                                  else setState(() => _taxAmount = 0);
-                                },
-                              )),
-                              const SizedBox(width: 8),
-                              Expanded(child: TextFormField(
-                                initialValue: _discountAmount > 0 ? _discountAmount.toString() : '',
-                                decoration: const InputDecoration(labelText: 'Descuento (\$)', isDense: true),
-                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                onChanged: (v) {
-                                  final p = double.tryParse(v);
-                                  if (p != null) setState(() => _discountAmount = p);
-                                  else setState(() => _discountAmount = 0);
-                                },
-                              )),
+                              SizedBox(
+                                width: 90,
+                                child: TextFormField(
+                                  initialValue: _freightAmount > 0 ? _freightAmount.toString() : '',
+                                  decoration: const InputDecoration(labelText: 'Flete (\$)', isDense: true),
+                                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                  onChanged: (v) {
+                                    final p = double.tryParse(v);
+                                    if (p != null) { setState(() => _freightAmount = p); }
+                                    else { setState(() => _freightAmount = 0); }
+                                  },
+                                ),
+                              ),
+                              SizedBox(
+                                width: 90,
+                                child: TextFormField(
+                                  initialValue: _taxAmount > 0 ? _taxAmount.toString() : '',
+                                  decoration: const InputDecoration(labelText: 'Impuestos (\$)', isDense: true),
+                                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                  onChanged: (v) {
+                                    final p = double.tryParse(v);
+                                    if (p != null) { setState(() => _taxAmount = p); }
+                                    else { setState(() => _taxAmount = 0); }
+                                  },
+                                ),
+                              ),
+                              SizedBox(
+                                width: 90,
+                                child: TextFormField(
+                                  initialValue: _discountAmount > 0 ? _discountAmount.toString() : '',
+                                  decoration: const InputDecoration(labelText: 'Descuento (\$)', isDense: true),
+                                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                  onChanged: (v) {
+                                    final p = double.tryParse(v);
+                                    if (p != null) { setState(() => _discountAmount = p); }
+                                    else { setState(() => _discountAmount = 0); }
+                                  },
+                                ),
+                              ),
                             ],
                           ),
                           const SizedBox(height: 16),
@@ -640,6 +665,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
         : item.quantity.toInt().toString();
 
     return Padding(
+      key: ValueKey('invoice_item_${item.product.id}'),
       padding: const EdgeInsets.all(12.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -660,7 +686,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                 flex: 1,
                 child: TextFormField(
                   initialValue: qtyStr,
-                  decoration: InputDecoration(labelText: 'Cant. (${item.product.unitType ?? 'un'})', isDense: true),
+                  decoration: InputDecoration(labelText: 'Cant. (${item.product.unitType})', isDense: true),
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
                   onChanged: (val) {
                     final p = double.tryParse(val);
@@ -724,6 +750,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                       SizedBox(
                         width: 100,
                         child: TextFormField(
+                          key: ValueKey('pvp_${item.product.id}_${item.suggestedPrice}_${item.updatePrice}'),
                           initialValue: item.manualPrice.toStringAsFixed(2),
                           enabled: item.updatePrice,
                           decoration: const InputDecoration(isDense: true, prefixText: '\$', contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8)),

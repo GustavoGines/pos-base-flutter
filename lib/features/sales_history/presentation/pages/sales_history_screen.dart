@@ -19,6 +19,8 @@ import 'package:frontend_desktop/features/cash_register/presentation/providers/c
 import 'package:frontend_desktop/core/utils/a4_split_pdf_service.dart';
 import 'package:printing/printing.dart';
 
+import 'package:frontend_desktop/core/presentation/widgets/print_format_selector.dart';
+
 // ─── Helpers de presentación para métodos de pago ────────────────────────────
 
 IconData _iconForCode(String code) {
@@ -1118,7 +1120,9 @@ class _TicketDetailPanel extends StatelessWidget {
                   final localTerminal = context.read<LocalTerminalProvider>();
                   if (settings != null) {
                     try {
-                      final isA4 = localTerminal.printerFormat.startsWith('a4');
+                      final format = await PrintFormatSelector.show(context);
+                      if (format == null) return;
+                      final isA4 = format == 'a4';
 
                       if (isA4) {
                         final saleJson = {
