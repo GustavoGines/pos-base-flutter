@@ -192,8 +192,8 @@ class ReceiptPrinterService {
 
     // Ítems
     for (final item in quote.items) {
-      final isWeight = item.quantity % 1 != 0;
-      final cantStr = isWeight ? '${item.quantity.toStringAsFixed(3)} kg' : '${item.quantity.toInt()} un';
+      final isWeight = item.product?.isSoldByWeight ?? (item.quantity % 1 != 0);
+      final cantStr = isWeight ? '${item.quantity.toQty()} kg' : '${item.quantity.toInt()} un';
 
       final productName = _cleanText(item.productName.toUpperCase());
       bytes += generator.row([
@@ -792,8 +792,8 @@ class ReceiptPrinterService {
 
         b += gen.text(productName, styles: const PosStyles(bold: true));
         b += gen.row([
-          PosColumn(text: '$actionLabel: ${deliveredNow.toStringAsFixed(1)}', width: 6),
-          PosColumn(text: 'Saldo: ${remaining.toStringAsFixed(1)}', width: 6, styles: const PosStyles(align: PosAlign.right, bold: true)),
+          PosColumn(text: '$actionLabel: ${deliveredNow.toQty()}', width: 6),
+          PosColumn(text: 'Saldo: ${remaining.toQty()}', width: 6, styles: const PosStyles(align: PosAlign.right, bold: true)),
         ]);
         b += gen.feed(1);
       }
@@ -852,7 +852,7 @@ class ReceiptPrinterService {
       bytes += generator.text(product.name, styles: const PosStyles(bold: true, height: PosTextSize.size2, width: PosTextSize.size2));
       bytes += generator.feed(1);
       
-      final priceStr = '\$ ${product.sellingPrice.toStringAsFixed(2)}';
+      final priceStr = '\$ ${_formatPrice(product.sellingPrice)}';
       bytes += generator.text(priceStr, styles: const PosStyles(bold: true, height: PosTextSize.size3, width: PosTextSize.size3));
       bytes += generator.feed(1);
 
@@ -1600,3 +1600,4 @@ class ReceiptPrinterService {
     }
   }
 }
+

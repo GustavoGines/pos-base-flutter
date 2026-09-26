@@ -550,12 +550,15 @@ class _QuoteCard extends StatelessWidget {
 
               // Número + estado
               SizedBox(
-                width: 170,
+                width: 190,
                 child: Row(
                   children: [
-                    Text(
-                      quote.quoteNumber,
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                    Flexible(
+                      child: Text(
+                        quote.quoteNumber,
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                     const SizedBox(width: 8),
                     _StatusBadge(label: label, color: color),

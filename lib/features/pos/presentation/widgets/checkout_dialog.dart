@@ -265,7 +265,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     final newTotal = widget.total + _shippingCostToApply;
     final line = _lines[0];
     // Actualizar el amount de la línea
-    final newText = newTotal.toCurrency();
+    final newText = newTotal.toInputFormat();
     if (line.controller.text != newText) {
       line.controller.text = newText;
       line.controller.selection = TextSelection.fromPosition(
@@ -524,28 +524,30 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     final settings = context.read<SettingsProvider>().settings;
 
     // Build Check Details Payload if a cheque is used
-    Map<String, dynamic>? checkDetailsPayload;
-    try {
-      final chequeLine = _lines.firstWhere((l) => l.method?.code == 'cheque');
-      if (chequeLine.checkBankController.text.trim().isEmpty ||
-          chequeLine.checkNumberController.text.trim().isEmpty ||
-          chequeLine.checkIssuerCuitController.text.trim().isEmpty ||
-          chequeLine.checkIssuerNameController.text.trim().isEmpty) {
-        SnackBarService.error(context,
-            'Complete los datos obligatorios del cheque (Banco, Número, CUIT, Firmante).');
-        return;
+    dynamic checkDetailsPayload;
+    final chequeLines = _lines.where((l) => l.method?.code == 'cheque').toList();
+    if (chequeLines.isNotEmpty) {
+      List<Map<String, dynamic>> checkList = [];
+      for (var chequeLine in chequeLines) {
+        if (chequeLine.checkBankController.text.trim().isEmpty ||
+            chequeLine.checkNumberController.text.trim().isEmpty ||
+            chequeLine.checkIssuerCuitController.text.trim().isEmpty ||
+            chequeLine.checkIssuerNameController.text.trim().isEmpty) {
+          SnackBarService.error(context,
+              'Complete los datos obligatorios de todos los cheques (Banco, Número, CUIT, Firmante).');
+          return;
+        }
+        checkList.add({
+          'bank_name': chequeLine.checkBankController.text.trim(),
+          'check_number': chequeLine.checkNumberController.text.trim(),
+          'issuer_cuit': chequeLine.checkIssuerCuitController.text.trim(),
+          'issuer_name': chequeLine.checkIssuerNameController.text.trim(),
+          'issue_date': chequeLine.checkIssueDateController.text.trim(),
+          'payment_date': chequeLine.checkPaymentDateController.text.trim(),
+          'amount': chequeLine.total,
+        });
       }
-      checkDetailsPayload = {
-        'bank_name': chequeLine.checkBankController.text.trim(),
-        'check_number': chequeLine.checkNumberController.text.trim(),
-        'issuer_cuit': chequeLine.checkIssuerCuitController.text.trim(),
-        'issuer_name': chequeLine.checkIssuerNameController.text.trim(),
-        'issue_date': chequeLine.checkIssueDateController.text.trim(),
-        'payment_date': chequeLine.checkPaymentDateController.text.trim(),
-        'amount': chequeLine.total,
-      };
-    } catch (_) {
-      // No cheque payment line found, which is fine.
+      checkDetailsPayload = checkList;
     }
 
     // Convert lines to payload
@@ -1655,19 +1657,21 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                               fontWeight: FontWeight.bold, fontSize: 12),
                         ),
                         const SizedBox(height: 4),
-                        RadioGroup<String>(
-                          groupValue: _fulfillmentStatus,
-                          onChanged: (val) {
-                            if (val != null) {
-                              setState(() {
-                                _fulfillmentStatus = val;
-                                context.read<PosProvider>().setCurrentLogistics(
-                                    _requiresDispatch, _fulfillmentStatus);
-                                _syncPaymentsWithShipping();
-                              });
-                            }
-                          },
-                          child: Row(
+                        Material(
+                          type: MaterialType.transparency,
+                          child: RadioGroup<String>(
+                            groupValue: _fulfillmentStatus,
+                            onChanged: (val) {
+                              if (val != null) {
+                                setState(() {
+                                  _fulfillmentStatus = val;
+                                  context.read<PosProvider>().setCurrentLogistics(
+                                      _requiresDispatch, _fulfillmentStatus);
+                                  _syncPaymentsWithShipping();
+                                });
+                              }
+                            },
+                            child: Row(
                             children: [
                               Expanded(
                                 child: RadioListTile<String>(
@@ -1695,6 +1699,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                                 ),
                               ),
                             ],
+                          ),
                           ),
                         ),
                       ],

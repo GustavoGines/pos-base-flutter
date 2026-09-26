@@ -3,6 +3,7 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:intl/intl.dart';
 import 'package:printing/printing.dart';
+import 'currency_formatter.dart';
 
 class A4SplitPdfService {
   static final _currencyFmt = NumberFormat.currency(locale: 'es_AR', symbol: '\$', decimalDigits: 0);
@@ -406,7 +407,7 @@ class A4SplitPdfService {
             final unitPrice = qty > 0 ? subtotal / qty : 0.0;
             
             final isWeight = item['product']?['is_sold_by_weight'] ?? item['is_sold_by_weight'] ?? false;
-            final qtyText = isWeight ? qty.toStringAsFixed(3) : qty.toInt().toString();
+            final qtyText = isWeight ? qty.toQty() : qty.toInt().toString();
 
             final pName = item['product_name'] ?? item['product']?['name'] ?? 'Producto';
 
@@ -669,7 +670,7 @@ class A4SplitPdfService {
             final qty = double.tryParse(qtyStr) ?? 1.0;
             
             final isWeight = item['product']?['is_sold_by_weight'] ?? false;
-            final qtyText = isWeight ? '${qty.toStringAsFixed(3)} kg' : '${qty.toInt()} un';
+            final qtyText = isWeight ? '${qty.toQty()} kg' : '${qty.toInt()} un';
             final pName = item['product']?['name'] ?? item['product_name'] ?? 'Producto';
 
             return pw.TableRow(
@@ -785,3 +786,4 @@ class A4SplitPdfService {
     );
   }
 }
+

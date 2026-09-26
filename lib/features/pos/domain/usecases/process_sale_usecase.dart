@@ -22,7 +22,7 @@ class ProcessSaleUseCase {
     double shippingCost = 0.0,
     bool requiresDispatch = false,
     String fulfillmentStatus = 'pending',
-    Map<String, dynamic>? checkDetails,
+    dynamic checkDetails,
     String? deliveryAddress,
     String? priceList,
   }) async {

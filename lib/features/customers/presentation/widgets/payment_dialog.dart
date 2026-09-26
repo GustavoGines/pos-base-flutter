@@ -166,7 +166,7 @@ class _PaymentDialogState extends State<PaymentDialog> {
       final amount = double.tryParse(cleanAmount) ?? 0.0;
       if (amount <= 0) continue;
 
-      Map<String, dynamic>? checkDetailsPayload;
+      dynamic checkDetailsPayload;
       if (line.method == 'cheque') {
         if (line.checkBankCtrl.text.trim().isEmpty ||
             line.checkNumberCtrl.text.trim().isEmpty ||

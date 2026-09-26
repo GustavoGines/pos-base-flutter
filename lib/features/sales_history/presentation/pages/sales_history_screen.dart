@@ -718,7 +718,7 @@ class _SaleListTile extends StatelessWidget {
                                     const SizedBox(width: 3),
                                     Text(
                                       hasMultiplePayments
-                                          ? '\$${p.totalAmount.toStringAsFixed(0)}'
+                                          ? '\$${p.totalAmount.toCurrency()}'
                                           : p.methodName,
                                       style: TextStyle(
                                           fontSize: 11,
@@ -974,20 +974,19 @@ class _TicketDetailPanel extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      crossAxisAlignment: CrossAxisAlignment.center,
+                    Wrap(
+                      alignment: WrapAlignment.end,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 16,
+                      runSpacing: 8,
                       children: [
                         // Desglose de pagos (Lado a lado)
-                        Flexible(
-                          child: Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            alignment: WrapAlignment.end,
-                            children: sale.payments.map((p) => _PaymentBadge(payment: p)).toList(),
-                          ),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          alignment: WrapAlignment.end,
+                          children: sale.payments.map((p) => _PaymentBadge(payment: p)).toList(),
                         ),
-                        const SizedBox(width: 16),
                         // Total cobrado al cliente (prominente) y Neto
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.end,
@@ -1077,7 +1076,7 @@ class _TicketDetailPanel extends StatelessWidget {
                       DataCell(Text(
                           item.isSoldByWeight
                               ? '${item.quantity.toQty()} Kg'
-                              : '${item.quantity.toStringAsFixed(0)} u',
+                              : '${item.quantity.toInt()} u',
                           style: textStyle)),
                       DataCell(Text(
                           '\$${item.unitPrice.toCurrency()}',
@@ -1150,24 +1149,54 @@ class _TicketDetailPanel extends StatelessWidget {
                           }).toList(),
                         };
 
-                        await Printing.layoutPdf(
-                          onLayout: (format) async {
-                            return await A4SplitPdfService.generateA4SingleReceipt(
-                              sale: saleJson,
-                              businessName: settings.companyName ?? 'MI NEGOCIO',
-                              businessAddress: settings.address,
-                              phone: settings.phone ?? '',
-                              cuit: settings.taxId ?? '',
-                              vendorName: sale.userName,
-                              paperSize: localTerminal.pdfPaperSize,
-                            );
-                          },
-                          name: 'Copia_Ticket_${sale.id}',
+                        final pdfBytes = await A4SplitPdfService.generateA4SingleReceipt(
+                          sale: saleJson,
+                          businessName: settings.companyName ?? 'MI NEGOCIO',
+                          businessAddress: settings.address,
+                          phone: settings.phone ?? '',
+                          cuit: settings.taxId ?? '',
+                          vendorName: sale.userName,
+                          paperSize: localTerminal.pdfPaperSize,
                         );
 
                         if (context.mounted) {
-                          SnackBarService.success(context,
-                              'Copia de Ticket #${sale.id} abierta en visor PDF.');
+                          await showDialog(
+                            context: context,
+                            builder: (ctx) {
+                              return Dialog(
+                                child: SizedBox(
+                                  width: 800,
+                                  height: 600,
+                                  child: Column(
+                                    children: [
+                                      Row(
+                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          const Padding(
+                                            padding: EdgeInsets.all(16.0),
+                                            child: Text('Vista Previa de Copia', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                                          ),
+                                          IconButton(
+                                            icon: const Icon(Icons.close),
+                                            onPressed: () => Navigator.pop(ctx),
+                                          ),
+                                        ],
+                                      ),
+                                      Expanded(
+                                        child: PdfPreview(
+                                          build: (format) async => pdfBytes,
+                                          canChangePageFormat: false,
+                                          canChangeOrientation: false,
+                                          pdfFileName: 'Copia_Ticket_${sale.id}.pdf',
+                                          canDebug: false,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          );
                         }
                       } else {
                         final itemsParaImprimir = sale.items.map((item) {

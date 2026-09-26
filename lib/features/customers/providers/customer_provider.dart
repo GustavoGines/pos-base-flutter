@@ -173,7 +173,7 @@ class CustomerProvider extends ChangeNotifier {
     List<Map<String, dynamic>>? payments,
     String description = '',
     List<int> saleIds = const [],
-    Map<String, dynamic>? checkDetails,
+    dynamic checkDetails,
     int? cashShiftId,
     bool isRefund = false,
   }) async {

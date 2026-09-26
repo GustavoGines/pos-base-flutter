@@ -1,3 +1,5 @@
+import 'dart:io';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../domain/repositories/auth_repository.dart';
@@ -82,8 +84,14 @@ class AuthProvider with ChangeNotifier {
         debugPrint('=== AUTH: Token stale detectado en background — limpiado silenciosamente ===');
       }
     }).catchError((e) {
-      // Sin conexión → mantener token (modo offline de 72h)
-      debugPrint('=== AUTH: Sin conexión al validar token en background (modo offline) ===');
+      if (e is SocketException || e is TimeoutException) {
+        // Sin conexión → mantener token (modo offline de 72h)
+        debugPrint('=== AUTH: Sin conexión al validar token en background (modo offline) ===');
+      } else {
+        // Error de servidor (ej: 401, 500) → limpiar token para evitar estados corruptos
+        _clearToken();
+        debugPrint('=== AUTH: Token inválido o error de servidor — limpiado silenciosamente === $e');
+      }
     });
   }
 
@@ -108,7 +116,7 @@ class AuthProvider with ChangeNotifier {
       notifyListeners();
       return true;
     } catch (e) {
-      _errorMessage = e.toString().replaceAll('Exception: ', '');
+      _errorMessage = e.toString();
       _isLoading = false;
       notifyListeners();
       return false;

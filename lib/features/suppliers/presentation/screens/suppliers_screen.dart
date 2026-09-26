@@ -223,7 +223,7 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
                   padding: const EdgeInsets.all(16).copyWith(bottom: 80),
                   gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
                     maxCrossAxisExtent: 400, // Compactado para mostrar más columnas en monitores ultra-wide
-                    mainAxisExtent: 180, // Alto reducido para no desperdiciar espacio vertical
+                    mainAxisExtent: 216, // Alto incrementado para evitar overflow de botones en pantallas pequeñas
                     crossAxisSpacing: 16,
                     mainAxisSpacing: 16,
                   ),

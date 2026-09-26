@@ -481,7 +481,7 @@ class PosProvider with ChangeNotifier {
     bool showPreview = true,
     bool requiresDispatch = false,
     String fulfillmentStatus = 'pending',
-    Map<String, dynamic>? checkDetails,
+    dynamic checkDetails,
     String? deliveryAddress,
   }) async {
     if (_cart.isEmpty) return false;
@@ -942,7 +942,7 @@ class PosProvider with ChangeNotifier {
     List<CartItem>? items,
     bool showPreview = true,
     double shippingCost = 0.0,
-    Map<String, dynamic>? checkDetails,
+    dynamic checkDetails,
   }) async {
     _isLoading = true;
     _errorMessage = null;

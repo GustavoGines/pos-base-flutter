@@ -3002,7 +3002,7 @@ class _PosScreenState extends State<PosScreen> {
         }
 
         return Text(
-          isByWeight ? '\$${displayPrice.toStringAsFixed(2)}/Kg' : '\$${displayPrice.toStringAsFixed(2)}',
+          isByWeight ? '\$${displayPrice.toCurrency()}/Kg' : '\$${displayPrice.toCurrency()}',
           style: TextStyle(
             color: isByWeight ? Colors.orange.shade800 : Colors.green.shade700,
             fontWeight: FontWeight.bold,
@@ -3091,3 +3091,4 @@ class _CartItemStockIndicator extends StatelessWidget {
     );
   }
 }
+

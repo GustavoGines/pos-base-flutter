@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -41,11 +42,16 @@ class _CashMovementsScreenState extends State<CashMovementsScreen> {
     super.dispose();
   }
 
-  void _onScroll() {
+  bool _isFetchingMore = false;
+
+  void _onScroll() async {
     if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200) {
+      if (_isFetchingMore) return;
       final provider = context.read<CashMovementProvider>();
       if (!provider.isLoading && provider.hasMore) {
-        provider.fetchMovements();
+        _isFetchingMore = true;
+        await provider.fetchMovements();
+        _isFetchingMore = false;
       }
     }
   }
@@ -277,13 +283,13 @@ class _CashMovementsScreenState extends State<CashMovementsScreen> {
 
       if (response.statusCode == 200) {
         final docsDir = await getApplicationDocumentsDirectory();
-        final exportDir = Directory('${docsDir.path}\\Sistema_POS\\Exportaciones');
+        final exportDir = Directory(p.join(docsDir.path, 'Sistema_POS', 'Exportaciones'));
         if (!await exportDir.exists()) {
           await exportDir.create(recursive: true);
         }
 
         final fileName = 'Movimientos_Caja_${DateTime.now().millisecondsSinceEpoch}.xlsx';
-        final file = File('${exportDir.path}\\$fileName');
+        final file = File(p.join(exportDir.path, fileName));
         await file.writeAsBytes(response.bodyBytes);
 
         if (Platform.isWindows) {
@@ -646,7 +652,16 @@ class _CashMovementsScreenState extends State<CashMovementsScreen> {
                                 const SizedBox(width: 12),
                                 if (movement.receiptFileUrl != null && movement.receiptFileUrl!.isNotEmpty)
                                   InkWell(
-                                    onTap: () => launchUrl(Uri.parse(movement.receiptFileUrl!)),
+                                    onTap: () async {
+                                      final uri = Uri.parse(movement.receiptFileUrl!);
+                                      if (await canLaunchUrl(uri)) {
+                                        await launchUrl(uri);
+                                      } else {
+                                        if (context.mounted) {
+                                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No se puede abrir el archivo adjunto.')));
+                                        }
+                                      }
+                                    },
                                     child: const Padding(
                                       padding: EdgeInsets.symmetric(horizontal: 4),
                                       child: Icon(Icons.attachment, color: Colors.blue, size: 20),

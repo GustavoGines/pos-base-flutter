@@ -33,7 +33,7 @@ abstract class PosRemoteDataSource {
     double shippingCost = 0.0,
     bool requiresDispatch = false,
     String fulfillmentStatus = 'pending',
-    Map<String, dynamic>? checkDetails,
+    dynamic checkDetails,
     String? deliveryAddress,
     String? priceList,
   });
@@ -48,7 +48,7 @@ abstract class PosRemoteDataSource {
     int? userId,
     List<CartItem>? items,
     double shippingCost = 0.0,
-    Map<String, dynamic>? checkDetails,
+    dynamic checkDetails,
   });
   Future<dynamic> voidPendingSale(int saleId);
   Future<void> updatePaymentMethodSurcharge(int id, double surchargeValue);
@@ -158,7 +158,7 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
     double shippingCost = 0.0,
     bool requiresDispatch = false,
     String fulfillmentStatus = 'pending',
-    Map<String, dynamic>? checkDetails,
+    dynamic checkDetails,
     String? deliveryAddress,
     String? priceList,
   }) async {
@@ -264,7 +264,7 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
     int? userId,
     List<CartItem>? items,
     double shippingCost = 0.0,
-    Map<String, dynamic>? checkDetails,
+    dynamic checkDetails,
   }) async {
     try {
       final payload = {
