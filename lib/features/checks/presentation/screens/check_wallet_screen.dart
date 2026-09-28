@@ -309,6 +309,13 @@ class _CheckWalletScreenState extends State<CheckWalletScreen> {
                                           () => _activeFilter = 'conflictos'),
                                       selectedColor: Colors.red.shade100,
                                     ),
+                                    FilterChip(
+                                      label: const Text('Anulados'),
+                                      selected: _activeFilter == 'anulados',
+                                      onSelected: (val) => setState(
+                                          () => _activeFilter = 'anulados'),
+                                      selectedColor: Colors.grey.shade300,
+                                    ),
                                   ],
                                 ),
                                 ConstrainedBox(
@@ -403,6 +410,10 @@ class _CheckWalletScreenState extends State<CheckWalletScreen> {
                                   }
                                   if (_activeFilter == 'conflictos' &&
                                       c.status != 'rejected') {
+                                    return false;
+                                  }
+                                  if (_activeFilter == 'anulados' &&
+                                      c.status != 'voided') {
                                     return false;
                                   }
 
