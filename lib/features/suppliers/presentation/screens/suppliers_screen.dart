@@ -43,8 +43,8 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
       );
       return;
     }
-    Future.microtask(() {
-      showDialog(
+    Future.microtask(() async {
+      await showDialog(
         context: context,
         barrierDismissible: false,
         builder: (_) => MovementFormDialog(
@@ -54,12 +54,16 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
           initialAmount: balance.abs(),
         ),
       );
+      // Refresh supplier list after payment dialog closes
+      if (mounted) {
+        context.read<SupplierProvider>().fetchSuppliers();
+      }
     });
   }
 
   void _openInvoiceForm(int supplierId, String supplierName) {
-    Future.microtask(() {
-      showDialog(
+    Future.microtask(() async {
+      await showDialog(
         context: context,
         barrierDismissible: false,
         builder: (_) => SupplierInvoiceFormDialog(
@@ -67,6 +71,9 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
           supplierName: supplierName,
         ),
       );
+      if (mounted) {
+        context.read<SupplierProvider>().fetchSuppliers();
+      }
     });
   }
 
@@ -128,13 +135,12 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 24.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                // Izquierda: Buscador y Refresh
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 500),
+            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 16.0),
+            child: LayoutBuilder(
+              builder: (context, headerConstraints) {
+                final isNarrow = headerConstraints.maxWidth < 720;
+                final searchBar = SizedBox(
+                  width: isNarrow ? headerConstraints.maxWidth : 460,
                   child: Row(
                     children: [
                       Expanded(
@@ -187,9 +193,9 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
                       ),
                     ],
                   ),
-                ),
-                // Derecha: Botón Nuevo Proveedor
-                ElevatedButton.icon(
+                );
+
+                final newSupplierButton = ElevatedButton.icon(
                   onPressed: () => _openForm(),
                   icon: const Icon(Icons.add),
                   label: const Text('Nuevo Proveedor'),
@@ -202,8 +208,30 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
                       borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                ),
-              ],
+                );
+
+                if (isNarrow) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      searchBar,
+                      const SizedBox(height: 12),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: newSupplierButton,
+                      ),
+                    ],
+                  );
+                }
+
+                return Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    searchBar,
+                    newSupplierButton,
+                  ],
+                );
+              },
             ),
           ),
           Expanded(
@@ -219,31 +247,43 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
                   );
                 }
 
-                return GridView.builder(
-                  padding: const EdgeInsets.all(16).copyWith(bottom: 80),
-                  gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                    maxCrossAxisExtent: 400, // Compactado para mostrar más columnas en monitores ultra-wide
-                    mainAxisExtent: 216, // Alto incrementado para evitar overflow de botones en pantallas pequeñas
-                    crossAxisSpacing: 16,
-                    mainAxisSpacing: 16,
-                  ),
-                  itemCount: provider.suppliers.length,
-                  itemBuilder: (context, index) {
-                    final supplier = provider.suppliers[index];
-                    return Card(
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        side: BorderSide(color: Colors.grey.shade200),
+                return LayoutBuilder(
+                  builder: (context, constraints) {
+                    final availableWidth = constraints.maxWidth;
+                    // Responsivo: 1 columna para <400px, 2 para <800px, 3+ para más
+                    final crossAxisCount = (availableWidth / 380).floor().clamp(1, 4);
+                    final cardWidth = (availableWidth - 32 - 12 * (crossAxisCount - 1)) / crossAxisCount;
+                    // Altura dinámica: cuando la tarjeta es angosta (<330px), los botones pasan a una segunda fila
+                    // por lo que la tarjeta requiere mayor altura (245px) en lugar de menor altura.
+                    final isTight = cardWidth < 330;
+                    final mainAxisExtent = isTight ? 245.0 : 195.0;
+                    
+                    return GridView.builder(
+                      padding: const EdgeInsets.all(16).copyWith(bottom: 80),
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: crossAxisCount,
+                        mainAxisExtent: mainAxisExtent,
+                        crossAxisSpacing: 12,
+                        mainAxisSpacing: 12,
                       ),
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(12),
-                        onTap: () => _openForm(supplier.id, supplier.toJson()),
-                        child: Padding(
-                          padding: const EdgeInsets.all(16.0),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
+                      itemCount: provider.suppliers.length,
+                      itemBuilder: (context, index) {
+                        final supplier = provider.suppliers[index];
+                        return Card(
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            side: BorderSide(color: Colors.grey.shade200),
+                          ),
+                          clipBehavior: Clip.antiAlias,
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(12),
+                            onTap: () => _openForm(supplier.id, supplier.toJson()),
+                            child: Padding(
+                              padding: const EdgeInsets.all(12.0),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
                               // Cabecera: Avatar, Nombre, CUIT y Menú de acciones
                               Row(
                                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -270,7 +310,12 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
                                           overflow: TextOverflow.ellipsis,
                                         ),
                                         if (supplier.cuit != null && supplier.cuit!.isNotEmpty)
-                                          Text('CUIT: ${supplier.cuit}', style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
+                                          Text(
+                                            'CUIT: ${supplier.cuit}',
+                                            style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
                                       ],
                                     ),
                                   ),
@@ -289,22 +334,48 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
                                   )
                                 ],
                               ),
-                              const Spacer(),
-                              // Contacto (Teléfono / Email)
-                              if (supplier.phone != null && supplier.phone!.isNotEmpty)
-                                Row(
+                              const SizedBox(height: 4),
+                              // Dirección y Contacto (flexible para no hacer overflow)
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Icon(Icons.phone_outlined, size: 14, color: Colors.grey.shade500),
-                                    const SizedBox(width: 6),
-                                    Text(supplier.phone!, style: TextStyle(color: Colors.grey.shade700, fontSize: 13)),
+                                    if (supplier.address != null && supplier.address!.isNotEmpty)
+                                      Row(
+                                        children: [
+                                          Icon(Icons.location_on_outlined, size: 14, color: Colors.grey.shade500),
+                                          const SizedBox(width: 6),
+                                          Expanded(
+                                            child: Text(supplier.address!, 
+                                              style: TextStyle(color: Colors.grey.shade700, fontSize: 12),
+                                              overflow: TextOverflow.ellipsis,
+                                              maxLines: 1,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    if (supplier.phone != null && supplier.phone!.isNotEmpty)
+                                      Row(
+                                        children: [
+                                          Icon(Icons.phone_outlined, size: 14, color: Colors.grey.shade500),
+                                          const SizedBox(width: 6),
+                                          Expanded(
+                                            child: Text(
+                                              supplier.phone!,
+                                              style: TextStyle(color: Colors.grey.shade700, fontSize: 12),
+                                              overflow: TextOverflow.ellipsis,
+                                              maxLines: 1,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
                                   ],
                                 ),
-                              const SizedBox(height: 12),
+                              ),
+                              const SizedBox(height: 4),
                               // Caja inferior: Saldo / Deuda
-                              LayoutBuilder(
-                                builder: (context, constraints) {
-                                  final isTight = constraints.maxWidth < 320;
-                                  
+                              Builder(
+                                builder: (context) {
                                   final balanceWidget = Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                     decoration: BoxDecoration(
@@ -338,35 +409,41 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
                                       if (supplier.balance != 0) ...[
                                         IconButton(
                                           tooltip: supplier.balance > 0 ? 'Pagar Saldo' : 'Devolución de Saldo a Favor',
+                                          visualDensity: VisualDensity.compact,
+                                          constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                                           style: IconButton.styleFrom(
                                             backgroundColor: supplier.balance > 0 ? Colors.red.shade50 : Colors.green.shade50,
                                             foregroundColor: supplier.balance > 0 ? Colors.red.shade700 : Colors.green.shade700,
                                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                                           ),
-                                          icon: const Icon(Icons.payments_outlined),
+                                          icon: const Icon(Icons.payments_outlined, size: 20),
                                           onPressed: () => _openPaymentForm(supplier.id, supplier.balance),
                                         ),
-                                        const SizedBox(width: 8),
+                                        const SizedBox(width: 6),
                                       ],
                                       IconButton(
                                         tooltip: 'Cargar Remito / Factura',
+                                        visualDensity: VisualDensity.compact,
+                                        constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                                         style: IconButton.styleFrom(
                                           backgroundColor: Colors.blue.shade50,
                                           foregroundColor: Colors.blue.shade700,
                                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                                         ),
-                                        icon: const Icon(Icons.receipt_long),
+                                        icon: const Icon(Icons.receipt_long, size: 20),
                                         onPressed: () => _openInvoiceForm(supplier.id, supplier.name),
                                       ),
-                                      const SizedBox(width: 8),
+                                      const SizedBox(width: 6),
                                       IconButton(
                                         tooltip: 'Ver Cuenta Corriente',
+                                        visualDensity: VisualDensity.compact,
+                                        constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                                         style: IconButton.styleFrom(
                                           backgroundColor: Colors.indigo.shade50,
                                           foregroundColor: Colors.indigo.shade700,
                                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                                         ),
-                                        icon: const Icon(Icons.history_edu),
+                                        icon: const Icon(Icons.history_edu, size: 20),
                                         onPressed: () {
                                           Navigator.push(
                                             context,
@@ -405,8 +482,10 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
                       ),
                     );
                   },
-                );
+                );   // GridView.builder
               },
+            );   // LayoutBuilder
+          },
             ),
           ),
         ],

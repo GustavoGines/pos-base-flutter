@@ -9,17 +9,20 @@ class SharedUserMenu extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isCompact = screenWidth < 500;
+
     return Consumer<AuthProvider>(
       builder: (context, auth, _) {
         final userName = auth.currentUser?['name'] ?? 'Sesión';
         return Padding(
-          padding: const EdgeInsets.only(right: 16),
+          padding: EdgeInsets.only(right: isCompact ? 4 : 16),
           child: PopupMenuButton<String>(
             offset: const Offset(0, 45),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            tooltip: 'Opciones de Usuario',
+            tooltip: 'Opciones de Usuario ($userName)',
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: EdgeInsets.symmetric(horizontal: isCompact ? 10 : 16, vertical: 8),
               decoration: BoxDecoration(
                 color: Colors.blueGrey.shade50,
                 borderRadius: BorderRadius.circular(20),
@@ -29,13 +32,15 @@ class SharedUserMenu extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   const Icon(Icons.person_outline, size: 20, color: Colors.blueGrey),
-                  const SizedBox(width: 8),
-                  Text(
-                    userName,
-                    style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey),
-                  ),
-                  const SizedBox(width: 4),
-                  const Icon(Icons.arrow_drop_down, color: Colors.blueGrey),
+                  if (!isCompact) ...[
+                    const SizedBox(width: 8),
+                    Text(
+                      userName,
+                      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey),
+                    ),
+                    const SizedBox(width: 4),
+                    const Icon(Icons.arrow_drop_down, color: Colors.blueGrey),
+                  ],
                 ],
               ),
             ),

@@ -380,7 +380,18 @@ class _CashMovementsScreenState extends State<CashMovementsScreen> {
                 spacing: 16,
                 runSpacing: 16,
                 children: [
-                  Text(provider.currentAllFilter ? 'Historial Completo de Caja' : 'Movimientos del Turno Actual', style: Theme.of(context).textTheme.headlineSmall),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Flexible(child: Text(provider.currentAllFilter ? 'Historial Completo de Caja' : 'Movimientos del Turno Actual', style: Theme.of(context).textTheme.headlineSmall)),
+                      IconButton(
+                        tooltip: 'Actualizar',
+                        icon: const Icon(Icons.refresh),
+                        color: Colors.blueGrey,
+                        onPressed: () => provider.fetchMovements(refresh: true, all: provider.currentAllFilter),
+                      ),
+                    ],
+                  ),
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,

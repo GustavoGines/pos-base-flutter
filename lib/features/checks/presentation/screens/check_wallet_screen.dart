@@ -35,13 +35,26 @@ class _CheckWalletScreenState extends State<CheckWalletScreen> {
   }
 
   void _updateStatus(int checkId, String status, {String? note}) {
-    context
-        .read<CheckProvider>()
+    final provider = context.read<CheckProvider>();
+    provider
         .updateCheckStatus(checkId, status, endorsementNote: note)
         .then((_) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Estado actualizado a ${_translateStatus(status)}')));
+        if (provider.error != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(provider.error!),
+              backgroundColor: Colors.red.shade700,
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Estado actualizado a ${_translateStatus(status)}'),
+              backgroundColor: Colors.green.shade700,
+            ),
+          );
+        }
       }
     });
   }

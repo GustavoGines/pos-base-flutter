@@ -53,7 +53,7 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
             children: [
               // ── LEFT: Logo + Empresa ──────────────────────────────────────
               Padding(
-                padding: const EdgeInsets.only(left: 12),
+                padding: EdgeInsets.only(left: screenWidth < 500 ? 6 : 12),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -275,7 +275,7 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
 
               // ── RIGHT: Alertas + Impresora + Usuario ───────────────────────────────────
               Padding(
-                padding: const EdgeInsets.only(right: 12),
+                padding: EdgeInsets.only(right: screenWidth < 500 ? 6 : 12),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -293,6 +293,7 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                           child: IconButton(
                             icon: const Icon(Icons.print_rounded, size: 22),
                             color: Colors.blueGrey,
+                            visualDensity: screenWidth < 500 ? VisualDensity.compact : VisualDensity.standard,
                             onPressed: () => _showPrinterSettingsDialog(ctx),
                           ),
                         );

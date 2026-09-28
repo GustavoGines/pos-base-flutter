@@ -102,7 +102,9 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
     }
 
     _paymentAmountController.addListener(() {
-      setState(() {}); // Re-render to update live total
+      if (mounted) {
+        setState(() {}); // Re-render to update live total
+      }
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -141,17 +143,35 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
     super.dispose();
   }
 
+  double? _sanitizeAndParse(String text) {
+    var clean = text.trim();
+    if (clean.contains('.') && clean.contains(',')) {
+      if (clean.lastIndexOf(',') > clean.lastIndexOf('.')) {
+        // Formato latinoamericano/europeo: 1.234,56 -> 1234.56
+        clean = clean.replaceAll('.', '').replaceAll(',', '.');
+      } else {
+        // Formato anglosajón: 1,234.56 -> 1234.56
+        clean = clean.replaceAll(',', '');
+      }
+    } else {
+      clean = clean.replaceAll(',', '.');
+    }
+    final val = double.tryParse(clean);
+    if (val == null || val <= 0 || val.isNaN || val.isInfinite) return null;
+    return double.parse(val.toStringAsFixed(2));
+  }
+
   double get _totalAmount {
     final listSum = _payments.fold(0.0, (sum, item) => sum + item.amount);
-    final pendingSum = double.tryParse(_paymentAmountController.text) ?? 0;
-    return listSum + pendingSum;
+    final pendingSum = _sanitizeAndParse(_paymentAmountController.text) ?? 0.0;
+    return double.parse((listSum + pendingSum).toStringAsFixed(2));
   }
 
   void _addPayment() {
-    final amount = double.tryParse(_paymentAmountController.text) ?? 0;
+    final amount = _sanitizeAndParse(_paymentAmountController.text) ?? 0;
     if (amount <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Ingrese un monto válido.')));
+          const SnackBar(content: Text('Ingrese un monto válido mayor a 0.')));
       return;
     }
 
@@ -162,14 +182,39 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
             const SnackBar(content: Text('Seleccione un cheque.')));
         return;
       }
+
+      // DEFENSIVE GUARD: Duplicate check prevention
+      final isAlreadyAdded = _payments.any(
+          (p) => p.method == 'check' && p.checkId == _currentCheckId);
+      if (isAlreadyAdded) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Este cheque ya ha sido agregado a la lista de pagos.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+
       final checks = context.read<CheckProvider>().checks;
-      checkObj = checks.firstWhere((c) => c.id == _currentCheckId);
+      try {
+        checkObj = checks.firstWhere((c) => c.id == _currentCheckId);
+      } catch (_) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('El cheque seleccionado no es válido.')));
+        return;
+      }
     }
+
+    // ENFORCE FACE VALUE: Check tender amount must strictly match carton nominal value
+    final finalAmount = (_currentPaymentMethod == 'check' && checkObj != null)
+        ? checkObj.amount
+        : amount;
 
     setState(() {
       _payments.add(PaymentItem(
         method: _currentPaymentMethod,
-        amount: amount,
+        amount: finalAmount,
         checkId: _currentCheckId,
         checkObj: checkObj,
       ));
@@ -184,19 +229,133 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
     });
   }
 
+  void _editPayment(int index) {
+    final p = _payments[index];
+    setState(() {
+      _payments.removeAt(index);
+      _currentPaymentMethod = p.method;
+      _currentCheckId = p.checkId;
+      _paymentAmountController.text = p.amount % 1 == 0
+          ? p.amount.toInt().toString()
+          : p.amount.toStringAsFixed(2);
+    });
+  }
+
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
 
+    final pendingAmount = _sanitizeAndParse(_paymentAmountController.text) ?? 0;
+
+    // GUARD: Prevent silent input discard if user typed an unparsable/invalid number
+    if (_paymentAmountController.text.trim().isNotEmpty && pendingAmount <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('El monto ingresado en el campo es inválido. Corríjalo o bórrelo antes de procesar.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     // Auto-agregar el pago si el usuario lo escribió pero olvidó presionar "Agregar"
-    final pendingAmount = double.tryParse(_paymentAmountController.text) ?? 0;
     if (pendingAmount > 0) {
-      _addPayment();
+      if (_currentPaymentMethod == 'check') {
+        if (_currentCheckId != null &&
+            !_payments.any((p) => p.method == 'check' && p.checkId == _currentCheckId)) {
+          _addPayment();
+        }
+      } else {
+        _addPayment();
+      }
     }
 
     if (_payments.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Agregue al menos un método de pago.')));
       return;
+    }
+
+    // STRICT SUBMISSION INTEGRITY BARRIER: Guarantee zero duplicate checks in payload
+    final checkIds = _payments
+        .where((p) => p.method == 'check' && p.checkId != null)
+        .map((p) => p.checkId!)
+        .toList();
+    if (checkIds.length != checkIds.toSet().length) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Error: No se permite utilizar el mismo cheque en múltiples líneas.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    // V-03 GUARD: Detect overpayment with checks and confirm cash change (vuelto)
+    if (_type == 'supplier_payment' && _selectedSupplierId != null) {
+      final supplierProv = context.read<SupplierProvider>();
+      final supps = supplierProv.suppliers.where((s) => s.id == _selectedSupplierId);
+      if (supps.isNotEmpty) {
+        final supplier = supps.first;
+        final debt = supplier.balance > 0 ? supplier.balance : 0.0;
+        final totalPaid = _payments.fold(0.0, (sum, p) => sum + p.amount);
+        final hasCheck = _payments.any((p) => p.method == 'check');
+
+        if (totalPaid > debt && debt > 0 && hasCheck) {
+          final changeAmount = double.parse((totalPaid - debt).toStringAsFixed(2));
+          final proceed = await showDialog<bool>(
+            context: context,
+            barrierDismissible: false,
+            builder: (ctx) => AlertDialog(
+              title: const Row(
+                children: [
+                  Icon(Icons.monetization_on, color: Colors.teal),
+                  SizedBox(width: 8),
+                  Text('Vuelto de Proveedor por Cheque'),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('La suma de pagos (\$${totalPaid.toStringAsFixed(2)}) supera la deuda actual (\$${debt.toStringAsFixed(2)}).'),
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.green.shade300),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Vuelto a ingresar a caja:', style: TextStyle(fontWeight: FontWeight.bold)),
+                        Text('\$${changeAmount.toStringAsFixed(2)}',
+                            style: TextStyle(fontWeight: FontWeight.w900, color: Colors.green.shade800, fontSize: 16)),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  const Text('¿Desea asentar el pago e ingresar el vuelto a la caja registradora?'),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('Cancelar'),
+                ),
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.teal, foregroundColor: Colors.white),
+                  child: const Text('Confirmar e Ingresar Vuelto'),
+                ),
+              ],
+            ),
+          );
+
+          if (proceed != true) return;
+        }
+      }
     }
 
     if (_type == 'withdrawal') {
@@ -253,7 +412,7 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
         'expense_category_id': (_expenseCategoryId == -1) ? null : _expenseCategoryId,
         'description': _descriptionController.text,
         'receipt_number': _receiptController.text,
-        'supplier_id': _selectedSupplierId,
+        'supplier_id': (_type == 'supplier_payment' || _category == 'Cobro de Saldo a Favor') ? _selectedSupplierId : null,
         'payments': _payments
             .map((p) => {
                   'amount': p.amount,
@@ -269,6 +428,9 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
 
       if (mounted && _selectedSupplierId != null) {
         supplierProvider.fetchSuppliers();
+      }
+      if (mounted) {
+        context.read<CheckProvider>().loadChecks();
       }
 
       // ══ 2. IMPRESIÓN (no bloqueante) ══
@@ -394,9 +556,6 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
               paperSize: localTerminal.pdfPaperSize,
             );
           }
-          if (hasCash) {
-            await ReceiptPrinterService.instance.openCashDrawer(localTerminal);
-          }
         } catch (printError) {
           debugPrint('Error de impresion PDF (no bloqueante): $printError');
           if (mounted) {
@@ -408,6 +567,14 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                 duration: const Duration(seconds: 4),
               ),
             );
+          }
+        }
+        // ── Apertura de gaveta separada (no debe afectar al estado del PDF) ──
+        if (hasCash) {
+          try {
+            await ReceiptPrinterService.instance.openCashDrawer(localTerminal);
+          } catch (_) {
+            // Silenciar — la gaveta no es crítica
           }
         }
       }
@@ -435,8 +602,14 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
   Widget build(BuildContext context) {
     final supplierProv = context.watch<SupplierProvider>();
     final checkProv = context.watch<CheckProvider>();
-    final availableChecks =
-        checkProv.checks.where((c) => c.status == 'in_wallet').toList();
+    final selectedCheckIds = _payments
+        .where((p) => p.method == 'check' && p.checkId != null)
+        .map((p) => p.checkId!)
+        .toSet();
+
+    final availableChecks = checkProv.checks
+        .where((c) => c.status == 'in_wallet' && !selectedCheckIds.contains(c.id))
+        .toList();
 
     return AlertDialog(
       title: const Text('Registrar Movimiento de Caja'),
@@ -477,6 +650,15 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                           ],
                           onChanged: (val) => setState(() {
                             _type = val!;
+                            if (_type != 'supplier_payment') {
+                              _selectedSupplierId = null;
+                              _payments.removeWhere((p) => p.method == 'check');
+                              if (_currentPaymentMethod == 'check') {
+                                _currentPaymentMethod = 'cash';
+                                _currentCheckId = null;
+                                _paymentAmountController.clear();
+                              }
+                            }
                             if (_type != 'expense') {
                               _expenseCategoryId = null;
                               _category = _currentCategories.first;
@@ -646,8 +828,14 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                                       child: Text(s.name),
                                     ))
                                 .toList(),
-                            onChanged: (val) =>
-                                setState(() => _selectedSupplierId = val),
+                            onChanged: (val) => setState(() {
+                              if (val != _selectedSupplierId) {
+                                _selectedSupplierId = val;
+                                _payments.clear();
+                                _paymentAmountController.clear();
+                                _currentCheckId = null;
+                              }
+                            }),
                             validator: (val) => val == null
                                 ? 'Debe seleccionar un proveedor'
                                 : null,
@@ -730,9 +918,23 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                                         visualDensity: VisualDensity.compact,
                                       ),
                                       onPressed: () {
+                                        if (_currentPaymentMethod == 'check') {
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            const SnackBar(
+                                              content: Text('El monto de un cheque no puede modificarse.'),
+                                            ),
+                                          );
+                                          return;
+                                        }
                                         setState(() {
                                           final listSum = _payments.fold(0.0, (sum, item) => sum + item.amount);
-                                          final remaining = supplier.balance.abs() - listSum;
+                                          final remaining = double.parse((supplier.balance.abs() - listSum).toStringAsFixed(2));
+                                          if (remaining <= 0) {
+                                            ScaffoldMessenger.of(context).showSnackBar(
+                                              const SnackBar(content: Text('La deuda ya está completamente cubierta o no hay saldo pendiente.')),
+                                            );
+                                            return;
+                                          }
                                           _paymentAmountController.text = 
                                               (remaining % 1 == 0 ? remaining.toInt().toString() : remaining.toStringAsFixed(2));
                                         });
@@ -753,7 +955,13 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                       }),
                   ],
 
-                  if (widget.helperText != null)
+                  if (widget.helperText != null && (() {
+                    // Hide the helper banner once the user has added payments
+                    // that fully cover the initial amount (the invoice debt).
+                    final paidSoFar = _payments.fold(0.0, (sum, p) => sum + p.amount);
+                    final target = widget.initialAmount ?? 0.0;
+                    return target <= 0 || paidSoFar < target;
+                  })())
                     Container(
                       margin: const EdgeInsets.only(top: 16),
                       padding: const EdgeInsets.all(12),
@@ -843,11 +1051,14 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                                       : p.method.toUpperCase()));
                           return ListTile(
                             dense: true,
+                            onTap: () => _editPayment(index),
                             title: Text(methodLabel),
                             subtitle: p.checkObj != null
                                 ? Text(
                                     'Cheque Nº ${p.checkObj!.checkNumber} - ${p.checkObj!.bankName}')
-                                : null,
+                                : const Text('Toque para editar',
+                                    style: TextStyle(
+                                        fontSize: 11, color: Colors.grey)),
                             trailing: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
@@ -858,8 +1069,15 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                                         fontWeight: FontWeight.bold,
                                         fontSize: 16)),
                                 IconButton(
+                                  icon: Icon(Icons.edit_outlined,
+                                      color: Colors.blue.shade400, size: 20),
+                                  tooltip: 'Editar pago',
+                                  onPressed: () => _editPayment(index),
+                                ),
+                                IconButton(
                                   icon: const Icon(Icons.delete,
                                       color: Colors.red, size: 20),
+                                  tooltip: 'Eliminar pago',
                                   onPressed: () => _removePayment(index),
                                 )
                               ],
@@ -883,22 +1101,30 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                             Expanded(
                               flex: 2,
                               child: DropdownButtonFormField<String>(
+                                key: ValueKey('payment_method_dropdown_$_type'),
                                 initialValue: _currentPaymentMethod,
                                 decoration: const InputDecoration(
                                     labelText: 'Método', isDense: true),
-                                items: const [
-                                  DropdownMenuItem(
+                                items: [
+                                  const DropdownMenuItem(
                                       value: 'cash', child: Text('Efectivo')),
-                                  DropdownMenuItem(
+                                  const DropdownMenuItem(
                                       value: 'transfer',
                                       child: Text('Transf.')),
-                                  DropdownMenuItem(
-                                      value: 'check', child: Text('Cheque')),
+                                  if (_type == 'supplier_payment')
+                                    const DropdownMenuItem(
+                                        value: 'check', child: Text('Cheque')),
                                 ],
                                 onChanged: (val) => setState(() {
+                                  final oldMethod = _currentPaymentMethod;
                                   _currentPaymentMethod = val!;
                                   _currentCheckId = null;
-                                  _paymentAmountController.clear();
+                                  // Solo limpiar el monto si cambiamos A cheque
+                                  // (porque el cheque tiene valor nominal fijo)
+                                  // o si venimos DE cheque (el valor era del cheque, no del usuario)
+                                  if (val == 'check' || oldMethod == 'check') {
+                                    _paymentAmountController.clear();
+                                  }
                                 }),
                               ),
                             ),
@@ -942,7 +1168,10 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                                   onChanged: null,
                                 )
                               : DropdownButtonFormField<int>(
-                                  initialValue: _currentCheckId,
+                                  key: ValueKey('check_dropdown_${selectedCheckIds.length}_$_currentCheckId'),
+                                  initialValue: availableChecks.any((c) => c.id == _currentCheckId)
+                                      ? _currentCheckId
+                                      : null,
                                   decoration: const InputDecoration(
                                       labelText:
                                           'Seleccionar Cheque en Cartera',
