@@ -28,23 +28,28 @@ class ZClosePdfService {
     if (context.mounted) {
       await showDialog(
         context: context,
-        builder: (ctx) => Dialog(
-          child: SizedBox(
-            width: 500,
-            height: 700,
-            child: Scaffold(
-              appBar: AppBar(title: const Text('Cierre Z - Vista Previa')),
-              body: PdfPreview(
-                allowPrinting: true,
-                allowSharing: true,
-                canChangeOrientation: false,
-                canChangePageFormat: false,
-                pdfFileName: 'Cierre_Z_${shift.id}.pdf',
-                build: (format) async => pdfBytes,
+        builder: (ctx) {
+          final size = MediaQuery.sizeOf(ctx);
+          return Dialog(
+            clipBehavior: Clip.antiAlias,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            child: SizedBox(
+              width: size.width * 0.75, // 75% of screen width
+              height: size.height * 0.9, // 90% of screen height
+              child: Scaffold(
+                appBar: AppBar(title: const Text('Cierre Z - Vista Previa')),
+                body: PdfPreview(
+                  allowPrinting: true,
+                  allowSharing: true,
+                  canChangeOrientation: false,
+                  canChangePageFormat: false,
+                  pdfFileName: 'Cierre_Z_${shift.id}.pdf',
+                  build: (format) async => pdfBytes,
+                ),
               ),
             ),
-          ),
-        ),
+          );
+        },
       );
     }
   }
@@ -177,6 +182,8 @@ class ZClosePdfService {
 
               _buildRow('Ventas con Tarjeta (Deb/Cred):', currencyFmt.format(shift.cardSales ?? 0)),
               _buildRow('Ventas por Transferencia:', currencyFmt.format(shift.transferSales ?? 0)),
+              if (isPremium || (shift.ccSales ?? 0) > 0)
+                _buildRow('Ventas Cta. Cte. (Deuda):', currencyFmt.format(shift.ccSales ?? 0)),
               _buildRow('Recargos Cobrados:', currencyFmt.format(shift.totalSurcharge ?? 0)),
               if (isPremium || (shift.checkSales ?? 0) > 0)
                 _buildRow('Valores en Cheques:', currencyFmt.format(shift.checkSales ?? 0)),

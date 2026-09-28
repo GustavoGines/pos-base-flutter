@@ -1437,6 +1437,13 @@ class ReceiptPrinterService {
       'Ventas Transf.:',
       '$currency${(shift.transferSales ?? 0.0).toCurrency()}',
     );
+    if (isPremium || (shift.ccSales ?? 0) > 0) {
+      bytes += _labelValue(
+        generator,
+        'Ventas Cta.Cte.:',
+        '$currency${(shift.ccSales ?? 0.0).toCurrency()}',
+      );
+    }
     bytes += _labelValue(
       generator,
       'Recargos Cobrados:',
