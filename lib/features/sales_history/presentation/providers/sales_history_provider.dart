@@ -69,12 +69,12 @@ class SalesHistoryProvider with ChangeNotifier {
     }
   }
 
-  Future<bool> voidSale(int saleId) async {
+  Future<bool> voidSale(int saleId, {required int shiftId}) async {
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
     try {
-      final updated = await dataSource.voidSale(saleId);
+      final updated = await dataSource.voidSale(saleId, shiftId: shiftId);
       final idx = _sales.indexWhere((s) => s.id == saleId);
       if (idx != -1) {
         _sales[idx] = updated;

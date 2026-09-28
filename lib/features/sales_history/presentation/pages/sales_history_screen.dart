@@ -878,7 +878,13 @@ class _TicketDetailPanel extends StatelessWidget {
     if (confirmed != true) return;
     if (!context.mounted) return;
 
-    final ok = await provider.voidSale(sale.id);
+    final currentShiftId = context.read<CashRegisterProvider>().currentShift?.id;
+    if (currentShiftId == null) {
+      SnackBarService.error(context, 'Debe haber un turno de caja abierto en esta terminal para anular una venta.');
+      return;
+    }
+
+    final ok = await provider.voidSale(sale.id, shiftId: currentShiftId);
     if (context.mounted) {
       if (ok) {
         SnackBarService.success(

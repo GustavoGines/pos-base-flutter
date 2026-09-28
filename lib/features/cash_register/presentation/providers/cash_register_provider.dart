@@ -144,7 +144,7 @@ class CashRegisterProvider with ChangeNotifier {
     }
   }
 
-  Future<CashRegisterShift?> closeShift(double countedCash, {int? closerUserId}) async {
+  Future<CashRegisterShift?> closeShift(double countedCash, {required String pin, int? closerUserId}) async {
     _clearError();
     _setLoading(true);
     try {
@@ -152,6 +152,7 @@ class CashRegisterProvider with ChangeNotifier {
       final closedShift = await closeShiftUseCase(
         _currentShift!.id,
         countedCash,
+        pin: pin,
         closerUserId: closerUserId,
       );
       _currentShift = null;

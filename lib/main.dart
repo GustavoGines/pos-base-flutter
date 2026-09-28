@@ -628,15 +628,16 @@ class _MainAppState extends State<MainApp> {
   Future<void> _showNetworkSettingsDialog(BuildContext context) async {
     final prefs = await SharedPreferences.getInstance();
     final currentUrl = prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
-    final urlController = TextEditingController(text: currentUrl);
 
     if (!context.mounted) return;
 
-    await showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (dCtx) => AlertDialog(
-        title: const Row(
+    final urlController = TextEditingController(text: currentUrl);
+    try {
+      await showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (dCtx) => AlertDialog(
+          title: const Row(
           children: [
             Icon(Icons.dns_outlined, color: Colors.blueAccent),
             SizedBox(width: 8),
@@ -738,6 +739,9 @@ class _MainAppState extends State<MainApp> {
         ],
       ),
     );
+    } finally {
+      urlController.dispose();
+    }
   }
 
   Widget _buildLoadingOrErrorScreen() {

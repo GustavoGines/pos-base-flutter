@@ -44,7 +44,7 @@ void main() {
       expect(provider.currentShift, null);
 
       // Si se intenta cerrar el turno cuando está bloqueado/vacío
-      final result = await provider.closeShift(1000.0);
+      final result = await provider.closeShift(1000.0, pin: '1234');
       
       // Debe retornar null y bloquear la acción (preventivo)
       expect(result, null);
@@ -69,7 +69,7 @@ void main() {
       expect(provider.currentShift?.id, 1);
 
       // Si se intenta cerrar, el provider debería permitir delegarlo al backend
-      when(mockCloseShiftUseCase.call(1, 1000.0, closerUserId: null))
+      when(mockCloseShiftUseCase.call(1, 1000.0, pin: '1234', closerUserId: null))
           .thenAnswer((_) async => CashRegisterShift(
                 id: 1,
                 cashRegisterId: 1,
@@ -79,7 +79,7 @@ void main() {
                 openedAt: DateTime.now(),
               ));
 
-      final closedShift = await provider.closeShift(1000.0);
+      final closedShift = await provider.closeShift(1000.0, pin: '1234');
       
       expect(closedShift?.status, 'closed');
       // Luego de cerrar, el estado vuelve a bloqueado

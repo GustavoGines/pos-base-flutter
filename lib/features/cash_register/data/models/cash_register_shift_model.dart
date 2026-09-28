@@ -1,3 +1,4 @@
+import 'dart:convert';
 import '../../domain/entities/cash_register_shift.dart';
 
 class CashRegisterShiftModel extends CashRegisterShift {
@@ -71,9 +72,11 @@ class CashRegisterShiftModel extends CashRegisterShift {
         checkDetails: json['check_details'] != null
             ? List<Map<String, dynamic>>.from(
                 (json['check_details'] is String
-                    ? (json['check_details'] as String).isNotEmpty ? [] : []
-                    : json['check_details'] as List)
-                    .map((e) => Map<String, dynamic>.from(e)))
+                    ? ((json['check_details'] as String).isNotEmpty
+                        ? (jsonDecode(json['check_details'] as String) as List)
+                        : [])
+                    : (json['check_details'] as List))
+                    .map((e) => Map<String, dynamic>.from(e as Map)))
             : null,
         ccSales: _parseDouble(json['cc_sales']),
         ccSalesCount: _parseInt(json['cc_sales_count']),

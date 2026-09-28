@@ -75,43 +75,47 @@ class _CheckWalletScreenState extends State<CheckWalletScreen> {
     );
   }
 
-  void _showEndorseDialog(int checkId) {
+  Future<void> _showEndorseDialog(int checkId) async {
     final TextEditingController noteController = TextEditingController();
-    showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(builder: (context, setState) {
-        final isButtonEnabled = noteController.text.trim().length >= 3;
-        return AlertDialog(
-          title: const Text('Endosar Cheque'),
-          content: TextField(
-            controller: noteController,
-            onChanged: (val) => setState(() {}),
-            decoration: const InputDecoration(
-              labelText: 'Entregado a (Nombre/Nota)',
-              border: OutlineInputBorder(),
+    try {
+      final String? note = await showDialog<String>(
+        context: context,
+        builder: (ctx) => StatefulBuilder(builder: (context, setState) {
+          final isButtonEnabled = noteController.text.trim().length >= 3;
+          return AlertDialog(
+            title: const Text('Endosar Cheque'),
+            content: TextField(
+              controller: noteController,
+              onChanged: (val) => setState(() {}),
+              decoration: const InputDecoration(
+                labelText: 'Entregado a (Nombre/Nota)',
+                border: OutlineInputBorder(),
+              ),
             ),
-          ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('Cancelar')),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue.shade700,
-                  foregroundColor: Colors.white),
-              onPressed: isButtonEnabled
-                  ? () {
-                      Navigator.pop(ctx);
-                      _updateStatus(checkId, 'endorsed',
-                          note: noteController.text.trim());
-                    }
-                  : null,
-              child: const Text('Endosar'),
-            ),
-          ],
-        );
-      }),
-    );
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Cancelar')),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue.shade700,
+                    foregroundColor: Colors.white),
+                onPressed: isButtonEnabled
+                    ? () => Navigator.pop(ctx, noteController.text.trim())
+                    : null,
+                child: const Text('Endosar'),
+              ),
+            ],
+          );
+        }),
+      );
+
+      if (note != null && mounted) {
+        _updateStatus(checkId, 'endorsed', note: note);
+      }
+    } finally {
+      noteController.dispose();
+    }
   }
 
   String _translateStatus(String status) {
@@ -124,6 +128,8 @@ class _CheckWalletScreenState extends State<CheckWalletScreen> {
         return 'Endosado';
       case 'rejected':
         return 'Rechazado';
+      case 'voided':
+        return 'Anulado';
       default:
         return status;
     }
@@ -145,6 +151,10 @@ class _CheckWalletScreenState extends State<CheckWalletScreen> {
       case 'rejected':
         bgColor = Colors.red.shade50;
         textColor = Colors.red.shade800;
+        break;
+      case 'voided':
+        bgColor = Colors.grey.shade200;
+        textColor = Colors.grey.shade700;
         break;
       default:
         bgColor = Colors.blue.shade50;
@@ -215,12 +225,8 @@ class _CheckWalletScreenState extends State<CheckWalletScreen> {
         currentRoute: '/checks',
         title: 'Cartera de Cheques',
       ),
-      body: provider.isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : provider.error != null
-              ? Center(child: Text('Error: ${provider.error}'))
-              : Center(
-                  child: ConstrainedBox(
+      body: Center(
+        child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 1600),
                     child: Padding(
                       padding: const EdgeInsets.all(24.0),
@@ -352,6 +358,38 @@ class _CheckWalletScreenState extends State<CheckWalletScreen> {
                           Expanded(
                             child: Builder(
                               builder: (context) {
+                                if (provider.isLoading && provider.checks.isEmpty) {
+                                  return const Center(
+                                    child: CircularProgressIndicator(),
+                                  );
+                                }
+
+                                if (provider.error != null) {
+                                  return Center(
+                                    child: Column(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Icon(Icons.error_outline,
+                                            size: 48, color: Colors.red.shade400),
+                                        const SizedBox(height: 12),
+                                        Text(
+                                          'Error: ${provider.error}',
+                                          style: TextStyle(
+                                              color: Colors.red.shade700,
+                                              fontSize: 16),
+                                          textAlign: TextAlign.center,
+                                        ),
+                                        const SizedBox(height: 16),
+                                        ElevatedButton.icon(
+                                          onPressed: () => provider.loadChecks(),
+                                          icon: const Icon(Icons.refresh),
+                                          label: const Text('Reintentar'),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                }
+
                                 final filteredChecks =
                                     provider.checks.where((c) {
                                   if (_activeFilter == 'activos' &&

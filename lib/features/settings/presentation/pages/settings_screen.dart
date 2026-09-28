@@ -810,60 +810,65 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   final mod = (tier['modifier'] as num).toDouble();
                   final sign = mod >= 0 ? '+' : '';
                   return GestureDetector(
-                    onTap: () {
+                    onTap: () async {
                       final editNameCtrl = TextEditingController(text: name);
                       final editModCtrl =
                           TextEditingController(text: mod.toString());
-                      showDialog(
-                        context: context,
-                        builder: (ctx) => AlertDialog(
-                          title: const Text('Editar Lista de Precios'),
-                          content: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              TextField(
-                                controller: editNameCtrl,
-                                decoration: const InputDecoration(
-                                    labelText: 'Nombre de la Lista',
-                                    border: OutlineInputBorder()),
-                              ),
-                              const SizedBox(height: 16),
-                              TextField(
-                                controller: editModCtrl,
-                                keyboardType:
-                                    const TextInputType.numberWithOptions(
-                                        signed: true, decimal: true),
-                                decoration: const InputDecoration(
-                                    labelText: 'Modificador (%)',
-                                    border: OutlineInputBorder()),
+                      try {
+                        await showDialog(
+                          context: context,
+                          builder: (ctx) => AlertDialog(
+                            title: const Text('Editar Lista de Precios'),
+                            content: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                TextField(
+                                  controller: editNameCtrl,
+                                  decoration: const InputDecoration(
+                                      labelText: 'Nombre de la Lista',
+                                      border: OutlineInputBorder()),
+                                ),
+                                const SizedBox(height: 16),
+                                TextField(
+                                  controller: editModCtrl,
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                          signed: true, decimal: true),
+                                  decoration: const InputDecoration(
+                                      labelText: 'Modificador (%)',
+                                      border: OutlineInputBorder()),
+                                ),
+                              ],
+                            ),
+                            actions: [
+                              TextButton(
+                                  onPressed: () => Navigator.pop(ctx),
+                                  child: const Text('Cancelar')),
+                              FilledButton(
+                                onPressed: () {
+                                  final newName = editNameCtrl.text.trim();
+                                  final newMod = double.tryParse(editModCtrl.text
+                                      .replaceAll(',', '.')
+                                      .trim());
+                                  if (newName.isNotEmpty && newMod != null) {
+                                    setState(() {
+                                      _customTiers[idx] = {
+                                        'name': newName,
+                                        'modifier': newMod
+                                      };
+                                    });
+                                    Navigator.pop(ctx);
+                                  }
+                                },
+                                child: const Text('Guardar'),
                               ),
                             ],
                           ),
-                          actions: [
-                            TextButton(
-                                onPressed: () => Navigator.pop(ctx),
-                                child: const Text('Cancelar')),
-                            FilledButton(
-                              onPressed: () {
-                                final newName = editNameCtrl.text.trim();
-                                final newMod = double.tryParse(editModCtrl.text
-                                    .replaceAll(',', '.')
-                                    .trim());
-                                if (newName.isNotEmpty && newMod != null) {
-                                  setState(() {
-                                    _customTiers[idx] = {
-                                      'name': newName,
-                                      'modifier': newMod
-                                    };
-                                  });
-                                  Navigator.pop(ctx);
-                                }
-                              },
-                              child: const Text('Guardar'),
-                            ),
-                          ],
-                        ),
-                      );
+                        );
+                      } finally {
+                        editNameCtrl.dispose();
+                        editModCtrl.dispose();
+                      }
                     },
                     child: Container(
                       padding: const EdgeInsets.symmetric(

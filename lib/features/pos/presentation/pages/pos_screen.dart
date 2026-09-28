@@ -583,38 +583,43 @@ class _PosScreenState extends State<PosScreen> {
           SnackBarService.error(context,
               'No se pudo abrir el puerto $comPort. ${err != null ? err.message : ""}');
         }
+        port.dispose();
         return;
       }
 
-      // Configuración estándar de balanzas (ej. Kretz/Systel en Argentina)
-      final config = port.config;
-      config.baudRate = 9600;
-      config.bits = 8;
-      config.stopBits = 1;
-      config.parity = 0; // SerialPortParity.none
-      port.config = config;
-
-      final reader = SerialPortReader(port, timeout: 500);
       String accumulatedData = '';
+      StreamSubscription? subscription;
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('Esperando peso estable... (1.5 seg)'),
-              duration: Duration(milliseconds: 1500)),
-        );
+      try {
+        // Configuración estándar de balanzas (ej. Kretz/Systel en Argentina)
+        final config = port.config;
+        config.baudRate = 9600;
+        config.bits = 8;
+        config.stopBits = 1;
+        config.parity = 0; // SerialPortParity.none
+        port.config = config;
+
+        final reader = SerialPortReader(port, timeout: 500);
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+                content: Text('Esperando peso estable... (1.5 seg)'),
+                duration: Duration(milliseconds: 1500)),
+          );
+        }
+
+        // Escuchar el stream durante 1.5 segundos
+        subscription = reader.stream.listen((data) {
+          accumulatedData += String.fromCharCodes(data);
+        });
+
+        await Future.delayed(const Duration(milliseconds: 1500));
+      } finally {
+        await subscription?.cancel();
+        port.close();
+        port.dispose();
       }
-
-      // Escuchar el stream durante 1.5 segundos
-      final subscription = reader.stream.listen((data) {
-        accumulatedData += String.fromCharCodes(data);
-      });
-
-      await Future.delayed(const Duration(milliseconds: 1500));
-
-      subscription.cancel();
-      port.close();
-      port.dispose();
 
       // Buscar si la balanza mandó un valor numérico continuo
       if (accumulatedData.isNotEmpty) {
@@ -1028,13 +1033,23 @@ class _PosScreenState extends State<PosScreen> {
                                           );
 
                                           if (confirm == true) {
+                                            final currentShift = context.read<CashRegisterProvider>().currentShift;
+                                            if (currentShift == null) {
+                                              if (dialogCtx.mounted) {
+                                                SnackBarService.error(
+                                                    dialogCtx, 'Debe haber un turno de caja abierto para anular órdenes.');
+                                              }
+                                              return;
+                                            }
                                             setState(() {
                                               isVoiding = true;
                                             });
                                             try {
                                               final success = await posProvider
-                                                  .voidPendingOrder(int.parse(
-                                                      sale['id'].toString()));
+                                                  .voidPendingOrder(
+                                                      int.parse(
+                                                          sale['id'].toString()),
+                                                      shiftId: currentShift.id);
                                               if (!success) {
                                                 throw Exception(
                                                     posProvider.errorMessage ??
@@ -1334,7 +1349,12 @@ class _PosScreenState extends State<PosScreen> {
     );
 
     if (confirmed == true && mounted) {
-      final success = await posProvider.voidPendingOrder(saleId);
+      final currentShiftId = context.read<CashRegisterProvider>().currentShift?.id;
+      if (currentShiftId == null) {
+        SnackBarService.error(context, 'Debe haber un turno de caja abierto para anular órdenes.');
+        return;
+      }
+      final success = await posProvider.voidPendingOrder(saleId, shiftId: currentShiftId);
       if (mounted) {
         if (success) {
           SnackBarService.success(
@@ -2683,12 +2703,29 @@ class _PosScreenState extends State<PosScreen> {
                               );
 
                               if (confirm == true) {
+                                final currentShift = context.read<CashRegisterProvider>().currentShift;
+                                if (currentShift == null) {
+                                  if (dialogCtx.mounted) {
+                                    SnackBarService.error(
+                                        dialogCtx, 'Debe haber un turno de caja abierto para anular órdenes.');
+                                  }
+                                  return;
+                                }
+                                if (posProvider.lastSaleId <= 0) {
+                                  if (dialogCtx.mounted) {
+                                    SnackBarService.error(
+                                        dialogCtx, 'No hay ID de venta válido para anular.');
+                                  }
+                                  return;
+                                }
                                 setState(() {
                                   isVoiding = true;
                                 });
                                 try {
-                                  await posProvider
-                                      .voidPendingOrder(posProvider.lastSaleId);
+                                  await posProvider.voidPendingOrder(
+                                    posProvider.lastSaleId,
+                                    shiftId: currentShift.id,
+                                  );
                                   // Restaurar carrito al estado previo a la venta
                                   posProvider.restoreLastSaleCart();
 

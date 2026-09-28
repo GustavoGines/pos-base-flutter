@@ -43,6 +43,18 @@ class _TrashScreenState extends State<TrashScreen> {
             onPressed: () async {
               Navigator.pop(ctx);
               final provider = context.read<TrashProvider>();
+              if (isRestore && provider.currentType == 'cash_movements') {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                          'Por normas de auditoría contable, los movimientos de caja anulados no pueden restaurarse.'),
+                      backgroundColor: Colors.orange,
+                    ),
+                  );
+                }
+                return;
+              }
               try {
                 if (isRestore) {
                   await provider.restoreItem(item.id);
@@ -165,11 +177,29 @@ class _TrashScreenState extends State<TrashScreen> {
                                 trailing: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    if (provider.currentType != 'cash_movements') ...[
+                                    if (provider.currentType == 'cash_movements') ...[
+                                      Tooltip(
+                                        message:
+                                            'Por normas de auditoría contable, los movimientos de caja anulados no pueden restaurarse.',
+                                        child: TextButton.icon(
+                                          icon: Icon(Icons.restore,
+                                              color: Colors.grey),
+                                          label: Text('Restaurar',
+                                              style: TextStyle(
+                                                  color: Colors.grey)),
+                                          onPressed: null,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                    ] else ...[
                                       TextButton.icon(
-                                        icon: const Icon(Icons.restore, color: Colors.green),
-                                        label: const Text('Restaurar', style: TextStyle(color: Colors.green)),
-                                        onPressed: () => _confirmAction(true, item),
+                                        icon: const Icon(Icons.restore,
+                                            color: Colors.green),
+                                        label: const Text('Restaurar',
+                                            style: TextStyle(
+                                                color: Colors.green)),
+                                        onPressed: () =>
+                                            _confirmAction(true, item),
                                       ),
                                       const SizedBox(width: 8),
                                     ],

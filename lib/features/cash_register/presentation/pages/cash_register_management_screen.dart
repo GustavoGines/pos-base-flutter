@@ -40,35 +40,43 @@ class _CashRegisterManagementScreenState extends State<CashRegisterManagementScr
 
   Future<void> _showCreateEditModal({CashRegister? register}) async {
     final nameCtrl = TextEditingController(text: register?.name ?? '');
-    
-    await showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(register == null ? 'Nueva Caja Física' : 'Editar Caja'),
-        content: TextField(
-          controller: nameCtrl,
-          decoration: const InputDecoration(labelText: 'Nombre o Ubicación', prefixIcon: Icon(Icons.computer)),
-          autofocus: true,
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
-          ElevatedButton(
-            onPressed: () async {
-              final name = nameCtrl.text.trim();
-              if (name.isNotEmpty) {
-                Navigator.pop(ctx);
-                if (register == null) {
-                  await _createRegister(name);
-                } else {
-                  await _updateRegister(register.id, name);
+    String? submittedName;
+
+    try {
+      submittedName = await showDialog<String>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text(register == null ? 'Nueva Caja Física' : 'Editar Caja'),
+          content: TextField(
+            controller: nameCtrl,
+            decoration: const InputDecoration(labelText: 'Nombre o Ubicación', prefixIcon: Icon(Icons.computer)),
+            autofocus: true,
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+            ElevatedButton(
+              onPressed: () {
+                final name = nameCtrl.text.trim();
+                if (name.isNotEmpty) {
+                  Navigator.pop(ctx, name);
                 }
-              }
-            },
-            child: const Text('Guardar'),
-          )
-        ],
-      ),
-    );
+              },
+              child: const Text('Guardar'),
+            )
+          ],
+        ),
+      );
+    } finally {
+      nameCtrl.dispose();
+    }
+
+    if (submittedName != null && mounted) {
+      if (register == null) {
+        await _createRegister(submittedName);
+      } else {
+        await _updateRegister(register.id, submittedName);
+      }
+    }
   }
 
   Future<void> _createRegister(String name) async {

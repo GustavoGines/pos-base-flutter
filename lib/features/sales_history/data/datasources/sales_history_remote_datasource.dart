@@ -25,10 +25,14 @@ class SalesHistoryRemoteDataSource {
   }
 
   /// Anula una venta y devuelve el registro actualizado.
-  Future<SaleRecord> voidSale(int saleId) async {
+  Future<SaleRecord> voidSale(int saleId, {required int shiftId}) async {
     final response = await client.post(
       Uri.parse('$baseUrl/sales/$saleId/void'),
-      headers: {'Accept': 'application/json'},
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json'
+      },
+      body: json.encode({'cash_shift_id': shiftId}),
     ).timeout(const Duration(seconds: 30));
     if (response.statusCode == 200) {
       final body = json.decode(response.body) as Map<String, dynamic>;

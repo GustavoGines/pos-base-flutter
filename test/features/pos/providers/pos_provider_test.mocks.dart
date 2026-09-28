@@ -341,11 +341,15 @@ class MockPosRepository extends _i1.Mock implements _i2.PosRepository {
       ) as _i6.Future<Map<String, dynamic>>);
 
   @override
-  _i6.Future<Map<String, dynamic>> voidPendingSale(int? saleId) =>
+  _i6.Future<Map<String, dynamic>> voidPendingSale(
+    int? saleId, {
+    required int? shiftId,
+  }) =>
       (super.noSuchMethod(
         Invocation.method(
           #voidPendingSale,
           [saleId],
+          {#shiftId: shiftId},
         ),
         returnValue:
             _i6.Future<Map<String, dynamic>>.value(<String, dynamic>{}),

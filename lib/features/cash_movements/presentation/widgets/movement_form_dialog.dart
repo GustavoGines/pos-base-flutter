@@ -15,6 +15,7 @@ import '../../../suppliers/presentation/widgets/supplier_invoice_form_dialog.dar
 import '../../../../core/utils/receipt_printer_service.dart';
 import '../../../../core/providers/local_terminal_provider.dart';
 import '../../../settings/presentation/providers/settings_provider.dart';
+import '../../../cash_register/presentation/providers/cash_register_provider.dart';
 import '../../services/cash_movement_pdf_service.dart';
 
 class PaymentItem {
@@ -244,9 +245,11 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
         }
       }
 
+      final activeShift = context.read<CashRegisterProvider>().currentShift;
       final data = {
         'type': _type,
         'category': _category,
+        'cash_shift_id': activeShift?.id,
         'expense_category_id': (_expenseCategoryId == -1) ? null : _expenseCategoryId,
         'description': _descriptionController.text,
         'receipt_number': _receiptController.text,

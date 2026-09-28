@@ -26,57 +26,61 @@ class _ExpenseCategoriesDialogState extends State<ExpenseCategoriesDialog> {
     });
   }
 
-  void _showFormDialog({int? id, String? initialName, bool initialIsActive = true}) {
+  Future<void> _showFormDialog({int? id, String? initialName, bool initialIsActive = true}) async {
     final nameCtrl = TextEditingController(text: initialName);
     bool isActive = initialIsActive;
 
-    showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
-          title: Text(id == null ? 'Nueva Categoría' : 'Editar Categoría'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameCtrl,
-                decoration: const InputDecoration(labelText: 'Nombre'),
-              ),
-              if (id != null)
-                SwitchListTile(
-                  title: const Text('Activa'),
-                  value: isActive,
-                  onChanged: (val) => setState(() => isActive = val),
+    try {
+      await showDialog(
+        context: context,
+        builder: (ctx) => StatefulBuilder(
+          builder: (context, setState) => AlertDialog(
+            title: Text(id == null ? 'Nueva Categoría' : 'Editar Categoría'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nameCtrl,
+                  decoration: const InputDecoration(labelText: 'Nombre'),
                 ),
+                if (id != null)
+                  SwitchListTile(
+                    title: const Text('Activa'),
+                    value: isActive,
+                    onChanged: (val) => setState(() => isActive = val),
+                  ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancelar'),
+              ),
+              FilledButton(
+                onPressed: () async {
+                  if (nameCtrl.text.trim().isEmpty) return;
+                  
+                  final prov = context.read<ExpenseCategoryProvider>();
+                  try {
+                    if (id == null) {
+                      await prov.createCategory(nameCtrl.text.trim());
+                    } else {
+                      await prov.updateCategory(id, nameCtrl.text.trim(), isActive);
+                    }
+                    if (mounted) Navigator.pop(ctx);
+                  } catch (e) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+                  }
+                },
+                child: const Text('Guardar'),
+              ),
             ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancelar'),
-            ),
-            FilledButton(
-              onPressed: () async {
-                if (nameCtrl.text.trim().isEmpty) return;
-                
-                final prov = context.read<ExpenseCategoryProvider>();
-                try {
-                  if (id == null) {
-                    await prov.createCategory(nameCtrl.text.trim());
-                  } else {
-                    await prov.updateCategory(id, nameCtrl.text.trim(), isActive);
-                  }
-                  if (mounted) Navigator.pop(ctx);
-                } catch (e) {
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
-                }
-              },
-              child: const Text('Guardar'),
-            ),
-          ],
         ),
-      ),
-    );
+      );
+    } finally {
+      nameCtrl.dispose();
+    }
   }
 
   @override

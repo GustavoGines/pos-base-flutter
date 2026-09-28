@@ -40,6 +40,7 @@ class LogisticsProvider extends ChangeNotifier {
   String get searchQuery => _searchQuery;
   bool get isDispatching => _isDispatching;
   String? get errorMessage => _errorMessage;
+  bool get isLoading => _tabs.values.any((tab) => tab.isLoading);
 
   LogisticsTabState getTabState(String status) => _tabs[status]!;
 
@@ -62,13 +63,17 @@ class LogisticsProvider extends ChangeNotifier {
 
   /// Forza la recarga de todas las pestañas inicializadas (útil tras crear una orden desde POS).
   Future<void> refreshAll({bool force = false}) async {
+    final futures = <Future<void>>[];
     for (final status in _tabs.keys) {
       if (force || _tabs[status]!.isInitialized) {
-        // Ejecutar sin await para que se actualicen en paralelo en background
-        fetchFirstPage(status);
+        futures.add(fetchFirstPage(status));
       }
     }
+    await Future.wait(futures);
   }
+
+  /// Recarga los remitos de todas las pestañas
+  Future<void> loadNotes({bool force = true}) => refreshAll(force: force);
 
   /// Fetch silencioso: actualiza la data de fondo sin mostrar loaders ni alterar la paginación existente
   Future<void> silentFetch(String status) async {

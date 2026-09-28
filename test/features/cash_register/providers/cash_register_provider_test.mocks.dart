@@ -153,6 +153,7 @@ class MockCloseShiftUseCase extends _i1.Mock implements _i7.CloseShiftUseCase {
   _i5.Future<_i3.CashRegisterShift> call(
     int? shiftId,
     double? countedCash, {
+    required String? pin,
     int? closerUserId,
   }) =>
       (super.noSuchMethod(
@@ -162,7 +163,10 @@ class MockCloseShiftUseCase extends _i1.Mock implements _i7.CloseShiftUseCase {
             shiftId,
             countedCash,
           ],
-          {#closerUserId: closerUserId},
+          {
+            #pin: pin,
+            #closerUserId: closerUserId,
+          },
         ),
         returnValue:
             _i5.Future<_i3.CashRegisterShift>.value(_FakeCashRegisterShift_1(
@@ -173,7 +177,10 @@ class MockCloseShiftUseCase extends _i1.Mock implements _i7.CloseShiftUseCase {
               shiftId,
               countedCash,
             ],
-            {#closerUserId: closerUserId},
+            {
+              #pin: pin,
+              #closerUserId: closerUserId,
+            },
           ),
         )),
       ) as _i5.Future<_i3.CashRegisterShift>);

@@ -228,11 +228,7 @@ class PosProvider with ChangeNotifier {
   }
 
   void submitWeighedProduct(Product product, double weightInKg) {
-    double finalWeight = weightInKg;
-    if (finalWeight > 50) {
-      finalWeight = finalWeight / 1000.0;
-    }
-    _addToCartDirectly(product, finalWeight);
+    _addToCartDirectly(product, weightInKg);
   }
 
   void _addToCartDirectly(Product product, double quantity) {
@@ -698,7 +694,7 @@ class PosProvider with ChangeNotifier {
                                           setState(() { isVoiding = true; });
                                           try {
                                             // 1. Anular en el servidor
-                                            await voidPendingOrder(int.parse(extractedSaleId!));
+                                            await voidPendingOrder(int.parse(extractedSaleId!), shiftId: shiftId);
                                             // 2. Restaurar carrito localmente
                                             _cart.clear();
                                             _cart.addAll(_lastSaleCart);
@@ -901,13 +897,13 @@ class PosProvider with ChangeNotifier {
   // ─────────────────────────────────────────────────────────────────
   // Anular una orden pendiente (eliminarla y devolver stock)
   // ─────────────────────────────────────────────────────────────────
-  Future<bool> voidPendingOrder(int saleId) async {
+  Future<bool> voidPendingOrder(int saleId, {required int shiftId}) async {
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
 
     try {
-      await repository.voidPendingSale(saleId);
+      await repository.voidPendingSale(saleId, shiftId: shiftId);
 
       if (_activePendingSaleId == saleId) {
         clearRecall();
@@ -1095,7 +1091,7 @@ class PosProvider with ChangeNotifier {
                                           if (confirm == true) {
                                             setState(() => isVoiding = true);
                                             try {
-                                              await voidPendingOrder(saleId);
+                                              await voidPendingOrder(saleId, shiftId: shiftId);
                                               // Restaurar carrito al estado previo
                                               _cart.clear();
                                               _cart.addAll(_lastSaleCart);

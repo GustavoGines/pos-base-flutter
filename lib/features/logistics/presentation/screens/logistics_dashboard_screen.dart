@@ -34,6 +34,8 @@ class _LogisticsDashboardScreenState extends State<LogisticsDashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final logisticsProvider = context.watch<LogisticsProvider>();
+
     return DefaultTabController(
       length: 3,
       child: Scaffold(
@@ -69,42 +71,69 @@ class _LogisticsDashboardScreenState extends State<LogisticsDashboardScreen> {
                     ),
                   ),
                   const SizedBox(width: 24),
-                  // ── Buscador (Derecha) ──
+                  // ── Buscador y Recarga (Derecha) ──
                   Expanded(
                     flex: 1,
-                    child: SizedBox(
-                      height: 40,
-                      child: TextField(
-                        controller: _searchController,
-                        onChanged: (value) {
-                          context
-                              .read<LogisticsProvider>()
-                              .onSearchChanged(value);
-                          setState(() {});
-                        },
-                        decoration: InputDecoration(
-                          hintText: 'Buscar remito o cliente...',
-                          border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8)),
-                          filled: true,
-                          fillColor: Colors.grey.shade100,
-                          contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 0),
-                          prefixIcon: const Icon(Icons.search, size: 20),
-                          suffixIcon: _searchController.text.isNotEmpty
-                              ? IconButton(
-                                  icon: const Icon(Icons.clear, size: 18),
-                                  onPressed: () {
-                                    _searchController.clear();
-                                    context
-                                        .read<LogisticsProvider>()
-                                        .onSearchChanged('');
-                                    setState(() {});
-                                  },
-                                )
-                              : null,
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: SizedBox(
+                            height: 40,
+                            child: TextField(
+                              controller: _searchController,
+                              onChanged: (value) {
+                                context
+                                    .read<LogisticsProvider>()
+                                    .onSearchChanged(value);
+                                setState(() {});
+                              },
+                              decoration: InputDecoration(
+                                hintText: 'Buscar remito o cliente...',
+                                border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(8)),
+                                filled: true,
+                                fillColor: Colors.grey.shade100,
+                                contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 16, vertical: 0),
+                                prefixIcon: const Icon(Icons.search, size: 20),
+                                suffixIcon: _searchController.text.isNotEmpty
+                                    ? IconButton(
+                                        icon: const Icon(Icons.clear, size: 18),
+                                        onPressed: () {
+                                          _searchController.clear();
+                                          context
+                                              .read<LogisticsProvider>()
+                                              .onSearchChanged('');
+                                          setState(() {});
+                                        },
+                                      )
+                                    : null,
+                              ),
+                            ),
+                          ),
                         ),
-                      ),
+                        const SizedBox(width: 8),
+                        if (logisticsProvider.isLoading)
+                          const Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 12.0),
+                            child: SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.blue,
+                              ),
+                            ),
+                          )
+                        else
+                          IconButton(
+                            tooltip: 'Actualizar remitos',
+                            icon: const Icon(Icons.refresh, color: Colors.blue),
+                            onPressed: () {
+                              context.read<LogisticsProvider>().loadNotes();
+                            },
+                          ),
+                      ],
                     ),
                   ),
                 ],

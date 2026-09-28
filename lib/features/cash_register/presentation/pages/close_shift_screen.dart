@@ -15,10 +15,12 @@ class CloseShiftScreen extends StatefulWidget {
 
 class _CloseShiftScreenState extends State<CloseShiftScreen> {
   final _countedCashController = TextEditingController();
+  final _pinController = TextEditingController();
 
   @override
   void dispose() {
     _countedCashController.dispose();
+    _pinController.dispose();
     super.dispose();
   }
 
@@ -26,6 +28,16 @@ class _CloseShiftScreenState extends State<CloseShiftScreen> {
     final countedCash = double.tryParse(_countedCashController.text.replaceAll(',', '.'));
     if (countedCash == null || countedCash < 0) {
       SnackBarService.error(context, 'Ingrese un monto de efectivo contado válido.');
+      return;
+    }
+
+    final pin = _pinController.text.trim();
+    if (pin.isEmpty) {
+      SnackBarService.error(context, 'El PIN de seguridad es obligatorio para cerrar el turno.');
+      return;
+    }
+    if (pin.length < 4) {
+      SnackBarService.error(context, 'El PIN de seguridad debe contener al menos 4 dígitos.');
       return;
     }
 
@@ -64,7 +76,11 @@ class _CloseShiftScreenState extends State<CloseShiftScreen> {
     final provider = context.read<CashRegisterProvider>();
     final currentUser = context.read<AuthProvider>().currentUser;
     final closerUserId = currentUser?['id'] as int?;
-    final closedShift = await provider.closeShift(countedCash, closerUserId: closerUserId);
+    final closedShift = await provider.closeShift(
+      countedCash,
+      pin: pin,
+      closerUserId: closerUserId,
+    );
     
     if (mounted) {
       if (closedShift != null) {
@@ -188,6 +204,35 @@ class _CloseShiftScreenState extends State<CloseShiftScreen> {
                             border: OutlineInputBorder(),
                             helperText: 'Cuente todo el efectivo físico del cajón (incluye el saldo inicial)',
                           ),
+                        ),
+                        const SizedBox(height: 20),
+
+                        // Campo de PIN de seguridad
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 8.0),
+                          child: Text('PIN de Autorización', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                        ),
+                        TextFormField(
+                          controller: _pinController,
+                          obscureText: true,
+                          keyboardType: TextInputType.number,
+                          textInputAction: TextInputAction.done,
+                          onFieldSubmitted: (_) => _handleCloseShift(),
+                          decoration: const InputDecoration(
+                            labelText: 'PIN de seguridad del cajero',
+                            prefixIcon: Icon(Icons.lock_outline),
+                            border: OutlineInputBorder(),
+                            helperText: 'Ingrese su PIN personal para autorizar el cierre',
+                          ),
+                          validator: (value) {
+                            if (value == null || value.trim().isEmpty) {
+                              return 'El PIN es obligatorio';
+                            }
+                            if (value.trim().length < 4) {
+                              return 'El PIN debe tener al menos 4 dígitos';
+                            }
+                            return null;
+                          },
                         ),
                         const SizedBox(height: 24),
 

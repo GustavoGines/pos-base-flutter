@@ -123,6 +123,13 @@ class _MobileNetworkSettingsScreenState extends State<MobileNetworkSettingsScree
   }
 
   @override
+  void dispose() {
+    _localCtrl.dispose();
+    _remoteCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(

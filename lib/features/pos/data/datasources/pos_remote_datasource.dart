@@ -50,7 +50,7 @@ abstract class PosRemoteDataSource {
     double shippingCost = 0.0,
     dynamic checkDetails,
   });
-  Future<dynamic> voidPendingSale(int saleId);
+  Future<dynamic> voidPendingSale(int saleId, {required int shiftId});
   Future<void> updatePaymentMethodSurcharge(int id, double surchargeValue);
   Future<Uint8List> downloadTicketPdf(int saleId);
   /// Crea un Remito de Logística a partir de una venta procesada.
@@ -313,11 +313,15 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
   }
 
   @override
-  Future<dynamic> voidPendingSale(int saleId) async {
+  Future<dynamic> voidPendingSale(int saleId, {required int shiftId}) async {
     try {
       final response = await client.post(
         Uri.parse('$baseUrl/sales/$saleId/void'),
-        headers: {'Accept': 'application/json'},
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: json.encode({'cash_shift_id': shiftId}),
       );
 
       if (response.statusCode == 200 || response.statusCode == 201) {

@@ -6,7 +6,7 @@ abstract class CashRegisterRemoteDataSource {
   Future<CashRegisterShiftModel?> getCurrentShift({int? registerId});
   Future<List<CashRegisterShiftModel>> getAllShifts();
   Future<CashRegisterShiftModel> openShift(double openingBalance, int userId, [int? registerId]);
-  Future<CashRegisterShiftModel> closeShift(int shiftId, double countedCash, {int? closerUserId});
+  Future<CashRegisterShiftModel> closeShift(int shiftId, double countedCash, {required String pin, int? closerUserId});
   Future<List<dynamic>> getRegisters();
 }
 
@@ -94,9 +94,12 @@ class CashRegisterRemoteDataSourceImpl implements CashRegisterRemoteDataSource {
   }
 
   @override
-  Future<CashRegisterShiftModel> closeShift(int shiftId, double countedCash, {int? closerUserId}) async {
+  Future<CashRegisterShiftModel> closeShift(int shiftId, double countedCash, {required String pin, int? closerUserId}) async {
     try {
-      final body = <String, dynamic>{'actual_balance': countedCash};
+      final body = <String, dynamic>{
+        'actual_balance': countedCash,
+        'pin': pin,
+      };
       if (closerUserId != null) body['closer_user_id'] = closerUserId;
 
       final response = await client.post(

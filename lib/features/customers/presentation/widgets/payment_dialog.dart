@@ -90,15 +90,11 @@ class _PaymentDialogState extends State<PaymentDialog> {
 
   void _removeLine(_PaymentLine line) {
     if (_lines.length <= 1) return;
+    setState(() {
+      _lines.remove(line);
+    });
     line.amountCtrl.removeListener(_onAmountChanged);
     line.dispose();
-    Future.microtask(() {
-      if (mounted) {
-        setState(() {
-          _lines.remove(line);
-        });
-      }
-    });
   }
 
   void _onAmountChanged() => setState(() {});
@@ -211,10 +207,11 @@ class _PaymentDialogState extends State<PaymentDialog> {
       return;
     }
 
+    bool success = false;
     setState(() => _isSubmitting = true);
 
     try {
-      final success = await context.read<CustomerProvider>().registerPayment(
+      success = await context.read<CustomerProvider>().registerPayment(
             customerId: widget.customer.id,
             payments: paymentsPayload,
             description: _descriptionController.text.trim(),
@@ -230,7 +227,9 @@ class _PaymentDialogState extends State<PaymentDialog> {
             Navigator.pop(context);
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                  content: Text(widget.isRefund ? 'Reintegro registrado correctamente' : 'Pago registrado correctamente'),
+                  content: Text(widget.isRefund
+                      ? 'Reintegro registrado correctamente'
+                      : 'Pago registrado correctamente'),
                   backgroundColor: Colors.green),
             );
           }
@@ -241,6 +240,9 @@ class _PaymentDialogState extends State<PaymentDialog> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(e.toString()), backgroundColor: Colors.red),
         );
+      }
+    } finally {
+      if (mounted && !success) {
         setState(() => _isSubmitting = false);
       }
     }
