@@ -81,3 +81,41 @@ Create the necessary tests to prove that all the implemented fixes work correctl
 
 ### Testing
 - [ ] Automated tests are created and successfully run, verifying the fixes for the duplicate checks, mixed payments, and other reported bugs.
+
+## Follow-up — 2026-09-28T16:30:19Z
+
+# Teamwork Project Prompt — Draft
+
+> Status: Launched
+> Goal: Craft prompt → get user approval → delegate to teamwork_preview
+> Requested team: Un equipo pequeño y enfocado (Small, focused team).
+
+Refactor the UI layouts for the Shift Detail ("Detalle del Turno") and Shift Close Summary ("Cierre de Turno") screens to make them wider and utilize a multi-column desktop-friendly design, eliminating the need for excessive vertical scrolling.
+
+Working directory: c:\laragon\www\Sistema_POS\pos-frontend
+Integrity mode: development
+
+## Requirements
+
+### R1. Expand and Restructure `general_audit_screen.dart`
+In `lib/features/reports/presentation/pages/general_audit_screen.dart`, locate the `_showShiftDetail` dialog. 
+- Increase the width constraint (currently `width: 500`) to something more appropriate for desktop (e.g., `800` or `900`).
+- Restructure the vertical list of data ("Desglose de Ventas", "Balance de Caja", "Auditoría de Ventas") into a side-by-side grid or multi-column layout using `Row` and `Expanded` or `Wrap` so that information is displayed horizontally where appropriate.
+
+### R2. Expand and Restructure `cash_shift_summary_screen.dart`
+In `lib/features/cash_register/presentation/pages/cash_shift_summary_screen.dart`.
+- Increase the `maxWidth: 500` constraint on the main `ConstrainedBox` to a wider desktop size (e.g., `800` or `900`).
+- Refactor the inner layout to use a side-by-side structure (e.g., "Balance de Caja" and KPIs on the left, "Desglose de Ventas" and actions/print buttons on the right) so the user doesn't have to scroll down to find the print options.
+
+### R3. No Version Control Operations
+Do NOT commit any changes to git. Apply the code modifications directly to the working directory.
+
+## Acceptance Criteria
+
+### UI Layout
+- [ ] Both target files no longer use a strict `500` pixel width limit, allowing them to utilize wider desktop screens.
+- [ ] The layouts in both files utilize horizontal space (Rows/Columns/Grids) to present the breakdown and balance data side-by-side.
+
+### Code Quality
+- [ ] Running `flutter analyze` returns no errors or RenderFlex overflow warnings related to these files.
+- [ ] No git commits were created.

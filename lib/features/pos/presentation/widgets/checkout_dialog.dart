@@ -1371,49 +1371,53 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
 
               // Cliente Selector si usa Cta Corriente
               if (_hasCuentaCorriente) ...[
-                GestureDetector(
-                  onTap: _openCustomerPicker,
-                  child: Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: _selectedCustomer != null
-                          ? Colors.purple.shade50
-                          : Colors.orange.shade50,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                          color: _selectedCustomer != null
-                              ? Colors.purple.shade300
-                              : Colors.orange.shade400),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(Icons.person,
+                Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: _openCustomerPicker,
+                    borderRadius: BorderRadius.circular(8),
+                    child: Ink(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: _selectedCustomer != null
+                            ? Colors.purple.shade50
+                            : Colors.orange.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
                             color: _selectedCustomer != null
-                                ? Colors.purple
-                                : Colors.orange),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _selectedCustomer == null
-                              ? Text('Seleccionar Cliente (Cta. Cte.)',
-                                  style: TextStyle(
-                                      color: Colors.orange.shade700,
-                                      fontWeight: FontWeight.bold))
-                              : Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(_selectedCustomer!.name,
-                                        style: TextStyle(
-                                            color: Colors.purple.shade700,
-                                            fontWeight: FontWeight.bold)),
-                                    Text(
-                                        _selectedCustomer!.isInternalAccount
-                                            ? 'Crédito disp: Ilimitado (Cuenta Interna)'
-                                            : 'Crédito disp: \$${_availableCredit.toCurrency()}',
-                                        style: TextStyle(fontSize: 12)),
-                                  ],
-                                ),
-                        ),
-                      ],
+                                ? Colors.purple.shade300
+                                : Colors.orange.shade400),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.person,
+                              color: _selectedCustomer != null
+                                  ? Colors.purple
+                                  : Colors.orange),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _selectedCustomer == null
+                                ? Text('Seleccionar Cliente (Cta. Cte.)',
+                                    style: TextStyle(
+                                        color: Colors.orange.shade700,
+                                        fontWeight: FontWeight.bold))
+                                : Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(_selectedCustomer!.name,
+                                          style: TextStyle(
+                                              color: Colors.purple.shade700,
+                                              fontWeight: FontWeight.bold)),
+                                      Text(
+                                          _selectedCustomer!.isInternalAccount
+                                              ? 'Crédito disp: Ilimitado (Cuenta Interna)'
+                                              : 'Crédito disp: \$${_availableCredit.toCurrency()}',
+                                          style: const TextStyle(fontSize: 12)),
+                                    ],
+                                  ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),

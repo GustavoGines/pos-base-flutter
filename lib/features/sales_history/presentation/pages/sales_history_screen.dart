@@ -529,8 +529,7 @@ class _MethodChip extends StatelessWidget {
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
-        width: 125,
-        constraints: const BoxConstraints(minHeight: 78),
+        constraints: const BoxConstraints(minWidth: 125, minHeight: 78),
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
         decoration: BoxDecoration(
           color: isSelected ? color : bgColor,
@@ -552,38 +551,34 @@ class _MethodChip extends StatelessWidget {
               child: Icon(icon, size: 14, color: isSelected ? Colors.white : color),
             ),
             const SizedBox(width: 4),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: isSelected ? Colors.white70 : color,
-                    ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  label,
+                  maxLines: 1,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: isSelected ? Colors.white70 : color,
                   ),
-                  // Total cobrado al cliente
-                  Text(
-                    '\$${amount.toCurrency()}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: isTotal ? 20 : 17,
-                      fontWeight: FontWeight.bold,
-                      color: isSelected ? Colors.white : color,
-                    ),
+                ),
+                // Total cobrado al cliente
+                Text(
+                  '\$${amount.toCurrency()}',
+                  maxLines: 1,
+                  style: TextStyle(
+                    fontSize: isTotal ? 20 : 17,
+                    fontWeight: FontWeight.bold,
+                    color: isSelected ? Colors.white : color,
                   ),
-                  // Desglose neto + recargo bancario
+                ),
+                // Desglose neto + recargo bancario
                   if (hasSurcharge) ...[
                     Text(
                       'Neto: \$${netAmount!.toCurrency()}',
                       maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontSize: 11,
                         color: isSelected
@@ -594,7 +589,6 @@ class _MethodChip extends StatelessWidget {
                     Text(
                       'Rec: +\$${surchargeAmount!.toCurrency()}',
                       maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontSize: 11,
                         color: isSelected
@@ -606,7 +600,6 @@ class _MethodChip extends StatelessWidget {
                   ],
                 ],
               ),
-            ),
           ],
         ),
       ),

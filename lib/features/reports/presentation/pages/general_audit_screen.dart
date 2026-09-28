@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'dart:convert';
+import 'dart:math' as math;
 import '../../../../core/presentation/widgets/global_app_bar.dart';
 import '../../../../features/auth/presentation/providers/auth_provider.dart';
 import '../../../../features/cash_register/presentation/providers/cash_register_provider.dart';
@@ -107,23 +108,26 @@ class _ShiftAuditTabState extends State<_ShiftAuditTab> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Historial Global de Turnos (Cierres Z)',
-                        style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.blueGrey),
-                      ),
-                      SizedBox(height: 4),
-                      Text(
-                        'Registro completo auditado (Solo para administradores)',
-                        style: TextStyle(color: Colors.grey),
-                      ),
-                    ],
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Historial Global de Turnos (Cierres Z)',
+                          style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.blueGrey),
+                        ),
+                        SizedBox(height: 4),
+                        Text(
+                          'Registro completo auditado (Solo para administradores)',
+                          style: TextStyle(color: Colors.grey),
+                        ),
+                      ],
+                    ),
                   ),
+                  const SizedBox(width: 8),
                   IconButton(
                     icon: const Icon(Icons.refresh, color: Colors.blueGrey),
                     onPressed: () => provider.loadAllShifts(),
@@ -153,8 +157,10 @@ class _ShiftAuditTabState extends State<_ShiftAuditTab> {
                       scrollDirection: Axis.horizontal,
                       child: ConstrainedBox(
                         constraints: BoxConstraints(
-                          minWidth: MediaQuery.of(context).size.width -
-                              48, // 48 is the horizontal padding (24*2)
+                          minWidth: math.max(
+                              0.0,
+                              MediaQuery.of(context).size.width -
+                                  48), // 48 is horizontal padding (24*2)
                         ),
                         child: DataTable(
                           showCheckboxColumn: false,
@@ -324,8 +330,14 @@ class _ShiftAuditTabState extends State<_ShiftAuditTab> {
           children: [
             Icon(Icons.receipt_long, color: Colors.blue.shade700),
             const SizedBox(width: 10),
-            Text('Detalle del Turno #${shift.id}'),
-            const Spacer(),
+            Expanded(
+              child: Text(
+                'Detalle del Turno #${shift.id}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(width: 10),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(
@@ -351,53 +363,141 @@ class _ShiftAuditTabState extends State<_ShiftAuditTab> {
           ],
         ),
         content: SizedBox(
-          width: 500,
+          width: 900,
           child: SingleChildScrollView(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _detailHeader(shift),
-                const Divider(height: 32),
-                _sectionTitle('Desglose de Ventas'),
-                _detailRow('Ventas en Efectivo',
-                    currencyFormat.format(shift.cashSales ?? 0)),
-                _detailRow('Ventas con Tarjeta',
-                    currencyFormat.format(shift.cardSales ?? 0)),
-                _detailRow('Ventas por Transferencia',
-                    currencyFormat.format(shift.transferSales ?? 0)),
-                _detailRow('Ventas con Cheque',
-                    currencyFormat.format(shift.checkSales ?? 0)),
-                if (shift.totalSurcharge != null && shift.totalSurcharge! > 0)
-                  _detailRow('Recargos Aplicados',
-                      currencyFormat.format(shift.totalSurcharge!),
-                      isBold: true, color: Colors.orange.shade800),
-                const Divider(height: 32),
-                _sectionTitle('Balance de Caja'),
-                _detailRow('Monto Inicial',
-                    currencyFormat.format(shift.openingBalance)),
-                _detailRow('Total Ventas (Neto)',
-                    currencyFormat.format(shift.totalSales ?? 0),
-                    isBold: true),
-                if (isClosed) ...[
-                  const SizedBox(height: 8),
-                  _detailRow('Esperado en Caja',
-                      currencyFormat.format(shift.expectedBalance ?? 0)),
-                  _detailRow('Declarado (Real)',
-                      currencyFormat.format(shift.actualBalance ?? 0)),
-                  const Divider(height: 16),
-                  _detailRow(
-                    'Diferencia',
-                    currencyFormat.format(shift.difference ?? 0),
-                    isBold: true,
-                    color: (shift.difference ?? 0) == 0
-                        ? Colors.green
-                        : Colors.red,
+                const SizedBox(height: 20),
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final isDesktop = constraints.maxWidth >= 600;
+
+                    final desglosePanel = Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade50,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.grey.shade200),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _sectionTitle('Desglose de Ventas',
+                              icon: Icons.point_of_sale),
+                          _detailRow('Ventas en Efectivo',
+                              currencyFormat.format(shift.cashSales ?? 0)),
+                          _detailRow('Ventas con Tarjeta',
+                              currencyFormat.format(shift.cardSales ?? 0)),
+                          _detailRow('Ventas por Transferencia',
+                              currencyFormat.format(shift.transferSales ?? 0)),
+                          _detailRow('Ventas con Cheque',
+                              currencyFormat.format(shift.checkSales ?? 0)),
+                          if (shift.totalSurcharge != null &&
+                              shift.totalSurcharge! > 0)
+                            _detailRow('Recargos Aplicados',
+                                currencyFormat.format(shift.totalSurcharge!),
+                                isBold: true, color: Colors.orange.shade800),
+                        ],
+                      ),
+                    );
+
+                    final balancePanel = Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade50,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.grey.shade200),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _sectionTitle('Balance de Caja',
+                              icon: Icons.account_balance),
+                          _detailRow('Monto Inicial',
+                              currencyFormat.format(shift.openingBalance)),
+                          _detailRow('Total Ventas (Neto)',
+                              currencyFormat.format(shift.totalSales ?? 0),
+                              isBold: true),
+                          if ((shift.totalDeposits ?? 0) > 0)
+                            _detailRow('Ingresos Extra',
+                                currencyFormat.format(shift.totalDeposits)),
+                          if ((shift.totalExpenses ?? 0) > 0)
+                            _detailRow('Gastos (Salida)',
+                                '-\$${currencyFormat.format(shift.totalExpenses).replaceAll('\$', '')}',
+                                color: Colors.red.shade800),
+                          if ((shift.totalWithdrawals ?? 0) > 0)
+                            _detailRow('Retiros de Dueño (Salida)',
+                                '-\$${currencyFormat.format(shift.totalWithdrawals).replaceAll('\$', '')}',
+                                color: Colors.red.shade800),
+                          if ((shift.totalSupplierPayments ?? 0) > 0)
+                            _detailRow('Pagos Proveedores (Salida)',
+                                '-\$${currencyFormat.format(shift.totalSupplierPayments).replaceAll('\$', '')}',
+                                color: Colors.red.shade800),
+                          if ((shift.totalRefunds ?? 0) > 0)
+                            _detailRow('Reintegros (Salida)',
+                                '-\$${currencyFormat.format(shift.totalRefunds).replaceAll('\$', '')}',
+                                color: Colors.red.shade800),
+                          if (isClosed) ...[
+                            const SizedBox(height: 8),
+                            _detailRow('Esperado en Caja',
+                                currencyFormat.format(shift.expectedBalance ?? 0)),
+                            _detailRow('Declarado (Real)',
+                                currencyFormat.format(shift.actualBalance ?? 0)),
+                            const Divider(height: 16),
+                            _detailRow(
+                              'Diferencia',
+                              currencyFormat.format(shift.difference ?? 0),
+                              isBold: true,
+                              color: (shift.difference ?? 0) == 0
+                                  ? Colors.green
+                                  : Colors.red,
+                            ),
+                          ],
+                        ],
+                      ),
+                    );
+
+                    if (isDesktop) {
+                      return Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(child: desglosePanel),
+                          const SizedBox(width: 16),
+                          Expanded(child: balancePanel),
+                        ],
+                      );
+                    } else {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          desglosePanel,
+                          const SizedBox(height: 16),
+                          balancePanel,
+                        ],
+                      );
+                    }
+                  },
+                ),
+                const SizedBox(height: 20),
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade50,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey.shade200),
                   ),
-                ],
-                const Divider(height: 32),
-                _sectionTitle('Auditoría de Ventas'),
-                const SizedBox(height: 12),
-                _ShiftSalesList(shiftId: shift.id),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _sectionTitle('Auditoría de Ventas',
+                          icon: Icons.receipt_long),
+                      const SizedBox(height: 8),
+                      _ShiftSalesList(shiftId: shift.id),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
@@ -413,33 +513,67 @@ class _ShiftAuditTabState extends State<_ShiftAuditTab> {
   }
 
   Widget _detailHeader(CashRegisterShift shift) {
-    return Column(
-      children: [
-        Row(
-          children: [
-            _headerItem(
-                'Caja', shift.cashRegisterName ?? '-', Icons.desktop_windows),
-            const SizedBox(width: 24),
-            _headerItem('Apertura', shift.userName ?? '-', Icons.person),
-          ],
-        ),
-        const SizedBox(height: 16),
-        Row(
-          children: [
-            _headerItem(
-                'Fecha Inicio',
-                DateFormat('dd/MM/yyyy HH:mm').format(shift.openedAt.toLocal()),
-                Icons.calendar_today),
-            const SizedBox(width: 24),
-            if (shift.closedAt != null)
-              _headerItem(
-                  'Fecha Cierre',
-                  DateFormat('dd/MM/yyyy HH:mm')
-                      .format(shift.closedAt!.toLocal()),
-                  Icons.event_available),
-          ],
-        ),
-      ],
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.blue.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.blue.shade100),
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isWide = constraints.maxWidth >= 550;
+          final cajaItem = _headerItem(
+              'Caja', shift.cashRegisterName ?? '-', Icons.desktop_windows);
+          final aperturaItem =
+              _headerItem('Apertura', shift.userName ?? '-', Icons.person);
+          final inicioItem = _headerItem(
+              'Fecha Inicio',
+              DateFormat('dd/MM/yyyy HH:mm').format(shift.openedAt.toLocal()),
+              Icons.calendar_today);
+          final cierreItem = _headerItem(
+              'Fecha Cierre',
+              shift.closedAt != null
+                  ? DateFormat('dd/MM/yyyy HH:mm')
+                      .format(shift.closedAt!.toLocal())
+                  : 'En curso...',
+              Icons.event_available);
+
+          if (isWide) {
+            return Row(
+              children: [
+                cajaItem,
+                const SizedBox(width: 16),
+                aperturaItem,
+                const SizedBox(width: 16),
+                inicioItem,
+                const SizedBox(width: 16),
+                cierreItem,
+              ],
+            );
+          } else {
+            return Column(
+              children: [
+                Row(
+                  children: [
+                    cajaItem,
+                    const SizedBox(width: 12),
+                    aperturaItem,
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    inicioItem,
+                    const SizedBox(width: 12),
+                    cierreItem,
+                  ],
+                ),
+              ],
+            );
+          }
+        },
+      ),
     );
   }
 
@@ -452,15 +586,23 @@ class _ShiftAuditTabState extends State<_ShiftAuditTab> {
             children: [
               Icon(icon, size: 14, color: Colors.grey),
               const SizedBox(width: 4),
-              Text(label,
+              Expanded(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                       fontSize: 11,
                       color: Colors.grey,
-                      fontWeight: FontWeight.bold)),
+                      fontWeight: FontWeight.bold),
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 4),
           Text(value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style:
                   const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
         ],
@@ -468,15 +610,29 @@ class _ShiftAuditTabState extends State<_ShiftAuditTab> {
     );
   }
 
-  Widget _sectionTitle(String title) {
+  Widget _sectionTitle(String title, {IconData? icon}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child: Text(title.toUpperCase(),
-          style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-              color: Colors.blue.shade900,
-              letterSpacing: 1.1)),
+      child: Row(
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 16, color: Colors.blue.shade800),
+            const SizedBox(width: 6),
+          ],
+          Expanded(
+            child: Text(
+              title.toUpperCase(),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.blue.shade900,
+                  letterSpacing: 1.1),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -487,13 +643,28 @@ class _ShiftAuditTabState extends State<_ShiftAuditTab> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label,
-              style: TextStyle(fontSize: 14, color: Colors.grey.shade700)),
-          Text(value,
-              style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: isBold ? FontWeight.bold : FontWeight.w500,
-                  color: color)),
+          Expanded(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 14, color: Colors.grey.shade700),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Flexible(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerRight,
+              child: Text(
+                value,
+                style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: isBold ? FontWeight.bold : FontWeight.w500,
+                    color: color),
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -614,23 +785,26 @@ class _StockMovementsTabState extends State<_StockMovementsTab> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Movimientos de Stock',
-                    style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.blueGrey),
-                  ),
-                  SizedBox(height: 4),
-                  Text(
-                    'Auditoría de todos los ingresos y egresos de mercadería',
-                    style: TextStyle(color: Colors.grey),
-                  ),
-                ],
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Movimientos de Stock',
+                      style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.blueGrey),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Auditoría de todos los ingresos y egresos de mercadería',
+                      style: TextStyle(color: Colors.grey),
+                    ),
+                  ],
+                ),
               ),
+              const SizedBox(width: 8),
               IconButton(
                 icon: const Icon(Icons.refresh, color: Colors.blueGrey),
                 onPressed: _fetchStockMovements,
@@ -659,7 +833,8 @@ class _StockMovementsTabState extends State<_StockMovementsTab> {
                   scrollDirection: Axis.horizontal,
                   child: ConstrainedBox(
                     constraints: BoxConstraints(
-                      minWidth: MediaQuery.of(context).size.width - 48,
+                      minWidth: math.max(
+                          0.0, MediaQuery.of(context).size.width - 48),
                     ),
                     child: DataTable(
                       headingRowColor:
@@ -705,11 +880,13 @@ class _StockMovementsTabState extends State<_StockMovementsTab> {
                         final userName =
                             mov['user']?['name'] ?? 'Sistema (Auto)';
                         final isSystem = userName.contains('Sistema');
+                        final parsedDate = DateTime.tryParse(mov['created_at']?.toString() ?? '');
+                        final dateStr = parsedDate != null
+                            ? DateFormat('dd/MM/yyyy HH:mm').format(parsedDate.toLocal())
+                            : '-';
 
                         return DataRow(cells: [
-                          DataCell(Text(DateFormat('dd/MM/yyyy HH:mm').format(
-                            DateTime.parse(mov['created_at']).toLocal(),
-                          ))),
+                          DataCell(Text(dateStr)),
                           DataCell(Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
@@ -834,7 +1011,12 @@ class _ShiftSalesListState extends State<_ShiftSalesList> {
     try {
       final auth = context.read<AuthProvider>();
       final client = auth.apiClient;
-      if (client == null) return;
+      if (client == null) {
+        if (mounted) {
+          setState(() => _loading = false);
+        }
+        return;
+      }
 
       final rawBaseUrl = auth.repository.remoteDataSource.baseUrl.trim();
       final baseUrl = rawBaseUrl.endsWith('/')
@@ -849,7 +1031,14 @@ class _ShiftSalesListState extends State<_ShiftSalesList> {
       if (response.statusCode == 200) {
         if (mounted) {
           setState(() {
-            _sales = json.decode(response.body);
+            final decoded = json.decode(response.body);
+            if (decoded is List) {
+              _sales = decoded;
+            } else if (decoded is Map && decoded['data'] is List) {
+              _sales = decoded['data'];
+            } else {
+              _sales = [];
+            }
             _loading = false;
           });
         }
@@ -889,92 +1078,127 @@ class _ShiftSalesListState extends State<_ShiftSalesList> {
     final fmt =
         NumberFormat.currency(locale: 'es_AR', symbol: '\$', decimalDigits: 0);
 
-    return Column(
-      children: _sales.map((sale) {
-        final saleTotal =
-            double.tryParse(sale['total']?.toString() ?? '0') ?? 0.0;
-        final saleSurcharge =
-            double.tryParse(sale['total_surcharge']?.toString() ?? '0') ?? 0.0;
-        final total = saleTotal + saleSurcharge;
-        final priceList = sale['price_list'] ?? 'Minorista';
-        final isVoided = sale['status'] == 'voided';
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isWide = constraints.maxWidth > 550;
+        final itemWidth =
+            isWide ? (constraints.maxWidth - 12) / 2 : constraints.maxWidth;
 
-        return Container(
-          margin: const EdgeInsets.only(bottom: 8),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: isVoided ? Colors.red.shade50 : Colors.grey.shade50,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-                color: isVoided ? Colors.red.shade100 : Colors.grey.shade200),
-          ),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
+        return Wrap(
+          spacing: 12,
+          runSpacing: 8,
+          children: _sales.map((sale) {
+            final saleTotal =
+                double.tryParse(sale['total']?.toString() ?? '0') ?? 0.0;
+            final saleSurcharge =
+                double.tryParse(sale['total_surcharge']?.toString() ?? '0') ?? 0.0;
+            final total = saleTotal + saleSurcharge;
+            final priceList = (sale['price_list'] ?? 'Minorista').toString();
+            final isVoided = sale['status'] == 'voided';
+            final parsedDate =
+                DateTime.tryParse(sale['created_at']?.toString() ?? '');
+            final timeStr = parsedDate != null
+                ? DateFormat('HH:mm').format(parsedDate.toLocal())
+                : '--:--';
+
+            return SizedBox(
+              width: itemWidth,
+              child: Container(
+                padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: isVoided ? Colors.red.shade100 : Colors.blue.shade50,
-                  shape: BoxShape.circle,
+                  color: isVoided ? Colors.red.shade50 : Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                      color: isVoided
+                          ? Colors.red.shade100
+                          : Colors.grey.shade200),
                 ),
-                child: Icon(
-                  isVoided ? Icons.block : Icons.shopping_bag_outlined,
-                  size: 16,
-                  color: isVoided ? Colors.red.shade700 : Colors.blue.shade700,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                child: Row(
                   children: [
-                    Text('Venta #${sale['id']}',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14,
-                          decoration:
-                              isVoided ? TextDecoration.lineThrough : null,
-                          color:
-                              isVoided ? Colors.red.shade700 : Colors.black87,
-                        )),
-                    Text(
-                        DateFormat('HH:mm').format(
-                            DateTime.parse(sale['created_at']).toLocal()),
-                        style:
-                            const TextStyle(fontSize: 11, color: Colors.grey)),
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color:
+                            isVoided ? Colors.red.shade100 : Colors.blue.shade50,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        isVoided ? Icons.block : Icons.shopping_bag_outlined,
+                        size: 16,
+                        color: isVoided
+                            ? Colors.red.shade700
+                            : Colors.blue.shade700,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Venta #${sale['id'] ?? '-'}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                                decoration:
+                                    isVoided ? TextDecoration.lineThrough : null,
+                                color: isVoided
+                                    ? Colors.red.shade700
+                                    : Colors.black87,
+                              )),
+                          Text(timeStr,
+                              style: const TextStyle(
+                                  fontSize: 11, color: Colors.grey)),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 130),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: isVoided
+                                  ? Colors.red.shade100
+                                  : Colors.blue.shade100,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(priceList.toUpperCase(),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.bold,
+                                    color: isVoided
+                                        ? Colors.red.shade900
+                                        : Colors.blue.shade900)),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerRight,
+                          child: Text(fmt.format(total),
+                              style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 15,
+                                  color:
+                                      isVoided ? Colors.red : Colors.black87)),
+                        ),
+                      ],
+                    ),
                   ],
                 ),
               ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color:
-                          isVoided ? Colors.red.shade100 : Colors.blue.shade100,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text(priceList.toUpperCase(),
-                        style: TextStyle(
-                            fontSize: 9,
-                            fontWeight: FontWeight.bold,
-                            color: isVoided
-                                ? Colors.red.shade900
-                                : Colors.blue.shade900)),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(fmt.format(total),
-                      style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 15,
-                          color: isVoided ? Colors.red : Colors.black87)),
-                ],
-              ),
-            ],
-          ),
+            );
+          }).toList(),
         );
-      }).toList(),
+      },
     );
   }
 }

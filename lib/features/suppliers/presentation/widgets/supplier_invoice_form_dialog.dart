@@ -225,7 +225,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
         'tax_amount': _taxAmount,
         'freight_amount': _freightAmount,
         'discount_amount': _discountAmount,
-        'issue_date': _issueDate?.toIso8601String().split('T')[0],
+        'issue_date': _issueDate?.toIso8601String(),
         'due_date': _dueDate?.toIso8601String().split('T')[0],
         'receipt_file_url': _attachmentUrl,
         'invoice_number': _invoiceNumberController.text.trim(),
@@ -444,7 +444,10 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                                       firstDate: DateTime(2000),
                                       lastDate: DateTime(2100),
                                     );
-                                    if (date != null) setState(() => _issueDate = date);
+                                    if (date != null) {
+                                      final now = DateTime.now();
+                                      setState(() => _issueDate = DateTime(date.year, date.month, date.day, now.hour, now.minute, now.second));
+                                    }
                                   },
                                   child: InputDecorator(
                                     decoration: const InputDecoration(labelText: 'Fecha Emisión', isDense: true),
