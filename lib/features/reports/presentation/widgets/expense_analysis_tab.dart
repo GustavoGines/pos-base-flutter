@@ -287,12 +287,6 @@ class _ExpenseAnalysisTabState extends State<ExpenseAnalysisTab> {
                           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                         ),
                       ),
-                      IconButton(
-                        icon: const Icon(Icons.refresh),
-                        color: Colors.blue.shade600,
-                        tooltip: 'Recargar Datos',
-                        onPressed: _isLoading ? null : _fetchData,
-                      ),
                     ],
                   ),
                 ],
@@ -373,7 +367,7 @@ class _ExpenseAnalysisTabState extends State<ExpenseAnalysisTab> {
                                       ),
                                       borderData: FlBorderData(show: false),
                                       sectionsSpace: 4,
-                                      centerSpaceRadius: isCompact ? 55 : 75,
+                                      centerSpaceRadius: isCompact ? 70 : 130,
                                       sections: _analysisData.asMap().entries.map((entry) {
                                         final index = entry.key;
                                         final item = entry.value;
@@ -382,8 +376,8 @@ class _ExpenseAnalysisTabState extends State<ExpenseAnalysisTab> {
                                         final percentage = _totalExpenses > 0 ? (total / _totalExpenses) * 100 : 0;
                                         
                                         final radius = isCompact
-                                            ? (isTouched ? 52.0 : 40.0)
-                                            : (isTouched ? 65.0 : 50.0);
+                                            ? (isTouched ? 55.0 : 45.0)
+                                            : (isTouched ? 90.0 : 75.0);
                                         final fontSize = isCompact
                                             ? (isTouched ? 12.0 : 10.0)
                                             : (isTouched ? 15.0 : 12.0);

@@ -150,11 +150,15 @@ class SupplierProvider extends ChangeNotifier {
       throw Exception(e.toString().replaceAll('Exception: ', ''));
     }
   }
-  Future<Map<String, dynamic>> fetchCurrentAccount(int supplierId) async {
+  Future<Map<String, dynamic>> fetchCurrentAccount(int supplierId, {String? adminPin}) async {
     try {
+      final headers = <String, String>{'Accept': 'application/json'};
+      if (adminPin != null && adminPin.isNotEmpty) {
+        headers['X-Admin-Pin'] = adminPin;
+      }
       final response = await client.get(
         Uri.parse('$baseUrl/suppliers/$supplierId/current-account'),
-        headers: {'Accept': 'application/json'},
+        headers: headers,
       );
 
       if (response.statusCode == 200) {

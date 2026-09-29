@@ -10,6 +10,7 @@ import '../../../../core/utils/receipt_printer_service.dart';
 import '../../../../core/presentation/widgets/print_format_selector.dart';
 import '../../../../core/providers/local_terminal_provider.dart';
 import '../../../cash_register/presentation/providers/cash_register_provider.dart';
+import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
 
 class SupplierCurrentAccountScreen extends StatefulWidget {
   final int supplierId;
@@ -28,6 +29,8 @@ class SupplierCurrentAccountScreen extends StatefulWidget {
 class _SupplierCurrentAccountScreenState extends State<SupplierCurrentAccountScreen> {
   bool _isLoading = true;
   String? _error;
+  bool _isAccessDenied = false;
+  String? _adminPin;
   List<dynamic> _history = [];
   List<dynamic> _filteredHistory = [];
   double _currentBalance = 0;
@@ -44,11 +47,12 @@ class _SupplierCurrentAccountScreenState extends State<SupplierCurrentAccountScr
     setState(() {
       _isLoading = true;
       _error = null;
+      _isAccessDenied = false;
     });
 
     try {
       final provider = context.read<SupplierProvider>();
-      final data = await provider.fetchCurrentAccount(widget.supplierId);
+      final data = await provider.fetchCurrentAccount(widget.supplierId, adminPin: _adminPin);
       if (mounted) {
         setState(() {
           _history = data['history'] ?? [];
@@ -59,8 +63,13 @@ class _SupplierCurrentAccountScreenState extends State<SupplierCurrentAccountScr
       }
     } catch (e) {
       if (mounted) {
+        final errorMsg = e.toString();
+        final isDenied = errorMsg.contains('Acceso denegado') || 
+                         errorMsg.contains('403') || 
+                         errorMsg.contains('permiso');
         setState(() {
-          _error = e.toString();
+          _error = errorMsg;
+          _isAccessDenied = isDenied;
           _isLoading = false;
         });
       }
@@ -111,6 +120,56 @@ class _SupplierCurrentAccountScreenState extends State<SupplierCurrentAccountScr
   Widget _buildBody() {
     if (_isLoading) return const Center(child: CircularProgressIndicator());
     if (_error != null) {
+      if (_isAccessDenied) {
+        return Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.lock_outline, color: Colors.orange.shade700, size: 64),
+                const SizedBox(height: 20),
+                Text(
+                  'Acceso Restringido',
+                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.orange.shade800),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'No tenés permisos para ver el estado de cuenta de este proveedor.\nPodés solicitar autorización ingresando el PIN del administrador.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 14, color: Colors.grey, height: 1.5),
+                ),
+                const SizedBox(height: 28),
+                FilledButton.icon(
+                  icon: const Icon(Icons.vpn_key, size: 20),
+                  label: const Text('INGRESAR PIN DE ADMINISTRADOR', style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 0.5)),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Colors.orange.shade700,
+                    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  onPressed: () async {
+                    final pin = await showDialog<String>(
+                      context: context,
+                      barrierDismissible: true,
+                      builder: (_) => const AdminPinDialog(actionDescription: 'Ver estado de cuenta de proveedor'),
+                    );
+                    if (pin != null && mounted) {
+                      _adminPin = pin;
+                      _loadData();
+                    }
+                  },
+                ),
+                const SizedBox(height: 12),
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Volver', style: TextStyle(color: Colors.grey)),
+                ),
+              ],
+            ),
+          ),
+        );
+      }
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
