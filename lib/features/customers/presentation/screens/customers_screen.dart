@@ -7,6 +7,7 @@ import '../widgets/customer_form_dialog.dart';
 import '../widgets/payment_dialog.dart';
 import '../widgets/sale_detail_dialog.dart';
 import '../widgets/payment_detail_dialog.dart';
+import '../../../../features/cash_register/presentation/providers/cash_register_provider.dart';
 import 'package:frontend_desktop/features/auth/presentation/widgets/admin_pin_dialog.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
 import 'package:frontend_desktop/features/sales_history/data/datasources/sales_history_remote_datasource.dart';
@@ -663,6 +664,17 @@ class _CustomerDetailPanel extends StatelessWidget {
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
                   onPressed: () {
+                    final cashProv = context.read<CashRegisterProvider>();
+                    if (cashProv.currentShift == null || !cashProv.currentShift!.isOpen) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Debe abrir un turno de caja para registrar abonos.'),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                      return;
+                    }
+
                     showDialog(
                       context: context,
                       barrierDismissible: false,
@@ -702,6 +714,17 @@ class _CustomerDetailPanel extends StatelessWidget {
                     backgroundColor: Colors.green.shade700,
                   ),
                   onPressed: () {
+                    final cashProv = context.read<CashRegisterProvider>();
+                    if (cashProv.currentShift == null || !cashProv.currentShift!.isOpen) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Debe abrir un turno de caja para procesar devoluciones.'),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                      return;
+                    }
+
                     showDialog(
                       context: context,
                       barrierDismissible: false,

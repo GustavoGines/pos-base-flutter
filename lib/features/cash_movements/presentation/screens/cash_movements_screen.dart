@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/presentation/widgets/global_app_bar.dart';
 import '../../providers/cash_movement_provider.dart';
 import '../widgets/movement_form_dialog.dart';
+import '../../../../features/cash_register/presentation/providers/cash_register_provider.dart';
 import '../../../../core/utils/receipt_printer_service.dart';
 import '../../services/cash_movement_pdf_service.dart';
 import 'package:frontend_desktop/core/presentation/widgets/print_format_selector.dart';
@@ -57,6 +58,17 @@ class _CashMovementsScreenState extends State<CashMovementsScreen> {
   }
 
   void _showFormDialog() {
+    final cashProv = context.read<CashRegisterProvider>();
+    if (cashProv.currentShift == null || !cashProv.currentShift!.isOpen) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Debe abrir un turno de caja para registrar movimientos (Gastos/Retiros/Pagos).'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     showDialog(
       context: context,
       barrierDismissible: false,

@@ -9,6 +9,7 @@ import '../../../settings/presentation/providers/settings_provider.dart';
 import '../../../../core/utils/receipt_printer_service.dart';
 import '../../../../core/presentation/widgets/print_format_selector.dart';
 import '../../../../core/providers/local_terminal_provider.dart';
+import '../../../cash_register/presentation/providers/cash_register_provider.dart';
 
 class SupplierCurrentAccountScreen extends StatefulWidget {
   final int supplierId;
@@ -227,6 +228,17 @@ class _SupplierCurrentAccountScreenState extends State<SupplierCurrentAccountScr
                               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                             ),
                             onPressed: () async {
+                              final cashProv = context.read<CashRegisterProvider>();
+                              if (cashProv.currentShift == null || !cashProv.currentShift!.isOpen) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Debe abrir un turno de caja para procesar pagos a proveedores.'),
+                                    backgroundColor: Colors.red,
+                                  ),
+                                );
+                                return;
+                              }
+
                               await showDialog(
                                 context: context,
                                 barrierDismissible: false,
