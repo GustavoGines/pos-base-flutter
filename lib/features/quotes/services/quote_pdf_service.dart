@@ -215,7 +215,7 @@ class QuotePdfService {
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                 children: [
                   pw.Text(
-                    'Presupuesto generado por $businessName · ${_dateFmt.format(DateTime.now())}',
+                    'Presupuesto generado por G-LABS Sistema POS · ${_dateFmt.format(DateTime.now())}',
                     style: const pw.TextStyle(fontSize: 8, color: textGrey),
                   ),
                   pw.Text(

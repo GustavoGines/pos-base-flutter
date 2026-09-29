@@ -231,7 +231,7 @@ class ZClosePdfService {
               ),
               pw.SizedBox(height: 24),
               pw.Center(
-                child: pw.Text('Comprobante generado por Antigravity POS', style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey400)),
+                child: pw.Text('Comprobante generado por G-LABS Sistema POS', style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey400)),
               )
             ],
           );
