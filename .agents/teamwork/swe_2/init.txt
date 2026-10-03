@@ -1,3 +1,0 @@
-# SWE Light Directory Initialized
-Agent: swe_2
-Project: Reorganize and granularize permissions in pos-frontend
