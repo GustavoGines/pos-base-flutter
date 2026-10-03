@@ -11,6 +11,7 @@ import '../../../checks/presentation/providers/check_provider.dart';
 import '../../../checks/domain/entities/third_party_check.dart';
 import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
+import '../../../../core/constants/app_permissions.dart';
 import '../../../suppliers/presentation/widgets/supplier_invoice_form_dialog.dart';
 import '../../../../core/utils/receipt_printer_service.dart';
 import '../../../../core/providers/local_terminal_provider.dart';
@@ -358,25 +359,14 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
       }
     }
 
-    if (_type == 'withdrawal') {
-      final auth = context.read<AuthProvider>();
-      if (auth.isAdmin) {
+    await AdminPinDialog.protectAction(
+      context,
+      action: 'Registrar Movimiento de Caja',
+      permissionKey: widget.initialType == 'supplier_payment' ? AppPermissions.paySuppliers : AppPermissions.createExpenses,
+      onAuthorized: () async {
         await _executeSubmit();
-        return;
-      }
-
-      final pin = await showDialog<String>(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) =>
-            const AdminPinDialog(actionDescription: 'Autorizar Retiro de Caja'),
-      );
-
-      if (pin == null) return;
-      await _executeSubmit(adminPin: pin);
-    } else {
-      await _executeSubmit();
-    }
+      },
+    );
   }
 
   Future<void> _executeSubmit({String? adminPin}) async {

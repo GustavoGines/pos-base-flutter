@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../data/datasources/cash_register_remote_datasource.dart';
 import '../../domain/entities/cash_register_shift.dart';
 import '../../domain/usecases/get_all_shifts_usecase.dart';
 import '../../domain/usecases/get_current_shift_usecase.dart';
@@ -144,7 +145,7 @@ class CashRegisterProvider with ChangeNotifier {
     }
   }
 
-  Future<CashRegisterShift?> closeShift(double countedCash, {required String pin, int? closerUserId}) async {
+  Future<CashRegisterShift?> closeShift(double countedCash, {required String pin, int? closerUserId, String? adminPin}) async {
     _clearError();
     _setLoading(true);
     try {
@@ -154,9 +155,13 @@ class CashRegisterProvider with ChangeNotifier {
         countedCash,
         pin: pin,
         closerUserId: closerUserId,
+        adminPin: adminPin,
       );
       _currentShift = null;
       return closedShift;
+    } on DifferenceRequiresAdminException {
+      _setLoading(false);
+      rethrow;
     } catch (e) {
       _errorMessage = e.toString();
       return null;

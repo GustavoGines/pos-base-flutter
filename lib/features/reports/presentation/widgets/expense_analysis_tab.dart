@@ -75,10 +75,10 @@ class _ExpenseAnalysisTabState extends State<ExpenseAnalysisTab> {
       final queryParams = _buildQueryParams(start, end);
 
       final client = context.read<ApiClient>();
-      final response = await client.get(
-        Uri.parse('$baseUrl/reports/expenses-analysis?$queryParams'),
-        headers: {'Accept': 'application/json'},
-      );
+      final uri = Uri.parse('$baseUrl/reports/expenses-analysis?$queryParams');
+      final headers = {'Accept': 'application/json'};
+      
+      final response = await client.get(uri, headers: headers);
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -120,10 +120,10 @@ class _ExpenseAnalysisTabState extends State<ExpenseAnalysisTab> {
       }
       
       final client = context.read<ApiClient>();
-      final response = await client.get(
-        Uri.parse(urlStr),
-        headers: {'Accept': type == 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'},
-      );
+      final uri = Uri.parse(urlStr);
+      final headers = {'Accept': type == 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'};
+      
+      final response = await client.get(uri, headers: headers);
 
       if (response.statusCode == 200) {
         final docsDir = await getApplicationDocumentsDirectory();
@@ -218,85 +218,90 @@ class _ExpenseAnalysisTabState extends State<ExpenseAnalysisTab> {
     return Column(
       children: [
         // Filtro de Fechas, Filtros Avanzados y Acciones
-        Container(
-          width: double.infinity,
-          padding: EdgeInsets.symmetric(
-            horizontal: MediaQuery.of(context).size.width < 500 ? 12 : 24,
-            vertical: 12,
-          ),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Wrap(
-                alignment: WrapAlignment.spaceBetween,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                spacing: 16,
-                runSpacing: 12,
+        Builder(
+          builder: (context) {
+            final isCompact = MediaQuery.of(context).size.width < 500;
+            return Container(
+              width: double.infinity,
+              padding: EdgeInsets.symmetric(
+                horizontal: isCompact ? 12 : 24,
+                vertical: isCompact ? 6 : 12,
+              ),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Wrap(
+                    alignment: WrapAlignment.spaceBetween,
                     crossAxisAlignment: WrapCrossAlignment.center,
-                    spacing: 8,
-                    runSpacing: 8,
+                    spacing: 16,
+                    runSpacing: isCompact ? 6 : 12,
                     children: [
-                      const Icon(Icons.date_range, color: Colors.blueGrey, size: 20),
-                      Text(
-                        'Desde ${DateFormat('dd/MM/yyyy').format(_startDate)} hasta ${DateFormat('dd/MM/yyyy').format(_endDate)}',
-                        style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.blueGrey),
+                      Wrap(
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: 8,
+                        runSpacing: isCompact ? 6 : 8,
+                        children: [
+                          const Icon(Icons.date_range, color: Colors.blueGrey, size: 20),
+                          Text(
+                            'Desde ${DateFormat('dd/MM/yyyy').format(_startDate)} hasta ${DateFormat('dd/MM/yyyy').format(_endDate)}',
+                            style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.blueGrey),
+                          ),
+                          OutlinedButton.icon(
+                            icon: const Icon(Icons.filter_alt_outlined, size: 16),
+                            label: const Text('Cambiar Período'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.indigo.shade600,
+                              side: BorderSide(color: Colors.indigo.shade200),
+                            ),
+                            onPressed: _selectDateRange,
+                          ),
+                          IconButton(
+                            tooltip: 'Actualizar Datos',
+                            icon: const Icon(Icons.refresh),
+                            color: Colors.blueGrey,
+                            onPressed: _fetchData,
+                          ),
+                        ],
                       ),
-                      OutlinedButton.icon(
-                        icon: const Icon(Icons.filter_alt_outlined, size: 16),
-                        label: const Text('Cambiar Período'),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.indigo.shade600,
-                          side: BorderSide(color: Colors.indigo.shade200),
-                        ),
-                        onPressed: _selectDateRange,
-                      ),
-                      IconButton(
-                        tooltip: 'Actualizar Datos',
-                        icon: const Icon(Icons.refresh),
-                        color: Colors.blueGrey,
-                        onPressed: _fetchData,
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: isCompact ? 6 : 8,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          FilledButton.icon(
+                            onPressed: _isLoading ? null : _exportExcel,
+                            icon: const Icon(Icons.file_download, size: 15),
+                            label: const Text('Exportar Excel'),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: Colors.green.shade600,
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                            ),
+                          ),
+                          FilledButton.icon(
+                            onPressed: _isLoading ? null : _exportPdf,
+                            icon: const Icon(Icons.picture_as_pdf, size: 15),
+                            label: const Text('Generar PDF'),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: Colors.red.shade600,
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      FilledButton.icon(
-                        onPressed: _isLoading ? null : _exportExcel,
-                        icon: const Icon(Icons.file_download, size: 15),
-                        label: const Text('Exportar Excel'),
-                        style: FilledButton.styleFrom(
-                          backgroundColor: Colors.green.shade600,
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                        ),
-                      ),
-                      FilledButton.icon(
-                        onPressed: _isLoading ? null : _exportPdf,
-                        icon: const Icon(Icons.picture_as_pdf, size: 15),
-                        label: const Text('Generar PDF'),
-                        style: FilledButton.styleFrom(
-                          backgroundColor: Colors.red.shade600,
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                        ),
-                      ),
-                    ],
-                  ),
+                  SizedBox(height: isCompact ? 6 : 12),
+                  const Divider(height: 1),
+                  SizedBox(height: isCompact ? 6 : 12),
+                  _buildFilterBar(),
                 ],
               ),
-              const SizedBox(height: 12),
-              const Divider(height: 1),
-              const SizedBox(height: 12),
-              _buildFilterBar(),
-            ],
-          ),
+            );
+          },
         ),
 
         // KPI y Contenido Responsivo

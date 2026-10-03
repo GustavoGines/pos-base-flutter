@@ -2,12 +2,58 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import '../../../../core/network/api_client.dart';
 import '../../../../core/utils/snack_bar_service.dart';
 
 class AdminPinDialog extends StatefulWidget {
   final String actionDescription;
 
   const AdminPinDialog({super.key, required this.actionDescription});
+
+  /// Intercepta proactivamente una acción sensible:
+  /// 1. Si el usuario es Administrador o tiene el permiso: ejecuta [onAuthorized] de inmediato.
+  /// 2. Si carece de permiso: despliega AdminPinDialog.
+  /// 3. Si el supervisor valida su PIN: envuelve la llamada a [onAuthorized] dentro de
+  ///    [ApiClient.withAdminPin], transmitiendo el header X-Admin-Pin al backend.
+  static Future<bool> protectAction(
+    BuildContext context, {
+    required String action,
+    required String permissionKey,
+    required Future<void> Function() onAuthorized,
+  }) async {
+    AuthProvider? auth;
+    ApiClient? client;
+    try {
+      auth = context.read<AuthProvider>();
+    } catch (_) {}
+    try {
+      client = context.read<ApiClient>();
+    } catch (_) {}
+
+    if (auth == null || auth.isAdmin || auth.hasPermission(permissionKey)) {
+      await onAuthorized();
+      return true;
+    }
+
+    
+
+    final pin = await showDialog<String>(
+      context: context,
+      barrierDismissible: true,
+      builder: (_) => AdminPinDialog(actionDescription: action),
+    );
+
+    if (pin == null || pin.isEmpty) {
+      return false; // Operación cancelada por el usuario
+    }
+
+    if (client != null) {
+      await client.withAdminPin(pin, onAuthorized);
+    } else {
+      await onAuthorized();
+    }
+    return true;
+  }
 
   /// Helper estático para interceptar acciones.
   /// Retorna true si:
@@ -19,13 +65,22 @@ class AdminPinDialog extends StatefulWidget {
     required String action,
     String? permissionKey,
   }) async {
-    final auth = context.read<AuthProvider>();
+    AuthProvider? auth;
+    try {
+      auth = context.read<AuthProvider>();
+    } catch (_) {}
+
+    // Si no hay provider de autenticación (ej: test unitario aislado), permitir
+    if (auth == null) return true;
 
     // Admins pasan directo siempre
     if (auth.isAdmin) return true;
 
     // Cajero con permiso específico también pasa directo
     if (permissionKey != null && auth.hasPermission(permissionKey)) return true;
+
+    // Si ya desbloqueó la pantalla con un PIN, pasa directo
+    
 
     // Sin permiso -> pedir PIN de Admin
     final result = await showDialog<String>(
@@ -35,6 +90,43 @@ class AdminPinDialog extends StatefulWidget {
     );
 
     return result != null;
+  }
+
+  /// Helper estático para interceptar acciones que necesitan inyectar el PIN en una nueva ruta.
+  /// Retorna:
+  ///   - 'ALREADY_AUTHORIZED' si el usuario ya es Admin o tiene el permiso.
+  ///   - El PIN ingresado si el usuario introdujo correctamente el PIN del Admin.
+  ///   - null si se canceló.
+  static Future<String?> verifyAndGetPin(
+    BuildContext context, {
+    required String action,
+    String? permissionKey,
+  }) async {
+    AuthProvider? auth;
+    try {
+      auth = context.read<AuthProvider>();
+    } catch (_) {}
+
+    // Si no hay provider de autenticación (ej: test unitario aislado), permitir
+    if (auth == null) return 'ALREADY_AUTHORIZED';
+
+    // Admins pasan directo siempre
+    if (auth.isAdmin) return 'ALREADY_AUTHORIZED';
+
+    // Cajero con permiso específico también pasa directo
+    if (permissionKey != null && auth.hasPermission(permissionKey)) return 'ALREADY_AUTHORIZED';
+
+    // Si ya desbloqueó la pantalla con un PIN, lo reutilizamos
+    
+
+    // Sin permiso -> pedir PIN de Admin y retornarlo
+    final result = await showDialog<String>(
+      context: context,
+      barrierDismissible: true,
+      builder: (_) => AdminPinDialog(actionDescription: action),
+    );
+
+    return result;
   }
 
   @override
@@ -117,8 +209,16 @@ class _AdminPinDialogState extends State<AdminPinDialog> {
       _onKeypadTap('del');
     }
     // Delete o Clear
-    else if (key == LogicalKeyboardKey.delete || key == LogicalKeyboardKey.escape) {
+    else if (key == LogicalKeyboardKey.delete) {
       _onKeypadTap('clr');
+    }
+    // Escape: si hay PIN ingresado lo borra; si está vacío cierra el modal
+    else if (key == LogicalKeyboardKey.escape) {
+      if (_pin.isNotEmpty) {
+        _onKeypadTap('clr');
+      } else {
+        Navigator.of(context).pop(null);
+      }
     } else {
       handled = false;
     }
@@ -149,7 +249,8 @@ class _AdminPinDialogState extends State<AdminPinDialog> {
       }
     } else {
       if (mounted) {
-        SnackBarService.error(context, 'PIN incorrecto o error de conexión.');
+        final errorMsg = provider.lastPinError ?? 'PIN incorrecto o error de conexión.';
+        SnackBarService.error(context, errorMsg);
       }
     }
 
@@ -162,8 +263,11 @@ class _AdminPinDialogState extends State<AdminPinDialog> {
       _focusNode.requestFocus();
 
       if (isAuthorized) {
-        Navigator.of(context).pop(verifiedPin);
-      }
+          try {
+            context.read<ApiClient>().markPinAsVerified(verifiedPin);
+          } catch (_) {}
+          Navigator.of(context).pop(verifiedPin);
+        }
     }
   }
 
@@ -192,63 +296,65 @@ class _AdminPinDialogState extends State<AdminPinDialog> {
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Container(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
         width: 380,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.admin_panel_settings_rounded, size: 48, color: Colors.redAccent),
-            const SizedBox(height: 16),
-            const Text('Acceso Restringido', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            Text(
-              'Ingresar PIN de Administrador para:\n${widget.actionDescription}',
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.black54),
-            ),
-            const SizedBox(height: 24),
-            SizedBox(
-              height: 16,
-              child: _isLoading
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.redAccent),
-                    )
-                  : Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: List.generate(_pinLength, (index) {
-                        final isActive = index < _pin.length;
-                        return Container(
-                          margin: const EdgeInsets.symmetric(horizontal: 6),
-                          width: 16,
-                          height: 16,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: isActive ? Colors.redAccent : Colors.grey.shade200,
-                          ),
-                        );
-                      }),
-                    ),
-            ),
-            const SizedBox(height: 24),
-            SizedBox(
-              width: 240,
-              child: GridView.count(
-                crossAxisCount: 3,
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                crossAxisSpacing: 12,
-                mainAxisSpacing: 12,
-                children: [
-                  for (var i = 1; i <= 9; i++) _buildKey(i.toString()),
-                  _buildKey('clr', icon: Icons.clear_all),
-                  _buildKey('0'),
-                  _buildKey('del', icon: Icons.backspace_outlined),
-                ],
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.admin_panel_settings_rounded, size: 44, color: Colors.redAccent),
+              const SizedBox(height: 12),
+              const Text('Acceso Restringido', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 6),
+              Text(
+                'Ingresar PIN de Administrador para:\n${widget.actionDescription}',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.black54),
               ),
-            ),
-          ],
+              const SizedBox(height: 18),
+              SizedBox(
+                height: 16,
+                child: _isLoading
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.redAccent),
+                      )
+                    : Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: List.generate(_pinLength, (index) {
+                          final isActive = index < _pin.length;
+                          return Container(
+                            margin: const EdgeInsets.symmetric(horizontal: 6),
+                            width: 14,
+                            height: 14,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: isActive ? Colors.redAccent : Colors.grey.shade200,
+                            ),
+                          );
+                        }),
+                      ),
+              ),
+              const SizedBox(height: 18),
+              SizedBox(
+                width: 240,
+                child: GridView.count(
+                  crossAxisCount: 3,
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  crossAxisSpacing: 10,
+                  mainAxisSpacing: 10,
+                  children: [
+                    for (var i = 1; i <= 9; i++) _buildKey(i.toString()),
+                    _buildKey('clr', icon: Icons.clear_all),
+                    _buildKey('0'),
+                    _buildKey('del', icon: Icons.backspace_outlined),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

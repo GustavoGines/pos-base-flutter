@@ -6,6 +6,7 @@ import '../providers/sales_history_provider.dart';
 import '../../domain/entities/sale_record.dart';
 import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
+import 'package:frontend_desktop/core/constants/app_permissions.dart';
 import '../../../users/presentation/providers/users_provider.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
@@ -821,11 +822,6 @@ class _TicketDetailPanel extends StatelessWidget {
   const _TicketDetailPanel({required this.sale, required this.provider});
 
   Future<void> _handleVoid(BuildContext context) async {
-    final authorized = await AdminPinDialog.verify(context,
-        action: 'Anular Ticket #${sale.id}', permissionKey: 'void_sales');
-    if (!authorized) return;
-    if (!context.mounted) return;
-
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -877,17 +873,24 @@ class _TicketDetailPanel extends StatelessWidget {
       return;
     }
 
-    final ok = await provider.voidSale(sale.id, shiftId: currentShiftId);
-    if (context.mounted) {
-      if (ok) {
-        SnackBarService.success(
-            context, 'Ticket #${sale.id} anulado con éxito. Stock restaurado.');
-        context.read<CatalogProvider>().fetchCriticalAlerts();
-      } else {
-        SnackBarService.error(
-            context, provider.errorMessage ?? 'Error al anular el ticket.');
-      }
-    }
+    await AdminPinDialog.protectAction(
+      context,
+      action: 'Anular Ticket #${sale.id}',
+      permissionKey: AppPermissions.voidSales,
+      onAuthorized: () async {
+        final ok = await provider.voidSale(sale.id, shiftId: currentShiftId);
+        if (context.mounted) {
+          if (ok) {
+            SnackBarService.success(
+                context, 'Ticket #${sale.id} anulado con éxito. Stock restaurado.');
+            context.read<CatalogProvider>().fetchCriticalAlerts();
+          } else {
+            SnackBarService.error(
+                context, provider.errorMessage ?? 'Error al anular el ticket.');
+          }
+        }
+      },
+    );
   }
 
   @override

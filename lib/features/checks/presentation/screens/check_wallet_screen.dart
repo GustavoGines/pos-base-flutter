@@ -4,6 +4,8 @@ import '../providers/check_provider.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'package:intl/intl.dart';
+import 'package:frontend_desktop/core/constants/app_permissions.dart';
+import 'package:frontend_desktop/features/auth/presentation/widgets/admin_pin_dialog.dart';
 
 class CheckWalletScreen extends StatefulWidget {
   const CheckWalletScreen({super.key});
@@ -35,28 +37,32 @@ class _CheckWalletScreenState extends State<CheckWalletScreen> {
   }
 
   void _updateStatus(int checkId, String status, {String? note}) {
-    final provider = context.read<CheckProvider>();
-    provider
-        .updateCheckStatus(checkId, status, endorsementNote: note)
-        .then((_) {
-      if (mounted) {
-        if (provider.error != null) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(provider.error!),
-              backgroundColor: Colors.red.shade700,
-            ),
-          );
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Estado actualizado a ${_translateStatus(status)}'),
-              backgroundColor: Colors.green.shade700,
-            ),
-          );
+    AdminPinDialog.protectAction(
+      context,
+      action: 'Modificar Estado de Cheque',
+      permissionKey: AppPermissions.endorseChecks,
+      onAuthorized: () async {
+        final provider = context.read<CheckProvider>();
+        await provider.updateCheckStatus(checkId, status, endorsementNote: note);
+        if (mounted) {
+          if (provider.error != null) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(provider.error!),
+                backgroundColor: Colors.red.shade700,
+              ),
+            );
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Estado actualizado a ${_translateStatus(status)}'),
+                backgroundColor: Colors.green.shade700,
+              ),
+            );
+          }
         }
-      }
-    });
+      },
+    );
   }
 
   void _confirmAction(

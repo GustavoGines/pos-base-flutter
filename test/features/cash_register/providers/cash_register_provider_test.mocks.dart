@@ -155,6 +155,7 @@ class MockCloseShiftUseCase extends _i1.Mock implements _i7.CloseShiftUseCase {
     double? countedCash, {
     required String? pin,
     int? closerUserId,
+    String? adminPin,
   }) =>
       (super.noSuchMethod(
         Invocation.method(
@@ -166,6 +167,7 @@ class MockCloseShiftUseCase extends _i1.Mock implements _i7.CloseShiftUseCase {
           {
             #pin: pin,
             #closerUserId: closerUserId,
+            #adminPin: adminPin,
           },
         ),
         returnValue:
@@ -180,6 +182,7 @@ class MockCloseShiftUseCase extends _i1.Mock implements _i7.CloseShiftUseCase {
             {
               #pin: pin,
               #closerUserId: closerUserId,
+              #adminPin: adminPin,
             },
           ),
         )),

@@ -95,10 +95,22 @@ class AuthRemoteDataSource {
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         return data['user'] as Map<String, dynamic>;
-      } else if (response.statusCode == 401) {
-        throw Exception('PIN incorrecto');
       } else {
-        throw Exception('Error del servidor (${response.statusCode})');
+        String? message;
+        try {
+          final data = json.decode(response.body);
+          if (data is Map && data['message'] != null) {
+            message = data['message'] as String?;
+          }
+        } catch (_) {}
+
+        if (response.statusCode == 429) {
+          throw Exception(message ?? 'Demasiados intentos de PIN. Operación bloqueada temporalmente.');
+        } else if (response.statusCode == 401) {
+          throw Exception(message ?? 'PIN incorrecto');
+        } else {
+          throw Exception(message ?? 'Error del servidor (${response.statusCode})');
+        }
       }
     } catch (e) {
       debugPrint('=== AUTHORIZE PIN ERROR: $e ===');

@@ -5,6 +5,8 @@ import '../providers/cash_register_provider.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import 'cash_shift_summary_screen.dart';
 import 'package:frontend_desktop/features/auth/presentation/providers/auth_provider.dart';
+import 'package:frontend_desktop/features/auth/presentation/widgets/admin_pin_dialog.dart';
+import '../../data/datasources/cash_register_remote_datasource.dart';
 
 class CloseShiftScreen extends StatefulWidget {
   const CloseShiftScreen({super.key});
@@ -73,23 +75,115 @@ class _CloseShiftScreenState extends State<CloseShiftScreen> {
 
     if (confirmed != true) return;
 
+    await _attemptCloseShift(countedCash, pin);
+  }
+
+  Future<void> _attemptCloseShift(double countedCash, String pin, {String? adminPin}) async {
     final provider = context.read<CashRegisterProvider>();
     final currentUser = context.read<AuthProvider>().currentUser;
     final closerUserId = currentUser?['id'] as int?;
-    final closedShift = await provider.closeShift(
-      countedCash,
-      pin: pin,
-      closerUserId: closerUserId,
-    );
-    
-    if (mounted) {
-      if (closedShift != null) {
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (_) => CashShiftSummaryScreen(closedShift: closedShift)),
-          (route) => false,
+
+    try {
+      final closedShift = await provider.closeShift(
+        countedCash,
+        pin: pin,
+        closerUserId: closerUserId,
+        adminPin: adminPin,
+      );
+
+      if (mounted) {
+        if (closedShift != null) {
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (_) => CashShiftSummaryScreen(closedShift: closedShift)),
+            (route) => false,
+          );
+        } else {
+          SnackBarService.error(context, provider.errorMessage ?? 'Error al cerrar el turno.');
+        }
+      }
+    } on DifferenceRequiresAdminException catch (e) {
+      if (!mounted) return;
+
+      // Mostrar la diferencia detectada y pedir PIN del supervisor
+      final isShortage = e.difference < 0;
+      final diffLabel = isShortage ? 'FALTANTE' : 'SOBRANTE';
+      final diffColor = isShortage ? Colors.red : Colors.green;
+
+      final supervisorPin = await showDialog<String>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.warning_amber_rounded, color: diffColor, size: 28),
+              const SizedBox(width: 8),
+              const Expanded(child: Text('Diferencia de Caja Detectada')),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Efectivo Esperado: \$${e.expectedBalance.toCurrency()}'),
+              Text('Efectivo Contado: \$${e.actualBalance.toCurrency()}'),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: diffColor.withAlpha(30),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: diffColor),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('$diffLabel:', style: TextStyle(fontWeight: FontWeight.bold, color: diffColor)),
+                    Text('\$${e.difference.abs().toCurrency()}', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: diffColor)),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Se requiere autorización de un supervisor para cerrar con diferencia.',
+                style: TextStyle(fontSize: 13, color: Colors.black54),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, null),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton.icon(
+              icon: const Icon(Icons.pin),
+              label: const Text('Ingresar PIN de Supervisor'),
+              style: FilledButton.styleFrom(backgroundColor: Colors.blue.shade800),
+              onPressed: () async {
+                Navigator.pop(ctx, '__REQUEST_PIN__');
+              },
+            ),
+          ],
+        ),
+      );
+
+      if (supervisorPin == '__REQUEST_PIN__' && mounted) {
+        // Lanzar el diálogo de PIN del admin
+        final enteredPin = await showDialog<String>(
+          context: context,
+          barrierDismissible: true,
+          builder: (_) => const AdminPinDialog(
+            actionDescription: 'Autorizar cierre con diferencia de caja',
+          ),
         );
-      } else {
-        SnackBarService.error(context, provider.errorMessage ?? 'Error al cerrar el turno.');
+
+        if (enteredPin != null && enteredPin.isNotEmpty && mounted) {
+          // Reintentar con el PIN del supervisor
+          await _attemptCloseShift(countedCash, pin, adminPin: enteredPin);
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        SnackBarService.error(context, e.toString().replaceFirst('Exception: ', ''));
       }
     }
   }

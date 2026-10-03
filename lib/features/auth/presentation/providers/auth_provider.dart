@@ -21,6 +21,7 @@ class AuthProvider with ChangeNotifier {
   Map<String, dynamic>? _currentUser;
   bool _isLoading = false;
   String? _errorMessage;
+  String? _lastPinError;
 
   /// Token de sesión activo (UUID 64 chars).
   /// NULL = sin sesión activa.
@@ -35,6 +36,7 @@ class AuthProvider with ChangeNotifier {
   Map<String, dynamic>? get currentUser => _currentUser;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
+  String? get lastPinError => _lastPinError;
   String? get sessionToken => _sessionToken;
   bool get requiresPinChange => _requiresPinChange;
 
@@ -42,12 +44,12 @@ class AuthProvider with ChangeNotifier {
   bool get isAdmin => _currentUser?['role'] == 'admin';
 
   /// Verifica si el usuario actual tiene un permiso específico.
-  /// Los Admins siempre tienen todos los permisos.
+  /// Los Admins siempre tienen todos los permisos. También soporta el comodín 'all'.
   bool hasPermission(String key) {
     if (isAdmin) return true;
     final perms = _currentUser?['permissions'];
-    if (perms == null) return false;
-    return (perms as List).contains(key);
+    if (perms == null || perms is! List) return false;
+    return perms.contains('all') || perms.contains(key);
   }
 
   /// Restaura el token desde SharedPreferences y lo valida contra el servidor.
@@ -176,10 +178,12 @@ class AuthProvider with ChangeNotifier {
   // Retorna el Map del usuario si es correcto, null si falla.
   // ──────────────────────────────────────────────────────────────────────────
   Future<Map<String, dynamic>?> authorizePin(String pin) async {
+    _lastPinError = null;
     try {
       final user = await repository.authorizePin(pin);
       return user;
     } catch (e) {
+      _lastPinError = e.toString().replaceFirst('Exception: ', '');
       return null;
     }
   }
@@ -213,6 +217,7 @@ class AuthProvider with ChangeNotifier {
   Future<void> _clearToken() async {
     _sessionToken = null;
     _updateApiClientToken(null);
+    apiClient?.setGlobalEphemeralPin(null);
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_kSessionTokenKey);
     debugPrint('=== AUTH: Token eliminado de SharedPreferences ===');

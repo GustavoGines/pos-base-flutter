@@ -5,6 +5,8 @@ import '../../models/customer_model.dart';
 import '../../providers/customer_provider.dart';
 import '../../../settings/presentation/providers/settings_provider.dart';
 import '../../../cash_register/presentation/providers/cash_register_provider.dart';
+import '../../../../core/constants/app_permissions.dart';
+import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
 
 class _PaymentLine {
   String method;
@@ -207,45 +209,52 @@ class _PaymentDialogState extends State<PaymentDialog> {
       return;
     }
 
-    bool success = false;
-    setState(() => _isSubmitting = true);
+    await AdminPinDialog.protectAction(
+      context,
+      action: widget.isRefund ? 'Registrar Reintegro' : 'Registrar Pago',
+      permissionKey: AppPermissions.collectCustomerDebt,
+      onAuthorized: () async {
+        bool success = false;
+        setState(() => _isSubmitting = true);
 
-    try {
-      success = await context.read<CustomerProvider>().registerPayment(
-            customerId: widget.customer.id,
-            payments: paymentsPayload,
-            description: _descriptionController.text.trim(),
-            saleIds: _paymentType == 'specific' ? _selectedSaleIds : const [],
-            cashShiftId: context.read<CashRegisterProvider>().currentShift?.id,
-            isRefund: widget.isRefund,
-          );
+        try {
+          success = await context.read<CustomerProvider>().registerPayment(
+                customerId: widget.customer.id,
+                payments: paymentsPayload,
+                description: _descriptionController.text.trim(),
+                saleIds: _paymentType == 'specific' ? _selectedSaleIds : const [],
+                cashShiftId: context.read<CashRegisterProvider>().currentShift?.id,
+                isRefund: widget.isRefund,
+              );
 
-      if (success && mounted) {
-        // Prevent synchronous pop while mouse_tracker is handling device updates
-        Future.microtask(() {
+          if (success && mounted) {
+            // Prevent synchronous pop while mouse_tracker is handling device updates
+            Future.microtask(() {
+              if (mounted) {
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                      content: Text(widget.isRefund
+                          ? 'Reintegro registrado correctamente'
+                          : 'Pago registrado correctamente'),
+                      backgroundColor: Colors.green),
+                );
+              }
+            });
+          }
+        } catch (e) {
           if (mounted) {
-            Navigator.pop(context);
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                  content: Text(widget.isRefund
-                      ? 'Reintegro registrado correctamente'
-                      : 'Pago registrado correctamente'),
-                  backgroundColor: Colors.green),
+              SnackBar(content: Text(e.toString()), backgroundColor: Colors.red),
             );
           }
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.toString()), backgroundColor: Colors.red),
-        );
-      }
-    } finally {
-      if (mounted && !success) {
-        setState(() => _isSubmitting = false);
-      }
-    }
+        } finally {
+          if (mounted && !success) {
+            setState(() => _isSubmitting = false);
+          }
+        }
+      },
+    );
   }
 
   @override

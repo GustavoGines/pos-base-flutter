@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:frontend_desktop/core/constants/app_permissions.dart';
 import 'package:frontend_desktop/features/auth/presentation/widgets/admin_pin_dialog.dart';
 import 'package:frontend_desktop/core/presentation/widgets/shared_user_menu.dart';
 import 'package:provider/provider.dart';
@@ -138,7 +139,6 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                                       icon: Icons.receipt_long_outlined,
                                       color: Colors.blueAccent,
                                       route: '/sales-history',
-                                      permissionKey: 'view_global_history',
                                     ),
                                     if (canAccessQuotes)
                                       _buildMenuItem(
@@ -147,6 +147,7 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                                         icon: Icons.description_outlined,
                                         color: Colors.indigo.shade700,
                                         route: '/quotes',
+                                        permissionKey: AppPermissions.manageQuotes,
                                       ),
                                     _buildMenuItem(
                                       context: context,
@@ -154,7 +155,7 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                                       icon: Icons.inventory_2_outlined,
                                       color: Colors.deepPurple,
                                       route: '/catalog',
-                                      permissionKey: 'manage_catalog',
+                                      permissionKey: AppPermissions.manageCatalog,
                                     ),
                                     _buildMenuItem(
                                       context: context,
@@ -162,6 +163,7 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                                       icon: canAccessSuppliers ? Icons.local_shipping_outlined : Icons.lock_outline,
                                       color: Colors.brown.shade600,
                                       route: '/suppliers',
+                                      permissionKey: AppPermissions.viewSuppliers,
                                       isLocked: !canAccessSuppliers,
                                       lockedTitle: 'Proveedores PREMIUM',
                                       lockedFeatures: [
@@ -187,6 +189,7 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                                       icon: canAccessExpenses ? Icons.receipt_long_outlined : Icons.lock_outline,
                                       color: Colors.blue.shade700,
                                       route: '/cash-movements',
+                                      permissionKey: AppPermissions.viewExpenses,
                                       isLocked: !canAccessExpenses,
                                       lockedTitle: 'Gestión de Gastos PREMIUM',
                                       lockedFeatures: [
@@ -201,6 +204,7 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                                       icon: canAccessCurrentAccounts ? Icons.account_balance_wallet_outlined : Icons.lock_outline,
                                       color: Colors.orange.shade700,
                                       route: '/cuentas-corrientes',
+                                      permissionKey: AppPermissions.viewCustomersAccount,
                                       isLocked: !canAccessCurrentAccounts,
                                       lockedTitle: 'Cuentas Corrientes PREMIUM',
                                       lockedFeatures: [
@@ -216,6 +220,7 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                                       icon: canAccessChecks ? Icons.account_balance_wallet : Icons.lock_outline,
                                       color: Colors.green.shade700,
                                       route: '/checks',
+                                      permissionKey: AppPermissions.viewChecks,
                                       isLocked: !canAccessChecks,
                                       lockedTitle: 'Cartera de Cheques PREMIUM',
                                       lockedFeatures: [
@@ -231,6 +236,7 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                                       icon: canAccessAdvancedReports ? Icons.bar_chart : Icons.lock_outline,
                                       color: Colors.purple.shade700,
                                       route: '/reports',
+                                      permissionKey: AppPermissions.viewReports,
                                       isLocked: !canAccessAdvancedReports,
                                       lockedTitle: 'Reportes Gerenciales PREMIUM',
                                       lockedFeatures: [
@@ -259,6 +265,7 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                                         icon: Icons.airport_shuttle,
                                         color: Colors.green.shade800,
                                         route: '/delivery-notes',
+                                        permissionKey: AppPermissions.manageDeliveryNotes,
                                       ),
                                       // Se pueden agregar más módulos aquí como Acopios
                                     ],
@@ -387,11 +394,16 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                 _showUpgradeDialog(context, title: lockedTitle, features: lockedFeatures);
                 return;
               }
+              String? unlockedPin;
               if (permissionKey != null) {
-                final authorized = await AdminPinDialog.verify(context, action: label, permissionKey: permissionKey);
-                if (!authorized || !context.mounted) return;
+                final resultPin = await AdminPinDialog.verifyAndGetPin(context, action: label, permissionKey: permissionKey);
+                if (resultPin == null || !context.mounted) return;
+                unlockedPin = resultPin == 'ALREADY_AUTHORIZED' ? null : resultPin;
               }
-              Navigator.of(context).pushReplacementNamed(route);
+              Navigator.of(context).pushReplacementNamed(
+                route,
+                arguments: {'unlocked_pin': unlockedPin},
+              );
             },
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 8.0),

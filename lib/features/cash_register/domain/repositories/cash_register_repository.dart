@@ -6,5 +6,5 @@ abstract class CashRegisterRepository {
   Future<List<CashRegisterShift>> getAllShifts();
   Future<CashRegisterShift?> getCurrentShift({int? registerId});
   Future<CashRegisterShift> openShift(double openingBalance, int userId, [int? registerId]);
-  Future<CashRegisterShift> closeShift(int shiftId, double countedCash, {required String pin, int? closerUserId});
+  Future<CashRegisterShift> closeShift(int shiftId, double countedCash, {required String pin, int? closerUserId, String? adminPin});
 }

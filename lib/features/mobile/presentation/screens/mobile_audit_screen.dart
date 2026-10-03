@@ -14,6 +14,8 @@ import 'package:frontend_desktop/features/settings/presentation/providers/settin
 import 'package:frontend_desktop/features/suppliers/providers/supplier_provider.dart';
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../../../core/constants/app_permissions.dart';
+import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
 
 class MobileAuditScreen extends StatefulWidget {
   const MobileAuditScreen({super.key});
@@ -159,49 +161,84 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
       return;
     }
 
-    setState(() => _isProcessing = true);
+    final isPriceChanged = (newPrice - _scannedProduct!.sellingPrice).abs() > 0.001;
+    final isStockChanged = addStock != null && addStock > 0;
 
-    try {
-      final catalogProvider = context.read<CatalogProvider>();
-      final payload = <String, dynamic>{
-        'selling_price': newPrice,
-        'cost_price': _scannedProduct!.costPrice,
-        'stock': _scannedProduct!.stock,
-      };
+    Future<void> executeSave() async {
+      setState(() => _isProcessing = true);
 
-      // ✅ FIX: Si el empleado llenó "Sumar Stock (+)", usamos incremento atómico.
-      // Si lo dejó vacío, solo actualizamos el precio (sin tocar el stock).
-      if (addStock != null && addStock > 0) {
-        payload['add_stock'] = addStock;
-      }
+      try {
+        final catalogProvider = context.read<CatalogProvider>();
+        final payload = <String, dynamic>{
+          'selling_price': newPrice,
+          'cost_price': _scannedProduct!.costPrice,
+          'stock': _scannedProduct!.stock,
+        };
 
-      final success = await catalogProvider.updateProduct(
-        _scannedProduct!.id,
-        payload,
-      );
-
-      if (success && mounted) {
-        final msg = (addStock != null && addStock > 0)
-            ? '✅ Precio actualizado y +${addStock.toStringAsFixed(0)} u. sumadas al stock'
-            : '✅ Precio actualizado';
-        SnackBarService.success(context, msg);
-
-        // En lugar de volver a la cámara, vaciamos el campo de suma rápida
-        setState(() {
-          _addStockQuickCtrl.clear();
-        });
-        
-        // Refrescar el producto desde la base de datos para mostrar los datos reales actualizados
-        if (_scannedProduct!.barcode != null && _scannedProduct!.barcode!.isNotEmpty) {
-          _searchProduct(_scannedProduct!.barcode!);
+        // Si el empleado llenó "Sumar Stock (+)", usamos incremento atómico.
+        // Si lo dejó vacío, solo actualizamos el precio (sin tocar el stock).
+        if (addStock != null && addStock > 0) {
+          payload['add_stock'] = addStock;
         }
-      } else if (mounted) {
-        SnackBarService.error(context, catalogProvider.errorMessage ?? 'Error desconocido al guardar');
+
+        final success = await catalogProvider.updateProduct(
+          _scannedProduct!.id,
+          payload,
+        );
+
+        if (success && mounted) {
+          final msg = (addStock != null && addStock > 0)
+              ? '✅ Precio actualizado y +${addStock.toStringAsFixed(0)} u. sumadas al stock'
+              : '✅ Precio actualizado';
+          SnackBarService.success(context, msg);
+
+          // En lugar de volver a la cámara, vaciamos el campo de suma rápida
+          setState(() {
+            _addStockQuickCtrl.clear();
+          });
+          
+          // Refrescar el producto desde la base de datos para mostrar los datos reales actualizados
+          if (_scannedProduct!.barcode != null && _scannedProduct!.barcode!.isNotEmpty) {
+            _searchProduct(_scannedProduct!.barcode!);
+          }
+        } else if (mounted) {
+          SnackBarService.error(context, catalogProvider.errorMessage ?? 'Error desconocido al guardar');
+        }
+      } catch (e) {
+        if (mounted) SnackBarService.error(context, 'Error al guardar: $e');
+      } finally {
+        if (mounted) setState(() => _isProcessing = false);
       }
-    } catch (e) {
-      if (mounted) SnackBarService.error(context, 'Error al guardar: $e');
-    } finally {
-      if (mounted) setState(() => _isProcessing = false);
+    }
+
+    if (isPriceChanged) {
+      final authorized = await AdminPinDialog.protectAction(
+        context,
+        action: 'Modificar Precio de Catálogo',
+        permissionKey: AppPermissions.manageCatalog,
+        onAuthorized: () async {
+          if (isStockChanged) {
+            await AdminPinDialog.protectAction(
+              context,
+              action: 'Ajustar Stock de Inventario',
+              permissionKey: AppPermissions.adjustStock,
+              onAuthorized: executeSave,
+            );
+          } else {
+            await executeSave();
+          }
+        },
+      );
+      if (!authorized) return;
+    } else if (isStockChanged) {
+      await AdminPinDialog.protectAction(
+        context,
+        action: 'Ajustar Stock de Inventario',
+        permissionKey: AppPermissions.adjustStock,
+        onAuthorized: executeSave,
+      );
+    } else {
+      await executeSave();
     }
   }
 

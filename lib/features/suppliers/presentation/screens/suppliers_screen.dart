@@ -8,6 +8,8 @@ import '../../../cash_register/presentation/providers/cash_register_provider.dar
 import '../../../cash_movements/presentation/widgets/movement_form_dialog.dart';
 import '../widgets/supplier_invoice_form_dialog.dart';
 import 'supplier_current_account_screen.dart';
+import '../../../../core/constants/app_permissions.dart';
+import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
 
 class SuppliersScreen extends StatefulWidget {
   const SuppliersScreen({super.key});
@@ -108,20 +110,27 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
     );
 
     if (confirm == true && mounted) {
-      try {
-        await context.read<SupplierProvider>().deleteSupplier(id);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Proveedor eliminado con éxito'), backgroundColor: Colors.green),
-          );
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
-          );
-        }
-      }
+      await AdminPinDialog.protectAction(
+        context,
+        action: 'Eliminar Proveedor $name',
+        permissionKey: AppPermissions.manageCatalog,
+        onAuthorized: () async {
+          try {
+            await context.read<SupplierProvider>().deleteSupplier(id);
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Proveedor eliminado con éxito'), backgroundColor: Colors.green),
+              );
+            }
+          } catch (e) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+              );
+            }
+          }
+        },
+      );
     }
   }
 

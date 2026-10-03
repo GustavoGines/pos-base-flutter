@@ -16,6 +16,7 @@ import '../../../../core/providers/local_terminal_provider.dart';
 import '../../../settings/presentation/providers/settings_provider.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
 import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
+import '../../../../core/constants/app_permissions.dart';
 import '../widgets/expense_categories_dialog.dart';
 
 class CashMovementsScreen extends StatefulWidget {
@@ -216,42 +217,35 @@ class _CashMovementsScreenState extends State<CashMovementsScreen> {
   }
 
   Future<void> _voidMovement(dynamic movement) async {
-    final auth = context.read<AuthProvider>();
-    String adminPin = '';
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Confirmar Anulación'),
+        content: Text('¿Está seguro de anular este movimiento de \$${movement.amount}?\n\nEsta acción revertirá los saldos y enviará el registro a la papelera.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton.icon(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade700),
+            onPressed: () => Navigator.pop(ctx, true),
+            icon: const Icon(Icons.delete_forever, size: 18),
+            label: const Text('Anular'),
+          ),
+        ],
+      ),
+    );
 
-    if (!auth.isAdmin && !auth.hasPermission('anular_gastos')) {
-      final pin = await showDialog<String>(
-        context: context,
-        builder: (_) => const AdminPinDialog(actionDescription: 'Anular Movimiento de Caja'),
-      );
-      if (pin == null) return;
-      adminPin = pin;
-    }
-    
-    if (mounted) {
-      final confirm = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Confirmar Anulación'),
-          content: Text('¿Está seguro de anular este movimiento de \$${movement.amount}?\n\nEsta acción revertirá los saldos y enviará el registro a la papelera.'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancelar'),
-            ),
-            FilledButton.icon(
-              style: FilledButton.styleFrom(backgroundColor: Colors.red.shade700),
-              onPressed: () => Navigator.pop(ctx, true),
-              icon: const Icon(Icons.delete_forever, size: 18),
-              label: const Text('Anular'),
-            ),
-          ],
-        ),
-      );
+    if (confirm != true || !mounted) return;
 
-      if (confirm == true && mounted) {
+    await AdminPinDialog.protectAction(
+      context,
+      action: 'Anular Movimiento de Caja',
+      permissionKey: AppPermissions.deleteCashMovements,
+      onAuthorized: () async {
         try {
-          await context.read<CashMovementProvider>().deleteMovement(movement.id, adminPin: adminPin);
+          await context.read<CashMovementProvider>().deleteMovement(movement.id);
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Movimiento anulado correctamente.')));
           }
@@ -260,8 +254,8 @@ class _CashMovementsScreenState extends State<CashMovementsScreen> {
             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Error al anular movimiento.'), backgroundColor: Colors.red));
           }
         }
-      }
-    }
+      },
+    );
   }
 
   Future<void> _exportExcel() async {
@@ -400,7 +394,9 @@ class _CashMovementsScreenState extends State<CashMovementsScreen> {
                         tooltip: 'Actualizar',
                         icon: const Icon(Icons.refresh),
                         color: Colors.blueGrey,
-                        onPressed: () => provider.fetchMovements(refresh: true, all: provider.currentAllFilter),
+                        onPressed: () {
+                          provider.fetchMovements(refresh: true, all: provider.currentAllFilter);
+                        },
                       ),
                     ],
                   ),
@@ -410,7 +406,14 @@ class _CashMovementsScreenState extends State<CashMovementsScreen> {
                     children: [
                       TextButton.icon(
                         onPressed: () {
-                          ExpenseCategoriesDialog.show(context);
+                          AdminPinDialog.protectAction(
+                            context,
+                            action: 'Gestionar Categorías de Gasto',
+                            permissionKey: AppPermissions.manageExpenseCategories,
+                            onAuthorized: () async {
+                              ExpenseCategoriesDialog.show(context);
+                            },
+                          );
                         },
                         icon: const Icon(Icons.category),
                         label: const Text('Categorías de Gasto'),

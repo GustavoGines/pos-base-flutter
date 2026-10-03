@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../models/customer_model.dart';
 import '../../providers/customer_provider.dart';
 import 'package:frontend_desktop/features/auth/presentation/widgets/admin_pin_dialog.dart';
+import 'package:frontend_desktop/core/constants/app_permissions.dart';
 
 class CustomerFormDialog extends StatefulWidget {
   final Customer? customer; // Null = Nuevo, No-null = Editar
@@ -46,62 +47,56 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
 
     setState(() => _isSubmitting = true);
 
-    try {
-      final payload = {
-        'name': _nameController.text.trim(),
-        'document_number': _documentController.text.trim(),
-        'phone': _phoneController.text.trim(),
-        'credit_limit':
-            double.tryParse(_creditLimitController.text.trim()) ?? 0.0,
-        'delivery_address': _deliveryAddressController.text.trim(),
-        'is_internal_account': _isInternalAccount,
-      };
+    await AdminPinDialog.protectAction(
+      context,
+      action: widget.customer == null ? 'Crear Cliente' : 'Editar Cliente',
+      permissionKey: AppPermissions.manageCustomers,
+      onAuthorized: () async {
+        try {
+          final payload = {
+            'name': _nameController.text.trim(),
+            'document_number': _documentController.text.trim(),
+            'phone': _phoneController.text.trim(),
+            'credit_limit':
+                double.tryParse(_creditLimitController.text.trim()) ?? 0.0,
+            'delivery_address': _deliveryAddressController.text.trim(),
+            'is_internal_account': _isInternalAccount,
+          };
 
-      bool success;
-      if (widget.customer == null) {
-        success =
-            await context.read<CustomerProvider>().createCustomer(payload);
-      } else {
-        final newCreditLimit = payload['credit_limit'] as double;
-        final oldCreditLimit = widget.customer!.creditLimit;
+          bool success;
+          if (widget.customer == null) {
+            success =
+                await context.read<CustomerProvider>().createCustomer(payload);
+          } else {
+            success = await context
+                .read<CustomerProvider>()
+                .updateCustomer(widget.customer!.id, payload);
+          }
 
-        if (newCreditLimit != oldCreditLimit) {
-          final isAuthorized = await AdminPinDialog.verify(context,
-              action: 'Modificar límite de crédito del cliente');
-          if (!isAuthorized) {
+          if (success && mounted) {
+            Navigator.pop(context);
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                  content: Text(widget.customer == null
+                      ? 'Cliente creado exitosamente'
+                      : 'Cliente actualizado exitosamente'),
+                  backgroundColor: Colors.green),
+            );
+          }
+        } catch (e) {
+          if (mounted) {
+            final msg = e.toString().replaceAll('Exception: ', '');
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(msg), backgroundColor: Colors.red),
+            );
+          }
+        } finally {
+          if (mounted) {
             setState(() => _isSubmitting = false);
-            return;
           }
         }
-
-        if (!mounted) return;
-        success = await context
-            .read<CustomerProvider>()
-            .updateCustomer(widget.customer!.id, payload);
-      }
-
-      if (success && mounted) {
-        Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text(widget.customer == null
-                  ? 'Cliente creado exitosamente'
-                  : 'Cliente actualizado exitosamente'),
-              backgroundColor: Colors.green),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        final msg = e.toString().replaceAll('Exception: ', '');
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(msg), backgroundColor: Colors.red),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isSubmitting = false);
-      }
-    }
+      },
+    );
   }
 
   @override

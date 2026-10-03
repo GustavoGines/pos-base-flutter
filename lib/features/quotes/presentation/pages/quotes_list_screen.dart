@@ -14,6 +14,8 @@ import 'quote_screen.dart';
 import 'package:frontend_desktop/core/presentation/widgets/print_format_selector.dart';
 import 'package:frontend_desktop/core/utils/receipt_printer_service.dart';
 import 'package:frontend_desktop/core/providers/local_terminal_provider.dart';
+import 'package:frontend_desktop/core/constants/app_permissions.dart';
+import 'package:frontend_desktop/features/auth/presentation/widgets/admin_pin_dialog.dart';
 
 // ─── Utilidades de estado ────────────────────────────────────────────────────
 
@@ -172,15 +174,23 @@ class _QuotesListScreenState extends State<QuotesListScreen>
       ),
     );
     if (confirmed != true || !mounted) return;
-    setState(() => _bulkLoading = true);
-    final provider = context.read<QuoteProvider>();
-    for (final q in toDelete) {
-      await provider.deleteQuote(q.id);
-    }
-    if (!mounted) return;
-    setState(() { _bulkLoading = false; _selected.clear(); });
-    await _loadData();
-    if (mounted) SnackBarService.success(context, '${toDelete.length} presupuesto(s) eliminados.');
+
+    await AdminPinDialog.protectAction(
+      context,
+      action: 'Eliminar presupuestos en lote',
+      permissionKey: AppPermissions.manageQuotes,
+      onAuthorized: () async {
+        setState(() => _bulkLoading = true);
+        final provider = context.read<QuoteProvider>();
+        for (final q in toDelete) {
+          await provider.deleteQuote(q.id);
+        }
+        if (!mounted) return;
+        setState(() { _bulkLoading = false; _selected.clear(); });
+        await _loadData();
+        if (mounted) SnackBarService.success(context, '${toDelete.length} presupuesto(s) eliminados.');
+      },
+    );
   }
 
   void _openQuoteCreation() {
@@ -445,9 +455,16 @@ class _QuotesListScreenState extends State<QuotesListScreen>
                     ),
                   ),
                   const SizedBox(width: 14),
-                  Text(
-                    'Seleccionar todo',
-                    style: TextStyle(color: Colors.grey.shade700, fontWeight: FontWeight.bold, fontSize: 14),
+                  InkWell(
+                    onTap: () => _selectAll(provider.quotes),
+                    borderRadius: BorderRadius.circular(4),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
+                      child: Text(
+                        'Seleccionar todo',
+                        style: TextStyle(color: Colors.grey.shade700, fontWeight: FontWeight.bold, fontSize: 14),
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -936,19 +953,26 @@ class _QuoteActionSheetState extends State<_QuoteActionSheet> {
 
     if (confirmed != true || !mounted) return;
 
-    setState(() => _loadingDelete = true);
-    final success = await context.read<QuoteProvider>().deleteQuote(widget.quote.id);
-    if (!mounted) return;
+    await AdminPinDialog.protectAction(
+      context,
+      action: 'Eliminar presupuesto #${widget.quote.quoteNumber}',
+      permissionKey: AppPermissions.manageQuotes,
+      onAuthorized: () async {
+        setState(() => _loadingDelete = true);
+        final success = await context.read<QuoteProvider>().deleteQuote(widget.quote.id);
+        if (!mounted) return;
 
-    if (success) {
-      widget.onRefresh();
-      Navigator.pop(context);
-      SnackBarService.success(context, 'Presupuesto eliminado.');
-    } else {
-      setState(() => _loadingDelete = false);
-      final msg = context.read<QuoteProvider>().errorMessage ?? 'Error al eliminar.';
-      SnackBarService.error(context, msg);
-    }
+        if (success) {
+          widget.onRefresh();
+          Navigator.pop(context);
+          SnackBarService.success(context, 'Presupuesto eliminado.');
+        } else {
+          setState(() => _loadingDelete = false);
+          final msg = context.read<QuoteProvider>().errorMessage ?? 'Error al eliminar.';
+          SnackBarService.error(context, msg);
+        }
+      },
+    );
   }
 
   @override

@@ -29,6 +29,9 @@ import 'core/presentation/widgets/license_guard.dart';
 import 'core/presentation/widgets/plan_upgrade_dialog.dart';
 import 'core/network/api_client.dart';
 import 'core/utils/receipt_printer_service.dart';
+import 'core/constants/app_permissions.dart';
+import 'core/presentation/widgets/permission_guard.dart';
+import 'features/auth/presentation/widgets/admin_pin_dialog.dart';
 
 // Screens
 import 'features/settings/presentation/pages/settings_screen.dart';
@@ -458,6 +461,20 @@ class _MainAppState extends State<MainApp> {
         if (ctx != null && ctx.mounted && !_isShowingSessionDialog) {
           _handleGlobalSessionExpired(ctx, authProv);
         }
+      };
+
+      // Intercepta Error 403 (Permiso Denegado / Descuento no autorizado) y solicita PIN de Administrador
+      authProv.apiClient?.onPermissionDenied = (reason) async {
+        final ctx = navigatorKey.currentContext;
+        if (ctx == null || !ctx.mounted) return null;
+
+        return await showDialog<String>(
+          context: ctx,
+          barrierDismissible: true,
+          builder: (_) => AdminPinDialog(
+            actionDescription: reason ?? 'Autorización de Administrador',
+          ),
+        );
       };
     });
   }
@@ -982,14 +999,31 @@ class _MainAppState extends State<MainApp> {
             ),
         '/pos': (context) => const PosScreen(),
         '/close-shift': (context) => const CloseShiftScreen(),
-        '/catalog': (context) => const CatalogScreen(),
+        '/catalog': (context) => const PermissionGuard(
+              permissionKey: AppPermissions.manageCatalog,
+              child: CatalogScreen(),
+            ),
         '/sales-history': (context) => const SalesHistoryScreen(),
-        '/general-audit': (context) => const GeneralAuditScreen(),
-        '/users': (context) => const UsersManagerScreen(),
-        '/settings': (context) => const SettingsScreen(),
-        '/settings/registers': (context) =>
-            const CashRegisterManagementScreen(),
-        '/cuentas-corrientes': (context) => const CustomersScreen(),
+        '/general-audit': (context) => const PermissionGuard(
+              permissionKey: AppPermissions.manageShifts,
+              child: GeneralAuditScreen(),
+            ),
+        '/users': (context) => const PermissionGuard(
+              permissionKey: AppPermissions.manageUsers,
+              child: UsersManagerScreen(),
+            ),
+        '/settings': (context) => const PermissionGuard(
+              permissionKey: AppPermissions.manageSettings,
+              child: SettingsScreen(),
+            ),
+        '/settings/registers': (context) => const PermissionGuard(
+              permissionKey: AppPermissions.manageSettings,
+              child: CashRegisterManagementScreen(),
+            ),
+        '/cuentas-corrientes': (context) => const PermissionGuard(
+              permissionKey: AppPermissions.viewCustomersAccount,
+              child: CustomersScreen(),
+            ),
         '/checks': (context) {
           final settings = context.watch<SettingsProvider>().settings;
           if (settings?.features.checks != true) {
@@ -1012,22 +1046,46 @@ class _MainAppState extends State<MainApp> {
                 backgroundColor: Color(0xFF1E2D45),
                 body: Center(child: CircularProgressIndicator()));
           }
-          return const CheckWalletScreen();
+          return const PermissionGuard(
+            permissionKey: AppPermissions.viewChecks,
+            child: CheckWalletScreen(),
+          );
         },
-        '/trash': (context) => const TrashScreen(),
+        '/trash': (context) => const PermissionGuard(
+              permissionKey: AppPermissions.manageTrash,
+              child: TrashScreen(),
+            ),
         // [hardware_store]
-        '/quotes': (context) => const QuotesListScreen(),
-        '/reports': (context) => const ReportsScreen(),
+        '/quotes': (context) => const PermissionGuard(
+              permissionKey: AppPermissions.manageQuotes,
+              child: QuotesListScreen(),
+            ),
+        '/reports': (context) => const PermissionGuard(
+              permissionKey: AppPermissions.viewReports,
+              child: ReportsScreen(),
+            ),
         // [logistics]
-        '/delivery-notes': (context) => const LogisticsDashboardScreen(),
+        '/delivery-notes': (context) => const PermissionGuard(
+              permissionKey: AppPermissions.manageDeliveryNotes,
+              child: LogisticsDashboardScreen(),
+            ),
         // [suppliers]
-        '/suppliers': (context) => const SuppliersScreen(),
+        '/suppliers': (context) => const PermissionGuard(
+              permissionKey: AppPermissions.viewSuppliers,
+              child: SuppliersScreen(),
+            ),
         // [cash movements]
-        '/cash-movements': (context) => const CashMovementsScreen(),
+        '/cash-movements': (context) => const PermissionGuard(
+              permissionKey: AppPermissions.viewExpenses,
+              child: CashMovementsScreen(),
+            ),
         // [mobile]
         '/mobile-scanner': (context) => const MobileScannerScreen(),
         '/mobile-audit': (context) => const MobileAuditScreen(),
-        '/mobile-dashboard': (context) => const MobileDashboardScreen(),
+        '/mobile-dashboard': (context) => const PermissionGuard(
+              permissionKey: AppPermissions.viewReports,
+              child: MobileDashboardScreen(),
+            ),
       },
     );
   }

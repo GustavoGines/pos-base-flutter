@@ -18,6 +18,7 @@ import 'dart:convert';
 import 'package:frontend_desktop/core/config/app_config.dart';
 import '../../../suppliers/providers/supplier_provider.dart';
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
+import 'package:frontend_desktop/core/constants/app_permissions.dart';
 
 class CatalogScreen extends StatefulWidget {
   const CatalogScreen({super.key});
@@ -1119,9 +1120,20 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
         'vencimiento_dias': int.parse(_expiryCtrl.text.trim()),
     };
 
-    final bool ok = _isEditing
-        ? await widget.provider.updateProduct(widget.product!.id, data)
-        : await widget.provider.createProduct(data);
+    bool ok = false;
+
+    final hasPermission = await AdminPinDialog.protectAction(
+      context,
+      action: _isEditing ? 'Editar Producto' : 'Crear Producto',
+      permissionKey: AppPermissions.manageCatalog,
+      onAuthorized: () async {
+        ok = _isEditing
+            ? await widget.provider.updateProduct(widget.product!.id, data)
+            : await widget.provider.createProduct(data);
+      },
+    );
+
+    if (!hasPermission) return;
 
     if (mounted) {
       if (ok) {
@@ -1951,78 +1963,87 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
+        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        titlePadding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+        contentPadding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+        actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         title: Row(
           children: [
             Icon(Icons.warning_amber_rounded, color: Colors.orange.shade800),
             const SizedBox(width: 8),
-            const Text('Confirmar Aumento'),
+            const Expanded(
+              child: Text('Confirmar Aumento'),
+            ),
           ],
         ),
-        content: SizedBox(
-          width: 450,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text.rich(
-                TextSpan(
-                  style: Theme.of(ctx).textTheme.bodyMedium,
-                  children: [
-                    const TextSpan(text: 'Se actualizarán los precios de '),
-                    TextSpan(
-                      text: '$affectedCount productos',
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    const TextSpan(text: ' aplicando un '),
-                    TextSpan(
-                      text: '${pct >= 0 ? '+' : ''}${pct.toStringAsFixed(1)}%',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: pct >= 0 ? Colors.deepOrange.shade700 : Colors.red.shade700,
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 450),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text.rich(
+                  TextSpan(
+                    style: Theme.of(ctx).textTheme.bodyMedium,
+                    children: [
+                      const TextSpan(text: 'Se actualizarán los precios de '),
+                      TextSpan(
+                        text: '$affectedCount productos',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
                       ),
-                    ),
-                    const TextSpan(text: '.'),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-              const Text('Ejemplos de cómo quedarán:', style: TextStyle(fontWeight: FontWeight.bold)),
-              const SizedBox(height: 8),
-              Container(
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey.shade300),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: ListView.separated(
-                  shrinkWrap: true,
-                  itemCount: examples.length,
-                  separatorBuilder: (_, __) => Divider(height: 1, color: Colors.grey.shade300),
-                  itemBuilder: (_, i) {
-                    final ex = examples[i];
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            flex: 2,
-                            child: Text(ex['name'], overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12)),
-                          ),
-                          Expanded(
-                            flex: 1,
-                            child: Text('\$${(num.tryParse(ex['old_price'].toString()) ?? 0).toStringAsFixed(2)}', style: const TextStyle(fontSize: 12, decoration: TextDecoration.lineThrough, color: Colors.grey)),
-                          ),
-                          const Icon(Icons.arrow_forward, size: 14, color: Colors.grey),
-                          Expanded(
-                            flex: 1,
-                            child: Text(' \$${(num.tryParse(ex['new_price'].toString()) ?? 0).toStringAsFixed(2)}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.green)),
-                          ),
-                        ],
+                      const TextSpan(text: ' aplicando un '),
+                      TextSpan(
+                        text: '${pct >= 0 ? '+' : ''}${pct.toStringAsFixed(1)}%',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: pct >= 0 ? Colors.deepOrange.shade700 : Colors.red.shade700,
+                        ),
                       ),
-                    );
-                  },
+                      const TextSpan(text: '.'),
+                    ],
+                  ),
                 ),
-              ),
-            ],
+                const SizedBox(height: 16),
+                const Text('Ejemplos de cómo quedarán:', style: TextStyle(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 8),
+                Container(
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.grey.shade300),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: examples.length,
+                    separatorBuilder: (_, __) => Divider(height: 1, color: Colors.grey.shade300),
+                    itemBuilder: (_, i) {
+                      final ex = examples[i];
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              flex: 2,
+                              child: Text(ex['name'], overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12)),
+                            ),
+                            Expanded(
+                              flex: 1,
+                              child: Text('\$${(num.tryParse(ex['old_price'].toString()) ?? 0).toStringAsFixed(2)}', style: const TextStyle(fontSize: 12, decoration: TextDecoration.lineThrough, color: Colors.grey)),
+                            ),
+                            const Icon(Icons.arrow_forward, size: 14, color: Colors.grey),
+                            Expanded(
+                              flex: 1,
+                              child: Text(' \$${(num.tryParse(ex['new_price'].toString()) ?? 0).toStringAsFixed(2)}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.green)),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
         actions: [
@@ -2063,131 +2084,144 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
     final categories = widget.provider.categories;
     final brands = widget.provider.brands;
     return AlertDialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      titlePadding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+      contentPadding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+      actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       title: Row(
         children: [
           Icon(Icons.trending_up, color: Colors.deepOrange.shade700),
           const SizedBox(width: 8),
-          const Text('Aumento Masivo de Precios'),
+          const Expanded(
+            child: Text('Aumento Masivo de Precios'),
+          ),
         ],
       ),
-      content: SizedBox(
-        width: 380,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.orange.shade50,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.orange.shade200),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.info_outline, color: Colors.orange.shade700, size: 18),
-                  const SizedBox(width: 8),
-                  const Expanded(
-                    child: Text(
-                      'Esta operación actualizará el precio de venta de forma masiva.\nUse valores negativos para aplicar descuentos (ej: -10 para -10%).',
-                      style: TextStyle(fontSize: 12),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _percentCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Porcentaje de variación (%)',
-                hintText: 'Ej: 15 para +15% o -10 para -10%',
-                prefixIcon: Icon(Icons.percent),
-                border: OutlineInputBorder(),
-              ),
-              keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
-            ),
-            const SizedBox(height: 16),
-            DropdownButtonFormField<String>(
-              initialValue: _targetField,
-              isExpanded: true,
-              decoration: const InputDecoration(
-                labelText: 'Base de Incremento',
-                prefixIcon: Icon(Icons.attach_money),
-                border: OutlineInputBorder(),
-                helperText: 'Elige si aumentas el Costo o el Precio Final.',
-              ),
-              items: const [
-                DropdownMenuItem(value: 'selling_price', child: Text('Solo Precio de Venta (Aumento estándar)', overflow: TextOverflow.ellipsis)),
-                DropdownMenuItem(value: 'cost_and_selling_price', child: Text('Costo de Proveedor y Precio de Venta', overflow: TextOverflow.ellipsis)),
-                DropdownMenuItem(value: 'cost_price', child: Text('Solo Costo (Baja el margen de ganancia)', overflow: TextOverflow.ellipsis)),
-              ],
-              onChanged: (val) => setState(() => _targetField = val ?? 'selling_price'),
-            ),
-            const SizedBox(height: 16),
-            DropdownButtonFormField<String>(
-              initialValue: _roundingRule,
-              isExpanded: true,
-              decoration: const InputDecoration(
-                labelText: 'Regla de Redondeo',
-                prefixIcon: Icon(Icons.calculate_outlined),
-                border: OutlineInputBorder(),
-                helperText: 'Evita precios con decimales feos.',
-              ),
-              items: const [
-                DropdownMenuItem(value: 'none', child: Text('Sin redondeo (Ej: \$1234.56)', overflow: TextOverflow.ellipsis)),
-                DropdownMenuItem(value: 'nearest_10', child: Text('A la decena más cercana (Ej: \$1230)', overflow: TextOverflow.ellipsis)),
-                DropdownMenuItem(value: 'nearest_50', child: Text('Múltiplos de \$50 (Ej: \$1250)', overflow: TextOverflow.ellipsis)),
-                DropdownMenuItem(value: 'nearest_100', child: Text('A la centena más cercana (Ej: \$1200)', overflow: TextOverflow.ellipsis)),
-                DropdownMenuItem(value: 'ends_99', child: Text('Terminar en .99 (Ej: \$1234.99)', overflow: TextOverflow.ellipsis)),
-              ],
-              onChanged: (val) => setState(() => _roundingRule = val ?? 'none'),
-            ),
-            const SizedBox(height: 16),
-            if (widget.targetProductIds == null) ...[
-              DropdownButtonFormField<int?>(
-                initialValue: _selectedCategoryId,
-                isExpanded: true,
-                decoration: const InputDecoration(
-                  labelText: 'Filtrar por Categoría',
-                  prefixIcon: Icon(Icons.folder_outlined),
-                  border: OutlineInputBorder(),
-                ),
-                items: [
-                  const DropdownMenuItem<int?>(value: null, child: Text('📦 Todas las categorías', overflow: TextOverflow.ellipsis)),
-                  ...categories.map((c) => DropdownMenuItem<int?>(value: c.id, child: Text('📂 ${c.name}', overflow: TextOverflow.ellipsis))),
-                ],
-                onChanged: (val) => setState(() => _selectedCategoryId = val),
-              ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<int?>(
-                initialValue: _selectedBrandId,
-                isExpanded: true,
-                decoration: const InputDecoration(
-                  labelText: 'Filtrar por Marca',
-                  prefixIcon: Icon(Icons.branding_watermark_outlined),
-                  border: OutlineInputBorder(),
-                ),
-                items: [
-                  const DropdownMenuItem<int?>(value: null, child: Text('🏷️ Todas las marcas', overflow: TextOverflow.ellipsis)),
-                  ...brands.map((b) => DropdownMenuItem<int?>(value: b.id, child: Text('🏷️ ${b.name}', overflow: TextOverflow.ellipsis))),
-                ],
-                onChanged: (val) => setState(() => _selectedBrandId = val),
-              ),
-            ] else ...[
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 400),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
               Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(4)),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.orange.shade200),
+                ),
                 child: Row(
                   children: [
-                    Icon(Icons.check_circle, color: Colors.blue.shade700, size: 16),
+                    Icon(Icons.info_outline, color: Colors.orange.shade700, size: 18),
                     const SizedBox(width: 8),
-                    Text('Aplicando a ${widget.targetProductIds!.length} productos seleccionados', style: TextStyle(color: Colors.blue.shade900, fontWeight: FontWeight.bold)),
+                    const Expanded(
+                      child: Text(
+                        'Esta operación actualizará el precio de venta de forma masiva.\nUse valores negativos para aplicar descuentos (ej: -10 para -10%).',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                    ),
                   ],
                 ),
               ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _percentCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Porcentaje de variación (%)',
+                  hintText: 'Ej: 15 para +15% o -10 para -10%',
+                  prefixIcon: Icon(Icons.percent),
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
+              ),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<String>(
+                initialValue: _targetField,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  labelText: 'Base de Incremento',
+                  prefixIcon: Icon(Icons.attach_money),
+                  border: OutlineInputBorder(),
+                  helperText: 'Elige si aumentas el Costo o el Precio Final.',
+                ),
+                items: const [
+                  DropdownMenuItem(value: 'selling_price', child: Text('Solo Precio de Venta (Aumento estándar)', overflow: TextOverflow.ellipsis)),
+                  DropdownMenuItem(value: 'cost_and_selling_price', child: Text('Costo de Proveedor y Precio de Venta', overflow: TextOverflow.ellipsis)),
+                  DropdownMenuItem(value: 'cost_price', child: Text('Solo Costo (Baja el margen de ganancia)', overflow: TextOverflow.ellipsis)),
+                ],
+                onChanged: (val) => setState(() => _targetField = val ?? 'selling_price'),
+              ),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<String>(
+                initialValue: _roundingRule,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  labelText: 'Regla de Redondeo',
+                  prefixIcon: Icon(Icons.calculate_outlined),
+                  border: OutlineInputBorder(),
+                  helperText: 'Evita precios con decimales feos.',
+                ),
+                items: const [
+                  DropdownMenuItem(value: 'none', child: Text('Sin redondeo (Ej: \$1234.56)', overflow: TextOverflow.ellipsis)),
+                  DropdownMenuItem(value: 'nearest_10', child: Text('A la decena más cercana (Ej: \$1230)', overflow: TextOverflow.ellipsis)),
+                  DropdownMenuItem(value: 'nearest_50', child: Text('Múltiplos de \$50 (Ej: \$1250)', overflow: TextOverflow.ellipsis)),
+                  DropdownMenuItem(value: 'nearest_100', child: Text('A la centena más cercana (Ej: \$1200)', overflow: TextOverflow.ellipsis)),
+                  DropdownMenuItem(value: 'ends_99', child: Text('Terminar en .99 (Ej: \$1234.99)', overflow: TextOverflow.ellipsis)),
+                ],
+                onChanged: (val) => setState(() => _roundingRule = val ?? 'none'),
+              ),
+              const SizedBox(height: 16),
+              if (widget.targetProductIds == null) ...[
+                DropdownButtonFormField<int?>(
+                  initialValue: _selectedCategoryId,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Filtrar por Categoría',
+                    prefixIcon: Icon(Icons.folder_outlined),
+                    border: OutlineInputBorder(),
+                  ),
+                  items: [
+                    const DropdownMenuItem<int?>(value: null, child: Text('📦 Todas las categorías', overflow: TextOverflow.ellipsis)),
+                    ...categories.map((c) => DropdownMenuItem<int?>(value: c.id, child: Text('📂 ${c.name}', overflow: TextOverflow.ellipsis))),
+                  ],
+                  onChanged: (val) => setState(() => _selectedCategoryId = val),
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<int?>(
+                  initialValue: _selectedBrandId,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Filtrar por Marca',
+                    prefixIcon: Icon(Icons.branding_watermark_outlined),
+                    border: OutlineInputBorder(),
+                  ),
+                  items: [
+                    const DropdownMenuItem<int?>(value: null, child: Text('🏷️ Todas las marcas', overflow: TextOverflow.ellipsis)),
+                    ...brands.map((b) => DropdownMenuItem<int?>(value: b.id, child: Text('🏷️ ${b.name}', overflow: TextOverflow.ellipsis))),
+                  ],
+                  onChanged: (val) => setState(() => _selectedBrandId = val),
+                ),
+              ] else ...[
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(4)),
+                  child: Row(
+                    children: [
+                      Icon(Icons.check_circle, color: Colors.blue.shade700, size: 16),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Aplicando a ${widget.targetProductIds!.length} productos seleccionados',
+                          style: TextStyle(color: Colors.blue.shade900, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
       actions: [
@@ -2255,16 +2289,16 @@ class _BulkPriceHistoryDialogState extends State<BulkPriceHistoryDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       title: const Row(
         children: [
           Icon(Icons.history),
           SizedBox(width: 8),
-          Text('Historial de Aumentos'),
+          Expanded(child: Text('Historial de Aumentos')),
         ],
       ),
-      content: SizedBox(
-        width: 600,
-        height: 400,
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 600, maxHeight: 400),
         child: Consumer<CatalogProvider>(
           builder: (_, p, __) {
             if (p.isLoading && p.priceHistory.isEmpty) {

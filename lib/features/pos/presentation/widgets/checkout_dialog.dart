@@ -15,6 +15,9 @@ import '../../../../core/utils/snack_bar_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:frontend_desktop/core/presentation/widgets/ticket_preview_dialog.dart';
 import 'package:frontend_desktop/core/providers/local_terminal_provider.dart';
+import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
+import '../../../../core/constants/app_permissions.dart';
+import '../../../../core/network/api_client.dart';
 
 class PaymentLine {
   PaymentMethod? method;
@@ -800,6 +803,21 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         if (errMsg.contains('SESSION_EXPIRED') ||
             errMsg.contains('otro dispositivo')) {
           Navigator.of(context).pop(false);
+          return;
+        }
+
+        if (errMsg.contains('UNAUTHORIZED_PRICE_DISCOUNT')) {
+          final pin = await AdminPinDialog.verifyAndGetPin(
+            context,
+            action: 'Autorizar Rebajas y Precios Especiales',
+            permissionKey: AppPermissions.applyDiscounts,
+          );
+          if (pin != null && pin.isNotEmpty && mounted) {
+            final client = context.read<ApiClient>();
+            await client.withAdminPin(pin, () async {
+              await _processCheckout();
+            });
+          }
           return;
         }
 

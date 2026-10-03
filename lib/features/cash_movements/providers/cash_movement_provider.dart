@@ -62,6 +62,7 @@ class CashMovementProvider extends ChangeNotifier {
     DateTime? startDate,
     DateTime? endDate,
     bool clearDates = false,
+    String? adminPin,
   }) async {
     if (_isLoading && !refresh) return;
 
@@ -107,9 +108,15 @@ class CashMovementProvider extends ChangeNotifier {
           url += '&start_date=$sd&end_date=$ed';
         }
       }
-      final response = await client.get(Uri.parse(url), headers: {
+      
+      final headers = <String, String>{
         'Accept': 'application/json',
-      });
+      };
+      if (adminPin != null && adminPin.isNotEmpty) {
+        headers['X-Admin-Pin'] = adminPin;
+      }
+
+      final response = await client.get(Uri.parse(url), headers: headers);
 
       if (currentFetchId != _fetchId) return;
 
@@ -197,17 +204,20 @@ class CashMovementProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> deleteMovement(int id, {required String adminPin}) async {
+  Future<void> deleteMovement(int id, {String? adminPin}) async {
     _isLoading = true;
     notifyListeners();
 
     try {
+      final headers = <String, String>{
+        'Accept': 'application/json',
+      };
+      if (adminPin != null && adminPin.isNotEmpty) {
+        headers['X-Admin-Pin'] = adminPin;
+      }
       final response = await client.delete(
         Uri.parse('$baseUrl/cash-movements/$id'),
-        headers: {
-          'Accept': 'application/json',
-          'X-Admin-Pin': adminPin,
-        },
+        headers: headers,
       );
 
       if (response.statusCode == 200) {

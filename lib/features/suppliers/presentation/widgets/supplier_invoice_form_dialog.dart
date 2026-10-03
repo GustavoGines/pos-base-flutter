@@ -12,6 +12,8 @@ import '../../../pos/presentation/providers/pos_provider.dart';
 import '../../../catalog/domain/entities/product.dart';
 import '../../../cash_movements/presentation/widgets/movement_form_dialog.dart';
 import '../../../cash_register/presentation/providers/cash_register_provider.dart';
+import '../../../../core/constants/app_permissions.dart';
+import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
 
 
 import '../../../catalog/presentation/providers/catalog_provider.dart';
@@ -207,79 +209,86 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
       return;
     }
 
-    setState(() => _isLoading = true);
+    await AdminPinDialog.protectAction(
+      context,
+      action: 'Cargar Comprobante de Compra',
+      permissionKey: AppPermissions.createSupplierInvoice,
+      onAuthorized: () async {
+        setState(() => _isLoading = true);
 
-    try {
-      final itemsData = _items.map((i) => {
-        'product_id': i.product.id,
-        'quantity': i.quantity,
-        'unit_cost': i.newCost,
-        'subtotal': i.quantity * i.newCost,
-        'update_price': i.updatePrice,
-        'new_selling_price': i.updatePrice ? i.manualPrice : null,
-      }).toList();
+        try {
+          final itemsData = _items.map((i) => {
+            'product_id': i.product.id,
+            'quantity': i.quantity,
+            'unit_cost': i.newCost,
+            'subtotal': i.quantity * i.newCost,
+            'update_price': i.updatePrice,
+            'new_selling_price': i.updatePrice ? i.manualPrice : null,
+          }).toList();
 
-      final data = {
-        'type': _type,
-        'amount': _totalAmount,
-        'tax_amount': _taxAmount,
-        'freight_amount': _freightAmount,
-        'discount_amount': _discountAmount,
-        'issue_date': _issueDate?.toIso8601String(),
-        'due_date': _dueDate?.toIso8601String().split('T')[0],
-        'receipt_file_url': _attachmentUrl,
-        'invoice_number': _invoiceNumberController.text.trim(),
-        'description': _descriptionController.text.trim(),
-        'items': itemsData,
-      };
+          final data = {
+            'type': _type,
+            'amount': _totalAmount,
+            'tax_amount': _taxAmount,
+            'freight_amount': _freightAmount,
+            'discount_amount': _discountAmount,
+            'issue_date': _issueDate?.toIso8601String(),
+            'due_date': _dueDate?.toIso8601String().split('T')[0],
+            'receipt_file_url': _attachmentUrl,
+            'invoice_number': _invoiceNumberController.text.trim(),
+            'description': _descriptionController.text.trim(),
+            'items': itemsData,
+          };
 
-      final provider = context.read<SupplierProvider>();
-      final success = await provider.createInvoice(widget.supplierId, data);
+          final provider = context.read<SupplierProvider>();
+          final success = await provider.createInvoice(widget.supplierId, data);
 
-      if (success && mounted) {
-        Navigator.of(context).pop();
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Factura registrada correctamente. Stock y Costos actualizados.')));
+          if (success && mounted) {
+            Navigator.of(context).pop();
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Factura registrada correctamente. Stock y Costos actualizados.')));
 
-        if (_payNow && _type == 'invoice') {
-          final supplier = provider.suppliers.firstWhere((s) => s.id == widget.supplierId);
-          final newBalance = supplier.balance;
-          final amountToPay = newBalance > 0 ? (_totalAmount < newBalance ? _totalAmount : newBalance) : 0.0;
-          final discount = _totalAmount - amountToPay;
-          
-          String? helperText;
-          if (discount > 0 && amountToPay > 0) {
-            helperText = '💡 Se han descontado \$${discount.toStringAsFixed(2).replaceAll('.00', '')} que tenías a favor.';
-          } else {
-            helperText = '💡 Este importe corresponde únicamente a la mercadería que acabas de cargar hoy. (Para saldar la deuda total, usa el botón rojo "Pagar Total" de arriba).';
-          }
+            if (_payNow && _type == 'invoice') {
+              final supplier = provider.suppliers.firstWhere((s) => s.id == widget.supplierId);
+              final newBalance = supplier.balance;
+              final amountToPay = newBalance > 0 ? (_totalAmount < newBalance ? _totalAmount : newBalance) : 0.0;
+              final discount = _totalAmount - amountToPay;
+              
+              String? helperText;
+              if (discount > 0 && amountToPay > 0) {
+                helperText = '💡 Se han descontado \$${discount.toStringAsFixed(2).replaceAll('.00', '')} que tenías a favor.';
+              } else {
+                helperText = '💡 Este importe corresponde únicamente a la mercadería que acabas de cargar hoy. (Para saldar la deuda total, usa el botón rojo "Pagar Total" de arriba).';
+              }
 
-          if (amountToPay > 0) {
-            final cashProv = context.read<CashRegisterProvider>();
-            if (cashProv.currentShift != null && cashProv.currentShift!.isOpen) {
-               showDialog(
-                context: context,
-                barrierDismissible: false,
-                builder: (_) => MovementFormDialog(
-                  initialSupplierId: widget.supplierId,
-                  initialType: 'supplier_payment',
-                  initialAmount: amountToPay,
-                  initialCategory: 'Pago a Proveedor',
-                  helperText: helperText,
-                ),
-              );
-            } else {
-               ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No se puede abonar ahora porque no hay turno de caja abierto.', style: TextStyle(color: Colors.white)), backgroundColor: Colors.red));
+              if (amountToPay > 0) {
+                final cashProv = context.read<CashRegisterProvider>();
+                if (cashProv.currentShift != null && cashProv.currentShift!.isOpen) {
+                   showDialog(
+                    context: context,
+                    barrierDismissible: false,
+                    builder: (_) => MovementFormDialog(
+                      initialSupplierId: widget.supplierId,
+                      initialType: 'supplier_payment',
+                      initialAmount: amountToPay,
+                      initialCategory: 'Pago a Proveedor',
+                      helperText: helperText,
+                    ),
+                  );
+                } else {
+                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No se puede abonar ahora porque no hay turno de caja abierto.', style: TextStyle(color: Colors.white)), backgroundColor: Colors.red));
+                }
+              } else {
+                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Factura cubierta con Saldo a Favor.', style: TextStyle(color: Colors.white)), backgroundColor: Colors.green));
+              }
             }
-          } else {
-             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Factura cubierta con Saldo a Favor.', style: TextStyle(color: Colors.white)), backgroundColor: Colors.green));
           }
+        } catch (e) {
+          if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: Colors.red));
+        } finally {
+          if (mounted) setState(() => _isLoading = false);
         }
-      }
-    } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString().toString()), backgroundColor: Colors.red));
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
+      },
+    );
   }
 
   @override

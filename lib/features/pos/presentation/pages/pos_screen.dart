@@ -23,6 +23,8 @@ import 'package:flutter_libserialport/flutter_libserialport.dart';
 import 'package:frontend_desktop/features/quotes/presentation/providers/quote_provider.dart';
 import 'package:frontend_desktop/features/reports/presentation/providers/inventory_alerts_provider.dart';
 import 'package:frontend_desktop/core/providers/local_terminal_provider.dart';
+import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
+import '../../../../core/constants/app_permissions.dart';
 import 'package:frontend_desktop/core/utils/a4_split_pdf_service.dart';
 import 'package:printing/printing.dart';
 import 'package:frontend_desktop/features/logistics/presentation/providers/logistics_provider.dart';
@@ -891,10 +893,11 @@ class _PosScreenState extends State<PosScreen> {
         // 1. PRIORIDAD ABSOLUTA: Mostrar confirmación visual de inmediato
         SnackBarService.success(context, '¡Venta registrada con éxito!');
 
-        // 2. ACTUALIZAR LOGÍSTICA EN BACKGROUND
-        // Forzamos la actualización de Logística para que al cambiar de pestaña
-        // los remitos generados ya estén listos sin tener que esperar el timer.
-        Provider.of<LogisticsProvider>(context, listen: false).refreshAll(force: true);
+        // 2. ACTUALIZAR LOGÍSTICA EN BACKGROUND (SOLO SI TIENE PERMISO)
+        final authProv = context.read<AuthProvider>();
+        if (authProv.hasPermission(AppPermissions.manageDeliveryNotes)) {
+          Provider.of<LogisticsProvider>(context, listen: false).refreshAll(force: true);
+        }
 
         final settingsProvider =
             Provider.of<SettingsProvider>(context, listen: false);
@@ -2036,7 +2039,8 @@ class _PosScreenState extends State<PosScreen> {
                         subtitle: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Row(
+                            Wrap(
+                              crossAxisAlignment: WrapCrossAlignment.center,
                               children: [
                                 if (item.unitPrice != item.product.sellingPrice)
                                   Padding(
@@ -2079,6 +2083,8 @@ class _PosScreenState extends State<PosScreen> {
                                         Border.all(color: Colors.blue.shade300),
                                     borderRadius: BorderRadius.circular(4)),
                                 child: Text('🏷️ Lista Mayorista Aplicada',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
                                         fontSize: 10,
                                         color: Colors.blue.shade800,
@@ -2094,7 +2100,9 @@ class _PosScreenState extends State<PosScreen> {
                                     border: Border.all(
                                         color: Colors.orange.shade300),
                                     borderRadius: BorderRadius.circular(4)),
-                                child: Text('💳 Recargo Tarjeta / Crédito',
+                                child: Text('💳 Recargo Tarjeta',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
                                         fontSize: 10,
                                         color: Colors.orange.shade800,
@@ -2112,6 +2120,8 @@ class _PosScreenState extends State<PosScreen> {
                                     borderRadius: BorderRadius.circular(4)),
                                 child: Text(
                                     '🏷️ Lista: ${item.customTierLabel ?? 'Personalizada'}',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
                                         fontSize: 10,
                                         color: Colors.purple.shade800,
@@ -2132,6 +2142,8 @@ class _PosScreenState extends State<PosScreen> {
                                     borderRadius: BorderRadius.circular(4)),
                                 child: Text(
                                   '📦 Desc. Volumétrico (x${(item.product.getApplicableTier(item.quantity)!['min_quantity'] as num).toQty()})',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
                                       fontSize: 10,
                                       color: Colors.green.shade800,
@@ -2721,27 +2733,41 @@ class _PosScreenState extends State<PosScreen> {
                                 setState(() {
                                   isVoiding = true;
                                 });
-                                try {
-                                  await posProvider.voidPendingOrder(
-                                    posProvider.lastSaleId,
-                                    shiftId: currentShift.id,
-                                  );
-                                  // Restaurar carrito al estado previo a la venta
-                                  posProvider.restoreLastSaleCart();
 
-                                  if (dialogCtx.mounted) {
-                                    SnackBarService.warning(dialogCtx,
-                                        'Venta anulada. Los productos han vuelto al carrito.');
-                                    Navigator.pop(dialogCtx, 'annulled');
-                                  }
-                                } catch (e) {
-                                  if (dialogCtx.mounted) {
-                                    SnackBarService.error(
-                                        dialogCtx, 'Error al anular: $e');
-                                    setState(() {
-                                      isVoiding = false;
-                                    });
-                                  }
+                                final hasPermission = await AdminPinDialog.protectAction(
+                                  dialogCtx,
+                                  action: 'Anulación de Ventas Emitidas',
+                                  permissionKey: AppPermissions.voidSales,
+                                  onAuthorized: () async {
+                                    try {
+                                      await posProvider.voidPendingOrder(
+                                        posProvider.lastSaleId,
+                                        shiftId: currentShift.id,
+                                      );
+                                      // Restaurar carrito al estado previo a la venta
+                                      posProvider.restoreLastSaleCart();
+
+                                      if (dialogCtx.mounted) {
+                                        SnackBarService.warning(dialogCtx,
+                                            'Venta anulada. Los productos han vuelto al carrito.');
+                                        Navigator.pop(dialogCtx, 'annulled');
+                                      }
+                                    } catch (e) {
+                                      if (dialogCtx.mounted) {
+                                        SnackBarService.error(
+                                            dialogCtx, 'Error al anular: $e');
+                                        setState(() {
+                                          isVoiding = false;
+                                        });
+                                      }
+                                    }
+                                  },
+                                );
+
+                                if (!hasPermission) {
+                                  setState(() {
+                                    isVoiding = false;
+                                  });
                                 }
                               }
                             },

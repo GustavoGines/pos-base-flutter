@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../constants/app_permissions.dart';
 import '../../../../features/auth/presentation/providers/auth_provider.dart';
 import '../../../../features/auth/presentation/widgets/admin_pin_dialog.dart';
 import '../../../../features/settings/presentation/providers/settings_provider.dart';
@@ -47,24 +48,27 @@ class SharedUserMenu extends StatelessWidget {
             onSelected: (value) async {
               switch (value) {
                 case 'shift_audit':
-                  final auditAuth = await AdminPinDialog.verify(context, action: 'Ver Auditoría General', permissionKey: 'view_global_history');
-                  if (auditAuth && context.mounted) {
-                    Navigator.of(context).pushNamed('/general-audit');
+                  final pin = await AdminPinDialog.verifyAndGetPin(context, action: 'Auditoría General', permissionKey: AppPermissions.manageShifts);
+                  if (pin != null && context.mounted) {
+                    Navigator.of(context).pushNamed('/general-audit', arguments: {'unlocked_pin': pin == 'ALREADY_AUTHORIZED' ? null : pin});
                   }
                   break;
                 case 'users':
-                  Navigator.of(context).pushNamed('/users');
+                  final pin = await AdminPinDialog.verifyAndGetPin(context, action: 'Gestión de Personal', permissionKey: AppPermissions.manageUsers);
+                  if (pin != null && context.mounted) {
+                    Navigator.of(context).pushNamed('/users', arguments: {'unlocked_pin': pin == 'ALREADY_AUTHORIZED' ? null : pin});
+                  }
                   break;
                 case 'trash':
-                  final authorized = await AdminPinDialog.verify(context, action: 'Acceder a Papelera');
-                  if (authorized && context.mounted) {
-                    Navigator.of(context).pushNamed('/trash');
+                  final pin = await AdminPinDialog.verifyAndGetPin(context, action: 'Papelera de Reciclaje', permissionKey: AppPermissions.manageTrash);
+                  if (pin != null && context.mounted) {
+                    Navigator.of(context).pushNamed('/trash', arguments: {'unlocked_pin': pin == 'ALREADY_AUTHORIZED' ? null : pin});
                   }
                   break;
                 case 'settings':
-                  final authorized = await AdminPinDialog.verify(context, action: 'Acceder a Configuración');
-                  if (authorized && context.mounted) {
-                    Navigator.of(context).pushNamed('/settings');
+                  final pin = await AdminPinDialog.verifyAndGetPin(context, action: 'Configuración del Sistema', permissionKey: AppPermissions.manageSettings);
+                  if (pin != null && context.mounted) {
+                    Navigator.of(context).pushNamed('/settings', arguments: {'unlocked_pin': pin == 'ALREADY_AUTHORIZED' ? null : pin});
                   }
                   break;
                 case 'logout':
@@ -105,28 +109,26 @@ class SharedUserMenu extends StatelessWidget {
               final hasZReports = settings.features.zReports;
 
               return <PopupMenuEntry<String>>[
-              if (auth.isAdmin) ...<PopupMenuEntry<String>>[
-                if (hasZReports)
-                  const PopupMenuItem<String>(
-                    value: 'shift_audit',
-                    child: ListTile(
-                      leading: Icon(Icons.manage_search_rounded),
-                      title: Text('Auditoría General'),
-                      contentPadding: EdgeInsets.zero,
-                      dense: true,
-                    ),
-                  ),
+              if (hasZReports)
                 const PopupMenuItem<String>(
-                  value: 'users',
+                  value: 'shift_audit',
                   child: ListTile(
-                    leading: Icon(Icons.manage_accounts_outlined),
-                    title: Text('Personal y Accesos'),
+                    leading: Icon(Icons.manage_search_rounded),
+                    title: Text('Auditoría General'),
                     contentPadding: EdgeInsets.zero,
                     dense: true,
                   ),
                 ),
-                const PopupMenuDivider(),
-              ],
+              const PopupMenuItem<String>(
+                value: 'users',
+                child: ListTile(
+                  leading: Icon(Icons.manage_accounts_outlined),
+                  title: Text('Personal y Accesos'),
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                ),
+              ),
+              const PopupMenuDivider(),
               const PopupMenuItem<String>(
                 value: 'trash',
                 child: ListTile(

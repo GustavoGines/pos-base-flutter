@@ -8,6 +8,8 @@ import '../../../../features/auth/presentation/providers/auth_provider.dart';
 import '../../../../features/cash_register/presentation/providers/cash_register_provider.dart';
 import '../../../../features/cash_register/domain/entities/cash_register_shift.dart';
 import '../../../../features/cash_register/presentation/pages/cash_shift_summary_screen.dart';
+import '../../../../features/auth/presentation/widgets/admin_pin_dialog.dart';
+import '../../../../core/constants/app_permissions.dart';
 
 class GeneralAuditScreen extends StatelessWidget {
   const GeneralAuditScreen({super.key});
@@ -689,10 +691,12 @@ class _StockMovementsTabState extends State<_StockMovementsTab> {
   @override
   void initState() {
     super.initState();
-    _fetchStockMovements();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _fetchStockMovements();
+    });
   }
 
-  Future<void> _fetchStockMovements() async {
+  Future<void> _fetchStockMovements({String? overridePin}) async {
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -710,30 +714,55 @@ class _StockMovementsTabState extends State<_StockMovementsTab> {
           ? rawBaseUrl.substring(0, rawBaseUrl.length - 1)
           : rawBaseUrl;
 
-      final response = await client.get(
-        Uri.parse('$baseUrl/audit/stock?per_page=100'),
-        headers: {'Accept': 'application/json'},
-      );
+      final pin = overridePin;
+      final uri = Uri.parse('$baseUrl/audit/stock?per_page=100');
+      final headers = {'Accept': 'application/json'};
+
+      final response = pin != null
+          ? await client.withAdminPin(pin, () => client.get(uri, headers: headers))
+          : await client.get(uri, headers: headers);
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        setState(() {
-          _movements = data['data'] ?? [];
-          _isLoading = false;
-        });
+        if (mounted) {
+          setState(() {
+            _movements = data['data'] ?? [];
+            _isLoading = false;
+          });
+        }
+      } else if (response.statusCode == 403) {
+        if (overridePin == null && mounted) {
+          final newPin = await AdminPinDialog.verifyAndGetPin(
+            context,
+            action: 'Ver Kardex',
+            permissionKey: AppPermissions.viewKardex,
+          );
+          
+          if (newPin != null) {
+            final pinToUse = newPin == 'ALREADY_AUTHORIZED' ? null : newPin;
+            // Retry fetch with new pin
+            await _fetchStockMovements(overridePin: pinToUse);
+            return;
+          } else {
+            throw Exception('Servidor respondió con error 403');
+          }
+        } else {
+          throw Exception('Servidor respondió con error 403');
+        }
       } else {
         throw Exception('Servidor respondió con error ${response.statusCode}');
       }
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         final errorStr = e.toString();
-        if (errorStr.contains('Servidor respondió con error')) {
-          _errorMessage =
-              'Error en el servidor backend. Contacte a soporte técnico.';
+        if (errorStr.contains('403')) {
+          _errorMessage = 'No tienes permiso para visualizar el Kardex (Movimientos de Stock).';
+        } else if (errorStr.contains('Servidor respondió con error')) {
+          _errorMessage = 'Error en el servidor backend. Contacte a soporte técnico.';
         } else if (errorStr.contains('NetworkException') ||
             errorStr.contains('SocketException')) {
-          _errorMessage =
-              'Error de conexión: No se pudo alcanzar el servidor. Verifique configuración.';
+          _errorMessage = 'Error de conexión: No se pudo alcanzar el servidor. Verifique configuración.';
         } else {
           _errorMessage = errorStr.replaceAll('Exception: ', '');
         }
