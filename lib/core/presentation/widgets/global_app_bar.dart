@@ -10,6 +10,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:frontend_desktop/features/updater/data/services/update_service.dart';
 import 'package:frontend_desktop/features/updater/presentation/widgets/update_dialog.dart';
 
+
 class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
   final String currentRoute;
   final String title;
@@ -104,6 +105,7 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                         final bool canAccessChecks = settings.features.checks;
                         final bool canAccessSuppliers = settings.features.suppliers;
                         final bool canAccessExpenses = settings.features.expenses;
+
 
                         return Center(
                           child: SingleChildScrollView(
@@ -381,13 +383,14 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
     bool isLocked = false,
     String lockedTitle = 'Módulo PRO',
     List<String> lockedFeatures = const [],
+    VoidCallback? onTap,
   }) {
     final isActive = currentRoute == route;
     final displayColor = isLocked ? Colors.grey.shade400 : color;
 
     return MenuItemButton(
       leadingIcon: Icon(icon, color: displayColor, size: 20),
-      onPressed: isActive
+      onPressed: (isActive && onTap == null)
           ? null
           : () async {
               if (isLocked) {
@@ -399,6 +402,10 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                 final resultPin = await AdminPinDialog.verifyAndGetPin(context, action: label, permissionKey: permissionKey);
                 if (resultPin == null || !context.mounted) return;
                 unlockedPin = resultPin == 'ALREADY_AUTHORIZED' ? null : resultPin;
+              }
+              if (onTap != null) {
+                onTap();
+                return;
               }
               Navigator.of(context).pushReplacementNamed(
                 route,

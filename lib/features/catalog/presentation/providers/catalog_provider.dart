@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../domain/entities/product.dart';
 import '../../domain/entities/category.dart';
 import '../../domain/entities/brand.dart';
+import '../../domain/entities/rubro.dart';
 import '../../domain/repositories/catalog_repository.dart';
 import '../../domain/usecases/get_products_usecase.dart';
 import '../../data/models/product_model.dart';
@@ -19,6 +20,9 @@ class CatalogProvider with ChangeNotifier {
 
   List<Brand> _brands = [];
   List<Brand> get brands => _brands;
+
+  List<Rubro> _rubros = [];
+  List<Rubro> get rubros => _rubros;
 
   bool _isLoading = false;
   bool get isLoading => _isLoading;
@@ -53,6 +57,7 @@ class CatalogProvider with ChangeNotifier {
     try {
       if (_categories.isEmpty) _categories = await repository.getCategories();
       if (_brands.isEmpty) _brands = await repository.getBrands();
+      if (_rubros.isEmpty) _rubros = await repository.getRubros();
       notifyListeners();
     } catch (e) {
       debugPrint('Error loading metadata: $e');
@@ -399,19 +404,29 @@ class CatalogProvider with ChangeNotifier {
   }
 
   // ───────────────────────────────────────────────────────
-  // GESTIÓN DE CATEGORÍAS
+  // GESTIÓN DE RUBROS
   // ───────────────────────────────────────────────────────
 
-  Future<int?> createCategory(String name, {String? description}) async {
+  Future<void> loadRubros() async {
+    try {
+      _rubros = await repository.getRubros();
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error loading rubros: $e');
+      _errorMessage = e.toString().replaceFirst('Exception: ', '');
+    }
+  }
+
+  Future<int?> createRubro(String name, {String? description}) async {
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
     try {
-      final created = await repository.createCategory(name, description: description);
-      _categories = [..._categories, created];
+      final created = await repository.createRubro(name, description: description);
+      _rubros = [..._rubros, created];
       return created.id;
     } catch (e) {
-      _errorMessage = e.toString();
+      _errorMessage = e.toString().replaceFirst('Exception: ', '');
       return null;
     } finally {
       _isLoading = false;
@@ -419,12 +434,72 @@ class CatalogProvider with ChangeNotifier {
     }
   }
 
-  Future<bool> updateCategory(int id, String name, {String? description}) async {
+  Future<bool> updateRubro(int id, String name, {String? description}) async {
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
     try {
-      final updated = await repository.updateCategory(id, name, description: description);
+      final updated = await repository.updateRubro(id, name, description: description);
+      final idx = _rubros.indexWhere((r) => r.id == id);
+      if (idx != -1) {
+        final newList = List.of(_rubros);
+        newList[idx] = updated;
+        _rubros = newList;
+      }
+      return true;
+    } catch (e) {
+      _errorMessage = e.toString().replaceFirst('Exception: ', '');
+      return false;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> deleteRubro(int id) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      await repository.deleteRubro(id);
+      _rubros.removeWhere((r) => r.id == id);
+      return true;
+    } catch (e) {
+      _errorMessage = e.toString().replaceFirst('Exception: ', '');
+      return false;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  // ───────────────────────────────────────────────────────
+  // GESTIÓN DE CATEGORÍAS
+  // ───────────────────────────────────────────────────────
+
+  Future<int?> createCategory(String name, {String? description, int? rubroId}) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      final created = await repository.createCategory(name, description: description, rubroId: rubroId);
+      _categories = [..._categories, created];
+      return created.id;
+    } catch (e) {
+      _errorMessage = e.toString().replaceFirst('Exception: ', '');
+      return null;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> updateCategory(int id, String name, {String? description, int? rubroId}) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      final updated = await repository.updateCategory(id, name, description: description, rubroId: rubroId);
       final idx = _categories.indexWhere((c) => c.id == id);
       if (idx != -1) {
         final newList = List.of(_categories);
@@ -433,7 +508,7 @@ class CatalogProvider with ChangeNotifier {
       }
       return true;
     } catch (e) {
-      _errorMessage = e.toString();
+      _errorMessage = e.toString().replaceFirst('Exception: ', '');
       return false;
     } finally {
       _isLoading = false;
@@ -450,7 +525,7 @@ class CatalogProvider with ChangeNotifier {
       _categories.removeWhere((c) => c.id == id);
       return true;
     } catch (e) {
-      _errorMessage = e.toString();
+      _errorMessage = e.toString().replaceFirst('Exception: ', '');
       return false;
     } finally {
       _isLoading = false;

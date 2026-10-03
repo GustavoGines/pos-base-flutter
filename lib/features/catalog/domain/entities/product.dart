@@ -23,6 +23,7 @@ class Product {
   final int salesCount;
   final String unitType;
   final Category? category;
+  final List<Category>? categories;
   final Brand? brand;
   final Supplier? supplier;
 
@@ -46,6 +47,7 @@ class Product {
     this.vencimientoDias,
     this.unitType = 'un',
     this.category,
+    this.categories,
     this.brand,
     this.supplier,
   });
@@ -69,6 +71,7 @@ class Product {
     int? vencimientoDias,
     String? unitType,
     Category? category,
+    List<Category>? categories,
     Brand? brand,
     Supplier? supplier,
   }) {
@@ -92,6 +95,7 @@ class Product {
       vencimientoDias: vencimientoDias ?? this.vencimientoDias,
       unitType: unitType ?? this.unitType,
       category: category ?? this.category,
+      categories: categories ?? this.categories,
       brand: brand ?? this.brand,
       supplier: supplier ?? this.supplier,
     );

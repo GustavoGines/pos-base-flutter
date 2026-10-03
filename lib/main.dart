@@ -38,6 +38,7 @@ import 'features/settings/presentation/pages/settings_screen.dart';
 import 'features/cash_register/presentation/pages/cash_register_management_screen.dart';
 import 'features/pos/presentation/pages/pos_screen.dart';
 import 'features/catalog/presentation/pages/catalog_screen.dart';
+
 import 'features/cash_register/presentation/pages/cash_register_screen.dart';
 import 'features/cash_register/presentation/pages/close_shift_screen.dart';
 import 'package:frontend_desktop/features/logistics/presentation/screens/logistics_dashboard_screen.dart';

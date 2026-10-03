@@ -76,6 +76,10 @@ class BusinessSettingsModel extends BusinessSettings {
       remoteAccess: featuresMap['remote_access'] == true || featuresMap['remote_access'] == 1,
       suppliers: featuresMap['suppliers'] == true || featuresMap['suppliers'] == 1,
       expenses: featuresMap['expenses'] == true || featuresMap['expenses'] == 1,
+      multiRubro: featuresMap['multi_rubro'] == true ||
+          featuresMap['multi_rubro'] == 1 ||
+          featuresMap['multi_rubros'] == true ||
+          featuresMap['multi_rubros'] == 1,
     );
 
     return BusinessSettingsModel(

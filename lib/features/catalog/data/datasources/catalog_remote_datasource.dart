@@ -3,19 +3,25 @@ import 'package:http/http.dart' as http;
 import '../models/product_model.dart';
 import '../models/category_model.dart';
 import '../models/brand_model.dart';
+import '../models/rubro_model.dart';
 
 abstract class CatalogRemoteDataSource {
   /// Returns a map with 'data' (`List<ProductModel>`), 'current_page', 'last_page'.
   Future<Map<String, dynamic>> fetchProducts({int page = 1, String? search, String? sortBy, String? sortDirection, int? perPage});
   Future<List<CategoryModel>> fetchCategories();
+  // Rubro CRUD
+  Future<List<RubroModel>> fetchRubros();
+  Future<RubroModel> createRubro(String name, {String? description});
+  Future<RubroModel> updateRubro(int id, String name, {String? description});
+  Future<void> deleteRubro(int id);
   // Brand CRUD
   Future<List<BrandModel>> fetchBrands();
   Future<BrandModel> createBrand(String name, {String? description});
   Future<BrandModel> updateBrand(int id, String name, {String? description});
   Future<void> deleteBrand(int id);
   // Category CRUD
-  Future<CategoryModel> createCategory(String name, {String? description});
-  Future<CategoryModel> updateCategory(int id, String name, {String? description});
+  Future<CategoryModel> createCategory(String name, {String? description, int? rubroId});
+  Future<CategoryModel> updateCategory(int id, String name, {String? description, int? rubroId});
   Future<void> deleteCategory(int id);
   // Product CRUD
   Future<ProductModel> createProduct(Map<String, dynamic> productData);
@@ -208,13 +214,95 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
     }
   }
 
+  // ── Rubro CRUD ──────────────────────────────────────────
   @override
-  Future<CategoryModel> createCategory(String name, {String? description}) async {
+  Future<List<RubroModel>> fetchRubros() async {
+    try {
+      final response = await client.get(
+        Uri.parse('$baseUrl/catalog/rubros'),
+        headers: {'Accept': 'application/json'},
+      );
+      if (response.statusCode == 200) {
+        final List<dynamic> jsonList = json.decode(response.body);
+        return jsonList.map((j) => RubroModel.fromJson(j)).toList();
+      } else {
+        throw Exception('Failed to load rubros (Status: ${response.statusCode})');
+      }
+    } catch (e) {
+      print('=== API Error en fetchRubros: $e ===');
+      rethrow;
+    }
+  }
+
+  @override
+  Future<RubroModel> createRubro(String name, {String? description}) async {
+    try {
+      final response = await client.post(
+        Uri.parse('$baseUrl/catalog/rubros'),
+        headers: {'Accept': 'application/json', 'Content-Type': 'application/json'},
+        body: json.encode({'name': name, if (description != null) 'description': description}),
+      );
+      if (response.statusCode == 201) {
+        return RubroModel.fromJson(json.decode(response.body));
+      } else {
+        throw Exception(_parseApiError(response.body, 'Error al crear rubro.'));
+      }
+    } catch (e) {
+      print('=== API Error en createRubro: $e ===');
+      rethrow;
+    }
+  }
+
+  @override
+  Future<RubroModel> updateRubro(int id, String name, {String? description}) async {
+    try {
+      final response = await client.put(
+        Uri.parse('$baseUrl/catalog/rubros/$id'),
+        headers: {'Accept': 'application/json', 'Content-Type': 'application/json'},
+        body: json.encode({'name': name, if (description != null) 'description': description}),
+      );
+      if (response.statusCode == 200) {
+        return RubroModel.fromJson(json.decode(response.body));
+      } else {
+        throw Exception(_parseApiError(response.body, 'Error al actualizar rubro.'));
+      }
+    } catch (e) {
+      print('=== API Error en updateRubro: $e ===');
+      rethrow;
+    }
+  }
+
+  @override
+  Future<void> deleteRubro(int id) async {
+    try {
+      final response = await client.delete(
+        Uri.parse('$baseUrl/catalog/rubros/$id'),
+        headers: {'Accept': 'application/json'},
+      );
+      if (response.statusCode == 422) {
+        final error = json.decode(response.body);
+        throw Exception(error['message'] ?? 'No se puede eliminar: tiene categorías asociadas.');
+      }
+      if (response.statusCode != 204 && response.statusCode != 200) {
+        throw Exception('Error al eliminar rubro (Status: ${response.statusCode})');
+      }
+    } catch (e) {
+      print('=== API Error en deleteRubro: $e ===');
+      rethrow;
+    }
+  }
+
+  @override
+  Future<CategoryModel> createCategory(String name, {String? description, int? rubroId}) async {
     try {
       final response = await client.post(
         Uri.parse('$baseUrl/catalog/categories'),
         headers: {'Accept': 'application/json', 'Content-Type': 'application/json'},
-        body: json.encode({'name': name, if (description != null) 'description': description}),
+        body: json.encode({
+          'name': name,
+          if (description != null) 'description': description,
+          if (rubroId != null) 'rubro_id': rubroId,
+        }),
       );
       if (response.statusCode == 201) {
         return CategoryModel.fromJson(json.decode(response.body));
@@ -228,12 +316,16 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
   }
 
   @override
-  Future<CategoryModel> updateCategory(int id, String name, {String? description}) async {
+  Future<CategoryModel> updateCategory(int id, String name, {String? description, int? rubroId}) async {
     try {
       final response = await client.put(
         Uri.parse('$baseUrl/catalog/categories/$id'),
         headers: {'Accept': 'application/json', 'Content-Type': 'application/json'},
-        body: json.encode({'name': name, if (description != null) 'description': description}),
+        body: json.encode({
+          'name': name,
+          if (description != null) 'description': description,
+          if (rubroId != null) 'rubro_id': rubroId,
+        }),
       );
       if (response.statusCode == 200) {
         return CategoryModel.fromJson(json.decode(response.body));

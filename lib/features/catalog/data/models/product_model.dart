@@ -24,6 +24,7 @@ class ProductModel extends Product {
     super.vencimientoDias,
     super.unitType,
     CategoryModel? super.category,
+    List<CategoryModel>? super.categories,
     BrandModel? super.brand,
     super.supplier,
   });
@@ -49,6 +50,7 @@ class ProductModel extends Product {
     int? vencimientoDias,
     String? unitType,
     covariant CategoryModel? category,
+    covariant List<CategoryModel>? categories,
     covariant BrandModel? brand,
     covariant dynamic supplier,
   }) {
@@ -72,6 +74,7 @@ class ProductModel extends Product {
       vencimientoDias: vencimientoDias ?? this.vencimientoDias,
       unitType: unitType ?? this.unitType,
       category: category ?? this.category as CategoryModel?,
+      categories: categories ?? (this.categories as List<CategoryModel>?),
       brand: brand ?? this.brand as BrandModel?,
       supplier: supplier ?? this.supplier,
     );
@@ -99,6 +102,14 @@ class ProductModel extends Product {
           'unit_price': double.tryParse(tier['unit_price'].toString()) ?? 0.0,
         };
       }).toList();
+    }
+
+    List<CategoryModel>? parsedCategories;
+    if (json['categories'] != null && json['categories'] is List) {
+      parsedCategories = (json['categories'] as List)
+          .whereType<Map>()
+          .map((c) => CategoryModel.fromJson(Map<String, dynamic>.from(c)))
+          .toList();
     }
 
     return ProductModel(
@@ -133,7 +144,8 @@ class ProductModel extends Product {
       unitType: json['unit_type']?.toString() ?? 'un',
       category: json['category'] != null && json['category'] is Map<String, dynamic>
           ? CategoryModel.fromJson(json['category'] as Map<String, dynamic>)
-          : null,
+          : (parsedCategories != null && parsedCategories.isNotEmpty ? parsedCategories.first : null),
+      categories: parsedCategories,
       brand: json['brand'] != null && json['brand'] is Map<String, dynamic>
           ? BrandModel.fromJson(json['brand'] as Map<String, dynamic>)
           : null,

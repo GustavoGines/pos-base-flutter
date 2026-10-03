@@ -6,9 +6,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:frontend_desktop/features/catalog/presentation/providers/catalog_provider.dart';
 import '../widgets/stock_adjustment_dialog.dart';
 import '../../domain/entities/product.dart';
+import '../../domain/entities/category.dart';
+import '../../domain/entities/brand.dart';
+import 'package:frontend_desktop/core/presentation/widgets/plan_upgrade_dialog.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import '../widgets/categories_manager_dialog.dart';
 import '../widgets/brands_manager_dialog.dart';
+import '../widgets/rubros_manager_dialog.dart';
 import '../../../suppliers/presentation/widgets/supplier_form_dialog.dart';
 import '../widgets/print_labels_dialog.dart';
 import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
@@ -146,6 +150,26 @@ class _CatalogScreenState extends State<CatalogScreen> {
     }
   }
 
+  Future<void> _openRubrosManager(BuildContext context) async {
+    final hasMultiRubro = context.read<SettingsProvider>().features.multiRubro;
+    if (!hasMultiRubro) {
+      PlanUpgradeDialog.show(
+        context,
+        featureName: 'Gestión de Rubros',
+        description: 'La gestión de múltiples rubros comerciales es exclusiva del Plan Premium.',
+      );
+      return;
+    }
+    await showDialog<int?>(
+      context: context,
+      builder: (_) => const RubrosManagerDialog(),
+    );
+    if (mounted) {
+      context.read<CatalogProvider>().loadMetadata();
+      context.read<CatalogProvider>().loadProducts(page: 1);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer<CatalogProvider>(
@@ -244,6 +268,24 @@ class _CatalogScreenState extends State<CatalogScreen> {
                           tooltip: 'Recargar Catálogo',
                           onPressed: () {
                             provider.loadProducts();
+                          },
+                        ),
+                        const SizedBox(width: 8),
+                        OutlinedButton.icon(
+                          icon: const Icon(Icons.category_rounded, size: 18),
+                          label: const Text('Rubros'),
+                          onPressed: () async {
+                            final hasMultiRubro = context.read<SettingsProvider>().features.multiRubro;
+                            if (!hasMultiRubro) {
+                              PlanUpgradeDialog.show(
+                                context,
+                                featureName: 'Gestión de Rubros',
+                                description: 'La gestión de múltiples rubros comerciales es exclusiva del Plan Premium.',
+                              );
+                              return;
+                            }
+                            final auth = await AdminPinDialog.verify(context, action: 'Gestionar Rubros', permissionKey: 'manage_catalog');
+                            if (auth && context.mounted) _openRubrosManager(context);
                           },
                         ),
                         const SizedBox(width: 8),
@@ -1113,7 +1155,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
       if (_priceTiers.isNotEmpty) 'price_tiers': _priceTiers,
       'unit_type': _unitType,
       'active': _active,
-      if (_categoryId != null) 'category_id': _categoryId,
+      'category_id': _categoryId,
       if (_brandId != null) 'brand_id': _brandId,
       'supplier_id': _supplierId,
       if (_expiryCtrl.text.trim().isNotEmpty)
@@ -1149,6 +1191,223 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     }
   }
 
+  Widget _buildCategorySelector(List<Category> categories) {
+    return Row(
+      children: [
+        Expanded(
+          child: DropdownButtonFormField<int?>(
+            isExpanded: true,
+            // ignore: deprecated_member_use
+            value: categories.any((c) => c.id == _categoryId) ? _categoryId : null,
+            decoration: const InputDecoration(
+              labelText: 'Categoría',
+              prefixIcon: Icon(Icons.category_outlined),
+            ),
+            items: [
+              const DropdownMenuItem<int?>(value: null, child: Text('— Sin categoría —')),
+              ...categories.map((c) => DropdownMenuItem<int?>(
+                value: c.id,
+                child: Text(
+                  c.name,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              )),
+            ],
+            onChanged: (val) {
+              setState(() {
+                _categoryId = val;
+              });
+            },
+          ),
+        ),
+        const SizedBox(width: 8),
+        Tooltip(
+          message: 'Crear categoría',
+          child: IconButton.filledTonal(
+            icon: const Icon(Icons.add),
+            onPressed: () => _showCreateCategoryQuickDialog(),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _showCreateCategoryQuickDialog() async {
+    final nameCtrl = TextEditingController();
+    final settingsProv = context.read<SettingsProvider>();
+    final isPremium = settingsProv.features.multiRubro;
+    final provider = context.read<CatalogProvider>();
+
+    if (isPremium && provider.rubros.isEmpty) {
+      await provider.loadRubros();
+    }
+
+    int? selectedRubroId = provider.rubros.isNotEmpty ? provider.rubros.first.id : null;
+
+    final createdId = await showDialog<int?>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          return AlertDialog(
+            title: const Text('Nueva Categoría'),
+            content: SizedBox(
+              width: 360,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: nameCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Nombre *',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.label_outline),
+                    ),
+                    autofocus: true,
+                  ),
+                  if (isPremium && provider.rubros.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<int?>(
+                      isExpanded: true,
+                      initialValue: selectedRubroId,
+                      decoration: const InputDecoration(
+                        labelText: 'Rubro Padre',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.category_outlined),
+                      ),
+                      items: provider.rubros.map((r) => DropdownMenuItem<int?>(
+                        value: r.id,
+                        child: Text(r.name, overflow: TextOverflow.ellipsis),
+                      )).toList(),
+                      onChanged: (val) {
+                        setDialogState(() {
+                          selectedRubroId = val;
+                        });
+                      },
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+              Consumer<CatalogProvider>(
+                builder: (_, p, __) => FilledButton(
+                  onPressed: p.isLoading
+                      ? null
+                      : () async {
+                          if (nameCtrl.text.trim().isEmpty) return;
+                          final newId = await p.createCategory(
+                            nameCtrl.text.trim(),
+                            rubroId: isPremium ? selectedRubroId : null,
+                          );
+                          if (newId != null && ctx.mounted) Navigator.pop(ctx, newId);
+                        },
+                  child: const Text('Crear'),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    if (createdId != null && mounted) {
+      setState(() {
+        _categoryId = createdId;
+      });
+    }
+  }
+
+  Widget _buildBrandSelector(List<Brand> brands) {
+    return Row(
+      children: [
+        Expanded(
+          child: DropdownButtonFormField<int?>(
+            isExpanded: true,
+            // ignore: deprecated_member_use
+            value: brands.any((b) => b.id == _brandId) ? _brandId : null,
+            decoration: const InputDecoration(labelText: 'Marca', prefixIcon: Icon(Icons.branding_watermark_outlined)),
+            items: [
+              const DropdownMenuItem<int?>(value: null, child: Text('— Sin marca —')),
+              ...brands.map((b) => DropdownMenuItem<int?>(value: b.id, child: Text(b.name))),
+            ],
+            onChanged: (val) => setState(() => _brandId = val),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Tooltip(
+          message: 'Crear marca',
+          child: IconButton.filledTonal(
+            icon: const Icon(Icons.add),
+            onPressed: () async {
+              final nameCtrl = TextEditingController();
+              final createdId = await showDialog<int?>(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  title: const Text('Nueva Marca'),
+                  content: TextField(
+                    controller: nameCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Nombre',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.branding_watermark_outlined),
+                    ),
+                    autofocus: true,
+                  ),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+                    Consumer<CatalogProvider>(
+                      builder: (_, p, __) => FilledButton(
+                        onPressed: p.isLoading
+                            ? null
+                            : () async {
+                                if (nameCtrl.text.trim().isEmpty) return;
+                                final newId = await p.createBrand(nameCtrl.text.trim());
+                                if (newId != null && ctx.mounted) Navigator.pop(ctx, newId);
+                              },
+                        child: const Text('Crear'),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+              if (createdId != null && mounted) setState(() => _brandId = createdId);
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCategoryAndBrandSection(
+    BuildContext context,
+    List<Category> categories,
+    List<Brand> brands,
+  ) {
+    final isNarrow = MediaQuery.of(context).size.width < 450;
+    final categoryWidget = _buildCategorySelector(categories);
+    final brandWidget = _buildBrandSelector(brands);
+
+    if (isNarrow) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          categoryWidget,
+          const SizedBox(height: 12),
+          brandWidget,
+        ],
+      );
+    }
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(child: categoryWidget),
+        const SizedBox(width: 16),
+        Expanded(child: brandWidget),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     // IMPORTANTE: usar context.watch (no widget.provider) para que el dropdown
@@ -1156,7 +1415,9 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     // (ej: cuando se crea una categoría/marca nueva desde el diálogo rápido).
     final provider = context.watch<CatalogProvider>();
     final supplierProv = context.watch<SupplierProvider>();
-    final canSeeSupplier = context.watch<SettingsProvider>().features.suppliers;
+    final settingsProv = context.watch<SettingsProvider>();
+    final canSeeSupplier = settingsProv.features.suppliers;
+    final isNarrow = MediaQuery.of(context).size.width < 450;
     
     final categories = provider.categories;
     final brands = provider.brands;
@@ -1181,11 +1442,10 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                 ),
                 const SizedBox(height: 12),
                 // Código Interno (PLU) + Código de barras
-                Row(
-                  children: [
-                    Expanded(
-                      flex: 4,
-                      child: TextFormField(
+                if (isNarrow)
+                  Column(
+                    children: [
+                      TextFormField(
                         controller: _internalCodeCtrl,
                         maxLength: 5,
                         decoration: const InputDecoration(
@@ -1196,11 +1456,8 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                         ),
                         keyboardType: TextInputType.number,
                       ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      flex: 6,
-                      child: TextFormField(
+                      const SizedBox(height: 12),
+                      TextFormField(
                         controller: _barcodeCtrl,
                         decoration: const InputDecoration(
                           labelText: 'Código de Barras (EAN)',
@@ -1208,137 +1465,42 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                           helperText: 'Dejar vacío si es pesable',
                         ),
                       ),
-                    ),
-                  ],
-                ),
+                    ],
+                  )
+                else
+                  Row(
+                    children: [
+                      Expanded(
+                        flex: 4,
+                        child: TextFormField(
+                          controller: _internalCodeCtrl,
+                          maxLength: 5,
+                          decoration: const InputDecoration(
+                            labelText: 'PLU (Interno) *',
+                            prefixIcon: Icon(Icons.numbers),
+                            counterText: '',
+                            helperText: '5 dígitos numéricos',
+                          ),
+                          keyboardType: TextInputType.number,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        flex: 6,
+                        child: TextFormField(
+                          controller: _barcodeCtrl,
+                          decoration: const InputDecoration(
+                            labelText: 'Código de Barras (EAN)',
+                            prefixIcon: Icon(Icons.qr_code_scanner),
+                            helperText: 'Dejar vacío si es pesable',
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 const SizedBox(height: 12),
-                // Categoría y Marca en la misma fila para optimizar espacio
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Categoría
-                    Expanded(
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: DropdownButtonFormField<int?>(
-                              // ignore: deprecated_member_use
-                              value: categories.any((c) => c.id == _categoryId) ? _categoryId : null,
-                              decoration: const InputDecoration(labelText: 'Categoría', prefixIcon: Icon(Icons.category_outlined)),
-                              items: [
-                                const DropdownMenuItem<int?>(value: null, child: Text('— Sin categoría —')),
-                                ...categories.map((c) => DropdownMenuItem<int?>(value: c.id, child: Text(c.name))),
-                              ],
-                              onChanged: (val) => setState(() => _categoryId = val),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Tooltip(
-                            message: 'Crear categoría',
-                            child: IconButton.filledTonal(
-                              icon: const Icon(Icons.add),
-                              onPressed: () async {
-                                final nameCtrl = TextEditingController();
-                                final createdId = await showDialog<int?>(
-                                  context: context,
-                                  builder: (ctx) => AlertDialog(
-                                    title: const Text('Nueva Categoría'),
-                                    content: TextField(
-                                      controller: nameCtrl,
-                                      decoration: const InputDecoration(
-                                        labelText: 'Nombre',
-                                        border: OutlineInputBorder(),
-                                        prefixIcon: Icon(Icons.label_outline),
-                                      ),
-                                      autofocus: true,
-                                    ),
-                                    actions: [
-                                      TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
-                                      Consumer<CatalogProvider>(
-                                        builder: (_, p, __) => FilledButton(
-                                          onPressed: p.isLoading
-                                            ? null
-                                            : () async {
-                                                if (nameCtrl.text.trim().isEmpty) return;
-                                                final newId = await p.createCategory(nameCtrl.text.trim());
-                                                if (newId != null && ctx.mounted) Navigator.pop(ctx, newId);
-                                            },
-                                          child: const Text('Crear'),
-                                        )
-                                      ),
-                                    ],
-                                  ),
-                                );
-                                if (createdId != null && mounted) setState(() => _categoryId = createdId);
-                              },
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    // Marca
-                    Expanded(
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: DropdownButtonFormField<int?>(
-                              // ignore: deprecated_member_use
-                              value: brands.any((b) => b.id == _brandId) ? _brandId : null,
-                              decoration: const InputDecoration(labelText: 'Marca', prefixIcon: Icon(Icons.branding_watermark_outlined)),
-                              items: [
-                                const DropdownMenuItem<int?>(value: null, child: Text('— Sin marca —')),
-                                ...brands.map((b) => DropdownMenuItem<int?>(value: b.id, child: Text(b.name))),
-                              ],
-                              onChanged: (val) => setState(() => _brandId = val),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Tooltip(
-                            message: 'Crear marca',
-                            child: IconButton.filledTonal(
-                              icon: const Icon(Icons.add),
-                              onPressed: () async {
-                                final nameCtrl = TextEditingController();
-                                final createdId = await showDialog<int?>(
-                                  context: context,
-                                  builder: (ctx) => AlertDialog(
-                                    title: const Text('Nueva Marca'),
-                                    content: TextField(
-                                      controller: nameCtrl,
-                                      decoration: const InputDecoration(
-                                        labelText: 'Nombre',
-                                        border: OutlineInputBorder(),
-                                        prefixIcon: Icon(Icons.branding_watermark_outlined),
-                                      ),
-                                      autofocus: true,
-                                    ),
-                                    actions: [
-                                      TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
-                                      Consumer<CatalogProvider>(
-                                        builder: (_, p, __) => FilledButton(
-                                          onPressed: p.isLoading
-                                            ? null
-                                            : () async {
-                                                if (nameCtrl.text.trim().isEmpty) return;
-                                                final newId = await p.createBrand(nameCtrl.text.trim());
-                                                if (newId != null && ctx.mounted) Navigator.pop(ctx, newId);
-                                            },
-                                          child: const Text('Crear'),
-                                        )
-                                      ),
-                                    ],
-                                  ),
-                                );
-                                if (createdId != null && mounted) setState(() => _brandId = createdId);
-                              },
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
+                // Categoría y Marca (Adaptativo Básico vs Premium & Anti-overflow)
+                _buildCategoryAndBrandSection(context, categories, brands),
                 const SizedBox(height: 12),
                 if (canSeeSupplier) ...[
                   Row(
@@ -1346,6 +1508,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                     children: [
                       Expanded(
                         child: DropdownButtonFormField<int?>(
+                          isExpanded: true,
                           // ignore: deprecated_member_use
                           value: suppliers.any((s) => s.id == _supplierId) ? _supplierId : null,
                           decoration: const InputDecoration(labelText: 'Proveedor', prefixIcon: Icon(Icons.local_shipping_outlined)),
@@ -1388,36 +1551,30 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                   ),
                   const SizedBox(height: 12),
                 ],
-                Row(
-                  children: [
-                    // Precio Costo — oculto en Combos (el costo se deriva de sus componentes)
-                    if (!_isCombo) ...[
-                      Expanded(
-                        child: TextFormField(
+                if (isNarrow)
+                  Column(
+                    children: [
+                      if (!_isCombo) ...[
+                        TextFormField(
                           controller: _costCtrl,
                           decoration: const InputDecoration(labelText: 'Precio Costo', prefixText: '\$ '),
                           keyboardType: const TextInputType.numberWithOptions(decimal: true),
                           validator: (v) => (v == null || double.tryParse(v.replaceAll(',', '.')) == null) ? 'Ingrese un monto válido' : null,
                         ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: TextFormField(
+                        const SizedBox(height: 12),
+                        TextFormField(
                           controller: _marginCtrl,
                           decoration: const InputDecoration(labelText: 'Utilidad', suffixText: '%', prefixIcon: Icon(Icons.percent, size: 16)),
                           keyboardType: const TextInputType.numberWithOptions(decimal: true),
                         ),
-                      ),
-                      const SizedBox(width: 12),
-                    ],
-                    Expanded(
-                      child: TextFormField(
+                        const SizedBox(height: 12),
+                      ],
+                      TextFormField(
                         controller: _priceCtrl,
                         decoration: const InputDecoration(labelText: 'Precio Venta *', prefixText: '\$ '),
                         keyboardType: const TextInputType.numberWithOptions(decimal: true),
                         validator: (v) {
                           if (v == null || double.tryParse(v.replaceAll(',', '.')) == null) return 'Ingrese un precio válido';
-                          // Solo validar costo vs precio si no es un combo
                           if (!_isCombo) {
                             final costStr = _costCtrl.text.replaceAll(',', '.');
                             final cost = double.tryParse(costStr) ?? 0;
@@ -1427,9 +1584,51 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                           return null;
                         },
                       ),
-                    ),
-                  ],
-                ),
+                    ],
+                  )
+                else
+                  Row(
+                    children: [
+                      // Precio Costo — oculto en Combos (el costo se deriva de sus componentes)
+                      if (!_isCombo) ...[
+                        Expanded(
+                          child: TextFormField(
+                            controller: _costCtrl,
+                            decoration: const InputDecoration(labelText: 'Precio Costo', prefixText: '\$ '),
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            validator: (v) => (v == null || double.tryParse(v.replaceAll(',', '.')) == null) ? 'Ingrese un monto válido' : null,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: TextFormField(
+                            controller: _marginCtrl,
+                            decoration: const InputDecoration(labelText: 'Utilidad', suffixText: '%', prefixIcon: Icon(Icons.percent, size: 16)),
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                      ],
+                      Expanded(
+                        child: TextFormField(
+                          controller: _priceCtrl,
+                          decoration: const InputDecoration(labelText: 'Precio Venta *', prefixText: '\$ '),
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          validator: (v) {
+                            if (v == null || double.tryParse(v.replaceAll(',', '.')) == null) return 'Ingrese un precio válido';
+                            // Solo validar costo vs precio si no es un combo
+                            if (!_isCombo) {
+                              final costStr = _costCtrl.text.replaceAll(',', '.');
+                              final cost = double.tryParse(costStr) ?? 0;
+                              final price = double.parse(v.replaceAll(',', '.'));
+                              if (price < cost) return 'El precio de venta debe ser mayor o igual al costo';
+                            }
+                            return null;
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
                 const SizedBox(height: 12),
                 // [hardware_store] Listas de Precio — UI Ocultada (Fase 1 Refactorización)
                 // Se deprecó la carga manual de price_wholesale y price_card
@@ -1439,41 +1638,68 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                 
                 AnimatedSize(
                   duration: const Duration(milliseconds: 300),
-                  child: _isCombo ? const SizedBox.shrink() : Row(
-                    children: [
-                      Expanded(
-                        flex: 4,
-                        child: TextFormField(
-                          controller: _stockCtrl,
-                          decoration: InputDecoration(
-                            labelText: 'Stock inicial',
-                            suffixText: _unitType,
-                            prefixIcon: const Icon(Icons.inventory_2_outlined),
-                          ),
-                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        flex: 6,
-                        child: TextFormField(
-                          controller: _minStockCtrl,
-                          decoration: const InputDecoration(
-                            labelText: 'Stock Mínimo (Alerta)',
-                            prefixIcon: Icon(Icons.notification_important_outlined),
-                            helperText: 'Opcional: Dejar vacío para no alertar',
-                          ),
-                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                        ),
-                      ),
-                    ],
-                  ),
+                  child: _isCombo
+                      ? const SizedBox.shrink()
+                      : (isNarrow
+                          ? Column(
+                              children: [
+                                TextFormField(
+                                  controller: _stockCtrl,
+                                  decoration: InputDecoration(
+                                    labelText: 'Stock inicial',
+                                    suffixText: _unitType,
+                                    prefixIcon: const Icon(Icons.inventory_2_outlined),
+                                  ),
+                                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                ),
+                                const SizedBox(height: 12),
+                                TextFormField(
+                                  controller: _minStockCtrl,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Stock Mínimo (Alerta)',
+                                    prefixIcon: Icon(Icons.notification_important_outlined),
+                                    helperText: 'Opcional: Dejar vacío para no alertar',
+                                  ),
+                                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                ),
+                              ],
+                            )
+                          : Row(
+                              children: [
+                                Expanded(
+                                  flex: 4,
+                                  child: TextFormField(
+                                    controller: _stockCtrl,
+                                    decoration: InputDecoration(
+                                      labelText: 'Stock inicial',
+                                      suffixText: _unitType,
+                                      prefixIcon: const Icon(Icons.inventory_2_outlined),
+                                    ),
+                                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  flex: 6,
+                                  child: TextFormField(
+                                    controller: _minStockCtrl,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Stock Mínimo (Alerta)',
+                                      prefixIcon: Icon(Icons.notification_important_outlined),
+                                      helperText: 'Opcional: Dejar vacío para no alertar',
+                                    ),
+                                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                  ),
+                                ),
+                              ],
+                            )),
                 ),
                 const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: DropdownButtonFormField<String>(
+                if (isNarrow)
+                  Column(
+                    children: [
+                      DropdownButtonFormField<String>(
+                        isExpanded: true,
                         initialValue: _unitType,
                         decoration: const InputDecoration(
                           labelText: 'Unidad de Medida',
@@ -1494,10 +1720,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                           }
                         }),
                       ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: SwitchListTile(
+                      SwitchListTile(
                         dense: true,
                         contentPadding: EdgeInsets.zero,
                         title: const Text('Venta p/peso (balanza)'),
@@ -1507,25 +1730,62 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                           if (v && _unitType == 'un') _unitType = 'kg'; // Auto set
                         }),
                       ),
-                    ),
-                  ],
-                ),
+                    ],
+                  )
+                else
+                  Row(
+                    children: [
+                      Expanded(
+                        child: DropdownButtonFormField<String>(
+                          isExpanded: true,
+                          initialValue: _unitType,
+                          decoration: const InputDecoration(
+                            labelText: 'Unidad de Medida',
+                            prefixIcon: Icon(Icons.square_foot),
+                          ),
+                          items: const [
+                            DropdownMenuItem(value: 'un', child: Text('Unidades')),
+                            DropdownMenuItem(value: 'kg', child: Text('Kilogramos')),
+                            DropdownMenuItem(value: 'g', child: Text('Gramos')),
+                            DropdownMenuItem(value: 'lt', child: Text('Litros')),
+                          ],
+                          onChanged: (val) => setState(() {
+                            _unitType = val ?? 'un';
+                            if (_unitType != 'un') {
+                              _isSoldByWeight = true; // Auto-marcar si es peso/volumen
+                            } else {
+                              _isSoldByWeight = false; // Desmarcar si es unidad pura
+                            }
+                          }),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: SwitchListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('Venta p/peso (balanza)'),
+                          value: _isSoldByWeight,
+                          onChanged: (v) => setState(() { 
+                            _isSoldByWeight = v;
+                            if (v && _unitType == 'un') _unitType = 'kg'; // Auto set
+                          }),
+                        ),
+                      ),
+                    ],
+                  ),
                 const SizedBox(height: 8),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: SwitchListTile(
+                if (isNarrow)
+                  Column(
+                    children: [
+                      SwitchListTile(
                         dense: true,
                         contentPadding: EdgeInsets.zero,
                         title: const Text('Activo (Visible en POS)'),
                         value: _active,
                         onChanged: (v) => setState(() => _active = v),
                       ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: SwitchListTile(
+                      SwitchListTile(
                         dense: true,
                         contentPadding: EdgeInsets.zero,
                         title: const Text('Es Combo / Receta'),
@@ -1533,9 +1793,34 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                         value: _isCombo,
                         onChanged: (v) => setState(() => _isCombo = v),
                       ),
-                    ),
-                  ],
-                ),
+                    ],
+                  )
+                else
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: SwitchListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('Activo (Visible en POS)'),
+                          value: _active,
+                          onChanged: (v) => setState(() => _active = v),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: SwitchListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('Es Combo / Receta'),
+                          subtitle: const Text('No maneja stock propio, usa ingredientes', style: TextStyle(fontSize: 11)),
+                          value: _isCombo,
+                          onChanged: (v) => setState(() => _isCombo = v),
+                        ),
+                      ),
+                    ],
+                  ),
                 AnimatedSize(
                   duration: const Duration(milliseconds: 300),
                   child: !_isCombo ? const SizedBox.shrink() : Container(
@@ -1549,8 +1834,11 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        Wrap(
+                          alignment: WrapAlignment.spaceBetween,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          spacing: 8,
+                          runSpacing: 4,
                           children: [
                             Text('Productos incluidos en el Combo', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.amber.shade900)),
                             TextButton.icon(
@@ -1654,8 +1942,11 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 8,
+            runSpacing: 4,
             children: [
               Text('Precios Mayoristas / Por Volumen', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue.shade900)),
               TextButton.icon(

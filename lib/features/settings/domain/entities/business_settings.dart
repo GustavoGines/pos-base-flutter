@@ -15,6 +15,7 @@ class FeatureFlags extends Equatable {
   final bool remoteAccess;
   final bool suppliers;
   final bool expenses;
+  final bool multiRubro;
 
   const FeatureFlags({
     this.fastPos = false,
@@ -31,6 +32,7 @@ class FeatureFlags extends Equatable {
     this.remoteAccess = false,
     this.suppliers = false,
     this.expenses = false,
+    this.multiRubro = false,
   });
 
   @override
@@ -49,6 +51,7 @@ class FeatureFlags extends Equatable {
         remoteAccess,
         suppliers,
         expenses,
+        multiRubro,
       ];
 }
 
@@ -101,6 +104,7 @@ class BusinessSettings extends Equatable {
     if (features.remoteAccess) list.add('remote_access');
     if (features.suppliers) list.add('suppliers');
     if (features.expenses) list.add('expenses');
+    if (features.multiRubro) list.add('multi_rubro');
     return list;
   }
 

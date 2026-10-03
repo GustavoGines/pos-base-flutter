@@ -1,6 +1,7 @@
 import '../../domain/entities/product.dart';
 import '../../domain/entities/category.dart';
 import '../../domain/entities/brand.dart';
+import '../../domain/entities/rubro.dart';
 import '../../domain/repositories/catalog_repository.dart';
 import '../datasources/catalog_remote_datasource.dart';
 
@@ -17,6 +18,26 @@ class CatalogRepositoryImpl implements CatalogRepository {
   @override
   Future<List<Category>> getCategories() async {
     return await remoteDataSource.fetchCategories();
+  }
+
+  @override
+  Future<List<Rubro>> getRubros() async {
+    return await remoteDataSource.fetchRubros();
+  }
+
+  @override
+  Future<Rubro> createRubro(String name, {String? description}) async {
+    return await remoteDataSource.createRubro(name, description: description);
+  }
+
+  @override
+  Future<Rubro> updateRubro(int id, String name, {String? description}) async {
+    return await remoteDataSource.updateRubro(id, name, description: description);
+  }
+
+  @override
+  Future<void> deleteRubro(int id) async {
+    return await remoteDataSource.deleteRubro(id);
   }
 
   @override
@@ -40,13 +61,13 @@ class CatalogRepositoryImpl implements CatalogRepository {
   }
 
   @override
-  Future<Category> createCategory(String name, {String? description}) async {
-    return await remoteDataSource.createCategory(name, description: description);
+  Future<Category> createCategory(String name, {String? description, int? rubroId}) async {
+    return await remoteDataSource.createCategory(name, description: description, rubroId: rubroId);
   }
 
   @override
-  Future<Category> updateCategory(int id, String name, {String? description}) async {
-    return await remoteDataSource.updateCategory(id, name, description: description);
+  Future<Category> updateCategory(int id, String name, {String? description, int? rubroId}) async {
+    return await remoteDataSource.updateCategory(id, name, description: description, rubroId: rubroId);
   }
 
   @override
