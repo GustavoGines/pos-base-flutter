@@ -32,7 +32,7 @@ class ExpenseCategoryProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> createCategory(String name) async {
+  Future<ExpenseCategory> createCategory(String name) async {
     final response = await client.post(
       Uri.parse('$baseUrl/expense-categories'),
       headers: {'Content-Type': 'application/json'},
@@ -40,6 +40,7 @@ class ExpenseCategoryProvider extends ChangeNotifier {
     );
     if (response.statusCode == 201) {
       await fetchCategories();
+      return ExpenseCategory.fromJson(json.decode(response.body));
     } else {
       throw Exception('Error al crear categoría');
     }

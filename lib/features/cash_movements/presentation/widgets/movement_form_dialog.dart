@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/presentation/widgets/print_format_selector.dart';
 import '../../providers/cash_movement_provider.dart';
 import '../../providers/expense_category_provider.dart';
+import 'expense_category_form_dialog.dart';
 
 import '../../../suppliers/providers/supplier_provider.dart';
 import '../../../checks/presentation/providers/check_provider.dart';
@@ -659,53 +660,77 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                       const SizedBox(width: 16),
                       Expanded(
                         child: _type == 'expense'
-                            ? Consumer<ExpenseCategoryProvider>(
-                                builder: (context, provider, _) {
-                                  if (provider.isLoading) {
-                                    return const Center(
-                                        child: CircularProgressIndicator());
-                                  }
-                                  final activeCategories = provider.categories
-                                      .where((c) => c.isActive)
-                                      .toList();
+                            ? Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(
+                                    child: Consumer<ExpenseCategoryProvider>(
+                                      builder: (context, provider, _) {
+                                        if (provider.isLoading) {
+                                          return const Center(
+                                              child: CircularProgressIndicator());
+                                        }
+                                        final activeCategories = provider.categories
+                                            .where((c) => c.isActive)
+                                            .toList();
 
-                                  // Verificar si ya existe una categoría llamada "Otros"
-                                  final hasOtros = activeCategories.any((c) => c.name.toLowerCase() == 'otros');
-                                  
-                                  return DropdownButtonFormField<int?>(
-                                    initialValue: _expenseCategoryId,
-                                    decoration: const InputDecoration(
-                                        labelText: 'Categoría de Gasto'),
-                                    items: [
-                                      const DropdownMenuItem<int?>(
-                                        value: null,
-                                        child: Text('Seleccione una categoría'),
-                                      ),
-                                      ...activeCategories.map((c) => DropdownMenuItem<int?>(
-                                            value: c.id,
-                                            child: Text(c.name),
-                                          )),
-                                      if (!hasOtros)
-                                        const DropdownMenuItem<int?>(
-                                          value: -1,
-                                          child: Text('Otros'),
-                                        ),
-                                    ],
-                                    onChanged: (val) => setState(() {
-                                      _expenseCategoryId = val;
-                                      if (val == -1) {
-                                        _category = 'Otros';
-                                      } else if (val != null) {
-                                        _category = activeCategories
-                                            .firstWhere((c) => c.id == val)
-                                            .name;
-                                      }
-                                    }),
-                                    validator: (val) => val == null
-                                        ? 'Seleccione una categoría'
-                                        : null,
-                                  );
-                                },
+                                        // Verificar si ya existe una categoría llamada "Otros"
+                                        final hasOtros = activeCategories.any((c) => c.name.toLowerCase() == 'otros');
+                                        
+                                        return DropdownButtonFormField<int?>(
+                                          initialValue: _expenseCategoryId,
+                                          decoration: const InputDecoration(
+                                              labelText: 'Categoría de Gasto'),
+                                          items: [
+                                            const DropdownMenuItem<int?>(
+                                              value: null,
+                                              child: Text('Seleccione una categoría'),
+                                            ),
+                                            ...activeCategories.map((c) => DropdownMenuItem<int?>(
+                                                  value: c.id,
+                                                  child: Text(c.name),
+                                                )),
+                                            if (!hasOtros)
+                                              const DropdownMenuItem<int?>(
+                                                value: -1,
+                                                child: Text('Otros'),
+                                              ),
+                                          ],
+                                          onChanged: (val) => setState(() {
+                                            _expenseCategoryId = val;
+                                            if (val == -1) {
+                                              _category = 'Otros';
+                                            } else if (val != null) {
+                                              _category = activeCategories
+                                                  .firstWhere((c) => c.id == val)
+                                                  .name;
+                                            }
+                                          }),
+                                          validator: (val) => val == null
+                                              ? 'Seleccione una categoría'
+                                              : null,
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 8.0),
+                                    child: IconButton.filledTonal(
+                                      icon: const Icon(Icons.add),
+                                      tooltip: 'Nueva Categoría',
+                                      onPressed: () async {
+                                        final newCat = await ExpenseCategoryFormDialog.show(context);
+                                        if (newCat != null) {
+                                          setState(() {
+                                            _expenseCategoryId = newCat.id;
+                                            _category = newCat.name;
+                                          });
+                                        }
+                                      },
+                                    ),
+                                  ),
+                                ],
                               )
                             : DropdownButtonFormField<String>(
                                 key: ValueKey(_type),
