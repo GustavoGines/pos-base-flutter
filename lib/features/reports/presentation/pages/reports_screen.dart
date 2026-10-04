@@ -10,6 +10,7 @@ import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 
 import '../providers/reports_provider.dart';
 import '../widgets/internal_consumption_report_view.dart';
+import '../widgets/rubro_profit_report_view.dart';
 import '../widgets/expense_analysis_tab.dart';
 
 class ReportsScreen extends StatefulWidget {
@@ -20,8 +21,9 @@ class ReportsScreen extends StatefulWidget {
 }
 
 class _ReportsScreenState extends State<ReportsScreen>
-    with SingleTickerProviderStateMixin {
-  late final TabController _tabController;
+    with TickerProviderStateMixin {
+  int _currentTabCount = 2;
+  late TabController _tabController;
 
   @override
   void initState() {
@@ -29,6 +31,7 @@ class _ReportsScreenState extends State<ReportsScreen>
     final features = context.read<SettingsProvider>().features;
     final hasAdvancedReports = features.advancedReports;
     final hasCurrentAccounts = features.currentAccounts;
+    final hasMultiRubro = features.multiRubro;
     
     // Calculamos el total de solapas: 
     // 2 base (Categoría, Marcas) 
@@ -54,6 +57,31 @@ class _ReportsScreenState extends State<ReportsScreen>
         context.read<CheckProvider>().loadChecks();
       }
     });
+  }
+
+
+  int _calculateTabCount(dynamic features) {
+    int count = 2;
+    if (features.multiRubro) count += 1;
+    if (features.advancedReports) {
+      count += 1;
+      if (features.expenses) count += 1;
+      if (features.currentAccounts) count += 1;
+    }
+    return count;
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final features = context.watch<SettingsProvider>().features;
+    final newCount = _calculateTabCount(features);
+    if (newCount != _currentTabCount) {
+      _currentTabCount = newCount;
+      final old = _tabController;
+      _tabController = TabController(length: _currentTabCount, vsync: this);
+      WidgetsBinding.instance.addPostFrameCallback((_) => old.dispose());
+    }
   }
 
   @override
@@ -126,6 +154,7 @@ class _ReportsScreenState extends State<ReportsScreen>
     final features = context.watch<SettingsProvider>().features;
     final hasAdvancedReports = features.advancedReports;
     final hasCurrentAccounts = features.currentAccounts;
+    final hasMultiRubro = features.multiRubro;
 
     return Scaffold(
       appBar: const GlobalAppBar(currentRoute: '/reports'),
@@ -150,6 +179,8 @@ class _ReportsScreenState extends State<ReportsScreen>
                       tabs: [
                         const Tab(icon: Icon(Icons.bar_chart, size: 18), text: 'Por Categoría'),
                         const Tab(icon: Icon(Icons.branding_watermark, size: 18), text: 'Marcas'),
+                          if (hasMultiRubro)
+                            const Tab(icon: Icon(Icons.account_tree_outlined, size: 18), text: 'Por Rubro'),
                         // 🔒 CANDADO 3: Balance Mensual y Consumo Interno solo para plan con advanced_reports
                         if (hasAdvancedReports) ...[
                           const Tab(icon: Icon(Icons.calendar_month, size: 18), text: 'Balance Mensual'),
@@ -199,7 +230,9 @@ class _ReportsScreenState extends State<ReportsScreen>
                             : provider.brandReportData.isEmpty
                                 ? const _EmptyState()
                                 : _DashboardContent(provider: provider, isBrand: true),
-                    // Tab 2: Balance Mensual (solo con advanced_reports)
+                    // Tab Por Rubro
+                      if (hasMultiRubro) const RubroProfitReportView(),
+                      // Tab 2: Balance Mensual (solo con advanced_reports)
                     if (hasAdvancedReports)
                       _MonthlyBalanceTab(provider: provider),
                     if (hasAdvancedReports && features.expenses)

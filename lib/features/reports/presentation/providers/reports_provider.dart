@@ -53,6 +53,23 @@ class ReportsProvider extends ChangeNotifier {
   List<dynamic> _brandReportData = [];
   List<dynamic> get brandReportData => _brandReportData;
 
+  List<dynamic> _rubroReportData = [];
+  List<dynamic> get rubroReportData => _rubroReportData;
+
+  bool _isLoadingRubro = false;
+  bool get isLoadingRubro => _isLoadingRubro;
+
+  String? _rubroError;
+  String? get rubroError => _rubroError;
+
+  dynamic _rubroFilter;
+  dynamic get rubroFilter => _rubroFilter;
+
+  void setRubroFilter(dynamic filter) {
+    _rubroFilter = filter;
+    notifyListeners();
+  }
+
   List<dynamic> _dailyEvolution = [];
   List<dynamic> get dailyEvolution => _dailyEvolution;
 
@@ -101,6 +118,38 @@ class ReportsProvider extends ChangeNotifier {
   double get marginPercentage {
     if (totalRevenueWithCost == 0) return 0;
     return (totalProfit / totalRevenueWithCost) * 100;
+  }
+
+  double get rubroTotalRevenue => _rubroReportData.fold(
+      0.0,
+      (sum, item) =>
+          sum + (double.tryParse(item['total_revenue']?.toString() ?? '0') ?? 0.0));
+
+  double get rubroTotalProfit => _rubroReportData.fold(
+      0.0,
+      (sum, item) =>
+          sum + (double.tryParse(item['total_profit']?.toString() ?? '0') ?? 0.0));
+
+  double get rubroTotalRevenueWithCost => _rubroReportData.fold(
+      0.0,
+      (sum, item) =>
+          sum + (double.tryParse(item['revenue_with_cost']?.toString() ?? '0') ?? 0.0));
+
+  static const Object _unsetFilter = Object();
+
+  double get rubroTotalQuantitySold => _rubroReportData.fold(
+      0.0,
+      (sum, item) =>
+          sum + (double.tryParse(item['items_sold']?.toString() ?? '0') ?? 0.0));
+
+  int get rubroTotalItemsSold => _rubroReportData.fold(
+      0,
+      (sum, item) =>
+          sum + (int.tryParse(item['items_sold']?.toString() ?? '0') ?? (double.tryParse(item['items_sold']?.toString() ?? '0')?.toInt() ?? 0)));
+
+  double get rubroMarginPercentage {
+    if (rubroTotalRevenueWithCost == 0) return 0.0;
+    return (rubroTotalProfit / rubroTotalRevenueWithCost) * 100;
   }
 
   // ─── Balance Mensual ───────────────────────────────────────────────
@@ -186,6 +235,31 @@ class ReportsProvider extends ChangeNotifier {
       _error = e.toString();
     } finally {
       _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> fetchProfitByRubro({Object? rubroFilter = _unsetFilter}) async {
+    _isLoadingRubro = true;
+    _rubroError = null;
+    if (!identical(rubroFilter, _unsetFilter)) {
+      _rubroFilter = rubroFilter;
+    }
+    notifyListeners();
+
+    try {
+      final df = DateFormat('yyyy-MM-dd');
+      final result = await dataSource.getProfitByRubro(
+        df.format(_startDate),
+        df.format(_endDate),
+        rubroFilter: _rubroFilter,
+      );
+
+      _rubroReportData = result['data'] ?? [];
+    } catch (e) {
+      _rubroError = e.toString();
+    } finally {
+      _isLoadingRubro = false;
       notifyListeners();
     }
   }
@@ -324,6 +398,112 @@ class ReportsProvider extends ChangeNotifier {
       }
     } catch (e) {
       _error = 'Error al exportar PDF: $e';
+    } finally {
+      _isExportingPdf = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> exportRubroToExcel({Object? rubroFilter = _unsetFilter}) async {
+    _isExporting = true;
+    _error = null;
+    _rubroError = null;
+    notifyListeners();
+
+    try {
+      final df = DateFormat('yyyy-MM-dd');
+      final activeFilter = identical(rubroFilter, _unsetFilter) ? _rubroFilter : rubroFilter;
+      final bytes = await dataSource.downloadRubroExcel(
+        df.format(_startDate),
+        df.format(_endDate),
+        rubroFilter: activeFilter,
+      );
+
+      final docsDir = await getApplicationDocumentsDirectory();
+      final reportesDir = Directory(
+          '${docsDir.path}${Platform.pathSeparator}Sistema_POS${Platform.pathSeparator}Reportes');
+
+      if (!await reportesDir.exists()) {
+        await reportesDir.create(recursive: true);
+      }
+
+      final cleanStart = DateFormat('dd-MM-yyyy').format(_startDate);
+      final cleanEnd = DateFormat('dd-MM-yyyy').format(_endDate);
+      final filename = 'Ganancias_Rubros_${cleanStart}_al_$cleanEnd.xlsx';
+      final file =
+          File('${reportesDir.path}${Platform.pathSeparator}$filename');
+
+      await file.writeAsBytes(bytes);
+
+      if (Platform.isWindows) {
+        try {
+          await Process.run('explorer.exe', ['/select,', file.path]);
+        } catch (e) {
+          debugPrint('Error abriendo explorer: $e');
+        }
+      } else {
+        final folderUri =
+            Uri.parse('file:///${reportesDir.path.replaceAll('\\', '/')}');
+        if (await canLaunchUrl(folderUri)) {
+          await launchUrl(folderUri);
+        }
+      }
+    } catch (e) {
+      _rubroError = 'Error al exportar Excel de rubros: $e';
+      _error = 'Error al exportar Excel de rubros: $e';
+    } finally {
+      _isExporting = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> exportRubroToPdf({Object? rubroFilter = _unsetFilter}) async {
+    _isExportingPdf = true;
+    _error = null;
+    _rubroError = null;
+    notifyListeners();
+
+    try {
+      final df = DateFormat('yyyy-MM-dd');
+      final activeFilter = identical(rubroFilter, _unsetFilter) ? _rubroFilter : rubroFilter;
+      final bytes = await dataSource.downloadRubroPdf(
+        df.format(_startDate),
+        df.format(_endDate),
+        rubroFilter: activeFilter,
+      );
+
+      final docsDir = await getApplicationDocumentsDirectory();
+      final reportesDir = Directory(
+          '${docsDir.path}${Platform.pathSeparator}Sistema_POS${Platform.pathSeparator}Reportes');
+
+      if (!await reportesDir.exists()) {
+        await reportesDir.create(recursive: true);
+      }
+
+      final cleanStart = DateFormat('dd-MM-yyyy').format(_startDate);
+      final cleanEnd = DateFormat('dd-MM-yyyy').format(_endDate);
+      final filename = 'Ganancias_Rubros_${cleanStart}_al_$cleanEnd.pdf';
+      final file =
+          File('${reportesDir.path}${Platform.pathSeparator}$filename');
+
+      await file.writeAsBytes(bytes);
+
+      if (Platform.isWindows) {
+        try {
+          await Process.run('explorer.exe', ['/select,', file.path]);
+        } catch (e) {
+          debugPrint('Error abriendo explorer: $e');
+        }
+      } else {
+        final folderUri =
+            Uri.parse('file:///${reportesDir.path.replaceAll('\\', '/')}');
+        if (await canLaunchUrl(folderUri)) {
+          await launchUrl(folderUri);
+        }
+      }
+    } catch (e) {
+      _rubroError = 'Error al exportar PDF de rubros: $e';
+      _error = 'Error al exportar PDF de rubros: $e';
     } finally {
       _isExportingPdf = false;
       notifyListeners();

@@ -35,6 +35,30 @@ class ReportsRemoteDataSource {
     }
   }
 
+  Future<Map<String, dynamic>> getProfitByRubro(String startDate, String endDate, {dynamic rubroFilter}) async {
+    String filterParam = '';
+    if (rubroFilter != null) {
+      if (rubroFilter is List) {
+        if (rubroFilter.isNotEmpty) {
+          filterParam = '&rubro_ids=${rubroFilter.join(',')}';
+        }
+      } else if (rubroFilter.toString().isNotEmpty) {
+        filterParam = '&rubro_id=$rubroFilter';
+      }
+    }
+    final uri = Uri.parse('$baseUrl/reports/sales-by-rubro?start_date=$startDate&end_date=$endDate$filterParam');
+    
+    final response = await client.get(uri, headers: {
+      'Accept': 'application/json',
+    });
+
+    if (response.statusCode == 200) {
+      return json.decode(response.body);
+    } else {
+      throw Exception('Error al obtener reporte por rubro: ${response.statusCode}');
+    }
+  }
+
   Future<Map<String, dynamic>> getInternalConsumption(String startDate, String endDate, {int? customerId}) async {
     final params = 'start_date=$startDate&end_date=$endDate${customerId != null ? '&customer_id=$customerId' : ''}';
     final uri = Uri.parse('$baseUrl/reports/internal-consumption?$params');
@@ -71,6 +95,48 @@ class ReportsRemoteDataSource {
       return response.bodyBytes;
     } else {
       throw Exception('Error al descargar el reporte PDF: ${response.statusCode}');
+    }
+  }
+
+  Future<List<int>> downloadRubroExcel(String startDate, String endDate, {dynamic rubroFilter}) async {
+    String filterParam = '';
+    if (rubroFilter != null) {
+      if (rubroFilter is List) {
+        if (rubroFilter.isNotEmpty) {
+          filterParam = '&rubro_ids=${rubroFilter.join(',')}';
+        }
+      } else if (rubroFilter.toString().isNotEmpty) {
+        filterParam = '&rubro_id=$rubroFilter';
+      }
+    }
+    final uri = Uri.parse('$baseUrl/reports/sales-by-rubro/export?start_date=$startDate&end_date=$endDate$filterParam');
+    final response = await client.get(uri);
+    if (response.statusCode == 200) {
+      return response.bodyBytes;
+    } else {
+      throw Exception('Error al descargar el reporte Excel por rubro: ${response.statusCode}');
+    }
+  }
+
+  Future<List<int>> downloadRubroPdf(String startDate, String endDate, {dynamic rubroFilter}) async {
+    String filterParam = '';
+    if (rubroFilter != null) {
+      if (rubroFilter is List) {
+        if (rubroFilter.isNotEmpty) {
+          filterParam = '&rubro_ids=${rubroFilter.join(',')}';
+        }
+      } else if (rubroFilter.toString().isNotEmpty) {
+        filterParam = '&rubro_id=$rubroFilter';
+      }
+    }
+    final uri = Uri.parse('$baseUrl/reports/sales-by-rubro/pdf?start_date=$startDate&end_date=$endDate$filterParam');
+    final response = await client.get(uri, headers: {
+      'Accept': 'application/pdf',
+    });
+    if (response.statusCode == 200) {
+      return response.bodyBytes;
+    } else {
+      throw Exception('Error al descargar el reporte PDF por rubro: ${response.statusCode}');
     }
   }
 
