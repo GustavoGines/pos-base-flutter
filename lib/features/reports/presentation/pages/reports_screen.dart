@@ -176,10 +176,10 @@ class _ReportsScreenState extends State<ReportsScreen>
                       indicatorWeight: 3,
                       labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                       tabs: [
-                        const Tab(icon: Icon(Icons.bar_chart, size: 18), text: 'Por Categoría'),
-                        const Tab(icon: Icon(Icons.branding_watermark, size: 18), text: 'Marcas'),
                           if (hasMultiRubro)
                             const Tab(icon: Icon(Icons.account_tree_outlined, size: 18), text: 'Por Rubro'),
+                        const Tab(icon: Icon(Icons.bar_chart, size: 18), text: 'Por Categoría'),
+                        const Tab(icon: Icon(Icons.branding_watermark, size: 18), text: 'Marcas'),
                         // 🔒 CANDADO 3: Balance Mensual y Consumo Interno solo para plan con advanced_reports
                         if (hasAdvancedReports) ...[
                           const Tab(icon: Icon(Icons.calendar_month, size: 18), text: 'Balance Mensual'),
@@ -194,10 +194,12 @@ class _ReportsScreenState extends State<ReportsScreen>
                     AnimatedBuilder(
                       animation: _tabController,
                       builder: (_, __) {
-                        if (_tabController.index == 0 || _tabController.index == 1) {
+                          final categoryIndex = hasMultiRubro ? 1 : 0;
+                          final brandIndex = hasMultiRubro ? 2 : 1;
+                          if (_tabController.index == categoryIndex || _tabController.index == brandIndex) {
                           return _FiltersBar(
                             provider: provider,
-                            isBrand: _tabController.index == 1,
+                            isBrand: _tabController.index == brandIndex,
                             onDateTap: () => _selectDateRange(context),
                             onRefresh: () => provider.fetchProfitByCategory(),
                           );
@@ -213,6 +215,8 @@ class _ReportsScreenState extends State<ReportsScreen>
                 child: TabBarView(
                   controller: _tabController,
                   children: [
+                    // Tab Por Rubro
+                      if (hasMultiRubro) const RubroProfitReportView(),
                     // Tab 0: Por Categoría (siempre disponible)
                     provider.isLoading
                         ? const Center(child: CircularProgressIndicator())
@@ -229,8 +233,6 @@ class _ReportsScreenState extends State<ReportsScreen>
                             : provider.brandReportData.isEmpty
                                 ? const _EmptyState()
                                 : _DashboardContent(provider: provider, isBrand: true),
-                    // Tab Por Rubro
-                      if (hasMultiRubro) const RubroProfitReportView(),
                       // Tab 2: Balance Mensual (solo con advanced_reports)
                     if (hasAdvancedReports)
                       _MonthlyBalanceTab(provider: provider),
