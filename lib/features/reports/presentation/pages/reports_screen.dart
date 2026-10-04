@@ -153,6 +153,7 @@ class _ReportsScreenState extends State<ReportsScreen>
     final features = context.watch<SettingsProvider>().features;
     final hasAdvancedReports = features.advancedReports;
     final hasCurrentAccounts = features.currentAccounts;
+      final hasMultiRubro = features.multiRubro;
 
     return Scaffold(
       appBar: const GlobalAppBar(currentRoute: '/reports'),
