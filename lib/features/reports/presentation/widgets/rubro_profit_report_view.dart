@@ -436,7 +436,7 @@ class _RubroProfitReportViewState extends State<RubroProfitReportView> {
                     label: Text(
                       _selectedRubroIds.isEmpty 
                         ? 'Todos los Rubros' 
-                        : ' Rubros seleccionados',
+                        : '${_selectedRubroIds.length} Rubros seleccionados',
                       style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
                       overflow: TextOverflow.ellipsis,
                     ),
