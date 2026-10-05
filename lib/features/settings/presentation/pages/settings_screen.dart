@@ -247,7 +247,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _pickLogo() async {
     try {
-      final result = await FilePicker.pickFiles(
+      final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['jpg', 'jpeg', 'png', 'webp'],
         withData: true,

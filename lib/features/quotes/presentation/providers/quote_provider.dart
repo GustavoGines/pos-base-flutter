@@ -182,6 +182,8 @@ class QuoteProvider extends ChangeNotifier {
         unitPrice: c.unitPrice,    // Motor híbrido: override o % global
         quantity: c.quantity,
         subtotal: c.subtotal,
+        product: c.product,
+        imageUrl: c.product.imageUrl,
       )).toList();
 
       final quote = await repository.createQuote(

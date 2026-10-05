@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:http/http.dart' as http;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
@@ -15,6 +16,63 @@ import '../data/quote_repository.dart';
 class QuotePdfService {
   static final _currencyFmt = NumberFormat.currency(locale: 'es_AR', symbol: '\$', decimalDigits: 0);
   static final _dateFmt = DateFormat('dd/MM/yyyy');
+
+  /// Cache en memoria de imágenes de productos para evitar peticiones redundantes.
+  static final Map<String, pw.MemoryImage?> _thumbnailCache = {};
+
+  /// Limpia la caché de miniaturas (útil para tests).
+  static void clearThumbnailCache() {
+    _thumbnailCache.clear();
+  }
+
+  /// Precarga asíncronamente las imágenes de los ítems de presupuesto antes del renderizado sincrónico de MultiPage.
+  static Future<Map<int, pw.MemoryImage>> preloadThumbnails(
+    Quote quote, {
+    http.Client? httpClient,
+  }) async {
+    final Map<int, pw.MemoryImage> imageMap = {};
+    final client = httpClient ?? http.Client();
+
+    try {
+      for (var i = 0; i < quote.items.length; i++) {
+        final item = quote.items[i];
+        final rawUrl = item.imageUrl ?? item.product?.imageUrl;
+        if (rawUrl == null || rawUrl.trim().isEmpty) continue;
+        final url = rawUrl.trim();
+
+        if (_thumbnailCache.containsKey(url)) {
+          final cached = _thumbnailCache[url];
+          if (cached != null) {
+            imageMap[i] = cached;
+          }
+          continue;
+        }
+
+        try {
+          final uri = Uri.tryParse(url);
+          if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) {
+            final response = await client.get(uri).timeout(const Duration(seconds: 4));
+            if (response.statusCode == 200 && response.bodyBytes.isNotEmpty) {
+              final memImg = pw.MemoryImage(response.bodyBytes);
+              _thumbnailCache[url] = memImg;
+              imageMap[i] = memImg;
+            } else {
+              _thumbnailCache[url] = null;
+            }
+          }
+        } catch (e) {
+          debugPrint('Error al precargar imagen de presupuesto ($url): $e');
+          _thumbnailCache[url] = null;
+        }
+      }
+    } finally {
+      if (httpClient == null) {
+        client.close();
+      }
+    }
+
+    return imageMap;
+  }
 
   /// Genera el PDF, lo guarda en el directorio de descargas, lo muestra al
   /// usuario (preview) y luego abre WhatsApp con un mensaje prearmado.
@@ -171,13 +229,17 @@ class QuotePdfService {
 
   // ── PDF Builder ──────────────────────────────────────────────────────────
 
-  static Future<Uint8List> _buildPdf({
+  static Future<Uint8List> generateQuotePdf({
     required Quote quote,
     required String businessName,
     String? businessAddress,
     String? businessPhone,
     String? vendorName,
+    http.Client? httpClient,
   }) async {
+    // 1. Precarga asíncrona de miniaturas antes del renderizado sincrónico de MultiPage
+    final itemThumbnails = await preloadThumbnails(quote, httpClient: httpClient);
+
     final doc = pw.Document();
 
     // Paleta de colores
@@ -399,10 +461,11 @@ class QuotePdfService {
                 horizontalInside: const pw.BorderSide(color: PdfColors.grey200, width: 0.5),
               ),
               columnWidths: {
-                0: const pw.FlexColumnWidth(5),
-                1: const pw.FlexColumnWidth(1.5),
-                2: const pw.FlexColumnWidth(2),
-                3: const pw.FlexColumnWidth(2),
+                0: const pw.FixedColumnWidth(36), // FOTO / Miniatura
+                1: const pw.FlexColumnWidth(5),   // DESCRIPCIÓN
+                2: const pw.FlexColumnWidth(1.4), // CANT.
+                3: const pw.FlexColumnWidth(1.8), // PRECIO UNIT.
+                4: const pw.FlexColumnWidth(1.8), // SUBTOTAL
               },
               children: [
                 // Header row
@@ -410,6 +473,7 @@ class QuotePdfService {
                   decoration: const pw.BoxDecoration(color: primary),
                   repeat: true, // Repite la cabecera de la tabla si salta de hoja
                   children: [
+                    _th('', align: pw.TextAlign.center),
                     _th('DESCRIPCIÓN'),
                     _th('CANT.', align: pw.TextAlign.center),
                     _th('PRECIO UNIT.', align: pw.TextAlign.right),
@@ -421,9 +485,11 @@ class QuotePdfService {
                   final i = e.key;
                   final item = e.value;
                   final isEven = i % 2 == 0;
+                  final memImg = itemThumbnails[i];
                   return pw.TableRow(
                     decoration: pw.BoxDecoration(color: isEven ? PdfColors.white : bgLight),
                     children: [
+                      _thumbnailCell(memImg),
                       _td(item.productName),
                       _td(
                         item.quantity % 1 == 0
@@ -481,6 +547,63 @@ class QuotePdfService {
     );
 
     return doc.save();
+  }
+
+  static Future<Uint8List> _buildPdf({
+    required Quote quote,
+    required String businessName,
+    String? businessAddress,
+    String? businessPhone,
+    String? vendorName,
+    http.Client? httpClient,
+  }) async {
+    return generateQuotePdf(
+      quote: quote,
+      businessName: businessName,
+      businessAddress: businessAddress,
+      businessPhone: businessPhone,
+      vendorName: vendorName,
+      httpClient: httpClient,
+    );
+  }
+
+  static pw.Widget _thumbnailCell(pw.MemoryImage? memoryImage) {
+    return pw.Padding(
+      padding: const pw.EdgeInsets.symmetric(horizontal: 2, vertical: 3),
+      child: pw.Center(
+        child: memoryImage != null
+            ? pw.Container(
+                width: 32,
+                height: 32,
+                decoration: pw.BoxDecoration(
+                  borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
+                  border: pw.Border.all(color: PdfColors.grey300, width: 0.5),
+                ),
+                child: pw.ClipRRect(
+                  horizontalRadius: 4,
+                  verticalRadius: 4,
+                  child: pw.Image(
+                    memoryImage,
+                    fit: pw.BoxFit.cover,
+                  ),
+                ),
+              )
+            : pw.Container(
+                width: 32,
+                height: 32,
+                decoration: const pw.BoxDecoration(
+                  color: PdfColors.grey100,
+                  borderRadius: pw.BorderRadius.all(pw.Radius.circular(4)),
+                ),
+                child: pw.Center(
+                  child: pw.Text(
+                    '-',
+                    style: const pw.TextStyle(color: PdfColors.grey400, fontSize: 10),
+                  ),
+                ),
+              ),
+      ),
+    );
   }
 
   static pw.Widget _th(String text, {pw.TextAlign align = pw.TextAlign.left}) =>

@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:frontend_desktop/core/config/app_config.dart';
 import 'package:frontend_desktop/features/catalog/data/models/product_model.dart';
@@ -16,6 +15,7 @@ import 'package:frontend_desktop/features/catalog/presentation/providers/catalog
 import 'package:frontend_desktop/features/cash_register/presentation/providers/cash_register_provider.dart';
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
 import '../widgets/checkout_dialog.dart';
+import '../widgets/pos_quick_access_view.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
@@ -2854,221 +2854,11 @@ class _PosScreenState extends State<PosScreen> {
   }
 
   Widget _buildDynamicCatalogView(List<Product> displayItems, String viewMode) {
-    if (viewMode == 'list') {
-      return ListView.builder(
-        itemCount: displayItems.length,
-        itemBuilder: (context, index) => _buildListItem(displayItems[index]),
-      );
-    } else if (viewMode == 'compact') {
-      return GridView.builder(
-        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-          maxCrossAxisExtent: 250,
-          childAspectRatio: 3.5,
-          crossAxisSpacing: 8,
-          mainAxisSpacing: 8,
-        ),
-        itemCount: displayItems.length,
-        itemBuilder: (context, index) => _buildCompactItem(displayItems[index]),
-      );
-    } else if (viewMode == 'grid_medium') {
-      return GridView.builder(
-        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-          maxCrossAxisExtent: 140,
-          childAspectRatio: 0.9,
-          crossAxisSpacing: 8,
-          mainAxisSpacing: 8,
-        ),
-        itemCount: displayItems.length,
-        itemBuilder: (context, index) => _buildGridItem(displayItems[index], isMedium: true),
-      );
-    } else {
-      // Default: grid_large
-      return GridView.builder(
-        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-          maxCrossAxisExtent: 180,
-          childAspectRatio: 0.85,
-          crossAxisSpacing: 12,
-          mainAxisSpacing: 12,
-        ),
-        itemCount: displayItems.length,
-        itemBuilder: (context, index) => _buildGridItem(displayItems[index], isMedium: false),
-      );
-    }
-  }
-
-  Widget _buildListItem(Product product) {
-    final isByWeight = product.isSoldByWeight;
-    return Card(
-      elevation: 1,
-      margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
-      child: ListTile(
-        onTap: () => _handleProductSelection(product),
-        leading: Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: isByWeight ? Colors.orange.shade50 : Colors.blue.shade50,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Icon(
-            isByWeight ? Icons.scale_rounded : Icons.inventory_2_outlined,
-            color: isByWeight ? Colors.orange.shade600 : Colors.blue.shade600,
-          ),
-        ),
-        title: Text(product.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-        subtitle: product.barcode != null && product.barcode!.isNotEmpty 
-            ? Text(product.barcode!, style: const TextStyle(fontSize: 12)) 
-            : null,
-        trailing: _buildPriceWidget(product, isByWeight, 16),
-      ),
-    );
-  }
-
-  Widget _buildCompactItem(Product product) {
-    final isByWeight = product.isSoldByWeight;
-    return InkWell(
-      borderRadius: BorderRadius.circular(6),
-      onTap: () => _handleProductSelection(product),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(
-          color: isByWeight ? Colors.orange.shade50 : Colors.blue.shade50,
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: isByWeight ? Colors.orange.shade200 : Colors.blue.shade200),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              isByWeight ? Icons.scale_rounded : Icons.inventory_2_outlined,
-              color: isByWeight ? Colors.orange.shade600 : Colors.blue.shade600,
-              size: 18,
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                product.name,
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            const SizedBox(width: 4),
-            _buildPriceWidget(product, isByWeight, 13),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildGridItem(Product product, {required bool isMedium}) {
-    final isByWeight = product.isSoldByWeight;
-    return InkWell(
-      borderRadius: BorderRadius.circular(10),
-      onTap: () => _handleProductSelection(product),
-      child: Card(
-        elevation: 2,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        child: Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(10),
-            gradient: LinearGradient(
-              colors: isByWeight ? [Colors.orange.shade50, Colors.white] : [Colors.blue.shade50, Colors.white],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-          ),
-          child: Padding(
-            padding: EdgeInsets.symmetric(horizontal: isMedium ? 4.0 : 8.0, vertical: isMedium ? 4.0 : 8.0),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                if (product.imageUrl != null &&
-                    product.imageUrl!.isNotEmpty &&
-                    (Uri.tryParse(product.imageUrl!)?.hasScheme ?? false) &&
-                    (Uri.tryParse(product.imageUrl!)?.hasAuthority ?? false) &&
-                    (Uri.tryParse(product.imageUrl!)?.host.isNotEmpty ?? false))
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(6),
-                    child: CachedNetworkImage(
-                      imageUrl: product.imageUrl!,
-                      width: isMedium ? 26 : 36,
-                      height: isMedium ? 26 : 36,
-                      fit: BoxFit.cover,
-                      placeholder: (context, url) => const SizedBox(
-                        width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                      errorWidget: (context, url, error) => Icon(
-                        isByWeight ? Icons.scale_rounded : Icons.inventory_2_outlined,
-                        color: isByWeight ? Colors.orange.shade600 : Colors.blue.shade600,
-                        size: isMedium ? 18 : 24,
-                      ),
-                    ),
-                  )
-                else
-                  Icon(
-                    isByWeight ? Icons.scale_rounded : Icons.inventory_2_outlined,
-                    color: isByWeight ? Colors.orange.shade600 : Colors.blue.shade600,
-                    size: isMedium ? 18 : 24,
-                  ),
-                SizedBox(height: isMedium ? 2 : 4),
-                Expanded(
-                  child: Center(
-                    child: Text(
-                      product.name,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: isMedium ? 11 : 13),
-                      maxLines: isMedium ? 2 : 3,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ),
-                SizedBox(height: isMedium ? 2 : 4),
-                Container(
-                  padding: EdgeInsets.symmetric(horizontal: 6, vertical: isMedium ? 1 : 2),
-                  decoration: BoxDecoration(
-                    color: isByWeight ? Colors.orange.shade100 : Colors.green.shade50,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: _buildPriceWidget(product, isByWeight, isMedium ? 11 : 13),
-                ),
-                if (isByWeight) ...[
-                  SizedBox(height: isMedium ? 2 : 3),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                    decoration: BoxDecoration(
-                      color: Colors.orange.shade200,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text('⚖️ Por Kg', style: TextStyle(fontSize: isMedium ? 9 : 10, color: Colors.orange.shade900, fontWeight: FontWeight.w600)),
-                  ),
-                ],
-                if (product.salesCount > 0) ...[
-                  SizedBox(height: isMedium ? 2 : 4),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                    decoration: BoxDecoration(
-                      color: Colors.blue.withAlpha(25),
-                      borderRadius: BorderRadius.circular(4),
-                      border: Border.all(color: Colors.blue.withAlpha(50)),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.flash_on_rounded, size: isMedium ? 8 : 10, color: Colors.blueAccent),
-                        const SizedBox(width: 2),
-                        Text(
-                          "${product.salesCount} vend.",
-                          style: TextStyle(fontSize: isMedium ? 8 : 9, color: Colors.blueAccent, fontWeight: FontWeight.bold),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ),
-      ),
+    return PosQuickAccessCatalogView(
+      products: displayItems,
+      viewMode: viewMode,
+      onSelectProduct: _handleProductSelection,
+      priceBuilder: (product, isByWeight, fontSize) => _buildPriceWidget(product, isByWeight, fontSize),
     );
   }
 

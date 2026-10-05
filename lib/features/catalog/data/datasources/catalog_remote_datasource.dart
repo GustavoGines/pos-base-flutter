@@ -30,7 +30,16 @@ abstract class CatalogRemoteDataSource {
   Future<ProductModel> updateProduct(int id, Map<String, dynamic> productData);
   Future<void> deleteProduct(int id);
   Future<Map<String, dynamic>> bulkDeleteProducts(List<int> ids);
-  Future<Map<String, dynamic>> bulkUpdateProducts(List<int> ids, {int? categoryId, bool? active, int? supplierId, bool clearSupplier = false});
+  Future<Map<String, dynamic>> bulkUpdateProducts(
+    List<int> ids, {
+    int? categoryId,
+    bool clearCategory = false,
+    int? brandId,
+    bool clearBrand = false,
+    bool? active,
+    int? supplierId,
+    bool clearSupplier = false,
+  });
   Future<Map<String, dynamic>> bulkPriceUpdate({
     required double percentage,
     required String roundingRule,
@@ -435,19 +444,40 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
   }
 
   @override
-  Future<Map<String, dynamic>> bulkUpdateProducts(List<int> ids, {int? categoryId, bool? active, int? supplierId, bool clearSupplier = false}) async {
+  Future<Map<String, dynamic>> bulkUpdateProducts(
+    List<int> ids, {
+    int? categoryId,
+    bool clearCategory = false,
+    int? brandId,
+    bool clearBrand = false,
+    bool? active,
+    int? supplierId,
+    bool clearSupplier = false,
+  }) async {
     try {
       final body = <String, dynamic>{'product_ids': ids};
-      if (categoryId != null) body['category_id'] = categoryId;
-      if (active != null) body['active'] = active;
+      if (clearCategory) {
+        body['category_id'] = null;
+      } else if (categoryId != null) {
+        body['category_id'] = categoryId;
+      }
+
+      if (clearBrand) {
+        body['brand_id'] = null;
+      } else if (brandId != null) {
+        body['brand_id'] = brandId;
+      }
+
       if (clearSupplier) {
         body['supplier_id'] = null;
       } else if (supplierId != null) {
         body['supplier_id'] = supplierId;
       }
 
-      final response = await client.put(
-        Uri.parse('$baseUrl/catalog/products/bulk-update'),
+      if (active != null) body['active'] = active;
+
+      final response = await client.post(
+        Uri.parse('$baseUrl/catalog/bulk-update'),
         headers: {'Accept': 'application/json', 'Content-Type': 'application/json'},
         body: json.encode(body),
       );

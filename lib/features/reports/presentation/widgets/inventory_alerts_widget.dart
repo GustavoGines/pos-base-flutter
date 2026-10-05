@@ -4,6 +4,8 @@ import '../providers/inventory_alerts_provider.dart';
 import 'package:frontend_desktop/features/catalog/presentation/providers/catalog_provider.dart';
 import 'package:frontend_desktop/features/catalog/presentation/widgets/stock_adjustment_dialog.dart';
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:frontend_desktop/core/utils/image_url_resolver.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 /// Widget autónomo de alertas semafóricas de stock.
@@ -448,6 +450,21 @@ class _ReactiveAlertTile extends StatelessWidget {
     final isWeight =
         alert['is_sold_by_weight'] == 1 || alert['is_sold_by_weight'] == true;
 
+    final String? rawImg = alert['image_url']?.toString() ?? alert['image_path']?.toString();
+    String? effectiveImg = resolveImageUrl(rawImg);
+    if (effectiveImg == null || effectiveImg.isEmpty) {
+      try {
+        final pid = int.tryParse(alert['product_id']?.toString() ?? '');
+        if (pid != null) {
+          final cat = context.read<CatalogProvider>();
+          final match = cat.products.where((p) => p.id == pid).firstOrNull;
+          effectiveImg = match?.imageUrl;
+        }
+      } catch (_) {}
+    }
+    final uri = effectiveImg != null && effectiveImg.isNotEmpty ? Uri.tryParse(effectiveImg) : null;
+    final hasImage = uri != null && uri.hasScheme && uri.hasAuthority && uri.host.isNotEmpty;
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       child: Container(
@@ -468,6 +485,43 @@ class _ReactiveAlertTile extends StatelessWidget {
           children: [
             Row(
               children: [
+                Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(8),
+                    color: isWeight ? Colors.orange.shade50 : Colors.blue.shade50,
+                    border: Border.all(color: Colors.grey.shade300, width: 1),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(7),
+                    child: hasImage
+                        ? CachedNetworkImage(
+                            imageUrl: effectiveImg!,
+                            width: 38,
+                            height: 38,
+                            fit: BoxFit.cover,
+                            placeholder: (context, url) => const Center(
+                              child: SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              ),
+                            ),
+                            errorWidget: (context, url, error) => Icon(
+                              Icons.inventory_2_outlined,
+                              size: 20,
+                              color: isWeight ? Colors.orange.shade700 : Colors.blue.shade700,
+                            ),
+                          )
+                        : Icon(
+                            Icons.inventory_2_outlined,
+                            size: 20,
+                            color: isWeight ? Colors.orange.shade700 : Colors.blue.shade700,
+                          ),
+                  ),
+                ),
+                const SizedBox(width: 10),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -483,6 +537,7 @@ class _ReactiveAlertTile extends StatelessWidget {
                     ],
                   ),
                 ),
+                const SizedBox(width: 8),
                 Text(
                   isWeight
                       ? '${stock.toStringAsFixed(3)} Kg'

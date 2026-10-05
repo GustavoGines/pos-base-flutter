@@ -159,7 +159,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
   }
 
   Future<void> _pickAndUploadFile() async {
-    final result = await fp.FilePicker.pickFiles(
+    final result = await fp.FilePicker.platform.pickFiles(
       type: fp.FileType.custom,
       allowedExtensions: ['jpg', 'jpeg', 'png', 'pdf'],
     );

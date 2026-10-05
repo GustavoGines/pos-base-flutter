@@ -11,6 +11,7 @@ class QuoteItem {
   final double quantity;
   final double subtotal;
   final Product? product;
+  final String? imageUrl;
 
   QuoteItem({
     this.productId,
@@ -19,7 +20,8 @@ class QuoteItem {
     required this.quantity,
     required this.subtotal,
     this.product,
-  });
+    String? imageUrl,
+  }) : imageUrl = imageUrl ?? product?.imageUrl;
 
   Map<String, dynamic> toJson() => {
     if (productId != null) 'product_id': productId,
@@ -85,15 +87,22 @@ class Quote {
       priceList: json['price_list']?.toString() ?? 'base',
       items: rawItems
           .map(
-            (i) => QuoteItem(
-              productId: i['product_id'] as int?,
-              productName: i['product_name']?.toString() ?? '',
-              unitPrice:
-                  double.tryParse(i['unit_price']?.toString() ?? '0') ?? 0,
-              quantity: double.tryParse(i['quantity']?.toString() ?? '1') ?? 1,
-              subtotal: double.tryParse(i['subtotal']?.toString() ?? '0') ?? 0,
-              product: i['product'] != null ? ProductModel.fromJson(i['product'] as Map<String, dynamic>) : null,
-            ),
+            (i) {
+              final product = i['product'] != null
+                  ? ProductModel.fromJson(i['product'] as Map<String, dynamic>)
+                  : null;
+              final imgUrl = i['image_url']?.toString() ?? product?.imageUrl;
+              return QuoteItem(
+                productId: i['product_id'] as int?,
+                productName: i['product_name']?.toString() ?? '',
+                unitPrice:
+                    double.tryParse(i['unit_price']?.toString() ?? '0') ?? 0,
+                quantity: double.tryParse(i['quantity']?.toString() ?? '1') ?? 1,
+                subtotal: double.tryParse(i['subtotal']?.toString() ?? '0') ?? 0,
+                product: product,
+                imageUrl: imgUrl,
+              );
+            },
           )
           .toList(),
     );

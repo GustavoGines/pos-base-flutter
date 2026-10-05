@@ -1,4 +1,4 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="ar.com.gglabs.posmobile">
 
     <!-- Permisos para instalación de APK (OTA update in-app) -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />

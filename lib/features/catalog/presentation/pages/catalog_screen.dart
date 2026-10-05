@@ -26,6 +26,8 @@ import 'package:frontend_desktop/core/config/app_config.dart';
 import '../../../suppliers/providers/supplier_provider.dart';
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
 import 'package:frontend_desktop/core/constants/app_permissions.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import '../../utils/product_share_helper.dart';
 
 class CatalogScreen extends StatefulWidget {
   const CatalogScreen({super.key});
@@ -61,6 +63,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
   Future<void> _initPusher() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      if (prefs.getBool('disable_pusher') == true) return;
       final terminalId = prefs.getString('pos_terminal_id') ?? 'caja-1';
       final currentUrl = prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
       final uri = Uri.parse(currentUrl);
@@ -232,6 +235,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                                 case 5: _confirmBulkDelete(provider); break;
                                 case 6: setState(() => _selectedProducts.clear()); break;
                                 case 7: _bulkUpdateSupplier(provider); break;
+                                case 8: _bulkUpdateBrand(provider); break;
                               }
                             },
                             child: Container(
@@ -253,15 +257,16 @@ class _CatalogScreenState extends State<CatalogScreen> {
                               ),
                             ),
                             itemBuilder: (context) => [
-                              const PopupMenuItem(value: 1, child: Row(children: [Icon(Icons.folder_outlined, color: Colors.orange, size: 20), SizedBox(width: 12), Text('Mover Categoría')])),
-                              const PopupMenuItem(value: 2, child: Row(children: [Icon(Icons.power_settings_new, color: Colors.teal, size: 20), SizedBox(width: 12), Text('Cambiar Estado')])),
-                              const PopupMenuItem(value: 3, child: Row(children: [Icon(Icons.trending_up, color: Colors.deepOrange, size: 20), SizedBox(width: 12), Text('Actualizar Precios')])),
-                              const PopupMenuItem(value: 4, child: Row(children: [Icon(Icons.print_outlined, color: Colors.deepPurple, size: 20), SizedBox(width: 12), Text('Imprimir Etiquetas')])),
-                              const PopupMenuItem(value: 7, child: Row(children: [Icon(Icons.local_shipping_outlined, color: Colors.brown, size: 20), SizedBox(width: 12), Text('Asignar Proveedor')])),
+                              const PopupMenuItem(value: 1, child: Row(children: [Icon(Icons.folder_outlined, color: Colors.orange, size: 20), SizedBox(width: 12), Expanded(child: Text('Mover Categoría'))])),
+                              const PopupMenuItem(value: 8, child: Row(children: [Icon(Icons.branding_watermark_outlined, color: Colors.indigo, size: 20), SizedBox(width: 12), Expanded(child: Text('Asignar Marca'))])),
+                              const PopupMenuItem(value: 7, child: Row(children: [Icon(Icons.local_shipping_outlined, color: Colors.brown, size: 20), SizedBox(width: 12), Expanded(child: Text('Asignar Proveedor'))])),
+                              const PopupMenuItem(value: 2, child: Row(children: [Icon(Icons.power_settings_new, color: Colors.teal, size: 20), SizedBox(width: 12), Expanded(child: Text('Cambiar Estado'))])),
+                              const PopupMenuItem(value: 3, child: Row(children: [Icon(Icons.trending_up, color: Colors.deepOrange, size: 20), SizedBox(width: 12), Expanded(child: Text('Actualizar Precios'))])),
+                              const PopupMenuItem(value: 4, child: Row(children: [Icon(Icons.print_outlined, color: Colors.deepPurple, size: 20), SizedBox(width: 12), Expanded(child: Text('Imprimir Etiquetas'))])),
                               const PopupMenuDivider(),
-                              const PopupMenuItem(value: 5, child: Row(children: [Icon(Icons.delete_outline, color: Colors.red, size: 20), SizedBox(width: 12), Text('Eliminar Todo')])),
+                              const PopupMenuItem(value: 5, child: Row(children: [Icon(Icons.delete_outline, color: Colors.red, size: 20), SizedBox(width: 12), Expanded(child: Text('Eliminar Todo'))])),
                               const PopupMenuDivider(),
-                              const PopupMenuItem(value: 6, child: Row(children: [Icon(Icons.deselect, color: Colors.grey, size: 20), SizedBox(width: 12), Text('Cancelar Selección')])),
+                              const PopupMenuItem(value: 6, child: Row(children: [Icon(Icons.deselect, color: Colors.grey, size: 20), SizedBox(width: 12), Expanded(child: Text('Cancelar Selección'))])),
                             ],
                           ),
                           const SizedBox(width: 12),
@@ -342,7 +347,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                       ],
                     );
 
-                    if (constraints.maxWidth < 1000) {
+                    if (constraints.maxWidth < 1250) {
                       return Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
@@ -360,7 +365,12 @@ class _CatalogScreenState extends State<CatalogScreen> {
                       children: [
                         Expanded(child: searchWidget),
                         const SizedBox(width: 12),
-                        actionRow,
+                        Flexible(
+                          child: SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: actionRow,
+                          ),
+                        ),
                       ],
                     );
                   },
@@ -389,7 +399,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                       )
                     : LayoutBuilder(
                         builder: (context, constraints) {
-                          const double minW = 950.0;
+                          const double minW = 1020.0;
                           return SingleChildScrollView(
                             scrollDirection: Axis.horizontal,
                             child: ConstrainedBox(
@@ -437,6 +447,50 @@ class _CatalogScreenState extends State<CatalogScreen> {
           ),
         );
       },
+    );
+  }
+
+  Widget _buildProductAvatar(Product p) {
+    final uri = p.imageUrl != null && p.imageUrl!.isNotEmpty ? Uri.tryParse(p.imageUrl!) : null;
+    final hasImage = uri != null &&
+        uri.hasScheme &&
+        uri.hasAuthority &&
+        uri.host.isNotEmpty;
+
+    return Container(
+      width: 40,
+      height: 40,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: p.isSoldByWeight ? Colors.orange.shade50 : Colors.blue.shade50,
+        border: Border.all(color: Colors.grey.shade300, width: 1),
+      ),
+      child: ClipOval(
+        child: hasImage
+            ? CachedNetworkImage(
+                imageUrl: p.imageUrl!,
+                width: 40,
+                height: 40,
+                fit: BoxFit.cover,
+                placeholder: (context, url) => const Center(
+                  child: SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+                errorWidget: (context, url, error) => Icon(
+                  p.isSoldByWeight ? Icons.scale_rounded : Icons.inventory_2_outlined,
+                  size: 20,
+                  color: p.isSoldByWeight ? Colors.orange.shade700 : Colors.blue.shade700,
+                ),
+              )
+            : Icon(
+                p.isSoldByWeight ? Icons.scale_rounded : Icons.inventory_2_outlined,
+                size: 20,
+                color: p.isSoldByWeight ? Colors.orange.shade700 : Colors.blue.shade700,
+              ),
+      ),
     );
   }
 
@@ -530,6 +584,12 @@ class _CatalogScreenState extends State<CatalogScreen> {
                   },
                 ),
               ),
+              const SizedBox(
+                width: 48,
+                child: Center(
+                  child: Icon(Icons.image_outlined, size: 18, color: Colors.blueGrey),
+                ),
+              ),
               sortHeader(fId, '#', 'id'),
               sortHeader(fNombre, 'Nombre', 'name'),
               sortHeader(fBarcode, 'Cód. Barras', 'barcode'),
@@ -580,6 +640,12 @@ class _CatalogScreenState extends State<CatalogScreen> {
                       }
                     });
                   },
+                ),
+              ),
+              SizedBox(
+                width: 48,
+                child: Center(
+                  child: _buildProductAvatar(p),
                 ),
               ),
               cell(fId, Text(p.id.toString(), style: TextStyle(color: Colors.grey.shade500, fontSize: 12), overflow: TextOverflow.ellipsis)),
@@ -779,13 +845,87 @@ class _CatalogScreenState extends State<CatalogScreen> {
     );
 
     if (newCategory != null && mounted) {
-      final finalCat = newCategory == -1 ? null : newCategory;
-      final msg = await provider.bulkUpdateProducts(_selectedProducts.keys.toList(), categoryId: finalCat);
-      if (msg != null) {
-        SnackBarService.success(context, msg);
-        setState(() => _selectedProducts.clear());
-      } else {
-        SnackBarService.error(context, provider.errorMessage ?? 'Error al actualizar categoría');
+      final clear = newCategory == -1;
+      final finalCat = clear ? null : newCategory;
+      final msg = await provider.bulkUpdateProducts(
+        _selectedProducts.keys.toList(),
+        categoryId: finalCat,
+        clearCategory: clear,
+      );
+      if (mounted) {
+        if (msg != null) {
+          SnackBarService.success(context, msg);
+          setState(() => _selectedProducts.clear());
+        } else {
+          SnackBarService.error(context, provider.errorMessage ?? 'Error al actualizar categoría');
+        }
+      }
+    }
+  }
+
+  Future<void> _bulkUpdateBrand(CatalogProvider provider) async {
+    final auth = await AdminPinDialog.verify(
+      context,
+      action: 'Asignar Marca en Lote',
+      permissionKey: 'manage_catalog',
+    );
+    if (!auth) return;
+
+    if (provider.brands.isEmpty && mounted) {
+      await provider.loadBrands();
+    }
+    if (!mounted) return;
+
+    int? newBrand = await showDialog<int?>(
+      context: context,
+      builder: (ctx) {
+        int? selected;
+        return AlertDialog(
+          title: const Text('Asignar Marca en Lote'),
+          content: DropdownButtonFormField<int?>(
+            decoration: const InputDecoration(
+              labelText: 'Elige la nueva marca',
+              border: OutlineInputBorder(),
+            ),
+            items: [
+              const DropdownMenuItem(value: -1, child: Text('— Sin Marca —')),
+              ...provider.brands.map((b) => DropdownMenuItem(value: b.id, child: Text(b.name))),
+            ],
+            onChanged: (val) => selected = val,
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: Colors.indigo),
+              onPressed: () {
+                if (selected == null) {
+                  SnackBarService.error(ctx, 'Selecciona una marca o "Sin Marca"');
+                  return;
+                }
+                Navigator.pop(ctx, selected);
+              },
+              child: const Text('Asignar'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (newBrand != null && mounted) {
+      final clear = newBrand == -1;
+      final finalBrand = clear ? null : newBrand;
+      final msg = await provider.bulkUpdateProducts(
+        _selectedProducts.keys.toList(),
+        brandId: finalBrand,
+        clearBrand: clear,
+      );
+      if (mounted) {
+        if (msg != null) {
+          SnackBarService.success(context, msg);
+          setState(() => _selectedProducts.clear());
+        } else {
+          SnackBarService.error(context, provider.errorMessage ?? 'Error al asignar marca');
+        }
       }
     }
   }
@@ -1150,7 +1290,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
 
   Future<void> _pickProductImage() async {
     try {
-      final result = await FilePicker.pickFiles(
+      final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['jpg', 'jpeg', 'png', 'webp'],
         withData: true,
@@ -1661,7 +1801,21 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     return PopScope(
       canPop: !isBusy,
       child: AlertDialog(
-      title: Text(_isEditing ? 'Editar Producto' : 'Nuevo Producto'),
+      title: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Expanded(
+            child: Text(_isEditing ? 'Editar Producto' : 'Nuevo Producto'),
+          ),
+          if (_isEditing && widget.product != null)
+            IconButton(
+              key: const Key('product_share_button'),
+              icon: const Icon(Icons.share_outlined),
+              tooltip: 'Compartir producto',
+              onPressed: () => ProductShareHelper.shareProduct(widget.product!),
+            ),
+        ],
+      ),
       contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
       content: SizedBox(
         width: 600,

@@ -281,12 +281,30 @@ class CatalogProvider with ChangeNotifier {
     }
   }
 
-  Future<String?> bulkUpdateProducts(List<int> ids, {int? categoryId, bool? active, int? supplierId, bool clearSupplier = false}) async {
+  Future<String?> bulkUpdateProducts(
+    List<int> ids, {
+    int? categoryId,
+    bool clearCategory = false,
+    int? brandId,
+    bool clearBrand = false,
+    bool? active,
+    int? supplierId,
+    bool clearSupplier = false,
+  }) async {
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
     try {
-      final result = await repository.bulkUpdateProducts(ids, categoryId: categoryId, active: active, supplierId: supplierId, clearSupplier: clearSupplier);
+      final result = await repository.bulkUpdateProducts(
+        ids,
+        categoryId: categoryId,
+        clearCategory: clearCategory,
+        brandId: brandId,
+        clearBrand: clearBrand,
+        active: active,
+        supplierId: supplierId,
+        clearSupplier: clearSupplier,
+      );
       await loadProducts(page: _currentPage);
       return result['message'] as String?;
     } catch (e) {
@@ -623,6 +641,15 @@ class CatalogProvider with ChangeNotifier {
     } finally {
       _isLoading = false;
       notifyListeners();
+    }
+  }
+
+  Future<void> loadBrands() async {
+    try {
+      _brands = await repository.getBrands();
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error loading brands: $e');
     }
   }
 }

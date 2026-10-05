@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:frontend_desktop/features/catalog/presentation/providers/catalog_provider.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import '../../domain/entities/product.dart';
 import 'stock_adjustment_dialog.dart';
 
 class StockAlertBell extends StatefulWidget {
@@ -244,6 +246,58 @@ class _StockAlertItem extends StatelessWidget {
   final VoidCallback onAction;
   const _StockAlertItem({required this.product, required this.onAction});
 
+  Widget _buildProductThumbnail(dynamic product) {
+    String? imageUrl;
+    bool isByWeight = false;
+    if (product is Product) {
+      imageUrl = product.imageUrl;
+      isByWeight = product.isSoldByWeight;
+    } else {
+      imageUrl = product.imageUrl?.toString();
+      isByWeight = product.isSoldByWeight == true;
+    }
+
+    final uri = imageUrl != null && imageUrl.isNotEmpty ? Uri.tryParse(imageUrl) : null;
+    final hasImage = uri != null && uri.hasScheme && uri.hasAuthority && uri.host.isNotEmpty;
+
+    return Container(
+      width: 40,
+      height: 40,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+        color: isByWeight ? Colors.orange.shade50 : Colors.blue.shade50,
+        border: Border.all(color: Colors.grey.shade300, width: 1),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(7),
+        child: hasImage
+            ? CachedNetworkImage(
+                imageUrl: imageUrl!,
+                width: 40,
+                height: 40,
+                fit: BoxFit.cover,
+                placeholder: (context, url) => const Center(
+                  child: SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+                errorWidget: (context, url, error) => Icon(
+                  Icons.inventory_2_outlined,
+                  size: 20,
+                  color: isByWeight ? Colors.orange.shade700 : Colors.blue.shade700,
+                ),
+              )
+            : Icon(
+                Icons.inventory_2_outlined,
+                size: 20,
+                color: isByWeight ? Colors.orange.shade700 : Colors.blue.shade700,
+              ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final double stock = product.stock;
@@ -267,6 +321,8 @@ class _StockAlertItem extends StatelessWidget {
         children: [
           Row(
             children: [
+              _buildProductThumbnail(product),
+              const SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -282,6 +338,7 @@ class _StockAlertItem extends StatelessWidget {
                   ],
                 ),
               ),
+              const SizedBox(width: 8),
               Text(
                 product.isSoldByWeight
                     ? '${stock.toQty()} Kg'
