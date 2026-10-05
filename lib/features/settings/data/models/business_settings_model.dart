@@ -1,4 +1,5 @@
 import 'dart:convert';
+import '../../../../core/utils/image_url_resolver.dart';
 import '../../domain/entities/business_settings.dart';
 
 class BusinessSettingsModel extends BusinessSettings {
@@ -17,6 +18,8 @@ class BusinessSettingsModel extends BusinessSettings {
     super.licenseNextPaymentAt,
     super.licenseManageUrl,
     super.isLifetime,
+    super.logoPath,
+    super.logoUrl,
     super.globalWholesalePercentage,
     super.globalCardPercentage,
     super.customPriceTiers,
@@ -102,6 +105,9 @@ class BusinessSettingsModel extends BusinessSettings {
           : null,
       licenseManageUrl: json['license_manage_url'],
       isLifetime: json['license_is_lifetime'] == '1',
+      logoPath: json['logo_path']?.toString(),
+      logoUrl: resolveImageUrl(json['logo_url']?.toString()) ??
+          resolveImageUrl(json['logo_path']?.toString()),
       globalWholesalePercentage: double.tryParse(
               json['wholesale_percentage']?.toString() ?? '-15.0') ??
           -15.0,
@@ -150,6 +156,7 @@ class BusinessSettingsModel extends BusinessSettings {
       'phone': phone,
       'tax_id': taxId,
       'receipt_footer_message': receiptFooterMessage,
+      if (logoPath != null) 'logo_path': logoPath,
       // Motor de precios globales
       'card_percentage': globalCardPercentage,
       'wholesale_percentage': globalWholesalePercentage,

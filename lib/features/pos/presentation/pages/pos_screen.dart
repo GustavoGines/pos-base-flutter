@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:frontend_desktop/core/config/app_config.dart';
 import 'package:frontend_desktop/features/catalog/data/models/product_model.dart';
@@ -2981,11 +2982,34 @@ class _PosScreenState extends State<PosScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                Icon(
-                  isByWeight ? Icons.scale_rounded : Icons.inventory_2_outlined,
-                  color: isByWeight ? Colors.orange.shade600 : Colors.blue.shade600,
-                  size: isMedium ? 18 : 24,
-                ),
+                if (product.imageUrl != null &&
+                    product.imageUrl!.isNotEmpty &&
+                    (Uri.tryParse(product.imageUrl!)?.hasScheme ?? false) &&
+                    (Uri.tryParse(product.imageUrl!)?.hasAuthority ?? false) &&
+                    (Uri.tryParse(product.imageUrl!)?.host.isNotEmpty ?? false))
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(6),
+                    child: CachedNetworkImage(
+                      imageUrl: product.imageUrl!,
+                      width: isMedium ? 26 : 36,
+                      height: isMedium ? 26 : 36,
+                      fit: BoxFit.cover,
+                      placeholder: (context, url) => const SizedBox(
+                        width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      errorWidget: (context, url, error) => Icon(
+                        isByWeight ? Icons.scale_rounded : Icons.inventory_2_outlined,
+                        color: isByWeight ? Colors.orange.shade600 : Colors.blue.shade600,
+                        size: isMedium ? 18 : 24,
+                      ),
+                    ),
+                  )
+                else
+                  Icon(
+                    isByWeight ? Icons.scale_rounded : Icons.inventory_2_outlined,
+                    color: isByWeight ? Colors.orange.shade600 : Colors.blue.shade600,
+                    size: isMedium ? 18 : 24,
+                  ),
                 SizedBox(height: isMedium ? 2 : 4),
                 Expanded(
                   child: Center(

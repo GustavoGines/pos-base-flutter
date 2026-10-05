@@ -1,4 +1,5 @@
 import '../../domain/entities/product.dart';
+import 'package:frontend_desktop/core/utils/image_url_resolver.dart';
 import 'category_model.dart';
 import 'brand_model.dart';
 import 'package:frontend_desktop/features/suppliers/models/supplier_model.dart';
@@ -23,6 +24,7 @@ class ProductModel extends Product {
     super.salesCount,
     super.vencimientoDias,
     super.unitType,
+    super.imageUrl,
     CategoryModel? super.category,
     List<CategoryModel>? super.categories,
     BrandModel? super.brand,
@@ -49,6 +51,7 @@ class ProductModel extends Product {
     int? salesCount,
     int? vencimientoDias,
     String? unitType,
+    String? imageUrl,
     covariant CategoryModel? category,
     covariant List<CategoryModel>? categories,
     covariant BrandModel? brand,
@@ -73,6 +76,7 @@ class ProductModel extends Product {
       salesCount: salesCount ?? this.salesCount,
       vencimientoDias: vencimientoDias ?? this.vencimientoDias,
       unitType: unitType ?? this.unitType,
+      imageUrl: imageUrl ?? this.imageUrl,
       category: category ?? this.category as CategoryModel?,
       categories: categories ?? (this.categories as List<CategoryModel>?),
       brand: brand ?? this.brand as BrandModel?,
@@ -142,6 +146,8 @@ class ProductModel extends Product {
           ? int.tryParse(json['vencimiento_dias'].toString())
           : null,
       unitType: json['unit_type']?.toString() ?? 'un',
+      imageUrl: resolveImageUrl(json['image_url']?.toString()) ??
+          resolveImageUrl(json['image_path']?.toString()),
       category: json['category'] != null && json['category'] is Map<String, dynamic>
           ? CategoryModel.fromJson(json['category'] as Map<String, dynamic>)
           : (parsedCategories != null && parsedCategories.isNotEmpty ? parsedCategories.first : null),

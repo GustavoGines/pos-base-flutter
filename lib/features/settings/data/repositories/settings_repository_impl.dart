@@ -18,6 +18,11 @@ class SettingsRepositoryImpl implements SettingsRepository {
   }
 
   @override
+  Future<String> uploadLogo(String filePath, {List<int>? bytes, String? filename}) async {
+    return await remoteDataSource.uploadLogo(filePath, bytes: bytes, filename: filename);
+  }
+
+  @override
   void updateBaseUrl(String newUrl) {
     if (remoteDataSource is SettingsRemoteDataSourceImpl) {
       (remoteDataSource as SettingsRemoteDataSourceImpl).updateBaseUrl(newUrl);

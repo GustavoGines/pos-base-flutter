@@ -1,5 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
+import 'package:frontend_desktop/core/utils/image_url_resolver.dart';
 import '../models/product_model.dart';
 import '../models/category_model.dart';
 import '../models/brand_model.dart';
@@ -57,6 +59,7 @@ abstract class CatalogRemoteDataSource {
   Future<List<ProductModel>> fetchCriticalAlerts();
   /// Returns [{id: int, stock: double}] for the given product IDs. Ultra-lightweight.
   Future<List<Map<String, dynamic>>> fetchBulkStock(List<int> ids);
+  Future<String> uploadProductImage(int productId, String filePath, {List<int>? bytes, String? filename});
 }
 
 class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
@@ -614,6 +617,67 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
       }
     } catch (e) {
       print('=== API Error en fetchBulkStock: $e ===');
+      rethrow;
+    }
+  }
+
+  MediaType _resolveMediaType(String filename) {
+    final ext = filename.split('.').last.toLowerCase();
+    switch (ext) {
+      case 'png':
+        return MediaType('image', 'png');
+      case 'jpg':
+      case 'jpeg':
+        return MediaType('image', 'jpeg');
+      case 'webp':
+        return MediaType('image', 'webp');
+      default:
+        return MediaType('image', 'jpeg');
+    }
+  }
+
+  @override
+  Future<String> uploadProductImage(int productId, String filePath, {List<int>? bytes, String? filename}) async {
+    try {
+      final request = http.MultipartRequest(
+        'POST',
+        Uri.parse('$baseUrl/catalog/products/$productId/image'),
+      );
+      request.headers['Accept'] = 'application/json';
+
+      final name = filename ?? (filePath.isNotEmpty ? filePath.split(RegExp(r'[/\\]')).last : 'product.jpg');
+      final mediaType = _resolveMediaType(name);
+
+      if (bytes != null) {
+        request.files.add(http.MultipartFile.fromBytes('image', bytes, filename: name, contentType: mediaType));
+      } else {
+        request.files.add(await http.MultipartFile.fromPath('image', filePath, contentType: mediaType));
+      }
+
+      final streamedResponse = await client.send(request);
+      final response = await http.Response.fromStream(streamedResponse);
+
+      if (response.statusCode == 200) {
+        final decoded = json.decode(response.body);
+        final rawUrl = (decoded['image_url'] ?? decoded['image_path'])?.toString();
+        return resolveImageUrl(rawUrl, baseUrl: baseUrl) ?? (rawUrl ?? '');
+      } else if (response.statusCode == 404) {
+        throw Exception('Error de conexión: No se encontró el servidor o el producto.');
+      } else if (response.statusCode == 500) {
+        throw Exception('Error interno del servidor. Contacte a soporte técnico.');
+      } else {
+        throw Exception(_parseApiError(response.body, 'Error al subir imagen del producto.'));
+      }
+    } on FormatException catch (e) {
+      throw Exception(e.message);
+    } catch (e) {
+      print('=== API Error en uploadProductImage: $e ===');
+      final errStr = e.toString();
+      if (errStr.contains('SocketException') ||
+          errStr.contains('TimeoutException') ||
+          errStr.contains('ClientException')) {
+        throw Exception('Error de conexión: No se encontró el servidor. Verifica la URL configurada.');
+      }
       rethrow;
     }
   }

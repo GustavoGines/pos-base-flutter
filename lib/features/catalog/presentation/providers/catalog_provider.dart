@@ -30,6 +30,9 @@ class CatalogProvider with ChangeNotifier {
   List<Product> _criticalAlerts = [];
   List<Product> get criticalAlerts => _criticalAlerts;
 
+  Product? _lastCreatedProduct;
+  Product? get lastCreatedProduct => _lastCreatedProduct;
+
   String? _errorMessage;
   String? get errorMessage => _errorMessage;
 
@@ -185,11 +188,35 @@ class CatalogProvider with ChangeNotifier {
     notifyListeners();
     try {
       final product = await repository.createProduct(data);
+      _lastCreatedProduct = product;
       _products = [product, ..._products];
       return true;
     } catch (e) {
       _errorMessage = e.toString();
       return false;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<String?> uploadProductImage(int productId, String filePath, {List<int>? bytes, String? filename}) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      final imageUrl = await repository.uploadProductImage(productId, filePath, bytes: bytes, filename: filename);
+      final idx = _products.indexWhere((p) => p.id == productId);
+      if (idx != -1) {
+        _products[idx] = _products[idx].copyWith(imageUrl: imageUrl);
+      }
+      if (_lastCreatedProduct?.id == productId) {
+        _lastCreatedProduct = _lastCreatedProduct!.copyWith(imageUrl: imageUrl);
+      }
+      return imageUrl;
+    } catch (e) {
+      _errorMessage = e.toString();
+      return null;
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -203,7 +230,13 @@ class CatalogProvider with ChangeNotifier {
     try {
       final updated = await repository.updateProduct(id, data);
       final idx = _products.indexWhere((p) => p.id == id);
-      if (idx != -1) _products[idx] = updated;
+      if (idx != -1) {
+        if (updated.imageUrl == null && _products[idx].imageUrl != null) {
+          _products[idx] = updated.copyWith(imageUrl: _products[idx].imageUrl);
+        } else {
+          _products[idx] = updated;
+        }
+      }
       return true;
     } catch (e) {
       _errorMessage = e.toString();

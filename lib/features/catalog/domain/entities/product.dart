@@ -22,6 +22,7 @@ class Product {
   final double? minStock;
   final int salesCount;
   final String unitType;
+  final String? imageUrl;
   final Category? category;
   final List<Category>? categories;
   final Brand? brand;
@@ -46,6 +47,7 @@ class Product {
     this.salesCount = 0,
     this.vencimientoDias,
     this.unitType = 'un',
+    this.imageUrl,
     this.category,
     this.categories,
     this.brand,
@@ -70,6 +72,7 @@ class Product {
     int? salesCount,
     int? vencimientoDias,
     String? unitType,
+    String? imageUrl,
     Category? category,
     List<Category>? categories,
     Brand? brand,
@@ -94,6 +97,7 @@ class Product {
       salesCount: salesCount ?? this.salesCount,
       vencimientoDias: vencimientoDias ?? this.vencimientoDias,
       unitType: unitType ?? this.unitType,
+      imageUrl: imageUrl ?? this.imageUrl,
       category: category ?? this.category,
       categories: categories ?? this.categories,
       brand: brand ?? this.brand,

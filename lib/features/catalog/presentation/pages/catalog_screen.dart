@@ -1,3 +1,6 @@
+import 'dart:io';
+import 'dart:typed_data';
+import 'package:file_picker/file_picker.dart';
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -951,6 +954,12 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
   int? _supplierId;
   late TextEditingController _expiryCtrl;
 
+  // Foto del producto
+  String? _selectedImagePath;
+  Uint8List? _selectedImageBytes;
+  String? _selectedImageName;
+  bool _isUploadingImage = false;
+
   PusherChannelsClient? _pusher;
 
   bool get _isEditing => widget.product != null;
@@ -1139,6 +1148,36 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     }
   }
 
+  Future<void> _pickProductImage() async {
+    try {
+      final result = await FilePicker.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['jpg', 'jpeg', 'png', 'webp'],
+        withData: true,
+      );
+      if (result != null && result.files.isNotEmpty) {
+        final file = result.files.single;
+        final fileSize = file.size > 0 ? file.size : (file.bytes?.length ?? 0);
+        if (fileSize > 2 * 1024 * 1024) {
+          if (mounted) {
+            SnackBarService.error(context, 'La imagen supera los 2MB permitidos (máx 2048 KB).');
+          }
+          return;
+        }
+        setState(() {
+          _selectedImagePath = file.path;
+          _selectedImageBytes = file.bytes;
+          _selectedImageName = file.name;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error seleccionando imagen de producto: $e');
+      if (mounted) {
+        SnackBarService.error(context, 'Error al seleccionar imagen: $e');
+      }
+    }
+  }
+
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
     final data = {
@@ -1163,15 +1202,19 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     };
 
     bool ok = false;
+    int? targetProductId = _isEditing ? widget.product!.id : null;
 
     final hasPermission = await AdminPinDialog.protectAction(
       context,
       action: _isEditing ? 'Editar Producto' : 'Crear Producto',
       permissionKey: AppPermissions.manageCatalog,
       onAuthorized: () async {
-        ok = _isEditing
-            ? await widget.provider.updateProduct(widget.product!.id, data)
-            : await widget.provider.createProduct(data);
+        if (_isEditing) {
+          ok = await widget.provider.updateProduct(widget.product!.id, data);
+        } else {
+          ok = await widget.provider.createProduct(data);
+          targetProductId = widget.provider.lastCreatedProduct?.id;
+        }
       },
     );
 
@@ -1179,12 +1222,44 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
 
     if (mounted) {
       if (ok) {
+        bool imageUploadSuccess = true;
+        String? imageUploadError;
+
+        if (_selectedImagePath != null || _selectedImageBytes != null) {
+          if (targetProductId != null) {
+            setState(() => _isUploadingImage = true);
+            final uploadResult = await widget.provider.uploadProductImage(
+              targetProductId!,
+              _selectedImagePath ?? '',
+              bytes: _selectedImageBytes,
+              filename: _selectedImageName,
+            );
+            if (mounted) setState(() => _isUploadingImage = false);
+
+            if (uploadResult == null) {
+              imageUploadSuccess = false;
+              imageUploadError = widget.provider.errorMessage?.replaceAll('Exception: ', '');
+            }
+          } else {
+            imageUploadSuccess = false;
+            imageUploadError = 'No se pudo obtener el identificador del producto para asociar la foto.';
+          }
+        }
+
         final margin = double.tryParse(_marginCtrl.text.replaceAll(',', '.')) ?? 0.0;
         final prefs = await SharedPreferences.getInstance();
         await prefs.setDouble('last_profit_margin', margin);
 
+        if (!mounted) return;
         Navigator.of(context).pop();
-        SnackBarService.success(context, _isEditing ? 'Producto actualizado correctamente.' : '¡Producto creado exitosamente!');
+        if (imageUploadSuccess) {
+          SnackBarService.success(context, _isEditing ? 'Producto actualizado correctamente.' : '¡Producto creado exitosamente!');
+        } else {
+          SnackBarService.warning(
+            context,
+            'Producto guardado, pero no se pudo subir la foto: ${imageUploadError ?? "Error al procesar la imagen."}',
+          );
+        }
       } else {
         SnackBarService.error(context, widget.provider.errorMessage ?? 'Error desconocido.');
       }
@@ -1408,6 +1483,165 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     );
   }
 
+  Widget _buildProductImagePicker() {
+    final existingImageUrl = widget.product?.imageUrl;
+    final existingUri = existingImageUrl != null ? Uri.tryParse(existingImageUrl) : null;
+    final hasValidExistingImage = existingUri != null &&
+        existingUri.hasScheme &&
+        existingUri.hasAuthority &&
+        existingUri.host.isNotEmpty;
+    final hasSelected = _selectedImageBytes != null || (_selectedImagePath != null && _selectedImagePath!.isNotEmpty);
+    final hasAny = hasSelected || hasValidExistingImage;
+
+    Widget imageContent;
+    if (_isUploadingImage) {
+      imageContent = const Center(
+        child: SizedBox(
+          width: 24,
+          height: 24,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      );
+    } else if (_selectedImageBytes != null) {
+      imageContent = Image.memory(
+        _selectedImageBytes!,
+        width: 100,
+        height: 100,
+        fit: BoxFit.cover,
+      );
+    } else if (_selectedImagePath != null && _selectedImagePath!.isNotEmpty) {
+      imageContent = Image.file(
+        File(_selectedImagePath!),
+        width: 100,
+        height: 100,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, size: 36, color: Colors.grey),
+      );
+    } else if (hasValidExistingImage) {
+      imageContent = Image.network(
+        existingImageUrl!,
+        width: 100,
+        height: 100,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, size: 36, color: Colors.grey),
+      );
+    } else {
+      imageContent = Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.add_a_photo_outlined, size: 32, color: Colors.grey.shade500),
+          const SizedBox(height: 4),
+          Text(
+            'Subir Foto',
+            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.grey.shade700),
+          ),
+        ],
+      );
+    }
+
+    final isNarrow = MediaQuery.of(context).size.width < 450;
+
+    final imageCard = InkWell(
+      onTap: _isUploadingImage ? null : _pickProductImage,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        key: const ValueKey('product_image_container'),
+        width: isNarrow ? 80 : 90,
+        height: isNarrow ? 80 : 90,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: hasSelected ? const Color(0xFF673AB7) : Colors.grey.shade300,
+            width: hasSelected ? 2 : 1,
+          ),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Center(child: imageContent),
+      ),
+    );
+
+    final actionsWidget = Wrap(
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: 8,
+      runSpacing: 4,
+      children: [
+        OutlinedButton.icon(
+          onPressed: _isUploadingImage ? null : _pickProductImage,
+          icon: const Icon(Icons.photo_library_outlined, size: 14),
+          label: Text(hasAny ? 'Cambiar Foto' : 'Seleccionar Foto', style: const TextStyle(fontSize: 11)),
+        ),
+        if (hasSelected)
+          IconButton(
+            tooltip: 'Descartar imagen seleccionada',
+            icon: const Icon(Icons.close, color: Colors.red, size: 16),
+            onPressed: _isUploadingImage
+                ? null
+                : () {
+                    setState(() {
+                      _selectedImagePath = null;
+                      _selectedImageBytes = null;
+                      _selectedImageName = null;
+                    });
+                  },
+          ),
+      ],
+    );
+
+    if (isNarrow) {
+      return Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade50,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.grey.shade200),
+        ),
+        child: Column(
+          children: [
+            imageCard,
+            const SizedBox(height: 6),
+            actionsWidget,
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Row(
+        children: [
+          imageCard,
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Foto del Producto',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.grey.shade800),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Visible en la cuadrícula de ventas del POS (PNG, JPG o WEBP).',
+                  style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                ),
+                const SizedBox(height: 8),
+                actionsWidget,
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     // IMPORTANTE: usar context.watch (no widget.provider) para que el dropdown
@@ -1422,8 +1656,11 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     final categories = provider.categories;
     final brands = provider.brands;
     final suppliers = supplierProv.suppliers;
+    final isBusy = provider.isLoading || _isUploadingImage;
 
-    return AlertDialog(
+    return PopScope(
+      canPop: !isBusy,
+      child: AlertDialog(
       title: Text(_isEditing ? 'Editar Producto' : 'Nuevo Producto'),
       contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
       content: SizedBox(
@@ -1434,6 +1671,8 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                _buildProductImagePicker(),
+                const SizedBox(height: 12),
                 // Nombre
                 TextFormField(
                   controller: _nameCtrl,
@@ -1913,19 +2152,28 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
         ),
       ),
       actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancelar'),
+        Consumer<CatalogProvider>(
+          builder: (_, p, __) {
+            final isBusy = p.isLoading || _isUploadingImage;
+            return TextButton(
+              onPressed: isBusy ? null : () => Navigator.of(context).pop(),
+              child: const Text('Cancelar'),
+            );
+          },
         ),
         Consumer<CatalogProvider>(
-          builder: (_, p, __) => FilledButton(
-            onPressed: p.isLoading ? null : _submit,
-            child: p.isLoading
-                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                : Text(_isEditing ? 'Guardar Cambios' : 'Crear Producto'),
-          ),
+          builder: (_, p, __) {
+            final isBusy = p.isLoading || _isUploadingImage;
+            return FilledButton(
+              onPressed: isBusy ? null : _submit,
+              child: isBusy
+                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : Text(_isEditing ? 'Guardar Cambios' : 'Crear Producto'),
+            );
+          },
         ),
       ],
+      ),
     );
   }
 

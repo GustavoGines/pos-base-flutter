@@ -174,7 +174,33 @@ class SettingsProvider with ChangeNotifier {
     notifyListeners();
 
     try {
-      _settings = await updateSettingsUseCase(data);
+      final updated = await updateSettingsUseCase(data);
+      if (updated.effectiveLogoUrl == null && _settings?.effectiveLogoUrl != null) {
+        _settings = updated.copyWith(
+          logoUrl: _settings!.logoUrl,
+          logoPath: updated.logoPath ?? _settings!.logoPath,
+        );
+      } else {
+        _settings = updated;
+      }
+      return true;
+    } catch (e) {
+      _errorMessage = e.toString();
+      return false;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> uploadLogo(String filePath, {List<int>? bytes, String? filename}) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      await updateSettingsUseCase.repository.uploadLogo(filePath, bytes: bytes, filename: filename);
+      await loadSettings(isSilent: true);
       return true;
     } catch (e) {
       _errorMessage = e.toString();

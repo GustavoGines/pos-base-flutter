@@ -63,27 +63,64 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                       IconButton(
                         icon: const Icon(Icons.arrow_back_rounded, color: Colors.blueGrey),
                         tooltip: 'Volver',
-                        onPressed: () => Navigator.of(context).pop(),
+                        onPressed: () => Navigator.of(context).maybePop(),
                       ),
                       const SizedBox(width: 4),
                     ],
-                    const Icon(Icons.point_of_sale_rounded, color: Colors.blueAccent, size: 26),
-                    if (!hideCompanyName) ...[
-                      const SizedBox(width: 8),
-                      Consumer<SettingsProvider>(
-                        builder: (context, settings, _) {
-                          final name = settings.settings?.companyName ?? title;
-                          return ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 150),
-                            child: Text(
-                              name.isNotEmpty ? name : title,
-                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          );
-                        },
-                      ),
-                    ],
+                    Consumer<SettingsProvider>(
+                      builder: (context, settings, _) {
+                        final logoUrl = settings.settings?.effectiveLogoUrl;
+                        final name = settings.settings?.companyName ?? title;
+                        final uri = logoUrl != null ? Uri.tryParse(logoUrl) : null;
+                        final hasValidLogo = uri != null &&
+                            uri.hasScheme &&
+                            uri.hasAuthority &&
+                            uri.host.isNotEmpty;
+
+                        return Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (hasValidLogo)
+                              Padding(
+                                padding: const EdgeInsets.only(right: 8),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(4),
+                                  child: Image.network(
+                                    logoUrl!,
+                                    width: 26,
+                                    height: 26,
+                                    fit: BoxFit.contain,
+                                    errorBuilder: (_, __, ___) => const Icon(
+                                      Icons.point_of_sale_rounded,
+                                      color: Colors.blueAccent,
+                                      size: 26,
+                                    ),
+                                  ),
+                                ),
+                              )
+                            else
+                              const Padding(
+                                padding: EdgeInsets.only(right: 8),
+                                child: Icon(
+                                  Icons.point_of_sale_rounded,
+                                  color: Colors.blueAccent,
+                                  size: 26,
+                                ),
+                              ),
+                            if (!hideCompanyName)
+                              ConstrainedBox(
+                                constraints: const BoxConstraints(maxWidth: 150),
+                                child: Text(
+                                  name.isNotEmpty ? name : title,
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.bold, fontSize: 15),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                          ],
+                        );
+                      },
+                    ),
                   ],
                 ),
               ),

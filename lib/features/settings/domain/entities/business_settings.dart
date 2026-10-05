@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import '../../../../core/utils/image_url_resolver.dart';
 
 class FeatureFlags extends Equatable {
   final bool fastPos;
@@ -111,6 +112,71 @@ class BusinessSettings extends Equatable {
   /// Alias legado — mantenido para retrocompatibilidad durante la transición.
   bool get isHardwareStore => businessType == 'hardware_store' || features.quotes;
 
+  final String? logoPath;
+  final String? logoUrl;
+
+  String? get effectiveLogoUrl {
+    if (logoUrl != null && logoUrl!.isNotEmpty) {
+      final resolved = resolveImageUrl(logoUrl);
+      if (resolved != null) return resolved;
+    }
+    if (logoPath != null && logoPath!.isNotEmpty) {
+      final resolved = resolveImageUrl(logoPath);
+      if (resolved != null) return resolved;
+    }
+    return null;
+  }
+
+  BusinessSettings copyWith({
+    String? companyName,
+    String? address,
+    String? phone,
+    String? taxId,
+    String? receiptFooterMessage,
+    String? licenseStatus,
+    String? licensePlanType,
+    String? licensePlanMode,
+    String? lastLicenseCheck,
+    String? serverTime,
+    DateTime? licenseExpiresAt,
+    DateTime? licenseNextPaymentAt,
+    String? licenseManageUrl,
+    bool? isLifetime,
+    String? logoPath,
+    String? logoUrl,
+    double? globalWholesalePercentage,
+    double? globalCardPercentage,
+    List<Map<String, dynamic>>? customPriceTiers,
+    String? businessType,
+    FeatureFlags? features,
+    bool? enableAdvancedPriceTiers,
+  }) {
+    return BusinessSettings(
+      companyName: companyName ?? this.companyName,
+      address: address ?? this.address,
+      phone: phone ?? this.phone,
+      taxId: taxId ?? this.taxId,
+      receiptFooterMessage: receiptFooterMessage ?? this.receiptFooterMessage,
+      licenseStatus: licenseStatus ?? this.licenseStatus,
+      licensePlanType: licensePlanType ?? this.licensePlanType,
+      licensePlanMode: licensePlanMode ?? this.licensePlanMode,
+      lastLicenseCheck: lastLicenseCheck ?? this.lastLicenseCheck,
+      serverTime: serverTime ?? this.serverTime,
+      licenseExpiresAt: licenseExpiresAt ?? this.licenseExpiresAt,
+      licenseNextPaymentAt: licenseNextPaymentAt ?? this.licenseNextPaymentAt,
+      licenseManageUrl: licenseManageUrl ?? this.licenseManageUrl,
+      isLifetime: isLifetime ?? this.isLifetime,
+      logoPath: logoPath ?? this.logoPath,
+      logoUrl: logoUrl ?? this.logoUrl,
+      globalWholesalePercentage: globalWholesalePercentage ?? this.globalWholesalePercentage,
+      globalCardPercentage: globalCardPercentage ?? this.globalCardPercentage,
+      customPriceTiers: customPriceTiers ?? this.customPriceTiers,
+      businessType: businessType ?? this.businessType,
+      features: features ?? this.features,
+      enableAdvancedPriceTiers: enableAdvancedPriceTiers ?? this.enableAdvancedPriceTiers,
+    );
+  }
+
   const BusinessSettings({
     this.companyName,
     this.address,
@@ -126,6 +192,8 @@ class BusinessSettings extends Equatable {
     this.licenseNextPaymentAt,
     this.licenseManageUrl,
     this.isLifetime = false,
+    this.logoPath,
+    this.logoUrl,
     this.globalWholesalePercentage = -15.0, // Hardcoded default based on common patterns
     this.globalCardPercentage = 15.0,
     this.customPriceTiers = const [],
@@ -150,6 +218,8 @@ class BusinessSettings extends Equatable {
         licenseNextPaymentAt,
         licenseManageUrl,
         isLifetime,
+        logoPath,
+        logoUrl,
         globalWholesalePercentage,
         globalCardPercentage,
         customPriceTiers,

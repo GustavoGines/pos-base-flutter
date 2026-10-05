@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/services.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:path/path.dart' as p;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -38,6 +39,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _phoneCtrl = TextEditingController();
   final _taxIdCtrl = TextEditingController();
   final _footerCtrl = TextEditingController();
+
+  // Logotipo del Negocio
+  String? _selectedLogoPath;
+  Uint8List? _selectedLogoBytes;
+  String? _selectedLogoName;
+  bool _isUploadingLogo = false;
 
   // Listas de Precios Personalizadas
   List<Map<String, dynamic>> _customTiers = [];
@@ -205,10 +212,66 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (!mounted) return;
 
     if (success) {
+      if (_selectedLogoPath != null || _selectedLogoBytes != null) {
+        setState(() => _isUploadingLogo = true);
+        final logoSuccess = await provider.uploadLogo(
+          _selectedLogoPath ?? '',
+          bytes: _selectedLogoBytes,
+          filename: _selectedLogoName,
+        );
+        if (mounted) setState(() => _isUploadingLogo = false);
+        if (logoSuccess) {
+          setState(() {
+            _selectedLogoPath = null;
+            _selectedLogoBytes = null;
+            _selectedLogoName = null;
+          });
+          if (mounted) {
+            SnackBarService.success(context, 'Configuración y logotipo guardados correctamente');
+          }
+          return;
+        } else {
+          if (mounted) {
+            final err = provider.errorMessage?.replaceAll('Exception: ', '') ?? 'falló la subida del logotipo';
+            SnackBarService.warning(context, 'Configuración guardada, pero $err');
+          }
+          return;
+        }
+      }
       SnackBarService.success(context, 'Configuración guardada correctamente');
     } else {
       SnackBarService.error(
           context, provider.errorMessage ?? 'Error al guardar');
+    }
+  }
+
+  Future<void> _pickLogo() async {
+    try {
+      final result = await FilePicker.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['jpg', 'jpeg', 'png', 'webp'],
+        withData: true,
+      );
+      if (result != null && result.files.isNotEmpty) {
+        final file = result.files.single;
+        final fileSize = file.size > 0 ? file.size : (file.bytes?.length ?? 0);
+        if (fileSize > 2 * 1024 * 1024) {
+          if (mounted) {
+            SnackBarService.error(context, 'El logotipo no puede superar los 2MB permitidos (máx 2048 KB).');
+          }
+          return;
+        }
+        setState(() {
+          _selectedLogoPath = file.path;
+          _selectedLogoBytes = file.bytes;
+          _selectedLogoName = file.name;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error seleccionando logo: $e');
+      if (mounted) {
+        SnackBarService.error(context, 'Error al seleccionar imagen: $e');
+      }
     }
   }
 
@@ -363,7 +426,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget build(BuildContext context) {
     final provider = context.watch<SettingsProvider>();
 
-    return Scaffold(
+    final isBusy = provider.isLoading || _isUploadingLogo;
+
+    return PopScope(
+      canPop: !isBusy,
+      child: Scaffold(
       appBar: GlobalAppBar(
         currentRoute: '/settings',
         title: 'Configuración del Sistema',
@@ -375,7 +442,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           : Row(
               children: [
                 // --- SIDEBAR (Xbox Style) ---
-                _buildSidebar(),
+                _buildSidebar(provider),
 
                 // --- CONTENT AREA ---
                 Expanded(
@@ -402,10 +469,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ],
             ),
+      ),
     );
   }
 
-  Widget _buildSidebar() {
+  Widget _buildSidebar(SettingsProvider provider) {
+    final isBusy = provider.isLoading || _isUploadingLogo;
     return Container(
       width: 280,
       decoration: BoxDecoration(
@@ -419,27 +488,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
             icon: Icons.storefront_outlined,
             title: 'General',
             section: SettingsSection.general,
+            isBusy: isBusy,
           ),
           _buildSidebarItem(
             icon: Icons.price_change_outlined,
             title: 'Precios Globales',
             section: SettingsSection.prices,
+            isBusy: isBusy,
           ),
           _buildSidebarItem(
             icon: Icons.verified_user_outlined,
             title: 'Suscripción',
             section: SettingsSection.subscription,
+            isBusy: isBusy,
           ),
           _buildSidebarItem(
             icon: Icons.dns_outlined,
             title: 'Red y Terminales',
             section: SettingsSection.network,
+            isBusy: isBusy,
           ),
           if (Platform.isWindows)
             _buildSidebarItem(
               icon: Icons.phone_android,
               title: 'App Móvil',
               section: SettingsSection.mobileApp,
+              isBusy: isBusy,
             ),
           const Spacer(),
           Padding(
@@ -448,8 +522,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
               width: double.infinity,
               height: 54,
               child: FilledButton.icon(
-                onPressed: _saveSettings,
-                icon: const Icon(Icons.save_outlined),
+                onPressed: isBusy ? null : _saveSettings,
+                icon: isBusy
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Icon(Icons.save_outlined),
                 label: const Text('GUARDAR',
                     style: TextStyle(
                         fontWeight: FontWeight.bold, letterSpacing: 1)),
@@ -469,12 +549,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget _buildSidebarItem(
       {required IconData icon,
       required String title,
-      required SettingsSection section}) {
+      required SettingsSection section,
+      bool isBusy = false}) {
     final isActive = _activeSection == section;
     final activeColor = const Color(0xFF673AB7);
 
     return InkWell(
-      onTap: () => setState(() => _activeSection = section),
+      onTap: isBusy ? null : () => setState(() => _activeSection = section),
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
@@ -489,16 +570,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
             Icon(icon,
                 color: isActive ? activeColor : Colors.grey.shade600, size: 22),
             const SizedBox(width: 16),
-            Text(
-              title,
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: isActive ? FontWeight.bold : FontWeight.w500,
-                color: isActive ? activeColor : Colors.grey.shade700,
+            Expanded(
+              child: Text(
+                title,
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: isActive ? FontWeight.bold : FontWeight.w500,
+                  color: isActive ? activeColor : Colors.grey.shade700,
+                ),
+                overflow: TextOverflow.ellipsis,
               ),
             ),
             if (isActive) ...[
-              const Spacer(),
+              const SizedBox(width: 8),
               Container(
                   width: 4,
                   height: 20,
@@ -534,6 +618,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _buildSectionHeader('Datos del Negocio',
             'Configurá los datos que aparecerán en tus tickets y facturas.'),
         const SizedBox(height: 32),
+        _buildLogoPicker(provider),
+        const SizedBox(height: 32),
         _buildTextField('Nombre del Comercio', _companyNameCtrl,
             icon: Icons.badge_outlined),
         const SizedBox(height: 24),
@@ -555,6 +641,145 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _buildTextField('Mensaje Pie de Ticket', _footerCtrl,
             icon: Icons.message_outlined, maxLines: 3),
         const SizedBox(height: 32),
+      ],
+    );
+  }
+
+  Widget _buildLogoPicker(SettingsProvider provider) {
+    final currentLogoUrl = provider.settings?.effectiveLogoUrl;
+    final currentLogoUri = currentLogoUrl != null ? Uri.tryParse(currentLogoUrl) : null;
+    final hasValidCurrentLogo = currentLogoUri != null &&
+        currentLogoUri.hasScheme &&
+        currentLogoUri.hasAuthority &&
+        currentLogoUri.host.isNotEmpty;
+    final hasSelectedImage = _selectedLogoBytes != null || (_selectedLogoPath != null && _selectedLogoPath!.isNotEmpty);
+    final hasAnyLogo = hasSelectedImage || hasValidCurrentLogo;
+
+    Widget imageContent;
+    if (_isUploadingLogo) {
+      imageContent = const Center(
+        child: SizedBox(
+          width: 32,
+          height: 32,
+          child: CircularProgressIndicator(strokeWidth: 3),
+        ),
+      );
+    } else if (_selectedLogoBytes != null) {
+      imageContent = Image.memory(
+        _selectedLogoBytes!,
+        width: 130,
+        height: 130,
+        fit: BoxFit.contain,
+      );
+    } else if (_selectedLogoPath != null && _selectedLogoPath!.isNotEmpty) {
+      imageContent = Image.file(
+        File(_selectedLogoPath!),
+        width: 130,
+        height: 130,
+        fit: BoxFit.contain,
+        errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, size: 40, color: Colors.grey),
+      );
+    } else if (hasValidCurrentLogo) {
+      imageContent = Image.network(
+        currentLogoUrl!,
+        width: 130,
+        height: 130,
+        fit: BoxFit.contain,
+        errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, size: 40, color: Colors.grey),
+      );
+    } else {
+      imageContent = Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.add_photo_alternate_outlined, size: 40, color: Colors.grey.shade500),
+          const SizedBox(height: 8),
+          Text(
+            'Subir Logo',
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey.shade700),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            '130x130',
+            style: TextStyle(fontSize: 10, color: Colors.grey.shade500),
+          ),
+        ],
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Logotipo del Negocio',
+          style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.grey.shade800),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Aparecerá en el encabezado del POS y en los comprobantes impresos (PNG, JPG o WEBP).',
+          style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            InkWell(
+              onTap: _isUploadingLogo ? null : _pickLogo,
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                key: const ValueKey('settings_logo_container'),
+                width: 130,
+                height: 130,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: hasSelectedImage ? const Color(0xFF673AB7) : Colors.grey.shade300,
+                    width: hasSelectedImage ? 2 : 1.5,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.04),
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: Center(child: imageContent),
+              ),
+            ),
+            const SizedBox(width: 20),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: _isUploadingLogo ? null : _pickLogo,
+                  icon: const Icon(Icons.folder_open, size: 18),
+                  label: Text(hasAnyLogo ? 'Cambiar Logo' : 'Seleccionar Logo'),
+                  style: OutlinedButton.styleFrom(
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+                if (hasSelectedImage) ...[
+                  const SizedBox(height: 8),
+                  TextButton.icon(
+                    onPressed: _isUploadingLogo
+                        ? null
+                        : () {
+                            setState(() {
+                              _selectedLogoPath = null;
+                              _selectedLogoBytes = null;
+                              _selectedLogoName = null;
+                            });
+                          },
+                    icon: const Icon(Icons.close, size: 18, color: Colors.red),
+                    label: const Text('Descartar selección', style: TextStyle(color: Colors.red)),
+                  ),
+                ],
+              ],
+            ),
+          ],
+        ),
       ],
     );
   }

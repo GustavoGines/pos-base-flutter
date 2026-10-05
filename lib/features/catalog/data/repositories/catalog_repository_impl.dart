@@ -174,4 +174,9 @@ class CatalogRepositoryImpl implements CatalogRepository {
   Future<List<Map<String, dynamic>>> fetchBulkStock(List<int> ids) async {
     return await remoteDataSource.fetchBulkStock(ids);
   }
+
+  @override
+  Future<String> uploadProductImage(int productId, String filePath, {List<int>? bytes, String? filename}) async {
+    return await remoteDataSource.uploadProductImage(productId, filePath, bytes: bytes, filename: filename);
+  }
 }
