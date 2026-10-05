@@ -74,9 +74,12 @@ class Product {
     String? unitType,
     String? imageUrl,
     Category? category,
+    bool clearCategory = false,
     List<Category>? categories,
     Brand? brand,
+    bool clearBrand = false,
     Supplier? supplier,
+    bool clearSupplier = false,
   }) {
     return Product(
       id: id ?? this.id,
@@ -98,10 +101,10 @@ class Product {
       vencimientoDias: vencimientoDias ?? this.vencimientoDias,
       unitType: unitType ?? this.unitType,
       imageUrl: imageUrl ?? this.imageUrl,
-      category: category ?? this.category,
+      category: clearCategory ? null : (category ?? this.category),
       categories: categories ?? this.categories,
-      brand: brand ?? this.brand,
-      supplier: supplier ?? this.supplier,
+      brand: clearBrand ? null : (brand ?? this.brand),
+      supplier: clearSupplier ? null : (supplier ?? this.supplier),
     );
   }
 

@@ -1,3 +1,6 @@
+import 'dart:io';
+import 'dart:typed_data';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/config/app_config.dart';
@@ -8,6 +11,7 @@ import 'package:frontend_desktop/features/pos/presentation/providers/pos_provide
 import 'package:frontend_desktop/features/catalog/presentation/providers/catalog_provider.dart';
 import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
+import 'package:frontend_desktop/core/utils/image_url_resolver.dart';
 import 'package:frontend_desktop/features/catalog/presentation/widgets/categories_manager_dialog.dart';
 import 'package:frontend_desktop/features/catalog/presentation/widgets/brands_manager_dialog.dart';
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
@@ -41,7 +45,9 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
   @override
   void initState() {
     super.initState();
-    _audioPlayer.setSource(AssetSource('beep_loud.wav'));
+    try {
+      _audioPlayer.setSource(AssetSource('beep_loud.wav')).catchError((_) {});
+    } catch (_) {}
     Future.microtask(() => context.read<CatalogProvider>().loadMetadata());
   }
 
@@ -69,12 +75,16 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
 
     try {
       try {
-        if (_audioPlayer.state == PlayerState.playing) await _audioPlayer.stop();
-        await _audioPlayer.play(AssetSource('beep_loud.wav'));
+        if (_audioPlayer.state == PlayerState.playing) {
+          _audioPlayer.stop().catchError((_) {});
+        }
+        _audioPlayer.play(AssetSource('beep_loud.wav')).catchError((_) {});
       } catch (_) {}
 
       // Pausar cámara mientras procesamos
-      _scannerController.stop();
+      try {
+        _scannerController.stop().catchError((_) {});
+      } catch (_) {}
 
       final posProvider = context.read<PosProvider>();
       final results = await posProvider.search(query.trim());
@@ -94,7 +104,9 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
               duration: const Duration(seconds: 4),
             ),
           );
-          _scannerController.start(); // Retomar escaneo
+          try {
+            _scannerController.start().catchError((_) {}); // Retomar escaneo
+          } catch (_) {}
         }
       } else {
         // Encontrar coincidencia exacta por código
@@ -111,7 +123,9 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
           FocusScope.of(context).unfocus(); // Ocultar teclado
           setState(() {
             _scannedProduct = match;
-            _priceCtrl.text = match!.sellingPrice.toInt().toString();
+            _priceCtrl.text = match!.sellingPrice % 1 == 0
+                ? match.sellingPrice.toInt().toString()
+                : match.sellingPrice.toString();
             _stockCtrl.text = (match.stock % 1 == 0 ? match.stock.toInt().toString() : match.stock.toString());
             _addStockQuickCtrl.clear(); // Limpiar campo de ingreso rápido
           });
@@ -120,7 +134,9 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
     } catch (e) {
       if (mounted) {
         SnackBarService.error(context, 'Error al buscar: $e');
-        _scannerController.start();
+        try {
+          _scannerController.start().catchError((_) {});
+        } catch (_) {}
       }
     } finally {
       if (mounted) {
@@ -153,8 +169,10 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
   Future<void> _saveChanges() async {
     if (_scannedProduct == null) return;
 
-    final newPrice = double.tryParse(_priceCtrl.text);
-    final addStock = double.tryParse(_addStockQuickCtrl.text.trim());
+    final newPrice = double.tryParse(_priceCtrl.text.trim().replaceAll(',', '.'));
+    final addStock = _addStockQuickCtrl.text.trim().isNotEmpty
+        ? double.tryParse(_addStockQuickCtrl.text.trim().replaceAll(',', '.'))
+        : null;
 
     if (newPrice == null) {
       SnackBarService.error(context, 'Precio inválido');
@@ -192,15 +210,28 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
               : '✅ Precio actualizado';
           SnackBarService.success(context, msg);
 
-          // En lugar de volver a la cámara, vaciamos el campo de suma rápida
+          final effectiveStock = (addStock != null && addStock > 0)
+              ? (_scannedProduct!.stock + addStock)
+              : _scannedProduct!.stock;
+
+          Product? updated = catalogProvider.lastUpdatedProduct;
+          if (updated == null || updated.id != _scannedProduct!.id) {
+            updated = _scannedProduct!.copyWith(
+              sellingPrice: newPrice,
+              stock: effectiveStock,
+            );
+          }
+
           setState(() {
+            _scannedProduct = updated;
+            _priceCtrl.text = updated!.sellingPrice % 1 == 0
+                ? updated.sellingPrice.toInt().toString()
+                : updated.sellingPrice.toString();
+            _stockCtrl.text = (updated.stock % 1 == 0
+                ? updated.stock.toInt().toString()
+                : updated.stock.toString());
             _addStockQuickCtrl.clear();
           });
-          
-          // Refrescar el producto desde la base de datos para mostrar los datos reales actualizados
-          if (_scannedProduct!.barcode != null && _scannedProduct!.barcode!.isNotEmpty) {
-            _searchProduct(_scannedProduct!.barcode!);
-          }
         } else if (mounted) {
           SnackBarService.error(context, catalogProvider.errorMessage ?? 'Error desconocido al guardar');
         }
@@ -272,13 +303,23 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
   }
 
   Future<void> _showProductFormDialog({String? initialBarcode, Product? productToEdit}) async {
-    _scannerController.stop();
+    try {
+      _scannerController.stop().catchError((_) {});
+    } catch (_) {}
 
     final nameCtrl = TextEditingController(text: productToEdit?.name);
     final barcodeCtrl = TextEditingController(text: productToEdit?.barcode ?? initialBarcode);
-    final costCtrl = TextEditingController(text: productToEdit != null ? productToEdit.costPrice.toInt().toString() : '');
+    final costCtrl = TextEditingController(
+      text: productToEdit != null
+          ? (productToEdit.costPrice % 1 == 0 ? productToEdit.costPrice.toInt().toString() : productToEdit.costPrice.toString())
+          : '',
+    );
     final marginCtrl = TextEditingController();
-    final priceCtrl = TextEditingController(text: productToEdit != null ? productToEdit.sellingPrice.toInt().toString() : '');
+    final priceCtrl = TextEditingController(
+      text: productToEdit != null
+          ? (productToEdit.sellingPrice % 1 == 0 ? productToEdit.sellingPrice.toInt().toString() : productToEdit.sellingPrice.toString())
+          : '',
+    );
     final stockCtrl = TextEditingController(text: productToEdit != null ? (productToEdit.stock % 1 == 0 ? productToEdit.stock.toInt().toString() : productToEdit.stock.toString()) : '');
     final minStockCtrl = TextEditingController(text: productToEdit?.minStock?.toString() ?? '');
     final vencimientoCtrl = TextEditingController(text: productToEdit?.vencimientoDias?.toString() ?? '');
@@ -286,6 +327,10 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
     final internalCodeCtrl = TextEditingController(text: productToEdit?.internalCode ?? '');
 
     bool isSaving = false;
+    String? selectedImagePath;
+    Uint8List? selectedImageBytes;
+    String? selectedImageName;
+    bool isUploadingImage = false;
     int? selectedCategoryId = productToEdit?.category?.id;
     int? selectedBrandId = productToEdit?.brand?.id;
     int? selectedSupplierId = productToEdit?.supplier?.id;
@@ -294,7 +339,8 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
     String unitType = productToEdit?.unitType ?? 'un';
 
     if (productToEdit != null && productToEdit.costPrice > 0) {
-      marginCtrl.text = (((productToEdit.sellingPrice - productToEdit.costPrice) / productToEdit.costPrice) * 100).toInt().toString();
+      final marginVal = ((productToEdit.sellingPrice - productToEdit.costPrice) / productToEdit.costPrice) * 100;
+      marginCtrl.text = marginVal % 1 == 0 ? marginVal.toInt().toString() : marginVal.toStringAsFixed(2);
     }
 
     // Helper para escaner secundario
@@ -339,21 +385,75 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
           builder: (context, setStateDialog) {
             final catalogProv = context.read<CatalogProvider>();
 
+            Future<void> pickProductImage() async {
+              try {
+                final result = await FilePicker.platform.pickFiles(
+                  type: FileType.image,
+                  withData: true,
+                );
+                if (result != null && result.files.isNotEmpty) {
+                  final file = result.files.single;
+                  final ext = file.extension?.toLowerCase() ??
+                      (file.name.contains('.') ? file.name.split('.').last.toLowerCase() : '');
+                  if (ext.isNotEmpty && !['jpg', 'jpeg', 'png', 'webp'].contains(ext)) {
+                    if (context.mounted) {
+                      SnackBarService.error(context, 'Formato no soportado ($ext). Usa JPG, PNG o WEBP.');
+                    }
+                    return;
+                  }
+                  int fileSize = file.size > 0 ? file.size : (file.bytes?.length ?? 0);
+                  if (fileSize == 0 && file.path != null && file.path!.isNotEmpty) {
+                    try {
+                      final ioFile = File(file.path!);
+                      if (ioFile.existsSync()) {
+                        fileSize = ioFile.lengthSync();
+                      }
+                    } catch (_) {}
+                  }
+                  if (fileSize > 2 * 1024 * 1024) {
+                    if (context.mounted) {
+                      SnackBarService.error(context, 'La imagen supera los 2MB permitidos (máx 2048 KB).');
+                    }
+                    return;
+                  }
+                  Uint8List? bytes = file.bytes;
+                  if (bytes == null && file.path != null && file.path!.isNotEmpty) {
+                    try {
+                      final ioFile = File(file.path!);
+                      if (ioFile.existsSync()) {
+                        bytes = ioFile.readAsBytesSync();
+                      }
+                    } catch (_) {}
+                  }
+                  setStateDialog(() {
+                    selectedImagePath = file.path;
+                    selectedImageBytes = bytes;
+                    selectedImageName = file.name;
+                  });
+                }
+              } catch (e) {
+                debugPrint('Error seleccionando imagen: $e');
+                if (context.mounted) {
+                  SnackBarService.error(context, 'Error al seleccionar imagen: $e');
+                }
+              }
+            }
+
             void calcPriceFromMargin() {
-              final cost = double.tryParse(costCtrl.text) ?? 0.0;
-              final margin = double.tryParse(marginCtrl.text) ?? 0.0;
+              final cost = double.tryParse(costCtrl.text.replaceAll(',', '.')) ?? 0.0;
+              final margin = double.tryParse(marginCtrl.text.replaceAll(',', '.')) ?? 0.0;
               if (cost > 0) {
                 final price = cost + (cost * (margin / 100));
-                priceCtrl.text = price.toInt().toString();
+                priceCtrl.text = price % 1 == 0 ? price.toInt().toString() : price.toStringAsFixed(2);
               }
             }
 
             void calcMarginFromPrice() {
-              final cost = double.tryParse(costCtrl.text) ?? 0.0;
-              final price = double.tryParse(priceCtrl.text) ?? 0.0;
+              final cost = double.tryParse(costCtrl.text.replaceAll(',', '.')) ?? 0.0;
+              final price = double.tryParse(priceCtrl.text.replaceAll(',', '.')) ?? 0.0;
               if (cost > 0 && price > 0) {
                 final margin = ((price - cost) / cost) * 100;
-                marginCtrl.text = margin.toInt().toString();
+                marginCtrl.text = margin % 1 == 0 ? margin.toInt().toString() : margin.toStringAsFixed(2);
               } else if (cost == 0) {
                 marginCtrl.text = '';
               }
@@ -375,6 +475,146 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    // Selector de Imagen de Producto
+                    Builder(
+                      builder: (context) {
+                        final resolvedExistingImageUrl = resolveImageUrl(productToEdit?.imageUrl);
+                        final hasValidExistingImage = resolvedExistingImageUrl != null && resolvedExistingImageUrl.isNotEmpty;
+                        final hasSelected = selectedImageBytes != null || (selectedImagePath != null && selectedImagePath!.isNotEmpty);
+                        final hasAny = hasSelected || hasValidExistingImage;
+
+                        Widget imageContent;
+                        if (isUploadingImage) {
+                          imageContent = const Center(
+                            child: SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          );
+                        } else if (selectedImageBytes != null) {
+                          imageContent = Image.memory(
+                            selectedImageBytes!,
+                            width: 75,
+                            height: 75,
+                            fit: BoxFit.cover,
+                          );
+                        } else if (selectedImagePath != null && selectedImagePath!.isNotEmpty) {
+                          imageContent = Image.file(
+                            File(selectedImagePath!),
+                            width: 75,
+                            height: 75,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, size: 32, color: Colors.grey),
+                          );
+                        } else if (hasValidExistingImage) {
+                          imageContent = Image.network(
+                            resolvedExistingImageUrl,
+                            width: 75,
+                            height: 75,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, size: 32, color: Colors.grey),
+                          );
+                        } else {
+                          imageContent = Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.add_a_photo_outlined, size: 26, color: Colors.grey.shade600),
+                              const SizedBox(height: 2),
+                              Text(
+                                'Subir Foto',
+                                style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Colors.grey.shade700),
+                              ),
+                            ],
+                          );
+                        }
+
+                        final imageCard = InkWell(
+                          key: const Key('mobile_product_image_picker'),
+                          onTap: (isSaving || isUploadingImage) ? null : () => pickProductImage(),
+                          borderRadius: BorderRadius.circular(8),
+                          child: Container(
+                            width: 75,
+                            height: 75,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: hasSelected ? const Color(0xFF673AB7) : Colors.grey.shade300,
+                                width: hasSelected ? 2 : 1,
+                              ),
+                            ),
+                            clipBehavior: Clip.antiAlias,
+                            child: Center(child: imageContent),
+                          ),
+                        );
+
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 12),
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade50,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.grey.shade200),
+                          ),
+                          child: Row(
+                            children: [
+                              imageCard,
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Foto del Producto',
+                                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.grey.shade800),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      'Cámara o galería',
+                                      style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Wrap(
+                                      spacing: 8,
+                                      crossAxisAlignment: WrapCrossAlignment.center,
+                                      children: [
+                                        OutlinedButton.icon(
+                                          key: const Key('mobile_pick_image_button'),
+                                          onPressed: (isSaving || isUploadingImage) ? null : () => pickProductImage(),
+                                          icon: const Icon(Icons.photo_library_outlined, size: 14),
+                                          label: Text(hasAny ? 'Cambiar Foto' : 'Seleccionar Foto', style: const TextStyle(fontSize: 11)),
+                                          style: OutlinedButton.styleFrom(
+                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                            minimumSize: const Size(0, 30),
+                                          ),
+                                        ),
+                                        if (hasSelected)
+                                          IconButton(
+                                            tooltip: 'Descartar foto',
+                                            icon: const Icon(Icons.close, color: Colors.red, size: 18),
+                                            padding: EdgeInsets.zero,
+                                            constraints: const BoxConstraints(),
+                                            onPressed: (isSaving || isUploadingImage)
+                                                ? null
+                                                : () {
+                                                    setStateDialog(() {
+                                                      selectedImagePath = null;
+                                                      selectedImageBytes = null;
+                                                      selectedImageName = null;
+                                                    });
+                                                  },
+                                          ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
                     TextField(
                       controller: nameCtrl,
                       decoration: const InputDecoration(labelText: 'Nombre del producto', isDense: true),
@@ -617,20 +857,24 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
               ),
               actions: [
                 TextButton(
-                  onPressed: () => Navigator.pop(ctx),
+                  onPressed: (isSaving || isUploadingImage) ? null : () => Navigator.pop(ctx),
                   child: const Text('Cancelar'),
                 ),
                 FilledButton(
-                  onPressed: isSaving
+                  onPressed: (isSaving || isUploadingImage)
                       ? null
                       : () async {
                           final name = nameCtrl.text.trim();
-                          final cost = double.tryParse(costCtrl.text) ?? 0.0;
-                          final price = double.tryParse(priceCtrl.text) ?? 0.0;
-                          final stock = double.tryParse(stockCtrl.text) ?? 0.0;
-                          final addStock = double.tryParse(addStockCtrl.text);
-                          final vencimientoDias = int.tryParse(vencimientoCtrl.text);
-                          final minStock = double.tryParse(minStockCtrl.text);
+                          final cost = double.tryParse(costCtrl.text.trim().replaceAll(',', '.')) ?? 0.0;
+                          final price = double.tryParse(priceCtrl.text.trim().replaceAll(',', '.')) ?? 0.0;
+                          final stock = double.tryParse(stockCtrl.text.trim().replaceAll(',', '.')) ?? 0.0;
+                          final addStock = addStockCtrl.text.trim().isNotEmpty
+                              ? double.tryParse(addStockCtrl.text.trim().replaceAll(',', '.'))
+                              : null;
+                          final vencimientoDias = int.tryParse(vencimientoCtrl.text.trim());
+                          final minStock = minStockCtrl.text.trim().isNotEmpty
+                              ? double.tryParse(minStockCtrl.text.trim().replaceAll(',', '.'))
+                              : null;
 
                           if (name.isEmpty) {
                             SnackBarService.error(context, 'El nombre es obligatorio');
@@ -666,24 +910,118 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                               payload['vencimiento_dias'] = vencimientoDias;
                             }
 
+                            int? targetProductId = productToEdit?.id;
                             if (productToEdit == null) {
                               payload['active'] = true;
                               success = await catalogProv.createProduct(payload);
+                              targetProductId = catalogProv.lastCreatedProduct?.id;
                             } else {
                               success = await catalogProv.updateProduct(productToEdit.id, payload);
+                            }
+
+                            bool imageUploadSuccess = true;
+                            String? imageUploadError;
+                            String? uploadedImageUrl;
+                            if (success && (selectedImagePath != null || selectedImageBytes != null)) {
+                              if (targetProductId != null) {
+                                setStateDialog(() => isUploadingImage = true);
+                                uploadedImageUrl = await catalogProv.uploadProductImage(
+                                  targetProductId,
+                                  selectedImagePath ?? '',
+                                  bytes: selectedImageBytes,
+                                  filename: selectedImageName,
+                                );
+                                if (uploadedImageUrl == null) {
+                                  imageUploadSuccess = false;
+                                  imageUploadError = catalogProv.errorMessage?.replaceAll('Exception: ', '');
+                                }
+                              } else {
+                                imageUploadSuccess = false;
+                                imageUploadError = 'No se pudo obtener el identificador del producto.';
+                              }
                             }
                             
                             if (success && ctx.mounted) {
                               Navigator.pop(ctx);
-                              SnackBarService.success(context, productToEdit == null ? 'Producto creado exitosamente' : 'Producto modificado exitosamente');
+                              if (imageUploadSuccess) {
+                                SnackBarService.success(context, productToEdit == null ? 'Producto creado exitosamente' : 'Producto modificado exitosamente');
+                              } else {
+                                SnackBarService.warning(
+                                  context,
+                                  'Producto guardado, pero no se pudo subir la foto: ${imageUploadError ?? "Error al procesar la imagen."}',
+                                );
+                              }
                               
                               String queryToSearch = barcodeCtrl.text.trim();
                               if (queryToSearch.isEmpty) {
+                                queryToSearch = internalCodeCtrl.text.trim();
+                              }
+                              if (queryToSearch.isEmpty) {
                                 queryToSearch = nameCtrl.text.trim();
                               }
-                              if (queryToSearch.isNotEmpty) {
-                                _manualSearchCtrl.text = queryToSearch;
-                                _searchProduct(queryToSearch);
+
+                              // Determinar el producto actualizado
+                              Product? updated = targetProductId != null
+                                  ? catalogProv.products.where((p) => p.id == targetProductId).firstOrNull
+                                  : null;
+
+                              if (updated == null && catalogProv.lastUpdatedProduct?.id == targetProductId) {
+                                updated = catalogProv.lastUpdatedProduct;
+                              } else if (updated == null && catalogProv.lastCreatedProduct?.id == targetProductId) {
+                                updated = catalogProv.lastCreatedProduct;
+                              }
+
+                              if (updated == null && productToEdit != null && productToEdit.id == targetProductId) {
+                                final effectiveStock = (addStock != null && addStock > 0) ? (stock + addStock) : stock;
+                                final newCategory = selectedCategoryId != null
+                                    ? catalogProv.categories.where((c) => c.id == selectedCategoryId).firstOrNull
+                                    : null;
+                                final newBrand = selectedBrandId != null
+                                    ? catalogProv.brands.where((b) => b.id == selectedBrandId).firstOrNull
+                                    : null;
+                                final newSupplier = selectedSupplierId != null
+                                    ? context.read<SupplierProvider>().suppliers.where((s) => s.id == selectedSupplierId).firstOrNull
+                                    : null;
+                                updated = productToEdit.copyWith(
+                                  name: name,
+                                  barcode: barcodeCtrl.text.trim().isEmpty ? null : barcodeCtrl.text.trim(),
+                                  internalCode: internalCodeCtrl.text.trim().isEmpty ? null : internalCodeCtrl.text.trim(),
+                                  sellingPrice: price,
+                                  costPrice: cost,
+                                  stock: effectiveStock,
+                                  imageUrl: uploadedImageUrl ?? productToEdit.imageUrl,
+                                  category: newCategory,
+                                  clearCategory: selectedCategoryId == null,
+                                  brand: newBrand,
+                                  clearBrand: selectedBrandId == null,
+                                  supplier: newSupplier,
+                                  clearSupplier: selectedSupplierId == null,
+                                  isSoldByWeight: isSoldByWeight,
+                                  unitType: isSoldByWeight ? 'kg' : unitType,
+                                  active: isActive,
+                                );
+                              }
+
+                              if (updated != null) {
+                                if (uploadedImageUrl != null && updated.imageUrl != uploadedImageUrl) {
+                                  updated = updated.copyWith(imageUrl: uploadedImageUrl);
+                                }
+                                setState(() {
+                                  _scannedProduct = updated;
+                                  _priceCtrl.text = updated!.sellingPrice % 1 == 0
+                                      ? updated.sellingPrice.toInt().toString()
+                                      : updated.sellingPrice.toString();
+                                  _stockCtrl.text = (updated.stock % 1 == 0 ? updated.stock.toInt().toString() : updated.stock.toString());
+                                  _addStockQuickCtrl.clear();
+                                });
+                                if (queryToSearch.isNotEmpty) {
+                                  _manualSearchCtrl.text = queryToSearch;
+                                }
+                              } else {
+                                if (queryToSearch.isNotEmpty) {
+                                  _manualSearchCtrl.text = queryToSearch;
+                                  _searchProduct(queryToSearch);
+                                }
                               }
                             } else if (ctx.mounted) {
                               SnackBarService.error(context, catalogProv.errorMessage ?? 'Error desconocido');
@@ -694,11 +1032,14 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                             }
                           } finally {
                             if (ctx.mounted) {
-                              setStateDialog(() => isSaving = false);
+                              setStateDialog(() {
+                                isSaving = false;
+                                isUploadingImage = false;
+                              });
                             }
                           }
                         },
-                  child: isSaving
+                  child: (isSaving || isUploadingImage)
                       ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                       : const Text('Guardar'),
                 ),
@@ -710,7 +1051,9 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
     );
 
     if (_scannedProduct == null) {
-      _scannerController.start();
+      try {
+        _scannerController.start().catchError((_) {});
+      } catch (_) {}
     }
   }
 
@@ -730,7 +1073,11 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.flash_on),
-            onPressed: () => _scannerController.toggleTorch(),
+            onPressed: () {
+              try {
+                _scannerController.toggleTorch().catchError((_) {});
+              } catch (_) {}
+            },
           ),
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -739,7 +1086,9 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                 _scannedProduct = null;
                 _manualSearchCtrl.clear();
               });
-              _scannerController.start();
+              try {
+                _scannerController.start().catchError((_) {});
+              } catch (_) {}
             },
           ),
         ],
@@ -785,7 +1134,24 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const Icon(Icons.check_circle, color: Colors.green, size: 64),
+                          Builder(
+                            builder: (context) {
+                              final resolvedScannedImg = resolveImageUrl(_scannedProduct!.imageUrl);
+                              if (resolvedScannedImg != null && resolvedScannedImg.isNotEmpty) {
+                                return ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Image.network(
+                                    resolvedScannedImg,
+                                    width: 64,
+                                    height: 64,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => const Icon(Icons.check_circle, color: Colors.green, size: 64),
+                                  ),
+                                );
+                              }
+                              return const Icon(Icons.check_circle, color: Colors.green, size: 64);
+                            },
+                          ),
                           const SizedBox(width: 8),
                           IconButton(
                             icon: const Icon(Icons.edit, color: Colors.blueAccent),

@@ -28,6 +28,10 @@ import 'package:frontend_desktop/features/settings/presentation/providers/settin
 import 'package:frontend_desktop/core/constants/app_permissions.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../utils/product_share_helper.dart';
+import 'package:frontend_desktop/core/utils/image_url_resolver.dart';
+import '../../../quotes/presentation/pages/quote_screen.dart';
+import '../../../quotes/presentation/providers/quote_provider.dart';
+import '../../../pos/presentation/providers/pos_provider.dart';
 
 class CatalogScreen extends StatefulWidget {
   const CatalogScreen({super.key});
@@ -236,6 +240,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                                 case 6: setState(() => _selectedProducts.clear()); break;
                                 case 7: _bulkUpdateSupplier(provider); break;
                                 case 8: _bulkUpdateBrand(provider); break;
+                                case 12: _bulkGenerateQuote(); break;
                               }
                             },
                             child: Container(
@@ -257,9 +262,10 @@ class _CatalogScreenState extends State<CatalogScreen> {
                               ),
                             ),
                             itemBuilder: (context) => [
-                              const PopupMenuItem(value: 1, child: Row(children: [Icon(Icons.folder_outlined, color: Colors.orange, size: 20), SizedBox(width: 12), Expanded(child: Text('Mover Categoría'))])),
+                              const PopupMenuItem(value: 1, child: Row(children: [Icon(Icons.folder_outlined, color: Colors.orange, size: 20), SizedBox(width: 12), Expanded(child: Text('Asignar Categoría'))])),
                               const PopupMenuItem(value: 8, child: Row(children: [Icon(Icons.branding_watermark_outlined, color: Colors.indigo, size: 20), SizedBox(width: 12), Expanded(child: Text('Asignar Marca'))])),
                               const PopupMenuItem(value: 7, child: Row(children: [Icon(Icons.local_shipping_outlined, color: Colors.brown, size: 20), SizedBox(width: 12), Expanded(child: Text('Asignar Proveedor'))])),
+                              const PopupMenuItem(value: 12, child: Row(children: [Icon(Icons.request_quote_outlined, color: Colors.teal, size: 20), SizedBox(width: 12), Expanded(child: Text('Generar Presupuesto'))])),
                               const PopupMenuItem(value: 2, child: Row(children: [Icon(Icons.power_settings_new, color: Colors.teal, size: 20), SizedBox(width: 12), Expanded(child: Text('Cambiar Estado'))])),
                               const PopupMenuItem(value: 3, child: Row(children: [Icon(Icons.trending_up, color: Colors.deepOrange, size: 20), SizedBox(width: 12), Expanded(child: Text('Actualizar Precios'))])),
                               const PopupMenuItem(value: 4, child: Row(children: [Icon(Icons.print_outlined, color: Colors.deepPurple, size: 20), SizedBox(width: 12), Expanded(child: Text('Imprimir Etiquetas'))])),
@@ -819,26 +825,41 @@ class _CatalogScreenState extends State<CatalogScreen> {
   }
 
   Future<void> _bulkUpdateCategory(CatalogProvider provider) async {
-    final auth = await AdminPinDialog.verify(context, action: 'Categorizar Lote', permissionKey: 'manage_catalog');
+    final auth = await AdminPinDialog.verify(context, action: 'Asignar Categoría en Lote', permissionKey: 'manage_catalog');
     if (!auth) return;
+
+    if (provider.categories.isEmpty && mounted) {
+      await provider.loadMetadata();
+    }
+    if (!mounted) return;
 
     int? newCategory = await showDialog<int?>(
       context: context,
       builder: (ctx) {
         int? selected;
         return AlertDialog(
-          title: const Text('Mover a Categoría'),
+          title: const Text('Asignar Categoría'),
           content: DropdownButtonFormField<int?>(
             decoration: const InputDecoration(labelText: 'Elige la nueva categoría', border: OutlineInputBorder()),
             items: [
-              const DropdownMenuItem(value: null, child: Text('— Quitar categoría —')),
+              const DropdownMenuItem(value: -1, child: Text('— Quitar Categoría —')),
               ...provider.categories.map((c) => DropdownMenuItem(value: c.id, child: Text(c.name))),
             ],
             onChanged: (val) => selected = val,
           ),
           actions: [
             TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
-            FilledButton(onPressed: () => Navigator.pop(ctx, selected ?? -1), child: const Text('Mover')),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: Colors.orange.shade800),
+              onPressed: () {
+                if (selected == null) {
+                  SnackBarService.error(ctx, 'Selecciona una categoría o "— Quitar Categoría —"');
+                  return;
+                }
+                Navigator.pop(ctx, selected);
+              },
+              child: const Text('Asignar'),
+            ),
           ],
         );
       },
@@ -860,6 +881,46 @@ class _CatalogScreenState extends State<CatalogScreen> {
           SnackBarService.error(context, provider.errorMessage ?? 'Error al actualizar categoría');
         }
       }
+    }
+  }
+
+  Future<void> _bulkGenerateQuote() async {
+    final products = _selectedProducts.values.toList();
+    if (products.isEmpty) return;
+
+    bool hasQuoteProv = false;
+    try {
+      final quoteProv = Provider.of<QuoteProvider?>(context, listen: false);
+      if (quoteProv != null) {
+        hasQuoteProv = true;
+        quoteProv.clearCart();
+        for (final p in products) {
+          quoteProv.addToCart(p, quantity: 1.0);
+        }
+      }
+    } catch (_) {}
+
+    try {
+      final posProv = Provider.of<PosProvider?>(context, listen: false);
+      if (posProv != null) {
+        posProv.clearCart();
+        for (final p in products) {
+          if (!p.isSoldByWeight) {
+            posProv.requestAddToCart(p);
+          } else {
+            posProv.submitWeighedProduct(p, 1.0);
+          }
+        }
+      }
+    } catch (_) {}
+
+    setState(() => _selectedProducts.clear());
+
+    if (mounted && hasQuoteProv) {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const QuoteScreen()),
+      );
     }
   }
 
@@ -888,7 +949,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
               border: OutlineInputBorder(),
             ),
             items: [
-              const DropdownMenuItem(value: -1, child: Text('— Sin Marca —')),
+              const DropdownMenuItem(value: -1, child: Text('— Quitar Marca —')),
               ...provider.brands.map((b) => DropdownMenuItem(value: b.id, child: Text(b.name))),
             ],
             onChanged: (val) => selected = val,
@@ -899,7 +960,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
               style: FilledButton.styleFrom(backgroundColor: Colors.indigo),
               onPressed: () {
                 if (selected == null) {
-                  SnackBarService.error(ctx, 'Selecciona una marca o "Sin Marca"');
+                  SnackBarService.error(ctx, 'Selecciona una marca o "— Quitar Marca —"');
                   return;
                 }
                 Navigator.pop(ctx, selected);
@@ -954,7 +1015,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
             : DropdownButtonFormField<int?>(
             decoration: const InputDecoration(labelText: 'Elige el nuevo proveedor', border: OutlineInputBorder()),
             items: [
-              const DropdownMenuItem(value: -1, child: Text('— Sin Proveedor —')),
+              const DropdownMenuItem(value: -1, child: Text('— Quitar Proveedor —')),
               ...supplierProv.suppliers.map((s) => DropdownMenuItem(value: s.id, child: Text(s.name))),
             ],
             onChanged: (val) => selected = val,
@@ -965,7 +1026,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
               style: FilledButton.styleFrom(backgroundColor: Colors.brown.shade600),
               onPressed: () {
                  if (selected == null) {
-                    SnackBarService.error(ctx, 'Selecciona un proveedor o "Sin Proveedor"');
+                    SnackBarService.error(ctx, 'Selecciona un proveedor o "— Quitar Proveedor —"');
                     return;
                  }
                  Navigator.pop(ctx, selected);
@@ -1297,16 +1358,41 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
       );
       if (result != null && result.files.isNotEmpty) {
         final file = result.files.single;
-        final fileSize = file.size > 0 ? file.size : (file.bytes?.length ?? 0);
+        final ext = file.extension?.toLowerCase() ??
+            (file.name.contains('.') ? file.name.split('.').last.toLowerCase() : '');
+        if (ext.isNotEmpty && !['jpg', 'jpeg', 'png', 'webp'].contains(ext)) {
+          if (mounted) {
+            SnackBarService.error(context, 'Formato no soportado ($ext). Usa JPG, PNG o WEBP.');
+          }
+          return;
+        }
+        int fileSize = file.size > 0 ? file.size : (file.bytes?.length ?? 0);
+        if (fileSize == 0 && file.path != null && file.path!.isNotEmpty) {
+          try {
+            final ioFile = File(file.path!);
+            if (ioFile.existsSync()) {
+              fileSize = ioFile.lengthSync();
+            }
+          } catch (_) {}
+        }
         if (fileSize > 2 * 1024 * 1024) {
           if (mounted) {
             SnackBarService.error(context, 'La imagen supera los 2MB permitidos (máx 2048 KB).');
           }
           return;
         }
+        Uint8List? bytes = file.bytes;
+        if (bytes == null && file.path != null && file.path!.isNotEmpty) {
+          try {
+            final ioFile = File(file.path!);
+            if (ioFile.existsSync()) {
+              bytes = ioFile.readAsBytesSync();
+            }
+          } catch (_) {}
+        }
         setState(() {
           _selectedImagePath = file.path;
-          _selectedImageBytes = file.bytes;
+          _selectedImageBytes = bytes;
           _selectedImageName = file.name;
         });
       }
@@ -1624,12 +1710,8 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
   }
 
   Widget _buildProductImagePicker() {
-    final existingImageUrl = widget.product?.imageUrl;
-    final existingUri = existingImageUrl != null ? Uri.tryParse(existingImageUrl) : null;
-    final hasValidExistingImage = existingUri != null &&
-        existingUri.hasScheme &&
-        existingUri.hasAuthority &&
-        existingUri.host.isNotEmpty;
+    final resolvedImageUrl = resolveImageUrl(widget.product?.imageUrl);
+    final hasValidExistingImage = resolvedImageUrl != null && resolvedImageUrl.isNotEmpty;
     final hasSelected = _selectedImageBytes != null || (_selectedImagePath != null && _selectedImagePath!.isNotEmpty);
     final hasAny = hasSelected || hasValidExistingImage;
 
@@ -1659,7 +1741,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
       );
     } else if (hasValidExistingImage) {
       imageContent = Image.network(
-        existingImageUrl!,
+        resolvedImageUrl,
         width: 100,
         height: 100,
         fit: BoxFit.cover,
@@ -1782,6 +1864,131 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     );
   }
 
+  Widget _buildProductImagePickerColumn() {
+    final resolvedImageUrl = resolveImageUrl(widget.product?.imageUrl);
+    final hasValidExistingImage = resolvedImageUrl != null && resolvedImageUrl.isNotEmpty;
+    final hasSelected = _selectedImageBytes != null || (_selectedImagePath != null && _selectedImagePath!.isNotEmpty);
+    final hasAny = hasSelected || hasValidExistingImage;
+
+    Widget imageContent;
+    if (_isUploadingImage) {
+      imageContent = const Center(
+        child: SizedBox(
+          width: 24,
+          height: 24,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      );
+    } else if (_selectedImageBytes != null) {
+      imageContent = Image.memory(
+        _selectedImageBytes!,
+        width: 100,
+        height: 100,
+        fit: BoxFit.cover,
+      );
+    } else if (_selectedImagePath != null && _selectedImagePath!.isNotEmpty) {
+      imageContent = Image.file(
+        File(_selectedImagePath!),
+        width: 100,
+        height: 100,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, size: 36, color: Colors.grey),
+      );
+    } else if (hasValidExistingImage) {
+      imageContent = Image.network(
+        resolvedImageUrl,
+        width: 100,
+        height: 100,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, size: 36, color: Colors.grey),
+      );
+    } else {
+      imageContent = Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.add_a_photo_outlined, size: 32, color: Colors.grey.shade500),
+          const SizedBox(height: 4),
+          Text(
+            'Subir Foto',
+            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.grey.shade700),
+          ),
+        ],
+      );
+    }
+
+    final imageCard = InkWell(
+      onTap: _isUploadingImage ? null : _pickProductImage,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        key: const ValueKey('product_image_container'),
+        width: 90,
+        height: 90,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: hasSelected ? const Color(0xFF673AB7) : Colors.grey.shade300,
+            width: hasSelected ? 2 : 1,
+          ),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Center(child: imageContent),
+      ),
+    );
+
+    final actionsWidget = OutlinedButton.icon(
+      onPressed: _isUploadingImage ? null : _pickProductImage,
+      icon: const Icon(Icons.photo_library_outlined, size: 13),
+      label: Text(hasAny ? 'Cambiar Foto' : 'Seleccionar Foto', style: const TextStyle(fontSize: 10.5)),
+      style: OutlinedButton.styleFrom(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        minimumSize: const Size(0, 30),
+      ),
+    );
+
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Text(
+            'Foto del Producto',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.grey.shade800),
+          ),
+          const SizedBox(height: 6),
+          imageCard,
+          const SizedBox(height: 6),
+          actionsWidget,
+          if (hasSelected) ...[
+            const SizedBox(height: 4),
+            IconButton(
+              tooltip: 'Descartar imagen seleccionada',
+              icon: const Icon(Icons.close, color: Colors.red, size: 16),
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+              onPressed: _isUploadingImage
+                  ? null
+                  : () {
+                      setState(() {
+                        _selectedImagePath = null;
+                        _selectedImageBytes = null;
+                        _selectedImageName = null;
+                      });
+                    },
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     // IMPORTANTE: usar context.watch (no widget.provider) para que el dropdown
@@ -1825,72 +2032,94 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                _buildProductImagePicker(),
-                const SizedBox(height: 12),
-                // Nombre
-                TextFormField(
-                  controller: _nameCtrl,
-                  decoration: const InputDecoration(labelText: 'Nombre del Producto *', prefixIcon: Icon(Icons.label_outline)),
-                  validator: (v) => v == null || v.isEmpty ? 'El nombre es obligatorio' : null,
-                ),
-                const SizedBox(height: 12),
-                // Código Interno (PLU) + Código de barras
-                if (isNarrow)
-                  Column(
-                    children: [
-                      TextFormField(
-                        controller: _internalCodeCtrl,
-                        maxLength: 5,
-                        decoration: const InputDecoration(
-                          labelText: 'PLU (Interno) *',
-                          prefixIcon: Icon(Icons.numbers),
-                          counterText: '',
-                          helperText: '5 dígitos numéricos',
-                        ),
-                        keyboardType: TextInputType.number,
-                      ),
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        controller: _barcodeCtrl,
-                        decoration: const InputDecoration(
-                          labelText: 'Código de Barras (EAN)',
-                          prefixIcon: Icon(Icons.qr_code_scanner),
-                          helperText: 'Dejar vacío si es pesable',
-                        ),
-                      ),
-                    ],
-                  )
-                else
+                if (isNarrow) ...[
+                  _buildProductImagePicker(),
+                  const SizedBox(height: 12),
+                  // Nombre
+                  TextFormField(
+                    controller: _nameCtrl,
+                    decoration: const InputDecoration(labelText: 'Nombre del Producto *', prefixIcon: Icon(Icons.label_outline)),
+                    validator: (v) => v == null || v.isEmpty ? 'El nombre es obligatorio' : null,
+                  ),
+                  const SizedBox(height: 12),
+                  // Código Interno (PLU) + Código de barras
+                  TextFormField(
+                    controller: _internalCodeCtrl,
+                    maxLength: 5,
+                    decoration: const InputDecoration(
+                      labelText: 'PLU (Interno) *',
+                      prefixIcon: Icon(Icons.numbers),
+                      counterText: '',
+                      helperText: '5 dígitos numéricos',
+                    ),
+                    keyboardType: TextInputType.number,
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _barcodeCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Código de Barras (EAN)',
+                      prefixIcon: Icon(Icons.qr_code_scanner),
+                      helperText: 'Dejar vacío si es pesable',
+                    ),
+                  ),
+                ] else ...[
                   Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // Lado izquierdo: Selector de Foto
+                      _buildProductImagePickerColumn(),
+                      const SizedBox(width: 16),
+                      // Lado derecho: Nombre y Códigos
                       Expanded(
-                        flex: 4,
-                        child: TextFormField(
-                          controller: _internalCodeCtrl,
-                          maxLength: 5,
-                          decoration: const InputDecoration(
-                            labelText: 'PLU (Interno) *',
-                            prefixIcon: Icon(Icons.numbers),
-                            counterText: '',
-                            helperText: '5 dígitos numéricos',
-                          ),
-                          keyboardType: TextInputType.number,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        flex: 6,
-                        child: TextFormField(
-                          controller: _barcodeCtrl,
-                          decoration: const InputDecoration(
-                            labelText: 'Código de Barras (EAN)',
-                            prefixIcon: Icon(Icons.qr_code_scanner),
-                            helperText: 'Dejar vacío si es pesable',
-                          ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            TextFormField(
+                              controller: _nameCtrl,
+                              decoration: const InputDecoration(
+                                labelText: 'Nombre del Producto *',
+                                prefixIcon: Icon(Icons.label_outline),
+                              ),
+                              validator: (v) => v == null || v.isEmpty ? 'El nombre es obligatorio' : null,
+                            ),
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                Expanded(
+                                  flex: 4,
+                                  child: TextFormField(
+                                    controller: _internalCodeCtrl,
+                                    maxLength: 5,
+                                    decoration: const InputDecoration(
+                                      labelText: 'PLU (Interno) *',
+                                      prefixIcon: Icon(Icons.numbers),
+                                      counterText: '',
+                                      helperText: '5 dígitos numéricos',
+                                    ),
+                                    keyboardType: TextInputType.number,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  flex: 6,
+                                  child: TextFormField(
+                                    controller: _barcodeCtrl,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Código de Barras (EAN)',
+                                      prefixIcon: Icon(Icons.qr_code_scanner),
+                                      helperText: 'Dejar vacío si es pesable',
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
                         ),
                       ),
                     ],
                   ),
+                ],
                 const SizedBox(height: 12),
                 // Categoría y Marca (Adaptativo Básico vs Premium & Anti-overflow)
                 _buildCategoryAndBrandSection(context, categories, brands),

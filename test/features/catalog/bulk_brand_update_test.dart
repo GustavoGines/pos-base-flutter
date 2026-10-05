@@ -458,11 +458,108 @@ void main() {
       await tester.tap(find.text('Lote (1)'));
       await tester.pumpAndSettle();
 
-      // Verify "Asignar Marca" is present with the branding icon
+      // Verify bulk menu items are present
       expect(find.text('Asignar Marca'), findsOneWidget);
       expect(find.byIcon(Icons.branding_watermark_outlined), findsAtLeastNWidgets(1));
-      expect(find.text('Mover Categoría'), findsOneWidget);
+      expect(find.text('Asignar Categoría'), findsOneWidget);
       expect(find.text('Asignar Proveedor'), findsOneWidget);
+      expect(find.text('Generar Presupuesto'), findsOneWidget);
+      // R1: Standalone Quitar options are cleaned up from main menu
+      expect(find.text('Quitar Categoría'), findsNothing);
+      expect(find.text('Quitar Marca'), findsNothing);
+      expect(find.text('Quitar Proveedor'), findsNothing);
+    });
+
+    testWidgets('R2: Asignar Marca dialog has — Quitar Marca — option that unsets brand via bulk update', (tester) async {
+      tester.view.physicalSize = const Size(1400, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() => tester.view.resetPhysicalSize());
+
+      final fakeRepo = FakeCatalogRepository();
+      final getProductsUseCase = GetProductsUseCase(fakeRepo);
+      final provider = CatalogProvider(
+        getProductsUseCase: getProductsUseCase,
+        repository: fakeRepo,
+      );
+
+      await tester.pumpWidget(buildTestScreen(catalogProvider: provider));
+      await tester.pump();
+
+      provider.products.addAll(sampleProducts);
+      provider.notifyListeners();
+      await tester.pump();
+
+      // Select first product
+      final checkboxes = find.byType(Checkbox);
+      await tester.tap(checkboxes.at(1));
+      await tester.pump();
+
+      // Open Lote menu
+      await tester.tap(find.text('Lote (1)'));
+      await tester.pumpAndSettle();
+
+      // Tap Asignar Marca
+      await tester.tap(find.text('Asignar Marca'));
+      await tester.pumpAndSettle();
+
+      // Dialog opens
+      expect(find.text('Asignar Marca en Lote'), findsOneWidget);
+
+      // Open dropdown
+      await tester.tap(find.byType(DropdownButtonFormField<int?>));
+      await tester.pumpAndSettle();
+
+      // Verify — Quitar Marca — is the first option
+      expect(find.text('— Quitar Marca —'), findsWidgets);
+
+      // Select — Quitar Marca —
+      await tester.tap(find.text('— Quitar Marca —').last);
+      await tester.pumpAndSettle();
+
+      // Tap Asignar button
+      await tester.tap(find.widgetWithText(FilledButton, 'Asignar'));
+      await tester.pumpAndSettle();
+
+      // Verify repository was called with brandId: null and clearBrand: true
+      expect(fakeRepo.lastClearBrand, isTrue);
+      expect(fakeRepo.lastBrandId, isNull);
+      expect(fakeRepo.lastIds, [101]);
+    });
+
+    testWidgets('Tapping "Generar Presupuesto" clears bulk selection and processes quote items', (tester) async {
+      tester.view.physicalSize = const Size(1400, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() => tester.view.resetPhysicalSize());
+
+      final fakeRepo = FakeCatalogRepository();
+      final getProductsUseCase = GetProductsUseCase(fakeRepo);
+      final provider = CatalogProvider(
+        getProductsUseCase: getProductsUseCase,
+        repository: fakeRepo,
+      );
+      await tester.pumpWidget(buildTestScreen(catalogProvider: provider));
+      await tester.pumpAndSettle();
+
+      provider.products.addAll(sampleProducts);
+      provider.notifyListeners();
+      await tester.pump();
+
+      final checkboxes = find.byType(Checkbox);
+      await tester.tap(checkboxes.at(1));
+      await tester.pump();
+
+      expect(find.text('Lote (1)'), findsOneWidget);
+
+      await tester.tap(find.text('Lote (1)'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Generar Presupuesto'), findsOneWidget);
+      await tester.tap(find.text('Generar Presupuesto'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+
+      // Selection is cleared
+      expect(find.text('Lote (1)'), findsNothing);
     });
   });
 }

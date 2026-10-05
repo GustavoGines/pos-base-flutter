@@ -33,6 +33,9 @@ class CatalogProvider with ChangeNotifier {
   Product? _lastCreatedProduct;
   Product? get lastCreatedProduct => _lastCreatedProduct;
 
+  Product? _lastUpdatedProduct;
+  Product? get lastUpdatedProduct => _lastUpdatedProduct;
+
   String? _errorMessage;
   String? get errorMessage => _errorMessage;
 
@@ -213,6 +216,9 @@ class CatalogProvider with ChangeNotifier {
       if (_lastCreatedProduct?.id == productId) {
         _lastCreatedProduct = _lastCreatedProduct!.copyWith(imageUrl: imageUrl);
       }
+      if (_lastUpdatedProduct?.id == productId) {
+        _lastUpdatedProduct = _lastUpdatedProduct!.copyWith(imageUrl: imageUrl);
+      }
       return imageUrl;
     } catch (e) {
       _errorMessage = e.toString();
@@ -229,6 +235,7 @@ class CatalogProvider with ChangeNotifier {
     notifyListeners();
     try {
       final updated = await repository.updateProduct(id, data);
+      _lastUpdatedProduct = updated;
       final idx = _products.indexWhere((p) => p.id == id);
       if (idx != -1) {
         if (updated.imageUrl == null && _products[idx].imageUrl != null) {
@@ -236,6 +243,7 @@ class CatalogProvider with ChangeNotifier {
         } else {
           _products[idx] = updated;
         }
+        _lastUpdatedProduct = _products[idx];
       }
       return true;
     } catch (e) {

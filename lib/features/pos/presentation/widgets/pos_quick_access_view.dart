@@ -47,7 +47,7 @@ class PosQuickAccessCatalogView extends StatelessWidget {
       return GridView.builder(
         gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
           maxCrossAxisExtent: 140,
-          childAspectRatio: 0.9,
+          childAspectRatio: 0.80,
           crossAxisSpacing: 8,
           mainAxisSpacing: 8,
         ),
@@ -59,7 +59,7 @@ class PosQuickAccessCatalogView extends StatelessWidget {
       return GridView.builder(
         gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
           maxCrossAxisExtent: 180,
-          childAspectRatio: 0.85,
+          childAspectRatio: 0.82,
           crossAxisSpacing: 12,
           mainAxisSpacing: 12,
         ),
@@ -215,6 +215,7 @@ class PosQuickAccessCatalogView extends StatelessWidget {
       onTap: () => onSelectProduct?.call(product),
       child: Card(
         elevation: 2,
+        clipBehavior: Clip.antiAlias,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         child: Container(
           decoration: BoxDecoration(
@@ -225,95 +226,114 @@ class PosQuickAccessCatalogView extends StatelessWidget {
               end: Alignment.bottomRight,
             ),
           ),
-          child: Padding(
-            padding: EdgeInsets.symmetric(horizontal: isMedium ? 4.0 : 8.0, vertical: isMedium ? 4.0 : 8.0),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                if (hasImage)
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(6),
-                    child: CachedNetworkImage(
-                      imageUrl: product.imageUrl!,
-                      width: isMedium ? 28 : 42,
-                      height: isMedium ? 28 : 42,
-                      fit: BoxFit.cover,
-                      placeholder: (context, url) => const SizedBox(
-                        width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                      errorWidget: (context, url, error) => Icon(
-                        isByWeight ? Icons.scale_rounded : Icons.inventory_2_outlined,
-                        color: isByWeight ? Colors.orange.shade600 : Colors.blue.shade600,
-                        size: isMedium ? 18 : 24,
-                      ),
-                    ),
-                  )
-                else
-                  Icon(
-                    isByWeight ? Icons.scale_rounded : Icons.inventory_2_outlined,
-                    color: isByWeight ? Colors.orange.shade600 : Colors.blue.shade600,
-                    size: isMedium ? 18 : 24,
-                  ),
-                SizedBox(height: isMedium ? 2 : 4),
-                Expanded(
-                  child: Center(
-                    child: Text(
-                      product.name,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: isMedium ? 11 : 13),
-                      maxLines: isMedium ? 2 : 3,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // ─── HEADER: Prominent Product Image (or fallback) ───
+              Expanded(
+                flex: isMedium ? 4 : 5,
+                child: Container(
+                  color: isByWeight ? Colors.orange.shade50 : Colors.blue.shade50,
+                  child: hasImage
+                      ? CachedNetworkImage(
+                          imageUrl: product.imageUrl!,
+                          width: double.infinity,
+                          height: double.infinity,
+                          fit: BoxFit.cover,
+                          placeholder: (context, url) => const Center(
+                            child: SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          ),
+                          errorWidget: (context, url, error) => Center(
+                            child: Icon(
+                              isByWeight ? Icons.scale_rounded : Icons.inventory_2_outlined,
+                              color: isByWeight ? Colors.orange.shade600 : Colors.blue.shade600,
+                              size: isMedium ? 30 : 42,
+                            ),
+                          ),
+                        )
+                      : Center(
+                          child: Icon(
+                            isByWeight ? Icons.scale_rounded : Icons.inventory_2_outlined,
+                            color: isByWeight ? Colors.orange.shade600 : Colors.blue.shade600,
+                            size: isMedium ? 30 : 42,
+                          ),
+                        ),
                 ),
-                SizedBox(height: isMedium ? 2 : 4),
-                Container(
-                  padding: EdgeInsets.symmetric(horizontal: 6, vertical: isMedium ? 1 : 2),
-                  decoration: BoxDecoration(
-                    color: isByWeight ? Colors.orange.shade100 : Colors.green.shade50,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: _renderPrice(context, product, isByWeight, isMedium ? 11 : 13),
-                ),
-                if (isByWeight) ...[
-                  SizedBox(height: isMedium ? 2 : 3),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                    decoration: BoxDecoration(
-                      color: Colors.orange.shade200,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text('⚖️ Por Kg', style: TextStyle(fontSize: isMedium ? 9 : 10, color: Colors.orange.shade900, fontWeight: FontWeight.w600)),
-                  ),
-                ],
-                if (product.salesCount > 0) ...[
-                  SizedBox(height: isMedium ? 2 : 4),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                    decoration: BoxDecoration(
-                      color: Colors.blue.withAlpha(25),
-                      borderRadius: BorderRadius.circular(4),
-                      border: Border.all(color: Colors.blue.withAlpha(50)),
-                    ),
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Row(
+              ),
+
+              // ─── BODY: Product Details, Price & Badges ───
+              Expanded(
+                flex: isMedium ? 6 : 5,
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: isMedium ? 4.0 : 8.0, vertical: isMedium ? 1.5 : 3.0),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Text(
+                        product.name,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: isMedium ? 11 : 12),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.flash_on_rounded, size: isMedium ? 8 : 10, color: Colors.blueAccent),
-                          const SizedBox(width: 2),
-                          Text(
-                            "${product.salesCount} vend.",
-                            style: TextStyle(fontSize: isMedium ? 8 : 9, color: Colors.blueAccent, fontWeight: FontWeight.bold),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                            decoration: BoxDecoration(
+                              color: isByWeight ? Colors.orange.shade100 : Colors.green.shade50,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: _renderPrice(context, product, isByWeight, isMedium ? 11 : 12),
                           ),
+                          if (isByWeight) ...[
+                            const SizedBox(height: 2),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0.5),
+                              decoration: BoxDecoration(
+                                color: Colors.orange.shade200,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text('⚖️ Por Kg', style: TextStyle(fontSize: 8.5, color: Colors.orange.shade900, fontWeight: FontWeight.w600)),
+                            ),
+                          ] else if (product.salesCount > 0) ...[
+                            const SizedBox(height: 2),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0.5),
+                              decoration: BoxDecoration(
+                                color: Colors.blue.withAlpha(25),
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(color: Colors.blue.withAlpha(50)),
+                              ),
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.flash_on_rounded, size: 8, color: Colors.blueAccent),
+                                    const SizedBox(width: 2),
+                                    Text(
+                                      "${product.salesCount} vend.",
+                                      style: const TextStyle(fontSize: 8, color: Colors.blueAccent, fontWeight: FontWeight.bold),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
                         ],
                       ),
-                    ),
+                    ],
                   ),
-                ],
-              ],
-            ),
+                ),
+              ),
+            ],
           ),
         ),
       ),

@@ -53,9 +53,12 @@ class ProductModel extends Product {
     String? unitType,
     String? imageUrl,
     covariant CategoryModel? category,
+    bool clearCategory = false,
     covariant List<CategoryModel>? categories,
     covariant BrandModel? brand,
+    bool clearBrand = false,
     covariant dynamic supplier,
+    bool clearSupplier = false,
   }) {
     return ProductModel(
       id: id ?? this.id,
@@ -77,10 +80,10 @@ class ProductModel extends Product {
       vencimientoDias: vencimientoDias ?? this.vencimientoDias,
       unitType: unitType ?? this.unitType,
       imageUrl: imageUrl ?? this.imageUrl,
-      category: category ?? this.category as CategoryModel?,
+      category: clearCategory ? null : (category ?? this.category as CategoryModel?),
       categories: categories ?? (this.categories as List<CategoryModel>?),
-      brand: brand ?? this.brand as BrandModel?,
-      supplier: supplier ?? this.supplier,
+      brand: clearBrand ? null : (brand ?? this.brand as BrandModel?),
+      supplier: clearSupplier ? null : (supplier ?? this.supplier),
     );
   }
 

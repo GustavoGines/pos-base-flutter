@@ -236,6 +236,76 @@ void main() {
       expect(fallbackText, contains('Leche Descremada'));
       expect(fallbackSubject, equals('Leche Descremada'));
     });
+
+    test('formatProductShareText includes wholesale and card prices when available', () {
+      final product = Product(
+        id: 10,
+        name: 'Taladro Percutor 750W',
+        barcode: '7799887766554',
+        internalCode: 'FER-01',
+        costPrice: 20000,
+        sellingPrice: 35000,
+        priceWholesale: 30000,
+        priceCard: 38500,
+        stock: 5,
+        active: true,
+        isSoldByWeight: false,
+      );
+
+      final text = ProductShareHelper.formatProductShareText(product);
+
+      expect(text, contains('📦 *Taladro Percutor 750W*'));
+      expect(text, contains('💰 Precio: \$35.000'));
+      expect(text, contains('🏷️ Mayorista: \$30.000'));
+      expect(text, contains('💳 Tarjeta: \$38.500'));
+    });
+
+    test('shareProduct resolves relative imageUrl via resolveImageUrl and shares image with caption text', () async {
+      final product = Product(
+        id: 11,
+        name: 'Amoladora Angular',
+        internalCode: 'AMO-02',
+        costPrice: 15000,
+        sellingPrice: 25000,
+        stock: 8,
+        active: true,
+        isSoldByWeight: false,
+        imageUrl: 'products/amoladora.png',
+      );
+
+      final mockPngBytes = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+      String? requestedUrl;
+      final mockClient = MockClient((request) async {
+        requestedUrl = request.url.toString();
+        return http.Response.bytes(mockPngBytes, 200);
+      });
+
+      final testTempDir = Directory.systemTemp.createTempSync('share_test_relative_');
+      try {
+        List<XFile>? sharedFiles;
+        String? captionText;
+
+        await ProductShareHelper.shareProduct(
+          product,
+          httpClient: mockClient,
+          getTempDir: () async => testTempDir,
+          shareFilesFn: (files, {text, subject}) async {
+            sharedFiles = files;
+            captionText = text;
+          },
+        );
+
+        expect(requestedUrl, contains('/storage/products/amoladora.png'));
+        expect(sharedFiles, isNotNull);
+        expect(sharedFiles!.length, equals(1));
+        expect(captionText, contains('Amoladora Angular'));
+        expect(captionText, contains('\$25.000'));
+      } finally {
+        if (testTempDir.existsSync()) {
+          testTempDir.deleteSync(recursive: true);
+        }
+      }
+    });
   });
 
   group('Milestone 4: ProductFormDialog Share Button Widget Tests', () {

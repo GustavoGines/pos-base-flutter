@@ -30,6 +30,7 @@ import 'package:frontend_desktop/core/utils/a4_split_pdf_service.dart';
 import 'package:printing/printing.dart';
 import 'package:frontend_desktop/features/logistics/presentation/providers/logistics_provider.dart';
 import 'package:dart_pusher_channels/dart_pusher_channels.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 class PosScreen extends StatefulWidget {
   const PosScreen({super.key});
@@ -2021,9 +2022,16 @@ class _PosScreenState extends State<PosScreen> {
           // Lista de ítems
           Expanded(
             child: pos.cart.isEmpty
-                ? const Center(
-                    child: Text('El carrito está vacío',
-                        style: TextStyle(color: Colors.grey)))
+                ? const Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      PosWatermarkLogo(size: 160),
+                      Center(
+                        child: Text('El carrito está vacío',
+                            style: TextStyle(color: Colors.grey)),
+                      ),
+                    ],
+                  )
                 : ListView.separated(
                     itemCount: pos.cart.length,
                     separatorBuilder: (_, __) => const Divider(height: 1),
@@ -2619,29 +2627,35 @@ class _PosScreenState extends State<PosScreen> {
                 }
 
                 if (displayItems.isEmpty) {
-                  return Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.search_off,
-                            size: 56, color: Colors.grey),
-                        const SizedBox(height: 12),
-                        Text(
-                          _searchQuery.isEmpty
-                              ? 'No hay productos en el catálogo.'
-                              : 'No se encontraron productos para "${_searchController.text}"',
-                          style:
-                              const TextStyle(color: Colors.grey, fontSize: 15),
-                          textAlign: TextAlign.center,
+                  return Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      const PosWatermarkLogo(size: 240),
+                      Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.search_off,
+                                size: 56, color: Colors.grey),
+                            const SizedBox(height: 12),
+                            Text(
+                              _searchQuery.isEmpty
+                                  ? 'No hay productos en el catálogo.'
+                                  : 'No se encontraron productos para "${_searchController.text}"',
+                              style:
+                                  const TextStyle(color: Colors.grey, fontSize: 15),
+                              textAlign: TextAlign.center,
+                            ),
+                            if (_searchQuery.isNotEmpty) ...[
+                              const SizedBox(height: 8),
+                              const Text('Presá Enter para buscar en el servidor',
+                                  style: TextStyle(
+                                      color: Colors.blueGrey, fontSize: 13)),
+                            ],
+                          ],
                         ),
-                        if (_searchQuery.isNotEmpty) ...[
-                          const SizedBox(height: 8),
-                          const Text('Presá Enter para buscar en el servidor',
-                              style: TextStyle(
-                                  color: Colors.blueGrey, fontSize: 13)),
-                        ],
-                      ],
-                    ),
+                      ),
+                    ],
                   );
                 }
 
@@ -2964,6 +2978,41 @@ class _CartItemStockIndicator extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Marca de agua semi-transparente (5% opacidad) con el logo del negocio o ícono de tienda
+class PosWatermarkLogo extends StatelessWidget {
+  final double size;
+  const PosWatermarkLogo({super.key, this.size = 180});
+
+  @override
+  Widget build(BuildContext context) {
+    final settings = context.watch<SettingsProvider>().settings;
+    final logoUrl = settings?.effectiveLogoUrl;
+
+    return IgnorePointer(
+      child: Opacity(
+        opacity: 0.05,
+        child: (logoUrl != null && logoUrl.isNotEmpty)
+            ? CachedNetworkImage(
+                imageUrl: logoUrl,
+                width: size,
+                height: size,
+                fit: BoxFit.contain,
+                errorWidget: (_, __, ___) => Icon(
+                  Icons.storefront_rounded,
+                  size: size,
+                  color: Colors.grey.shade400,
+                ),
+              )
+            : Icon(
+                Icons.storefront_rounded,
+                size: size,
+                color: Colors.grey.shade400,
+              ),
       ),
     );
   }

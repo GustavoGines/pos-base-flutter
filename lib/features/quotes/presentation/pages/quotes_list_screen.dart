@@ -751,6 +751,7 @@ class _QuoteActionSheetState extends State<_QuoteActionSheet> {
         businessAddress: settings?.address,
         businessPhone: settings?.phone,
         vendorName: vendorName,
+        logoUrl: settings?.effectiveLogoUrl,
       );
     } else if (format == 'thermal') {
       if (settings != null) {
@@ -782,6 +783,7 @@ class _QuoteActionSheetState extends State<_QuoteActionSheet> {
         businessAddress: settings?.address,
         businessPhone: settings?.phone,
         vendorName: null,
+        logoUrl: settings?.effectiveLogoUrl,
       );
 
       if (!mounted) return;

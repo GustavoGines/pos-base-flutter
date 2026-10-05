@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../../core/utils/currency_formatter.dart';
+import '../../../core/utils/image_url_resolver.dart';
 import '../domain/entities/product.dart';
 
 /// Helper para formatear y compartir productos mediante el plugin nativo `share_plus`.
@@ -13,6 +14,12 @@ class ProductShareHelper {
     final buffer = StringBuffer();
     buffer.writeln('📦 *${product.name}*');
     buffer.writeln('💰 Precio: \$${product.sellingPrice.toCurrency()}');
+    if (product.priceWholesale != null && product.priceWholesale! > 0) {
+      buffer.writeln('🏷️ Mayorista: \$${product.priceWholesale!.toCurrency()}');
+    }
+    if (product.priceCard != null && product.priceCard! > 0) {
+      buffer.writeln('💳 Tarjeta: \$${product.priceCard!.toCurrency()}');
+    }
     if (product.barcode != null && product.barcode!.trim().isNotEmpty) {
       buffer.writeln('🏷️ Código de Barras: ${product.barcode!.trim()}');
     }
@@ -24,6 +31,9 @@ class ProductShareHelper {
     }
     if (product.brand != null && product.brand!.name.trim().isNotEmpty) {
       buffer.writeln('🏭 Marca: ${product.brand!.name.trim()}');
+    }
+    if (product.supplier != null && product.supplier!.name.trim().isNotEmpty) {
+      buffer.writeln('🚚 Proveedor: ${product.supplier!.name.trim()}');
     }
     if (product.isSoldByWeight) {
       buffer.writeln('⚖️ Venta por Peso');
@@ -43,7 +53,8 @@ class ProductShareHelper {
     Future<void> Function(String text, {String? subject})? shareTextFn,
   }) async {
     final text = formatProductShareText(product);
-    final imageUrl = product.imageUrl?.trim();
+    final rawUrl = product.imageUrl?.trim();
+    final imageUrl = (rawUrl != null && rawUrl.isNotEmpty) ? (resolveImageUrl(rawUrl) ?? rawUrl) : null;
 
     // 1. Caso sin imagen: compartir solo texto
     if (imageUrl == null || imageUrl.isEmpty) {
@@ -79,6 +90,18 @@ class ProductShareHelper {
           await tempFile.writeAsBytes(response.bodyBytes);
 
           final xFile = XFile(tempFile.path);
+          if (shareFilesFn != null) {
+            await shareFilesFn([xFile], text: text, subject: product.name);
+          } else {
+            await Share.shareXFiles([xFile], text: text, subject: product.name);
+          }
+          return;
+        }
+      } else {
+        // Manejo de archivo local directo si existe
+        final localFile = File(imageUrl);
+        if (localFile.existsSync()) {
+          final xFile = XFile(localFile.path);
           if (shareFilesFn != null) {
             await shareFilesFn([xFile], text: text, subject: product.name);
           } else {

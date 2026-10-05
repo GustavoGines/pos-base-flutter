@@ -1,4 +1,5 @@
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
+import 'package:frontend_desktop/core/utils/image_url_resolver.dart';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
@@ -25,6 +26,57 @@ class QuotePdfService {
     _thumbnailCache.clear();
   }
 
+  /// Precarga asíncronamente el logotipo del negocio para el encabezado del PDF.
+  static Future<pw.MemoryImage?> preloadLogo({
+    String? logoUrl,
+    Uint8List? logoBytes,
+    http.Client? httpClient,
+  }) async {
+    if (logoBytes != null && logoBytes.isNotEmpty) {
+      try {
+        return pw.MemoryImage(logoBytes);
+      } catch (e) {
+        debugPrint('Error al crear MemoryImage desde logoBytes: $e');
+        return null;
+      }
+    }
+    if (logoUrl == null || logoUrl.trim().isEmpty) return null;
+    final resolvedUrl = resolveImageUrl(logoUrl) ?? logoUrl.trim();
+
+    if (_thumbnailCache.containsKey(resolvedUrl)) {
+      return _thumbnailCache[resolvedUrl];
+    }
+
+    final client = httpClient ?? http.Client();
+    try {
+      final uri = Uri.tryParse(resolvedUrl);
+      if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) {
+        final response = await client.get(uri).timeout(const Duration(seconds: 4));
+        if (response.statusCode == 200 && response.bodyBytes.isNotEmpty) {
+          final memImg = pw.MemoryImage(response.bodyBytes);
+          _thumbnailCache[resolvedUrl] = memImg;
+          return memImg;
+        }
+      } else {
+        final file = File(resolvedUrl);
+        if (file.existsSync()) {
+          final bytes = await file.readAsBytes();
+          if (bytes.isNotEmpty) {
+            final memImg = pw.MemoryImage(bytes);
+            _thumbnailCache[resolvedUrl] = memImg;
+            return memImg;
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('Error al precargar logotipo ($resolvedUrl): $e');
+    } finally {
+      if (httpClient == null) client.close();
+    }
+    _thumbnailCache[resolvedUrl] = null;
+    return null;
+  }
+
   /// Precarga asíncronamente las imágenes de los ítems de presupuesto antes del renderizado sincrónico de MultiPage.
   static Future<Map<int, pw.MemoryImage>> preloadThumbnails(
     Quote quote, {
@@ -38,7 +90,7 @@ class QuotePdfService {
         final item = quote.items[i];
         final rawUrl = item.imageUrl ?? item.product?.imageUrl;
         if (rawUrl == null || rawUrl.trim().isEmpty) continue;
-        final url = rawUrl.trim();
+        final url = resolveImageUrl(rawUrl) ?? rawUrl.trim();
 
         if (_thumbnailCache.containsKey(url)) {
           final cached = _thumbnailCache[url];
@@ -56,6 +108,20 @@ class QuotePdfService {
               final memImg = pw.MemoryImage(response.bodyBytes);
               _thumbnailCache[url] = memImg;
               imageMap[i] = memImg;
+            } else {
+              _thumbnailCache[url] = null;
+            }
+          } else {
+            final file = File(url);
+            if (file.existsSync()) {
+              final bytes = await file.readAsBytes();
+              if (bytes.isNotEmpty) {
+                final memImg = pw.MemoryImage(bytes);
+                _thumbnailCache[url] = memImg;
+                imageMap[i] = memImg;
+              } else {
+                _thumbnailCache[url] = null;
+              }
             } else {
               _thumbnailCache[url] = null;
             }
@@ -82,6 +148,8 @@ class QuotePdfService {
     String? businessAddress,
     String? businessPhone,
     String? vendorName,
+    String? logoUrl,
+    Uint8List? logoBytes,
   }) async {
     final pdfBytes = await _buildPdf(
       quote: quote,
@@ -89,6 +157,8 @@ class QuotePdfService {
       businessAddress: businessAddress,
       businessPhone: businessPhone,
       vendorName: vendorName,
+      logoUrl: logoUrl,
+      logoBytes: logoBytes,
     );
 
     // ── Guardar archivo ──────────────────────────────────────────────────
@@ -118,6 +188,8 @@ class QuotePdfService {
     String? businessAddress,
     String? businessPhone,
     String? vendorName,
+    String? logoUrl,
+    Uint8List? logoBytes,
   }) async {
     showGeneralDialog(
       context: context,
@@ -168,6 +240,8 @@ class QuotePdfService {
                         businessAddress: businessAddress,
                         businessPhone: businessPhone,
                         vendorName: vendorName,
+                        logoUrl: logoUrl,
+                        logoBytes: logoBytes,
                       ),
                     ),
                   ),
@@ -235,10 +309,17 @@ class QuotePdfService {
     String? businessAddress,
     String? businessPhone,
     String? vendorName,
+    String? logoUrl,
+    Uint8List? logoBytes,
     http.Client? httpClient,
   }) async {
-    // 1. Precarga asíncrona de miniaturas antes del renderizado sincrónico de MultiPage
-    final itemThumbnails = await preloadThumbnails(quote, httpClient: httpClient);
+    // 1. Precarga asíncrona de miniaturas y logotipo antes del renderizado sincrónico de MultiPage
+    final results = await Future.wait([
+      preloadThumbnails(quote, httpClient: httpClient),
+      preloadLogo(logoUrl: logoUrl, logoBytes: logoBytes, httpClient: httpClient),
+    ]);
+    final itemThumbnails = results[0] as Map<int, pw.MemoryImage>;
+    final logoImage = results[1] as pw.MemoryImage?;
 
     final doc = pw.Document();
 
@@ -300,24 +381,49 @@ class QuotePdfService {
               padding: const pw.EdgeInsets.symmetric(horizontal: 24, vertical: 16),
               child: pw.Row(
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: pw.CrossAxisAlignment.center,
                 children: [
-                  pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.start,
-                    children: [
-                      pw.Text(businessName,
-                          style: pw.TextStyle(
-                            color: PdfColors.white,
-                            fontSize: 20,
-                            fontWeight: pw.FontWeight.bold,
-                          )),
-                      if (businessAddress != null)
-                        pw.Text(businessAddress,
-                            style: const pw.TextStyle(color: PdfColors.grey300, fontSize: 10)),
-                      if (businessPhone != null)
-                        pw.Text('Tel: $businessPhone',
-                            style: const pw.TextStyle(color: PdfColors.grey300, fontSize: 10)),
-                    ],
+                  pw.Expanded(
+                    child: pw.Row(
+                      crossAxisAlignment: pw.CrossAxisAlignment.center,
+                      children: [
+                        if (logoImage != null)
+                          pw.Container(
+                            width: 50,
+                            height: 50,
+                            margin: const pw.EdgeInsets.only(right: 14),
+                            decoration: const pw.BoxDecoration(
+                              color: PdfColors.white,
+                              borderRadius: pw.BorderRadius.all(pw.Radius.circular(6)),
+                            ),
+                            padding: const pw.EdgeInsets.all(3),
+                            child: pw.Center(
+                              child: pw.Image(logoImage, fit: pw.BoxFit.contain),
+                            ),
+                          ),
+                        pw.Expanded(
+                          child: pw.Column(
+                            crossAxisAlignment: pw.CrossAxisAlignment.start,
+                            children: [
+                              pw.Text(businessName,
+                                  style: pw.TextStyle(
+                                    color: PdfColors.white,
+                                    fontSize: 18,
+                                    fontWeight: pw.FontWeight.bold,
+                                  )),
+                              if (businessAddress != null)
+                                pw.Text(businessAddress,
+                                    style: const pw.TextStyle(color: PdfColors.grey300, fontSize: 10)),
+                              if (businessPhone != null)
+                                pw.Text('Tel: $businessPhone',
+                                    style: const pw.TextStyle(color: PdfColors.grey300, fontSize: 10)),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
+                  pw.SizedBox(width: 16),
                   pw.Column(
                     crossAxisAlignment: pw.CrossAxisAlignment.end,
                     children: [
@@ -555,6 +661,8 @@ class QuotePdfService {
     String? businessAddress,
     String? businessPhone,
     String? vendorName,
+    String? logoUrl,
+    Uint8List? logoBytes,
     http.Client? httpClient,
   }) async {
     return generateQuotePdf(
@@ -563,6 +671,8 @@ class QuotePdfService {
       businessAddress: businessAddress,
       businessPhone: businessPhone,
       vendorName: vendorName,
+      logoUrl: logoUrl,
+      logoBytes: logoBytes,
       httpClient: httpClient,
     );
   }

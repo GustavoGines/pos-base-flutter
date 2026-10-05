@@ -107,7 +107,7 @@ void main() {
       expect(find.byIcon(Icons.inventory_2_outlined), findsOneWidget);
     });
 
-    testWidgets('Mode "grid_medium": Renders 28x28 CachedNetworkImage for product with image, and fallback icon for item without image', (tester) async {
+    testWidgets('Mode "grid_medium": Renders expanded CachedNetworkImage with BoxFit.cover for product with image, and fallback icon for item without image', (tester) async {
       await tester.pumpWidget(buildTestApp(
         products: [productWithImage, weighedProductNoImage],
         viewMode: 'grid_medium',
@@ -117,13 +117,14 @@ void main() {
       final imageFinder = find.byType(CachedNetworkImage);
       expect(imageFinder, findsOneWidget);
       final image = tester.widget<CachedNetworkImage>(imageFinder);
-      expect(image.width, 28.0);
-      expect(image.height, 28.0);
+      expect(image.width, double.infinity);
+      expect(image.height, double.infinity);
+      expect(image.fit, BoxFit.cover);
 
       expect(find.byIcon(Icons.scale_rounded), findsOneWidget);
     });
 
-    testWidgets('Mode "grid_large": Renders 42x42 CachedNetworkImage for product with image, and fallback icon for item without image', (tester) async {
+    testWidgets('Mode "grid_large": Renders expanded CachedNetworkImage with BoxFit.cover for product with image, and fallback icon for item without image', (tester) async {
       await tester.pumpWidget(buildTestApp(
         products: [productWithImage, unitProductNoImage, weighedProductNoImage],
         viewMode: 'grid_large',
@@ -133,8 +134,9 @@ void main() {
       final imageFinder = find.byType(CachedNetworkImage);
       expect(imageFinder, findsOneWidget);
       final image = tester.widget<CachedNetworkImage>(imageFinder);
-      expect(image.width, 42.0);
-      expect(image.height, 42.0);
+      expect(image.width, double.infinity);
+      expect(image.height, double.infinity);
+      expect(image.fit, BoxFit.cover);
 
       expect(find.byIcon(Icons.inventory_2_outlined), findsOneWidget);
       expect(find.byIcon(Icons.scale_rounded), findsOneWidget);

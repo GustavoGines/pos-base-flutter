@@ -923,12 +923,14 @@ class _QuoteSuccessDialogState extends State<_QuoteSuccessDialog> {
   Future<void> _generateAndSave() async {
     setState(() => _generatingPdf = true);
     try {
+      final logoUrl = context.read<SettingsProvider>().settings?.effectiveLogoUrl;
       final path = await QuotePdfService.generateAndShare(
         quote: widget.quote,
         businessName: widget.businessName,
         businessAddress: widget.businessAddress,
         businessPhone: widget.businessPhone,
         vendorName: widget.vendorName,
+        logoUrl: logoUrl,
       );
       if (mounted) setState(() { _generatingPdf = false; _savedPath = path; });
     } catch (e) {
@@ -940,6 +942,7 @@ class _QuoteSuccessDialogState extends State<_QuoteSuccessDialog> {
   }
 
   Future<void> _preview() async {
+    final logoUrl = context.read<SettingsProvider>().settings?.effectiveLogoUrl;
     await QuotePdfService.preview(
       context: context,
       quote: widget.quote,
@@ -947,6 +950,7 @@ class _QuoteSuccessDialogState extends State<_QuoteSuccessDialog> {
       businessAddress: widget.businessAddress,
       businessPhone: widget.businessPhone,
       vendorName: widget.vendorName,
+      logoUrl: logoUrl,
     );
   }
 

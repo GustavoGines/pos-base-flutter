@@ -296,4 +296,168 @@ void main() {
       expect(ascii.decode(pdfBytes.sublist(0, 5)), equals('%PDF-'));
     });
   });
+
+  group('Phase 7.5: QuotePdfService Logo Preload & Header Rendering Tests', () {
+    test('preloadLogo downloads and caches pw.MemoryImage for valid logoUrl', () async {
+      int requestCount = 0;
+      final mockClient = MockClient((request) async {
+        requestCount++;
+        if (request.url.toString() == 'http://example.com/logo.png') {
+          return http.Response.bytes(samplePngBytes, 200);
+        }
+        return http.Response('Not Found', 404);
+      });
+
+      final logo = await QuotePdfService.preloadLogo(
+        logoUrl: 'http://example.com/logo.png',
+        httpClient: mockClient,
+      );
+
+      expect(logo, isNotNull);
+      expect(logo!.bytes, equals(samplePngBytes));
+      expect(requestCount, equals(1));
+
+      // Second run hits cache
+      final cachedLogo = await QuotePdfService.preloadLogo(
+        logoUrl: 'http://example.com/logo.png',
+        httpClient: mockClient,
+      );
+      expect(cachedLogo, isNotNull);
+      expect(requestCount, equals(1));
+    });
+
+    test('preloadLogo supports raw logoBytes directly without network call', () async {
+      final logo = await QuotePdfService.preloadLogo(
+        logoBytes: samplePngBytes,
+      );
+
+      expect(logo, isNotNull);
+      expect(logo!.bytes, equals(samplePngBytes));
+    });
+
+    test('preloadLogo handles HTTP 404/500 errors gracefully returning null', () async {
+      final mockClient = MockClient((request) async {
+        return http.Response('Not Found', 404);
+      });
+
+      final logo = await QuotePdfService.preloadLogo(
+        logoUrl: 'http://example.com/nonexistent_logo.png',
+        httpClient: mockClient,
+      );
+
+      expect(logo, isNull);
+    });
+
+    test('preloadLogo returns null for null or empty logoUrl', () async {
+      expect(await QuotePdfService.preloadLogo(logoUrl: null), isNull);
+      expect(await QuotePdfService.preloadLogo(logoUrl: '   '), isNull);
+    });
+
+    test('generateQuotePdf embeds business logo in PDF header with logoUrl', () async {
+      final mockClient = MockClient((request) async {
+        if (request.url.toString() == 'http://example.com/brand_logo.png') {
+          return http.Response.bytes(samplePngBytes, 200);
+        }
+        return http.Response('Not Found', 404);
+      });
+
+      final quote = Quote(
+        id: 200,
+        quoteNumber: 'PRE-LOGO-01',
+        status: 'pending',
+        subtotal: 5000,
+        total: 5000,
+        items: [
+          QuoteItem(
+            productId: 1,
+            productName: 'Item de prueba',
+            unitPrice: 5000,
+            quantity: 1,
+            subtotal: 5000,
+          ),
+        ],
+      );
+
+      final pdfBytes = await QuotePdfService.generateQuotePdf(
+        quote: quote,
+        businessName: 'Empresa con Logo',
+        businessAddress: 'Calle Falsa 123',
+        businessPhone: '123456789',
+        logoUrl: 'http://example.com/brand_logo.png',
+        httpClient: mockClient,
+      );
+
+      expect(pdfBytes, isNotNull);
+      expect(pdfBytes.isNotEmpty, isTrue);
+      expect(ascii.decode(pdfBytes.sublist(0, 5)), equals('%PDF-'));
+    });
+
+    test('generateQuotePdf embeds business logo from logoBytes in header', () async {
+      final quote = Quote(
+        id: 201,
+        quoteNumber: 'PRE-LOGO-02',
+        status: 'pending',
+        subtotal: 2500,
+        total: 2500,
+        items: [
+          QuoteItem(
+            productId: 2,
+            productName: 'Item con logoBytes',
+            unitPrice: 2500,
+            quantity: 1,
+            subtotal: 2500,
+          ),
+        ],
+      );
+
+      final pdfBytes = await QuotePdfService.generateQuotePdf(
+        quote: quote,
+        businessName: 'Empresa Direct Bytes',
+        logoBytes: samplePngBytes,
+      );
+
+      expect(pdfBytes, isNotNull);
+      expect(pdfBytes.isNotEmpty, isTrue);
+      expect(ascii.decode(pdfBytes.sublist(0, 5)), equals('%PDF-'));
+    });
+
+    test('generateQuotePdf renders both business logo in header and item thumbnails in table', () async {
+      final mockClient = MockClient((request) async {
+        if (request.url.toString() == 'http://example.com/header_logo.png' ||
+            request.url.toString() == 'http://example.com/item_thumbnail.png') {
+          return http.Response.bytes(samplePngBytes, 200);
+        }
+        return http.Response('Not Found', 404);
+      });
+
+      final quote = Quote(
+        id: 202,
+        quoteNumber: 'PRE-DUAL-01',
+        status: 'pending',
+        subtotal: 10000,
+        total: 10000,
+        items: [
+          QuoteItem(
+            productId: 10,
+            productName: 'Producto con Miniatura',
+            unitPrice: 10000,
+            quantity: 1,
+            subtotal: 10000,
+            imageUrl: 'http://example.com/item_thumbnail.png',
+          ),
+        ],
+      );
+
+      final pdfBytes = await QuotePdfService.generateQuotePdf(
+        quote: quote,
+        businessName: 'Empresa Dual',
+        logoUrl: 'http://example.com/header_logo.png',
+        httpClient: mockClient,
+      );
+
+      expect(pdfBytes, isNotNull);
+      expect(pdfBytes.isNotEmpty, isTrue);
+      expect(ascii.decode(pdfBytes.sublist(0, 5)), equals('%PDF-'));
+    });
+  });
 }
