@@ -18,12 +18,20 @@ import 'package:frontend_desktop/core/providers/local_terminal_provider.dart';
 import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
 import '../../../../core/constants/app_permissions.dart';
 import '../../../../core/network/api_client.dart';
+import 'mercadopago_qr_dialog.dart';
+import 'posnet_waiting_dialog.dart';
 
 class PaymentLine {
   PaymentMethod? method;
   TextEditingController controller;
   TextEditingController percentageController;
   FocusNode percentageFocus;
+
+  // Integración Mercado Pago (QR y Point)
+  bool mpPaid = false;
+  String? mpPaymentId;
+  String? mpOrderId;
+  String? mpExternalReference;
 
   TextEditingController checkBankController;
   TextEditingController checkNumberController;
@@ -71,6 +79,13 @@ class PaymentLine {
 
   void updateMethod(PaymentMethod? m,
       {double? defaultCardSurcharge, bool disableSurcharge = false}) {
+    if (m?.code != method?.code ||
+        (m?.code != 'mercadopago_qr' && m?.code != 'mercadopago_point')) {
+      mpPaid = false;
+      mpPaymentId = null;
+      mpOrderId = null;
+      mpExternalReference = null;
+    }
     method = m;
     if (disableSurcharge) {
       percentageController.text = '0.0';
@@ -117,6 +132,23 @@ class CheckoutDialog extends StatefulWidget {
 
 class _CheckoutDialogState extends State<CheckoutDialog> {
   final List<PaymentLine> _lines = [];
+
+  @visibleForTesting
+  List<PaymentLine> get paymentLines => _lines;
+
+  @visibleForTesting
+  void confirmMpPaymentForTesting(PaymentLine line, {
+    String mpPaymentId = 'MP-TEST-9988',
+    String mpOrderId = 'ORD-TEST-7766',
+    String externalReference = 'POS-REF-5544',
+  }) {
+    setState(() {
+      line.mpPaid = true;
+      line.mpPaymentId = mpPaymentId;
+      line.mpOrderId = mpOrderId;
+      line.mpExternalReference = externalReference;
+    });
+  }
   // Rastreo del último método VÁLIDO por línea para revertir si el usuario
   // intenta seleccionar una opción bloqueada (ej: cuenta_corriente en plan Basic)
   final List<PaymentMethod?> _previousValidMethods = [];
@@ -383,6 +415,14 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       }
     }
     if (_hasCuentaCorriente && _selectedCustomer == null) return false;
+
+    // Bloquear si hay pagos de Mercado Pago sin confirmar
+    final hasUnconfirmedMp = _lines.any((l) =>
+        (l.method?.code == 'mercadopago_qr' ||
+            l.method?.code == 'mercadopago_point') &&
+        !l.mpPaid);
+    if (hasUnconfirmedMp) return false;
+
     return true;
   }
 
@@ -560,6 +600,11 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
               'base_amount': l.amount,
               'surcharge_amount': l.surcharge,
               'total_amount': l.total,
+              if (l.mpPaid) ...{
+                'mp_payment_id': l.mpPaymentId,
+                'mp_order_id': l.mpOrderId,
+                'reference_id': l.mpExternalReference,
+              },
             })
         .toList();
 
@@ -827,7 +872,88 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     }
   }
 
+  Future<void> _openMercadoPagoQrModal(PaymentLine line) async {
+    final double chargeAmount = line.total > 0
+        ? line.total
+        : (line.amount > 0 ? line.amount : widget.total);
+
+    if (chargeAmount <= 0) {
+      SnackBarService.warning(context, 'El monto a cobrar debe ser mayor a cero');
+      return;
+    }
+
+    String terminalId = 'caja-1';
+    List<CartItem>? cart;
+    try {
+      final localTerminal =
+          Provider.of<LocalTerminalProvider>(context, listen: false);
+      if (localTerminal.terminalId.isNotEmpty) {
+        terminalId = localTerminal.terminalId;
+      }
+    } catch (_) {}
+    try {
+      final posProvider = Provider.of<PosProvider>(context, listen: false);
+      cart = posProvider.cart;
+    } catch (_) {}
+
+    final result = await showDialog<Map<String, dynamic>>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => MercadoPagoQrDialog(
+        amount: chargeAmount,
+        terminalId: terminalId,
+        cartItems: cart,
+        externalReference: line.mpExternalReference,
+      ),
+    );
+
+    if (result != null &&
+        (result['status'] == 'approved' || result['approved'] == true) &&
+        mounted) {
+      setState(() {
+        line.mpPaid = true;
+        line.mpPaymentId = result['mp_payment_id']?.toString();
+        line.mpOrderId = result['mp_order_id']?.toString();
+        line.mpExternalReference = result['external_reference']?.toString();
+      });
+    }
+  }
+
+  Future<void> _sendToPosnetDevice(PaymentLine line) async {
+    final double chargeAmount = line.total > 0
+        ? line.total
+        : (line.amount > 0 ? line.amount : widget.total);
+
+    if (chargeAmount <= 0) {
+      SnackBarService.warning(context, 'El monto a cobrar debe ser mayor a cero');
+      return;
+    }
+
+    final result = await showDialog<Map<String, dynamic>>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => PosnetWaitingDialog(
+        amount: chargeAmount,
+        description: 'Venta POS',
+        externalReference: line.mpExternalReference,
+      ),
+    );
+
+    if (result != null &&
+        (result['status'] == 'approved' || result['approved'] == true) &&
+        mounted) {
+      setState(() {
+        line.mpPaid = true;
+        line.mpPaymentId = result['mp_payment_id']?.toString();
+        line.mpOrderId = result['mp_order_id']?.toString();
+        line.mpExternalReference = result['external_reference']?.toString();
+      });
+    }
+  }
+
   IconData _getIconForMethod(String code) {
+    if (code == 'mercadopago_qr') return Icons.qr_code_scanner;
+    if (code == 'mercadopago_point') return Icons.point_of_sale;
     if (code.contains('efectivo')) return Icons.payments_outlined;
     if (code.contains('debito')) return Icons.credit_card;
     if (code.contains('credito')) return Icons.credit_score;
@@ -861,13 +987,17 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       backgroundColor: Colors.white,
-      child: Container(
-        width: 600,
-        padding: const EdgeInsets.all(32),
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Container(
+          width: 580,
+          padding: const EdgeInsets.all(24),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.vertical,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
               // ──── Header
               if (isPending) ...[
                 Row(
@@ -957,19 +1087,24 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                     : Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Column(
-                            children: [
-                              const Text('Total a Cobrar',
-                                  style: TextStyle(
-                                      fontSize: 14,
-                                      color: Colors.black54,
-                                      fontWeight: FontWeight.bold)),
-                              Text('\$${_grandTotal.toCurrency()}',
-                                  style: TextStyle(
-                                      fontSize: 32,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.blue.shade800)),
-                            ],
+                          Flexible(
+                            child: Column(
+                              children: [
+                                const Text('Total a Cobrar',
+                                    style: TextStyle(
+                                        fontSize: 14,
+                                        color: Colors.black54,
+                                        fontWeight: FontWeight.bold)),
+                                FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: Text('\$${_grandTotal.toCurrency()}',
+                                      style: TextStyle(
+                                          fontSize: 32,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.blue.shade800)),
+                                ),
+                              ],
+                            ),
                           ),
                         ],
                       ),
@@ -1349,6 +1484,100 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                               ],
                             ),
                           ),
+
+                        // ── Acciones Mercado Pago QR ──
+                        if (line.method?.code == 'mercadopago_qr')
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8.0),
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: !line.mpPaid
+                                  ? FittedBox(
+                                      fit: BoxFit.scaleDown,
+                                      alignment: Alignment.centerLeft,
+                                      child: FilledButton.icon(
+                                        icon: const Icon(Icons.qr_code_scanner, size: 18),
+                                        label: const Text('Generar QR Mercado Pago'),
+                                        style: FilledButton.styleFrom(
+                                          backgroundColor: const Color(0xFF009EE3),
+                                        ),
+                                        onPressed: () => _openMercadoPagoQrModal(line),
+                                      ),
+                                    )
+                                  : Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFE8F5E9),
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(color: const Color(0xFF2E7D32)),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          const Icon(Icons.check_circle, color: Color(0xFF2E7D32), size: 18),
+                                          const SizedBox(width: 8),
+                                          Flexible(
+                                            child: Text(
+                                              'Pago Aprobado (ID: ${line.mpPaymentId ?? line.mpExternalReference})',
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                color: Color(0xFF2E7D32),
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                            ),
+                          ),
+
+                        // ── Acciones Mercado Pago Point ──
+                        if (line.method?.code == 'mercadopago_point')
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8.0),
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: !line.mpPaid
+                                  ? FittedBox(
+                                      fit: BoxFit.scaleDown,
+                                      alignment: Alignment.centerLeft,
+                                      child: FilledButton.icon(
+                                        icon: const Icon(Icons.point_of_sale, size: 18),
+                                        label: const Text('Enviar a Posnet Físico'),
+                                        style: FilledButton.styleFrom(
+                                          backgroundColor: const Color(0xFF009EE3),
+                                        ),
+                                        onPressed: () => _sendToPosnetDevice(line),
+                                      ),
+                                    )
+                                  : Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFE8F5E9),
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(color: const Color(0xFF2E7D32)),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          const Icon(Icons.check_circle, color: Color(0xFF2E7D32), size: 18),
+                                          const SizedBox(width: 8),
+                                          Flexible(
+                                            child: Text(
+                                              'Pago Aprobado (ID: ${line.mpPaymentId ?? line.mpExternalReference})',
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                color: Color(0xFF2E7D32),
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                            ),
+                          ),
                       ],
                     ),
                   );
@@ -1366,8 +1595,11 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
 
               const Divider(height: 32),
 
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 8,
+                runSpacing: 4,
                 children: [
                   const Text('Saldo Pendiente a Cubrir:',
                       style: TextStyle(fontSize: 16)),
@@ -1524,9 +1756,14 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
               ],
 
               // Options: Imprimir + Vista Previa
-              Row(
+              Wrap(
+                crossAxisAlignment: WrapCrossAlignment.center,
+                alignment: WrapAlignment.spaceBetween,
+                spacing: 8,
+                runSpacing: 4,
                 children: [
-                  Expanded(
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(minWidth: 160, maxWidth: 320),
                     child: CheckboxListTile(
                       title: const Text('Imprimir Comprobante',
                           style: TextStyle(fontWeight: FontWeight.bold)),
@@ -1849,7 +2086,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
           ),
         ),
       ),
-    );
+    ),
+  );
   }
 }
 
