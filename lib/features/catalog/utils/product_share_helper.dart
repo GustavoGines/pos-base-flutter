@@ -56,17 +56,21 @@ class ProductShareHelper {
     final rawUrl = product.imageUrl?.trim();
     final imageUrl = (rawUrl != null && rawUrl.isNotEmpty) ? (resolveImageUrl(rawUrl) ?? rawUrl) : null;
 
-    // 1. Caso sin imagen: compartir solo texto
-    if (imageUrl == null || imageUrl.isEmpty) {
-      if (shareTextFn != null) {
-        await shareTextFn(text, subject: product.name);
-      } else {
-        await Share.share(text, subject: product.name);
+    // 1. Caso sin imagen o en Web: compartir directamente solo texto
+    if (kIsWeb || imageUrl == null || imageUrl.isEmpty) {
+      try {
+        if (shareTextFn != null) {
+          await shareTextFn(text, subject: product.name);
+        } else {
+          await Share.share(text, subject: product.name);
+        }
+      } catch (e) {
+        debugPrint('Error al compartir texto de producto: $e');
       }
       return;
     }
 
-    // 2. Caso con imagen: descargar y escribir a archivo temporal
+    // 2. Caso con imagen: descargar y escribir a archivo temporal único
     final client = httpClient ?? http.Client();
     try {
       final uri = Uri.tryParse(imageUrl);
@@ -85,8 +89,17 @@ class ProductShareHelper {
             ext = 'jpeg';
           }
 
-          final filePath = '${tempDir.path}${Platform.pathSeparator}producto_${product.id}.$ext';
+          final sep = Platform.pathSeparator;
+          final dirPath = tempDir.path.endsWith('/') || tempDir.path.endsWith('\\')
+              ? tempDir.path
+              : '${tempDir.path}$sep';
+          final filePath = '${dirPath}producto_${product.id}.$ext';
           final tempFile = File(filePath);
+          if (tempFile.existsSync()) {
+            try {
+              tempFile.deleteSync();
+            } catch (_) {}
+          }
           await tempFile.writeAsBytes(response.bodyBytes);
 
           final xFile = XFile(tempFile.path);
@@ -97,7 +110,7 @@ class ProductShareHelper {
           }
           return;
         }
-      } else {
+      } else if (!kIsWeb) {
         // Manejo de archivo local directo si existe
         final localFile = File(imageUrl);
         if (localFile.existsSync()) {
@@ -119,10 +132,14 @@ class ProductShareHelper {
     }
 
     // 3. Fallback: compartir texto si la imagen falló o no pudo descargarse
-    if (shareTextFn != null) {
-      await shareTextFn(text, subject: product.name);
-    } else {
-      await Share.share(text, subject: product.name);
+    try {
+      if (shareTextFn != null) {
+        await shareTextFn(text, subject: product.name);
+      } else {
+        await Share.share(text, subject: product.name);
+      }
+    } catch (e) {
+      debugPrint('Error al compartir texto del producto (fallback): $e');
     }
   }
 }

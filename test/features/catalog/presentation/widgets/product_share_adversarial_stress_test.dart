@@ -580,5 +580,47 @@ void main() {
         if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
       }
     });
+
+    test('Adversarial R3: Trailing slash in getTempDir directory path avoids double slash in shared XFile', () async {
+      final sampleProduct = Product(
+        id: 777,
+        name: 'Trailing Slash Test Product',
+        internalCode: 'TS-777',
+        costPrice: 100,
+        sellingPrice: 200,
+        stock: 10,
+        active: true,
+        isSoldByWeight: false,
+        imageUrl: 'http://example.com/item.png',
+      );
+
+      final mockClient = MockClient((request) async {
+        return http.Response.bytes(samplePngBytes, 200);
+      });
+
+      final baseDir = Directory.systemTemp.createTempSync('trailing_slash_check_');
+
+      try {
+        final sep = Platform.pathSeparator;
+        final dirWithSlash = Directory('${baseDir.path}$sep');
+
+        XFile? sharedFile;
+        await ProductShareHelper.shareProduct(
+          sampleProduct,
+          httpClient: mockClient,
+          getTempDir: () async => dirWithSlash,
+          shareFilesFn: (files, {text, subject}) async {
+            if (files.isNotEmpty) sharedFile = files.first;
+          },
+        );
+
+        expect(sharedFile, isNotNull);
+        final doubleSep = '$sep$sep';
+        final pathAfterRoot = sharedFile!.path.replaceFirst(RegExp(r'^[A-Za-z]:[\\/]'), '');
+        expect(pathAfterRoot.contains(doubleSep), isFalse);
+      } finally {
+        if (baseDir.existsSync()) baseDir.deleteSync(recursive: true);
+      }
+    });
   });
 }

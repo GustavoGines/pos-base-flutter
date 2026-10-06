@@ -69,6 +69,7 @@ abstract class CatalogRemoteDataSource {
   /// Returns [{id: int, stock: double}] for the given product IDs. Ultra-lightweight.
   Future<List<Map<String, dynamic>>> fetchBulkStock(List<int> ids);
   Future<String> uploadProductImage(int productId, String filePath, {List<int>? bytes, String? filename});
+  Future<void> deleteProductImage(int productId);
 }
 
 class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
@@ -702,6 +703,31 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
       throw Exception(e.message);
     } catch (e) {
       print('=== API Error en uploadProductImage: $e ===');
+      final errStr = e.toString();
+      if (errStr.contains('SocketException') ||
+          errStr.contains('TimeoutException') ||
+          errStr.contains('ClientException')) {
+        throw Exception('Error de conexión: No se encontró el servidor. Verifica la URL configurada.');
+      }
+      rethrow;
+    }
+  }
+
+  @override
+  Future<void> deleteProductImage(int productId) async {
+    try {
+      final response = await client.delete(
+        Uri.parse('$baseUrl/catalog/products/$productId/image'),
+        headers: {'Accept': 'application/json'},
+      );
+
+      if (response.statusCode != 200 && response.statusCode != 204) {
+        throw Exception(_parseApiError(response.body, 'Error al eliminar imagen del producto.'));
+      }
+    } on FormatException catch (e) {
+      throw Exception(e.message);
+    } catch (e) {
+      print('=== API Error en deleteProductImage: $e ===');
       final errStr = e.toString();
       if (errStr.contains('SocketException') ||
           errStr.contains('TimeoutException') ||

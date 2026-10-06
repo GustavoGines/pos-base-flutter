@@ -229,6 +229,32 @@ class CatalogProvider with ChangeNotifier {
     }
   }
 
+  Future<bool> deleteProductImage(int productId) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      await repository.deleteProductImage(productId);
+      final idx = _products.indexWhere((p) => p.id == productId);
+      if (idx != -1) {
+        _products[idx] = _products[idx].copyWith(imageUrl: null, clearImageUrl: true);
+      }
+      if (_lastCreatedProduct?.id == productId) {
+        _lastCreatedProduct = _lastCreatedProduct!.copyWith(imageUrl: null, clearImageUrl: true);
+      }
+      if (_lastUpdatedProduct?.id == productId) {
+        _lastUpdatedProduct = _lastUpdatedProduct!.copyWith(imageUrl: null, clearImageUrl: true);
+      }
+      return true;
+    } catch (e) {
+      _errorMessage = e.toString();
+      return false;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
   Future<bool> updateProduct(int id, Map<String, dynamic> data) async {
     _isLoading = true;
     _errorMessage = null;

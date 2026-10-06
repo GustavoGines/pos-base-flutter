@@ -197,4 +197,9 @@ class CatalogRepositoryImpl implements CatalogRepository {
   Future<String> uploadProductImage(int productId, String filePath, {List<int>? bytes, String? filename}) async {
     return await remoteDataSource.uploadProductImage(productId, filePath, bytes: bytes, filename: filename);
   }
+
+  @override
+  Future<void> deleteProductImage(int productId) async {
+    return await remoteDataSource.deleteProductImage(productId);
+  }
 }

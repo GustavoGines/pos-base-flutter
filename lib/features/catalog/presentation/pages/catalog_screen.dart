@@ -18,6 +18,7 @@ import '../widgets/brands_manager_dialog.dart';
 import '../widgets/rubros_manager_dialog.dart';
 import '../../../suppliers/presentation/widgets/supplier_form_dialog.dart';
 import '../widgets/print_labels_dialog.dart';
+import '../widgets/product_image_preview_dialog.dart';
 import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
 import 'package:dart_pusher_channels/dart_pusher_channels.dart';
@@ -1160,6 +1161,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
   Uint8List? _selectedImageBytes;
   String? _selectedImageName;
   bool _isUploadingImage = false;
+  bool _deleteExistingImage = false;
 
   PusherChannelsClient? _pusher;
 
@@ -1394,6 +1396,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
           _selectedImagePath = file.path;
           _selectedImageBytes = bytes;
           _selectedImageName = file.name;
+          _deleteExistingImage = false;
         });
       }
     } catch (e) {
@@ -1402,6 +1405,30 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
         SnackBarService.error(context, 'Error al seleccionar imagen: $e');
       }
     }
+  }
+
+  void _showImagePreviewDialog() {
+    final resolvedImageUrl = _deleteExistingImage ? null : resolveImageUrl(widget.product?.imageUrl);
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => ProductImagePreviewDialog(
+        title: _nameCtrl.text.trim().isNotEmpty ? _nameCtrl.text.trim() : 'Foto del Producto',
+        imageUrl: resolvedImageUrl,
+        imagePath: _selectedImagePath,
+        imageBytes: _selectedImageBytes,
+        onChangeImage: () async {
+          await _pickProductImage();
+        },
+        onRemoveImage: () {
+          setState(() {
+            _selectedImagePath = null;
+            _selectedImageBytes = null;
+            _selectedImageName = null;
+            _deleteExistingImage = true;
+          });
+        },
+      ),
+    );
   }
 
   Future<void> _submit() async {
@@ -1451,6 +1478,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
         bool imageUploadSuccess = true;
         String? imageUploadError;
 
+        final hadRemoteImage = widget.product?.imageUrl != null && widget.product!.imageUrl!.trim().isNotEmpty;
         if (_selectedImagePath != null || _selectedImageBytes != null) {
           if (targetProductId != null) {
             setState(() => _isUploadingImage = true);
@@ -1469,6 +1497,18 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
           } else {
             imageUploadSuccess = false;
             imageUploadError = 'No se pudo obtener el identificador del producto para asociar la foto.';
+          }
+        } else if (_deleteExistingImage && targetProductId != null && _isEditing && hadRemoteImage) {
+          try {
+            final delSuccess = await widget.provider.deleteProductImage(targetProductId!);
+            if (!delSuccess) {
+              imageUploadSuccess = false;
+              imageUploadError = widget.provider.errorMessage?.replaceAll('Exception: ', '') ?? 'Error al eliminar la foto del producto.';
+            }
+          } catch (e) {
+            debugPrint('Error eliminando imagen del producto: $e');
+            imageUploadSuccess = false;
+            imageUploadError = e.toString();
           }
         }
 
@@ -1710,7 +1750,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
   }
 
   Widget _buildProductImagePicker() {
-    final resolvedImageUrl = resolveImageUrl(widget.product?.imageUrl);
+    final resolvedImageUrl = _deleteExistingImage ? null : resolveImageUrl(widget.product?.imageUrl);
     final hasValidExistingImage = resolvedImageUrl != null && resolvedImageUrl.isNotEmpty;
     final hasSelected = _selectedImageBytes != null || (_selectedImagePath != null && _selectedImagePath!.isNotEmpty);
     final hasAny = hasSelected || hasValidExistingImage;
@@ -1764,7 +1804,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     final isNarrow = MediaQuery.of(context).size.width < 450;
 
     final imageCard = InkWell(
-      onTap: _isUploadingImage ? null : _pickProductImage,
+      onTap: _isUploadingImage ? null : (hasAny ? _showImagePreviewDialog : _pickProductImage),
       borderRadius: BorderRadius.circular(8),
       child: Container(
         key: const ValueKey('product_image_container'),
@@ -1793,9 +1833,9 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
           icon: const Icon(Icons.photo_library_outlined, size: 14),
           label: Text(hasAny ? 'Cambiar Foto' : 'Seleccionar Foto', style: const TextStyle(fontSize: 11)),
         ),
-        if (hasSelected)
+        if (hasAny)
           IconButton(
-            tooltip: 'Descartar imagen seleccionada',
+            tooltip: 'Quitar foto',
             icon: const Icon(Icons.close, color: Colors.red, size: 16),
             onPressed: _isUploadingImage
                 ? null
@@ -1804,6 +1844,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                       _selectedImagePath = null;
                       _selectedImageBytes = null;
                       _selectedImageName = null;
+                      _deleteExistingImage = true;
                     });
                   },
           ),
@@ -1865,7 +1906,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
   }
 
   Widget _buildProductImagePickerColumn() {
-    final resolvedImageUrl = resolveImageUrl(widget.product?.imageUrl);
+    final resolvedImageUrl = _deleteExistingImage ? null : resolveImageUrl(widget.product?.imageUrl);
     final hasValidExistingImage = resolvedImageUrl != null && resolvedImageUrl.isNotEmpty;
     final hasSelected = _selectedImageBytes != null || (_selectedImagePath != null && _selectedImagePath!.isNotEmpty);
     final hasAny = hasSelected || hasValidExistingImage;
@@ -1917,7 +1958,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     }
 
     final imageCard = InkWell(
-      onTap: _isUploadingImage ? null : _pickProductImage,
+      onTap: _isUploadingImage ? null : (hasAny ? _showImagePreviewDialog : _pickProductImage),
       borderRadius: BorderRadius.circular(8),
       child: Container(
         key: const ValueKey('product_image_container'),
@@ -1965,10 +2006,10 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
           imageCard,
           const SizedBox(height: 6),
           actionsWidget,
-          if (hasSelected) ...[
+          if (hasAny) ...[
             const SizedBox(height: 4),
             IconButton(
-              tooltip: 'Descartar imagen seleccionada',
+              tooltip: 'Quitar foto',
               icon: const Icon(Icons.close, color: Colors.red, size: 16),
               visualDensity: VisualDensity.compact,
               padding: EdgeInsets.zero,
@@ -1980,6 +2021,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                         _selectedImagePath = null;
                         _selectedImageBytes = null;
                         _selectedImageName = null;
+                        _deleteExistingImage = true;
                       });
                     },
             ),

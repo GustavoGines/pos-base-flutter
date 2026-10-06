@@ -10,6 +10,8 @@ import 'package:provider/provider.dart';
 import 'package:frontend_desktop/features/pos/presentation/providers/pos_provider.dart';
 import 'package:frontend_desktop/features/catalog/presentation/providers/catalog_provider.dart';
 import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
+import 'package:frontend_desktop/features/catalog/utils/product_share_helper.dart';
+import 'package:frontend_desktop/features/catalog/presentation/widgets/product_image_preview_dialog.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import 'package:frontend_desktop/core/utils/image_url_resolver.dart';
 import 'package:frontend_desktop/features/catalog/presentation/widgets/categories_manager_dialog.dart';
@@ -331,6 +333,7 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
     Uint8List? selectedImageBytes;
     String? selectedImageName;
     bool isUploadingImage = false;
+    bool deleteExistingImage = false;
     int? selectedCategoryId = productToEdit?.category?.id;
     int? selectedBrandId = productToEdit?.brand?.id;
     int? selectedSupplierId = productToEdit?.supplier?.id;
@@ -429,6 +432,7 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                     selectedImagePath = file.path;
                     selectedImageBytes = bytes;
                     selectedImageName = file.name;
+                    deleteExistingImage = false;
                   });
                 }
               } catch (e) {
@@ -463,12 +467,19 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
               title: Row(
                 children: [
                   Expanded(child: Text(productToEdit == null ? 'Nuevo Producto' : 'Editar Producto', style: const TextStyle(fontSize: 18))),
-                  if (productToEdit != null)
+                  if (productToEdit != null) ...[
                     IconButton(
                       icon: const Icon(Icons.print, color: Colors.blueAccent),
                       tooltip: 'Imprimir en Tiquetera Térmica',
                       onPressed: () => _printLabelRemotely(productToEdit.id),
                     ),
+                    IconButton(
+                      key: const Key('product_share_button'),
+                      icon: const Icon(Icons.share_outlined, color: Colors.blueAccent),
+                      tooltip: 'Compartir producto',
+                      onPressed: () => ProductShareHelper.shareProduct(productToEdit),
+                    ),
+                  ],
                 ],
               ),
               content: SingleChildScrollView(
@@ -478,7 +489,7 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                     // Selector de Imagen de Producto
                     Builder(
                       builder: (context) {
-                        final resolvedExistingImageUrl = resolveImageUrl(productToEdit?.imageUrl);
+                        final resolvedExistingImageUrl = deleteExistingImage ? null : resolveImageUrl(productToEdit?.imageUrl);
                         final hasValidExistingImage = resolvedExistingImageUrl != null && resolvedExistingImageUrl.isNotEmpty;
                         final hasSelected = selectedImageBytes != null || (selectedImagePath != null && selectedImagePath!.isNotEmpty);
                         final hasAny = hasSelected || hasValidExistingImage;
@@ -531,7 +542,28 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
 
                         final imageCard = InkWell(
                           key: const Key('mobile_product_image_picker'),
-                          onTap: (isSaving || isUploadingImage) ? null : () => pickProductImage(),
+                          onTap: (isSaving || isUploadingImage)
+                              ? null
+                              : (hasAny
+                                  ? () => showDialog(
+                                        context: context,
+                                        builder: (dialogCtx) => ProductImagePreviewDialog(
+                                          title: nameCtrl.text.trim().isNotEmpty ? nameCtrl.text.trim() : 'Foto del Producto',
+                                          imageUrl: resolvedExistingImageUrl,
+                                          imagePath: selectedImagePath,
+                                          imageBytes: selectedImageBytes,
+                                          onChangeImage: () => pickProductImage(),
+                                          onRemoveImage: () {
+                                            setStateDialog(() {
+                                              selectedImagePath = null;
+                                              selectedImageBytes = null;
+                                              selectedImageName = null;
+                                              deleteExistingImage = true;
+                                            });
+                                          },
+                                        ),
+                                      )
+                                  : () => pickProductImage()),
                           borderRadius: BorderRadius.circular(8),
                           child: Container(
                             width: 75,
@@ -589,7 +621,7 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                                             minimumSize: const Size(0, 30),
                                           ),
                                         ),
-                                        if (hasSelected)
+                                        if (hasAny)
                                           IconButton(
                                             tooltip: 'Descartar foto',
                                             icon: const Icon(Icons.close, color: Colors.red, size: 18),
@@ -602,6 +634,7 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                                                       selectedImagePath = null;
                                                       selectedImageBytes = null;
                                                       selectedImageName = null;
+                                                      deleteExistingImage = true;
                                                     });
                                                   },
                                           ),
@@ -922,6 +955,7 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                             bool imageUploadSuccess = true;
                             String? imageUploadError;
                             String? uploadedImageUrl;
+                            final hadRemoteImage = productToEdit?.imageUrl != null && productToEdit!.imageUrl!.trim().isNotEmpty;
                             if (success && (selectedImagePath != null || selectedImageBytes != null)) {
                               if (targetProductId != null) {
                                 setStateDialog(() => isUploadingImage = true);
@@ -938,6 +972,18 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                               } else {
                                 imageUploadSuccess = false;
                                 imageUploadError = 'No se pudo obtener el identificador del producto.';
+                              }
+                            } else if (success && deleteExistingImage && targetProductId != null && hadRemoteImage) {
+                              try {
+                                final delSuccess = await catalogProv.deleteProductImage(targetProductId);
+                                if (!delSuccess) {
+                                  imageUploadSuccess = false;
+                                  imageUploadError = catalogProv.errorMessage?.replaceAll('Exception: ', '') ?? 'Error al eliminar la foto del producto.';
+                                }
+                              } catch (e) {
+                                debugPrint('Error eliminando foto de producto: $e');
+                                imageUploadSuccess = false;
+                                imageUploadError = e.toString();
                               }
                             }
                             
@@ -982,6 +1028,7 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                                 final newSupplier = selectedSupplierId != null
                                     ? context.read<SupplierProvider>().suppliers.where((s) => s.id == selectedSupplierId).firstOrNull
                                     : null;
+                                final shouldClearImg = deleteExistingImage && selectedImagePath == null && selectedImageBytes == null;
                                 updated = productToEdit.copyWith(
                                   name: name,
                                   barcode: barcodeCtrl.text.trim().isEmpty ? null : barcodeCtrl.text.trim(),
@@ -989,7 +1036,8 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                                   sellingPrice: price,
                                   costPrice: cost,
                                   stock: effectiveStock,
-                                  imageUrl: uploadedImageUrl ?? productToEdit.imageUrl,
+                                  imageUrl: shouldClearImg ? null : (uploadedImageUrl ?? productToEdit.imageUrl),
+                                  clearImageUrl: shouldClearImg,
                                   category: newCategory,
                                   clearCategory: selectedCategoryId == null,
                                   brand: newBrand,
@@ -1005,6 +1053,8 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                               if (updated != null) {
                                 if (uploadedImageUrl != null && updated.imageUrl != uploadedImageUrl) {
                                   updated = updated.copyWith(imageUrl: uploadedImageUrl);
+                                } else if (deleteExistingImage && selectedImagePath == null && selectedImageBytes == null) {
+                                  updated = updated.copyWith(imageUrl: null, clearImageUrl: true);
                                 }
                                 setState(() {
                                   _scannedProduct = updated;
@@ -1136,16 +1186,48 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                         children: [
                           Builder(
                             builder: (context) {
-                              final resolvedScannedImg = resolveImageUrl(_scannedProduct!.imageUrl);
+                              final targetProduct = _scannedProduct;
+                              if (targetProduct == null) return const SizedBox.shrink();
+                              final resolvedScannedImg = resolveImageUrl(targetProduct.imageUrl);
                               if (resolvedScannedImg != null && resolvedScannedImg.isNotEmpty) {
-                                return ClipRRect(
+                                return InkWell(
+                                  key: const Key('mobile_scanned_image_preview'),
+                                  onTap: () {
+                                    showDialog(
+                                      context: context,
+                                      builder: (dialogCtx) => ProductImagePreviewDialog(
+                                        title: targetProduct.name,
+                                        imageUrl: resolvedScannedImg,
+                                        onChangeImage: () {
+                                          _showProductFormDialog(productToEdit: targetProduct);
+                                        },
+                                        onRemoveImage: () async {
+                                          final success = await context.read<CatalogProvider>().deleteProductImage(targetProduct.id);
+                                          if (success && mounted) {
+                                            setState(() {
+                                              if (_scannedProduct?.id == targetProduct.id) {
+                                                _scannedProduct = _scannedProduct!.copyWith(imageUrl: null, clearImageUrl: true);
+                                              }
+                                            });
+                                            SnackBarService.success(context, 'Foto eliminada correctamente');
+                                          } else if (mounted) {
+                                            final errorMsg = context.read<CatalogProvider>().errorMessage?.replaceAll('Exception: ', '') ?? 'No se pudo eliminar la foto del producto.';
+                                            SnackBarService.error(context, errorMsg);
+                                          }
+                                        },
+                                      ),
+                                    );
+                                  },
                                   borderRadius: BorderRadius.circular(8),
-                                  child: Image.network(
-                                    resolvedScannedImg,
-                                    width: 64,
-                                    height: 64,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (_, __, ___) => const Icon(Icons.check_circle, color: Colors.green, size: 64),
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: Image.network(
+                                      resolvedScannedImg,
+                                      width: 64,
+                                      height: 64,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (_, __, ___) => const Icon(Icons.check_circle, color: Colors.green, size: 64),
+                                    ),
                                   ),
                                 );
                               }
@@ -1162,6 +1244,12 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                             icon: const Icon(Icons.print, color: Colors.blueAccent),
                             tooltip: 'Imprimir en Tiquetera Térmica',
                             onPressed: () => _printLabelRemotely(_scannedProduct!.id),
+                          ),
+                          IconButton(
+                            key: const Key('mobile_share_button'),
+                            icon: const Icon(Icons.share, color: Colors.blueAccent),
+                            tooltip: 'Compartir',
+                            onPressed: () => ProductShareHelper.shareProduct(_scannedProduct!),
                           ),
                         ],
                       ),

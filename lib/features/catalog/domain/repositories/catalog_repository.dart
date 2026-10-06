@@ -67,4 +67,5 @@ abstract class CatalogRepository {
   /// Fetches only {id, stock} for the given IDs. Avoids a full catalog reload post-sale.
   Future<List<Map<String, dynamic>>> fetchBulkStock(List<int> ids);
   Future<String> uploadProductImage(int productId, String filePath, {List<int>? bytes, String? filename});
+  Future<void> deleteProductImage(int productId);
 }
