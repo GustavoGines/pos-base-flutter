@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -181,8 +182,8 @@ class _LoginScreenState extends State<LoginScreen> {
   // Llamado tanto por el teclado físico como por los botones táctiles.
   // ─────────────────────────────────────────────────────────────────
   void _onKeypadTap(String value) {
-    // Ignorar entrada mientras se procesa un login (evita doble submit)
-    if (context.read<AuthProvider>().isLoading) return;
+    // Ignorar entrada mientras se procesa un login o se transiciona al home (evita doble submit)
+    if (_isSubmitting || _isNavigating || context.read<AuthProvider>().isLoading) return;
 
     if (value == 'clr') {
       setState(() {
@@ -202,65 +203,93 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   bool _isSubmitting = false;
+  bool _isNavigating = false;
 
   Future<void> _submitPin() async {
-    if (_isSubmitting) return;
+    if (_isSubmitting || _isNavigating) return;
     
     setState(() => _isSubmitting = true);
-    final provider = context.read<AuthProvider>();
-    final success = await provider.verifyPin(_pin);
-    
-    if (mounted) {
-      if (success) {
-        // [Bugfix] Evitar flashes visuales de "Pantalla Bloqueo" y "Turno de caja"
-        // si la app arrancó sin red y se reconectó justo en este momento.
-        // Forzamos la actualización del estado global ANTES de navegar al home.
-        final settingsProv = context.read<SettingsProvider>();
-        final cashProv = context.read<CashRegisterProvider>();
-        
-        await settingsProv.loadSettings(isSilent: true);
-        
-        // Forzar verificacin remota de la licencia en el login exacto
-        await settingsProv.syncLicenseWithServer(AppConfig.kApiBaseUrl, isSilent: true);
-        
-        final assignedId = settingsProv.assignedRegisterId;
-        debugPrint('=== LOGIN: Verificando turno activo (registerId: ${assignedId > 0 ? assignedId : "null (fallback a Caja Principal)"}) ===');
-        await cashProv.checkCurrentShift(registerId: assignedId > 0 ? assignedId : null);
-        debugPrint('=== LOGIN: Turno detectado: ${cashProv.currentShift != null ? "ID:${cashProv.currentShift!.id} (${cashProv.currentShift!.status})" : "NINGUNO"} ===');
-
-
-        // ── PROTOCOLO DE RESCATE: forzar cambio de PIN antes de entrar ────
-        if (provider.requiresPinChange && mounted) {
-          await showDialog(
-            context: context,
-            barrierDismissible: false,
-            builder: (_) => const RescuePinChangeDialog(),
+    try {
+      final provider = context.read<AuthProvider>();
+      final success = await provider.verifyPin(_pin);
+      
+      if (mounted) {
+        if (success) {
+          // [Bugfix] Evitar flashes visuales de "Pantalla Bloqueo" y "Turno de caja"
+          // si la app arrancó sin red y se reconectó justo en este momento.
+          // Forzamos la actualización del estado global ANTES de navegar al home.
+          final settingsProv = context.read<SettingsProvider>();
+          final cashProv = context.read<CashRegisterProvider>();
+          
+          await settingsProv.loadSettings(isSilent: true);
+          
+          // R2: Sincronización remota de licencia en segundo plano (fire-and-forget, no bloqueante)
+          unawaited(
+            settingsProv
+                .syncLicenseWithServer(settingsProv.currentApiUrl, isSilent: true)
+                .catchError((e) {
+              debugPrint('=== LOGIN: Error en sincronización de licencia en segundo plano: $e ===');
+            }),
           );
-        }
-        // ─────────────────────────────────────────────────────────────────
-
-        // Encolamos la navegación al final del frame para que el Navigator 
-        // no colapse ni arroje !_debugLocked si hay builds en curso o si 
-        // el LicenseGuard recién reconstruyó la vista.
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) {
-            setState(() => _isSubmitting = false);
-            SnackBarService.success(context, '¡Bienvenido, ${provider.currentUser?['name']}!');
-            Navigator.of(context).pushReplacementNamed('/home');
+          
+          // R3: Omitir verificación de turno en móvil (ahorra 23 queries y ~300ms)
+          if (!AppConfig.isMobile) {
+            final assignedId = settingsProv.assignedRegisterId;
+            debugPrint('=== LOGIN: Verificando turno activo (registerId: ${assignedId > 0 ? assignedId : "null (fallback a Caja Principal)"}) ===');
+            await cashProv.checkCurrentShift(registerId: assignedId > 0 ? assignedId : null);
+            debugPrint('=== LOGIN: Turno detectado: ${cashProv.currentShift != null ? "ID:${cashProv.currentShift!.id} (${cashProv.currentShift!.status})" : "NINGUNO"} ===');
           }
-        });
-      } else {
-        setState(() => _isSubmitting = false);
-        final errorMsg = provider.errorMessage ?? 'Error desconocido';
-        SnackBarService.error(context, errorMsg);
+
+          // ── PROTOCOLO DE RESCATE: forzar cambio de PIN antes de entrar ────
+          if (provider.requiresPinChange && mounted) {
+            await showDialog(
+              context: context,
+              barrierDismissible: false,
+              builder: (_) => const RescuePinChangeDialog(),
+            );
+          }
+          // ─────────────────────────────────────────────────────────────────
+
+          _isNavigating = true;
+
+          // Encolamos la navegación al final del frame para que el Navigator 
+          // no colapse ni arroje !_debugLocked si hay builds en curso o si 
+          // el LicenseGuard recién reconstruyó la vista.
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              SnackBarService.success(context, '¡Bienvenido, ${provider.currentUser?['name']}!');
+              Navigator.of(context).pushReplacementNamed('/home');
+            }
+          });
+        } else {
+          final errorMsg = provider.errorMessage ?? 'Error desconocido';
+          SnackBarService.error(context, errorMsg);
+          setState(() {
+            _pin = '';
+            _errorDetail = errorMsg;
+          });
+          // Re-solicitar foco post-error para que el teclado siga activo
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) _keyboardFocus.requestFocus();
+          });
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        SnackBarService.error(context, 'Error durante el inicio de sesión: $e');
         setState(() {
           _pin = '';
-          _errorDetail = errorMsg;
+          _errorDetail = 'Error durante el inicio de sesión: $e';
         });
-        // Re-solicitar foco post-error para que el teclado siga activo
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) _keyboardFocus.requestFocus();
         });
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSubmitting = false);
+      } else {
+        _isSubmitting = false;
       }
     }
   }
@@ -401,7 +430,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         // ── Indicadores de PIN ────────────────────────
                         SizedBox(
                           height: 24,
-                          child: provider.isLoading
+                          child: (provider.isLoading || _isSubmitting || _isNavigating)
                               ? const SizedBox(
                                   width: 24, height: 24,
                                   child: CircularProgressIndicator(strokeWidth: 3))
@@ -471,9 +500,12 @@ class _LoginScreenState extends State<LoginScreen> {
                           children: [
                             Icon(Icons.keyboard, size: 14, color: Colors.grey.shade400),
                             const SizedBox(width: 4),
-                            Text(
-                              'También podés usar el teclado físico',
-                              style: TextStyle(fontSize: 11, color: Colors.grey.shade400),
+                            Flexible(
+                              child: Text(
+                                'También podés usar el teclado físico',
+                                style: TextStyle(fontSize: 11, color: Colors.grey.shade400),
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
                           ],
                         ),
@@ -482,7 +514,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         IconButton(
                           icon: const Icon(Icons.settings_ethernet, color: Colors.blueGrey, size: 28),
                           tooltip: 'Configurar Servidor',
-                          onPressed: _showServerConfigDialog,
+                          onPressed: (_isSubmitting || _isNavigating) ? null : _showServerConfigDialog,
                         ),
                       ],
                     ), // Cierre de la Column

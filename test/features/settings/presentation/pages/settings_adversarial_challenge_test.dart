@@ -116,10 +116,10 @@ class FakeAdversarialCashRegisterProvider extends ChangeNotifier implements Cash
 }
 
 class FakeAdversarialSettingsProvider extends ChangeNotifier implements SettingsProvider {
-  BusinessSettings? _settings;
+  final BusinessSettings? _settings;
   Map<String, dynamic>? _integrationsData;
-  bool _isLoading = false;
-  bool _isLoadingIntegrations = false;
+  final bool _isLoading = false;
+  final bool _isLoadingIntegrations = false;
   String? _errorMessage;
 
   bool uploadAfipCertificatesCalled = false;

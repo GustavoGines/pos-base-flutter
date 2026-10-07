@@ -27,9 +27,13 @@ class AppConfig {
   // disperso por el código. Si en el futuro se agrega iOS o Linux,
   // solo hay que actualizar aquí.
 
+  /// Permite sobrescribir la detección de plataforma exclusivamente en pruebas de unidad/widget.
+  @visibleForTesting
+  static bool? debugOverrideIsMobile;
+
   /// True si la app corre en un dispositivo móvil (Android o iOS).
   static bool get isMobile =>
-      !kIsWeb && (Platform.isAndroid || Platform.isIOS);
+      debugOverrideIsMobile ?? (!kIsWeb && (Platform.isAndroid || Platform.isIOS));
 
   /// True si la app corre en escritorio (Windows, Linux o macOS).
   static bool get isDesktop =>
