@@ -11,6 +11,14 @@ abstract class SettingsRemoteDataSource {
   Future<Map<String, dynamic>> fetchIntegrations();
   Future<bool> updateIntegrations(Map<String, dynamic> data);
   Future<Map<String, dynamic>> testMercadoPagoConnection({String? mpAccessToken});
+  Future<Map<String, dynamic>> uploadAfipCertificates({
+    required String cuit,
+    required List<int> certBytes,
+    required String certFilename,
+    required List<int> keyBytes,
+    required String keyFilename,
+    String? keyPassphrase,
+  });
 }
 
 class SettingsRemoteDataSourceImpl implements SettingsRemoteDataSource {
@@ -302,6 +310,72 @@ class SettingsRemoteDataSourceImpl implements SettingsRemoteDataSource {
         'success': false,
         'message': 'Error inesperado al probar la conexión.',
       };
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> uploadAfipCertificates({
+    required String cuit,
+    required List<int> certBytes,
+    required String certFilename,
+    required List<int> keyBytes,
+    required String keyFilename,
+    String? keyPassphrase,
+  }) async {
+    try {
+      final request = http.MultipartRequest(
+        'POST',
+        Uri.parse('$baseUrl/settings/afip/upload-certificates'),
+      );
+      request.headers['Accept'] = 'application/json';
+
+      request.fields['cuit'] = cuit;
+      if (keyPassphrase != null && keyPassphrase.trim().isNotEmpty) {
+        request.fields['key_passphrase'] = keyPassphrase.trim();
+      }
+
+      request.files.add(
+        http.MultipartFile.fromBytes(
+          'cert_file',
+          certBytes,
+          filename: certFilename,
+        ),
+      );
+
+      request.files.add(
+        http.MultipartFile.fromBytes(
+          'key_file',
+          keyBytes,
+          filename: keyFilename,
+        ),
+      );
+
+      final streamedResponse = await client.send(request);
+      final response = await http.Response.fromStream(streamedResponse);
+
+      if (response.statusCode == 200) {
+        try {
+          return json.decode(response.body) as Map<String, dynamic>;
+        } catch (_) {
+          throw const FormatException('La respuesta del servidor no es un JSON válido.');
+        }
+      } else if (response.statusCode == 404) {
+        throw Exception('Error de conexión: No se encontró el servidor. Verifica la URL configurada.');
+      } else if (response.statusCode == 500) {
+        throw Exception('Error interno del servidor. Contacte a soporte técnico.');
+      } else {
+        throw Exception(_parseApiError(response.body, 'Error al subir certificados de AFIP (Status: ${response.statusCode})'));
+      }
+    } on FormatException catch (e) {
+      throw Exception(e.message);
+    } catch (e) {
+      final errStr = e.toString();
+      if (errStr.contains('SocketException') ||
+          errStr.contains('TimeoutException') ||
+          errStr.contains('ClientException')) {
+        throw Exception('Error de conexión: No se encontró el servidor. Verifica la URL configurada.');
+      }
+      rethrow;
     }
   }
 }

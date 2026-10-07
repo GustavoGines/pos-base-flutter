@@ -87,10 +87,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   final _afipCuitCtrl = TextEditingController();
   final _afipPtoVtaCtrl = TextEditingController();
+  final _afipKeyPassphraseCtrl = TextEditingController();
+  bool _obscureAfipPassphrase = true;
+  Uint8List? _selectedCertBytes;
+  String? _selectedCertName;
+  Uint8List? _selectedKeyBytes;
+  String? _selectedKeyName;
+  bool _isUploadingCertificates = false;
   String _afipEnvironment = 'testing';
   bool _afipEnabled = false;
   bool _afipHasCert = false;
   bool _afipHasKey = false;
+  final ExpansibleController _mpExpCtrl = ExpansibleController();
+  final ExpansibleController _afipExpCtrl = ExpansibleController();
   String? _afipCertExpiresAt;
   bool _integrationsLoaded = false;
   bool _isLoadingIntegrations = false;
@@ -292,6 +301,138 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  Future<void> _pickAfipCert() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['crt'],
+        withData: true,
+      );
+      if (result != null && result.files.isNotEmpty) {
+        final file = result.files.single;
+        List<int>? bytes = file.bytes;
+        if (bytes == null && file.path != null && file.path!.isNotEmpty) {
+          try {
+            bytes = await File(file.path!).readAsBytes();
+          } catch (_) {}
+        }
+        if (bytes != null) {
+          setState(() {
+            _selectedCertBytes = Uint8List.fromList(bytes!);
+            _selectedCertName = file.name;
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('[SettingsScreen] Error al seleccionar certificado: $e');
+      if (mounted) {
+        SnackBarService.error(context, 'Error al seleccionar el certificado');
+      }
+    }
+  }
+
+  Future<void> _pickAfipKey() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['key'],
+        withData: true,
+      );
+      if (result != null && result.files.isNotEmpty) {
+        final file = result.files.single;
+        List<int>? bytes = file.bytes;
+        if (bytes == null && file.path != null && file.path!.isNotEmpty) {
+          try {
+            bytes = await File(file.path!).readAsBytes();
+          } catch (_) {}
+        }
+        if (bytes != null) {
+          setState(() {
+            _selectedKeyBytes = Uint8List.fromList(bytes!);
+            _selectedKeyName = file.name;
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('[SettingsScreen] Error al seleccionar clave privada: $e');
+      if (mounted) {
+        SnackBarService.error(context, 'Error al seleccionar la clave privada');
+      }
+    }
+  }
+
+  Future<void> _uploadAfipCertificates() async {
+    if (_isUploadingCertificates || _isSavingIntegrations) return;
+
+    final auth = context.read<AuthProvider?>();
+    final canManageSettings =
+        auth == null || auth.isAdmin || auth.hasPermission(AppPermissions.manageSettings);
+    if (!canManageSettings) {
+      if (mounted) {
+        SnackBarService.error(context, 'No tienes permisos para modificar la configuración de ARCA.');
+      }
+      return;
+    }
+
+    final cuit = _afipCuitCtrl.text.trim().replaceAll(RegExp(r'\D'), '');
+    if (cuit.isEmpty || cuit.length < 10) {
+      if (mounted) {
+        SnackBarService.warning(context, 'Debe ingresar un CUIT comercial válido.');
+      }
+      return;
+    }
+
+    if (_selectedCertBytes == null || _selectedKeyBytes == null) {
+      if (mounted) {
+        SnackBarService.warning(context, 'Debe seleccionar tanto el certificado (.crt) como la clave privada (.key).');
+      }
+      return;
+    }
+
+    setState(() => _isUploadingCertificates = true);
+    try {
+      final provider = context.read<SettingsProvider>();
+      final result = await provider.uploadAfipCertificates(
+        cuit: cuit,
+        certBytes: _selectedCertBytes!,
+        certFilename: _selectedCertName ?? 'cert.crt',
+        keyBytes: _selectedKeyBytes!,
+        keyFilename: _selectedKeyName ?? 'cert.key',
+        keyPassphrase: _afipKeyPassphraseCtrl.text.trim().isNotEmpty
+            ? _afipKeyPassphraseCtrl.text.trim()
+            : null,
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        _selectedCertBytes = null;
+        _selectedCertName = null;
+        _selectedKeyBytes = null;
+        _selectedKeyName = null;
+        _afipKeyPassphraseCtrl.clear();
+        _afipHasCert = result['afip_has_cert'] == true || provider.integrations?['afip_has_cert'] == true;
+        _afipHasKey = result['afip_has_key'] == true || provider.integrations?['afip_has_key'] == true;
+        if (result['afip_cert_expires_at'] != null) {
+          _afipCertExpiresAt = result['afip_cert_expires_at'].toString();
+        } else if (provider.integrations?['afip_cert_expires_at'] != null) {
+          _afipCertExpiresAt = provider.integrations!['afip_cert_expires_at'].toString();
+        }
+      });
+
+      SnackBarService.success(context, result['message']?.toString() ?? 'Certificados de AFIP guardados y validados correctamente.');
+    } catch (e) {
+      if (mounted) {
+        final msg = e.toString().replaceAll('Exception: ', '');
+        SnackBarService.error(context, msg.isNotEmpty ? msg : 'Error al subir certificados de AFIP.');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isUploadingCertificates = false);
+      }
+    }
+  }
+
   Future<bool> _saveIntegrations({bool showFeedback = true}) async {
     final auth = context.read<AuthProvider?>();
     final canManageSettings =
@@ -398,6 +539,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _mpWebhookUrlCtrl.dispose();
     _afipCuitCtrl.dispose();
     _afipPtoVtaCtrl.dispose();
+    _afipKeyPassphraseCtrl.dispose();
     super.dispose();
   }
 
@@ -1068,50 +1210,162 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  Widget _buildMpStatusBadge() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: _mpQrEnabled ? Colors.green.shade50 : Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+            color: _mpQrEnabled ? Colors.green.shade200 : Colors.grey.shade300),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: _mpQrEnabled ? Colors.green.shade600 : Colors.grey.shade500,
+            ),
+          ),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              _mpQrEnabled ? 'Activo' : 'Inactivo',
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: _mpQrEnabled ? Colors.green.shade700 : Colors.grey.shade600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAfipStatusBadge() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: _afipEnabled ? Colors.green.shade50 : Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+            color: _afipEnabled ? Colors.green.shade200 : Colors.grey.shade300),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: _afipEnabled ? Colors.green.shade600 : Colors.grey.shade500,
+            ),
+          ),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              _afipEnabled ? 'Activo' : 'Inactivo',
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: _afipEnabled ? Colors.green.shade700 : Colors.grey.shade600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildMercadoPagoCard(bool isNarrow) {
     return Card(
       elevation: 0,
+      clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
         side: BorderSide(color: Colors.grey.shade200),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF009EE3).withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Icon(Icons.qr_code_2,
-                      color: Color(0xFF009EE3), size: 28),
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          controller: _mpExpCtrl,
+          initiallyExpanded: _mpQrEnabled,
+          tilePadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+          childrenPadding: const EdgeInsets.only(left: 24, right: 24, bottom: 24),
+          trailing: Switch(
+            value: _mpQrEnabled,
+            activeThumbColor: const Color(0xFF009EE3),
+            onChanged: (val) {
+              setState(() => _mpQrEnabled = val);
+              if (val) {
+                _mpExpCtrl.expand();
+              } else {
+                _mpExpCtrl.collapse();
+              }
+            },
+          ),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF009EE3).withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
+                child: const Icon(Icons.qr_code_2,
+                    color: Color(0xFF009EE3), size: 28),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (isNarrow) ...[
                       const Text(
                         'Mercado Pago',
                         style: TextStyle(
                             fontSize: 18, fontWeight: FontWeight.bold),
+                        overflow: TextOverflow.ellipsis,
                       ),
-                      Text(
-                        'Cobro con QR In-Store y terminales físicas Point',
-                        style: TextStyle(
-                            fontSize: 13, color: Colors.grey.shade600),
+                      const SizedBox(height: 6),
+                      _buildMpStatusBadge(),
+                    ] else ...[
+                      Row(
+                        children: [
+                          Flexible(
+                            child: const Text(
+                              'Mercado Pago',
+                              style: TextStyle(
+                                  fontSize: 18, fontWeight: FontWeight.bold),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          _buildMpStatusBadge(),
+                        ],
                       ),
                     ],
-                  ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Cobro con QR In-Store y terminales físicas Point',
+                      style: TextStyle(
+                          fontSize: 13, color: Colors.grey.shade600),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-            const Divider(height: 32),
+              ),
+            ],
+          ),
+          children: [
+            const Divider(height: 1),
+            const SizedBox(height: 16),
 
             // Switch Habilitar Cobro QR
             SwitchListTile(
@@ -1124,7 +1378,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               value: _mpQrEnabled,
               activeThumbColor: const Color(0xFF009EE3),
-              onChanged: (val) => setState(() => _mpQrEnabled = val),
+              onChanged: (val) {
+                setState(() => _mpQrEnabled = val);
+                if (val) {
+                  _mpExpCtrl.expand();
+                } else {
+                  _mpExpCtrl.collapse();
+                }
+              },
             ),
             const SizedBox(height: 16),
 
@@ -1264,47 +1525,85 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget _buildAfipCard(bool isNarrow) {
     return Card(
       elevation: 0,
+      clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
         side: BorderSide(color: Colors.grey.shade200),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF2E7D32).withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Icon(Icons.receipt_long,
-                      color: Color(0xFF2E7D32), size: 28),
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          controller: _afipExpCtrl,
+          initiallyExpanded: _afipEnabled,
+          tilePadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+          childrenPadding: const EdgeInsets.only(left: 24, right: 24, bottom: 24),
+          trailing: Switch(
+            value: _afipEnabled,
+            activeThumbColor: const Color(0xFF2E7D32),
+            onChanged: (val) {
+              setState(() => _afipEnabled = val);
+              if (val) {
+                _afipExpCtrl.expand();
+              } else {
+                _afipExpCtrl.collapse();
+              }
+            },
+          ),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF2E7D32).withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
+                child: const Icon(Icons.receipt_long,
+                    color: Color(0xFF2E7D32), size: 28),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (isNarrow) ...[
                       const Text(
                         'ARCA / AFIP (Facturación Electrónica)',
                         style: TextStyle(
                             fontSize: 18, fontWeight: FontWeight.bold),
+                        overflow: TextOverflow.ellipsis,
                       ),
-                      Text(
-                        'Emisión de Facturas y Comprobantes Fiscales Oficiales (WebService WSFEv1)',
-                        style: TextStyle(
-                            fontSize: 13, color: Colors.grey.shade600),
+                      const SizedBox(height: 6),
+                      _buildAfipStatusBadge(),
+                    ] else ...[
+                      Row(
+                        children: [
+                          Flexible(
+                            child: const Text(
+                              'ARCA / AFIP (Facturación Electrónica)',
+                              style: TextStyle(
+                                  fontSize: 18, fontWeight: FontWeight.bold),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          _buildAfipStatusBadge(),
+                        ],
                       ),
                     ],
-                  ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Emisión de Facturas y Comprobantes Fiscales Oficiales (WebService WSFEv1)',
+                      style: TextStyle(
+                          fontSize: 13, color: Colors.grey.shade600),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-            const Divider(height: 32),
+              ),
+            ],
+          ),
+          children: [
+            const Divider(height: 1),
+            const SizedBox(height: 16),
 
             // Switch Habilitar Facturación ARCA
             SwitchListTile(
@@ -1317,7 +1616,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               value: _afipEnabled,
               activeThumbColor: const Color(0xFF2E7D32),
-              onChanged: (val) => setState(() => _afipEnabled = val),
+              onChanged: (val) {
+                setState(() => _afipEnabled = val);
+                if (val) {
+                  _afipExpCtrl.expand();
+                } else {
+                  _afipExpCtrl.collapse();
+                }
+              },
             ),
             const SizedBox(height: 16),
 
@@ -1472,8 +1778,242 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ],
             ),
+            const Divider(height: 32),
+
+            // Sección de Carga y Actualización de Certificados
+            Text(
+              'Carga de Certificados Digitales (X.509)',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: Colors.grey.shade700,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Seleccione el certificado emitido por AFIP (.crt) y la clave privada generada (.key).',
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+            ),
+            const SizedBox(height: 16),
+
+            // Selectores de archivo
+            if (isNarrow) ...[
+              _buildFilePickerTile(
+                title: 'Certificado AFIP (.crt)',
+                selectedFileName: _selectedCertName,
+                buttonKey: const ValueKey('btn_pick_afip_cert'),
+                onPick: _pickAfipCert,
+                onClear: _selectedCertName != null
+                    ? () => setState(() {
+                          _selectedCertBytes = null;
+                          _selectedCertName = null;
+                        })
+                    : null,
+                icon: Icons.verified_user_outlined,
+              ),
+              const SizedBox(height: 12),
+              _buildFilePickerTile(
+                title: 'Clave Privada (.key)',
+                selectedFileName: _selectedKeyName,
+                buttonKey: const ValueKey('btn_pick_afip_key'),
+                onPick: _pickAfipKey,
+                onClear: _selectedKeyName != null
+                    ? () => setState(() {
+                          _selectedKeyBytes = null;
+                          _selectedKeyName = null;
+                        })
+                    : null,
+                icon: Icons.vpn_key_outlined,
+              ),
+            ] else ...[
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: _buildFilePickerTile(
+                      title: 'Certificado AFIP (.crt)',
+                      selectedFileName: _selectedCertName,
+                      buttonKey: const ValueKey('btn_pick_afip_cert'),
+                      onPick: _pickAfipCert,
+                      onClear: _selectedCertName != null
+                          ? () => setState(() {
+                                _selectedCertBytes = null;
+                                _selectedCertName = null;
+                              })
+                          : null,
+                      icon: Icons.verified_user_outlined,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: _buildFilePickerTile(
+                      title: 'Clave Privada (.key)',
+                      selectedFileName: _selectedKeyName,
+                      buttonKey: const ValueKey('btn_pick_afip_key'),
+                      onPick: _pickAfipKey,
+                      onClear: _selectedKeyName != null
+                          ? () => setState(() {
+                                _selectedKeyBytes = null;
+                                _selectedKeyName = null;
+                              })
+                          : null,
+                      icon: Icons.vpn_key_outlined,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            const SizedBox(height: 16),
+
+            // Campo de contraseña de clave privada (opcional)
+            TextFormField(
+              key: const ValueKey('field_afip_key_passphrase'),
+              controller: _afipKeyPassphraseCtrl,
+              obscureText: _obscureAfipPassphrase,
+              decoration: _inputDecoration(
+                'Contraseña de Clave Privada (Opcional)',
+                Icons.lock_outline,
+                hint: 'Dejar vacío si la clave no tiene contraseña',
+              ).copyWith(
+                helperText:
+                    'Solo requerida si la clave privada (.key) fue cifrada con contraseña.',
+                suffixIcon: IconButton(
+                  icon: Icon(_obscureAfipPassphrase
+                      ? Icons.visibility_outlined
+                      : Icons.visibility_off_outlined),
+                  tooltip: _obscureAfipPassphrase
+                      ? 'Mostrar contraseña'
+                      : 'Ocultar contraseña',
+                  onPressed: () => setState(
+                      () => _obscureAfipPassphrase = !_obscureAfipPassphrase),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            // Botón de subida
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                FilledButton.icon(
+                  key: const ValueKey('btn_upload_afip_certs'),
+                  onPressed: (_isUploadingCertificates || _isSavingIntegrations)
+                      ? null
+                      : _uploadAfipCertificates,
+                  icon: _isUploadingCertificates
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor:
+                                AlwaysStoppedAnimation<Color>(Colors.white),
+                          ),
+                        )
+                      : const Icon(Icons.cloud_upload_outlined, size: 18),
+                  label: Text(_isUploadingCertificates
+                      ? 'Subiendo certificados...'
+                      : 'Subir Certificados a ARCA'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF2E7D32),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 20, vertical: 14),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+                Text(
+                  'Valida criptográficamente el par y lo almacena de forma segura en el servidor.',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                ),
+              ],
+            ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildFilePickerTile({
+    required String title,
+    required String? selectedFileName,
+    required Key buttonKey,
+    required VoidCallback onPick,
+    VoidCallback? onClear,
+    required IconData icon,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 18, color: const Color(0xFF2E7D32)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            key: buttonKey,
+            onPressed: onPick,
+            icon: const Icon(Icons.folder_open, size: 16),
+            label: const Text('Seleccionar'),
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              visualDensity: VisualDensity.compact,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  selectedFileName ?? 'Sin archivo seleccionado',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: selectedFileName != null
+                        ? Colors.black87
+                        : Colors.grey.shade600,
+                    fontWeight: selectedFileName != null
+                        ? FontWeight.w600
+                        : FontWeight.normal,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (onClear != null)
+                Tooltip(
+                  message: 'Quitar archivo',
+                  child: InkWell(
+                    onTap: onClear,
+                    borderRadius: BorderRadius.circular(12),
+                    child: const Padding(
+                      padding: EdgeInsets.all(4),
+                      child: Icon(Icons.close, size: 16, color: Colors.grey),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ],
       ),
     );
   }

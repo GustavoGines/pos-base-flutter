@@ -59,6 +59,9 @@ class SettingsProvider with ChangeNotifier {
   bool _isLoadingIntegrations = false;
   bool get isLoadingIntegrations => _isLoadingIntegrations;
 
+  bool _isUploadingCertificates = false;
+  bool get isUploadingCertificates => _isUploadingCertificates;
+
   SettingsProvider({
     required this.getSettingsUseCase,
     required this.updateSettingsUseCase,
@@ -272,6 +275,41 @@ class SettingsProvider with ChangeNotifier {
   Future<Map<String, dynamic>> testMercadoPagoConnection({String? mpAccessToken}) async {
     final repo = updateSettingsUseCase.repository;
     return await repo.testMercadoPagoConnection(mpAccessToken: mpAccessToken);
+  }
+
+  Future<Map<String, dynamic>> uploadAfipCertificates({
+    required String cuit,
+    required List<int> certBytes,
+    required String certFilename,
+    required List<int> keyBytes,
+    required String keyFilename,
+    String? keyPassphrase,
+  }) async {
+    _isUploadingCertificates = true;
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      final repo = updateSettingsUseCase.repository;
+      final result = await repo.uploadAfipCertificates(
+        cuit: cuit,
+        certBytes: certBytes,
+        certFilename: certFilename,
+        keyBytes: keyBytes,
+        keyFilename: keyFilename,
+        keyPassphrase: keyPassphrase,
+      );
+      await loadIntegrations(isSilent: true);
+      return result;
+    } catch (e) {
+      _errorMessage = e.toString().replaceAll('Exception: ', '');
+      rethrow;
+    } finally {
+      _isUploadingCertificates = false;
+      _isLoading = false;
+      notifyListeners();
+    }
   }
 
   Future<String> activateLicense(String baseUrl, String licenseKey) async {

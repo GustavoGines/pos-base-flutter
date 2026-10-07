@@ -1,16 +1,21 @@
 import 'package:flutter/material.dart';
+import 'thermal_receipt_widget.dart';
 
 /// Diálogo de Vista Previa del ticket en formato papel térmico simulado.
-/// Recibe una lista de [TicketLine] con texto e indicador de estilo.
+/// Soporta tanto [ThermalReceiptWidget] moderno como la lista legacy de [TicketLine].
 class TicketPreviewDialog extends StatelessWidget {
   final String title;
   final List<TicketLine> lines;
+  final Widget? receiptWidget;
+  final ThermalPaperWidth? paperWidth;
   final VoidCallback? onConfirmPrint;
 
   const TicketPreviewDialog({
     super.key,
     required this.title,
-    required this.lines,
+    this.lines = const [],
+    this.receiptWidget,
+    this.paperWidth,
     this.onConfirmPrint,
   });
 
@@ -18,14 +23,19 @@ class TicketPreviewDialog extends StatelessWidget {
   static Future<bool> show(
     BuildContext context, {
     required String title,
-    required List<TicketLine> lines,
+    List<TicketLine>? lines,
+    Widget? receiptWidget,
+    ThermalPaperWidth? paperWidth,
+    VoidCallback? onConfirmPrint,
   }) async {
     return await showDialog<bool>(
           context: context,
           builder: (ctx) => TicketPreviewDialog(
             title: title,
-            lines: lines,
-            onConfirmPrint: () => Navigator.pop(ctx, true),
+            lines: lines ?? const [],
+            receiptWidget: receiptWidget,
+            paperWidth: paperWidth,
+            onConfirmPrint: onConfirmPrint ?? () => Navigator.pop(ctx, true),
           ),
         ) ??
         false;
@@ -33,17 +43,19 @@ class TicketPreviewDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final effectivePaperWidth = paperWidth?.logicalWidth ?? 290.0;
+
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 420, maxHeight: 700),
+        constraints: const BoxConstraints(maxWidth: 420, maxHeight: 720),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             // Header
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: BoxDecoration(
                 color: Colors.grey.shade900,
                 borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
@@ -51,14 +63,22 @@ class TicketPreviewDialog extends StatelessWidget {
               child: Row(
                 children: [
                   const Icon(Icons.receipt_long, color: Colors.white70, size: 22),
-                  const SizedBox(width: 12),
-                  Text(
-                    title,
-                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                      ),
+                    ),
                   ),
-                  const Spacer(),
                   IconButton(
                     icon: const Icon(Icons.close, color: Colors.white70),
+                    visualDensity: VisualDensity.compact,
                     onPressed: () => Navigator.pop(context, false),
                   ),
                 ],
@@ -68,20 +88,33 @@ class TicketPreviewDialog extends StatelessWidget {
             // Ticket simulado en papel térmico
             Flexible(
               child: Container(
-                color: const Color(0xFFF5F5F5),
+                color: const Color(0xFFEFEFEF),
+                width: double.infinity,
                 child: SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 16),
-                  child: Container(
-                    width: double.infinity,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.12), blurRadius: 8, offset: const Offset(0, 4))],
-                    ),
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: lines.map((line) => _buildLine(line)).toList(),
-                    ),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+                  child: Center(
+                    child: receiptWidget ??
+                        Container(
+                          width: effectivePaperWidth,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.12),
+                                blurRadius: 8,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 18,
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: lines.map((line) => _buildLine(line)).toList(),
+                          ),
+                        ),
                   ),
                 ),
               ),
@@ -89,13 +122,16 @@ class TicketPreviewDialog extends StatelessWidget {
 
             // Actions
             Padding(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: Row(
                 children: [
                   Expanded(
                     child: OutlinedButton(
                       onPressed: () => Navigator.pop(context, false),
-                      child: const Text('Cancelar'),
+                      child: const FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text('Cancelar'),
+                      ),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -103,9 +139,14 @@ class TicketPreviewDialog extends StatelessWidget {
                     flex: 2,
                     child: FilledButton.icon(
                       onPressed: onConfirmPrint,
-                      icon: const Icon(Icons.print),
-                      label: const Text('Imprimir'),
-                      style: FilledButton.styleFrom(backgroundColor: Colors.green.shade700),
+                      icon: const Icon(Icons.print, size: 18),
+                      label: const FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text('Imprimir'),
+                      ),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: Colors.green.shade700,
+                      ),
                     ),
                   ),
                 ],
@@ -143,6 +184,7 @@ class TicketPreviewDialog extends StatelessWidget {
                     Expanded(
                       child: Text(
                         line.text,
+                        softWrap: true,
                         style: TextStyle(
                           fontSize: line.isLarge ? 14 : 11,
                           fontWeight: line.isBold ? FontWeight.bold : FontWeight.normal,
@@ -150,12 +192,19 @@ class TicketPreviewDialog extends StatelessWidget {
                         ),
                       ),
                     ),
-                    Text(
-                      line.rightText!,
-                      style: TextStyle(
-                        fontSize: line.isLarge ? 14 : 11,
-                        fontWeight: FontWeight.bold,
-                        fontFamily: 'monospace',
+                    const SizedBox(width: 4),
+                    Flexible(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerRight,
+                        child: Text(
+                          line.rightText!,
+                          style: TextStyle(
+                            fontSize: line.isLarge ? 14 : 11,
+                            fontWeight: FontWeight.bold,
+                            fontFamily: 'monospace',
+                          ),
+                        ),
                       ),
                     ),
                   ]

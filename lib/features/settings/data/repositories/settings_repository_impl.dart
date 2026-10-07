@@ -38,6 +38,25 @@ class SettingsRepositoryImpl implements SettingsRepository {
   }
 
   @override
+  Future<Map<String, dynamic>> uploadAfipCertificates({
+    required String cuit,
+    required List<int> certBytes,
+    required String certFilename,
+    required List<int> keyBytes,
+    required String keyFilename,
+    String? keyPassphrase,
+  }) async {
+    return await remoteDataSource.uploadAfipCertificates(
+      cuit: cuit,
+      certBytes: certBytes,
+      certFilename: certFilename,
+      keyBytes: keyBytes,
+      keyFilename: keyFilename,
+      keyPassphrase: keyPassphrase,
+    );
+  }
+
+  @override
   void updateBaseUrl(String newUrl) {
     if (remoteDataSource is SettingsRemoteDataSourceImpl) {
       (remoteDataSource as SettingsRemoteDataSourceImpl).updateBaseUrl(newUrl);

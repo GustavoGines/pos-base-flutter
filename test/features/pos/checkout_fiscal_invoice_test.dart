@@ -354,7 +354,8 @@ void main() {
       await tester.pumpAndSettle();
 
       // Tap en Factura Fiscal ARCA
-      await tester.tap(find.text('Factura Fiscal ARCA'));
+      await tester.ensureVisible(find.text('Factura Fiscal ARCA'));
+        await tester.tap(find.text('Factura Fiscal ARCA'));
       await tester.pumpAndSettle();
 
       // Ahora el selector de comprobante y los campos fiscales son visibles
@@ -372,11 +373,13 @@ void main() {
       await tester.pumpAndSettle();
 
       // Activar Factura Fiscal
-      await tester.tap(find.text('Factura Fiscal ARCA'));
+      await tester.ensureVisible(find.text('Factura Fiscal ARCA'));
+        await tester.tap(find.text('Factura Fiscal ARCA'));
       await tester.pumpAndSettle();
 
       // Seleccionar Factura A
-      await tester.tap(find.text('Factura A'));
+      await tester.ensureVisible(find.text('Factura A'));
+        await tester.tap(find.text('Factura A'));
       await tester.pumpAndSettle();
 
       // Botón debe estar deshabilitado porque CUIT está vacío y nombre está vacío
@@ -384,8 +387,10 @@ void main() {
       expect(submitBtn.onPressed, isNull);
 
       // Ingresar CUIT inválido
-      await tester.enterText(find.byKey(const Key('fiscal_doc_number_field')), '20-12345678-9');
-      await tester.enterText(find.byKey(const Key('fiscal_receiver_name_field')), 'Empresa Falsa SA');
+      await tester.ensureVisible(find.byKey(const Key('fiscal_doc_number_field')));
+        await tester.enterText(find.byKey(const Key('fiscal_doc_number_field')), '20-12345678-9');
+      await tester.ensureVisible(find.byKey(const Key('fiscal_receiver_name_field')));
+        await tester.enterText(find.byKey(const Key('fiscal_receiver_name_field')), 'Empresa Falsa SA');
       await tester.pumpAndSettle();
 
       // Feedback en tiempo real muestra error de Módulo 11
@@ -396,7 +401,8 @@ void main() {
       expect(submitBtn.onPressed, isNull);
 
       // Ingresar CUIT válido
-      await tester.enterText(find.byKey(const Key('fiscal_doc_number_field')), '30-50001091-2');
+      await tester.ensureVisible(find.byKey(const Key('fiscal_doc_number_field')));
+        await tester.enterText(find.byKey(const Key('fiscal_doc_number_field')), '30-50001091-2');
       await tester.pumpAndSettle();
 
       // Feedback muestra éxito de Módulo 11
@@ -414,16 +420,21 @@ void main() {
       await tester.pumpAndSettle();
 
       // Activar Factura Fiscal
-      await tester.tap(find.text('Factura Fiscal ARCA'));
+      await tester.ensureVisible(find.text('Factura Fiscal ARCA'));
+        await tester.tap(find.text('Factura Fiscal ARCA'));
       await tester.pumpAndSettle();
 
       // Seleccionar Factura A y completar datos
-      await tester.tap(find.text('Factura A'));
+      await tester.ensureVisible(find.text('Factura A'));
+        await tester.tap(find.text('Factura A'));
       await tester.pumpAndSettle();
 
-      await tester.enterText(find.byKey(const Key('fiscal_doc_number_field')), '30-50001091-2');
-      await tester.enterText(find.byKey(const Key('fiscal_receiver_name_field')), 'Banco Nación SA');
-      await tester.enterText(find.byKey(const Key('fiscal_receiver_address_field')), 'Bartolomé Mitre 326, CABA');
+      await tester.ensureVisible(find.byKey(const Key('fiscal_doc_number_field')));
+        await tester.enterText(find.byKey(const Key('fiscal_doc_number_field')), '30-50001091-2');
+      await tester.ensureVisible(find.byKey(const Key('fiscal_receiver_name_field')));
+        await tester.enterText(find.byKey(const Key('fiscal_receiver_name_field')), 'Banco Nación SA');
+      await tester.ensureVisible(find.byKey(const Key('fiscal_receiver_address_field')));
+        await tester.enterText(find.byKey(const Key('fiscal_receiver_address_field')), 'Bartolomé Mitre 326, CABA');
       await tester.pumpAndSettle();
 
       // Confirmar pago
@@ -447,16 +458,20 @@ void main() {
       await tester.pumpAndSettle();
 
       // Activar Factura Fiscal
-      await tester.tap(find.text('Factura Fiscal ARCA'));
+      await tester.ensureVisible(find.text('Factura Fiscal ARCA'));
+        await tester.tap(find.text('Factura Fiscal ARCA'));
       await tester.pumpAndSettle();
 
       // Factura B viene seleccionada por defecto (o seleccionamos B)
-      await tester.tap(find.text('Factura B'));
+      await tester.ensureVisible(find.text('Factura B'));
+        await tester.tap(find.text('Factura B'));
       await tester.pumpAndSettle();
 
       // Ingresar DNI y nombre
-      await tester.enterText(find.byKey(const Key('fiscal_doc_number_field')), '35123456');
-      await tester.enterText(find.byKey(const Key('fiscal_receiver_name_field')), 'Consumidor Final Regular');
+      await tester.ensureVisible(find.byKey(const Key('fiscal_doc_number_field')));
+        await tester.enterText(find.byKey(const Key('fiscal_doc_number_field')), '35123456');
+      await tester.ensureVisible(find.byKey(const Key('fiscal_receiver_name_field')));
+        await tester.enterText(find.byKey(const Key('fiscal_receiver_name_field')), 'Consumidor Final Regular');
       await tester.pumpAndSettle();
 
       // Confirmar pago
@@ -483,15 +498,18 @@ void main() {
       await tester.pumpAndSettle();
 
       // Activar Factura Fiscal en pantalla pequeña
-      await tester.tap(find.text('Factura Fiscal ARCA'));
+      await tester.ensureVisible(find.text('Factura Fiscal ARCA'));
+        await tester.tap(find.text('Factura Fiscal ARCA'));
       await tester.pumpAndSettle();
 
       // Cambiar entre vouchers
-      await tester.tap(find.text('Factura A'));
+      await tester.ensureVisible(find.text('Factura A'));
+        await tester.tap(find.text('Factura A'));
       await tester.pumpAndSettle();
 
       // Ingresar texto
-      await tester.enterText(find.byKey(const Key('fiscal_doc_number_field')), '30-50001091-2');
+      await tester.ensureVisible(find.byKey(const Key('fiscal_doc_number_field')));
+        await tester.enterText(find.byKey(const Key('fiscal_doc_number_field')), '30-50001091-2');
       await tester.pumpAndSettle();
 
       // Verificar que ningún error de overflow fue capturado
@@ -511,10 +529,12 @@ void main() {
       await tester.pumpAndSettle();
 
       // Activar Factura Fiscal
-      await tester.tap(find.text('Factura Fiscal ARCA'));
+      await tester.ensureVisible(find.text('Factura Fiscal ARCA'));
+        await tester.tap(find.text('Factura Fiscal ARCA'));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Factura C'));
+      await tester.ensureVisible(find.text('Factura C'));
+        await tester.tap(find.text('Factura C'));
       await tester.pumpAndSettle();
 
       expect(tester.takeException(), isNull);

@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'package:printing/printing.dart';
 import 'package:flutter/material.dart';
 import '../../domain/entities/cart_item.dart';
@@ -17,6 +18,7 @@ import 'package:frontend_desktop/features/quotes/data/quote_repository.dart';
 import 'package:frontend_desktop/core/config/app_config.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:frontend_desktop/core/utils/a4_split_pdf_service.dart';
+import 'package:frontend_desktop/core/utils/afip_fiscal_pdf_service.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import 'package:frontend_desktop/features/customers/models/customer_model.dart';
 
@@ -698,35 +700,47 @@ class PosProvider with ChangeNotifier {
             // settings no es null aquí (garantizado por el guard externo)
             // Si requiere despacho pero NO es entrega inmediata, generamos el A4 normal de venta
             // pero el remito se generará después desde Logística.
-            final pdfBytes = await A4SplitPdfService.generateA4SingleReceipt(
-              sale: {
-                'id': extractedSaleId,
-                'items': cartSnapshot.map((i) => {
-                  'product_name': i.product.name,
-                  'quantity': i.quantity,
-                  'unit_price': i.unitPrice,
-                  'subtotal': i.subtotal,
-                  'product': {
-                    'is_sold_by_weight': i.product.isSoldByWeight,
-                  }
-                }).toList(),
-                'total': totalSnapshot,
-                'shipping_cost': shippingCostSnapshot,
-                'surcharge_amount': totalSurcharge,
-                'tendered_amount': tenderedAmount,
-                'change_amount': changeAmount,
-                'payments': resolvedPayments,
-                'customer': {'name': 'Consumidor Final'}, 
-                'customer_name': 'Consumidor Final',
-                'electronic_invoice': _lastElectronicInvoice,
-              },
-              businessName: settings.companyName ?? 'Mi Negocio',
-              businessAddress: settings.address,
-              phone: settings.phone ?? '',
-              cuit: settings.taxId ?? '',
-              vendorName: userName,
-              paperSize: localTerminal.pdfPaperSize,
-            );
+            final salePayload = {
+              'id': extractedSaleId,
+              'items': cartSnapshot.map((i) => {
+                'product_name': i.product.name,
+                'quantity': i.quantity,
+                'unit_price': i.unitPrice,
+                'subtotal': i.subtotal,
+                'product': {
+                  'is_sold_by_weight': i.product.isSoldByWeight,
+                }
+              }).toList(),
+              'total': totalSnapshot,
+              'shipping_cost': shippingCostSnapshot,
+              'surcharge_amount': totalSurcharge,
+              'tendered_amount': tenderedAmount,
+              'change_amount': changeAmount,
+              'payments': resolvedPayments,
+              'customer': {'name': 'Consumidor Final'}, 
+              'customer_name': 'Consumidor Final',
+              'electronic_invoice': _lastElectronicInvoice,
+            };
+
+            final Uint8List pdfBytes;
+            if (_lastElectronicInvoice != null) {
+              pdfBytes = await AfipFiscalPdfService.generateFiscalInvoice(
+                sale: salePayload,
+                electronicInvoice: _lastElectronicInvoice!,
+                businessSettings: settings,
+                paperSize: localTerminal.pdfPaperSize,
+              );
+            } else {
+              pdfBytes = await A4SplitPdfService.generateA4SingleReceipt(
+                sale: salePayload,
+                businessName: settings.companyName ?? 'Mi Negocio',
+                businessAddress: settings.address,
+                phone: settings.phone ?? '',
+                cuit: settings.taxId ?? '',
+                vendorName: userName,
+                paperSize: localTerminal.pdfPaperSize,
+              );
+            }
 
             final ctx = AppConfig.navigatorKey.currentContext;
             if (ctx != null && ctx.mounted) {
@@ -1256,6 +1270,7 @@ class PosProvider with ChangeNotifier {
                 }
               }
             } else {
+              _activePrinter.electronicInvoice = _lastElectronicInvoice;
               await printerService!.printSaleTicket(
                 items: ticketItems,
                 total: saleTotal,

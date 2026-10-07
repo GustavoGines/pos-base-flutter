@@ -1209,7 +1209,10 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                TextButton.icon(
+                  Wrap(
+                    spacing: 4,
+                    children: [
+                      TextButton.icon(
                   key: const Key('select_customer_fiscal_btn'),
                   icon: const Icon(Icons.person_search, size: 16),
                   label: Text(_selectedCustomer == null ? 'Buscar Cliente' : 'Cambiar'),
@@ -1219,6 +1222,27 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                   ),
                   onPressed: _openCustomerPicker,
                 ),
+                      if (_selectedCustomer != null)
+                        TextButton.icon(
+                          icon: const Icon(Icons.person_remove, size: 16, color: Colors.red),
+                          label: const Text('Quitar', style: TextStyle(color: Colors.red)),
+                          style: TextButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          ),
+                          onPressed: () {
+                            setState(() {
+                              _selectedCustomer = null;
+                              _fiscalDocType = 99; // Consumidor Final
+                              _fiscalDocNumberCtrl.clear();
+                              _fiscalReceiverNameCtrl.clear();
+                              _fiscalTaxCondition = 'consumidor_final';
+                              _fiscalReceiverAddressCtrl.clear();
+                            });
+                          },
+                        ),
+                    ],
+                  ),
               ],
             ),
             const SizedBox(height: 8),

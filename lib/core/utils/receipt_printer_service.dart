@@ -338,7 +338,12 @@ class ReceiptPrinterService {
       final recDoc = invoice['doc_number']?.toString() ?? '---';
       final recCond = (invoice['receiver_tax_condition']?.toString() ?? 'CONSUMIDOR FINAL').toUpperCase();
       bytes += generator.text('CLIENTE: ${_cleanText(recName)}', styles: const PosStyles(align: PosAlign.left));
-      bytes += generator.text('DOC: $recDoc | IVA: $recCond', styles: const PosStyles(align: PosAlign.left));
+      if (targetPaperSize == PaperSize.mm58) {
+        bytes += generator.text('DOC: $recDoc', styles: const PosStyles(align: PosAlign.left));
+        bytes += generator.text('IVA: $recCond', styles: const PosStyles(align: PosAlign.left));
+      } else {
+        bytes += generator.text('DOC: $recDoc | IVA: $recCond', styles: const PosStyles(align: PosAlign.left));
+      }
     } else {
       bytes += generator.text(
         _cleanText('COMPROBANTE DE VENTA'),
@@ -561,7 +566,7 @@ class ReceiptPrinterService {
         try {
           bytes += generator.qrcode(
             qrData,
-            size: QRSize.size4,
+            size: targetPaperSize == PaperSize.mm58 ? QRSize.size3 : QRSize.size4,
             align: PosAlign.center,
           );
           bytes += generator.feed(1);
@@ -645,7 +650,36 @@ class ReceiptPrinterService {
       bytes += generator.text('CUIT: ${settings.taxId}', styles: const PosStyles(align: PosAlign.center, bold: true));
     }
     bytes += generator.hr(ch: '=');
-    bytes += generator.text('COMPROBANTE DE VENTA', styles: const PosStyles(align: PosAlign.center, bold: true));
+    final invoice = electronicInvoice;
+    if (invoice != null) {
+      final letter = invoice['voucher_letter']?.toString().toUpperCase() ?? 'B';
+      final nro = invoice['formatted_number']?.toString() ??
+          invoice['voucher_number']?.toString() ??
+          (receiptNumber ?? '00001');
+      bytes += generator.text(
+        'FACTURA $letter N° $nro',
+        styles: const PosStyles(
+          align: PosAlign.center,
+          bold: true,
+          height: PosTextSize.size1,
+          width: PosTextSize.size1,
+        ),
+      );
+      final pv = invoice['point_of_sale']?.toString().padLeft(5, '0') ?? '00001';
+      bytes += generator.text('PUNTO DE VENTA: $pv', styles: const PosStyles(align: PosAlign.center));
+      final recName = invoice['receiver_name']?.toString() ?? customerName ?? 'CONSUMIDOR FINAL';
+      final recDoc = invoice['doc_number']?.toString() ?? '---';
+      final recCond = (invoice['receiver_tax_condition']?.toString() ?? 'CONSUMIDOR FINAL').toUpperCase();
+      bytes += generator.text('CLIENTE: ${_cleanText(recName)}', styles: const PosStyles(align: PosAlign.left));
+      if (targetPaperSize == PaperSize.mm58) {
+        bytes += generator.text('DOC: $recDoc', styles: const PosStyles(align: PosAlign.left));
+        bytes += generator.text('IVA: $recCond', styles: const PosStyles(align: PosAlign.left));
+      } else {
+        bytes += generator.text('DOC: $recDoc | IVA: $recCond', styles: const PosStyles(align: PosAlign.left));
+      }
+    } else {
+      bytes += generator.text('COMPROBANTE DE VENTA', styles: const PosStyles(align: PosAlign.center, bold: true));
+    }
     bytes += generator.hr(ch: '-');
 
     final now = DateTime.now();
@@ -656,7 +690,7 @@ class ReceiptPrinterService {
     if (userName != null) {
       bytes += generator.text('CAJERO: ${_cleanText(userName).toUpperCase()}');
     }
-    if (customerName != null && customerName.isNotEmpty && customerName != 'Consumidor Final') {
+    if (invoice == null && customerName != null && customerName.isNotEmpty && customerName != 'Consumidor Final') {
       bytes += generator.text('CLIENTE: ${_cleanText(customerName).toUpperCase()}', styles: const PosStyles(bold: true));
     }
     bytes += generator.hr(ch: '-');
@@ -704,7 +738,52 @@ class ReceiptPrinterService {
     bytes += generator.feed(1);
     bytes += generator.text('UNIDADES VENDIDAS: $totalItemsQty', styles: const PosStyles(bold: true));
     bytes += generator.hr(ch: '-');
-    bytes += generator.text('*** NO VALIDO COMO FACTURA ***', styles: const PosStyles(align: PosAlign.center, bold: true));
+    if (invoice != null) {
+      final netAmount = invoice['net_amount'];
+      final ivaAmount = invoice['iva_amount'];
+      if (netAmount != null && ivaAmount != null) {
+        final net = double.tryParse(netAmount.toString()) ?? 0.0;
+        final iva = double.tryParse(ivaAmount.toString()) ?? 0.0;
+        bytes += generator.hr(ch: '-');
+        bytes += generator.row([
+          PosColumn(text: 'Neto Gravado:', width: 6, styles: const PosStyles(bold: true)),
+          PosColumn(text: '\$${net.toStringAsFixed(2)}', width: 6, styles: const PosStyles(align: PosAlign.right)),
+        ]);
+        bytes += generator.row([
+          PosColumn(text: 'IVA:', width: 6, styles: const PosStyles(bold: true)),
+          PosColumn(text: '\$${iva.toStringAsFixed(2)}', width: 6, styles: const PosStyles(align: PosAlign.right)),
+        ]);
+        bytes += generator.hr(ch: '-');
+      }
+
+      final cae = invoice['cae']?.toString() ?? '';
+      final caeVto = invoice['cae_expiration']?.toString() ?? '';
+      if (cae.isNotEmpty) {
+        bytes += generator.text('CAE: $cae', styles: const PosStyles(align: PosAlign.center, bold: true));
+        bytes += generator.text('VTO. CAE: $caeVto', styles: const PosStyles(align: PosAlign.center, bold: true));
+        bytes += generator.feed(1);
+      }
+
+      final qrData = invoice['qr_data']?.toString();
+      if (qrData != null && qrData.isNotEmpty) {
+        try {
+          bytes += generator.qrcode(
+            qrData,
+            size: targetPaperSize == PaperSize.mm58 ? QRSize.size3 : QRSize.size4,
+            align: PosAlign.center,
+          );
+          bytes += generator.feed(1);
+        } catch (e) {
+          debugPrint('Error imprimiendo QR fiscal térmico en split ticket: $e');
+        }
+      }
+      bytes += generator.text(
+        'Comprobante Autorizado por AFIP',
+        styles: const PosStyles(align: PosAlign.center, bold: true),
+      );
+    } else {
+      bytes += generator.text('*** NO VALIDO COMO FACTURA ***', styles: const PosStyles(align: PosAlign.center, bold: true));
+    }
     bytes += generator.feed(3);
     // Corte parcial entre los dos comprobantes
     bytes += generator.cut(mode: PosCutMode.partial);
