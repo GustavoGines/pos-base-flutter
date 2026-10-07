@@ -55,6 +55,10 @@ abstract class PosRemoteDataSource {
   Future<Uint8List> downloadTicketPdf(int saleId);
   /// Crea un Remito de Logística a partir de una venta procesada.
   Future<Map<String, dynamic>> createDeliveryNoteFromSale(int saleId, {String fulfillmentStatus = 'pending'});
+  /// Emite factura fiscal electrónica ARCA / AFIP (Factura A, B, C)
+  Future<Map<String, dynamic>> issueFiscalInvoice(int saleId, Map<String, dynamic> invoiceData);
+  /// Obtiene los datos fiscales de una factura autorizada
+  Future<Map<String, dynamic>?> fetchElectronicInvoice(int saleId);
 }
 
 class PosRemoteDataSourceImpl implements PosRemoteDataSource {
@@ -360,6 +364,61 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
       return json.decode(response.body);
     } catch (e) {
       print('=== API Error en createDeliveryNoteFromSale: $e ===');
+      rethrow;
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> issueFiscalInvoice(int saleId, Map<String, dynamic> invoiceData) async {
+    try {
+      final response = await client.post(
+        Uri.parse('$baseUrl/sales/$saleId/invoice'),
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: json.encode(invoiceData),
+      );
+
+      final decoded = json.decode(response.body);
+      if (response.statusCode == 200) {
+        return decoded is Map<String, dynamic> ? decoded : {'success': true, 'invoice': decoded};
+      } else if (response.statusCode == 504) {
+        // Contingencia / Timeout de AFIP (no bloquear al cajero)
+        return {
+          'success': false,
+          'contingency': true,
+          'message': decoded is Map ? (decoded['message'] ?? 'Servicio de AFIP no disponible. Venta registrada en contingencia.') : 'AFIP Timeout',
+          'invoice_status': 'pending',
+          'error': decoded is Map ? decoded['error'] : null,
+        };
+      } else {
+        final message = decoded is Map ? (decoded['message'] ?? 'Error al emitir factura fiscal (HTTP ${response.statusCode})') : 'Error HTTP ${response.statusCode}';
+        throw Exception(message);
+      }
+    } catch (e) {
+      print('=== API Error en issueFiscalInvoice: $e ===');
+      rethrow;
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>?> fetchElectronicInvoice(int saleId) async {
+    try {
+      final response = await client.get(
+        Uri.parse('$baseUrl/sales/$saleId/electronic-invoice'),
+        headers: {'Accept': 'application/json'},
+      );
+      if (response.statusCode == 200) {
+        final decoded = json.decode(response.body);
+        return decoded is Map ? (decoded['invoice'] as Map<String, dynamic>?) : null;
+      } else if (response.statusCode == 404) {
+        return null;
+      } else {
+        throw Exception('Error al obtener factura electrónica (HTTP ${response.statusCode})');
+      }
+    } catch (e) {
+      print('=== API Error en fetchElectronicInvoice: $e ===');
       rethrow;
     }
   }

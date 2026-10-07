@@ -21,6 +21,9 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
   late TextEditingController _phoneController;
   late TextEditingController _creditLimitController;
   late TextEditingController _deliveryAddressController;
+  late TextEditingController _fiscalAddressController;
+  int _documentType = 96;
+  String _taxCondition = 'consumidor_final';
   bool _isInternalAccount = false;
 
   bool _isSubmitting = false;
@@ -31,6 +34,8 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
     _nameController = TextEditingController(text: widget.customer?.name ?? '');
     _documentController =
         TextEditingController(text: widget.customer?.documentNumber ?? '');
+    _documentType = widget.customer?.documentType ?? 96;
+    _taxCondition = widget.customer?.taxCondition ?? 'consumidor_final';
     _phoneController =
         TextEditingController(text: widget.customer?.phone ?? '');
     _creditLimitController = TextEditingController(
@@ -39,6 +44,8 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
             : '');
     _deliveryAddressController =
         TextEditingController(text: widget.customer?.deliveryAddress ?? '');
+    _fiscalAddressController =
+        TextEditingController(text: widget.customer?.fiscalAddress ?? '');
     _isInternalAccount = widget.customer?.isInternalAccount ?? false;
   }
 
@@ -56,6 +63,11 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
           final payload = {
             'name': _nameController.text.trim(),
             'document_number': _documentController.text.trim(),
+            'document_type': _documentType,
+            'tax_condition': _taxCondition,
+            'fiscal_address': _fiscalAddressController.text.trim().isEmpty
+                ? null
+                : _fiscalAddressController.text.trim(),
             'phone': _phoneController.text.trim(),
             'credit_limit':
                 double.tryParse(_creditLimitController.text.trim()) ?? 0.0,
@@ -106,6 +118,7 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
     _phoneController.dispose();
     _creditLimitController.dispose();
     _deliveryAddressController.dispose();
+    _fiscalAddressController.dispose();
     super.dispose();
   }
 
@@ -124,18 +137,91 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
               TextFormField(
                 controller: _nameController,
                 decoration: const InputDecoration(
-                    labelText: 'Nombre *', border: OutlineInputBorder()),
+                    labelText: 'Nombre / Razón Social *',
+                    border: OutlineInputBorder()),
                 validator: (val) =>
                     val == null || val.isEmpty ? 'Requerido' : null,
               ),
               const SizedBox(height: 16),
+              DropdownButtonFormField<int>(
+                initialValue: _documentType,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  labelText: 'Tipo de Documento AFIP',
+                  border: OutlineInputBorder(),
+                ),
+                items: const [
+                  DropdownMenuItem(value: 80, child: Text('80 - CUIT')),
+                  DropdownMenuItem(value: 86, child: Text('86 - CUIL')),
+                  DropdownMenuItem(value: 96, child: Text('96 - DNI')),
+                  DropdownMenuItem(value: 99, child: Text('99 - Consumidor Final')),
+                ],
+                onChanged: (val) {
+                  if (val != null) setState(() => _documentType = val);
+                },
+              ),
+              const SizedBox(height: 16),
               TextFormField(
                 controller: _documentController,
+                decoration: InputDecoration(
+                  labelText: _documentType == 80
+                      ? 'CUIT (11 dígitos sin guiones) *'
+                      : (_documentType == 86
+                          ? 'CUIL (11 dígitos) *'
+                          : (_documentType == 96
+                              ? 'DNI (7 u 8 dígitos) *'
+                              : 'Nro de Documento')),
+                  border: const OutlineInputBorder(),
+                ),
+                keyboardType: TextInputType.number,
+                validator: (val) {
+                  final text = val?.trim() ?? '';
+                  if (text.isEmpty) {
+                    if (_documentType == 99) return null;
+                    return 'Requerido';
+                  }
+                  if (_documentType == 80 || _documentType == 86) {
+                    if (!AfipModulo11.validateCuit(text)) {
+                      return 'CUIT/CUIL inválido (Módulo 11)';
+                    }
+                  } else if (_documentType == 96) {
+                    if (!AfipModulo11.validateDni(text)) {
+                      return 'DNI inválido (7-8 dígitos)';
+                    }
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<String>(
+                initialValue: _taxCondition,
+                isExpanded: true,
                 decoration: const InputDecoration(
-                    labelText: 'Documento / DNI *',
+                  labelText: 'Condición frente al IVA',
+                  border: OutlineInputBorder(),
+                ),
+                items: const [
+                  DropdownMenuItem(
+                      value: 'consumidor_final', child: Text('Consumidor Final')),
+                  DropdownMenuItem(
+                      value: 'responsable_inscripto',
+                      child: Text('IVA Responsable Inscripto')),
+                  DropdownMenuItem(
+                      value: 'monotributo',
+                      child: Text('Responsable Monotributo')),
+                  DropdownMenuItem(
+                      value: 'exento', child: Text('IVA Exento')),
+                ],
+                onChanged: (val) {
+                  if (val != null) setState(() => _taxCondition = val);
+                },
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _fiscalAddressController,
+                decoration: const InputDecoration(
+                    labelText: 'Dirección Fiscal (AFIP) (Opcional)',
                     border: OutlineInputBorder()),
-                validator: (val) =>
-                    val == null || val.isEmpty ? 'Requerido' : null,
               ),
               const SizedBox(height: 16),
               TextFormField(

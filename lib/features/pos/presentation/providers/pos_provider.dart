@@ -5,8 +5,8 @@ import '../../domain/entities/payment_method.dart';
 import '../../domain/usecases/process_sale_usecase.dart';
 import '../../domain/usecases/search_products_usecase.dart';
 import '../../domain/repositories/pos_repository.dart';
-import '../../data/datasources/pos_remote_datasource.dart'
-    show ClosedShiftException;
+import '../../data/datasources/pos_remote_datasource.dart';
+import '../../data/repositories/pos_repository_impl.dart';
 import 'package:frontend_desktop/core/network/api_client.dart'
     show SessionExpiredException;
 import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
@@ -25,6 +25,18 @@ class PosProvider with ChangeNotifier {
   final SearchProductsUseCase searchProductsUseCase;
   final PosRepository repository;
   final ReceiptPrinterService? printerService;
+  final PosRemoteDataSource? remoteDataSource;
+
+  PosRemoteDataSource? get effectiveRemoteDataSource {
+    if (remoteDataSource != null) return remoteDataSource;
+    if (repository is PosRepositoryImpl) {
+      return (repository as PosRepositoryImpl).remoteDataSource;
+    }
+    return null;
+  }
+
+  Map<String, dynamic>? _lastElectronicInvoice;
+  Map<String, dynamic>? get lastElectronicInvoice => _lastElectronicInvoice;
 
   final List<CartItem> _cart = [];
   List<CartItem> get cart => _cart;
@@ -171,14 +183,69 @@ class PosProvider with ChangeNotifier {
     _lastSelectedCustomer = customer;
   }
 
+  Map<String, dynamic>? _pendingFiscalInvoiceData;
+  Map<String, dynamic>? get pendingFiscalInvoiceData => _pendingFiscalInvoiceData;
+  void setPendingFiscalInvoiceData(Map<String, dynamic>? data) {
+    _pendingFiscalInvoiceData = data;
+  }
+
   PosProvider({
     required this.processSaleUseCase,
     required this.searchProductsUseCase,
     required this.repository,
     this.printerService,
+    this.remoteDataSource,
   }) {
     loadPaymentMethods();
     _loadLastShippingCost();
+  }
+
+  /// Emite y solicita CAE a ARCA / AFIP para una venta
+  Future<Map<String, dynamic>?> issueFiscalInvoice(int saleId, Map<String, dynamic> invoiceData) async {
+    final ds = effectiveRemoteDataSource;
+    if (ds == null) {
+      debugPrint('No PosRemoteDataSource available to issue fiscal invoice');
+      return null;
+    }
+    try {
+      final result = await ds.issueFiscalInvoice(saleId, invoiceData);
+      if (result['success'] == true && result['invoice'] != null) {
+        _lastElectronicInvoice = result['invoice'] as Map<String, dynamic>;
+      } else if (result['contingency'] == true || result['invoice_status'] == 'pending') {
+        _lastElectronicInvoice = null;
+        _printerWarning = 'Factura en contingencia: ${result['message'] ?? 'AFIP fuera de servicio'}';
+      }
+      notifyListeners();
+      return result;
+    } catch (e) {
+      debugPrint('Error en issueFiscalInvoice: $e');
+      _lastElectronicInvoice = null;
+      _printerWarning = 'Error al autorizar con AFIP ($e). Venta en contingencia.';
+      notifyListeners();
+      return {
+        'success': false,
+        'contingency': true,
+        'message': e.toString(),
+        'invoice_status': 'pending',
+      };
+    }
+  }
+
+  /// Consulta la factura electrónica autorizada previamente
+  Future<Map<String, dynamic>?> fetchElectronicInvoice(int saleId) async {
+    final ds = effectiveRemoteDataSource;
+    if (ds == null) return null;
+    try {
+      final invoice = await ds.fetchElectronicInvoice(saleId);
+      if (invoice != null) {
+        _lastElectronicInvoice = invoice;
+        notifyListeners();
+      }
+      return invoice;
+    } catch (e) {
+      debugPrint('Error al obtener factura electrónica: $e');
+      return null;
+    }
   }
 
   Future<void> _loadLastShippingCost() async {
@@ -545,6 +612,25 @@ class PosProvider with ChangeNotifier {
         _lastDeliveryNote = result.deliveryNote;
       }
 
+      // Emisión de Factura Fiscal Electrónica ARCA/AFIP si fue requerida
+      _lastElectronicInvoice = null;
+      final fiscalData = _pendingFiscalInvoiceData;
+      if (fiscalData != null) {
+        final sId = int.tryParse(extractedSaleId);
+        if (sId != null) {
+          try {
+            final invRes = await issueFiscalInvoice(sId, fiscalData);
+            if (invRes != null && invRes['invoice'] != null) {
+              _lastElectronicInvoice = invRes['invoice'] as Map<String, dynamic>;
+            }
+          } catch (e) {
+            debugPrint('Contingencia fiscal en processCheckout: $e');
+            _lastElectronicInvoice = null;
+            _printerWarning = 'AFIP fuera de servicio. Se emite Ticket No Fiscal en contingencia.';
+          }
+        }
+      }
+
       // ── Lógica de Resolución de Pagos ──
       // Resolvemos los nombres de los métodos de pago para los comprobantes
       final resolvedPayments = (payments.map((p) {
@@ -632,6 +718,7 @@ class PosProvider with ChangeNotifier {
                 'payments': resolvedPayments,
                 'customer': {'name': 'Consumidor Final'}, 
                 'customer_name': 'Consumidor Final',
+                'electronic_invoice': _lastElectronicInvoice,
               },
               businessName: settings.companyName ?? 'Mi Negocio',
               businessAddress: settings.address,
@@ -753,6 +840,7 @@ class PosProvider with ChangeNotifier {
           }
         } else {
           // Ruta Térmica: leer hardware 100% del LocalTerminalProvider
+          _activePrinter.electronicInvoice = _lastElectronicInvoice;
           if (requiresDispatch && _lastDeliveryNote != null) {
             // SPLIT TICKET: Venta + Orden de Retiro en el mismo rollo
             await _activePrinter.printSplitTicket(
@@ -959,6 +1047,21 @@ class PosProvider with ChangeNotifier {
         shippingCost: shippingCost,
         checkDetails: checkDetails,
       );
+
+      // Emisión fiscal para venta pendiente si fue requerida
+      final fiscalData = _pendingFiscalInvoiceData;
+      if (fiscalData != null) {
+        try {
+          final invRes = await issueFiscalInvoice(saleId, fiscalData);
+          if (invRes != null && invRes['invoice'] != null) {
+            _lastElectronicInvoice = invRes['invoice'] as Map<String, dynamic>;
+          }
+        } catch (e) {
+          debugPrint('Contingencia fiscal en payPendingSale: $e');
+          _lastElectronicInvoice = null;
+          _printerWarning = 'AFIP fuera de servicio. Se emite Ticket No Fiscal en contingencia.';
+        }
+      }
 
       // Imprimir ticket si hay impresora configurada.
       // (Si items != null, significa que venimos desde processCheckout, que YA imprime el ticket)

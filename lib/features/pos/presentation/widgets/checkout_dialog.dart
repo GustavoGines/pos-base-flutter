@@ -167,6 +167,97 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
 
   Customer? _selectedCustomer;
 
+  // ── Facturación Fiscal ARCA / AFIP ──
+  bool _isFiscalMode = false;
+  int _voucherType = 6; // 1 = Factura A, 6 = Factura B, 11 = Factura C
+  int _fiscalDocType = 96; // 80 = CUIT, 86 = CUIL, 96 = DNI, 99 = Consumidor Final
+  final _fiscalDocNumberCtrl = TextEditingController();
+  final _fiscalReceiverNameCtrl = TextEditingController();
+  final _fiscalReceiverAddressCtrl = TextEditingController();
+  String _fiscalTaxCondition = 'consumidor_final';
+
+  @visibleForTesting
+  bool get isFiscalMode => _isFiscalMode;
+
+  @visibleForTesting
+  int get voucherType => _voucherType;
+
+  @visibleForTesting
+  bool get isFiscalValid => _isFiscalValid;
+
+  @visibleForTesting
+  void setFiscalModeForTesting(bool isFiscal) {
+    setState(() {
+      _isFiscalMode = isFiscal;
+      if (_isFiscalMode && _selectedCustomer != null) {
+        _syncCustomerWithFiscal(_selectedCustomer);
+      }
+    });
+  }
+
+  @visibleForTesting
+  void setVoucherTypeForTesting(int vType) {
+    _onVoucherTypeChanged(vType);
+  }
+
+  void _syncCustomerWithFiscal(Customer? c) {
+    if (c != null) {
+      _fiscalDocNumberCtrl.text = c.documentNumber;
+      _fiscalReceiverNameCtrl.text = c.name;
+      _fiscalReceiverAddressCtrl.text =
+          c.fiscalAddress ?? c.deliveryAddress ?? '';
+      _fiscalDocType = c.documentType;
+      _fiscalTaxCondition = c.taxCondition;
+      if (_voucherType == 1 && _fiscalDocType != 80) {
+        _fiscalDocType = 80;
+      }
+      if (_voucherType == 1 && _fiscalTaxCondition != 'responsable_inscripto') {
+        _fiscalTaxCondition = 'responsable_inscripto';
+      }
+    }
+  }
+
+  void _onVoucherTypeChanged(int newType) {
+    setState(() {
+      _voucherType = newType;
+      if (newType == 1) {
+        _fiscalDocType = 80;
+        _fiscalTaxCondition = 'responsable_inscripto';
+      } else if (newType == 6 || newType == 11) {
+        if (_fiscalDocType == 80 &&
+            _fiscalTaxCondition == 'responsable_inscripto' &&
+            _selectedCustomer == null) {
+          _fiscalDocType = 96;
+          _fiscalTaxCondition = 'consumidor_final';
+        }
+      }
+    });
+  }
+
+  bool get _isFiscalValid {
+    if (!_isFiscalMode) return true;
+    final docNum = _fiscalDocNumberCtrl.text.trim();
+    if (_voucherType == 1) {
+      if (_fiscalDocType != 80) return false;
+      if (!AfipModulo11.isValid(docNum)) return false;
+      if (_fiscalTaxCondition != 'responsable_inscripto') return false;
+      if (_fiscalReceiverNameCtrl.text.trim().isEmpty) return false;
+      return true;
+    } else if (_voucherType == 6 || _voucherType == 11) {
+      if ((_fiscalDocType == 80 || _fiscalDocType == 86) &&
+          !AfipModulo11.isValid(docNum)) {
+        return false;
+      }
+      if (_fiscalDocType == 96 &&
+          docNum.isNotEmpty &&
+          docNum.replaceAll(RegExp(r'\D'), '').length < 7) {
+        return false;
+      }
+      return true;
+    }
+    return true;
+  }
+
   bool get _isCartAlreadySurcharged {
     // En Modo Básico (toggle off) los surcharges de métodos de pago SIEMPRE aplican.
     final settings = context.read<SettingsProvider>().settings;
@@ -187,6 +278,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     _selectedCustomer = posProvider.lastSelectedCustomer;
     if (_selectedCustomer != null) {
       _deliveryAddressCtrl.text = _selectedCustomer!.deliveryAddress ?? '';
+      _syncCustomerWithFiscal(_selectedCustomer);
     }
 
     // Recuperar estado persistente si existe, o usar la memoria del último flete
@@ -256,6 +348,9 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     _shippingCostCtrl.dispose();
     _cashTenderedFocus.dispose();
     _deliveryAddressCtrl.dispose();
+    _fiscalDocNumberCtrl.dispose();
+    _fiscalReceiverNameCtrl.dispose();
+    _fiscalReceiverAddressCtrl.dispose();
     super.dispose();
   }
 
@@ -401,6 +496,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
 
   bool get _canSubmit {
     if (_pendingBalance > 0.01) return false; // Saldo pendiente sin cubrir
+    if (_isFiscalMode && !_isFiscalValid) return false;
     // Solo bloquear si el cajero ingresó un monto recibido MENOR al efectivo de la línea
     // y el campo fue modificado manualmente (no está vacío ni igual al monto de la línea)
     if (_cashRequired > 0) {
@@ -481,6 +577,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
           setState(() {
             _selectedCustomer = c;
             _deliveryAddressCtrl.text = c.deliveryAddress ?? '';
+            _syncCustomerWithFiscal(c);
           });
           context.read<PosProvider>().setLastSelectedCustomer(c);
           final localTerminal = context.read<LocalTerminalProvider>();
@@ -779,6 +876,32 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       return;
     }
 
+    Map<String, dynamic>? fiscalPayload;
+    if (_isFiscalMode) {
+      fiscalPayload = {
+        'voucher_type': _voucherType,
+        'doc_type': _fiscalDocType,
+        'doc_number': _fiscalDocNumberCtrl.text
+            .trim()
+            .replaceAll(RegExp(r'[^0-9]'), ''),
+        'receiver_name': _fiscalReceiverNameCtrl.text.trim().isNotEmpty
+            ? _fiscalReceiverNameCtrl.text.trim()
+            : (_selectedCustomer?.name ?? 'Consumidor Final'),
+        'receiver_address': _fiscalReceiverAddressCtrl.text.trim().isNotEmpty
+            ? _fiscalReceiverAddressCtrl.text.trim()
+            : (_selectedCustomer?.fiscalAddress ??
+                _selectedCustomer?.deliveryAddress ??
+                ''),
+        'receiver_tax_condition': _fiscalTaxCondition,
+      };
+    }
+
+    if (_isFiscalMode && fiscalPayload != null) {
+      try {
+        posProvider.setPendingFiscalInvoiceData(fiscalPayload);
+      } catch (_) {}
+    }
+
     if (isPending) {
       success = await posProvider.payPendingSale(
         saleId: widget.saleId!,
@@ -959,6 +1082,409 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     if (code.contains('transferencia')) return Icons.account_balance_outlined;
     if (code.contains('cuenta')) return Icons.book_outlined;
     return Icons.money;
+  }
+
+  Widget _buildFiscalInvoicingSection() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: _isFiscalMode
+            ? const Color(0xFFF0F4FF)
+            : const Color(0xFFF9FAFB),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: _isFiscalMode
+              ? const Color(0xFF90CDF4)
+              : const Color(0xFFE2E8F0),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    _isFiscalMode ? Icons.verified : Icons.receipt_long,
+                    color: _isFiscalMode ? Colors.indigo.shade700 : Colors.black54,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Tipo de Comprobante:',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                      color: _isFiscalMode ? Colors.indigo.shade900 : Colors.black87,
+                    ),
+                  ),
+                ],
+              ),
+              SegmentedButton<bool>(
+                key: const Key('fiscal_mode_segmented_button'),
+                style: const ButtonStyle(
+                  visualDensity: VisualDensity.compact,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                segments: const [
+                  ButtonSegment<bool>(
+                    value: false,
+                    label: Text('Ticket Común', style: TextStyle(fontSize: 12)),
+                  ),
+                  ButtonSegment<bool>(
+                    value: true,
+                    label: Text('Factura Fiscal ARCA', style: TextStyle(fontSize: 12)),
+                  ),
+                ],
+                selected: {_isFiscalMode},
+                onSelectionChanged: (newSelection) {
+                  setState(() {
+                    _isFiscalMode = newSelection.first;
+                    if (_isFiscalMode && _selectedCustomer != null) {
+                      _syncCustomerWithFiscal(_selectedCustomer);
+                    }
+                  });
+                },
+              ),
+            ],
+          ),
+          if (_isFiscalMode) ...[
+            const SizedBox(height: 12),
+            const Divider(height: 1),
+            const SizedBox(height: 12),
+            Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                const Text(
+                  'Comprobante:',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                ),
+                SegmentedButton<int>(
+                  key: const Key('voucher_type_segmented_button'),
+                  style: const ButtonStyle(
+                    visualDensity: VisualDensity.compact,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  segments: const [
+                    ButtonSegment<int>(value: 1, label: Text('Factura A')),
+                    ButtonSegment<int>(value: 6, label: Text('Factura B')),
+                    ButtonSegment<int>(value: 11, label: Text('Factura C')),
+                  ],
+                  selected: {_voucherType},
+                  onSelectionChanged: (newVal) {
+                    _onVoucherTypeChanged(newVal.first);
+                  },
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 320),
+                  child: Text(
+                    _selectedCustomer != null
+                        ? 'Cliente: ${_selectedCustomer!.name}'
+                        : 'Cliente no seleccionado (Consumidor Final)',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: _selectedCustomer != null
+                          ? Colors.indigo.shade800
+                          : Colors.grey.shade700,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                TextButton.icon(
+                  key: const Key('select_customer_fiscal_btn'),
+                  icon: const Icon(Icons.person_search, size: 16),
+                  label: Text(_selectedCustomer == null ? 'Buscar Cliente' : 'Cambiar'),
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  ),
+                  onPressed: _openCustomerPicker,
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final isNarrow = constraints.maxWidth < 360;
+                if (isNarrow) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      DropdownButtonFormField<int>(
+                        key: ValueKey('fiscal_doc_type_narrow_$_fiscalDocType'),
+                        initialValue: _fiscalDocType,
+                        isExpanded: true,
+                        isDense: true,
+                        decoration: InputDecoration(
+                          labelText: 'Tipo Doc',
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                        ),
+                        items: const [
+                          DropdownMenuItem(value: 80, child: Text('CUIT (80)', style: TextStyle(fontSize: 12))),
+                          DropdownMenuItem(value: 86, child: Text('CUIL (86)', style: TextStyle(fontSize: 12))),
+                          DropdownMenuItem(value: 96, child: Text('DNI (96)', style: TextStyle(fontSize: 12))),
+                          DropdownMenuItem(value: 99, child: Text('S/D (99)', style: TextStyle(fontSize: 12))),
+                        ],
+                        onChanged: _voucherType == 1
+                            ? null
+                            : (val) {
+                                if (val != null) setState(() => _fiscalDocType = val);
+                              },
+                      ),
+                      const SizedBox(height: 8),
+                      TextFormField(
+                        key: const Key('fiscal_doc_number_field'),
+                        controller: _fiscalDocNumberCtrl,
+                        keyboardType: TextInputType.number,
+                        decoration: InputDecoration(
+                          labelText: 'N° Documento',
+                          hintText: _fiscalDocType == 80 ? '20-12345678-9' : 'DNI / CUIT',
+                          isDense: true,
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                          suffixIcon: _buildDocValidationIcon(),
+                        ),
+                        onChanged: (_) => setState(() {}),
+                      ),
+                      _buildDocValidationFeedback(),
+                    ],
+                  );
+                }
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      width: 140,
+                      child: DropdownButtonFormField<int>(
+                        key: ValueKey('fiscal_doc_type_wide_$_fiscalDocType'),
+                        initialValue: _fiscalDocType,
+                        isExpanded: true,
+                        isDense: true,
+                        decoration: InputDecoration(
+                          labelText: 'Tipo Doc',
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                        ),
+                        items: const [
+                          DropdownMenuItem(value: 80, child: Text('CUIT (80)', style: TextStyle(fontSize: 12))),
+                          DropdownMenuItem(value: 86, child: Text('CUIL (86)', style: TextStyle(fontSize: 12))),
+                          DropdownMenuItem(value: 96, child: Text('DNI (96)', style: TextStyle(fontSize: 12))),
+                          DropdownMenuItem(value: 99, child: Text('S/D (99)', style: TextStyle(fontSize: 12))),
+                        ],
+                        onChanged: _voucherType == 1
+                            ? null
+                            : (val) {
+                                if (val != null) setState(() => _fiscalDocType = val);
+                              },
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          TextFormField(
+                            key: const Key('fiscal_doc_number_field'),
+                            controller: _fiscalDocNumberCtrl,
+                            keyboardType: TextInputType.number,
+                            decoration: InputDecoration(
+                              labelText: 'N° Documento',
+                              hintText: _fiscalDocType == 80 ? '20-12345678-9' : 'DNI / CUIT',
+                              isDense: true,
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                              suffixIcon: _buildDocValidationIcon(),
+                            ),
+                            onChanged: (_) => setState(() {}),
+                          ),
+                          _buildDocValidationFeedback(),
+                        ],
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+            const SizedBox(height: 8),
+            TextFormField(
+              key: const Key('fiscal_receiver_name_field'),
+              controller: _fiscalReceiverNameCtrl,
+              decoration: InputDecoration(
+                labelText: 'Razón Social / Nombre Receptor',
+                hintText: _voucherType == 1 ? 'Requerido para Factura A' : 'Consumidor Final',
+                isDense: true,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+              ),
+              onChanged: (_) => setState(() {}),
+            ),
+            const SizedBox(height: 8),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final isNarrow = constraints.maxWidth < 400;
+                if (isNarrow) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      DropdownButtonFormField<String>(
+                        key: ValueKey('fiscal_tax_condition_narrow_$_fiscalTaxCondition'),
+                        initialValue: _fiscalTaxCondition,
+                        isExpanded: true,
+                        isDense: true,
+                        decoration: InputDecoration(
+                          labelText: 'Condición IVA',
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                        ),
+                        items: const [
+                          DropdownMenuItem(value: 'consumidor_final', child: Text('Consumidor Final', style: TextStyle(fontSize: 12))),
+                          DropdownMenuItem(value: 'responsable_inscripto', child: Text('Resp. Inscripto', style: TextStyle(fontSize: 12))),
+                          DropdownMenuItem(value: 'monotributo', child: Text('Monotributo', style: TextStyle(fontSize: 12))),
+                          DropdownMenuItem(value: 'exento', child: Text('Exento', style: TextStyle(fontSize: 12))),
+                        ],
+                        onChanged: _voucherType == 1
+                            ? null
+                            : (val) {
+                                if (val != null) setState(() => _fiscalTaxCondition = val);
+                              },
+                      ),
+                      const SizedBox(height: 8),
+                      TextFormField(
+                        key: const Key('fiscal_receiver_address_field'),
+                        controller: _fiscalReceiverAddressCtrl,
+                        decoration: InputDecoration(
+                          labelText: 'Domicilio Fiscal (Opcional)',
+                          isDense: true,
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                        ),
+                      ),
+                    ],
+                  );
+                }
+                return Row(
+                  children: [
+                    Expanded(
+                      flex: 2,
+                      child: DropdownButtonFormField<String>(
+                        key: ValueKey('fiscal_tax_condition_wide_$_fiscalTaxCondition'),
+                        initialValue: _fiscalTaxCondition,
+                        isExpanded: true,
+                        isDense: true,
+                        decoration: InputDecoration(
+                          labelText: 'Condición IVA',
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                        ),
+                        items: const [
+                          DropdownMenuItem(value: 'consumidor_final', child: Text('Consumidor Final', style: TextStyle(fontSize: 12))),
+                          DropdownMenuItem(value: 'responsable_inscripto', child: Text('Resp. Inscripto', style: TextStyle(fontSize: 12))),
+                          DropdownMenuItem(value: 'monotributo', child: Text('Monotributo', style: TextStyle(fontSize: 12))),
+                          DropdownMenuItem(value: 'exento', child: Text('Exento', style: TextStyle(fontSize: 12))),
+                        ],
+                        onChanged: _voucherType == 1
+                            ? null
+                            : (val) {
+                                if (val != null) setState(() => _fiscalTaxCondition = val);
+                              },
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      flex: 3,
+                      child: TextFormField(
+                        key: const Key('fiscal_receiver_address_field'),
+                        controller: _fiscalReceiverAddressCtrl,
+                        decoration: InputDecoration(
+                          labelText: 'Domicilio Fiscal (Opcional)',
+                          isDense: true,
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget? _buildDocValidationIcon() {
+    final text = _fiscalDocNumberCtrl.text.trim();
+    if (text.isEmpty) return null;
+
+    if (_fiscalDocType == 80 || _fiscalDocType == 86) {
+      final isValid = AfipModulo11.isValid(text);
+      return Icon(
+        isValid ? Icons.check_circle : Icons.error_outline,
+        color: isValid ? Colors.green : Colors.red,
+        size: 20,
+      );
+    }
+    return null;
+  }
+
+  Widget _buildDocValidationFeedback() {
+    final text = _fiscalDocNumberCtrl.text.trim();
+    if (_fiscalDocType == 80 || _fiscalDocType == 86) {
+      if (text.isEmpty) {
+        if (_voucherType == 1) {
+          return const Padding(
+            padding: EdgeInsets.only(top: 4, left: 4),
+            child: Text(
+              'Factura A requiere CUIT obligatorio',
+              style: TextStyle(color: Colors.red, fontSize: 11),
+            ),
+          );
+        }
+        return const SizedBox.shrink();
+      }
+      final isValid = AfipModulo11.isValid(text);
+      if (!isValid) {
+        return const Padding(
+          padding: EdgeInsets.only(top: 4, left: 4),
+          child: Text(
+            'CUIT/CUIL inválido (falla Módulo 11)',
+            key: Key('cuit_invalid_feedback'),
+            style: TextStyle(color: Colors.red, fontSize: 11),
+          ),
+        );
+      } else {
+        return const Padding(
+          padding: EdgeInsets.only(top: 4, left: 4),
+          child: Text(
+            'CUIT/CUIL válido (Módulo 11 OK)',
+            key: Key('cuit_valid_feedback'),
+            style: TextStyle(color: Colors.green, fontSize: 11),
+          ),
+        );
+      }
+    }
+    return const SizedBox.shrink();
   }
 
   @override
@@ -1753,6 +2279,10 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                 ),
                 const SizedBox(height: 24),
               ],
+
+              // ── Facturación Fiscal (ARCA / AFIP) ──
+              _buildFiscalInvoicingSection(),
+              const SizedBox(height: 16),
 
               // Options: Imprimir + Vista Previa
               Wrap(

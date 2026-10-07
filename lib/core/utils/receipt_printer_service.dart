@@ -65,6 +65,7 @@ class PrinterConfig {
 /// ```
 class ReceiptPrinterService {
   PrinterConfig config;
+  Map<String, dynamic>? electronicInvoice;
 
   // Singleton pattern
   static final ReceiptPrinterService _instance =
@@ -316,10 +317,34 @@ class ReceiptPrinterService {
     }
     bytes += generator.hr(ch: '=');
 
-    bytes += generator.text(
-      _cleanText('COMPROBANTE DE VENTA'),
-      styles: const PosStyles(align: PosAlign.center, bold: true),
-    );
+    final invoice = electronicInvoice;
+    if (invoice != null) {
+      final letter = invoice['voucher_letter']?.toString().toUpperCase() ?? 'B';
+      final nro = invoice['formatted_number']?.toString() ??
+          invoice['voucher_number']?.toString() ??
+          (receiptNumber ?? '00001');
+      bytes += generator.text(
+        'FACTURA $letter N° $nro',
+        styles: const PosStyles(
+          align: PosAlign.center,
+          bold: true,
+          height: PosTextSize.size1,
+          width: PosTextSize.size1,
+        ),
+      );
+      final pv = invoice['point_of_sale']?.toString().padLeft(5, '0') ?? '00001';
+      bytes += generator.text('PUNTO DE VENTA: $pv', styles: const PosStyles(align: PosAlign.center));
+      final recName = invoice['receiver_name']?.toString() ?? 'CONSUMIDOR FINAL';
+      final recDoc = invoice['doc_number']?.toString() ?? '---';
+      final recCond = (invoice['receiver_tax_condition']?.toString() ?? 'CONSUMIDOR FINAL').toUpperCase();
+      bytes += generator.text('CLIENTE: ${_cleanText(recName)}', styles: const PosStyles(align: PosAlign.left));
+      bytes += generator.text('DOC: $recDoc | IVA: $recCond', styles: const PosStyles(align: PosAlign.left));
+    } else {
+      bytes += generator.text(
+        _cleanText('COMPROBANTE DE VENTA'),
+        styles: const PosStyles(align: PosAlign.center, bold: true),
+      );
+    }
     bytes += generator.hr(ch: '-');
 
     // ── Fecha y número de comprobante ────────────────────────────
@@ -503,10 +528,57 @@ class ReceiptPrinterService {
       );
       bytes += generator.feed(1);
     }
-    bytes += generator.text(
-      '*** NO VALIDO COMO FACTURA ***',
-      styles: const PosStyles(align: PosAlign.center, bold: true),
-    );
+
+    if (invoice != null) {
+      // Desglose de impuestos para Factura A o B
+      final netAmount = invoice['net_amount'];
+      final ivaAmount = invoice['iva_amount'];
+      if (netAmount != null && ivaAmount != null) {
+        final net = double.tryParse(netAmount.toString()) ?? 0.0;
+        final iva = double.tryParse(ivaAmount.toString()) ?? 0.0;
+        bytes += generator.hr(ch: '-');
+        bytes += generator.row([
+          PosColumn(text: 'Neto Gravado:', width: 6, styles: const PosStyles(bold: true)),
+          PosColumn(text: '\$${net.toStringAsFixed(2)}', width: 6, styles: const PosStyles(align: PosAlign.right)),
+        ]);
+        bytes += generator.row([
+          PosColumn(text: 'IVA:', width: 6, styles: const PosStyles(bold: true)),
+          PosColumn(text: '\$${iva.toStringAsFixed(2)}', width: 6, styles: const PosStyles(align: PosAlign.right)),
+        ]);
+        bytes += generator.hr(ch: '-');
+      }
+
+      final cae = invoice['cae']?.toString() ?? '';
+      final caeVto = invoice['cae_expiration']?.toString() ?? '';
+      if (cae.isNotEmpty) {
+        bytes += generator.text('CAE: $cae', styles: const PosStyles(align: PosAlign.center, bold: true));
+        bytes += generator.text('VTO. CAE: $caeVto', styles: const PosStyles(align: PosAlign.center, bold: true));
+        bytes += generator.feed(1);
+      }
+
+      final qrData = invoice['qr_data']?.toString();
+      if (qrData != null && qrData.isNotEmpty) {
+        try {
+          bytes += generator.qrcode(
+            qrData,
+            size: QRSize.size4,
+            align: PosAlign.center,
+          );
+          bytes += generator.feed(1);
+        } catch (e) {
+          debugPrint('Error imprimiendo QR fiscal térmico: $e');
+        }
+      }
+      bytes += generator.text(
+        'Comprobante Autorizado por AFIP',
+        styles: const PosStyles(align: PosAlign.center, bold: true),
+      );
+    } else {
+      bytes += generator.text(
+        '*** NO VALIDO COMO FACTURA ***',
+        styles: const PosStyles(align: PosAlign.center, bold: true),
+      );
+    }
 
     bytes += generator.feed(3);
     bytes += generator.cut();

@@ -64,8 +64,11 @@ class A4SplitPdfService {
       ),
     );
 
+    final isFiscal = sale['electronic_invoice'] != null;
+    final watermarkText = isFiscal ? 'ORIGINAL' : 'COMPROBANTE\nNO FISCAL';
+
     pw.Widget buildWatermarkTop(pw.Context ctx) => pw.Positioned.fill(
-      child: buildWatermark('COMPROBANTE\nNO FISCAL', isSmallOrder),
+      child: buildWatermark(watermarkText, isSmallOrder),
     );
 
     pw.Widget buildWatermarkBot(pw.Context ctx) => pw.Positioned.fill(
@@ -105,7 +108,7 @@ class A4SplitPdfService {
                         bottom: 0, left: 0, right: 0,
                         child: _buildFooter(businessName, isCompact: true, isSale: true),
                       ),
-                      buildWatermark('COMPROBANTE\nNO FISCAL', true),
+                      buildWatermark(watermarkText, true),
                     ],
                   ),
                 ),
@@ -255,7 +258,7 @@ class A4SplitPdfService {
                         child: pw.Transform.rotateBox(
                           angle: 0.6,
                           child: pw.Text(
-                            'COMPROBANTE\nNO FISCAL',
+                            sale['electronic_invoice'] != null ? 'ORIGINAL' : 'COMPROBANTE\nNO FISCAL',
                             textAlign: pw.TextAlign.center,
                             style: pw.TextStyle(
                               fontSize: 45,
@@ -295,36 +298,139 @@ class A4SplitPdfService {
     final tendered = double.tryParse(sale['tendered_amount']?.toString() ?? '0') ?? grandTotal;
     final change = double.tryParse(sale['change_amount']?.toString() ?? '0') ?? 0.0;
 
+    final invoice = sale['electronic_invoice'] as Map<String, dynamic>?;
+    final isFiscal = invoice != null;
+    final voucherLetter = isFiscal ? (invoice['voucher_letter']?.toString().toUpperCase() ?? 'B') : '';
+    final voucherCode = isFiscal ? (invoice['voucher_type'] ?? (voucherLetter == 'A' ? 1 : (voucherLetter == 'C' ? 11 : 6))) : 0;
+    final formattedNumber = isFiscal
+        ? (invoice['formatted_number']?.toString() ??
+            invoice['voucher_number']?.toString() ??
+            sale['id'].toString().padLeft(8, '0'))
+        : sale['id'].toString().padLeft(8, '0');
+    final docNumber = isFiscal ? (invoice['doc_number']?.toString() ?? '---') : '';
+    final taxCondition = isFiscal
+        ? (invoice['receiver_tax_condition']?.toString() ?? 'Consumidor Final')
+        : '';
+    final receiverName = isFiscal
+        ? (invoice['receiver_name']?.toString() ??
+            (sale['customer']?['name'] ?? sale['customer_name'] ?? 'Consumidor Final'))
+        : (sale['customer']?['name'] ?? sale['customer_name'] ?? 'Consumidor Final');
+    final receiverAddress = isFiscal ? invoice['receiver_address']?.toString() : null;
+
     return [
-      // ENCABEZADO VENTA (Estilo Laravel: Izquierda/Derecha)
-      pw.Row(
-        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-        crossAxisAlignment: pw.CrossAxisAlignment.start,
-        children: [
-          pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
-            children: [
-              pw.Text(businessName.toUpperCase(), style: pw.TextStyle(color: _secondary, fontSize: 18, fontWeight: pw.FontWeight.bold)),
-              if (businessAddress != null && businessAddress.isNotEmpty)
-                pw.Text(businessAddress, style: const pw.TextStyle(color: PdfColors.black, fontSize: 10)),
-              if (phone.isNotEmpty)
-                pw.Text('Tel: $phone', style: const pw.TextStyle(color: PdfColors.black, fontSize: 9)),
-              if (cuit.isNotEmpty)
-                pw.Text('CUIT: $cuit', style: const pw.TextStyle(color: PdfColors.black, fontSize: 9)),
-            ]
-          ),
-          pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.end,
-            children: [
-              pw.Text('COMPROBANTE DE VENTA', style: pw.TextStyle(color: PdfColors.black, fontSize: 16, fontWeight: pw.FontWeight.bold)),
-              pw.Text('Número: ${sale['id'].toString().padLeft(8, '0')}', style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold)),
-              pw.Text('Fecha: ${_dateFmt.format(DateTime.now())}', style: const pw.TextStyle(fontSize: 9)),
-              pw.Text('Cajero: ${vendorName?.toUpperCase() ?? 'CAJA'}', style: const pw.TextStyle(fontSize: 9)),
-            ]
-          )
-        ],
-      ),
-      
+      // ENCABEZADO VENTA
+      if (isFiscal)
+        pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.Expanded(
+              flex: 4,
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Text(businessName.toUpperCase(),
+                      style: pw.TextStyle(
+                          color: _secondary,
+                          fontSize: isCompact ? 13 : 16,
+                          fontWeight: pw.FontWeight.bold)),
+                  if (businessAddress != null && businessAddress.isNotEmpty)
+                    pw.Text(businessAddress,
+                        style: const pw.TextStyle(color: PdfColors.black, fontSize: 9)),
+                  if (phone.isNotEmpty)
+                    pw.Text('Tel: $phone',
+                        style: const pw.TextStyle(color: PdfColors.black, fontSize: 8)),
+                  if (cuit.isNotEmpty)
+                    pw.Text('CUIT: $cuit',
+                        style: const pw.TextStyle(color: PdfColors.black, fontSize: 8)),
+                ],
+              ),
+            ),
+            // Cuadro de Letra Fiscal AFIP
+            pw.Container(
+              width: isCompact ? 34 : 40,
+              height: isCompact ? 34 : 40,
+              decoration: pw.BoxDecoration(
+                border: pw.Border.all(color: PdfColors.black, width: 1.5),
+                borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
+              ),
+              child: pw.Column(
+                mainAxisAlignment: pw.MainAxisAlignment.center,
+                children: [
+                  pw.Text(voucherLetter,
+                      style: pw.TextStyle(
+                          fontSize: isCompact ? 16 : 20, fontWeight: pw.FontWeight.bold)),
+                  pw.Text('COD. ${voucherCode.toString().padLeft(2, '0')}',
+                      style: pw.TextStyle(
+                          fontSize: isCompact ? 5 : 6, fontWeight: pw.FontWeight.bold)),
+                ],
+              ),
+            ),
+            pw.Expanded(
+              flex: 4,
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.end,
+                children: [
+                  pw.Text('FACTURA $voucherLetter',
+                      style: pw.TextStyle(
+                          color: PdfColors.black,
+                          fontSize: isCompact ? 13 : 16,
+                          fontWeight: pw.FontWeight.bold)),
+                  pw.Text('Comp. N°: $formattedNumber',
+                      style: pw.TextStyle(
+                          fontSize: isCompact ? 9 : 10, fontWeight: pw.FontWeight.bold)),
+                  pw.Text('Fecha: ${_dateFmt.format(DateTime.now())}',
+                      style: const pw.TextStyle(fontSize: 8)),
+                  pw.Text('Cajero: ${vendorName?.toUpperCase() ?? 'CAJA'}',
+                      style: const pw.TextStyle(fontSize: 8)),
+                ],
+              ),
+            ),
+          ],
+        )
+      else
+        pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Text(businessName.toUpperCase(),
+                    style: pw.TextStyle(
+                        color: _secondary,
+                        fontSize: 18,
+                        fontWeight: pw.FontWeight.bold)),
+                if (businessAddress != null && businessAddress.isNotEmpty)
+                  pw.Text(businessAddress,
+                      style: const pw.TextStyle(color: PdfColors.black, fontSize: 10)),
+                if (phone.isNotEmpty)
+                  pw.Text('Tel: $phone',
+                      style: const pw.TextStyle(color: PdfColors.black, fontSize: 9)),
+                if (cuit.isNotEmpty)
+                  pw.Text('CUIT: $cuit',
+                      style: const pw.TextStyle(color: PdfColors.black, fontSize: 9)),
+              ],
+            ),
+            pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.end,
+              children: [
+                pw.Text('COMPROBANTE DE VENTA',
+                    style: pw.TextStyle(
+                        color: PdfColors.black,
+                        fontSize: 16,
+                        fontWeight: pw.FontWeight.bold)),
+                pw.Text('Número: ${sale['id'].toString().padLeft(8, '0')}',
+                    style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold)),
+                pw.Text('Fecha: ${_dateFmt.format(DateTime.now())}',
+                    style: const pw.TextStyle(fontSize: 9)),
+                pw.Text('Cajero: ${vendorName?.toUpperCase() ?? 'CAJA'}',
+                    style: const pw.TextStyle(fontSize: 9)),
+              ],
+            ),
+          ],
+        ),
+
       pw.SizedBox(height: 5),
       pw.Divider(thickness: 2, color: PdfColors.black),
       pw.SizedBox(height: 8),
@@ -342,19 +448,39 @@ class A4SplitPdfService {
               child: pw.Column(
                 crossAxisAlignment: pw.CrossAxisAlignment.start,
                 children: [
-                  pw.Text('CLIENTE', style: pw.TextStyle(fontSize: 8, color: _textGrey, fontWeight: pw.FontWeight.bold)),
+                  pw.Text('CLIENTE / RECEPTOR',
+                      style: pw.TextStyle(
+                          fontSize: 8,
+                          color: _textGrey,
+                          fontWeight: pw.FontWeight.bold)),
                   pw.SizedBox(height: 2),
-                  pw.Text((sale['customer']?['name'] ?? sale['customer_name'] ?? 'Consumidor Final').toUpperCase(), style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold)),
+                  pw.Text(receiverName.toUpperCase(),
+                      style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold)),
+                  if (isFiscal && docNumber.isNotEmpty && docNumber != '---') ...[
+                    pw.SizedBox(height: 2),
+                    pw.Text('Doc / CUIT: $docNumber | IVA: ${taxCondition.toUpperCase()}',
+                        style: const pw.TextStyle(fontSize: 8)),
+                  ],
+                  if (isFiscal && receiverAddress != null && receiverAddress.isNotEmpty) ...[
+                    pw.SizedBox(height: 1),
+                    pw.Text('Domicilio Fiscal: $receiverAddress',
+                        style: const pw.TextStyle(fontSize: 8)),
+                  ],
                 ],
               ),
             ),
             pw.Expanded(
               child: pw.Column(
-                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                crossAxisAlignment: pw.CrossAxisAlignment.end,
                 children: [
-                  pw.Text('CAJERO', style: pw.TextStyle(fontSize: 8, color: _textGrey, fontWeight: pw.FontWeight.bold)),
+                  pw.Text('CAJERO',
+                      style: pw.TextStyle(
+                          fontSize: 8,
+                          color: _textGrey,
+                          fontWeight: pw.FontWeight.bold)),
                   pw.SizedBox(height: 2),
-                  pw.Text((vendorName ?? 'SISTEMA').toUpperCase(), style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold)),
+                  pw.Text((vendorName ?? 'SISTEMA').toUpperCase(),
+                      style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold)),
                 ],
               ),
             ),
@@ -505,6 +631,22 @@ class A4SplitPdfService {
               child: pw.Column(
                 crossAxisAlignment: pw.CrossAxisAlignment.end,
                 children: [
+                  if (isFiscal && invoice['net_amount'] != null) ...[
+                    pw.Row(
+                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                      children: [
+                        pw.Text('Neto Gravado:', style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey700)),
+                        pw.Text(_currencyFmt.format(double.tryParse(invoice['net_amount'].toString()) ?? 0.0), style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey700)),
+                      ],
+                    ),
+                    pw.Row(
+                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                      children: [
+                        pw.Text('IVA:', style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey700)),
+                        pw.Text(_currencyFmt.format(double.tryParse(invoice['iva_amount']?.toString() ?? '0') ?? 0.0), style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey700)),
+                      ],
+                    ),
+                  ],
                   if (shippingCost > 0)
                     pw.Row(
                       mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
@@ -549,6 +691,45 @@ class A4SplitPdfService {
           ]
         ),
         
+        if (isFiscal) ...[
+          pw.SizedBox(height: isCompact ? 6 : 10),
+          pw.Container(
+            padding: const pw.EdgeInsets.all(6),
+            decoration: pw.BoxDecoration(
+              border: pw.Border.all(color: PdfColors.grey400, width: 0.8),
+              borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
+            ),
+            child: pw.Row(
+              crossAxisAlignment: pw.CrossAxisAlignment.center,
+              children: [
+                if (invoice['qr_data'] != null && invoice['qr_data'].toString().isNotEmpty)
+                  pw.BarcodeWidget(
+                    barcode: pw.Barcode.qrCode(),
+                    data: invoice['qr_data'].toString(),
+                    width: isCompact ? 50 : 65,
+                    height: isCompact ? 50 : 65,
+                  ),
+                pw.SizedBox(width: 10),
+                pw.Expanded(
+                  child: pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Text('CAE N°: ${invoice['cae'] ?? '---'}',
+                          style: pw.TextStyle(fontSize: isCompact ? 8 : 10, fontWeight: pw.FontWeight.bold)),
+                      pw.SizedBox(height: 2),
+                      pw.Text('Fecha de Vto. de CAE: ${invoice['cae_expiration'] ?? '---'}',
+                          style: pw.TextStyle(fontSize: isCompact ? 7 : 9, color: PdfColors.grey700)),
+                      pw.SizedBox(height: 2),
+                      pw.Text('Comprobante Autorizado por AFIP (RG 4892)',
+                          style: pw.TextStyle(fontSize: isCompact ? 6 : 7, color: PdfColors.grey600, fontStyle: pw.FontStyle.italic)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+
         pw.SizedBox(height: isCompact ? 8 : 15),
     ];
   }
