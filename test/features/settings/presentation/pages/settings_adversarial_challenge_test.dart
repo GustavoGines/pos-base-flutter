@@ -1,4 +1,4 @@
-import 'dart:convert';
+
 import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -141,7 +141,7 @@ class FakeAdversarialSettingsProvider extends ChangeNotifier implements Settings
     Map<String, dynamic>? integrationsData,
   })  : _settings = settings ??
             const BusinessSettings(
-              id: 1,
+              
               companyName: 'Challenger POS Megastore',
               address: 'Av. Corrientes 1234, CABA',
               phone: '+54 11 5555-5555',
