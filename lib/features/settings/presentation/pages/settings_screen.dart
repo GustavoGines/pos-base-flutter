@@ -1296,7 +1296,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
           controller: _mpExpCtrl,
-          initiallyExpanded: _mpQrEnabled,
+          initiallyExpanded: false,
           tilePadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
           childrenPadding: const EdgeInsets.only(left: 24, right: 24, bottom: 24),
           trailing: Switch(
@@ -1513,7 +1513,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
           controller: _afipExpCtrl,
-          initiallyExpanded: _afipEnabled,
+          initiallyExpanded: false,
           tilePadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
           childrenPadding: const EdgeInsets.only(left: 24, right: 24, bottom: 24),
           trailing: Switch(
