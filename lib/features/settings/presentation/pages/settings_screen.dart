@@ -1367,27 +1367,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const Divider(height: 1),
             const SizedBox(height: 16),
 
-            // Switch Habilitar Cobro QR
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Habilitar cobro con QR',
-                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
-              subtitle: Text(
-                'Genera códigos QR dinámicos en la pantalla de cobro para tus clientes',
-                style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
-              ),
-              value: _mpQrEnabled,
-              activeThumbColor: const Color(0xFF009EE3),
-              onChanged: (val) {
-                setState(() => _mpQrEnabled = val);
-                if (val) {
-                  _mpExpCtrl.expand();
-                } else {
-                  _mpExpCtrl.collapse();
-                }
-              },
-            ),
-            const SizedBox(height: 16),
 
             // Access Token
             TextFormField(
@@ -1605,27 +1584,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const Divider(height: 1),
             const SizedBox(height: 16),
 
-            // Switch Habilitar Facturación ARCA
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Habilitar Facturación ARCA',
-                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
-              subtitle: Text(
-                'Activa la emisión fiscal electrónica en el punto de venta',
-                style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
-              ),
-              value: _afipEnabled,
-              activeThumbColor: const Color(0xFF2E7D32),
-              onChanged: (val) {
-                setState(() => _afipEnabled = val);
-                if (val) {
-                  _afipExpCtrl.expand();
-                } else {
-                  _afipExpCtrl.collapse();
-                }
-              },
-            ),
-            const SizedBox(height: 16),
 
             // CUIT y Punto de Venta (responsive: column si es estrecho)
             if (isNarrow) ...[
