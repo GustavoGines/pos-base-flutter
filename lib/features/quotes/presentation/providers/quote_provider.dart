@@ -196,9 +196,44 @@ class QuoteProvider extends ChangeNotifier {
         priceList: activePriceListKey,  // ← guardamos la lista usada en BD
       );
 
-      _lastCreatedQuote = quote;
+      // Enriquecer items del quote con los datos del carrito en memoria (product e imageUrl)
+      final cartByProductId = {for (final c in _cart) c.product.id: c};
+      final cartByName = {for (final c in _cart) c.product.name: c};
+      final enrichedItems = quote.items.map((it) {
+        if (it.product != null && it.imageUrl != null) return it;
+        final match = (it.productId != null ? cartByProductId[it.productId] : null) ?? cartByName[it.productName];
+        if (match != null) {
+          return QuoteItem(
+            productId: it.productId ?? match.product.id,
+            productName: it.productName,
+            unitPrice: it.unitPrice,
+            quantity: it.quantity,
+            subtotal: it.subtotal,
+            product: it.product ?? match.product,
+            imageUrl: it.imageUrl ?? match.product.imageUrl,
+          );
+        }
+        return it;
+      }).toList();
+
+      final enrichedQuote = Quote(
+        id: quote.id,
+        quoteNumber: quote.quoteNumber,
+        status: quote.status,
+        subtotal: quote.subtotal,
+        total: quote.total,
+        customerName: quote.customerName,
+        customerPhone: quote.customerPhone,
+        notes: quote.notes,
+        validUntil: quote.validUntil,
+        items: enrichedItems,
+        createdAt: quote.createdAt,
+        priceList: quote.priceList,
+      );
+
+      _lastCreatedQuote = enrichedQuote;
       _cart.clear();
-      return quote;
+      return enrichedQuote;
     } catch (e) {
       _errorMessage = e.toString().replaceFirst('Exception: ', '');
       return null;

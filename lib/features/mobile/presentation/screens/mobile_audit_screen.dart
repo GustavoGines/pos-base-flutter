@@ -382,7 +382,7 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
 
     await showDialog(
       context: context,
-      barrierDismissible: false,
+      barrierDismissible: true,
       builder: (ctx) {
         return StatefulBuilder(
           builder: (context, setStateDialog) {
@@ -477,7 +477,7 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                       key: const Key('product_share_button'),
                       icon: const Icon(Icons.share_outlined, color: Colors.blueAccent),
                       tooltip: 'Compartir producto',
-                      onPressed: () => ProductShareHelper.shareProduct(productToEdit),
+                      onPressed: () => ProductShareHelper.shareProduct(productToEdit, context: context),
                     ),
                   ],
                 ],
@@ -1249,7 +1249,7 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                             key: const Key('mobile_share_button'),
                             icon: const Icon(Icons.share, color: Colors.blueAccent),
                             tooltip: 'Compartir',
-                            onPressed: () => ProductShareHelper.shareProduct(_scannedProduct!),
+                            onPressed: () => ProductShareHelper.shareProduct(_scannedProduct!, context: context),
                           ),
                         ],
                       ),

@@ -100,7 +100,7 @@ class AdversarialSettingsProvider extends ChangeNotifier implements SettingsProv
   @override
   BusinessSettings? get settings => const BusinessSettings(
         licensePlanType: 'premium',
-        features: FeatureFlags(suppliers: true, multiRubro: true, multiplePrices: true),
+        features: FeatureFlags(quotes: true, suppliers: true, multiRubro: true, multiplePrices: true),
       );
   @override
   bool get isLoading => false;
@@ -109,7 +109,7 @@ class AdversarialSettingsProvider extends ChangeNotifier implements SettingsProv
   @override
   String get currentPlan => 'premium';
   @override
-  FeatureFlags get features => const FeatureFlags(suppliers: true, multiRubro: true, multiplePrices: true);
+  FeatureFlags get features => const FeatureFlags(quotes: true, suppliers: true, multiRubro: true, multiplePrices: true);
   @override
   bool hasFeature(String featureName) => true;
   @override

@@ -107,7 +107,7 @@ void main() {
       expect(find.byIcon(Icons.inventory_2_outlined), findsOneWidget);
     });
 
-    testWidgets('Mode "grid_medium": Renders expanded CachedNetworkImage with BoxFit.cover for product with image, and fallback icon for item without image', (tester) async {
+    testWidgets('Mode "grid_medium": Renders expanded CachedNetworkImage with BoxFit.contain for product with image, and fallback icon for item without image', (tester) async {
       await tester.pumpWidget(buildTestApp(
         products: [productWithImage, weighedProductNoImage],
         viewMode: 'grid_medium',
@@ -119,12 +119,12 @@ void main() {
       final image = tester.widget<CachedNetworkImage>(imageFinder);
       expect(image.width, double.infinity);
       expect(image.height, double.infinity);
-      expect(image.fit, BoxFit.cover);
+      expect(image.fit, BoxFit.contain);
 
       expect(find.byIcon(Icons.scale_rounded), findsOneWidget);
     });
 
-    testWidgets('Mode "grid_large": Renders expanded CachedNetworkImage with BoxFit.cover for product with image, and fallback icon for item without image', (tester) async {
+    testWidgets('Mode "grid_large": Renders expanded CachedNetworkImage with BoxFit.contain for product with image, and fallback icon for item without image', (tester) async {
       await tester.pumpWidget(buildTestApp(
         products: [productWithImage, unitProductNoImage, weighedProductNoImage],
         viewMode: 'grid_large',
@@ -136,7 +136,7 @@ void main() {
       final image = tester.widget<CachedNetworkImage>(imageFinder);
       expect(image.width, double.infinity);
       expect(image.height, double.infinity);
-      expect(image.fit, BoxFit.cover);
+      expect(image.fit, BoxFit.contain);
 
       expect(find.byIcon(Icons.inventory_2_outlined), findsOneWidget);
       expect(find.byIcon(Icons.scale_rounded), findsOneWidget);

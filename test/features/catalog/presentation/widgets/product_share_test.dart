@@ -1,4 +1,4 @@
-import 'dart:io';
+﻿import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -80,13 +80,12 @@ void main() {
 
       final text = ProductShareHelper.formatProductShareText(product);
 
-      expect(text, contains('📦 *Yerba Mate Premium 1kg*'));
-      expect(text, contains('💰 Precio: \$2.800'));
-      expect(text, contains('🏷️ Código de Barras: 7791234567890'));
-      expect(text, contains('🔢 Código Interno: YM01'));
-      expect(text, contains('📂 Categoría: Almacén'));
-      expect(text, contains('🏭 Marca: Taragüi'));
-      expect(text, isNot(contains('⚖️ Venta por Peso')));
+      expect(text, contains('*Yerba Mate Premium 1kg*'));
+      expect(text, contains('- Precio: \$2.800'));
+
+      expect(text, contains('- Categoría: Almacén'));
+      expect(text, contains('- Marca: Taragüi'));
+      expect(text, isNot(contains('- Producto por peso')));
     });
 
     test('formatProductShareText formats minimally without crashing for basic product', () {
@@ -103,13 +102,13 @@ void main() {
 
       final text = ProductShareHelper.formatProductShareText(product);
 
-      expect(text, contains('📦 *Pan Casero*'));
-      expect(text, contains('💰 Precio: \$900'));
-      expect(text, contains('🔢 Código Interno: PAN01'));
-      expect(text, contains('⚖️ Venta por Peso'));
-      expect(text, isNot(contains('🏷️ Código de Barras:')));
-      expect(text, isNot(contains('📂 Categoría:')));
-      expect(text, isNot(contains('🏭 Marca:')));
+      expect(text, contains('*Pan Casero*'));
+      expect(text, contains('- Precio: \$900'));
+
+      expect(text, contains('- Producto por peso'));
+      expect(text, isNot(contains('- Código de Barras:')));
+      expect(text, isNot(contains('- Categoría:')));
+      expect(text, isNot(contains('- Marca:')));
     });
 
     test('shareProduct shares text-only when product has no imageUrl', () async {
@@ -142,7 +141,7 @@ void main() {
       expect(sharedFiles, isNull);
       expect(sharedText, isNotNull);
       expect(sharedText, contains('Arroz 1kg'));
-      expect(sharedSubject, equals('Arroz 1kg'));
+      expect(sharedSubject, isNull);
     });
 
     test('shareProduct downloads image to temp file and shares XFiles when imageUrl is valid', () async {
@@ -190,7 +189,7 @@ void main() {
         expect(File(sharedFiles!.first.path).existsSync(), isTrue);
         expect(await File(sharedFiles!.first.path).readAsBytes(), equals(mockPngBytes));
         expect(sharedText, contains('Galletitas Chocolate'));
-        expect(sharedSubject, equals('Galletitas Chocolate'));
+        expect(sharedSubject, isNull);
       } finally {
         if (testTempDir.existsSync()) {
           testTempDir.deleteSync(recursive: true);
@@ -234,7 +233,7 @@ void main() {
       expect(sharedFiles, isNull);
       expect(fallbackText, isNotNull);
       expect(fallbackText, contains('Leche Descremada'));
-      expect(fallbackSubject, equals('Leche Descremada'));
+      expect(fallbackSubject, isNull);
     });
 
     test('formatProductShareText includes wholesale and card prices when available', () {
@@ -254,10 +253,10 @@ void main() {
 
       final text = ProductShareHelper.formatProductShareText(product);
 
-      expect(text, contains('📦 *Taladro Percutor 750W*'));
-      expect(text, contains('💰 Precio: \$35.000'));
-      expect(text, contains('🏷️ Mayorista: \$30.000'));
-      expect(text, contains('💳 Tarjeta: \$38.500'));
+      expect(text, contains('*Taladro Percutor 750W*'));
+      expect(text, contains('- Precio: \$35.000'));
+      expect(text, contains('- Mayorista: \$30.000'));
+      expect(text, contains('- Tarjeta: \$38.500'));
     });
 
     test('shareProduct resolves relative imageUrl via resolveImageUrl and shares image with caption text', () async {
@@ -376,3 +375,4 @@ void main() {
     });
   });
 }
+

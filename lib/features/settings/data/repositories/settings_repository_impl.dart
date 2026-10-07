@@ -23,6 +23,21 @@ class SettingsRepositoryImpl implements SettingsRepository {
   }
 
   @override
+  Future<Map<String, dynamic>> fetchIntegrations() async {
+    return await remoteDataSource.fetchIntegrations();
+  }
+
+  @override
+  Future<bool> updateIntegrations(Map<String, dynamic> data) async {
+    return await remoteDataSource.updateIntegrations(data);
+  }
+
+  @override
+  Future<Map<String, dynamic>> testMercadoPagoConnection({String? mpAccessToken}) async {
+    return await remoteDataSource.testMercadoPagoConnection(mpAccessToken: mpAccessToken);
+  }
+
+  @override
   void updateBaseUrl(String newUrl) {
     if (remoteDataSource is SettingsRemoteDataSourceImpl) {
       (remoteDataSource as SettingsRemoteDataSourceImpl).updateBaseUrl(newUrl);

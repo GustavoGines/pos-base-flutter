@@ -71,7 +71,7 @@ class FakeSettingsProvider extends ChangeNotifier implements SettingsProvider {
       : _settings = settings ??
             const BusinessSettings(
               licensePlanType: 'premium',
-              features: FeatureFlags(suppliers: true),
+              features: FeatureFlags(quotes: true, suppliers: true),
             );
 
   @override

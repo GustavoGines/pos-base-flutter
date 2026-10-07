@@ -94,7 +94,7 @@ class StressSettingsProvider extends ChangeNotifier implements SettingsProvider 
           companyName: 'Challenger POS',
           logoUrl: 'http://pos.test/storage/logo.png',
           licensePlanType: 'premium',
-          features: FeatureFlags(suppliers: true, multiRubro: true, multiplePrices: true),
+          features: FeatureFlags(quotes: true, suppliers: true, multiRubro: true, multiplePrices: true),
         );
   }
 
@@ -103,7 +103,7 @@ class StressSettingsProvider extends ChangeNotifier implements SettingsProvider 
       companyName: 'Challenger POS',
       logoUrl: newLogo,
       licensePlanType: 'premium',
-      features: const FeatureFlags(suppliers: true, multiRubro: true, multiplePrices: true),
+      features: const FeatureFlags(quotes: true, suppliers: true, multiRubro: true, multiplePrices: true),
     );
     notifyListeners();
   }
@@ -117,7 +117,7 @@ class StressSettingsProvider extends ChangeNotifier implements SettingsProvider 
   @override
   String get currentPlan => 'premium';
   @override
-  FeatureFlags get features => const FeatureFlags(suppliers: true, multiRubro: true, multiplePrices: true);
+  FeatureFlags get features => const FeatureFlags(quotes: true, suppliers: true, multiRubro: true, multiplePrices: true);
   @override
   bool hasFeature(String featureName) => true;
   @override

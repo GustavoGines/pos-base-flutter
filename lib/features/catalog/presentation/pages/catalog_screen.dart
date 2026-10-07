@@ -217,8 +217,10 @@ class _CatalogScreenState extends State<CatalogScreen> {
                       ),
                     );
 
-                    final actionRow = Row(
-                      mainAxisSize: MainAxisSize.min,
+                    final actionRow = Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         if (_selectedProducts.isNotEmpty) ...[
                           PopupMenuButton<int>(
@@ -360,23 +362,19 @@ class _CatalogScreenState extends State<CatalogScreen> {
                         children: [
                           searchWidget,
                           const SizedBox(height: 12),
-                          SingleChildScrollView(
-                            scrollDirection: Axis.horizontal,
-                            child: actionRow,
-                          ),
+                          actionRow,
                         ],
                       );
                     }
 
                     return Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Expanded(child: searchWidget),
                         const SizedBox(width: 12),
                         Flexible(
-                          child: SingleChildScrollView(
-                            scrollDirection: Axis.horizontal,
-                            child: actionRow,
-                          ),
+                          flex: 2,
+                          child: actionRow,
                         ),
                       ],
                     );
@@ -770,7 +768,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
   void _showStockAdjustment(BuildContext ctx, CatalogProvider provider, Product p) {
     showDialog(
       context: ctx,
-      barrierDismissible: false,
+      barrierDismissible: true,
       builder: (_) => StockAdjustmentDialog(provider: provider, product: p),
     );
   }
@@ -778,7 +776,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
   void _showProductForm(BuildContext ctx, CatalogProvider provider, {Product? product}) {
     showDialog(
       context: ctx,
-      barrierDismissible: false,
+      barrierDismissible: true,
       builder: (_) => ProductFormDialog(
         provider: provider,
         product: product,
@@ -834,13 +832,24 @@ class _CatalogScreenState extends State<CatalogScreen> {
     }
     if (!mounted) return;
 
+    int defaultCat = -1;
+    if (_selectedProducts.isNotEmpty) {
+      final firstCatId = _selectedProducts.values.first.category?.id;
+      if (firstCatId != null &&
+          _selectedProducts.values.every((p) => p.category?.id == firstCatId) &&
+          provider.categories.any((c) => c.id == firstCatId)) {
+        defaultCat = firstCatId;
+      }
+    }
+
     int? newCategory = await showDialog<int?>(
       context: context,
       builder: (ctx) {
-        int? selected;
+        int? selected = defaultCat;
         return AlertDialog(
           title: const Text('Asignar Categoría'),
           content: DropdownButtonFormField<int?>(
+            initialValue: selected,
             decoration: const InputDecoration(labelText: 'Elige la nueva categoría', border: OutlineInputBorder()),
             items: [
               const DropdownMenuItem(value: -1, child: Text('— Quitar Categoría —')),
@@ -886,6 +895,16 @@ class _CatalogScreenState extends State<CatalogScreen> {
   }
 
   Future<void> _bulkGenerateQuote() async {
+    final hasQuotes = context.read<SettingsProvider>().features.quotes;
+    if (!hasQuotes) {
+      PlanUpgradeDialog.show(
+        context,
+        featureName: 'Generador de Presupuestos',
+        description: 'La creación de presupuestos es exclusiva del Plan Premium.',
+      );
+      return;
+    }
+
     final products = _selectedProducts.values.toList();
     if (products.isEmpty) return;
 
@@ -938,13 +957,24 @@ class _CatalogScreenState extends State<CatalogScreen> {
     }
     if (!mounted) return;
 
+    int defaultBrand = -1;
+    if (_selectedProducts.isNotEmpty) {
+      final firstBrandId = _selectedProducts.values.first.brand?.id;
+      if (firstBrandId != null &&
+          _selectedProducts.values.every((p) => p.brand?.id == firstBrandId) &&
+          provider.brands.any((b) => b.id == firstBrandId)) {
+        defaultBrand = firstBrandId;
+      }
+    }
+
     int? newBrand = await showDialog<int?>(
       context: context,
       builder: (ctx) {
-        int? selected;
+        int? selected = defaultBrand;
         return AlertDialog(
           title: const Text('Asignar Marca en Lote'),
           content: DropdownButtonFormField<int?>(
+            initialValue: selected,
             decoration: const InputDecoration(
               labelText: 'Elige la nueva marca',
               border: OutlineInputBorder(),
@@ -993,6 +1023,16 @@ class _CatalogScreenState extends State<CatalogScreen> {
   }
 
   Future<void> _bulkUpdateSupplier(CatalogProvider provider) async {
+    final hasSuppliers = context.read<SettingsProvider>().features.suppliers;
+    if (!hasSuppliers) {
+      PlanUpgradeDialog.show(
+        context,
+        featureName: 'Gestión de Proveedores',
+        description: 'La asignación y filtrado por proveedores es exclusiva del Plan Premium.',
+      );
+      return;
+    }
+
     final auth = await AdminPinDialog.verify(context, action: 'Asignar Proveedor en Lote', permissionKey: 'manage_catalog');
     if (!auth) return;
 
@@ -1005,15 +1045,26 @@ class _CatalogScreenState extends State<CatalogScreen> {
     
     final supplierProv = context.read<SupplierProvider>();
 
+    int defaultSupplier = -1;
+    if (_selectedProducts.isNotEmpty) {
+      final firstSupplierId = _selectedProducts.values.first.supplier?.id;
+      if (firstSupplierId != null &&
+          _selectedProducts.values.every((p) => p.supplier?.id == firstSupplierId) &&
+          supplierProv.suppliers.any((s) => s.id == firstSupplierId)) {
+        defaultSupplier = firstSupplierId;
+      }
+    }
+
     int? newSupplier = await showDialog<int?>(
       context: context,
       builder: (ctx) {
-        int? selected;
+        int? selected = defaultSupplier;
         return AlertDialog(
           title: const Text('Asignar Proveedor'),
           content: supplierProv.isLoading 
             ? const SizedBox(height: 50, child: Center(child: CircularProgressIndicator()))
             : DropdownButtonFormField<int?>(
+            initialValue: selected,
             decoration: const InputDecoration(labelText: 'Elige el nuevo proveedor', border: OutlineInputBorder()),
             items: [
               const DropdownMenuItem(value: -1, child: Text('— Quitar Proveedor —')),
@@ -1823,32 +1874,47 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
       ),
     );
 
-    final actionsWidget = Wrap(
-      crossAxisAlignment: WrapCrossAlignment.center,
-      spacing: 8,
-      runSpacing: 4,
+    final imageWithBadge = Stack(
+      clipBehavior: Clip.none,
       children: [
-        OutlinedButton.icon(
-          onPressed: _isUploadingImage ? null : _pickProductImage,
-          icon: const Icon(Icons.photo_library_outlined, size: 14),
-          label: Text(hasAny ? 'Cambiar Foto' : 'Seleccionar Foto', style: const TextStyle(fontSize: 11)),
-        ),
+        imageCard,
         if (hasAny)
-          IconButton(
-            tooltip: 'Quitar foto',
-            icon: const Icon(Icons.close, color: Colors.red, size: 16),
-            onPressed: _isUploadingImage
-                ? null
-                : () {
-                    setState(() {
-                      _selectedImagePath = null;
-                      _selectedImageBytes = null;
-                      _selectedImageName = null;
-                      _deleteExistingImage = true;
-                    });
-                  },
+          Positioned(
+            top: -6,
+            right: -6,
+            child: IconButton(
+              tooltip: 'Quitar foto',
+              icon: const Icon(Icons.close, color: Colors.white, size: 14),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+              style: IconButton.styleFrom(
+                backgroundColor: Colors.red.shade600,
+                foregroundColor: Colors.white,
+                elevation: 2,
+                shadowColor: Colors.black38,
+                padding: EdgeInsets.zero,
+                minimumSize: const Size(24, 24),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              onPressed: _isUploadingImage
+                  ? null
+                  : () {
+                      setState(() {
+                        _selectedImagePath = null;
+                        _selectedImageBytes = null;
+                        _selectedImageName = null;
+                        _deleteExistingImage = true;
+                      });
+                    },
+            ),
           ),
       ],
+    );
+
+    final actionsWidget = OutlinedButton.icon(
+      onPressed: _isUploadingImage ? null : _pickProductImage,
+      icon: const Icon(Icons.photo_library_outlined, size: 14),
+      label: Text(hasAny ? 'Cambiar Foto' : 'Seleccionar Foto', style: const TextStyle(fontSize: 11)),
     );
 
     if (isNarrow) {
@@ -1862,7 +1928,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
         ),
         child: Column(
           children: [
-            imageCard,
+            imageWithBadge,
             const SizedBox(height: 6),
             actionsWidget,
           ],
@@ -1880,7 +1946,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
       ),
       child: Row(
         children: [
-          imageCard,
+          imageWithBadge,
           const SizedBox(width: 16),
           Expanded(
             child: Column(
@@ -1977,6 +2043,43 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
       ),
     );
 
+    final imageWithBadge = Stack(
+      clipBehavior: Clip.none,
+      children: [
+        imageCard,
+        if (hasAny)
+          Positioned(
+            top: -6,
+            right: -6,
+            child: IconButton(
+              tooltip: 'Quitar foto',
+              icon: const Icon(Icons.close, color: Colors.white, size: 14),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+              style: IconButton.styleFrom(
+                backgroundColor: Colors.red.shade600,
+                foregroundColor: Colors.white,
+                elevation: 2,
+                shadowColor: Colors.black38,
+                padding: EdgeInsets.zero,
+                minimumSize: const Size(24, 24),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              onPressed: _isUploadingImage
+                  ? null
+                  : () {
+                      setState(() {
+                        _selectedImagePath = null;
+                        _selectedImageBytes = null;
+                        _selectedImageName = null;
+                        _deleteExistingImage = true;
+                      });
+                    },
+            ),
+          ),
+      ],
+    );
+
     final actionsWidget = OutlinedButton.icon(
       onPressed: _isUploadingImage ? null : _pickProductImage,
       icon: const Icon(Icons.photo_library_outlined, size: 13),
@@ -2003,29 +2106,9 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.grey.shade800),
           ),
           const SizedBox(height: 6),
-          imageCard,
+          imageWithBadge,
           const SizedBox(height: 6),
           actionsWidget,
-          if (hasAny) ...[
-            const SizedBox(height: 4),
-            IconButton(
-              tooltip: 'Quitar foto',
-              icon: const Icon(Icons.close, color: Colors.red, size: 16),
-              visualDensity: VisualDensity.compact,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(),
-              onPressed: _isUploadingImage
-                  ? null
-                  : () {
-                      setState(() {
-                        _selectedImagePath = null;
-                        _selectedImageBytes = null;
-                        _selectedImageName = null;
-                        _deleteExistingImage = true;
-                      });
-                    },
-            ),
-          ],
         ],
       ),
     );

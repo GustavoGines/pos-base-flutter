@@ -53,6 +53,12 @@ class SettingsProvider with ChangeNotifier {
   String? _errorMessage;
   String? get errorMessage => _errorMessage;
 
+  Map<String, dynamic>? _integrations;
+  Map<String, dynamic>? get integrations => _integrations;
+
+  bool _isLoadingIntegrations = false;
+  bool get isLoadingIntegrations => _isLoadingIntegrations;
+
   SettingsProvider({
     required this.getSettingsUseCase,
     required this.updateSettingsUseCase,
@@ -216,6 +222,56 @@ class SettingsProvider with ChangeNotifier {
     if (updateSettingsUseCase.repository is SettingsRepositoryImpl) {
       (updateSettingsUseCase.repository as SettingsRepositoryImpl).updateBaseUrl(newUrl);
     }
+  }
+
+  Future<Map<String, dynamic>?> loadIntegrations({bool isSilent = false}) async {
+    if (!isSilent) {
+      _isLoadingIntegrations = true;
+      notifyListeners();
+    }
+    try {
+      final repo = updateSettingsUseCase.repository;
+      final data = await repo.fetchIntegrations();
+      _integrations = data;
+      return data;
+    } catch (e) {
+      debugPrint('[SettingsProvider] Error al cargar integraciones: $e');
+      if (!isSilent) {
+        _errorMessage = e.toString().replaceAll('Exception: ', '');
+      }
+      return null;
+    } finally {
+      if (!isSilent) {
+        _isLoadingIntegrations = false;
+        notifyListeners();
+      }
+    }
+  }
+
+  Future<bool> saveIntegrations(Map<String, dynamic> data) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      final repo = updateSettingsUseCase.repository;
+      final success = await repo.updateIntegrations(data);
+      if (success) {
+        await loadIntegrations(isSilent: true);
+        await loadSettings(isSilent: true);
+      }
+      return success;
+    } catch (e) {
+      _errorMessage = e.toString().replaceAll('Exception: ', '');
+      return false;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<Map<String, dynamic>> testMercadoPagoConnection({String? mpAccessToken}) async {
+    final repo = updateSettingsUseCase.repository;
+    return await repo.testMercadoPagoConnection(mpAccessToken: mpAccessToken);
   }
 
   Future<String> activateLicense(String baseUrl, String licenseKey) async {

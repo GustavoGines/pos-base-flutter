@@ -102,7 +102,7 @@ class _MercadoPagoQrDialogState extends State<MercadoPagoQrDialog> {
       }
 
       final body = <String, dynamic>{
-        'pos_id': widget.terminalId.isNotEmpty ? widget.terminalId : 'caja-1',
+        'pos_id': widget.terminalId.isNotEmpty ? widget.terminalId : 'CAJA1',
         'amount': widget.amount,
         'items': itemsPayload,
         if (_externalReference != null && _externalReference!.isNotEmpty)

@@ -239,7 +239,7 @@ class PosQuickAccessCatalogView extends StatelessWidget {
                           imageUrl: product.imageUrl!,
                           width: double.infinity,
                           height: double.infinity,
-                          fit: BoxFit.cover,
+                          fit: BoxFit.contain,
                           placeholder: (context, url) => const Center(
                             child: SizedBox(
                               width: 18,

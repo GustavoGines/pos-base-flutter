@@ -211,9 +211,9 @@ void main() {
         final images = find.byType(CachedNetworkImage);
         expect(images, findsWidgets);
 
-        // Verify CachedNetworkImage fit is BoxFit.cover and width/height are double.infinity
+        // Verify CachedNetworkImage fit is BoxFit.contain and width/height are double.infinity
         final firstImage = tester.widget<CachedNetworkImage>(images.first);
-        expect(firstImage.fit, BoxFit.cover);
+        expect(firstImage.fit, BoxFit.contain);
         expect(firstImage.width, double.infinity);
         expect(firstImage.height, double.infinity);
 
@@ -245,7 +245,7 @@ void main() {
         expect(images, findsWidgets);
 
         final firstImage = tester.widget<CachedNetworkImage>(images.first);
-        expect(firstImage.fit, BoxFit.cover);
+        expect(firstImage.fit, BoxFit.contain);
         expect(firstImage.width, double.infinity);
         expect(firstImage.height, double.infinity);
       });
@@ -407,7 +407,7 @@ void main() {
       );
     }
 
-    testWidgets('PosWatermarkLogo renders store icon fallback with 0.05 opacity when logoUrl is null', (tester) async {
+    testWidgets('PosWatermarkLogo renders store icon fallback with 0.1 opacity when logoUrl is null', (tester) async {
       final mockSettings = MockSettingsProvider(
         initialSettings: const BusinessSettings(
           companyName: 'Comercio Sin Logo',
@@ -424,7 +424,7 @@ void main() {
       final opacityFinder = find.byType(Opacity);
       expect(opacityFinder, findsOneWidget);
       final opacityWidget = tester.widget<Opacity>(opacityFinder);
-      expect(opacityWidget.opacity, 0.05);
+      expect(opacityWidget.opacity, 0.1);
 
       expect(find.byIcon(Icons.storefront_rounded), findsOneWidget);
       expect(find.byType(CachedNetworkImage), findsNothing);

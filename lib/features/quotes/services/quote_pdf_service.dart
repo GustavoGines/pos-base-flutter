@@ -1,5 +1,7 @@
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'package:frontend_desktop/core/utils/image_url_resolver.dart';
+import 'package:frontend_desktop/core/config/app_config.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
@@ -26,11 +28,54 @@ class QuotePdfService {
     _thumbnailCache.clear();
   }
 
+  static Future<String?> _resolveEffectiveBaseUrl(String? baseUrl) async {
+    if (baseUrl != null && baseUrl.trim().isNotEmpty) {
+      return baseUrl.trim();
+    }
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedUrl = prefs.getString('pos_api');
+      if (savedUrl != null && savedUrl.trim().isNotEmpty) {
+        return savedUrl.trim();
+      }
+    } catch (_) {}
+    return AppConfig.kApiBaseUrl;
+  }
+
+  static File? _checkLocalFile(String pathOrUrl) {
+    final trimmed = pathOrUrl.trim();
+    if (trimmed.startsWith('file:')) {
+      try {
+        final uri = Uri.parse(trimmed);
+        final file = File.fromUri(uri);
+        if (file.existsSync()) return file;
+      } catch (_) {
+        try {
+          final cleanPath = trimmed.replaceFirst(RegExp(r'^file:[/\\]+'), '');
+          final file = File(cleanPath);
+          if (file.existsSync()) return file;
+        } catch (_) {}
+      }
+      return null;
+    }
+
+    if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
+      try {
+        final file = File(trimmed);
+        if (file.existsSync()) {
+          return file;
+        }
+      } catch (_) {}
+    }
+    return null;
+  }
+
   /// Precarga asíncronamente el logotipo del negocio para el encabezado del PDF.
   static Future<pw.MemoryImage?> preloadLogo({
     String? logoUrl,
     Uint8List? logoBytes,
     http.Client? httpClient,
+    String? baseUrl,
   }) async {
     if (logoBytes != null && logoBytes.isNotEmpty) {
       try {
@@ -41,7 +86,32 @@ class QuotePdfService {
       }
     }
     if (logoUrl == null || logoUrl.trim().isEmpty) return null;
-    final resolvedUrl = resolveImageUrl(logoUrl) ?? logoUrl.trim();
+    final trimmed = logoUrl.trim();
+
+    if (_thumbnailCache.containsKey(trimmed)) {
+      return _thumbnailCache[trimmed];
+    }
+
+    // 1. Verificar si es archivo local antes de resolveImageUrl
+    final localFile = _checkLocalFile(trimmed);
+    if (localFile != null && localFile.existsSync()) {
+      try {
+        final bytes = await localFile.readAsBytes();
+        if (bytes.isNotEmpty) {
+          final memImg = pw.MemoryImage(bytes);
+          _thumbnailCache[trimmed] = memImg;
+          return memImg;
+        }
+      } catch (e) {
+        debugPrint('Error al leer archivo local de logotipo ($trimmed): $e');
+      }
+      _thumbnailCache[trimmed] = null;
+      return null;
+    }
+
+    // 2. Resolver con baseUrl dinámica
+    final effectiveBase = await _resolveEffectiveBaseUrl(baseUrl);
+    final resolvedUrl = resolveImageUrl(trimmed, baseUrl: effectiveBase) ?? trimmed;
 
     if (_thumbnailCache.containsKey(resolvedUrl)) {
       return _thumbnailCache[resolvedUrl];
@@ -54,15 +124,17 @@ class QuotePdfService {
         final response = await client.get(uri).timeout(const Duration(seconds: 4));
         if (response.statusCode == 200 && response.bodyBytes.isNotEmpty) {
           final memImg = pw.MemoryImage(response.bodyBytes);
+          _thumbnailCache[trimmed] = memImg;
           _thumbnailCache[resolvedUrl] = memImg;
           return memImg;
         }
       } else {
-        final file = File(resolvedUrl);
+        final file = _checkLocalFile(resolvedUrl) ?? File(resolvedUrl);
         if (file.existsSync()) {
           final bytes = await file.readAsBytes();
           if (bytes.isNotEmpty) {
             final memImg = pw.MemoryImage(bytes);
+            _thumbnailCache[trimmed] = memImg;
             _thumbnailCache[resolvedUrl] = memImg;
             return memImg;
           }
@@ -73,6 +145,7 @@ class QuotePdfService {
     } finally {
       if (httpClient == null) client.close();
     }
+    _thumbnailCache[trimmed] = null;
     _thumbnailCache[resolvedUrl] = null;
     return null;
   }
@@ -81,16 +154,50 @@ class QuotePdfService {
   static Future<Map<int, pw.MemoryImage>> preloadThumbnails(
     Quote quote, {
     http.Client? httpClient,
+    String? baseUrl,
   }) async {
     final Map<int, pw.MemoryImage> imageMap = {};
     final client = httpClient ?? http.Client();
+    final effectiveBase = await _resolveEffectiveBaseUrl(baseUrl);
 
     try {
       for (var i = 0; i < quote.items.length; i++) {
         final item = quote.items[i];
         final rawUrl = item.imageUrl ?? item.product?.imageUrl;
         if (rawUrl == null || rawUrl.trim().isEmpty) continue;
-        final url = resolveImageUrl(rawUrl) ?? rawUrl.trim();
+        final trimmedRaw = rawUrl.trim();
+
+        if (_thumbnailCache.containsKey(trimmedRaw)) {
+          final cached = _thumbnailCache[trimmedRaw];
+          if (cached != null) {
+            imageMap[i] = cached;
+          }
+          continue;
+        }
+
+        // 1. Verificar si es archivo local antes de resolveImageUrl
+        final localFile = _checkLocalFile(trimmedRaw);
+        if (localFile != null && localFile.existsSync()) {
+          try {
+            final bytes = await localFile.readAsBytes();
+            if (bytes.isNotEmpty) {
+              final memImg = pw.MemoryImage(bytes);
+              _thumbnailCache[trimmedRaw] = memImg;
+              imageMap[i] = memImg;
+              continue;
+            } else {
+              _thumbnailCache[trimmedRaw] = null;
+              continue;
+            }
+          } catch (e) {
+            debugPrint('Error al leer archivo local ($trimmedRaw): $e');
+            _thumbnailCache[trimmedRaw] = null;
+            continue;
+          }
+        }
+
+        // 2. Resolver con dynamic baseUrl
+        final url = resolveImageUrl(trimmedRaw, baseUrl: effectiveBase) ?? trimmedRaw;
 
         if (_thumbnailCache.containsKey(url)) {
           final cached = _thumbnailCache[url];
@@ -106,28 +213,34 @@ class QuotePdfService {
             final response = await client.get(uri).timeout(const Duration(seconds: 4));
             if (response.statusCode == 200 && response.bodyBytes.isNotEmpty) {
               final memImg = pw.MemoryImage(response.bodyBytes);
+              _thumbnailCache[trimmedRaw] = memImg;
               _thumbnailCache[url] = memImg;
               imageMap[i] = memImg;
             } else {
+              _thumbnailCache[trimmedRaw] = null;
               _thumbnailCache[url] = null;
             }
           } else {
-            final file = File(url);
+            final file = _checkLocalFile(url) ?? File(url);
             if (file.existsSync()) {
               final bytes = await file.readAsBytes();
               if (bytes.isNotEmpty) {
                 final memImg = pw.MemoryImage(bytes);
+                _thumbnailCache[trimmedRaw] = memImg;
                 _thumbnailCache[url] = memImg;
                 imageMap[i] = memImg;
               } else {
+                _thumbnailCache[trimmedRaw] = null;
                 _thumbnailCache[url] = null;
               }
             } else {
+              _thumbnailCache[trimmedRaw] = null;
               _thumbnailCache[url] = null;
             }
           }
         } catch (e) {
           debugPrint('Error al precargar imagen de presupuesto ($url): $e');
+          _thumbnailCache[trimmedRaw] = null;
           _thumbnailCache[url] = null;
         }
       }
@@ -150,6 +263,7 @@ class QuotePdfService {
     String? vendorName,
     String? logoUrl,
     Uint8List? logoBytes,
+    String? baseUrl,
   }) async {
     final pdfBytes = await _buildPdf(
       quote: quote,
@@ -159,6 +273,7 @@ class QuotePdfService {
       vendorName: vendorName,
       logoUrl: logoUrl,
       logoBytes: logoBytes,
+      baseUrl: baseUrl,
     );
 
     // ── Guardar archivo ──────────────────────────────────────────────────
@@ -190,6 +305,7 @@ class QuotePdfService {
     String? vendorName,
     String? logoUrl,
     Uint8List? logoBytes,
+    String? baseUrl,
   }) async {
     showGeneralDialog(
       context: context,
@@ -242,6 +358,7 @@ class QuotePdfService {
                         vendorName: vendorName,
                         logoUrl: logoUrl,
                         logoBytes: logoBytes,
+                        baseUrl: baseUrl,
                       ),
                     ),
                   ),
@@ -312,11 +429,12 @@ class QuotePdfService {
     String? logoUrl,
     Uint8List? logoBytes,
     http.Client? httpClient,
+    String? baseUrl,
   }) async {
     // 1. Precarga asíncrona de miniaturas y logotipo antes del renderizado sincrónico de MultiPage
     final results = await Future.wait([
-      preloadThumbnails(quote, httpClient: httpClient),
-      preloadLogo(logoUrl: logoUrl, logoBytes: logoBytes, httpClient: httpClient),
+      preloadThumbnails(quote, httpClient: httpClient, baseUrl: baseUrl),
+      preloadLogo(logoUrl: logoUrl, logoBytes: logoBytes, httpClient: httpClient, baseUrl: baseUrl),
     ]);
     final itemThumbnails = results[0] as Map<int, pw.MemoryImage>;
     final logoImage = results[1] as pw.MemoryImage?;
@@ -333,8 +451,27 @@ class QuotePdfService {
 
     doc.addPage(
       pw.MultiPage(
-        pageFormat: PdfPageFormat.a4,
-        margin: const pw.EdgeInsets.all(32),
+        pageTheme: pw.PageTheme(
+          pageFormat: PdfPageFormat.a4,
+          margin: const pw.EdgeInsets.all(32),
+          buildBackground: (pw.Context context) {
+            if (logoImage == null) return pw.SizedBox();
+            return pw.FullPage(
+              ignoreMargins: false,
+              child: pw.Center(
+                child: pw.Opacity(
+                  opacity: 0.10,
+                  child: pw.Image(
+                    logoImage,
+                    width: 340,
+                    height: 340,
+                    fit: pw.BoxFit.contain,
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
         footer: (pw.Context ctx) {
           return pw.Column(
             mainAxisSize: pw.MainAxisSize.min,
@@ -389,14 +526,9 @@ class QuotePdfService {
                       children: [
                         if (logoImage != null)
                           pw.Container(
-                            width: 50,
-                            height: 50,
+                            width: 68,
+                            height: 68,
                             margin: const pw.EdgeInsets.only(right: 14),
-                            decoration: const pw.BoxDecoration(
-                              color: PdfColors.white,
-                              borderRadius: pw.BorderRadius.all(pw.Radius.circular(6)),
-                            ),
-                            padding: const pw.EdgeInsets.all(3),
                             child: pw.Center(
                               child: pw.Image(logoImage, fit: pw.BoxFit.contain),
                             ),
@@ -664,6 +796,7 @@ class QuotePdfService {
     String? logoUrl,
     Uint8List? logoBytes,
     http.Client? httpClient,
+    String? baseUrl,
   }) async {
     return generateQuotePdf(
       quote: quote,
@@ -674,6 +807,7 @@ class QuotePdfService {
       logoUrl: logoUrl,
       logoBytes: logoBytes,
       httpClient: httpClient,
+      baseUrl: baseUrl,
     );
   }
 

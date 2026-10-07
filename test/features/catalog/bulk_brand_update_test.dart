@@ -94,7 +94,7 @@ class FakeSettingsProvider extends ChangeNotifier implements SettingsProvider {
   @override
   BusinessSettings? get settings => const BusinessSettings(
         licensePlanType: 'premium',
-        features: FeatureFlags(suppliers: true, multiRubro: true),
+        features: FeatureFlags(quotes: true, suppliers: true, multiRubro: true),
       );
   @override
   bool get isLoading => false;
@@ -103,7 +103,7 @@ class FakeSettingsProvider extends ChangeNotifier implements SettingsProvider {
   @override
   String get currentPlan => 'premium';
   @override
-  FeatureFlags get features => const FeatureFlags(suppliers: true, multiRubro: true);
+  FeatureFlags get features => const FeatureFlags(quotes: true, suppliers: true, multiRubro: true);
   @override
   bool hasFeature(String featureName) => true;
   @override

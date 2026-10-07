@@ -25,6 +25,8 @@ import 'package:frontend_desktop/core/presentation/widgets/print_format_selector
 // ─── Helpers de presentación para métodos de pago ────────────────────────────
 
 IconData _iconForCode(String code) {
+  if (code.contains('mercadopago_qr')) return Icons.qr_code_scanner;
+  if (code.contains('mercadopago_point') || code.contains('point')) return Icons.point_of_sale;
   if (code.contains('efectivo') || code == 'cash') return Icons.payments_outlined;
   if (code.contains('debito') || code == 'card_debit') return Icons.credit_card;
   if (code.contains('credito') || code == 'card_credit') return Icons.credit_score;
@@ -34,6 +36,7 @@ IconData _iconForCode(String code) {
 }
 
 Color _colorForCode(String code) {
+  if (code.contains('mercadopago')) return const Color(0xFF009EE3);
   if (code.contains('efectivo') || code == 'cash') return Colors.green.shade700;
   if (code.contains('debito') || code == 'card_debit') return Colors.blue.shade700;
   if (code.contains('credito') || code == 'card_credit') return Colors.indigo.shade700;
@@ -43,6 +46,7 @@ Color _colorForCode(String code) {
 }
 
 Color _bgForCode(String code) {
+  if (code.contains('mercadopago')) return const Color(0xFFE1F5FE);
   if (code.contains('efectivo') || code == 'cash') return Colors.green.shade50;
   if (code.contains('debito') || code == 'card_debit') return Colors.blue.shade50;
   if (code.contains('credito') || code == 'card_credit') return Colors.indigo.shade50;

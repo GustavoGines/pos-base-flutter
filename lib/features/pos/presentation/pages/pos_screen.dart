@@ -2021,18 +2021,20 @@ class _PosScreenState extends State<PosScreen> {
 
           // Lista de ítems
           Expanded(
-            child: pos.cart.isEmpty
-                ? const Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      PosWatermarkLogo(size: 160),
-                      Center(
-                        child: Text('El carrito está vacío',
-                            style: TextStyle(color: Colors.grey)),
-                      ),
-                    ],
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                const FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: PosWatermarkLogo(size: 260),
+                ),
+                if (pos.cart.isEmpty)
+                  const Center(
+                    child: Text('El carrito está vacío',
+                        style: TextStyle(color: Colors.grey)),
                   )
-                : ListView.separated(
+                else
+                  ListView.separated(
                     itemCount: pos.cart.length,
                     separatorBuilder: (_, __) => const Divider(height: 1),
                     itemBuilder: (context, index) {
@@ -2206,6 +2208,8 @@ class _PosScreenState extends State<PosScreen> {
                       );
                     },
                   ),
+              ],
+            ),
           ),
 
           // Footer (Total + Doble Botón)
@@ -2592,46 +2596,49 @@ class _PosScreenState extends State<PosScreen> {
 
           // ── Grilla dinámica ────────────────────────────────────────────
           Expanded(
-            child: Consumer<CatalogProvider>(
-              builder: (context, catalog, child) {
-                if (catalog.isLoading) {
-                  return const Center(child: CircularProgressIndicator());
-                }
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                const FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: PosWatermarkLogo(size: 360),
+                ),
+                Consumer<CatalogProvider>(
+                  builder: (context, catalog, child) {
+                    if (catalog.isLoading) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
 
-                // Determinar qué mostrar: resultados de API o Acceso Rápido
-                final List<Product> displayItems;
-                if (_searchQuery.isEmpty) {
-                  // Acceso Rápido Inteligente:
-                  // Nivel 1: Por peso o sin código de barras (siempre arriba)
-                  // Nivel 2: Más vendidos primero
-                  final level1 = catalog.products
-                      .where((p) =>
-                          p.isSoldByWeight ||
-                          (p.barcode == null || p.barcode!.isEmpty))
-                      .toList();
+                    // Determinar qué mostrar: resultados de API o Acceso Rápido
+                    final List<Product> displayItems;
+                    if (_searchQuery.isEmpty) {
+                      // Acceso Rápido Inteligente:
+                      // Nivel 1: Por peso o sin código de barras (siempre arriba)
+                      // Nivel 2: Más vendidos primero
+                      final level1 = catalog.products
+                          .where((p) =>
+                              p.isSoldByWeight ||
+                              (p.barcode == null || p.barcode!.isEmpty))
+                          .toList();
 
-                  final others = catalog.products
-                      .where((p) =>
-                          !p.isSoldByWeight &&
-                          (p.barcode != null && p.barcode!.isNotEmpty))
-                      .toList();
+                      final others = catalog.products
+                          .where((p) =>
+                              !p.isSoldByWeight &&
+                              (p.barcode != null && p.barcode!.isNotEmpty))
+                          .toList();
 
-                  // Ordenar ambos grupos por ventas descendente
-                  level1.sort((a, b) => b.salesCount.compareTo(a.salesCount));
-                  others.sort((a, b) => b.salesCount.compareTo(a.salesCount));
+                      // Ordenar ambos grupos por ventas descendente
+                      level1.sort((a, b) => b.salesCount.compareTo(a.salesCount));
+                      others.sort((a, b) => b.salesCount.compareTo(a.salesCount));
 
-                  displayItems = [...level1, ...others];
-                } else {
-                  // Resultados del servidor — búsqueda real sobre toda la BD
-                  displayItems = _searchResults;
-                }
+                      displayItems = [...level1, ...others];
+                    } else {
+                      // Resultados del servidor — búsqueda real sobre toda la BD
+                      displayItems = _searchResults;
+                    }
 
-                if (displayItems.isEmpty) {
-                  return Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      const PosWatermarkLogo(size: 240),
-                      Center(
+                    if (displayItems.isEmpty) {
+                      return Center(
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
@@ -2654,14 +2661,15 @@ class _PosScreenState extends State<PosScreen> {
                             ],
                           ],
                         ),
-                      ),
-                    ],
-                  );
-                }
+                      );
+                    }
 
-                final viewMode = context.watch<LocalTerminalProvider>().catalogViewMode;
-                return _buildDynamicCatalogView(displayItems, viewMode);
-              },
+                    final viewMode =
+                        context.watch<LocalTerminalProvider>().catalogViewMode;
+                    return _buildDynamicCatalogView(displayItems, viewMode);
+                  },
+                ),
+              ],
             ),
           ),
         ],
@@ -2983,7 +2991,7 @@ class _CartItemStockIndicator extends StatelessWidget {
   }
 }
 
-/// Marca de agua semi-transparente (5% opacidad) con el logo del negocio o ícono de tienda
+/// Marca de agua semi-transparente (10% opacidad) con el logo del negocio o ícono de tienda
 class PosWatermarkLogo extends StatelessWidget {
   final double size;
   const PosWatermarkLogo({super.key, this.size = 180});
@@ -2995,24 +3003,27 @@ class PosWatermarkLogo extends StatelessWidget {
 
     return IgnorePointer(
       child: Opacity(
-        opacity: 0.05,
-        child: (logoUrl != null && logoUrl.isNotEmpty)
-            ? CachedNetworkImage(
-                imageUrl: logoUrl,
-                width: size,
-                height: size,
-                fit: BoxFit.contain,
-                errorWidget: (_, __, ___) => Icon(
+        opacity: 0.10,
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: (logoUrl != null && logoUrl.isNotEmpty)
+              ? CachedNetworkImage(
+                  imageUrl: logoUrl,
+                  width: size,
+                  height: size,
+                  fit: BoxFit.contain,
+                  errorWidget: (_, __, ___) => Icon(
+                    Icons.storefront_rounded,
+                    size: size,
+                    color: Colors.grey.shade400,
+                  ),
+                )
+              : Icon(
                   Icons.storefront_rounded,
                   size: size,
                   color: Colors.grey.shade400,
                 ),
-              )
-            : Icon(
-                Icons.storefront_rounded,
-                size: size,
-                color: Colors.grey.shade400,
-              ),
+        ),
       ),
     );
   }

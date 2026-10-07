@@ -74,7 +74,7 @@ class FakeAdversarialSettingsProvider extends ChangeNotifier implements Settings
   @override
   BusinessSettings? get settings => const BusinessSettings(
         licensePlanType: 'premium',
-        features: FeatureFlags(suppliers: true),
+        features: FeatureFlags(quotes: true, suppliers: true),
       );
   @override
   bool get isLoading => false;
@@ -83,7 +83,7 @@ class FakeAdversarialSettingsProvider extends ChangeNotifier implements Settings
   @override
   String get currentPlan => 'premium';
   @override
-  FeatureFlags get features => const FeatureFlags(suppliers: true);
+  FeatureFlags get features => const FeatureFlags(quotes: true, suppliers: true);
   @override
   bool hasFeature(String featureName) => true;
   @override
@@ -477,11 +477,11 @@ void main() {
         ),
       );
 
-      tester.view.physicalSize = const Size(400, 300);
+      tester.view.physicalSize = const Size(400, 480);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(() => tester.view.resetPhysicalSize());
 
-      await tester.pumpWidget(buildCatalogHarness(products: sampleProducts, viewport: const Size(400, 300)));
+      await tester.pumpWidget(buildCatalogHarness(products: sampleProducts, viewport: const Size(400, 480)));
       await tester.pump();
 
       // Ensure no exceptions or RenderFlex overflows occur

@@ -46,15 +46,14 @@ void main() {
       final text = ProductShareHelper.formatProductShareText(product);
 
       // Verify no crashes, complete inclusion of hostile inputs
-      expect(text, contains('📦 *🔥 Super Promo 🚀 "1/2 Pulgada" & <script>alert(1)</script> \'; DROP TABLE products;--*'));
-      expect(text, contains('💰 Precio: \$1.999,50'));
-      expect(text, contains('🏷️ Mayorista: \$1.500'));
-      expect(text, contains('💳 Tarjeta: \$2.200'));
-      expect(text, contains('🏷️ Código de Barras: 77900112233'));
-      expect(text, contains('🔢 Código Interno: XSS-01'));
-      expect(text, contains('📂 Categoría: Herramientas & Bazar'));
-      expect(text, contains('🏭 Marca: Brand "Pro"'));
-      expect(text, contains('🚚 Proveedor: Proveedor O\'Reilly'));
+      expect(text, contains('*🔥 Super Promo 🚀 "1/2 Pulgada" & <script>alert(1)</script> \'; DROP TABLE products;--*'));
+      expect(text, contains('- Precio: \$1.999,50'));
+      expect(text, contains('- Mayorista: \$1.500'));
+      expect(text, contains('- Tarjeta: \$2.200'));
+
+      expect(text, contains('- Categoría: Herramientas & Bazar'));
+      expect(text, contains('- Marca: Brand "Pro"'));
+      expect(text, contains('- Proveedor: Proveedor O\'Reilly'));
     });
 
     test('Handles multiline product name with newlines properly', () {
@@ -70,8 +69,8 @@ void main() {
       );
 
       final text = ProductShareHelper.formatProductShareText(product);
-      expect(text, contains('📦 *Línea 1\nLínea 2\nLínea 3*'));
-      expect(text, contains('💰 Precio: \$100'));
+      expect(text, contains('*Línea 1\nLínea 2\nLínea 3*'));
+      expect(text, contains('- Precio: \$100'));
     });
 
     test('Zero selling price and extreme large prices do not crash formatter', () {
@@ -87,7 +86,7 @@ void main() {
       );
 
       final zeroText = ProductShareHelper.formatProductShareText(zeroProduct);
-      expect(zeroText, contains('💰 Precio: \$0'));
+      expect(zeroText, contains('- Precio: \$0'));
 
       final largeProduct = Product(
         id: 1002,
@@ -101,7 +100,7 @@ void main() {
       );
 
       final largeText = ProductShareHelper.formatProductShareText(largeProduct);
-      expect(largeText, contains('💰 Precio: \$999.999.999,99'));
+      expect(largeText, contains('- Precio: \$999.999.999,99'));
     });
 
     test('Zero or negative wholesale and card prices are excluded from output', () {
@@ -119,7 +118,7 @@ void main() {
       );
 
       final text = ProductShareHelper.formatProductShareText(product);
-      expect(text, contains('💰 Precio: \$200'));
+      expect(text, contains('- Precio: \$200'));
       expect(text, isNot(contains('Mayorista:')));
       expect(text, isNot(contains('Tarjeta:')));
     });
@@ -141,13 +140,13 @@ void main() {
       );
 
       final text = ProductShareHelper.formatProductShareText(product);
-      expect(text, contains('📦 *Producto Con Espacios Fantasma*'));
-      expect(text, contains('💰 Precio: \$20'));
-      expect(text, isNot(contains('🏷️ Código de Barras:')));
-      expect(text, isNot(contains('🔢 Código Interno:')));
-      expect(text, isNot(contains('📂 Categoría:')));
-      expect(text, isNot(contains('🏭 Marca:')));
-      expect(text, isNot(contains('🚚 Proveedor:')));
+      expect(text, contains('*Producto Con Espacios Fantasma*'));
+      expect(text, contains('- Precio: \$20'));
+      expect(text, isNot(contains('- Código de Barras:')));
+
+      expect(text, isNot(contains('- Categoría:')));
+      expect(text, isNot(contains('- Marca:')));
+      expect(text, isNot(contains('- Proveedor:')));
     });
 
     test('Massive 2000-character name renders completely without truncation or crash', () {
@@ -458,7 +457,7 @@ void main() {
           expect(sharedFiles!.first.path, endsWith(expectedFilename), reason: 'Failed for url: $url');
           expect(captionText, isNotNull);
           expect(captionText, contains('Item Extension Test'));
-          expect(captionText, contains('💰 Precio: \$100'));
+          expect(captionText, contains('- Precio: \$100'));
         }
       } finally {
         if (testTempDir.existsSync()) {
@@ -574,7 +573,7 @@ void main() {
           expect(capturedText, isNotNull);
           expect(capturedText!.trim().isNotEmpty, isTrue);
           expect(capturedText, contains(p.name));
-          expect(capturedText, contains('💰 Precio:'));
+          expect(capturedText, contains('- Precio:'));
         }
       } finally {
         if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);

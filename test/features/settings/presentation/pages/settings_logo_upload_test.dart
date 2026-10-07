@@ -112,6 +112,16 @@ class FakeSettingsProvider extends ChangeNotifier implements SettingsProvider {
   Future<void> loadSettings({bool isSilent = false}) async {}
 
   @override
+  Future<Map<String, dynamic>?> loadIntegrations({bool isSilent = false}) async => null;
+
+  @override
+  Future<bool> saveIntegrations(Map<String, dynamic> data) async => true;
+
+  @override
+  Future<Map<String, dynamic>> testMercadoPagoConnection({String? mpAccessToken}) async =>
+      {'success': true, 'message': 'Conexión exitosa'};
+
+  @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 

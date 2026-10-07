@@ -18,8 +18,10 @@ import '../../../updater/data/services/update_service.dart';
 import '../../../updater/presentation/widgets/update_dialog.dart';
 import '../../../pos/presentation/providers/pos_provider.dart';
 import '../widgets/mobile_app_qr_section.dart';
+import '../../../auth/presentation/providers/auth_provider.dart';
+import '../../../../core/constants/app_permissions.dart';
 
-enum SettingsSection { general, prices, subscription, network, mobileApp }
+enum SettingsSection { general, prices, subscription, network, integrations, mobileApp }
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -72,6 +74,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
   int _versionTaps = 0;
   String _currentChannel = 'stable';
 
+  // Integraciones (Mercado Pago & ARCA/AFIP)
+  final _mpAccessTokenCtrl = TextEditingController();
+  final _mpWebhookSecretCtrl = TextEditingController();
+  final _mpPointDeviceIdCtrl = TextEditingController();
+  final _mpWebhookUrlCtrl = TextEditingController();
+  bool _mpQrEnabled = false;
+  bool _obscureMpToken = true;
+  bool _obscureMpSecret = true;
+  bool _isTestingMpConnection = false;
+  bool _isSavingIntegrations = false;
+
+  final _afipCuitCtrl = TextEditingController();
+  final _afipPtoVtaCtrl = TextEditingController();
+  String _afipEnvironment = 'testing';
+  bool _afipEnabled = false;
+  bool _afipHasCert = false;
+  bool _afipHasKey = false;
+  String? _afipCertExpiresAt;
+  bool _integrationsLoaded = false;
+  bool _isLoadingIntegrations = false;
+
   @override
   void initState() {
     super.initState();
@@ -118,6 +141,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
           });
         }
       });
+
+      final auth = context.read<AuthProvider?>();
+      final canManageSettings =
+          auth == null || auth.isAdmin || auth.hasPermission(AppPermissions.manageSettings);
+      if (canManageSettings) {
+        _loadIntegrationsData();
+      }
     });
   }
 
@@ -157,6 +187,196 @@ class _SettingsScreenState extends State<SettingsScreen> {
     } catch (_) {}
   }
 
+  Future<void> _loadIntegrationsData() async {
+    final auth = context.read<AuthProvider?>();
+    final canManageSettings =
+        auth == null || auth.isAdmin || auth.hasPermission(AppPermissions.manageSettings);
+    if (!canManageSettings) return;
+
+    setState(() => _isLoadingIntegrations = true);
+    try {
+      final provider = context.read<SettingsProvider>();
+      final data = await provider.loadIntegrations(isSilent: true);
+      if (data != null && mounted) {
+        setState(() {
+          _mpAccessTokenCtrl.text = data['mp_access_token']?.toString() ?? '';
+          _mpWebhookSecretCtrl.text = data['mp_webhook_secret']?.toString() ?? '';
+          _mpPointDeviceIdCtrl.text = data['mp_point_device_id']?.toString() ?? '';
+          _mpQrEnabled = data['mp_qr_enabled'] == true ||
+              data['mp_qr_enabled'] == '1' ||
+              data['mp_qr_enabled'] == 1;
+
+          final webhookUrl = data['mp_webhook_url']?.toString();
+          if (webhookUrl != null && webhookUrl.isNotEmpty) {
+            _mpWebhookUrlCtrl.text = webhookUrl;
+          } else {
+            final activeUrl = _serverUrlCtrl.text.isNotEmpty
+                ? _serverUrlCtrl.text
+                : provider.currentApiUrl;
+            _mpWebhookUrlCtrl.text = '$activeUrl/webhooks/mercadopago';
+          }
+
+          _afipEnabled = data['afip_enabled'] == true ||
+              data['afip_enabled'] == '1' ||
+              data['afip_enabled'] == 1;
+          _afipCuitCtrl.text = data['afip_cuit']?.toString() ?? '';
+          _afipPtoVtaCtrl.text =
+              (data['afip_pto_vta'] != null && data['afip_pto_vta'].toString() != '0')
+                  ? data['afip_pto_vta'].toString()
+                  : '';
+          _afipEnvironment = data['afip_environment']?.toString() ?? 'testing';
+          _afipHasCert = data['afip_has_cert'] == true;
+          _afipHasKey = data['afip_has_key'] == true;
+          _afipCertExpiresAt = data['afip_cert_expires_at']?.toString();
+          _integrationsLoaded = true;
+        });
+      }
+    } catch (e) {
+      debugPrint('[SettingsScreen] Error al cargar integraciones: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _isLoadingIntegrations = false);
+      }
+    }
+  }
+
+  Future<void> _testMercadoPagoConnection() async {
+    if (_isSavingIntegrations) return;
+    final auth = context.read<AuthProvider?>();
+    final canManageSettings =
+        auth == null || auth.isAdmin || auth.hasPermission(AppPermissions.manageSettings);
+    if (!canManageSettings) {
+      if (mounted) {
+        SnackBarService.error(
+            context, 'No tienes permisos para probar la conexión.');
+      }
+      return;
+    }
+
+    final token = _mpAccessTokenCtrl.text.trim();
+    if (token.isEmpty) {
+      if (mounted) {
+        SnackBarService.warning(
+            context, 'Debe ingresar un Access Token para probar la conexión.');
+      }
+      return;
+    }
+
+    setState(() => _isTestingMpConnection = true);
+    try {
+      final provider = context.read<SettingsProvider>();
+      final result = await provider.testMercadoPagoConnection(
+        mpAccessToken: token,
+      );
+
+      if (!mounted) return;
+
+      if (result['success'] == true) {
+        final nickname = result['nickname'];
+        final detail = nickname != null ? ' (Usuario: $nickname)' : '';
+        SnackBarService.success(context, 'Conexión con Mercado Pago exitosa$detail.');
+      } else {
+        final message =
+            result['message']?.toString() ?? 'Error al conectar con Mercado Pago.';
+        SnackBarService.error(context, message);
+      }
+    } catch (_) {
+      if (mounted) {
+        SnackBarService.error(
+            context, 'No se pudo verificar la conexión con Mercado Pago.');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isTestingMpConnection = false);
+      }
+    }
+  }
+
+  Future<bool> _saveIntegrations({bool showFeedback = true}) async {
+    final auth = context.read<AuthProvider?>();
+    final canManageSettings =
+        auth == null || auth.isAdmin || auth.hasPermission(AppPermissions.manageSettings);
+    if (!canManageSettings) {
+      if (showFeedback && mounted) {
+        SnackBarService.error(
+            context, 'No tienes permisos para modificar integraciones.');
+      }
+      return false;
+    }
+
+    if (_isTestingMpConnection) {
+      if (showFeedback && mounted) {
+        SnackBarService.warning(
+            context, 'Espere a que finalice la prueba de conexión.');
+      }
+      return false;
+    }
+
+    if (!_integrationsLoaded) {
+      if (showFeedback && mounted) {
+        SnackBarService.warning(
+            context, 'No se cargaron los datos de integraciones. Reintente antes de guardar.');
+      }
+      return false;
+    }
+
+    setState(() => _isSavingIntegrations = true);
+    try {
+      final provider = context.read<SettingsProvider>();
+      final ptoVtaText = _afipPtoVtaCtrl.text.trim();
+      int? ptoVta;
+      if (ptoVtaText.isNotEmpty) {
+        final parsed = int.tryParse(ptoVtaText);
+        if (parsed == null || parsed < 1 || parsed > 99999) {
+          if (showFeedback && mounted) {
+            SnackBarService.error(
+                context, 'El Punto de Venta debe ser un número entre 1 y 99999.');
+          }
+          return false;
+        }
+        ptoVta = parsed;
+      }
+
+      final data = <String, dynamic>{
+        'mp_qr_enabled': _mpQrEnabled ? '1' : '0',
+        'mp_point_device_id': _mpPointDeviceIdCtrl.text.trim(),
+        'mp_access_token': _mpAccessTokenCtrl.text.trim(),
+        'mp_webhook_secret': _mpWebhookSecretCtrl.text.trim(),
+        'afip_enabled': _afipEnabled ? '1' : '0',
+        'afip_cuit': _afipCuitCtrl.text.trim(),
+        'afip_pto_vta': ptoVta,
+        'afip_environment': _afipEnvironment,
+      };
+
+      final success = await provider.saveIntegrations(data);
+      if (!mounted) return false;
+
+      if (success) {
+        if (showFeedback) {
+          SnackBarService.success(
+              context, 'Configuración de integraciones guardada correctamente.');
+        }
+        await _loadIntegrationsData();
+        return true;
+      } else {
+        if (showFeedback) {
+          SnackBarService.error(
+              context, provider.errorMessage ?? 'Error al guardar integraciones.');
+        }
+        return false;
+      }
+    } catch (e) {
+      if (mounted && showFeedback) {
+        SnackBarService.error(context, 'Error al guardar integraciones.');
+      }
+      return false;
+    } finally {
+      if (mounted) {
+        setState(() => _isSavingIntegrations = false);
+      }
+    }
+  }
+
   @override
   void dispose() {
     _companyNameCtrl.dispose();
@@ -172,10 +392,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _serverUrlCtrl.removeListener(_handleUrlChange);
     _backendPathCtrl.dispose();
     _serverUrlCtrl.dispose();
+    _mpAccessTokenCtrl.dispose();
+    _mpWebhookSecretCtrl.dispose();
+    _mpPointDeviceIdCtrl.dispose();
+    _mpWebhookUrlCtrl.dispose();
+    _afipCuitCtrl.dispose();
+    _afipPtoVtaCtrl.dispose();
     super.dispose();
   }
 
   Future<void> _saveSettings() async {
+    if (_activeSection == SettingsSection.integrations) {
+      await _saveIntegrations(showFeedback: true);
+      return;
+    }
+
     if (!_formKey.currentState!.validate()) return;
 
     final provider = context.read<SettingsProvider>();
@@ -425,56 +656,179 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<SettingsProvider>();
+    final auth = context.watch<AuthProvider?>();
+    final canManageSettings =
+        auth == null || auth.isAdmin || auth.hasPermission(AppPermissions.manageSettings);
 
-    final isBusy = provider.isLoading || _isUploadingLogo;
+    final isBusy =
+        provider.isLoading || _isUploadingLogo || _isSavingIntegrations || _isTestingMpConnection;
 
     return PopScope(
       canPop: !isBusy,
       child: Scaffold(
-      appBar: GlobalAppBar(
-        currentRoute: '/settings',
-        title: 'Configuración del Sistema',
-        showBackButton: true,
-      ),
-      backgroundColor: const Color(0xFFF8F9FA),
-      body: provider.isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : Row(
-              children: [
-                // --- SIDEBAR (Xbox Style) ---
-                _buildSidebar(provider),
+        appBar: GlobalAppBar(
+          currentRoute: '/settings',
+          title: 'Configuración del Sistema',
+          showBackButton: true,
+        ),
+        backgroundColor: const Color(0xFFF8F9FA),
+        body: provider.isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : LayoutBuilder(
+                builder: (context, constraints) {
+                  final isCompact = constraints.maxWidth < 700;
 
-                // --- CONTENT AREA ---
-                Expanded(
-                  child: Form(
-                    key: _formKey,
-                    child: AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 300),
-                      child: SingleChildScrollView(
-                        key: ValueKey(_activeSection),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 64, vertical: 48),
-                          child: Align(
-                            alignment: Alignment.topCenter,
-                            child: ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 900),
-                              child: _buildActiveSection(provider),
+                  if (isCompact) {
+                    return Form(
+                      key: _formKey,
+                      child: Column(
+                        children: [
+                          _buildCompactTabBar(isBusy, canManageSettings),
+                          Expanded(
+                            child: SingleChildScrollView(
+                              key: ValueKey(_activeSection),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 16, vertical: 16),
+                                child: _buildActiveSection(provider),
+                              ),
+                            ),
+                          ),
+                          _buildCompactBottomBar(isBusy),
+                        ],
+                      ),
+                    );
+                  }
+
+                  return Row(
+                    children: [
+                      // --- SIDEBAR (Xbox Style) ---
+                      _buildSidebar(provider, canManageSettings: canManageSettings),
+
+                      // --- CONTENT AREA ---
+                      Expanded(
+                        child: Form(
+                          key: _formKey,
+                          child: AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 300),
+                            child: SingleChildScrollView(
+                              key: ValueKey(_activeSection),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 64, vertical: 48),
+                                child: Align(
+                                  alignment: Alignment.topCenter,
+                                  child: ConstrainedBox(
+                                    constraints: const BoxConstraints(maxWidth: 900),
+                                    child: _buildActiveSection(provider),
+                                  ),
+                                ),
+                              ),
                             ),
                           ),
                         ),
                       ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
+                    ],
+                  );
+                },
+              ),
       ),
     );
   }
 
-  Widget _buildSidebar(SettingsProvider provider) {
-    final isBusy = provider.isLoading || _isUploadingLogo;
+  Widget _buildCompactTabBar(bool isBusy, bool canManageSettings) {
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: Row(
+          children: [
+            _buildCompactTabChip('General', Icons.storefront_outlined,
+                SettingsSection.general, isBusy),
+            _buildCompactTabChip('Precios', Icons.price_change_outlined,
+                SettingsSection.prices, isBusy),
+            _buildCompactTabChip('Suscripción', Icons.verified_user_outlined,
+                SettingsSection.subscription, isBusy),
+            _buildCompactTabChip(
+                'Red', Icons.dns_outlined, SettingsSection.network, isBusy),
+            if (canManageSettings)
+              _buildCompactTabChip('Integraciones', Icons.hub_outlined,
+                  SettingsSection.integrations, isBusy),
+            if (Platform.isWindows)
+              _buildCompactTabChip('App Móvil', Icons.phone_android,
+                  SettingsSection.mobileApp, isBusy),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCompactTabChip(
+      String label, IconData icon, SettingsSection section, bool isBusy) {
+    final isSelected = _activeSection == section;
+    const activeColor = Color(0xFF673AB7);
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: ChoiceChip(
+        selected: isSelected,
+        avatar: Icon(icon,
+            size: 16,
+            color: isSelected ? Colors.white : Colors.grey.shade700),
+        label: Text(label),
+        selectedColor: activeColor,
+        labelStyle: TextStyle(
+          color: isSelected ? Colors.white : Colors.grey.shade800,
+          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+          fontSize: 13,
+        ),
+        onSelected: isBusy
+            ? null
+            : (_) {
+                setState(() => _activeSection = section);
+                if (section == SettingsSection.integrations &&
+                    !_integrationsLoaded) {
+                  _loadIntegrationsData();
+                }
+              },
+      ),
+    );
+  }
+
+  Widget _buildCompactBottomBar(bool isBusy) {
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.all(12),
+      child: SizedBox(
+        width: double.infinity,
+        height: 48,
+        child: FilledButton.icon(
+          onPressed: isBusy ? null : _saveSettings,
+          icon: isBusy
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: Colors.white),
+                )
+              : const Icon(Icons.save_outlined),
+          label: const Text('GUARDAR',
+              style: TextStyle(fontWeight: FontWeight.bold)),
+          style: FilledButton.styleFrom(
+            backgroundColor: const Color(0xFF673AB7),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSidebar(SettingsProvider provider,
+      {bool canManageSettings = true}) {
+    final isBusy =
+        provider.isLoading || _isUploadingLogo || _isSavingIntegrations || _isTestingMpConnection;
     return Container(
       width: 280,
       decoration: BoxDecoration(
@@ -508,6 +862,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
             section: SettingsSection.network,
             isBusy: isBusy,
           ),
+          if (canManageSettings)
+            _buildSidebarItem(
+              icon: Icons.hub_outlined,
+              title: 'Integraciones',
+              section: SettingsSection.integrations,
+              isBusy: isBusy,
+            ),
           if (Platform.isWindows)
             _buildSidebarItem(
               icon: Icons.phone_android,
@@ -527,7 +888,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ? const SizedBox(
                         width: 18,
                         height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white),
                       )
                     : const Icon(Icons.save_outlined),
                 label: const Text('GUARDAR',
@@ -555,7 +917,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final activeColor = const Color(0xFF673AB7);
 
     return InkWell(
-      onTap: isBusy ? null : () => setState(() => _activeSection = section),
+      onTap: isBusy
+          ? null
+          : () {
+              setState(() => _activeSection = section);
+              if (section == SettingsSection.integrations &&
+                  !_integrationsLoaded) {
+                _loadIntegrationsData();
+              }
+            },
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
@@ -606,9 +976,555 @@ class _SettingsScreenState extends State<SettingsScreen> {
         return _buildSubscriptionSection(provider);
       case SettingsSection.network:
         return _buildNetworkSection(provider);
+      case SettingsSection.integrations:
+        final auth = context.watch<AuthProvider?>();
+        final canManageSettings =
+            auth == null || auth.isAdmin || auth.hasPermission(AppPermissions.manageSettings);
+        if (!canManageSettings) {
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.all(48.0),
+              child: Text(
+                'No tienes permisos para gestionar integraciones.',
+                style: TextStyle(fontSize: 16, color: Colors.grey),
+              ),
+            ),
+          );
+        }
+        return _buildIntegrationsSection(provider);
       case SettingsSection.mobileApp:
         return MobileAppQrSection(r2PublicBaseUrl: 'https://pub-xxxx.r2.dev'); // Will fix the URL via config if needed or leave a placeholder as they might be doing elsewhere
     }
+  }
+
+  Widget _buildIntegrationsSection(SettingsProvider provider) {
+    if (_isLoadingIntegrations) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(48.0),
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
+    if (!_integrationsLoaded) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(48.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.cloud_off_outlined, size: 64, color: Colors.grey.shade400),
+              const SizedBox(height: 16),
+              const Text(
+                'No se pudo cargar la configuración de integraciones',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Ocurrió un error al consultar el servidor. Verificá la conexión e intentá nuevamente.',
+                style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              FilledButton.icon(
+                key: const ValueKey('btn_retry_load_integrations'),
+                onPressed: _loadIntegrationsData,
+                icon: const Icon(Icons.refresh, size: 18),
+                label: const Text('Reintentar'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFF673AB7),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isNarrow = constraints.maxWidth < 600;
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildSectionHeader('Integraciones',
+                'Gestioná las pasarelas de pago y facturación electrónica oficial.'),
+            const SizedBox(height: 32),
+
+            // Mercado Pago Card
+            _buildMercadoPagoCard(isNarrow),
+            const SizedBox(height: 32),
+
+            // ARCA / AFIP Card
+            _buildAfipCard(isNarrow),
+            const SizedBox(height: 32),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildMercadoPagoCard(bool isNarrow) {
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: Colors.grey.shade200),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF009EE3).withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(Icons.qr_code_2,
+                      color: Color(0xFF009EE3), size: 28),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Mercado Pago',
+                        style: TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.bold),
+                      ),
+                      Text(
+                        'Cobro con QR In-Store y terminales físicas Point',
+                        style: TextStyle(
+                            fontSize: 13, color: Colors.grey.shade600),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const Divider(height: 32),
+
+            // Switch Habilitar Cobro QR
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Habilitar cobro con QR',
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+              subtitle: Text(
+                'Genera códigos QR dinámicos en la pantalla de cobro para tus clientes',
+                style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+              ),
+              value: _mpQrEnabled,
+              activeThumbColor: const Color(0xFF009EE3),
+              onChanged: (val) => setState(() => _mpQrEnabled = val),
+            ),
+            const SizedBox(height: 16),
+
+            // Access Token
+            TextFormField(
+              key: const ValueKey('field_mp_access_token'),
+              controller: _mpAccessTokenCtrl,
+              obscureText: _obscureMpToken,
+              decoration: _inputDecoration(
+                'Access Token',
+                Icons.vpn_key_outlined,
+                hint: 'APP_USR-...',
+              ).copyWith(
+                helperText:
+                    'Credencial de Mercado Pago. Si no se modifica, se preserva el secreto guardado.',
+                helperMaxLines: 2,
+                suffixIcon: IconButton(
+                  icon: Icon(_obscureMpToken
+                      ? Icons.visibility_outlined
+                      : Icons.visibility_off_outlined),
+                  tooltip:
+                      _obscureMpToken ? 'Mostrar token' : 'Ocultar token',
+                  onPressed: () =>
+                      setState(() => _obscureMpToken = !_obscureMpToken),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            // Webhook Secret
+            TextFormField(
+              key: const ValueKey('field_mp_webhook_secret'),
+              controller: _mpWebhookSecretCtrl,
+              obscureText: _obscureMpSecret,
+              decoration: _inputDecoration(
+                'Webhook Secret',
+                Icons.lock_outline,
+                hint: 'whsec_...',
+              ).copyWith(
+                helperText:
+                    'Clave de firma para validar notificaciones automáticas de pago.',
+                helperMaxLines: 2,
+                suffixIcon: IconButton(
+                  icon: Icon(_obscureMpSecret
+                      ? Icons.visibility_outlined
+                      : Icons.visibility_off_outlined),
+                  tooltip:
+                      _obscureMpSecret ? 'Mostrar secret' : 'Ocultar secret',
+                  onPressed: () =>
+                      setState(() => _obscureMpSecret = !_obscureMpSecret),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            // Device ID Posnet
+            TextFormField(
+              key: const ValueKey('field_mp_point_device_id'),
+              controller: _mpPointDeviceIdCtrl,
+              decoration: _inputDecoration(
+                'Device ID Posnet (Point)',
+                Icons.point_of_sale_outlined,
+                hint: 'Ej: POINT_SMART_01',
+              ).copyWith(
+                helperText:
+                    'Identificador del dispositivo Point asociado a esta caja (opcional).',
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            // Webhook URL (solo lectura con botón copiar)
+            TextFormField(
+              key: const ValueKey('field_mp_webhook_url'),
+              controller: _mpWebhookUrlCtrl,
+              readOnly: true,
+              decoration: _inputDecoration(
+                'URL Webhook (Solo lectura)',
+                Icons.link_outlined,
+                hint: 'https://...',
+              ).copyWith(
+                helperText:
+                    'Copia esta URL en tu panel de desarrolladores de Mercado Pago.',
+                suffixIcon: IconButton(
+                  icon: const Icon(Icons.copy_outlined, size: 20),
+                  tooltip: 'Copiar URL al portapapeles',
+                  onPressed: () {
+                    final text = _mpWebhookUrlCtrl.text.trim();
+                    if (text.isNotEmpty) {
+                      Clipboard.setData(ClipboardData(text: text));
+                      SnackBarService.info(
+                          context, 'URL de webhook copiada al portapapeles');
+                    }
+                  },
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+
+            // Botón Probar conexión
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                OutlinedButton.icon(
+                  key: const ValueKey('btn_test_mp_connection'),
+                  onPressed: (_isTestingMpConnection || _isSavingIntegrations)
+                      ? null
+                      : _testMercadoPagoConnection,
+                  icon: _isTestingMpConnection
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.wifi_tethering, size: 18),
+                  label: const Text('Probar conexión'),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 20, vertical: 14),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+                Text(
+                  'Verifica que el Access Token sea válido contra la API oficial',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAfipCard(bool isNarrow) {
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: Colors.grey.shade200),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF2E7D32).withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(Icons.receipt_long,
+                      color: Color(0xFF2E7D32), size: 28),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'ARCA / AFIP (Facturación Electrónica)',
+                        style: TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.bold),
+                      ),
+                      Text(
+                        'Emisión de Facturas y Comprobantes Fiscales Oficiales (WebService WSFEv1)',
+                        style: TextStyle(
+                            fontSize: 13, color: Colors.grey.shade600),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const Divider(height: 32),
+
+            // Switch Habilitar Facturación ARCA
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Habilitar Facturación ARCA',
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+              subtitle: Text(
+                'Activa la emisión fiscal electrónica en el punto de venta',
+                style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+              ),
+              value: _afipEnabled,
+              activeThumbColor: const Color(0xFF2E7D32),
+              onChanged: (val) => setState(() => _afipEnabled = val),
+            ),
+            const SizedBox(height: 16),
+
+            // CUIT y Punto de Venta (responsive: column si es estrecho)
+            if (isNarrow) ...[
+              TextFormField(
+                key: const ValueKey('field_afip_cuit'),
+                controller: _afipCuitCtrl,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                maxLength: 11,
+                decoration: _inputDecoration(
+                  'CUIT Comercial',
+                  Icons.badge_outlined,
+                  hint: 'Ej: 20123456789',
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                key: const ValueKey('field_afip_pto_vta'),
+                controller: _afipPtoVtaCtrl,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                maxLength: 5,
+                decoration: _inputDecoration(
+                  'Punto de Venta',
+                  Icons.store_outlined,
+                  hint: 'Ej: 1',
+                ),
+              ),
+            ] else ...[
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    flex: 2,
+                    child: TextFormField(
+                      key: const ValueKey('field_afip_cuit'),
+                      controller: _afipCuitCtrl,
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                      maxLength: 11,
+                      decoration: _inputDecoration(
+                        'CUIT Comercial',
+                        Icons.badge_outlined,
+                        hint: 'Ej: 20123456789',
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    flex: 1,
+                    child: TextFormField(
+                      key: const ValueKey('field_afip_pto_vta'),
+                      controller: _afipPtoVtaCtrl,
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                      maxLength: 5,
+                      decoration: _inputDecoration(
+                        'Punto de Venta',
+                        Icons.store_outlined,
+                        hint: 'Ej: 1',
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            const SizedBox(height: 20),
+
+            // Selector de Entorno (Testing / Producción)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Entorno de Facturación',
+                  style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey.shade700),
+                ),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<String>(
+                  key: const ValueKey('dropdown_afip_environment'),
+                  isExpanded: true,
+                  initialValue: _afipEnvironment,
+                  decoration: _inputDecoration(
+                    'Entorno',
+                    Icons.cloud_outlined,
+                  ),
+                  items: const [
+                    DropdownMenuItem(
+                      value: 'testing',
+                      child: Text(
+                        'Testing (Homologación ARCA)',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    DropdownMenuItem(
+                      value: 'production',
+                      child: Text(
+                        'Producción (Servidores Reales)',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                  onChanged: (val) {
+                    if (val != null) {
+                      setState(() => _afipEnvironment = val);
+                    }
+                  },
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+
+            // Indicadores visuales de estado de certificado y llave
+            Text(
+              'Estado de Certificados en Servidor',
+              style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey.shade700),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 12,
+              runSpacing: 10,
+              children: [
+                _buildStatusChip(
+                  keyName: 'chip_afip_cert',
+                  label: _afipHasCert
+                      ? 'Certificado (.crt) Instalado'
+                      : 'Certificado (.crt) No Instalado',
+                  isOk: _afipHasCert,
+                  icon: _afipHasCert
+                      ? Icons.check_circle_outline
+                      : Icons.warning_amber_rounded,
+                  subtitle: _afipCertExpiresAt != null
+                      ? 'Vence: $_afipCertExpiresAt'
+                      : null,
+                ),
+                _buildStatusChip(
+                  keyName: 'chip_afip_key',
+                  label: _afipHasKey
+                      ? 'Clave Privada (.key) Instalada'
+                      : 'Clave Privada (.key) No Instalada',
+                  isOk: _afipHasKey,
+                  icon: _afipHasKey
+                      ? Icons.key_outlined
+                      : Icons.key_off_outlined,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatusChip({
+    required String keyName,
+    required String label,
+    required bool isOk,
+    required IconData icon,
+    String? subtitle,
+  }) {
+    final color = isOk ? const Color(0xFF2E7D32) : const Color(0xFFD32F2F);
+    final bgColor = isOk ? const Color(0xFFE8F5E9) : const Color(0xFFFFEBEE);
+
+    return Container(
+      key: ValueKey(keyName),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: color, size: 20),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                      color: color, fontWeight: FontWeight.bold, fontSize: 13),
+                ),
+                if (subtitle != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                        color: color.withValues(alpha: 0.8), fontSize: 11),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildGeneralSection(SettingsProvider provider) {
@@ -1554,35 +2470,39 @@ class _AnimatedSubscriptionCardState extends State<AnimatedSubscriptionCard>
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: widget.isPremium
-                              ? Colors.amber.shade400.withValues(alpha: 0.9)
-                              : Colors.white.withValues(alpha: 0.2),
-                          borderRadius: BorderRadius.circular(30),
-                          boxShadow: widget.isPremium
-                              ? [
-                                  BoxShadow(
-                                      color:
-                                          Colors.amber.withValues(alpha: 0.5),
-                                      blurRadius: 10)
-                                ]
-                              : [],
-                        ),
-                        child: Text(
-                          title,
-                          style: TextStyle(
+                      Flexible(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 8),
+                          decoration: BoxDecoration(
                             color: widget.isPremium
-                                ? Colors.black87
-                                : Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13,
-                            letterSpacing: 1.2,
+                                ? Colors.amber.shade400.withValues(alpha: 0.9)
+                                : Colors.white.withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(30),
+                            boxShadow: widget.isPremium
+                                ? [
+                                    BoxShadow(
+                                        color:
+                                            Colors.amber.withValues(alpha: 0.5),
+                                        blurRadius: 10)
+                                  ]
+                                : [],
+                          ),
+                          child: Text(
+                            title,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: widget.isPremium
+                                  ? Colors.black87
+                                  : Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                              letterSpacing: 1.2,
+                            ),
                           ),
                         ),
                       ),
+                      const SizedBox(width: 8),
                       Icon(
                         widget.isPremium
                             ? Icons.workspace_premium

@@ -228,7 +228,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     final settings = context.read<SettingsProvider>().settings;
     if (provider.paymentMethods.isNotEmpty) {
       final defaultCash = provider.paymentMethods.firstWhere((p) => p.isCash,
-          orElse: () => provider.paymentMethods.first);
+          orElse: () => provider.paymentMethods.firstWhere((m) => !m.code.contains('transfer'), orElse: () => provider.paymentMethods.first));
       final line = PaymentLine(
         method: defaultCash,
         initialAmount:
@@ -319,10 +319,9 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     // Auto-fill available balance
     double left = _pendingBalance > 0 ? _pendingBalance : 0.0;
 
-    // Usar el primer método que no sea cuenta_corriente como default seguro
     final defaultMethod = provider.paymentMethods.firstWhere(
-      (m) => m.code != 'cuenta_corriente',
-      orElse: () => provider.paymentMethods.first,
+      (m) => m.code != 'cuenta_corriente' && !m.code.contains('transfer'),
+      orElse: () => provider.paymentMethods.firstWhere((m) => !m.code.contains('transfer'), orElse: () => provider.paymentMethods.first),
     );
 
     final line = PaymentLine(
@@ -1157,8 +1156,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                                   contentPadding: const EdgeInsets.symmetric(
                                       horizontal: 12, vertical: 12),
                                 ),
-                                initialValue: line.method,
-                                items: provider.paymentMethods.map((m) {
+                                initialValue: provider.paymentMethods.contains(line.method) && !(line.method?.code.contains('transfer') ?? false) ? line.method : null,
+                                items: provider.paymentMethods.where((m) => !m.code.contains('transfer')).map((m) {
                                   final bool isCuentaCorriente =
                                       m.code == 'cuenta_corriente';
                                   final bool isCheque = m.code == 'cheque';

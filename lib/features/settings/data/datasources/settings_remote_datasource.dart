@@ -8,6 +8,9 @@ abstract class SettingsRemoteDataSource {
   Future<BusinessSettingsModel> fetchSettings();
   Future<BusinessSettingsModel> updateSettings(Map<String, dynamic> data);
   Future<String> uploadLogo(String filePath, {List<int>? bytes, String? filename});
+  Future<Map<String, dynamic>> fetchIntegrations();
+  Future<bool> updateIntegrations(Map<String, dynamic> data);
+  Future<Map<String, dynamic>> testMercadoPagoConnection({String? mpAccessToken});
 }
 
 class SettingsRemoteDataSourceImpl implements SettingsRemoteDataSource {
@@ -175,6 +178,130 @@ class SettingsRemoteDataSourceImpl implements SettingsRemoteDataSource {
         throw Exception('Error de conexión: No se encontró el servidor. Verifica la URL configurada.');
       }
       rethrow;
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> fetchIntegrations() async {
+    try {
+      final response = await client.get(
+        Uri.parse('$baseUrl/settings/integrations'),
+        headers: {'Accept': 'application/json'},
+      );
+
+      if (response.statusCode == 200) {
+        try {
+          return json.decode(response.body) as Map<String, dynamic>;
+        } catch (_) {
+          throw const FormatException('La respuesta del servidor no es un JSON válido.');
+        }
+      } else if (response.statusCode == 404) {
+        throw Exception('Error de conexión: No se encontró el servidor. Verifica la URL configurada.');
+      } else if (response.statusCode == 500) {
+        throw Exception('Error interno del servidor. Contacte a soporte técnico.');
+      } else {
+        throw Exception(_parseApiError(response.body, 'Error al obtener integraciones (Status: ${response.statusCode})'));
+      }
+    } on FormatException catch (e) {
+      throw Exception(e.message);
+    } catch (e) {
+      final errStr = e.toString();
+      if (errStr.contains('SocketException') ||
+          errStr.contains('TimeoutException') ||
+          errStr.contains('ClientException')) {
+        throw Exception('Error de conexión: No se encontró el servidor. Verifica la URL configurada.');
+      }
+      rethrow;
+    }
+  }
+
+  @override
+  Future<bool> updateIntegrations(Map<String, dynamic> data) async {
+    try {
+      final response = await client.put(
+        Uri.parse('$baseUrl/settings/integrations'),
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: json.encode(data),
+      );
+
+      if (response.statusCode == 200) {
+        return true;
+      } else if (response.statusCode == 404) {
+        throw Exception('Error de conexión: No se encontró el servidor. Verifica la URL configurada.');
+      } else if (response.statusCode == 500) {
+        throw Exception('Error interno del servidor. Contacte a soporte técnico.');
+      } else {
+        throw Exception(_parseApiError(response.body, 'Error al guardar integraciones (Status: ${response.statusCode})'));
+      }
+    } on FormatException catch (e) {
+      throw Exception(e.message);
+    } catch (e) {
+      final errStr = e.toString();
+      if (errStr.contains('SocketException') ||
+          errStr.contains('TimeoutException') ||
+          errStr.contains('ClientException')) {
+        throw Exception('Error de conexión: No se encontró el servidor. Verifica la URL configurada.');
+      }
+      rethrow;
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> testMercadoPagoConnection({String? mpAccessToken}) async {
+    try {
+      final Map<String, dynamic> payload = {};
+      if (mpAccessToken != null) {
+        payload['mp_access_token'] = mpAccessToken;
+      }
+
+      final response = await client.post(
+        Uri.parse('$baseUrl/settings/integrations/mercadopago/test'),
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: json.encode(payload),
+      );
+
+      final Map<String, dynamic> decoded;
+      try {
+        decoded = json.decode(response.body) as Map<String, dynamic>;
+      } catch (_) {
+        throw const FormatException('La respuesta del servidor no es un JSON válido.');
+      }
+
+      if (response.statusCode == 200) {
+        return {
+          'success': decoded['success'] == true,
+          'message': decoded['message']?.toString() ?? 'Conexión exitosa',
+          'collector_id': decoded['collector_id'],
+          'nickname': decoded['nickname'],
+        };
+      } else {
+        return {
+          'success': false,
+          'message': decoded['message']?.toString() ?? 'Error al conectar con Mercado Pago',
+        };
+      }
+    } on FormatException catch (e) {
+      return {'success': false, 'message': e.message};
+    } catch (e) {
+      final errStr = e.toString();
+      if (errStr.contains('SocketException') ||
+          errStr.contains('TimeoutException') ||
+          errStr.contains('ClientException')) {
+        return {
+          'success': false,
+          'message': 'No se pudo conectar con el servidor principal.',
+        };
+      }
+      return {
+        'success': false,
+        'message': 'Error inesperado al probar la conexión.',
+      };
     }
   }
 }
