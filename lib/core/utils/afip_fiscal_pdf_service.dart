@@ -250,11 +250,12 @@ class AfipFiscalPdfService {
         sale['customer']?['tax_id'] ??
         sale['customer_tax_id'] ??
         '---';
-    final receiverTaxCondition =
+    final rawReceiverTaxCondition =
         electronicInvoice['receiver_tax_condition']?.toString() ??
             (voucherLetter == 'A'
-                ? 'IVA Responsable Inscripto'
-                : 'Consumidor Final');
+                ? 'responsable_inscripto'
+                : 'consumidor_final');
+    final receiverTaxCondition = _formatTaxCondition(rawReceiverTaxCondition);
     final receiverName = electronicInvoice['receiver_name']?.toString() ??
         sale['customer']?['name'] ??
         sale['customer_name'] ??
@@ -528,6 +529,24 @@ class AfipFiscalPdfService {
   // ─────────────────────────────────────────────────────────────────────────
   // Componente 2: Sección Receptor (Datos del Cliente)
   // ─────────────────────────────────────────────────────────────────────────
+  static String _formatTaxCondition(String raw) {
+    switch (raw.toLowerCase()) {
+      case 'consumidor_final':
+        return 'Consumidor Final';
+      case 'responsable_inscripto':
+        return 'IVA Responsable Inscripto';
+      case 'monotributo':
+      case 'responsable_monotributo':
+        return 'Responsable Monotributo';
+      case 'exento':
+      case 'sujeto_exento':
+      case 'iva_exento':
+        return 'IVA Sujeto Exento';
+      default:
+        return raw;
+    }
+  }
+
   static pw.Widget _buildReceiverSection({
     required String receiverDoc,
     required String receiverTaxCondition,
