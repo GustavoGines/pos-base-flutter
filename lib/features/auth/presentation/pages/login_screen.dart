@@ -51,12 +51,12 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _checkForUpdates() async {
-    final packageInfo = await PackageInfo.fromPlatform();
-    if (mounted) {
-      setState(() => _appVersion = packageInfo.version);
-    }
-
     try {
+      final packageInfo = await PackageInfo.fromPlatform();
+      if (mounted) {
+        setState(() => _appVersion = packageInfo.version);
+      }
+
       final isMobile = AppConfig.isMobile;
 
       if (isMobile) {
@@ -106,6 +106,7 @@ class _LoginScreenState extends State<LoginScreen> {
         final globalContext = AppConfig.navigatorKey.currentContext;
         if (globalContext != null) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!globalContext.mounted) return;
             if (result.frontendUpdate != null) {
               showDialog(
                 context: globalContext,
@@ -147,11 +148,38 @@ class _LoginScreenState extends State<LoginScreen> {
     }
 
     // ── Dígitos: fila superior (digit0-9) + Numpad (numpad0-9) ──────
-    // event.character es la forma más robusta: captura ambas fuentes
-    // y respeta el layout del teclado del sistema operativo.
+    // 1. event.character respeta el layout del sistema operativo.
+    // 2. Si event.character es null (común en eventos raw de Numpad físico en Windows/Android),
+    //    macheamos directamente contra LogicalKeyboardKey.
     final char = event.character;
-    if (char != null && RegExp(r'^\d$').hasMatch(char)) {
-      _onKeypadTap(char);
+    String? digit = (char != null && RegExp(r'^\d$').hasMatch(char)) ? char : null;
+    if (digit == null) {
+      final key = event.logicalKey;
+      if (key == LogicalKeyboardKey.digit0 || key == LogicalKeyboardKey.numpad0) {
+        digit = '0';
+      } else if (key == LogicalKeyboardKey.digit1 || key == LogicalKeyboardKey.numpad1) {
+        digit = '1';
+      } else if (key == LogicalKeyboardKey.digit2 || key == LogicalKeyboardKey.numpad2) {
+        digit = '2';
+      } else if (key == LogicalKeyboardKey.digit3 || key == LogicalKeyboardKey.numpad3) {
+        digit = '3';
+      } else if (key == LogicalKeyboardKey.digit4 || key == LogicalKeyboardKey.numpad4) {
+        digit = '4';
+      } else if (key == LogicalKeyboardKey.digit5 || key == LogicalKeyboardKey.numpad5) {
+        digit = '5';
+      } else if (key == LogicalKeyboardKey.digit6 || key == LogicalKeyboardKey.numpad6) {
+        digit = '6';
+      } else if (key == LogicalKeyboardKey.digit7 || key == LogicalKeyboardKey.numpad7) {
+        digit = '7';
+      } else if (key == LogicalKeyboardKey.digit8 || key == LogicalKeyboardKey.numpad8) {
+        digit = '8';
+      } else if (key == LogicalKeyboardKey.digit9 || key == LogicalKeyboardKey.numpad9) {
+        digit = '9';
+      }
+    }
+
+    if (digit != null) {
+      _onKeypadTap(digit);
       return KeyEventResult.handled;
     }
 
@@ -161,8 +189,9 @@ class _LoginScreenState extends State<LoginScreen> {
       return KeyEventResult.handled;
     }
 
-    // ── Limpiar todo: Escape ──────────────────────────────────────────
-    if (event.logicalKey == LogicalKeyboardKey.escape) {
+    // ── Limpiar todo: Escape o Delete ─────────────────────────────────
+    if (event.logicalKey == LogicalKeyboardKey.escape ||
+        event.logicalKey == LogicalKeyboardKey.delete) {
       _onKeypadTap('clr');
       return KeyEventResult.handled;
     }
@@ -222,6 +251,7 @@ class _LoginScreenState extends State<LoginScreen> {
           final cashProv = context.read<CashRegisterProvider>();
           
           await settingsProv.loadSettings(isSilent: true);
+          if (!mounted) return;
           
           // R2: Sincronización remota de licencia en segundo plano (fire-and-forget, no bloqueante)
           unawaited(
@@ -237,6 +267,7 @@ class _LoginScreenState extends State<LoginScreen> {
             final assignedId = settingsProv.assignedRegisterId;
             debugPrint('=== LOGIN: Verificando turno activo (registerId: ${assignedId > 0 ? assignedId : "null (fallback a Caja Principal)"}) ===');
             await cashProv.checkCurrentShift(registerId: assignedId > 0 ? assignedId : null);
+            if (!mounted) return;
             debugPrint('=== LOGIN: Turno detectado: ${cashProv.currentShift != null ? "ID:${cashProv.currentShift!.id} (${cashProv.currentShift!.status})" : "NINGUNO"} ===');
           }
 
@@ -250,6 +281,22 @@ class _LoginScreenState extends State<LoginScreen> {
           }
           // ─────────────────────────────────────────────────────────────────
 
+          // Si el diálogo se cerró sin completar el cambio de PIN, abortamos la navegación
+          if (provider.requiresPinChange) {
+            if (mounted) {
+              setState(() {
+                _pin = '';
+                _errorDetail = 'Debe establecer un nuevo PIN de acceso para ingresar al sistema.';
+              });
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) _keyboardFocus.requestFocus();
+              });
+            }
+            return;
+          }
+
+          if (!mounted) return;
+
           _isNavigating = true;
 
           // Encolamos la navegación al final del frame para que el Navigator 
@@ -257,8 +304,20 @@ class _LoginScreenState extends State<LoginScreen> {
           // el LicenseGuard recién reconstruyó la vista.
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted) {
-              SnackBarService.success(context, '¡Bienvenido, ${provider.currentUser?['name']}!');
-              Navigator.of(context).pushReplacementNamed('/home');
+              try {
+                final userName = provider.currentUser?['name'];
+                SnackBarService.success(context, userName != null ? '¡Bienvenido, $userName!' : '¡Bienvenido!');
+                Navigator.of(context).pushReplacementNamed('/home');
+              } catch (e) {
+                if (mounted) {
+                  setState(() {
+                    _isNavigating = false;
+                    _pin = '';
+                    _errorDetail = 'Error al navegar al inicio: $e';
+                  });
+                  _keyboardFocus.requestFocus();
+                }
+              }
             }
           });
         } else {
