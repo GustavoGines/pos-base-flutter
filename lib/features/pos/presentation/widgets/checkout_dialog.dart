@@ -1,4 +1,4 @@
-import 'package:frontend_desktop/core/utils/currency_formatter.dart';
+﻿import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:frontend_desktop/features/catalog/presentation/providers/catalog_provider.dart';
@@ -27,7 +27,7 @@ class PaymentLine {
   TextEditingController percentageController;
   FocusNode percentageFocus;
 
-  // Integración Mercado Pago (QR y Point)
+  // IntegraciÃ³n Mercado Pago (QR y Point)
   bool mpPaid = false;
   String? mpPaymentId;
   String? mpOrderId;
@@ -93,8 +93,8 @@ class PaymentLine {
     }
     double val = m?.surchargeValue ?? 0.0;
 
-    // Si el cajero selecciona tarjeta de crédito/débito y la BD local no tiene un recargo específico,
-    // inyectamos automáticamente el recargo global de configuraciones (ej: 15%).
+    // Si el cajero selecciona tarjeta de crÃ©dito/dÃ©bito y la BD local no tiene un recargo especÃ­fico,
+    // inyectamos automÃ¡ticamente el recargo global de configuraciones (ej: 15%).
     if (m != null &&
         val == 0.0 &&
         defaultCardSurcharge != null &&
@@ -149,8 +149,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       line.mpExternalReference = externalReference;
     });
   }
-  // Rastreo del último método VÁLIDO por línea para revertir si el usuario
-  // intenta seleccionar una opción bloqueada (ej: cuenta_corriente en plan Basic)
+  // Rastreo del Ãºltimo mÃ©todo VÃLIDO por lÃ­nea para revertir si el usuario
+  // intenta seleccionar una opciÃ³n bloqueada (ej: cuenta_corriente en plan Basic)
   final List<PaymentMethod?> _previousValidMethods = [];
   bool _printReceipt = true;
   bool _showPreview = false;
@@ -159,7 +159,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
 
   // Global cash tendered
   final _cashTenderedCtrl = TextEditingController();
-  // FocusNode dedicado para poder enfocar el campo por código
+  // FocusNode dedicado para poder enfocar el campo por cÃ³digo
   final _cashTenderedFocus = FocusNode();
 
   late TextEditingController _shippingCostCtrl;
@@ -167,7 +167,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
 
   Customer? _selectedCustomer;
 
-  // ── Facturación Fiscal ARCA / AFIP ──
+  // â”€â”€ FacturaciÃ³n Fiscal ARCA / AFIP â”€â”€
   bool _isFiscalMode = false;
   int _voucherType = 6; // 1 = Factura A, 6 = Factura B, 11 = Factura C
   int _fiscalDocType = 96; // 80 = CUIT, 86 = CUIL, 96 = DNI, 99 = Consumidor Final
@@ -260,10 +260,10 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   }
 
   bool get _isCartAlreadySurcharged {
-    // En Modo Básico (toggle off) los surcharges de métodos de pago SIEMPRE aplican.
+    // En Modo BÃ¡sico (toggle off) los surcharges de mÃ©todos de pago SIEMPRE aplican.
     final settings = context.read<SettingsProvider>().settings;
     if (settings == null || !settings.enableAdvancedPriceTiers) return false;
-    // En Modo Avanzado: suprimimos el recargo del método si el carrito ya tiene
+    // En Modo Avanzado: suprimimos el recargo del mÃ©todo si el carrito ya tiene
     // el factor de tarjeta o un custom con recargo positivo (para evitar doble cobro).
     final pos = context.read<PosProvider>();
     return pos.activeTier == PriceTier.card ||
@@ -275,25 +275,25 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     super.initState();
     final posProvider = context.read<PosProvider>();
 
-    // Auto-seleccionar el último cliente usado en Cta Cte si existe
+    // Auto-seleccionar el Ãºltimo cliente usado en Cta Cte si existe
     _selectedCustomer = posProvider.lastSelectedCustomer;
     if (_selectedCustomer != null) {
       _deliveryAddressCtrl.text = _selectedCustomer!.deliveryAddress ?? '';
       _syncCustomerWithFiscal(_selectedCustomer);
     }
 
-    // Recuperar estado persistente si existe, o usar la memoria del último flete
+    // Recuperar estado persistente si existe, o usar la memoria del Ãºltimo flete
     _requiresDispatch = posProvider.currentRequiresDispatch;
     _fulfillmentStatus = posProvider.currentFulfillmentStatus;
 
-    // Si la venta actual tiene 0 (porque acabamos de empezar o limpiar), sugerimos el último usado
+    // Si la venta actual tiene 0 (porque acabamos de empezar o limpiar), sugerimos el Ãºltimo usado
     final initialShipping = posProvider.shippingCost > 0
         ? posProvider.shippingCost
         : posProvider.lastUsedShippingCost;
 
     _shippingCostCtrl = TextEditingController(
         text: initialShipping > 0 ? initialShipping.toInputFormat() : '');
-    // Sincronizar la memoria local del diálogo con el último flete usado
+    // Sincronizar la memoria local del diÃ¡logo con el Ãºltimo flete usado
     // (No llamamos a setShippingCost del provider para no alterar el total del fondo prematuramente)
     _shippingCostCtrl.addListener(() {
       setState(() {});
@@ -313,7 +313,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         _printReceipt = prefs.getBool('auto_print_receipt') ?? true;
         _showPreview = prefs.getBool('show_preview_receipt') ?? false;
 
-        // Memoria del último comprobante usado (A=1, B=6, C=11)
+        // Memoria del Ãºltimo comprobante usado (A=1, B=6, C=11)
         final lastVoucher = prefs.getInt('last_voucher_type');
         if (lastVoucher != null && [1, 6, 11].contains(lastVoucher)) {
           _voucherType = lastVoucher;
@@ -344,7 +344,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       final line = PaymentLine(
         method: defaultCash,
         initialAmount:
-            widget.total + (_requiresDispatch ? _shippingCostToApply : 0.0),
+            _baseTotal + (_requiresDispatch ? _shippingCostToApply : 0.0),
         defaultCardSurcharge: settings?.globalCardPercentage,
         disableSurcharge: _isCartAlreadySurcharged,
       );
@@ -376,15 +376,15 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
 
   void _onAmountChanged() => setState(() {});
 
-  /// Sincroniza el campo "Efectivo Recibido" con la porción en efectivo actual.
-  /// Se llama en cada cambio estructural: agregar/quitar línea o cambiar método.
+  /// Sincroniza el campo "Efectivo Recibido" con la porciÃ³n en efectivo actual.
+  /// Se llama en cada cambio estructural: agregar/quitar lÃ­nea o cambiar mÃ©todo.
   /// [autoFocus] pone el cursor en el campo para que el cajero tipee el monto recibido.
   void _syncCashField({bool autoFocus = false}) {
     final req = _lines
         .where((l) => l.method?.isCash == true)
         .fold(0.0, (double sum, l) => sum + l.amount);
 
-    // Actualizar el texto solo si el valor difiere (evita recursión del listener)
+    // Actualizar el texto solo si el valor difiere (evita recursiÃ³n del listener)
     final currentText = _cashTenderedCtrl.text;
     final newText = req > 0 ? req.toInputFormat() : '';
     if (currentText != newText) {
@@ -408,13 +408,13 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     }
   }
 
-  /// Cuando el flete cambia y hay UNA SOLA línea de pago, actualiza el
-  /// monto automáticamente para que el Saldo Pendiente quede en $0.
+  /// Cuando el flete cambia y hay UNA SOLA lÃ­nea de pago, actualiza el
+  /// monto automÃ¡ticamente para que el Saldo Pendiente quede en $0.
   void _syncPaymentsWithShipping() {
-    if (_lines.length != 1) return; // Solo auto-sync con pago único
-    final newTotal = widget.total + _shippingCostToApply;
+    if (_lines.length != 1) return; // Solo auto-sync con pago Ãºnico
+    final newTotal = _baseTotal + _shippingCostToApply;
     final line = _lines[0];
-    // Actualizar el amount de la línea
+    // Actualizar el amount de la lÃ­nea
     final newText = newTotal.toInputFormat();
     if (line.controller.text != newText) {
       line.controller.text = newText;
@@ -451,7 +451,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       _lines.add(line);
       _previousValidMethods.add(defaultMethod);
     });
-    // Sincronizar el efectivo y auto-enfocar: el cajero tiene que tipear cuánto le dan
+    // Sincronizar el efectivo y auto-enfocar: el cajero tiene que tipear cuÃ¡nto le dan
     _syncCashField(autoFocus: defaultMethod.isCash);
   }
 
@@ -467,7 +467,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
           _previousValidMethods.removeAt(index);
         }
       });
-      // Re-sincronizar al quitar una línea (puede cambiar el efectivo requerido)
+      // Re-sincronizar al quitar una lÃ­nea (puede cambiar el efectivo requerido)
       _syncCashField();
     }
   }
@@ -485,10 +485,18 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     return 0.0;
   }
 
+  double get _currentIibbAmount {
+    final posProvider = context.read<PosProvider>();
+    final settings = context.read<SettingsProvider>().settings;
+    return posProvider.calculateIibbPerceptionAmount(settings: settings, customer: _selectedCustomer);
+  }
+
+  double get _baseTotal => widget.total + _currentIibbAmount;
+
   double get _grandTotal =>
-      widget.total + _totalSurcharge + _shippingCostToApply;
+      _baseTotal + _totalSurcharge + _shippingCostToApply;
   double get _pendingBalance =>
-      widget.total + _shippingCostToApply - _totalBaseAmount;
+      _baseTotal + _shippingCostToApply - _totalBaseAmount;
 
   double get _cashRequired {
     return _lines
@@ -517,12 +525,12 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   bool get _canSubmit {
     if (_pendingBalance > 0.01) return false; // Saldo pendiente sin cubrir
     if (_isFiscalMode && !_isFiscalValid) return false;
-    // Solo bloquear si el cajero ingresó un monto recibido MENOR al efectivo de la línea
-    // y el campo fue modificado manualmente (no está vacío ni igual al monto de la línea)
+    // Solo bloquear si el cajero ingresÃ³ un monto recibido MENOR al efectivo de la lÃ­nea
+    // y el campo fue modificado manualmente (no estÃ¡ vacÃ­o ni igual al monto de la lÃ­nea)
     if (_cashRequired > 0) {
       final tendered = _actualTendered;
       final cashText = _cashTenderedCtrl.text.trim();
-      // Si el campo tiene algo escrito y es menor al requerido → bloquear
+      // Si el campo tiene algo escrito y es menor al requerido â†’ bloquear
       if (cashText.isNotEmpty &&
           tendered > 0 &&
           tendered < (_cashRequired - 0.01)) {
@@ -543,10 +551,10 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
 
   void _showProUpsellDialog([String? methodName]) {
     final isCheque = methodName?.toLowerCase().contains('cheque') == true;
-    final title = isCheque ? 'Actualizá a Premium' : 'Actualizá a Premium';
+    final title = isCheque ? 'ActualizÃ¡ a Premium' : 'ActualizÃ¡ a Premium';
     final content = isCheque
-        ? 'El cobro con cheques de terceros es exclusivo del Plan Premium.\n\n¿Qué te permite?\n• Registrar cheques diferidos.\n• Visualizar la cartera en el dashboard.\n• Semáforo de pagos próximos.'
-        : 'El módulo de Cuentas Corrientes es exclusivo para el Plan Premium.\n\n¿Qué te permite?\n• Fiar a tus clientes de confianza.\n• Controlar saldos deudores.\n• Armar estados de cuenta fiables.\n\nContatáte para subir al Plan Premium y desbloquearlo.';
+        ? 'El cobro con cheques de terceros es exclusivo del Plan Premium.\n\nÂ¿QuÃ© te permite?\nâ€¢ Registrar cheques diferidos.\nâ€¢ Visualizar la cartera en el dashboard.\nâ€¢ SemÃ¡foro de pagos prÃ³ximos.'
+        : 'El mÃ³dulo de Cuentas Corrientes es exclusivo para el Plan Premium.\n\nÂ¿QuÃ© te permite?\nâ€¢ Fiar a tus clientes de confianza.\nâ€¢ Controlar saldos deudores.\nâ€¢ Armar estados de cuenta fiables.\n\nContatÃ¡te para subir al Plan Premium y desbloquearlo.';
 
     showDialog(
       context: context,
@@ -646,9 +654,9 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                           : null,
                     );
               }
-              // Como CheckoutDialog tiene copia estática del 'total', si el tier bajó los precios el total debe recalcularse.
-              // Para no complicar la caja con saldos saltando de golpe, le avisamos al Provider que ya recalculó en background.
-              // El cajero verá el nuevo total en la barra superior del diálogo si lo cerramos.
+              // Como CheckoutDialog tiene copia estÃ¡tica del 'total', si el tier bajÃ³ los precios el total debe recalcularse.
+              // Para no complicar la caja con saldos saltando de golpe, le avisamos al Provider que ya recalculÃ³ en background.
+              // El cajero verÃ¡ el nuevo total en la barra superior del diÃ¡logo si lo cerramos.
             }
           }
           Navigator.pop(ctx);
@@ -670,7 +678,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       if (!_selectedCustomer!.isInternalAccount && ccNeed > _availableCredit) {
         SnackBarService.error(
             context,
-            'El cliente no tiene límite de crédito suficiente. '
+            'El cliente no tiene lÃ­mite de crÃ©dito suficiente. '
             'Disponible: \$${_availableCredit.toCurrency()}');
         return;
       }
@@ -693,7 +701,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
             chequeLine.checkIssuerCuitController.text.trim().isEmpty ||
             chequeLine.checkIssuerNameController.text.trim().isEmpty) {
           SnackBarService.error(context,
-              'Complete los datos obligatorios de todos los cheques (Banco, Número, CUIT, Firmante).');
+              'Complete los datos obligatorios de todos los cheques (Banco, NÃºmero, CUIT, Firmante).');
           return;
         }
         checkList.add({
@@ -724,8 +732,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
             })
         .toList();
 
-    // Vista Previa: solo aplica para impresoras térmicas.
-    // Para A4, el provider maneja el visor PDF directamente según showPreview.
+    // Vista Previa: solo aplica para impresoras tÃ©rmicas.
+    // Para A4, el provider maneja el visor PDF directamente segÃºn showPreview.
     final localTerminal =
         Provider.of<LocalTerminalProvider>(context, listen: false);
     final isA4 = localTerminal.printerFormat.startsWith('a4');
@@ -734,7 +742,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       final cart = posProvider.cart;
       final isNarrow = localTerminal.printerFormat == 'thermal_58';
 
-      // ──── Replicar EXACTAMENTE la lógica de printSaleTicket ────
+      // â”€â”€â”€â”€ Replicar EXACTAMENTE la lÃ³gica de printSaleTicket â”€â”€â”€â”€
       final bool isComplexPayment = _lines.length > 1 || _totalSurcharge > 0.01;
       final bool hasTendered = _actualTendered > 0.01;
 
@@ -757,7 +765,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         if (userName != null) TicketLine('CAJERO: ${userName.toUpperCase()}'),
         const TicketLine.hr(),
 
-        // Ítems del carrito
+        // Ãtems del carrito
         ...cart
             .map((item) => [
                   TicketLine(
@@ -769,12 +777,12 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
             .expand((l) => l),
         const TicketLine.hr(bold: true),
 
-        // ──── Sección de pago (igual que el ticket real) ────
+        // â”€â”€â”€â”€ SecciÃ³n de pago (igual que el ticket real) â”€â”€â”€â”€
         if (isComplexPayment) ...[
           TicketLine('SUBTOTAL:',
-              rightText: '\$${widget.total.toCurrency()}', isBold: true),
+              rightText: '\$${_baseTotal.toCurrency()}', isBold: true),
           const TicketLine.hr(),
-          // Un renglón por cada método de pago
+          // Un renglÃ³n por cada mÃ©todo de pago
           ..._lines.map((l) => TicketLine(
                 (l.method?.name ?? 'PAGO').toUpperCase(),
                 rightText: '\$${l.amount.toCurrency()}',
@@ -785,7 +793,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                 rightText: '\$${_totalSurcharge.toCurrency()}'),
           const TicketLine.hr(),
           if (_shippingCostToApply > 0.01)
-            TicketLine('FLETE / ENVÍO:',
+            TicketLine('FLETE / ENVÃO:',
                 rightText: '\$${_shippingCostToApply.toCurrency()}'),
           TicketLine('TOTAL COBRADO:',
               rightText: '\$${_grandTotal.toCurrency()}',
@@ -800,7 +808,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         ] else ...[
           // Venta simple: un pago, sin recargos
           if (_shippingCostToApply > 0.01)
-            TicketLine('FLETE / ENVÍO:',
+            TicketLine('FLETE / ENVÃO:',
                 rightText: '\$${_shippingCostToApply.toCurrency()}'),
           TicketLine('TOTAL GENERAL:',
               rightText: '\$${_grandTotal.toCurrency()}',
@@ -828,7 +836,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         ),
       ];
 
-      // AGREGADO: Si es split ticket (Retira ya), mostrar también el remito en la vista previa
+      // AGREGADO: Si es split ticket (Retira ya), mostrar tambiÃ©n el remito en la vista previa
       if (_requiresDispatch && _fulfillmentStatus == 'delivered') {
         lines.add(const TicketLine.space());
         lines.add(const TicketLine.hr(bold: true)); // Simular corte
@@ -836,7 +844,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         lines.add(const TicketLine('ORDEN DE RETIRO / REMITO',
             align: TicketAlign.center, isBold: true));
         lines.add(const TicketLine.hr());
-        lines.add(const TicketLine('REMITO N°: (PROXIMO)'));
+        lines.add(const TicketLine('REMITO NÂ°: (PROXIMO)'));
         lines.add(const TicketLine('VENTA ASOC: (PROXIMA)'));
         lines.add(TicketLine(
             'FECHA: ${DateTime.now().day.toString().padLeft(2, "0")}/${DateTime.now().month.toString().padLeft(2, "0")}/${DateTime.now().year}'));
@@ -846,7 +854,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
               isBold: true));
         }
         if (userName != null) {
-          lines.add(TicketLine('VENDIÓ: ${userName.toUpperCase()}'));
+          lines.add(TicketLine('VENDIÃ“: ${userName.toUpperCase()}'));
         }
         lines.add(const TicketLine.hr());
         lines.add(const TicketLine('ARTICULOS A RETIRAR:', isBold: true));
@@ -877,7 +885,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       if (!mounted) return;
       final confirmed = await TicketPreviewDialog.show(
         context,
-        title: 'Vista Previa — Ticket ${isNarrow ? "58mm" : "80mm"}',
+        title: 'Vista Previa â€” Ticket ${isNarrow ? "58mm" : "80mm"}',
         lines: lines,
       );
       if (!mounted || !confirmed) return;
@@ -927,7 +935,9 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         saleId: widget.saleId!,
         saleTotal: _grandTotal,
         totalSurcharge: _totalSurcharge,
-        payments: paymentsPayload,
+          iibbPerceptionAmount: _currentIibbAmount > 0 ? _currentIibbAmount : null,
+          iibbPerceptionRate: _currentIibbAmount > 0 ? _selectedCustomer?.iibbPerceptionRate : null,
+          payments: paymentsPayload,
         tenderedAmount: _actualTendered,
         changeAmount: _change,
         shiftId: shiftId,
@@ -942,7 +952,9 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       success = await posProvider.processCheckout(
         shiftId: shiftId,
         totalSurcharge: _totalSurcharge,
-        payments: paymentsPayload,
+          iibbPerceptionAmount: _currentIibbAmount > 0 ? _currentIibbAmount : null,
+          iibbPerceptionRate: _currentIibbAmount > 0 ? _selectedCustomer?.iibbPerceptionRate : null,
+          payments: paymentsPayload,
         tenderedAmount: _actualTendered,
         changeAmount: _change,
         printerFormat: localTerminal.printerFormat,
@@ -983,10 +995,10 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
           return;
         }
 
-        // ──── Sesión Única: el error viene del ValidateSessionToken middleware ────
+        // â”€â”€â”€â”€ SesiÃ³n Ãšnica: el error viene del ValidateSessionToken middleware â”€â”€â”€â”€
         // El dialog se cierra con false para devolver el control a _handleCheckout
         // en pos_screen, que es quien muestra el dialog de seguridad naranja y
-        // fuerza el logout + navegación a /login.
+        // fuerza el logout + navegaciÃ³n a /login.
         if (errMsg.contains('SESSION_EXPIRED') ||
             errMsg.contains('otro dispositivo')) {
           Navigator.of(context).pop(false);
@@ -1017,7 +1029,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   Future<void> _openMercadoPagoQrModal(PaymentLine line) async {
     final double chargeAmount = line.total > 0
         ? line.total
-        : (line.amount > 0 ? line.amount : widget.total);
+        : (line.amount > 0 ? line.amount : _baseTotal);
 
     if (chargeAmount <= 0) {
       SnackBarService.warning(context, 'El monto a cobrar debe ser mayor a cero');
@@ -1064,7 +1076,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   Future<void> _sendToPosnetDevice(PaymentLine line) async {
     final double chargeAmount = line.total > 0
         ? line.total
-        : (line.amount > 0 ? line.amount : widget.total);
+        : (line.amount > 0 ? line.amount : _baseTotal);
 
     if (chargeAmount <= 0) {
       SnackBarService.warning(context, 'El monto a cobrar debe ser mayor a cero');
@@ -1161,7 +1173,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                 segments: const [
                   ButtonSegment<bool>(
                     value: false,
-                    label: Text('Ticket Común', style: TextStyle(fontSize: 12)),
+                    label: Text('Ticket ComÃºn', style: TextStyle(fontSize: 12)),
                   ),
                   ButtonSegment<bool>(
                     value: true,
@@ -1306,7 +1318,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                         controller: _fiscalDocNumberCtrl,
                         keyboardType: TextInputType.number,
                         decoration: InputDecoration(
-                          labelText: 'N° Documento',
+                          labelText: 'NÂ° Documento',
                           hintText: _fiscalDocType == 80 ? '20-12345678-9' : 'DNI / CUIT',
                           isDense: true,
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
@@ -1357,7 +1369,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                             controller: _fiscalDocNumberCtrl,
                             keyboardType: TextInputType.number,
                             decoration: InputDecoration(
-                              labelText: 'N° Documento',
+                              labelText: 'NÂ° Documento',
                               hintText: _fiscalDocType == 80 ? '20-12345678-9' : 'DNI / CUIT',
                               isDense: true,
                               border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
@@ -1379,7 +1391,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
               key: const Key('fiscal_receiver_name_field'),
               controller: _fiscalReceiverNameCtrl,
               decoration: InputDecoration(
-                labelText: 'Razón Social / Nombre Receptor',
+                labelText: 'RazÃ³n Social / Nombre Receptor',
                 hintText: _voucherType == 1 ? 'Requerido para Factura A' : 'Consumidor Final',
                 isDense: true,
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
@@ -1401,7 +1413,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                         isExpanded: true,
                         isDense: true,
                         decoration: InputDecoration(
-                          labelText: 'Condición IVA',
+                          labelText: 'CondiciÃ³n IVA',
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                           contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
                         ),
@@ -1441,7 +1453,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                         isExpanded: true,
                         isDense: true,
                         decoration: InputDecoration(
-                          labelText: 'Condición IVA',
+                          labelText: 'CondiciÃ³n IVA',
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                           contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
                         ),
@@ -1517,7 +1529,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         return const Padding(
           padding: EdgeInsets.only(top: 4, left: 4),
           child: Text(
-            'CUIT/CUIL inválido (falla Módulo 11)',
+            'CUIT/CUIL invÃ¡lido (falla MÃ³dulo 11)',
             key: Key('cuit_invalid_feedback'),
             style: TextStyle(color: Colors.red, fontSize: 11),
           ),
@@ -1526,7 +1538,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         return const Padding(
           padding: EdgeInsets.only(top: 4, left: 4),
           child: Text(
-            'CUIT/CUIL válido (Módulo 11 OK)',
+            'CUIT/CUIL vÃ¡lido (MÃ³dulo 11 OK)',
             key: Key('cuit_valid_feedback'),
             style: TextStyle(color: Colors.green, fontSize: 11),
           ),
@@ -1551,7 +1563,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
             children: [
               CircularProgressIndicator(),
               SizedBox(height: 16),
-              Text("Cargando métodos de pago..."),
+              Text("Cargando mÃ©todos de pago..."),
             ],
           ),
         ),
@@ -1572,7 +1584,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-              // ──── Header
+              // â”€â”€â”€â”€ Header
               if (isPending) ...[
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -1606,7 +1618,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                   border: Border.all(color: Colors.blue.shade200),
                 ),
                 // Mostrar el desglose completo SOLO si hay recargos,
-                // si no, mostrar solo el total para evitar confusión con "$0.00 Recargo"
+                // si no, mostrar solo el total para evitar confusiÃ³n con "$0.00 Recargo"
                 child: _totalSurcharge > 0
                     ? Row(
                         mainAxisAlignment: MainAxisAlignment.spaceAround,
@@ -1616,10 +1628,15 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                               const Text('Total Base',
                                   style: TextStyle(
                                       fontSize: 14, color: Colors.black54)),
-                              Text('\$${widget.total.toCurrency()}',
+                              Text('\$${_baseTotal.toCurrency()}',
                                   style: const TextStyle(
                                       fontSize: 24,
                                       fontWeight: FontWeight.bold)),
+                                if (_currentIibbAmount > 0)
+                                  Text('Inc. Percep. IIBB (${_selectedCustomer?.iibbPerceptionRate}%): \$${_currentIibbAmount.toCurrency()}',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                          fontSize: 10, color: Colors.purple.shade700, fontWeight: FontWeight.bold)),
                             ],
                           ),
                           Text('+',
@@ -1686,7 +1703,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
 
               const SizedBox(height: 24),
 
-              // ──── Líneas de Pago
+              // â”€â”€â”€â”€ LÃ­neas de Pago
               Column(
                 children: _lines.asMap().entries.map((entry) {
                   int idx = entry.key;
@@ -1701,14 +1718,14 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                             Expanded(
                               flex: 2,
                               // Key con method.id garantiza que Flutter recree el widget
-                              // si hacemos revert explícito, evitando estados visuales desincronizados
+                              // si hacemos revert explÃ­cito, evitando estados visuales desincronizados
                               child: DropdownButtonFormField<PaymentMethod>(
                                 key: ValueKey('dd_${idx}_${line.method?.id}'),
                                 isExpanded: true,
                                 icon: Icon(Icons.arrow_drop_down_rounded,
                                     color: Colors.blue.shade700),
                                 decoration: InputDecoration(
-                                  labelText: 'Método',
+                                  labelText: 'MÃ©todo',
                                   labelStyle:
                                       TextStyle(color: Colors.blue.shade700),
                                   filled: true,
@@ -1744,8 +1761,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
 
                                   return DropdownMenuItem<PaymentMethod>(
                                     value: m,
-                                    // enabled: true —  el item es clickeable aunque sea Premium.
-                                    // Al hacer click → onChanged muestra el upsell y revierte.
+                                    // enabled: true â€”  el item es clickeable aunque sea Premium.
+                                    // Al hacer click â†’ onChanged muestra el upsell y revierte.
                                     enabled: true,
                                     child: Row(
                                       children: [
@@ -1765,12 +1782,12 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                                             overflow: TextOverflow.ellipsis,
                                           ),
                                         ),
-                                        // Hint sutil de que es premium —  no deshabilita ni grisea
+                                        // Hint sutil de que es premium â€”  no deshabilita ni grisea
                                         if (isLocked) ...[
                                           const SizedBox(width: 6),
                                           Tooltip(
                                             message:
-                                                'Función Pro —  Hacé clic para conocer más',
+                                                'FunciÃ³n Pro â€”  HacÃ© clic para conocer mÃ¡s',
                                             child: Icon(
                                               Icons.workspace_premium,
                                               size: 15,
@@ -1800,7 +1817,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                                   if (isLockedSel) {
                                     _showProUpsellDialog(val.name);
 
-                                    // Revertir explícitamente al último método válido
+                                    // Revertir explÃ­citamente al Ãºltimo mÃ©todo vÃ¡lido
                                     final prev =
                                         (idx < _previousValidMethods.length)
                                             ? _previousValidMethods[idx]
@@ -1814,8 +1831,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                                         disableSurcharge:
                                             _isCartAlreadySurcharged));
 
-                                    // En el microsegundo siguiente, restauramos el método verdadero
-                                    // Así Flutter se ve forzado a renderizar desde cero con la opción original.
+                                    // En el microsegundo siguiente, restauramos el mÃ©todo verdadero
+                                    // AsÃ­ Flutter se ve forzado a renderizar desde cero con la opciÃ³n original.
                                     WidgetsBinding.instance
                                         .addPostFrameCallback((_) {
                                       if (mounted) {
@@ -1829,7 +1846,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                                     return;
                                   }
                                   setState(() {
-                                    // Guardar el nuevo método como "previo válido" antes de cambiar
+                                    // Guardar el nuevo mÃ©todo como "previo vÃ¡lido" antes de cambiar
                                     if (idx < _previousValidMethods.length) {
                                       _previousValidMethods[idx] = val;
                                     }
@@ -1840,8 +1857,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                                             _isCartAlreadySurcharged);
                                   });
                                   // Sincronizar el campo de efectivo recibido.
-                                  // Si el método elegido es efectivo → auto-foco para que
-                                  // el cajero tipee cuánto le dan.
+                                  // Si el mÃ©todo elegido es efectivo â†’ auto-foco para que
+                                  // el cajero tipee cuÃ¡nto le dan.
                                   _syncCashField(autoFocus: val.isCash);
                                 },
                               ),
@@ -1940,7 +1957,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                             ),
                           ],
                         ),
-                        // ── Formulario de cheque (se despliega cuando code == 'cheque') ──
+                        // â”€â”€ Formulario de cheque (se despliega cuando code == 'cheque') â”€â”€
                         if (line.method?.code == 'cheque')
                           Container(
                             padding: const EdgeInsets.all(12),
@@ -2031,7 +2048,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                                                 line.checkIssueDateController,
                                             decoration: InputDecoration(
                                                 labelText:
-                                                    'Emisión (YYYY-MM-DD)',
+                                                    'EmisiÃ³n (YYYY-MM-DD)',
                                                 isDense: true,
                                                 border: OutlineInputBorder(
                                                     borderRadius:
@@ -2059,7 +2076,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                             ),
                           ),
 
-                        // ── Acciones Mercado Pago QR ──
+                        // â”€â”€ Acciones Mercado Pago QR â”€â”€
                         if (line.method?.code == 'mercadopago_qr')
                           Padding(
                             padding: const EdgeInsets.only(top: 8.0),
@@ -2106,7 +2123,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                             ),
                           ),
 
-                        // ── Acciones Mercado Pago Point ──
+                        // â”€â”€ Acciones Mercado Pago Point â”€â”€
                         if (line.method?.code == 'mercadopago_point')
                           Padding(
                             padding: const EdgeInsets.only(top: 8.0),
@@ -2118,7 +2135,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                                       alignment: Alignment.centerLeft,
                                       child: FilledButton.icon(
                                         icon: const Icon(Icons.point_of_sale, size: 18),
-                                        label: const Text('Enviar a Posnet Físico'),
+                                        label: const Text('Enviar a Posnet FÃ­sico'),
                                         style: FilledButton.styleFrom(
                                           backgroundColor: const Color(0xFF009EE3),
                                         ),
@@ -2162,7 +2179,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                 alignment: Alignment.centerLeft,
                 child: TextButton.icon(
                   icon: const Icon(Icons.add),
-                  label: const Text('Completar con otro método'),
+                  label: const Text('Completar con otro mÃ©todo'),
                   onPressed: _pendingBalance > 0.01 ? _addLine : null,
                 ),
               ),
@@ -2234,8 +2251,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                                               fontWeight: FontWeight.bold)),
                                       Text(
                                           _selectedCustomer!.isInternalAccount
-                                              ? 'Crédito disp: Ilimitado (Cuenta Interna)'
-                                              : 'Crédito disp: \$${_availableCredit.toCurrency()}',
+                                              ? 'CrÃ©dito disp: Ilimitado (Cuenta Interna)'
+                                              : 'CrÃ©dito disp: \$${_availableCredit.toCurrency()}',
                                           style: const TextStyle(fontSize: 12)),
                                     ],
                                   ),
@@ -2260,7 +2277,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                             decimal: true),
                         textInputAction: TextInputAction.done,
                         onTap: () {
-                          // Selecciona todo el texto pre-cargado para sobreescribirlo rápido
+                          // Selecciona todo el texto pre-cargado para sobreescribirlo rÃ¡pido
                           _cashTenderedCtrl.selection = TextSelection(
                             baseOffset: 0,
                             extentOffset: _cashTenderedCtrl.text.length,
@@ -2279,7 +2296,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                             borderSide: BorderSide(
                                 color: Colors.green.shade600, width: 2),
                           ),
-                          helperText: 'Ingresá el monto que entrega el cliente',
+                          helperText: 'IngresÃ¡ el monto que entrega el cliente',
                           helperStyle: TextStyle(
                               fontSize: 11, color: Colors.green.shade700),
                         ),
@@ -2329,7 +2346,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                 const SizedBox(height: 24),
               ],
 
-              // ── Facturación Fiscal (ARCA / AFIP) ──
+              // â”€â”€ FacturaciÃ³n Fiscal (ARCA / AFIP) â”€â”€
               _buildFiscalInvoicingSection(),
               const SizedBox(height: 16),
 
@@ -2387,7 +2404,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
               ),
               const SizedBox(height: 24),
 
-              // ── Toggle Logística a Demanda ──────────────────────────
+              // â”€â”€ Toggle LogÃ­stica a Demanda â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
               // Solo visible si el plan tiene la feature 'logistics' habilitada
               if (settings?.features.logistics == true && !isPending) ...[
                 const Divider(),
@@ -2446,7 +2463,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  'Enviar a Logística (Armar Pedido)',
+                                  'Enviar a LogÃ­stica (Armar Pedido)',
                                   style: TextStyle(
                                     fontWeight: FontWeight.bold,
                                     fontSize: 13,
@@ -2457,7 +2474,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                                 ),
                                 Text(
                                   _requiresDispatch
-                                      ? 'Se creará un remito automáticamente al confirmar'
+                                      ? 'Se crearÃ¡ un remito automÃ¡ticamente al confirmar'
                                       : 'Se entrega en el momento (sin remito)',
                                   style: TextStyle(
                                     fontSize: 11,
@@ -2558,7 +2575,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                               const Icon(Icons.local_shipping_outlined,
                                   size: 18, color: Colors.blueGrey),
                               const SizedBox(width: 8),
-                              const Text('Flete / Envío:',
+                              const Text('Flete / EnvÃ­o:',
                                   style: TextStyle(
                                       fontWeight: FontWeight.bold,
                                       fontSize: 13)),
@@ -2597,7 +2614,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                                   controller: _deliveryAddressCtrl,
                                   decoration: const InputDecoration(
                                     labelText:
-                                        'Dirección de Entrega (Opcional)',
+                                        'DirecciÃ³n de Entrega (Opcional)',
                                     isDense: true,
                                     contentPadding: EdgeInsets.symmetric(
                                         horizontal: 8, vertical: 8),
@@ -2782,3 +2799,11 @@ class _CustomerPickerDialogState extends State<_CustomerPickerDialog> {
     );
   }
 }
+
+
+
+
+
+
+
+

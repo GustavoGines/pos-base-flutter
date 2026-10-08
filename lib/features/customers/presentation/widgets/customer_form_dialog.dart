@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../models/customer_model.dart';
@@ -39,6 +39,7 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
     _documentController =
         TextEditingController(text: widget.customer?.documentNumber ?? '');
     _documentType = widget.customer?.documentType ?? 96;
+    if (![80, 86, 96].contains(_documentType)) _documentType = 96;
     _taxCondition = widget.customer?.taxCondition ?? 'consumidor_final';
     _phoneController =
         TextEditingController(text: widget.customer?.phone ?? '');
@@ -152,7 +153,7 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
               TextFormField(
                 controller: _nameController,
                 decoration: const InputDecoration(
-                    labelText: 'Nombre / Razón Social *',
+                    labelText: 'Nombre / RazÃ³n Social *',
                     border: OutlineInputBorder()),
                 validator: (val) =>
                     val == null || val.isEmpty ? 'Requerido' : null,
@@ -169,8 +170,7 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
                   DropdownMenuItem(value: 80, child: Text('80 - CUIT')),
                   DropdownMenuItem(value: 86, child: Text('86 - CUIL')),
                   DropdownMenuItem(value: 96, child: Text('96 - DNI')),
-                  DropdownMenuItem(value: 99, child: Text('99 - Consumidor Final')),
-                ],
+                                  ],
                 onChanged: (val) {
                   if (val != null) setState(() => _documentType = val);
                 },
@@ -180,11 +180,11 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
                 controller: _documentController,
                 decoration: InputDecoration(
                   labelText: _documentType == 80
-                      ? 'CUIT (11 dígitos sin guiones) *'
+                      ? 'CUIT (11 dÃ­gitos sin guiones) *'
                       : (_documentType == 86
-                          ? 'CUIL (11 dígitos) *'
+                          ? 'CUIL (11 dÃ­gitos) *'
                           : (_documentType == 96
-                              ? 'DNI (7 u 8 dígitos) *'
+                              ? 'DNI (7 u 8 dÃ­gitos) *'
                               : 'Nro de Documento')),
                   border: const OutlineInputBorder(),
                 ),
@@ -197,11 +197,11 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
                   }
                   if (_documentType == 80 || _documentType == 86) {
                     if (!AfipModulo11.validateCuit(text)) {
-                      return 'CUIT/CUIL inválido (Módulo 11)';
+                      return 'CUIT/CUIL invÃ¡lido (MÃ³dulo 11)';
                     }
                   } else if (_documentType == 96) {
                     if (!AfipModulo11.validateDni(text)) {
-                      return 'DNI inválido (7-8 dígitos)';
+                      return 'DNI invÃ¡lido (7-8 dÃ­gitos)';
                     }
                   }
                   return null;
@@ -212,7 +212,7 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
                 initialValue: _taxCondition,
                 isExpanded: true,
                 decoration: const InputDecoration(
-                  labelText: 'Condición frente al IVA',
+                  labelText: 'CondiciÃ³n frente al IVA',
                   border: OutlineInputBorder(),
                 ),
                 items: const [
@@ -235,7 +235,7 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
               TextFormField(
                 controller: _fiscalAddressController,
                 decoration: const InputDecoration(
-                    labelText: 'Dirección Fiscal (AFIP) (Opcional)',
+                    labelText: 'DirecciÃ³n Fiscal (AFIP) (Opcional)',
                     border: OutlineInputBorder()),
               ),
               const SizedBox(height: 16),
@@ -243,14 +243,14 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
                 controller: _phoneController,
                 keyboardType: TextInputType.phone,
                 decoration: const InputDecoration(
-                    labelText: 'Teléfono (Opcional)',
+                    labelText: 'TelÃ©fono (Opcional)',
                     border: OutlineInputBorder()),
               ),
               const SizedBox(height: 16),
               TextFormField(
                 controller: _deliveryAddressController,
                 decoration: const InputDecoration(
-                    labelText: 'Dirección de Entrega (Opcional)',
+                    labelText: 'DirecciÃ³n de Entrega (Opcional)',
                     border: OutlineInputBorder()),
               ),
               const SizedBox(height: 16),
@@ -258,16 +258,16 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
                 controller: _creditLimitController,
                 keyboardType: TextInputType.number,
                 decoration: const InputDecoration(
-                    labelText: 'Límite de Crédito (\$) (Opcional)',
+                    labelText: 'LÃ­mite de CrÃ©dito (\$) (Opcional)',
                     border: OutlineInputBorder()),
               ),
               const SizedBox(height: 16),
               SwitchListTile(
                 title: const Text(
-                    'Cuenta de Consumo Interno (Ej: Repostería / Uso Propio)',
+                    'Cuenta de Consumo Interno (Ej: ReposterÃ­a / Uso Propio)',
                     style: TextStyle(fontSize: 14)),
                 subtitle: const Text(
-                    'Excluye estas ventas de los reportes de ganancias y facturación.',
+                    'Excluye estas ventas de los reportes de ganancias y facturaciÃ³n.',
                     style: TextStyle(fontSize: 12)),
                 value: _isInternalAccount,
                 activeThumbColor: Colors.indigo,
@@ -278,10 +278,10 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
               const SizedBox(height: 16),
               SwitchListTile(
                 key: const ValueKey('switch_applies_iibb_perception'),
-                title: const Text('Aplica Percepción IIBB',
+                title: const Text('Aplica PercepciÃ³n IIBB',
                     style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
                 subtitle: const Text(
-                    'Calcular percepción de Ingresos Brutos en compras mayoristas.',
+                    'Calcular percepciÃ³n de Ingresos Brutos en compras mayoristas.',
                     style: TextStyle(fontSize: 12)),
                 value: _appliesIibbPerception,
                 activeThumbColor: Theme.of(context).colorScheme.primary,
@@ -309,7 +309,7 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
                     FilteringTextInputFormatter.allow(RegExp(r'^\d*[\.,]?\d{0,2}')),
                   ],
                   decoration: const InputDecoration(
-                    labelText: 'Alícuota IIBB (%) *',
+                    labelText: 'AlÃ­cuota IIBB (%) *',
                     hintText: 'Ej: 3.0',
                     prefixIcon: Icon(Icons.percent),
                     border: OutlineInputBorder(),
@@ -317,11 +317,11 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
                   validator: (val) {
                     if (!_appliesIibbPerception) return null;
                     if (val == null || val.trim().isEmpty) {
-                      return 'La alícuota es requerida si aplica percepción';
+                      return 'La alÃ­cuota es requerida si aplica percepciÃ³n';
                     }
                     final n = double.tryParse(val.trim().replaceAll(',', '.'));
                     if (n == null || n < 0 || n > 100) {
-                      return 'Ingrese un porcentaje válido (0 - 100)';
+                      return 'Ingrese un porcentaje vÃ¡lido (0 - 100)';
                     }
                     return null;
                   },
@@ -352,3 +352,4 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
     );
   }
 }
+

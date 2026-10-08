@@ -1,4 +1,4 @@
-import 'package:frontend_desktop/core/utils/currency_formatter.dart';
+﻿import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../models/customer_model.dart';
@@ -226,16 +226,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
                                     child: Row(
                                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                       children: [
-                                        Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Text('DNI: ${customer.documentNumber}', style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
-                                            if (customer.phone != null && customer.phone!.isNotEmpty) ...[
-                                              const SizedBox(width: 8),
-                                              Text('· 📞 ${customer.phone}', style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
-                                            ]
-                                          ],
-                                        ),
+                                        Expanded(child: Wrap(crossAxisAlignment: WrapCrossAlignment.center, children: [Text('DNI: ${customer.documentNumber}', style: TextStyle(color: Colors.grey.shade600, fontSize: 12), overflow: TextOverflow.ellipsis), if (customer.phone != null && customer.phone!.isNotEmpty) ...[const SizedBox(width: 8), Text('📞 ${customer.phone}', style: TextStyle(color: Colors.grey.shade600, fontSize: 12), overflow: TextOverflow.ellipsis)]])),
                                         Row(
                                           mainAxisSize: MainAxisSize.min,
                                           children: [

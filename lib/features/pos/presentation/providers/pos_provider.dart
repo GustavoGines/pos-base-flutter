@@ -1,4 +1,4 @@
-import 'dart:typed_data';
+﻿import 'dart:typed_data';
 import 'package:printing/printing.dart';
 import 'package:flutter/material.dart';
 import '../../domain/entities/cart_item.dart';
@@ -46,7 +46,7 @@ class PosProvider with ChangeNotifier {
   bool _isLoading = false;
   bool get isLoading => _isLoading;
 
-  // Guard: evita que un doble-click genere dos API calls antes de que el Consumer reconstruya el botón
+  // Guard: evita que un doble-click genere dos API calls antes de que el Consumer reconstruya el botÃ³n
   bool _isHoldingOrder = false;
   bool get isHoldingOrder => _isHoldingOrder;
 
@@ -56,10 +56,10 @@ class PosProvider with ChangeNotifier {
   String? _printerWarning;
   String? get printerWarning => _printerWarning;
 
-  // ── Seguridad: Turno Cerrado Remotamente ─────────────────────────
+  // â”€â”€ Seguridad: Turno Cerrado Remotamente â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Se activa cuando el backend rechaza una venta porque el turno ya
   // fue cerrado desde otra terminal. La UI observa este flag para
-  // mostrar el diálogo crítico y forzar la recarga del estado.
+  // mostrar el diÃ¡logo crÃ­tico y forzar la recarga del estado.
   bool _isShiftClosed = false;
   bool get isShiftClosed => _isShiftClosed;
 
@@ -68,11 +68,11 @@ class PosProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  // ── Órdenes Pendientes ──────────────────────────────────────────
+  // â”€â”€ Ã“rdenes Pendientes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   List<Map<String, dynamic>> _pendingSales = [];
   List<Map<String, dynamic>> get pendingSales => _pendingSales;
 
-  // Seguimiento de ID de venta (útil para Corralón/Remitos post-checkout)
+  // Seguimiento de ID de venta (Ãºtil para CorralÃ³n/Remitos post-checkout)
   int? _lastSaleId;
   double? _lastSaleTotal;
   double? _lastSaleShippingCost;
@@ -89,8 +89,8 @@ class PosProvider with ChangeNotifier {
   double get lastSurchargeAmount => _lastSurchargeAmount ?? 0.0;
   List<Map<String, dynamic>> get lastSalePayments => _lastSalePayments;
 
-  // Rastrea si la última venta disparó un remito automático desde el checkout
-  // (true = cajero activó el toggle "Enviar a Logística" y el remito ya fue creado)
+  // Rastrea si la Ãºltima venta disparÃ³ un remito automÃ¡tico desde el checkout
+  // (true = cajero activÃ³ el toggle "Enviar a LogÃ­stica" y el remito ya fue creado)
   bool _wasLastSaleDispatched = false;
   bool get wasLastSaleDispatched => _wasLastSaleDispatched;
 
@@ -100,14 +100,14 @@ class PosProvider with ChangeNotifier {
   Map<String, dynamic>? _lastDeliveryNote;
   Map<String, dynamic>? get lastDeliveryNote => _lastDeliveryNote;
 
-  // Snapshot del carrito de la última venta (disponible incluso después de clearCart)
+  // Snapshot del carrito de la Ãºltima venta (disponible incluso despuÃ©s de clearCart)
   List<CartItem> _lastSaleCart = [];
   List<CartItem> get lastSaleCart => _lastSaleCart;
 
   bool _isPendingLoading = false;
   bool get isPendingLoading => _isPendingLoading;
 
-  // [multiple-prices] Gestión del Nivel de Precio Activo
+  // [multiple-prices] GestiÃ³n del Nivel de Precio Activo
   PriceTier _activeTier = PriceTier.base;
   PriceTier get activeTier => _activeTier;
 
@@ -135,7 +135,7 @@ class PosProvider with ChangeNotifier {
     if (tier != PriceTier.custom) _customTierLabel = null;
     _activeTier = tier;
 
-    // Propagar a todos los ítems del carrito
+    // Propagar a todos los Ã­tems del carrito
     for (var item in _cart) {
       item.activeTier = _activeTier;
       item.wholesaleFactor = _currentWholesaleFactor;
@@ -163,7 +163,7 @@ class PosProvider with ChangeNotifier {
   List<PaymentMethod> _paymentMethods = [];
   List<PaymentMethod> get paymentMethods => _paymentMethods;
 
-  // ── Persistencia de Estado de Logística (UI) ──
+  // â”€â”€ Persistencia de Estado de LogÃ­stica (UI) â”€â”€
   // Estos campos mantienen el estado del CheckoutDialog durante la misma venta
   bool _currentRequiresDispatch = false;
   bool get currentRequiresDispatch => _currentRequiresDispatch;
@@ -177,7 +177,7 @@ class PosProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  // Recordar el último cliente seleccionado en Cuenta Corriente para mayor agilidad
+  // Recordar el Ãºltimo cliente seleccionado en Cuenta Corriente para mayor agilidad
   Customer? _lastSelectedCustomer;
   Customer? get lastSelectedCustomer => _lastSelectedCustomer;
 
@@ -262,7 +262,7 @@ class PosProvider with ChangeNotifier {
     }
   }
 
-  /// Consulta la factura electrónica autorizada previamente
+  /// Consulta la factura electrÃ³nica autorizada previamente
   Future<Map<String, dynamic>?> fetchElectronicInvoice(int saleId) async {
     final ds = effectiveRemoteDataSource;
     if (ds == null) return null;
@@ -274,14 +274,14 @@ class PosProvider with ChangeNotifier {
       }
       return invoice;
     } catch (e) {
-      debugPrint('Error al obtener factura electrónica: $e');
+      debugPrint('Error al obtener factura electrÃ³nica: $e');
       return null;
     }
   }
 
   Future<void> _loadLastShippingCost() async {
     final prefs = await SharedPreferences.getInstance();
-    _shippingCost = 0.0; // Empieza en 0 cada sesión
+    _shippingCost = 0.0; // Empieza en 0 cada sesiÃ³n
     _lastUsedShippingCost = prefs.getDouble('last_shipping_cost') ?? 0.0;
     notifyListeners();
   }
@@ -289,7 +289,7 @@ class PosProvider with ChangeNotifier {
   double _shippingCost = 0.0;
   double get shippingCost => _shippingCost;
   
-  // Memoria del último flete para sugerirlo en la siguiente venta
+  // Memoria del Ãºltimo flete para sugerirlo en la siguiente venta
   double _lastUsedShippingCost = 0.0;
   double get lastUsedShippingCost => _lastUsedShippingCost;
 
@@ -319,17 +319,17 @@ class PosProvider with ChangeNotifier {
   }
   double get cartIvaAmount => ivaAmount;
 
-  /// Indica si corresponde aplicar Percepción IIBB al cliente seleccionado
+  /// Indica si corresponde aplicar PercepciÃ³n IIBB al cliente seleccionado
   bool get appliesIibbPerception {
     return _isIibbPerceptionAgent &&
         (_selectedCustomer?.appliesIibbPerception == true) &&
         ((_selectedCustomer?.iibbPerceptionRate ?? 0.0) > 0);
   }
 
-  /// Alícuota de percepción IIBB activa para el cliente
+  /// AlÃ­cuota de percepciÃ³n IIBB activa para el cliente
   double get iibbPerceptionRate => _selectedCustomer?.iibbPerceptionRate ?? 0.0;
 
-  /// Monto monetario de la Percepción IIBB: Base Neta * (Alícuota / 100)
+  /// Monto monetario de la PercepciÃ³n IIBB: Base Neta * (AlÃ­cuota / 100)
   double get iibbPerceptionAmount {
     return appliesIibbPerception
         ? ((netSubtotal * (iibbPerceptionRate / 100.0)) * 100).roundToDouble() / 100.0
@@ -337,7 +337,7 @@ class PosProvider with ChangeNotifier {
   }
   double get cartIibbPerceptionAmount => iibbPerceptionAmount;
 
-  /// Total general del carrito: Subtotal + Percepción IIBB (+ Flete logístico pendiente)
+  /// Total general del carrito: Subtotal + PercepciÃ³n IIBB (+ Flete logÃ­stico pendiente)
   double get cartTotal {
     final bool applyShipping =
         _currentRequiresDispatch && _currentFulfillmentStatus == 'pending';
@@ -346,18 +346,20 @@ class PosProvider with ChangeNotifier {
         (applyShipping ? _shippingCost : 0.0);
   }
 
-  /// Helper que permite validar percepción pasando BusinessSettings opcionales
-  bool checkAppliesIibbPerception({BusinessSettings? settings}) {
+  /// Helper que permite validar percepciÃ³n pasando BusinessSettings opcionales
+  bool checkAppliesIibbPerception({BusinessSettings? settings, Customer? customer}) {
     final isAgent = settings?.isIibbPerceptionAgent ?? _isIibbPerceptionAgent;
+    final c = customer ?? _selectedCustomer;
     return isAgent &&
-        (_selectedCustomer?.appliesIibbPerception == true) &&
-        ((_selectedCustomer?.iibbPerceptionRate ?? 0.0) > 0);
+        (c?.appliesIibbPerception == true) &&
+        ((c?.iibbPerceptionRate ?? 0.0) > 0);
   }
 
-  /// Helper que calcula el monto de percepción pasando BusinessSettings opcionales
-  double calculateIibbPerceptionAmount({BusinessSettings? settings}) {
-    if (!checkAppliesIibbPerception(settings: settings)) return 0.0;
-    return ((netSubtotal * (iibbPerceptionRate / 100.0)) * 100).roundToDouble() / 100.0;
+  /// Helper que calcula el monto de percepciÃ³n pasando BusinessSettings opcionales
+  double calculateIibbPerceptionAmount({BusinessSettings? settings, Customer? customer}) {
+    if (!checkAppliesIibbPerception(settings: settings, customer: customer)) return 0.0;
+    final rate = customer?.iibbPerceptionRate ?? iibbPerceptionRate;
+    return ((netSubtotal * (rate / 100.0)) * 100).roundToDouble() / 100.0;
   }
 
   // Garantiza que siempre tengamos un printerService, incluso si no se inyecta
@@ -390,7 +392,7 @@ class PosProvider with ChangeNotifier {
         (item) => item.product.id == product.id && !item.product.isSoldByWeight,
       );
       if (index >= 0) {
-        _cart[index].product = product; // Actualizar con el stock más reciente
+        _cart[index].product = product; // Actualizar con el stock mÃ¡s reciente
         _cart[index].quantity += quantity;
       } else {
         _cart.add(CartItem(
@@ -436,14 +438,14 @@ class PosProvider with ChangeNotifier {
     _recalledUserName = null;
     _errorMessage = null;
     _isShiftClosed = false;
-    // No reseteamos estas variables aquí porque la UI las necesita
-    // inmediatamente después de la venta para mostrar el PDF Split.
+    // No reseteamos estas variables aquÃ­ porque la UI las necesita
+    // inmediatamente despuÃ©s de la venta para mostrar el PDF Split.
     // _wasLastSaleDispatched = false;
     // _lastDeliveryNote = null;
-    // Reseteamos el flete a 0.0 para que el carrito vacío muestre $0
+    // Reseteamos el flete a 0.0 para que el carrito vacÃ­o muestre $0
     _shippingCost = 0.0;
     
-    // Reseteamos el estado de logística para la próxima venta
+    // Reseteamos el estado de logÃ­stica para la prÃ³xima venta
     _currentRequiresDispatch = false;
     _currentFulfillmentStatus = 'pending';
 
@@ -508,8 +510,8 @@ class PosProvider with ChangeNotifier {
     clearCart();
   }
 
-  /// Restaura el carrito al estado de la última venta procesada.
-  /// Usado por el flujo de anulación en la vista previa del comprobante.
+  /// Restaura el carrito al estado de la Ãºltima venta procesada.
+  /// Usado por el flujo de anulaciÃ³n en la vista previa del comprobante.
   void restoreLastSaleCart() {
     _cart.clear();
     _cart.addAll(_lastSaleCart);
@@ -519,7 +521,7 @@ class PosProvider with ChangeNotifier {
 
   void recallOrderToCart(Map<String, dynamic> sale) {
     clearCart();
-    // Use un temporizador mínimo o asegure que se haya limpiado el carrito (ya es sincrónico).
+    // Use un temporizador mÃ­nimo o asegure que se haya limpiado el carrito (ya es sincrÃ³nico).
 
     final saleId = (sale['id'] as num).toInt();
     final rawItems = (sale['items'] as List?) ?? [];
@@ -551,7 +553,7 @@ class PosProvider with ChangeNotifier {
     _recalledUserName = sale['user']?['name']?.toString();
     
     // Al recuperar, mantenemos el despacho desactivado por defecto para que el cajero
-    // lo active manualmente si corresponde, evitando cobros automáticos inesperados.
+    // lo active manualmente si corresponde, evitando cobros automÃ¡ticos inesperados.
     _currentRequiresDispatch = false;
     _currentFulfillmentStatus = 'pending';
     
@@ -605,9 +607,9 @@ class PosProvider with ChangeNotifier {
     }
   }
 
-  // ─────────────────────────────────────────────────────────────────
+  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // FLUJO NORMAL: Cobrar directamente
-  // ─────────────────────────────────────────────────────────────────
+  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   Future<bool> processCheckout({
     required int shiftId,
     required double totalSurcharge,
@@ -667,7 +669,7 @@ class PosProvider with ChangeNotifier {
           checkDetails: checkDetails,
         );
         if (!success) {
-          // El error se seteó dentro de payPendingSale
+          // El error se seteÃ³ dentro de payPendingSale
           return false;
         }
         extractedSaleId = _activePendingSaleId!.toString();
@@ -699,7 +701,7 @@ class PosProvider with ChangeNotifier {
         _lastDeliveryNote = result.deliveryNote;
       }
 
-      // Emisión de Factura Fiscal Electrónica ARCA/AFIP si fue requerida
+      // EmisiÃ³n de Factura Fiscal ElectrÃ³nica ARCA/AFIP si fue requerida
       _lastElectronicInvoice = null;
       final fiscalData = _pendingFiscalInvoiceData;
       if (fiscalData != null) {
@@ -718,8 +720,8 @@ class PosProvider with ChangeNotifier {
         }
       }
 
-      // ── Lógica de Resolución de Pagos ──
-      // Resolvemos los nombres de los métodos de pago para los comprobantes
+      // â”€â”€ LÃ³gica de ResoluciÃ³n de Pagos â”€â”€
+      // Resolvemos los nombres de los mÃ©todos de pago para los comprobantes
       final resolvedPayments = (payments.map((p) {
         final id = (p['payment_method_id'] as num?)?.toInt();
         final method = _paymentMethods.firstWhere(
@@ -740,7 +742,7 @@ class PosProvider with ChangeNotifier {
             0.0;
 
         return {
-          'name': method.name, // Para la impresora térmica (pd['name'])
+          'name': method.name, // Para la impresora tÃ©rmica (pd['name'])
           'payment_method': {
             'name': method.name
           }, // Para el PDF A4 (p['payment_method']['name'])
@@ -762,7 +764,7 @@ class PosProvider with ChangeNotifier {
       _lastChangeAmount = changeAmount;
       _lastSurchargeAmount = totalSurcharge;
       _lastSalePayments =
-          resolvedPayments; // Guardamos la versión resuelta con nombres
+          resolvedPayments; // Guardamos la versiÃ³n resuelta con nombres
       _wasLastSaleDispatched = requiresDispatch;
       _lastSalePrinted = settings != null;
 
@@ -770,8 +772,8 @@ class PosProvider with ChangeNotifier {
       _lastSaleCart = List<CartItem>.from(_cart);
       clearCart();
 
-      // ── Lógica de Impresión (A4 o Térmica) ──
-      // Solo se imprime si el usuario activó "Imprimir Comprobante" (settings != null).
+      // â”€â”€ LÃ³gica de ImpresiÃ³n (A4 o TÃ©rmica) â”€â”€
+      // Solo se imprime si el usuario activÃ³ "Imprimir Comprobante" (settings != null).
       if (settings != null) {
         try {
         if (localTerminal.printerFormat.startsWith('a4')) {
@@ -782,9 +784,9 @@ class PosProvider with ChangeNotifier {
           final isA4FormatForDispatch = localTerminal.printerFormat == 'a4_split' || localTerminal.printerFormat == 'a4_normal' || localTerminal.printerFormat == 'a4';
           
           if (!(requiresDispatch && isDeliveredNow) || !isA4FormatForDispatch) {
-            // settings no es null aquí (garantizado por el guard externo)
+            // settings no es null aquÃ­ (garantizado por el guard externo)
             // Si requiere despacho pero NO es entrega inmediata, generamos el A4 normal de venta
-            // pero el remito se generará después desde Logística.
+            // pero el remito se generarÃ¡ despuÃ©s desde LogÃ­stica.
             final salePayload = {
               'id': extractedSaleId,
               'items': cartSnapshot.map((i) => {
@@ -863,14 +865,14 @@ class PosProvider with ChangeNotifier {
                                         final confirm = await showDialog<bool>(
                                           context: dialogCtx,
                                           builder: (c) => AlertDialog(
-                                            title: const Text('¿Anular Venta?'),
-                                            content: const Text('Esta acción cancelará el cobro en el sistema y devolverá los productos al carrito.'),
+                                            title: const Text('Â¿Anular Venta?'),
+                                            content: const Text('Esta acciÃ³n cancelarÃ¡ el cobro en el sistema y devolverÃ¡ los productos al carrito.'),
                                             actions: [
                                               TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('NO, VOLVER')),
                                               ElevatedButton(
                                                 style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
                                                 onPressed: () => Navigator.pop(c, true), 
-                                                child: const Text('SÍ, ANULAR')
+                                                child: const Text('SÃ, ANULAR')
                                               ),
                                             ],
                                           ),
@@ -886,7 +888,7 @@ class PosProvider with ChangeNotifier {
                                             _cart.addAll(_lastSaleCart);
                                             _shippingCost = _lastSaleShippingCost ?? 0.0;
                                             notifyListeners();
-                                            // 3. Salir de la vista previa indicando anulación
+                                            // 3. Salir de la vista previa indicando anulaciÃ³n
                                             if (dialogCtx.mounted) {
                                               SnackBarService.warning(dialogCtx, 'Venta anulada. Los productos han vuelto al carrito.');
                                               Navigator.pop(dialogCtx, 'annulled');
@@ -938,7 +940,7 @@ class PosProvider with ChangeNotifier {
             }
           }
         } else {
-          // Ruta Térmica: leer hardware 100% del LocalTerminalProvider
+          // Ruta TÃ©rmica: leer hardware 100% del LocalTerminalProvider
           _activePrinter.electronicInvoice = _lastElectronicInvoice;
           if (requiresDispatch && _lastDeliveryNote != null) {
             // SPLIT TICKET: Venta + Orden de Retiro en el mismo rollo
@@ -989,10 +991,10 @@ class PosProvider with ChangeNotifier {
       }
       }
 
-      // ── El Remito de Logística (Fricción Cero) ──
-      // El backend PosController ya se encargó de crearlo atómicamente y retornarlo.
+      // â”€â”€ El Remito de LogÃ­stica (FricciÃ³n Cero) â”€â”€
+      // El backend PosController ya se encargÃ³ de crearlo atÃ³micamente y retornarlo.
       // Si el backend no pudo crearlo o hubo un problema, ya lo capturaremos.
-      // Ya extrajimos _lastDeliveryNote de la respuesta al inicio de esta función.
+      // Ya extrajimos _lastDeliveryNote de la respuesta al inicio de esta funciÃ³n.
 
       return true;
     } on ClosedShiftException catch (e) {
@@ -1000,7 +1002,7 @@ class PosProvider with ChangeNotifier {
       _errorMessage = e.message;
       return false;
     } on SessionExpiredException catch (e) {
-      // Sesión única: otro dispositivo inició sesión con este usuario.
+      // SesiÃ³n Ãºnica: otro dispositivo iniciÃ³ sesiÃ³n con este usuario.
       // Guardamos el mensaje con la key SESSION_EXPIRED para que la UI lo detecte.
       _errorMessage = 'SESSION_EXPIRED: ${e.message}';
       return false;
@@ -1013,9 +1015,9 @@ class PosProvider with ChangeNotifier {
     }
   }
 
-  // ─────────────────────────────────────────────────────────────────
+  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // FLUJO PREVENTA: Dejar en espera
-  // ─────────────────────────────────────────────────────────────────
+  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   Future<bool> holdOrder({
     required int shiftId,
     int? userId,
@@ -1065,9 +1067,9 @@ class PosProvider with ChangeNotifier {
     }
   }
 
-  // ─────────────────────────────────────────────────────────────────
+  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Cargar lista de pendientes desde el backend
-  // ─────────────────────────────────────────────────────────────────
+  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   Future<void> loadPendingSales() async {
     _isPendingLoading = true;
     notifyListeners();
@@ -1081,9 +1083,9 @@ class PosProvider with ChangeNotifier {
     }
   }
 
-  // ─────────────────────────────────────────────────────────────────
+  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Anular una orden pendiente (eliminarla y devolver stock)
-  // ─────────────────────────────────────────────────────────────────
+  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   Future<bool> voidPendingOrder(int saleId, {required int shiftId}) async {
     _isLoading = true;
     _errorMessage = null;
@@ -1107,9 +1109,9 @@ class PosProvider with ChangeNotifier {
     }
   }
 
-  // ─────────────────────────────────────────────────────────────────
+  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Cobrar una orden pendiente
-  // ─────────────────────────────────────────────────────────────────
+  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   Future<bool> payPendingSale({
     required int saleId,
     required double saleTotal,
@@ -1151,7 +1153,7 @@ class PosProvider with ChangeNotifier {
         checkDetails: checkDetails,
       );
 
-      // Emisión fiscal para venta pendiente si fue requerida
+      // EmisiÃ³n fiscal para venta pendiente si fue requerida
       final fiscalData = _pendingFiscalInvoiceData;
       if (fiscalData != null) {
         try {
@@ -1277,9 +1279,9 @@ class PosProvider with ChangeNotifier {
                                           final confirm = await showDialog<bool>(
                                             context: dialogCtx,
                                             builder: (c) => AlertDialog(
-                                              title: const Text('¿Anular Venta?'),
+                                              title: const Text('Â¿Anular Venta?'),
                                               content: const Text(
-                                                  'Esta acción cancelará el cobro en el sistema y devolverá los productos al carrito.'),
+                                                  'Esta acciÃ³n cancelarÃ¡ el cobro en el sistema y devolverÃ¡ los productos al carrito.'),
                                               actions: [
                                                 TextButton(
                                                     onPressed: () => Navigator.pop(c, false),
@@ -1289,7 +1291,7 @@ class PosProvider with ChangeNotifier {
                                                       backgroundColor: Colors.red,
                                                       foregroundColor: Colors.white),
                                                   onPressed: () => Navigator.pop(c, true),
-                                                  child: const Text('SÍ, ANULAR'),
+                                                  child: const Text('SÃ, ANULAR'),
                                                 ),
                                               ],
                                             ),
@@ -1392,3 +1394,4 @@ class PosProvider with ChangeNotifier {
     }
   }
 }
+
