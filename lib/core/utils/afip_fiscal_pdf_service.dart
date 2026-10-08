@@ -1,4 +1,4 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 import 'dart:typed_data';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
@@ -293,15 +293,20 @@ class AfipFiscalPdfService {
             .toString()) ??
         0.0;
     final iibbPerceptionAmount = double.tryParse(
-            (electronicInvoice['iibb_perception_amount'] ??
+            (electronicInvoice['tribute_amount'] ??
+                    electronicInvoice['iibb_perception_amount'] ??
                     sale['iibb_perception_amount'] ??
                     0)
                 .toString()) ??
         0.0;
+    double extractedRate = 0.0;
+    if (electronicInvoice['tributes_breakdown'] != null && (electronicInvoice['tributes_breakdown'] as List).isNotEmpty) {
+      extractedRate = double.tryParse(electronicInvoice['tributes_breakdown'][0]['Alic']?.toString() ?? '0') ?? 0.0;
+    }
     final iibbPerceptionRate = double.tryParse(
             (electronicInvoice['iibb_perception_rate'] ??
                     sale['iibb_perception_rate'] ??
-                    0)
+                    extractedRate)
                 .toString()) ??
         0.0;
 
@@ -1103,3 +1108,6 @@ class AfipFiscalPdfService {
     return results;
   }
 }
+
+
+

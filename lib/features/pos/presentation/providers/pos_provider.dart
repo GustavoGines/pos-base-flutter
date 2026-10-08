@@ -789,6 +789,8 @@ class PosProvider with ChangeNotifier {
             // pero el remito se generarÃ¡ despuÃ©s desde LogÃ­stica.
             final salePayload = {
               'id': extractedSaleId,
+              'iibb_perception_amount': effectivePerceptionAmount,
+              'iibb_perception_rate': effectivePerceptionRate,
               'items': cartSnapshot.map((i) => {
                 'product_name': i.product.name,
                 'quantity': i.quantity,
@@ -1394,4 +1396,5 @@ class PosProvider with ChangeNotifier {
     }
   }
 }
+
 
