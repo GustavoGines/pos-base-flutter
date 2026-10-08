@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -22,7 +22,7 @@ import 'package:frontend_desktop/features/pos/presentation/widgets/posnet_waitin
 import 'package:frontend_desktop/features/settings/domain/entities/business_settings.dart';
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
 
-// ─── FAKE PROVIDERS & MOCKS ──────────────────────────────────────────────────
+// â”€â”€â”€ FAKE PROVIDERS & MOCKS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class FakePosProvider extends ChangeNotifier implements PosProvider {
   final List<PaymentMethod> _paymentMethods;
@@ -99,7 +99,7 @@ class FakePosProvider extends ChangeNotifier implements PosProvider {
   Future<bool> processCheckout({
     required int shiftId,
     required double totalSurcharge,
-    required List<Map<String, dynamic>> payments,
+    double? iibbPerceptionAmount, double? iibbPerceptionRate, required List<Map<String, dynamic>> payments,
     required double tenderedAmount,
     required double changeAmount,
     required String printerFormat,
@@ -193,7 +193,7 @@ class FakeCatalogProvider extends ChangeNotifier implements CatalogProvider {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
-// ─── HELPERS ─────────────────────────────────────────────────────────────────
+// â”€â”€â”€ HELPERS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 final testPaymentMethods = [
   PaymentMethod(
@@ -280,7 +280,7 @@ Future<void> configureTestScreen(WidgetTester tester) async {
   });
 }
 
-// ─── TEST SUITE ──────────────────────────────────────────────────────────────
+// â”€â”€â”€ TEST SUITE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 void main() {
   setUp(() {
@@ -410,31 +410,31 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // Al inicio está seleccionado Efectivo, confirmar pago está habilitado
+      // Al inicio estÃ¡ seleccionado Efectivo, confirmar pago estÃ¡ habilitado
       final confirmBtnInitial = tester.widget<ElevatedButton>(
         find.widgetWithText(ElevatedButton, 'CONFIRMAR PAGO'),
       );
       expect(confirmBtnInitial.onPressed, isNotNull);
 
-      // Cambiar método a "Mercado Pago QR"
+      // Cambiar mÃ©todo a "Mercado Pago QR"
       await tester.tap(find.byType(DropdownButtonFormField<PaymentMethod>));
       await tester.pumpAndSettle();
 
       await tester.tap(find.text('Mercado Pago QR').last);
       await tester.pumpAndSettle();
 
-      // 1. Verificar que aparece el botón "Generar QR Mercado Pago"
+      // 1. Verificar que aparece el botÃ³n "Generar QR Mercado Pago"
       expect(find.text('Generar QR Mercado Pago'), findsOneWidget);
       expect(find.byIcon(Icons.qr_code_scanner), findsAtLeastNWidgets(1));
 
-      // 2. Verificar que CONFIRMAR PAGO está estrictamente DESHABILITADO (_canSubmit == false)
+      // 2. Verificar que CONFIRMAR PAGO estÃ¡ estrictamente DESHABILITADO (_canSubmit == false)
       final confirmBtnAfterMp = tester.widget<ElevatedButton>(
         find.widgetWithText(ElevatedButton, 'CONFIRMAR PAGO'),
       );
       expect(confirmBtnAfterMp.onPressed, isNull);
     });
 
-    testWidgets('Selecting mercadopago_point displays "Enviar a Posnet Físico" and disables CONFIRMAR PAGO until paid',
+    testWidgets('Selecting mercadopago_point displays "Enviar a Posnet FÃ­sico" and disables CONFIRMAR PAGO until paid',
         (WidgetTester tester) async {
       await configureTestScreen(tester);
       final posProvider = FakePosProvider(paymentMethods: testPaymentMethods);
@@ -444,18 +444,18 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // Cambiar método a "Mercado Pago Point"
+      // Cambiar mÃ©todo a "Mercado Pago Point"
       await tester.tap(find.byType(DropdownButtonFormField<PaymentMethod>));
       await tester.pumpAndSettle();
 
       await tester.tap(find.text('Mercado Pago Point').last);
       await tester.pumpAndSettle();
 
-      // 1. Verificar que aparece el botón "Enviar a Posnet Físico"
-      expect(find.text('Enviar a Posnet Físico'), findsOneWidget);
+      // 1. Verificar que aparece el botÃ³n "Enviar a Posnet FÃ­sico"
+      expect(find.text('Enviar a Posnet FÃ­sico'), findsOneWidget);
       expect(find.byIcon(Icons.point_of_sale), findsAtLeastNWidgets(1));
 
-      // 2. Verificar que CONFIRMAR PAGO está estrictamente DESHABILITADO (_canSubmit == false)
+      // 2. Verificar que CONFIRMAR PAGO estÃ¡ estrictamente DESHABILITADO (_canSubmit == false)
       final confirmBtn = tester.widget<ElevatedButton>(
         find.widgetWithText(ElevatedButton, 'CONFIRMAR PAGO'),
       );
@@ -478,7 +478,7 @@ void main() {
       await tester.tap(find.text('Mercado Pago QR').last);
       await tester.pumpAndSettle();
 
-      // Interceptar y simular confirmación de pago
+      // Interceptar y simular confirmaciÃ³n de pago
       final dynamic state = tester.state(find.byType(CheckoutDialog));
       final line = state.paymentLines.first as PaymentLine;
       state.confirmMpPaymentForTesting(
@@ -493,7 +493,7 @@ void main() {
       expect(find.text('Pago Aprobado (ID: MP-TEST-9988)'), findsOneWidget);
       expect(find.byIcon(Icons.check_circle), findsAtLeastNWidgets(1));
 
-      // 2. Verificar que CONFIRMAR PAGO ahora está HABILITADO
+      // 2. Verificar que CONFIRMAR PAGO ahora estÃ¡ HABILITADO
       final confirmBtn = tester.widget<ElevatedButton>(
         find.widgetWithText(ElevatedButton, 'CONFIRMAR PAGO'),
       );
@@ -541,7 +541,7 @@ void main() {
       // 1. Chip visible
       expect(find.text('Pago Aprobado (ID: POINT-PAY-1122)'), findsOneWidget);
 
-      // 2. Botón habilitado
+      // 2. BotÃ³n habilitado
       final confirmBtn = tester.widget<ElevatedButton>(
         find.widgetWithText(ElevatedButton, 'CONFIRMAR PAGO'),
       );
@@ -600,24 +600,24 @@ void main() {
       await tester.tap(find.text('Mercado Pago QR').last);
       await tester.pumpAndSettle();
 
-      // Presionar botón Generar QR
+      // Presionar botÃ³n Generar QR
       await tester.tap(find.text('Generar QR Mercado Pago'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));
 
       expect(find.byType(MercadoPagoQrDialog), findsOneWidget);
       expect(
-        find.text('Escaneá con Mercado Pago o cualquier billetera interoperable'),
+        find.text('EscaneÃ¡ con Mercado Pago o cualquier billetera interoperable'),
         findsOneWidget,
       );
 
-      // Cancelar diálogo para limpiar timers
+      // Cancelar diÃ¡logo para limpiar timers
       await tester.tap(find.text('Cancelar Cobro QR'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
     });
 
-    testWidgets('Tapping "Enviar a Posnet Físico" opens PosnetWaitingDialog',
+    testWidgets('Tapping "Enviar a Posnet FÃ­sico" opens PosnetWaitingDialog',
         (WidgetTester tester) async {
       await configureTestScreen(tester);
       final posProvider = FakePosProvider(paymentMethods: testPaymentMethods);
@@ -655,18 +655,19 @@ void main() {
       await tester.tap(find.text('Mercado Pago Point').last);
       await tester.pumpAndSettle();
 
-      // Presionar botón Enviar a Posnet Físico
-      await tester.tap(find.text('Enviar a Posnet Físico'));
+      // Presionar botÃ³n Enviar a Posnet FÃ­sico
+      await tester.tap(find.text('Enviar a Posnet FÃ­sico'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));
 
       expect(find.byType(PosnetWaitingDialog), findsOneWidget);
       expect(find.text('Esperando tarjeta en el Posnet...'), findsOneWidget);
 
-      // Cancelar diálogo para limpiar timers
-      await tester.tap(find.text('Cancelar Operación'));
+      // Cancelar diÃ¡logo para limpiar timers
+      await tester.tap(find.text('Cancelar OperaciÃ³n'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
     });
   });
 }
+

@@ -27,6 +27,8 @@ class BusinessSettingsModel extends BusinessSettings {
     super.features,
     super.enableAdvancedPriceTiers,
     super.afipEnabled,
+    super.isIibbPerceptionAgent,
+    super.defaultIibbPerceptionRate,
   });
 
   factory BusinessSettingsModel.fromJson(Map<String, dynamic> json) {
@@ -121,6 +123,12 @@ class BusinessSettingsModel extends BusinessSettings {
       enableAdvancedPriceTiers: json['enable_advanced_price_tiers'] == '1' ||
           json['enable_advanced_price_tiers'] == true,
       afipEnabled: json['afip_enabled'] == '1' || json['afip_enabled'] == true,
+      isIibbPerceptionAgent: json['is_iibb_perception_agent'] == '1' ||
+          json['is_iibb_perception_agent'] == true ||
+          json['is_iibb_perception_agent'] == 1,
+      defaultIibbPerceptionRate: double.tryParse(
+              json['default_iibb_perception_rate']?.toString() ?? '0.0') ??
+          0.0,
     );
   }
 
@@ -167,6 +175,9 @@ class BusinessSettingsModel extends BusinessSettings {
       // Feature Toggle Multi-Tenant
       'enable_advanced_price_tiers': enableAdvancedPriceTiers ? '1' : '0',
       'afip_enabled': afipEnabled ? '1' : '0',
+      // Percepciones IIBB (Módulo Mayorista)
+      'is_iibb_perception_agent': isIibbPerceptionAgent ? '1' : '0',
+      'default_iibb_perception_rate': defaultIibbPerceptionRate.toStringAsFixed(2),
     };
   }
 }

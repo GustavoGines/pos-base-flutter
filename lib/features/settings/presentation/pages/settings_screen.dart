@@ -57,6 +57,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _cardPercentageCtrl = TextEditingController();
   final _wholesalePercentageCtrl = TextEditingController();
   bool _advancedPriceTiersEnabled = false; // Feature Toggle Multi-Tenant
+  bool _isIibbPerceptionAgent = false;
+  final _defaultIibbRateCtrl = TextEditingController();
 
   // Red y Rutas Locales
   final _backendPathCtrl = TextEditingController();
@@ -127,6 +129,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _wholesalePercentageCtrl.text =
             settings.globalWholesalePercentage.toString();
         _advancedPriceTiersEnabled = settings.enableAdvancedPriceTiers;
+        _isIibbPerceptionAgent = settings.isIibbPerceptionAgent;
+        _defaultIibbRateCtrl.text = settings.defaultIibbPerceptionRate > 0
+            ? settings.defaultIibbPerceptionRate.toString()
+            : '';
 
         _customTiers = List<Map<String, dynamic>>.from(
             settings.customPriceTiers.map((e) => Map<String, dynamic>.from(e)));
@@ -530,6 +536,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _tierModCtrl.dispose();
     _cardPercentageCtrl.dispose();
     _wholesalePercentageCtrl.dispose();
+    _defaultIibbRateCtrl.dispose();
     _serverUrlCtrl.removeListener(_handleUrlChange);
     _backendPathCtrl.dispose();
     _serverUrlCtrl.dispose();
@@ -578,6 +585,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           -15.0,
       'custom_price_tiers': _customTiers,
       'enable_advanced_price_tiers': _advancedPriceTiersEnabled ? '1' : '0',
+      'is_iibb_perception_agent': _isIibbPerceptionAgent ? '1' : '0',
+      'default_iibb_perception_rate': double.tryParse(
+              _defaultIibbRateCtrl.text.trim().replaceAll(',', '.')) ??
+          0.0,
     };
 
     final success = await provider.saveSettings(data);
@@ -2231,7 +2242,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     width: 1.5,
                   ),
                 ),
-                child: SwitchListTile(
+                child: Material(
+                  color: Colors.transparent,
+                  borderRadius: BorderRadius.circular(16),
+                  child: SwitchListTile(
                   contentPadding:
                       const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                   shape: RoundedRectangleBorder(
@@ -2334,6 +2348,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     setState(() => _advancedPriceTiersEnabled = val);
                   },
                 ),
+                ),
               ),
               const SizedBox(height: 32),
               Row(
@@ -2356,6 +2371,84 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           );
         }),
+        // ── Percepciones IIBB (Módulo Mayorista) ───────────────────────
+        Container(
+          margin: const EdgeInsets.only(top: 24),
+          decoration: BoxDecoration(
+            color: _isIibbPerceptionAgent
+                ? const Color(0xFF2E7D32).withValues(alpha: 0.05)
+                : Colors.grey.shade50,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: _isIibbPerceptionAgent
+                  ? const Color(0xFF2E7D32).withValues(alpha: 0.4)
+                  : Colors.grey.shade200,
+              width: 1.5,
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Material(
+                  color: Colors.transparent,
+                  child: SwitchListTile(
+                    key: const ValueKey('switch_iibb_perception_agent'),
+                    contentPadding: EdgeInsets.zero,
+                    secondary: Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF2E7D32).withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.account_balance, color: Color(0xFF2E7D32)),
+                    ),
+                    title: const Text(
+                      'Agente de Percepción IIBB (Módulo Mayorista)',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                    ),
+                    subtitle: const Text(
+                      'Habilita la aplicación de percepciones de Ingresos Brutos a clientes alcanzados en ventas.',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                    value: _isIibbPerceptionAgent,
+                    activeThumbColor: const Color(0xFF2E7D32),
+                    onChanged: (val) => setState(() => _isIibbPerceptionAgent = val),
+                  ),
+                ),
+                if (_isIibbPerceptionAgent) ...[
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    key: const ValueKey('field_default_iibb_rate'),
+                    controller: _defaultIibbRateCtrl,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(RegExp(r'^\d*[\.,]?\d{0,2}')),
+                    ],
+                    decoration: InputDecoration(
+                      labelText: 'Alícuota por defecto IIBB (%)',
+                      hintText: 'Ej: 3.0',
+                      prefixIcon: const Icon(Icons.percent, size: 20),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                      filled: true,
+                      fillColor: Colors.white,
+                    ),
+                    validator: (val) {
+                      if (!_isIibbPerceptionAgent) return null;
+                      if (val == null || val.trim().isEmpty) return null;
+                      final parsed = double.tryParse(val.trim().replaceAll(',', '.'));
+                      if (parsed == null || parsed < 0 || parsed > 100) {
+                        return 'Ingrese una alícuota válida (0 - 100%)';
+                      }
+                      return null;
+                    },
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
         if (provider.settings?.features.multiplePrices == true) ...[
           const SizedBox(height: 48),
           _buildCustomTiersSection(enabled: _advancedPriceTiersEnabled),

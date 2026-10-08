@@ -82,6 +82,8 @@ class SaleRecord {
   final String? userName;
   final int? cashierId;
   final String? cashierName;
+  final double? iibbPerceptionAmount;
+  final double? iibbPerceptionRate;
 
   const SaleRecord({
     required this.id,
@@ -95,6 +97,8 @@ class SaleRecord {
     this.userName,
     this.cashierId,
     this.cashierName,
+    this.iibbPerceptionAmount,
+    this.iibbPerceptionRate,
   });
 
   bool get isVoided => status == 'voided';
@@ -144,6 +148,12 @@ class SaleRecord {
       userName: json['user']?['name'] as String?,
       cashierId: json['cashier_id'] as int?,
       cashierName: json['cashier']?['name'] as String?,
+      iibbPerceptionAmount: json['iibb_perception_amount'] != null
+          ? double.tryParse(json['iibb_perception_amount'].toString())
+          : null,
+      iibbPerceptionRate: json['iibb_perception_rate'] != null
+          ? double.tryParse(json['iibb_perception_rate'].toString())
+          : null,
     );
   }
 }

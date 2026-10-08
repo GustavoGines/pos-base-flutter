@@ -21,6 +21,8 @@ abstract class PosRemoteDataSource {
   Future<dynamic> processSale({
     required double total,
     required double totalSurcharge,
+    double? iibbPerceptionAmount,
+    double? iibbPerceptionRate,
     List<Map<String, dynamic>>? payments,
     double? tenderedAmount,
     double? changeAmount,
@@ -41,6 +43,8 @@ abstract class PosRemoteDataSource {
   Future<dynamic> payPendingSale({
     required int saleId,
     required double totalSurcharge,
+    double? iibbPerceptionAmount,
+    double? iibbPerceptionRate,
     required List<Map<String, dynamic>> payments,
     required double tenderedAmount,
     required double changeAmount,
@@ -150,6 +154,8 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
   Future<dynamic> processSale({
     required double total,
     required double totalSurcharge,
+    double? iibbPerceptionAmount,
+    double? iibbPerceptionRate,
     List<Map<String, dynamic>>? payments,
     double? tenderedAmount,
     double? changeAmount,
@@ -173,6 +179,8 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
         'shipping_cost': shippingCost,
         'requires_dispatch': requiresDispatch,
         'fulfillment_status': fulfillmentStatus,
+        if (iibbPerceptionAmount != null) 'iibb_perception_amount': iibbPerceptionAmount,
+        if (iibbPerceptionRate != null) 'iibb_perception_rate': iibbPerceptionRate,
         if (payments != null) 'payments': payments,
         'status': status,
         if (tenderedAmount != null) 'tendered_amount': tenderedAmount,
@@ -261,6 +269,8 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
   Future<dynamic> payPendingSale({
     required int saleId,
     required double totalSurcharge,
+    double? iibbPerceptionAmount,
+    double? iibbPerceptionRate,
     required List<Map<String, dynamic>> payments,
     required double tenderedAmount,
     required double changeAmount,
@@ -277,6 +287,8 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
         'tendered_amount': tenderedAmount,
         'change_amount': changeAmount,
         'shipping_cost': shippingCost,
+        if (iibbPerceptionAmount != null) 'iibb_perception_amount': iibbPerceptionAmount,
+        if (iibbPerceptionRate != null) 'iibb_perception_rate': iibbPerceptionRate,
         if (userId != null) 'user_id': userId,
         if (checkDetails != null) 'check_details': checkDetails,
         'cash_shift_id': shiftId,

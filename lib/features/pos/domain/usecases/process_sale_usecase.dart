@@ -10,6 +10,8 @@ class ProcessSaleUseCase {
   Future<Sale> call({
     required double total,
     required double totalSurcharge,
+    double? iibbPerceptionAmount,
+    double? iibbPerceptionRate,
     List<Map<String, dynamic>>? payments,
     double? tenderedAmount,
     double? changeAmount,
@@ -30,6 +32,8 @@ class ProcessSaleUseCase {
     return await repository.processSale(
       total: total,
       totalSurcharge: totalSurcharge,
+      iibbPerceptionAmount: iibbPerceptionAmount,
+      iibbPerceptionRate: iibbPerceptionRate,
       payments: payments,
       tenderedAmount: tenderedAmount,
       changeAmount: changeAmount,

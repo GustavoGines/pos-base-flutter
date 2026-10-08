@@ -292,6 +292,18 @@ class AfipFiscalPdfService {
                 0)
             .toString()) ??
         0.0;
+    final iibbPerceptionAmount = double.tryParse(
+            (electronicInvoice['iibb_perception_amount'] ??
+                    sale['iibb_perception_amount'] ??
+                    0)
+                .toString()) ??
+        0.0;
+    final iibbPerceptionRate = double.tryParse(
+            (electronicInvoice['iibb_perception_rate'] ??
+                    sale['iibb_perception_rate'] ??
+                    0)
+                .toString()) ??
+        0.0;
 
     final subtotal = double.tryParse(
             (sale['subtotal'] ?? sale['total'] ?? totalAmount).toString()) ??
@@ -355,6 +367,8 @@ class AfipFiscalPdfService {
       discountsOrSurcharges: discountsOrSurcharges,
       totalAmount: totalAmount,
       ivaBreakdown: electronicInvoice['iva_breakdown'] as List<dynamic>?,
+      iibbPerceptionAmount: iibbPerceptionAmount,
+      iibbPerceptionRate: iibbPerceptionRate,
     );
 
     final footerWidget = _buildFiscalFooter(
@@ -771,6 +785,8 @@ class AfipFiscalPdfService {
     required double discountsOrSurcharges,
     required double totalAmount,
     List<dynamic>? ivaBreakdown,
+    double iibbPerceptionAmount = 0.0,
+    double iibbPerceptionRate = 0.0,
   }) {
     if (isFacturaA) {
       double iva21 = 0.0;
@@ -828,7 +844,7 @@ class AfipFiscalPdfService {
                     style: const pw.TextStyle(fontSize: 8),
                   ),
                   pw.Text('IVA 21%: ${_currencyFmt.format(iva21)}',
-                      style: const pw.TextStyle(fontSize: 8)),
+                       style: const pw.TextStyle(fontSize: 8)),
                   if (iva105 > 0)
                     pw.Text('IVA 10.5%: ${_currencyFmt.format(iva105)}',
                         style: const pw.TextStyle(fontSize: 8)),
@@ -836,6 +852,11 @@ class AfipFiscalPdfService {
                   if (exemptAmount > 0)
                     pw.Text('Importe Exento: ${_currencyFmt.format(exemptAmount)}',
                         style: const pw.TextStyle(fontSize: 8)),
+                  if (iibbPerceptionAmount > 0)
+                    pw.Text(
+                      'Percepción IIBB (${iibbPerceptionRate > 0 ? iibbPerceptionRate.toStringAsFixed(1) : "0.0"}%): ${_currencyFmt.format(iibbPerceptionAmount)}',
+                      style: const pw.TextStyle(fontSize: 8),
+                    ),
                 ],
               ),
             ),
@@ -877,6 +898,11 @@ class AfipFiscalPdfService {
                   if (discountsOrSurcharges != 0)
                     pw.Text(
                       'Descuentos / Recargos: ${_currencyFmt.format(discountsOrSurcharges)}',
+                      style: const pw.TextStyle(fontSize: 8),
+                    ),
+                  if (iibbPerceptionAmount > 0)
+                    pw.Text(
+                      'Percepción IIBB (${iibbPerceptionRate > 0 ? iibbPerceptionRate.toStringAsFixed(1) : "0.0"}%): ${_currencyFmt.format(iibbPerceptionAmount)}',
                       style: const pw.TextStyle(fontSize: 8),
                     ),
                 ],

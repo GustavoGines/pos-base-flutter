@@ -6,6 +6,8 @@ class Sale {
   final String paymentMethod;
   final CashRegisterShift shift;
   final Map<String, dynamic>? deliveryNote;
+  final double? iibbPerceptionAmount;
+  final double? iibbPerceptionRate;
 
   Sale({
     this.id,
@@ -13,6 +15,8 @@ class Sale {
     required this.paymentMethod,
     required this.shift,
     this.deliveryNote,
+    this.iibbPerceptionAmount,
+    this.iibbPerceptionRate,
   });
 }
   

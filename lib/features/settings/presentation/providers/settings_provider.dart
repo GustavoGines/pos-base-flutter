@@ -47,6 +47,10 @@ class SettingsProvider with ChangeNotifier {
     return _settings?.hasFeature(featureName) ?? false;
   }
 
+  // ─── [mayorista-iibb] Percepciones IIBB ───────────────────────────────────
+  bool get isIibbPerceptionAgent => _settings?.isIibbPerceptionAgent ?? false;
+  double get defaultIibbPerceptionRate => _settings?.defaultIibbPerceptionRate ?? 0.0;
+
   bool _isLoading = false;
   bool get isLoading => _isLoading;
 

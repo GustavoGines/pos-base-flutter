@@ -53,6 +53,8 @@ class Customer {
   final String? defaultPriceTier; // 'base', 'wholesale', 'card'
   final String? deliveryAddress;
   final bool isInternalAccount;
+  final bool appliesIibbPerception;
+  final double? iibbPerceptionRate;
   final List<CustomerTransaction> transactions;
 
   Customer({
@@ -69,6 +71,8 @@ class Customer {
     this.defaultPriceTier,
     this.deliveryAddress,
     this.isInternalAccount = false,
+    this.appliesIibbPerception = false,
+    this.iibbPerceptionRate,
     this.transactions = const [],
   });
 
@@ -87,6 +91,12 @@ class Customer {
       defaultPriceTier: json['default_price_tier'],
       deliveryAddress: json['delivery_address'],
       isInternalAccount: json['is_internal_account'] == 1 || json['is_internal_account'] == true,
+      appliesIibbPerception: json['applies_iibb_perception'] == 1 ||
+          json['applies_iibb_perception'] == true ||
+          json['applies_iibb_perception'] == '1',
+      iibbPerceptionRate: json['iibb_perception_rate'] != null
+          ? double.tryParse(json['iibb_perception_rate'].toString().replaceAll(',', '.'))
+          : null,
       transactions: json['transactions'] != null 
           ? (json['transactions'] as List).map((t) => CustomerTransaction.fromJson(t)).toList()
           : [],
@@ -108,6 +118,9 @@ class Customer {
       'default_price_tier': defaultPriceTier,
       'delivery_address': deliveryAddress,
       'is_internal_account': isInternalAccount,
+      'applies_iibb_perception': appliesIibbPerception,
+      if (appliesIibbPerception && iibbPerceptionRate != null)
+        'iibb_perception_rate': iibbPerceptionRate,
     };
   }
 
@@ -125,6 +138,8 @@ class Customer {
     String? defaultPriceTier,
     String? deliveryAddress,
     bool? isInternalAccount,
+    bool? appliesIibbPerception,
+    double? iibbPerceptionRate,
     List<CustomerTransaction>? transactions,
   }) {
     return Customer(
@@ -141,6 +156,10 @@ class Customer {
       defaultPriceTier: defaultPriceTier ?? this.defaultPriceTier,
       deliveryAddress: deliveryAddress ?? this.deliveryAddress,
       isInternalAccount: isInternalAccount ?? this.isInternalAccount,
+      appliesIibbPerception: appliesIibbPerception ?? this.appliesIibbPerception,
+      iibbPerceptionRate: (appliesIibbPerception == false)
+          ? null
+          : (iibbPerceptionRate ?? this.iibbPerceptionRate),
       transactions: transactions ?? this.transactions,
     );
   }

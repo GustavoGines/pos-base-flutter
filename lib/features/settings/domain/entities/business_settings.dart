@@ -85,6 +85,8 @@ class BusinessSettings extends Equatable {
   /// - true → Modo Avanzado (Ferretería/Mayorista): tier dropdown visible, surcharges SUPRIMIDOS (el precio ya incluye el factor).
   final bool enableAdvancedPriceTiers;
   final bool afipEnabled;
+  final bool isIibbPerceptionAgent;
+  final double defaultIibbPerceptionRate;
 
   /// @deprecated Use [features] instead for better type safety.
   bool hasFeature(String featureName) => licenseFeatures.contains(featureName);
@@ -152,6 +154,8 @@ class BusinessSettings extends Equatable {
     FeatureFlags? features,
     bool? enableAdvancedPriceTiers,
     bool? afipEnabled,
+    bool? isIibbPerceptionAgent,
+    double? defaultIibbPerceptionRate,
   }) {
     return BusinessSettings(
       companyName: companyName ?? this.companyName,
@@ -177,6 +181,8 @@ class BusinessSettings extends Equatable {
       features: features ?? this.features,
       enableAdvancedPriceTiers: enableAdvancedPriceTiers ?? this.enableAdvancedPriceTiers,
       afipEnabled: afipEnabled ?? this.afipEnabled,
+      isIibbPerceptionAgent: isIibbPerceptionAgent ?? this.isIibbPerceptionAgent,
+      defaultIibbPerceptionRate: defaultIibbPerceptionRate ?? this.defaultIibbPerceptionRate,
     );
   }
 
@@ -204,6 +210,8 @@ class BusinessSettings extends Equatable {
     this.features = const FeatureFlags(),
     this.enableAdvancedPriceTiers = false,
     this.afipEnabled = false,
+    this.isIibbPerceptionAgent = false,
+    this.defaultIibbPerceptionRate = 0.0,
   });
 
   @override
@@ -230,5 +238,8 @@ class BusinessSettings extends Equatable {
         businessType,
         features,
         enableAdvancedPriceTiers,
+        afipEnabled,
+        isIibbPerceptionAgent,
+        defaultIibbPerceptionRate,
       ];
 }

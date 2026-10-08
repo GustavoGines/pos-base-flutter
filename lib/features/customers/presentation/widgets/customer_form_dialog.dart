@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../models/customer_model.dart';
 import '../../providers/customer_provider.dart';
+import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
 import 'package:frontend_desktop/features/auth/presentation/widgets/admin_pin_dialog.dart';
 import 'package:frontend_desktop/core/constants/app_permissions.dart';
 
@@ -25,6 +27,8 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
   int _documentType = 96;
   String _taxCondition = 'consumidor_final';
   bool _isInternalAccount = false;
+  bool _appliesIibbPerception = false;
+  late TextEditingController _iibbRateController;
 
   bool _isSubmitting = false;
 
@@ -47,6 +51,12 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
     _fiscalAddressController =
         TextEditingController(text: widget.customer?.fiscalAddress ?? '');
     _isInternalAccount = widget.customer?.isInternalAccount ?? false;
+    _appliesIibbPerception = widget.customer?.appliesIibbPerception ?? false;
+    _iibbRateController = TextEditingController(
+      text: widget.customer?.iibbPerceptionRate != null
+          ? widget.customer!.iibbPerceptionRate.toString()
+          : '',
+    );
   }
 
   Future<void> _submit() async {
@@ -73,6 +83,10 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
                 double.tryParse(_creditLimitController.text.trim()) ?? 0.0,
             'delivery_address': _deliveryAddressController.text.trim(),
             'is_internal_account': _isInternalAccount,
+            'applies_iibb_perception': _appliesIibbPerception,
+            'iibb_perception_rate': _appliesIibbPerception
+                ? double.tryParse(_iibbRateController.text.trim().replaceAll(',', '.'))
+                : null,
           };
 
           bool success;
@@ -119,6 +133,7 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
     _creditLimitController.dispose();
     _deliveryAddressController.dispose();
     _fiscalAddressController.dispose();
+    _iibbRateController.dispose();
     super.dispose();
   }
 
@@ -258,6 +273,60 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
                 activeThumbColor: Colors.indigo,
                 onChanged: (val) => setState(() => _isInternalAccount = val),
               ),
+              const SizedBox(height: 16),
+              const Divider(height: 1),
+              const SizedBox(height: 16),
+              SwitchListTile(
+                key: const ValueKey('switch_applies_iibb_perception'),
+                title: const Text('Aplica Percepción IIBB',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                subtitle: const Text(
+                    'Calcular percepción de Ingresos Brutos en compras mayoristas.',
+                    style: TextStyle(fontSize: 12)),
+                value: _appliesIibbPerception,
+                activeThumbColor: Theme.of(context).colorScheme.primary,
+                onChanged: (val) {
+                  setState(() {
+                    _appliesIibbPerception = val;
+                    if (val && _iibbRateController.text.trim().isEmpty) {
+                      try {
+                        final defaultRate = context.read<SettingsProvider?>()?.settings?.defaultIibbPerceptionRate;
+                        if (defaultRate != null && defaultRate > 0) {
+                          _iibbRateController.text = defaultRate.toString();
+                        }
+                      } catch (_) {}
+                    }
+                  });
+                },
+              ),
+              if (_appliesIibbPerception) ...[
+                const SizedBox(height: 12),
+                TextFormField(
+                  key: const ValueKey('field_iibb_perception_rate'),
+                  controller: _iibbRateController,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  inputFormatters: [
+                    FilteringTextInputFormatter.allow(RegExp(r'^\d*[\.,]?\d{0,2}')),
+                  ],
+                  decoration: const InputDecoration(
+                    labelText: 'Alícuota IIBB (%) *',
+                    hintText: 'Ej: 3.0',
+                    prefixIcon: Icon(Icons.percent),
+                    border: OutlineInputBorder(),
+                  ),
+                  validator: (val) {
+                    if (!_appliesIibbPerception) return null;
+                    if (val == null || val.trim().isEmpty) {
+                      return 'La alícuota es requerida si aplica percepción';
+                    }
+                    final n = double.tryParse(val.trim().replaceAll(',', '.'));
+                    if (n == null || n < 0 || n > 100) {
+                      return 'Ingrese un porcentaje válido (0 - 100)';
+                    }
+                    return null;
+                  },
+                ),
+              ],
             ],
           ),
         ),

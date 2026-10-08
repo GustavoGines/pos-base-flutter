@@ -26,6 +26,8 @@ class PosRepositoryImpl implements PosRepository {
   Future<Sale> processSale({
     required double total,
     required double totalSurcharge,
+    double? iibbPerceptionAmount,
+    double? iibbPerceptionRate,
     List<Map<String, dynamic>>? payments,
     double? tenderedAmount,
     double? changeAmount,
@@ -45,6 +47,8 @@ class PosRepositoryImpl implements PosRepository {
     final response = await remoteDataSource.processSale(
       total: total,
       totalSurcharge: totalSurcharge,
+      iibbPerceptionAmount: iibbPerceptionAmount,
+      iibbPerceptionRate: iibbPerceptionRate,
       payments: payments,
       tenderedAmount: tenderedAmount,
       changeAmount: changeAmount,
@@ -75,6 +79,8 @@ class PosRepositoryImpl implements PosRepository {
         status: 'open',
       ),
       deliveryNote: response['sale']['delivery_note'],
+      iibbPerceptionAmount: double.tryParse((response['sale']?['iibb_perception_amount'] ?? iibbPerceptionAmount ?? 0).toString()) ?? 0.0,
+      iibbPerceptionRate: double.tryParse((response['sale']?['iibb_perception_rate'] ?? iibbPerceptionRate ?? '').toString()),
     );
   }
 
@@ -88,6 +94,8 @@ class PosRepositoryImpl implements PosRepository {
   Future<Map<String, dynamic>> payPendingSale({
     required int saleId,
     required double totalSurcharge,
+    double? iibbPerceptionAmount,
+    double? iibbPerceptionRate,
     required List<Map<String, dynamic>> payments,
     required double tenderedAmount,
     required double changeAmount,
@@ -100,6 +108,8 @@ class PosRepositoryImpl implements PosRepository {
     final response = await remoteDataSource.payPendingSale(
       saleId: saleId,
       totalSurcharge: totalSurcharge,
+      iibbPerceptionAmount: iibbPerceptionAmount,
+      iibbPerceptionRate: iibbPerceptionRate,
       payments: payments,
       tenderedAmount: tenderedAmount,
       changeAmount: changeAmount,

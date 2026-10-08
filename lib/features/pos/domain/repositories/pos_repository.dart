@@ -10,6 +10,8 @@ abstract class PosRepository {
   Future<Sale> processSale({
     required double total,
     required double totalSurcharge,
+    double? iibbPerceptionAmount,
+    double? iibbPerceptionRate,
     List<Map<String, dynamic>>? payments,
     double? tenderedAmount,
     double? changeAmount,
@@ -30,6 +32,8 @@ abstract class PosRepository {
   Future<Map<String, dynamic>> payPendingSale({
     required int saleId,
     required double totalSurcharge,
+    double? iibbPerceptionAmount,
+    double? iibbPerceptionRate,
     required List<Map<String, dynamic>> payments,
     required double tenderedAmount,
     required double changeAmount,

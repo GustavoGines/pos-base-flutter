@@ -44,6 +44,8 @@ class ThermalReceiptWidget extends StatelessWidget {
   final double tenderedAmount;
   final double changeAmount;
   final double shippingCost;
+  final double iibbPerceptionAmount;
+  final double iibbPerceptionRate;
   final DateTime? dateTime;
 
   const ThermalReceiptWidget({
@@ -63,6 +65,8 @@ class ThermalReceiptWidget extends StatelessWidget {
     this.tenderedAmount = 0.0,
     this.changeAmount = 0.0,
     this.shippingCost = 0.0,
+    this.iibbPerceptionAmount = 0.0,
+    this.iibbPerceptionRate = 0.0,
     this.dateTime,
   });
 
@@ -452,6 +456,18 @@ class ThermalReceiptWidget extends StatelessWidget {
   // ─────────────────────────────────────────────────────────────────────────
 
   Widget _buildFinancialSummary(double factor) {
+    final perceptionAmt = iibbPerceptionAmount > 0
+        ? iibbPerceptionAmount
+        : (double.tryParse(
+                electronicInvoice?['iibb_perception_amount']?.toString() ?? '') ??
+            0.0);
+    final perceptionRt = iibbPerceptionRate > 0
+        ? iibbPerceptionRate
+        : (double.tryParse(
+                electronicInvoice?['iibb_perception_rate']?.toString() ?? '') ??
+            0.0);
+    final hasPerception = perceptionAmt > 0.01;
+
     final grandTotal = total + surchargeAmount;
     final hasSurcharge = surchargeAmount > 0.01;
     final hasShipping = shippingCost > 0.01;
@@ -460,7 +476,10 @@ class ThermalReceiptWidget extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (hasMultiplePayments || hasSurcharge || hasShipping) ...[
+        if (hasMultiplePayments ||
+            hasSurcharge ||
+            hasShipping ||
+            hasPerception) ...[
           _buildKeyValueRow(
             'SUBTOTAL:',
             '\$${_formatPrice(total - shippingCost)}',
@@ -470,6 +489,12 @@ class ThermalReceiptWidget extends StatelessWidget {
             _buildKeyValueRow(
               'FLETE / ENVIO:',
               '\$${_formatPrice(shippingCost)}',
+              factor: factor,
+            ),
+          if (hasPerception)
+            _buildKeyValueRow(
+              'PERCEPCION IIBB (${perceptionRt.toStringAsFixed(1)}%):',
+              '\$${_formatPrice(perceptionAmt)}',
               factor: factor,
             ),
           if (hasSurcharge)

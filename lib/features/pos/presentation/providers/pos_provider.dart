@@ -185,6 +185,35 @@ class PosProvider with ChangeNotifier {
     _lastSelectedCustomer = customer;
   }
 
+  // Cliente activo en el carrito del POS
+  Customer? _selectedCustomer;
+  Customer? get selectedCustomer => _selectedCustomer;
+
+  bool _isIibbPerceptionAgent = false;
+  bool get isIibbPerceptionAgent => _isIibbPerceptionAgent;
+
+  void setIsIibbPerceptionAgent(bool value) {
+    if (_isIibbPerceptionAgent != value) {
+      _isIibbPerceptionAgent = value;
+      notifyListeners();
+    }
+  }
+
+  void updateSettings(BusinessSettings? settings) {
+    if (settings != null) {
+      setIsIibbPerceptionAgent(settings.isIibbPerceptionAgent);
+    }
+  }
+
+  void selectCustomer(Customer? customer, {bool? isPerceptionAgent}) {
+    _selectedCustomer = customer;
+    _lastSelectedCustomer = customer;
+    if (isPerceptionAgent != null) {
+      _isIibbPerceptionAgent = isPerceptionAgent;
+    }
+    notifyListeners();
+  }
+
   Map<String, dynamic>? _pendingFiscalInvoiceData;
   Map<String, dynamic>? get pendingFiscalInvoiceData => _pendingFiscalInvoiceData;
   void setPendingFiscalInvoiceData(Map<String, dynamic>? data) {
@@ -278,10 +307,57 @@ class PosProvider with ChangeNotifier {
     return _cart.fold(0.0, (total, item) => total + item.subtotal);
   }
 
+  /// Base imponible neta gravada estimada (Subtotal con IVA / 1.21)
+  double get netSubtotal {
+    return (cartSubtotal / 1.21 * 100).roundToDouble() / 100.0;
+  }
+  double get cartNetSubtotal => netSubtotal;
+
+  /// Monto de IVA discriminado
+  double get ivaAmount {
+    return ((cartSubtotal - netSubtotal) * 100).roundToDouble() / 100.0;
+  }
+  double get cartIvaAmount => ivaAmount;
+
+  /// Indica si corresponde aplicar Percepción IIBB al cliente seleccionado
+  bool get appliesIibbPerception {
+    return _isIibbPerceptionAgent &&
+        (_selectedCustomer?.appliesIibbPerception == true) &&
+        ((_selectedCustomer?.iibbPerceptionRate ?? 0.0) > 0);
+  }
+
+  /// Alícuota de percepción IIBB activa para el cliente
+  double get iibbPerceptionRate => _selectedCustomer?.iibbPerceptionRate ?? 0.0;
+
+  /// Monto monetario de la Percepción IIBB: Base Neta * (Alícuota / 100)
+  double get iibbPerceptionAmount {
+    return appliesIibbPerception
+        ? ((netSubtotal * (iibbPerceptionRate / 100.0)) * 100).roundToDouble() / 100.0
+        : 0.0;
+  }
+  double get cartIibbPerceptionAmount => iibbPerceptionAmount;
+
+  /// Total general del carrito: Subtotal + Percepción IIBB (+ Flete logístico pendiente)
   double get cartTotal {
-    // Solo sumamos el flete al total general si la logística está activa y pendiente
-    final bool applyShipping = _currentRequiresDispatch && _currentFulfillmentStatus == 'pending';
-    return cartSubtotal + (applyShipping ? _shippingCost : 0.0);
+    final bool applyShipping =
+        _currentRequiresDispatch && _currentFulfillmentStatus == 'pending';
+    return cartSubtotal +
+        iibbPerceptionAmount +
+        (applyShipping ? _shippingCost : 0.0);
+  }
+
+  /// Helper que permite validar percepción pasando BusinessSettings opcionales
+  bool checkAppliesIibbPerception({BusinessSettings? settings}) {
+    final isAgent = settings?.isIibbPerceptionAgent ?? _isIibbPerceptionAgent;
+    return isAgent &&
+        (_selectedCustomer?.appliesIibbPerception == true) &&
+        ((_selectedCustomer?.iibbPerceptionRate ?? 0.0) > 0);
+  }
+
+  /// Helper que calcula el monto de percepción pasando BusinessSettings opcionales
+  double calculateIibbPerceptionAmount({BusinessSettings? settings}) {
+    if (!checkAppliesIibbPerception(settings: settings)) return 0.0;
+    return ((netSubtotal * (iibbPerceptionRate / 100.0)) * 100).roundToDouble() / 100.0;
   }
 
   // Garantiza que siempre tengamos un printerService, incluso si no se inyecta
@@ -354,6 +430,7 @@ class PosProvider with ChangeNotifier {
 
   void clearCart() {
     _cart.clear();
+    _selectedCustomer = null;
     _activePendingSaleId = null;
     _activeQuoteId = null;
     _recalledUserName = null;
@@ -548,6 +625,8 @@ class PosProvider with ChangeNotifier {
     String fulfillmentStatus = 'pending',
     dynamic checkDetails,
     String? deliveryAddress,
+    double? iibbPerceptionAmount,
+    double? iibbPerceptionRate,
   }) async {
     if (_cart.isEmpty) return false;
 
@@ -562,6 +641,8 @@ class PosProvider with ChangeNotifier {
     final totalSnapshot = cartTotal;
     // Solo aplicamos flete al comprobante si se requiere despacho y no es entrega inmediata
     final shippingCostSnapshot = (requiresDispatch && fulfillmentStatus == 'pending') ? _shippingCost : 0.0;
+    final effectivePerceptionAmount = iibbPerceptionAmount ?? this.iibbPerceptionAmount;
+    final effectivePerceptionRate = iibbPerceptionRate ?? (this.iibbPerceptionRate > 0 ? this.iibbPerceptionRate : null);
 
     try {
       String? extractedSaleId;
@@ -571,6 +652,8 @@ class PosProvider with ChangeNotifier {
           saleId: _activePendingSaleId!,
           saleTotal: totalSnapshot,
           totalSurcharge: totalSurcharge,
+          iibbPerceptionAmount: effectivePerceptionAmount,
+          iibbPerceptionRate: effectivePerceptionRate,
           payments: payments,
           tenderedAmount: tenderedAmount,
           changeAmount: changeAmount,
@@ -592,6 +675,8 @@ class PosProvider with ChangeNotifier {
         final result = await processSaleUseCase(
           total: totalSnapshot,
           totalSurcharge: totalSurcharge,
+          iibbPerceptionAmount: effectivePerceptionAmount,
+          iibbPerceptionRate: effectivePerceptionRate,
           payments: payments,
           tenderedAmount: tenderedAmount,
           changeAmount: changeAmount,
@@ -1041,6 +1126,8 @@ class PosProvider with ChangeNotifier {
     bool showPreview = true,
     double shippingCost = 0.0,
     dynamic checkDetails,
+    double? iibbPerceptionAmount,
+    double? iibbPerceptionRate,
   }) async {
     _isLoading = true;
     _errorMessage = null;
@@ -1052,6 +1139,8 @@ class PosProvider with ChangeNotifier {
       await repository.payPendingSale(
         saleId: saleId,
         totalSurcharge: totalSurcharge,
+        iibbPerceptionAmount: iibbPerceptionAmount,
+        iibbPerceptionRate: iibbPerceptionRate,
         payments: payments,
         tenderedAmount: tenderedAmount,
         changeAmount: changeAmount,

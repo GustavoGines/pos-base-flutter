@@ -97,6 +97,8 @@ class MockProcessSaleUseCase extends _i1.Mock
   _i6.Future<_i3.Sale> call({
     required double? total,
     required double? totalSurcharge,
+    double? iibbPerceptionAmount,
+    double? iibbPerceptionRate,
     List<Map<String, dynamic>>? payments,
     double? tenderedAmount,
     double? changeAmount,
@@ -120,6 +122,8 @@ class MockProcessSaleUseCase extends _i1.Mock
           {
             #total: total,
             #totalSurcharge: totalSurcharge,
+            #iibbPerceptionAmount: iibbPerceptionAmount,
+            #iibbPerceptionRate: iibbPerceptionRate,
             #payments: payments,
             #tenderedAmount: tenderedAmount,
             #changeAmount: changeAmount,
@@ -145,6 +149,8 @@ class MockProcessSaleUseCase extends _i1.Mock
             {
               #total: total,
               #totalSurcharge: totalSurcharge,
+              #iibbPerceptionAmount: iibbPerceptionAmount,
+              #iibbPerceptionRate: iibbPerceptionRate,
               #payments: payments,
               #tenderedAmount: tenderedAmount,
               #changeAmount: changeAmount,
@@ -227,6 +233,8 @@ class MockPosRepository extends _i1.Mock implements _i2.PosRepository {
   _i6.Future<_i3.Sale> processSale({
     required double? total,
     required double? totalSurcharge,
+    double? iibbPerceptionAmount,
+    double? iibbPerceptionRate,
     List<Map<String, dynamic>>? payments,
     double? tenderedAmount,
     double? changeAmount,
@@ -250,6 +258,8 @@ class MockPosRepository extends _i1.Mock implements _i2.PosRepository {
           {
             #total: total,
             #totalSurcharge: totalSurcharge,
+            #iibbPerceptionAmount: iibbPerceptionAmount,
+            #iibbPerceptionRate: iibbPerceptionRate,
             #payments: payments,
             #tenderedAmount: tenderedAmount,
             #changeAmount: changeAmount,
@@ -275,6 +285,8 @@ class MockPosRepository extends _i1.Mock implements _i2.PosRepository {
             {
               #total: total,
               #totalSurcharge: totalSurcharge,
+              #iibbPerceptionAmount: iibbPerceptionAmount,
+              #iibbPerceptionRate: iibbPerceptionRate,
               #payments: payments,
               #tenderedAmount: tenderedAmount,
               #changeAmount: changeAmount,
@@ -310,6 +322,8 @@ class MockPosRepository extends _i1.Mock implements _i2.PosRepository {
   _i6.Future<Map<String, dynamic>> payPendingSale({
     required int? saleId,
     required double? totalSurcharge,
+    double? iibbPerceptionAmount,
+    double? iibbPerceptionRate,
     required List<Map<String, dynamic>>? payments,
     required double? tenderedAmount,
     required double? changeAmount,
@@ -326,6 +340,8 @@ class MockPosRepository extends _i1.Mock implements _i2.PosRepository {
           {
             #saleId: saleId,
             #totalSurcharge: totalSurcharge,
+            #iibbPerceptionAmount: iibbPerceptionAmount,
+            #iibbPerceptionRate: iibbPerceptionRate,
             #payments: payments,
             #tenderedAmount: tenderedAmount,
             #changeAmount: changeAmount,
