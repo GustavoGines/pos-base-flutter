@@ -56,7 +56,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   // Precios Globales
   final _cardPercentageCtrl = TextEditingController();
   final _wholesalePercentageCtrl = TextEditingController();
-  bool _advancedPriceTiersEnabled = false; // Feature Toggle Multi-Tenant
+  bool _advancedPriceTiersEnabled = false; // ━━━━━━━━ Feature Toggle Multi-Tenant ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   bool _isIibbPerceptionAgent = false;
   final _defaultIibbRateCtrl = TextEditingController();
 
@@ -106,13 +106,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _integrationsLoaded = false;
   bool _isLoadingIntegrations = false;
 
+  String? _selectedTaxCondition = 'IVA Responsable Inscripto';
+  final _iibbCtrl = TextEditingController();
+  final _activityStartDateCtrl = TextEditingController();
+
   @override
   void initState() {
     super.initState();
     _loadVersion();
     _loadChannel();
 
-    // Listener para auto-completar la ruta del backend si el técnico cambia la URL
+    // Listener para auto-completar la ruta del backend si el tí©cnico cambia la URL
     _serverUrlCtrl.addListener(_handleUrlChange);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -124,6 +128,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _phoneCtrl.text = settings.phone ?? '';
         _taxIdCtrl.text = settings.taxId ?? '';
         _footerCtrl.text = settings.receiptFooterMessage ?? '';
+        
+        _selectedTaxCondition = settings.taxCondition;
+        if (_selectedTaxCondition == null || _selectedTaxCondition!.isEmpty) {
+           _selectedTaxCondition = 'IVA Responsable Inscripto';
+        }
+        _iibbCtrl.text = (settings.iibb == null || settings.iibb!.isEmpty) ? 'Exento' : settings.iibb!;
+        _activityStartDateCtrl.text = settings.activityStartDate ?? '';
 
         _cardPercentageCtrl.text = settings.globalCardPercentage.toString();
         _wholesalePercentageCtrl.text =
@@ -149,7 +160,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             _serverUrlCtrl.text =
                 prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
 
-            // Si la ruta está vacía al iniciar, intentamos auto-detectar una sugerencia
+            // Si la ruta estí¡ vací­a al iniciar, intentamos auto-detectar una sugerencia
             if (_backendPathCtrl.text.isEmpty) {
               _autoDetectBackendPath();
             }
@@ -167,7 +178,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _handleUrlChange() {
-    // Si el técnico está escribiendo la URL y la ruta está vacía, intentamos ayudar
+    // Si el tí©cnico estí¡ escribiendo la URL y la ruta estí¡ vací­a, intentamos ayudar
     if (_backendPathCtrl.text.isEmpty) {
       _autoDetectBackendPath();
     }
@@ -175,7 +186,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   void _autoDetectBackendPath() {
     // Estrategia 1: Carpeta hermana (Estructura de producción ideal)
-    // exe en: <raíz>/pos-frontend/app.exe  -> busca <raíz>/pos-backend
+    // exe en: <raí­z>/pos-frontend/app.exe  -> busca <raí­z>/pos-backend
     try {
       final installDir = File(Platform.resolvedExecutable).parent;
       final siblingBackend = p.join(installDir.parent.path, 'pos-backend');
@@ -383,7 +394,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final cuit = _afipCuitCtrl.text.trim().replaceAll(RegExp(r'\D'), '');
     if (cuit.isEmpty || cuit.length < 10) {
       if (mounted) {
-        SnackBarService.warning(context, 'Debe ingresar un CUIT comercial válido.');
+        SnackBarService.warning(context, 'Debe ingresar un CUIT comercial ví¡lido.');
       }
       return;
     }
@@ -477,7 +488,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         if (parsed == null || parsed < 1 || parsed > 99999) {
           if (showFeedback && mounted) {
             SnackBarService.error(
-                context, 'El Punto de Venta debe ser un número entre 1 y 99999.');
+                context, 'El Punto de Venta debe ser un níºmero entre 1 y 99999.');
           }
           return false;
         }
@@ -560,7 +571,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     final provider = context.read<SettingsProvider>();
 
-    // ── IMPORTANTE: guardar URL y ruta local PRIMERO ──────────────────────────
+    // ━━━━━━━━ IMPORTANTE: guardar URL y ruta local PRIMERO í¢â€â‚¬í¢â€â‚¬í¢â€â‚¬í¢â€â‚¬í¢â€â‚¬í¢â€â‚¬í¢â€â‚¬í¢â€â‚¬í¢â€â‚¬í¢â€â‚¬í¢â€â‚¬í¢â€â‚¬í¢â€â‚¬í¢â€â‚¬í¢â€â‚¬í¢â€â‚¬í¢â€â‚¬í¢â€â‚¬í¢â€â‚¬í¢â€â‚¬í¢â€â‚¬í¢â€â‚¬í¢â€â‚¬í¢â€â‚¬í¢â€â‚¬í¢â€â‚¬
     // Si el usuario cambió la URL del servidor, el request de saveSettings debe
     // usar ya la nueva URL. De lo contrario falla con "No se puede conectar".
     final newUrl = _serverUrlCtrl.text.trim();
@@ -589,6 +600,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       'default_iibb_perception_rate': double.tryParse(
               _defaultIibbRateCtrl.text.trim().replaceAll(',', '.')) ??
           0.0,
+      'tax_condition': _selectedTaxCondition ?? 'IVA Responsable Inscripto',
+      'iibb': _iibbCtrl.text.trim(),
+      'activity_start_date': _activityStartDateCtrl.text.trim(),
     };
 
     final success = await provider.saveSettings(data);
@@ -641,7 +655,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         final fileSize = file.size > 0 ? file.size : (file.bytes?.length ?? 0);
         if (fileSize > 2 * 1024 * 1024) {
           if (mounted) {
-            SnackBarService.error(context, 'El logotipo no puede superar los 2MB permitidos (máx 2048 KB).');
+            SnackBarService.error(context, 'El logotipo no puede superar los 2MB permitidos (mí¡x 2048 KB).');
           }
           return;
         }
@@ -769,7 +783,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (!mounted) return;
 
       if (frontendUpdate != null && backendUpdate != null) {
-        // ESCENARIO 1: ACTUALIZACIÓN DOBLE (INTEGRAL)
+        // ESCENARIO 1: ACTUALIZACIíƒâ€œN DOBLE (INTEGRAL)
         // No damos a elegir, forzamos el flujo integral empezando por el frontend
         showDialog(
           context: context,
@@ -788,7 +802,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         );
       } else if (backendUpdate != null) {
         // ESCENARIO 3: Solo Backend
-        // El backend ya se actualiza automáticamente, solo informamos
+        // El backend ya se actualiza automí¡ticamente, solo informamos
         showDialog(
           context: context,
           barrierDismissible: true,
@@ -796,7 +810,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         );
       } else {
         SnackBarService.success(
-            context, 'Tu sistema está actualizado (v$_appVersion)');
+            context, 'Tu sistema estí¡ actualizado (v$_appVersion)');
       }
     } catch (e) {
       if (!mounted) return;
@@ -1205,7 +1219,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _buildSectionHeader('Integraciones',
-                'Gestioná las pasarelas de pago y facturación electrónica oficial.'),
+            'Gestioná de forma avanzada las integraciones de tu cuenta con servicios externos.'),
             const SizedBox(height: 32),
 
             // Mercado Pago Card
@@ -1365,7 +1379,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ],
                     const SizedBox(height: 4),
                     Text(
-                      'Cobro con QR In-Store y terminales físicas Point',
+                      'Cobro con QR In-Store y terminales fí­sicas Point',
                       style: TextStyle(
                           fontSize: 13, color: Colors.grey.shade600),
                     ),
@@ -1416,7 +1430,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 hint: 'whsec_...',
               ).copyWith(
                 helperText:
-                    'Clave de firma para validar notificaciones automáticas de pago.',
+                    'Clave de firma para validar notificaciones automí¡ticas de pago.',
                 helperMaxLines: 2,
                 suffixIcon: IconButton(
                   icon: Icon(_obscureMpSecret
@@ -1501,7 +1515,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ),
                 Text(
-                  'Verifica que el Access Token sea válido contra la API oficial',
+                  'Verifica que el Access Token sea ví¡lido contra la API oficial',
                   style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                 ),
               ],
@@ -1834,7 +1848,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
             const SizedBox(height: 16),
 
-            // Campo de contraseña de clave privada (opcional)
+            // Campo de contraseí±a de clave privada (opcional)
             TextFormField(
               key: const ValueKey('field_afip_key_passphrase'),
               controller: _afipKeyPassphraseCtrl,
@@ -1842,7 +1856,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               decoration: _inputDecoration(
                 'Contraseña de Clave Privada (Opcional)',
                 Icons.lock_outline,
-                hint: 'Dejar vacío si la clave no tiene contraseña',
+                hint: 'Dejar vací­o si la clave no tiene contraseña',
               ).copyWith(
                 helperText:
                     'Solo requerida si la clave privada (.key) fue cifrada con contraseña.',
@@ -1894,7 +1908,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ),
                 Text(
-                  'Valida criptográficamente el par y lo almacena de forma segura en el servidor.',
+                  'Valida criptogrí¡ficamente el par y lo almacena de forma segura en el servidor.',
                   style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                 ),
               ],
@@ -2054,7 +2068,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         Row(
           children: [
             Expanded(
-                child: _buildTextField('Teléfono', _phoneCtrl,
+                child: _buildTextField('Telí©fono', _phoneCtrl,
                     icon: Icons.phone_outlined)),
             const SizedBox(width: 24),
             Expanded(
@@ -2063,8 +2077,126 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ],
         ),
         const SizedBox(height: 24),
+        Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Condición frente al IVA', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Colors.black87)),
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<String>(
+                    initialValue: _selectedTaxCondition,
+                    decoration: InputDecoration(
+                      prefixIcon: const Icon(Icons.account_balance_outlined, color: Colors.black54),
+                      filled: true,
+                      fillColor: const Color(0xFFF8F9FA),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade300)),
+                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade300)),
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: 'IVA Responsable Inscripto', child: Text('IVA Responsable Inscripto')),
+                      DropdownMenuItem(value: 'Responsable Monotributo', child: Text('Responsable Monotributo')),
+                      DropdownMenuItem(value: 'IVA Exento', child: Text('IVA Exento')),
+                      DropdownMenuItem(value: 'Consumidor Final', child: Text('Consumidor Final')),
+                    ],
+                    onChanged: (val) {
+                      setState(() { _selectedTaxCondition = val; });
+                    },
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 24),
+            Expanded(
+                child: _buildTextField('Nro. Ingresos Brutos (IIBB)', _iibbCtrl,
+                    icon: Icons.assignment_outlined)),
+          ],
+        ),
+        const SizedBox(height: 24),
+        _buildTextField('Fecha de Inicio de Actividades (ej: 01/01/2020)', _activityStartDateCtrl,
+            icon: Icons.calendar_today_outlined),
+        const SizedBox(height: 24),
         _buildTextField('Mensaje Pie de Ticket', _footerCtrl,
             icon: Icons.message_outlined, maxLines: 3),
+        const SizedBox(height: 32),
+        Container(
+          decoration: BoxDecoration(
+            color: _isIibbPerceptionAgent
+                ? const Color(0xFF2E7D32).withValues(alpha: 0.05)
+                : Colors.grey.shade50,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: _isIibbPerceptionAgent
+                  ? const Color(0xFF2E7D32).withValues(alpha: 0.4)
+                  : Colors.grey.shade200,
+              width: 1.5,
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Material(
+                  color: Colors.transparent,
+                  child: SwitchListTile(
+                    key: const ValueKey('switch_iibb_perception_agent'),
+                    contentPadding: EdgeInsets.zero,
+                    secondary: Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF2E7D32).withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.account_balance, color: Color(0xFF2E7D32)),
+                    ),
+                    title: const Text(
+                      'Agente de Percepción IIBB / ATP',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                    ),
+                    subtitle: const Text(
+                      'Habilita el cálculo automático de percepciones de Ingresos Brutos en las facturas A y B.',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                    value: _isIibbPerceptionAgent,
+                    activeThumbColor: const Color(0xFF2E7D32),
+                    onChanged: (val) => setState(() => _isIibbPerceptionAgent = val),
+                  ),
+                ),
+                if (_isIibbPerceptionAgent) ...[
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    key: const ValueKey('field_default_iibb_rate'),
+                    controller: _defaultIibbRateCtrl,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(RegExp(r'^\d*[\.,]?\d{0,2}')),
+                    ],
+                    decoration: InputDecoration(
+                      labelText: 'Alcuota por defecto IIBB (%)',
+                      hintText: 'Ej: 3.0',
+                      prefixIcon: const Icon(Icons.percent, size: 20),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                      filled: true,
+                      fillColor: Colors.white,
+                    ),
+                    validator: (val) {
+                      if (!_isIibbPerceptionAgent) return null;
+                      if (val == null || val.trim().isEmpty) return null;
+                      final parsed = double.tryParse(val.trim().replaceAll(',', '.'));
+                      if (parsed == null || parsed < 0 || parsed > 100) {
+                        return 'Ingrese una alícuota válida (0 - 100%)';
+                      }
+                      return null;
+                    },
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
         const SizedBox(height: 32),
       ],
     );
@@ -2214,10 +2346,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildSectionHeader('Precios y Factores',
-            'Configurá los porcentajes matemáticos para las listas de precios globales.'),
+            'Configurá los porcentajes matemí¡ticos para las listas de precios globales.'),
         const SizedBox(height: 32),
 
-        // ── Feature Toggle Multi-Tenant ──────────────────────────────────────
+        // ━━━━━━━━ Feature Toggle Multi-Tenant ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         Builder(builder: (context) {
           final hasMultiPrices =
               provider.settings?.features.multiplePrices == true;
@@ -2299,7 +2431,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ? 'Multi-Listas de Precios (Plan Avanzado)'
                         : _advancedPriceTiersEnabled
                             ? 'Modo Avanzado (Multi-Listas Activo)'
-                            : 'Modo Básico (Retail / Minorista)',
+                            : 'Modo Bí¡sico (Retail / Minorista)',
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 15,
@@ -2314,10 +2446,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     padding: const EdgeInsets.only(top: 4),
                     child: Text(
                       isLocked
-                          ? 'Activá el Plan Avanzado para habilitar el selector de Listas de Precios (Mayorista / Tarjeta) en el POS.'
+                          ? 'Activí¡ el Plan Avanzado para habilitar el selector de Listas de Precios (Mayorista / Tarjeta) en el POS.'
                           : _advancedPriceTiersEnabled
-                              ? 'El POS muestra el selector de Listas (Mayorista / Tarjeta / Custom). Los recargos del método de pago se desactivan automáticamente para evitar doble cobro.'
-                              : 'El POS opera con precio único. Los recargos configurados en cada Método de Pago se aplican normalmente al momento del cobro.',
+                              ? 'El POS muestra el selector de Listas (Mayorista / Tarjeta / Custom). Los recargos del mí©todo de pago se desactivan automí¡ticamente para evitar doble cobro.'
+                              : 'El POS opera con precio íºnico. Los recargos configurados en cada Mí©todo de Pago se aplican normalmente al momento del cobro.',
                       style: TextStyle(
                           fontSize: 12,
                           color: Colors.grey.shade600,
@@ -2330,7 +2462,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       isLocked ? Colors.grey.shade400 : const Color(0xFF3F51B5),
                   onChanged: (val) {
                     if (isLocked) {
-                      // Mostrar upsell — no cambiar el estado local
+                      // Mostrar upsell í¢â‚¬â€ no cambiar el estado local
                       PlanUpgradeDialog.show(
                         context,
                         title: 'Plan Avanzado Requerido',
@@ -2343,7 +2475,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         onNavigateToSettings: () => setState(() =>
                             _activeSection = SettingsSection.subscription),
                       );
-                      return; // ← bloquea el setState
+                      return; // í¢â€ Â bloquea el setState
                     }
                     setState(() => _advancedPriceTiersEnabled = val);
                   },
@@ -2371,84 +2503,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           );
         }),
-        // ── Percepciones IIBB (Módulo Mayorista) ───────────────────────
-        Container(
-          margin: const EdgeInsets.only(top: 24),
-          decoration: BoxDecoration(
-            color: _isIibbPerceptionAgent
-                ? const Color(0xFF2E7D32).withValues(alpha: 0.05)
-                : Colors.grey.shade50,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: _isIibbPerceptionAgent
-                  ? const Color(0xFF2E7D32).withValues(alpha: 0.4)
-                  : Colors.grey.shade200,
-              width: 1.5,
-            ),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Material(
-                  color: Colors.transparent,
-                  child: SwitchListTile(
-                    key: const ValueKey('switch_iibb_perception_agent'),
-                    contentPadding: EdgeInsets.zero,
-                    secondary: Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF2E7D32).withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: const Icon(Icons.account_balance, color: Color(0xFF2E7D32)),
-                    ),
-                    title: const Text(
-                      'Agente de Percepción IIBB (Módulo Mayorista)',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                    ),
-                    subtitle: const Text(
-                      'Habilita la aplicación de percepciones de Ingresos Brutos a clientes alcanzados en ventas.',
-                      style: TextStyle(fontSize: 12),
-                    ),
-                    value: _isIibbPerceptionAgent,
-                    activeThumbColor: const Color(0xFF2E7D32),
-                    onChanged: (val) => setState(() => _isIibbPerceptionAgent = val),
-                  ),
-                ),
-                if (_isIibbPerceptionAgent) ...[
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    key: const ValueKey('field_default_iibb_rate'),
-                    controller: _defaultIibbRateCtrl,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    inputFormatters: [
-                      FilteringTextInputFormatter.allow(RegExp(r'^\d*[\.,]?\d{0,2}')),
-                    ],
-                    decoration: InputDecoration(
-                      labelText: 'Alícuota por defecto IIBB (%)',
-                      hintText: 'Ej: 3.0',
-                      prefixIcon: const Icon(Icons.percent, size: 20),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                      filled: true,
-                      fillColor: Colors.white,
-                    ),
-                    validator: (val) {
-                      if (!_isIibbPerceptionAgent) return null;
-                      if (val == null || val.trim().isEmpty) return null;
-                      final parsed = double.tryParse(val.trim().replaceAll(',', '.'));
-                      if (parsed == null || parsed < 0 || parsed > 100) {
-                        return 'Ingrese una alícuota válida (0 - 100%)';
-                      }
-                      return null;
-                    },
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ),
         if (provider.settings?.features.multiplePrices == true) ...[
           const SizedBox(height: 48),
           _buildCustomTiersSection(enabled: _advancedPriceTiersEnabled),
@@ -2466,7 +2520,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _buildSectionHeader('Listas de Precios Especiales',
-                'Creá modificadores dinámicos para clientes (Ej: "Gremio" con -10%).'),
+                'Creí¡ modificadores diní¡micos para clientes (Ej: "Gremio" con -10%).'),
             const SizedBox(height: 24),
             Row(
               crossAxisAlignment: CrossAxisAlignment.end,
@@ -2498,7 +2552,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         });
                       } else {
                         SnackBarService.warning(context,
-                            'Ingresá un nombre y un porcentaje válido numérico.');
+                            'Ingresá un nombre y un porcentaje ví¡lido numí©rico.');
                       }
                     },
                     icon: const Icon(Icons.add),
@@ -2634,7 +2688,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildSectionHeader('Suscripción y Licencia',
-            'Gestioná tu acceso Premium, Módulos y facturación.'),
+            'Gestioná tus cajas registradoras físicas y sus permisos desde aquí.'),
         const SizedBox(height: 32),
         if (provider.isLicenseActive) ...[
           AnimatedSubscriptionCard(
@@ -2654,7 +2708,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             runSpacing: 12,
             children: (provider.allowedAddons.isEmpty)
                 ? [
-                    const Text('No hay addons específicos activos.',
+                    const Text('No hay addons especí­ficos activos.',
                         style: TextStyle(color: Colors.grey))
                   ]
                 : provider.allowedAddons
@@ -2778,7 +2832,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         const Padding(
           padding: EdgeInsets.only(left: 12, top: 8),
           child: Text(
-            '⚠️ Esta ruta es necesaria para que las actualizaciones automáticas puedan reemplazar los archivos del servidor local.',
+            'í¢Å¡Â í¯Â¸Â Esta ruta es necesaria para que las actualizaciones automí¡ticas puedan reemplazar los archivos del servidor local.',
             style: TextStyle(
                 fontSize: 12,
                 color: Colors.orange,
@@ -2805,7 +2859,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           title: const Text('Asignación de Terminal',
               style: TextStyle(fontWeight: FontWeight.bold)),
           subtitle: Text(
-              'Esta PC está configurada como: Caja ID ${provider.assignedRegisterId}'),
+              'Esta PC estí¡ configurada como: Caja ID ${provider.assignedRegisterId}'),
           trailing: const Icon(Icons.chevron_right),
           onTap: () => _showTerminalAssignmentDialog(context, provider),
         ),
@@ -2823,7 +2877,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           title: const Text('Administración de Cajas',
               style: TextStyle(fontWeight: FontWeight.bold)),
           subtitle: const Text(
-              'Configurá los nombres y permisos de cada terminal física.'),
+              'Configurá los nombres y permisos de cada terminal fí­sica.'),
           trailing: const Icon(Icons.chevron_right),
           onTap: () {
             if (provider.features.multiCaja) {
@@ -2834,7 +2888,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 title: 'Plan Premium Requerido',
                 featureName: 'Gestión Multi-Caja',
                 description:
-                    'La administración de múltiples terminales físicas es '
+                    'La administración de míºltiples terminales fí­sicas es '
                     'una función exclusiva del plan PREMIUM.',
                 onNavigateToSettings: () => setState(
                     () => _activeSection = SettingsSection.subscription),
@@ -2905,7 +2959,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  // Los modales se mantienen funcionalmente igual pero podrían estilizarse más.
+  // Los modales se mantienen funcionalmente igual pero podrí­an estilizarse mí¡s.
   // Re-implementando los esenciales para que el archivo compile.
 
   Future<void> _showTerminalAssignmentDialog(
@@ -2936,18 +2990,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
               if (ctx.mounted) Navigator.pop(ctx);
 
               // Forzar recarga del turno con la nueva caja asignada.
-              // Esto actualizará globalmente el CashRegisterProvider y el Consumer en /home
-              // echará al usuario a la pantalla de "Abrir Caja" si la nueva terminal está cerrada.
+              // Esto actualizarí¡ globalmente el CashRegisterProvider y el Consumer en /home
+              // echarí¡ al usuario a la pantalla de "Abrir Caja" si la nueva terminal estí¡ cerrada.
               await cashProvider.checkCurrentShift(registerId: id);
 
-              // Limpiar carrito para que no quede huérfano de la terminal anterior
+              // Limpiar carrito para que no quede huí©rfano de la terminal anterior
               if (AppConfig.navigatorKey.currentContext != null) {
                 AppConfig.navigatorKey.currentContext!
                     .read<PosProvider>()
                     .clearCart();
               }
 
-              // Redirigir a /home para que reevalúe el estado y muestre la apertura de caja si es necesario
+              // Redirigir a /home para que reevalíºe el estado y muestre la apertura de caja si es necesario
               AppConfig.navigatorKey.currentState
                   ?.pushNamedAndRemoveUntil('/home', (route) => false);
             }
@@ -3008,7 +3062,7 @@ class _AnimatedSubscriptionCardState extends State<AnimatedSubscriptionCard>
 
   @override
   Widget build(BuildContext context) {
-    final title = widget.isPremium ? 'PLAN PREMIUM' : 'PLAN BÁSICO';
+    final title = widget.isPremium ? 'PLAN PREMIUM' : 'PLAN BíSICO';
 
     final gradientColors = widget.isPremium
         ? [
@@ -3119,7 +3173,7 @@ class _AnimatedSubscriptionCardState extends State<AnimatedSubscriptionCard>
                   const SizedBox(height: 10),
                   Text(
                     widget.isLifetime
-                        ? 'Disfrutás de todas las funciones Premium sin límites de tiempo.'
+                        ? 'Disfrutí¡s de todas las funciones Premium sin lí­mites de tiempo.'
                         : (widget.expiresAt != null
                             ? 'Expira el: ${DateFormat('dd MMMM, yyyy').format(widget.expiresAt!)}'
                             : (widget.lastSync != null
@@ -3212,3 +3266,4 @@ class _AnimatedSubscriptionCardState extends State<AnimatedSubscriptionCard>
     );
   }
 }
+

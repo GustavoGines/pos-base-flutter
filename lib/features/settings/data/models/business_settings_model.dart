@@ -29,6 +29,9 @@ class BusinessSettingsModel extends BusinessSettings {
     super.afipEnabled,
     super.isIibbPerceptionAgent,
     super.defaultIibbPerceptionRate,
+    super.taxCondition,
+    super.iibb,
+    super.activityStartDate,
   });
 
   factory BusinessSettingsModel.fromJson(Map<String, dynamic> json) {
@@ -129,6 +132,9 @@ class BusinessSettingsModel extends BusinessSettings {
       defaultIibbPerceptionRate: double.tryParse(
               json['default_iibb_perception_rate']?.toString() ?? '0.0') ??
           0.0,
+      taxCondition: json['tax_condition']?.toString(),
+      iibb: json['iibb']?.toString(),
+      activityStartDate: json['activity_start_date']?.toString(),
     );
   }
 

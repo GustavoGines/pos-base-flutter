@@ -363,7 +363,7 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
         throw Exception(error['message'] ?? 'No se puede eliminar: tiene productos asociados.');
       }
       if (response.statusCode != 204) {
-        throw Exception('Error al eliminar categorÃ­a (Status: ${response.statusCode})');
+        throw Exception('Error al eliminar categoría (Status: ${response.statusCode})');
       }
     } catch (e) {
       print('=== API Error en deleteCategory: $e ===');
@@ -555,7 +555,7 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
       if (response.statusCode == 200) {
         return json.decode(response.body) as Map<String, dynamic>;
       } else {
-        throw Exception('Error al previsualizar la actualizaciÃ³n de precios: ${response.body}');
+        throw Exception('Error al previsualizar la actualización de precios: ${response.body}');
       }
     } catch (e) {
       print('=== API Error en bulkPricePreview: $e ===');
@@ -577,7 +577,7 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
     final response = await client.post(Uri.parse('$baseUrl/catalog/bulk-price-history/$historyId/revert'));
     if (response.statusCode == 200) {
       final data = json.decode(response.body);
-      return data['message'] ?? 'Revertido con Ã©xito';
+      return data['message'] ?? 'Revertido con éxito';
     }
     throw Exception('Error al revertir el aumento de precios: ${response.body}');
   }
@@ -625,7 +625,7 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
         final List<dynamic> jsonList = json.decode(response.body);
         return jsonList.map((j) => ProductModel.fromJson(j)).toList();
       } else {
-        throw Exception('Error al cargar alertas crÃ­ticas (${response.statusCode})');
+        throw Exception('Error al cargar alertas críticas (${response.statusCode})');
       }
     } catch (e) {
       print('=== API Error en fetchCriticalAlerts: $e ===');

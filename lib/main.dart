@@ -362,12 +362,16 @@ void main() async {
           ),
           lazy: false,
         ),
-        ChangeNotifierProvider(
-          create: (_) => PosProvider(
+        ChangeNotifierProxyProvider<SettingsProvider, PosProvider>(
+            create: (_) => PosProvider(
             processSaleUseCase: ProcessSaleUseCase(posRepo),
             searchProductsUseCase: SearchProductsUseCase(posRepo),
             repository: posRepo,
           ),
+          update: (_, settings, pos) {
+            pos!.updateSettings(settings.settings);
+            return pos;
+          },
           lazy: false,
         ),
         ChangeNotifierProvider(

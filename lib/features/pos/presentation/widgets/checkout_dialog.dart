@@ -1,4 +1,4 @@
-﻿import 'package:frontend_desktop/core/utils/currency_formatter.dart';
+import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:frontend_desktop/features/catalog/presentation/providers/catalog_provider.dart';
@@ -952,8 +952,6 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       success = await posProvider.processCheckout(
         shiftId: shiftId,
         totalSurcharge: _totalSurcharge,
-        iibbPerceptionAmount: _currentIibbAmount > 0 ? _currentIibbAmount : null,
-        iibbPerceptionRate: _currentIibbAmount > 0 ? _selectedCustomer?.iibbPerceptionRate : null,
         payments: paymentsPayload,
         tenderedAmount: _actualTendered,
         changeAmount: _change,
@@ -1276,6 +1274,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                               _fiscalTaxCondition = 'consumidor_final';
                               _fiscalReceiverAddressCtrl.clear();
                             });
+                            context.read<PosProvider>().setLastSelectedCustomer(null);
                           },
                         ),
                     ],
@@ -2794,4 +2793,3 @@ class _CustomerPickerDialogState extends State<_CustomerPickerDialog> {
     );
   }
 }
-

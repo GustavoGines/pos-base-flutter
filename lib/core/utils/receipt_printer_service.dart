@@ -1654,18 +1654,18 @@ class ReceiptPrinterService {
   /// Elimina acentos y caracteres especiales que no soportan las impresoras térmicas chinas (CP437).
   String _cleanText(String text) {
     if (text.isEmpty) return text;
-    const Map<String, String> accents = {
-      'À':'A', 'Á':'A', 'Â':'A', 'Ã':'A', 'Ä':'A', 'Å':'A',
-      'à':'a', 'á':'a', 'â':'a', 'ã':'a', 'ä':'a', 'å':'a',
-      'Ò':'O', 'Ó':'O', 'Ô':'O', 'Õ':'O', 'Ö':'O', 'Ø':'O',
-      'ò':'o', 'ó':'o', 'ô':'o', 'õ':'o', 'ö':'o', 'ø':'o',
-      'È':'E', 'É':'E', 'Ê':'E', 'Ë':'E',
-      'è':'e', 'é':'e', 'ê':'e', 'ë':'e',
+        const Map<String, String> accents = {
+      'Á':'A', 'À':'A', 'Â':'A', 'Ä':'A', 'Ã':'A', 'Å':'A',
+      'á':'a', 'à':'a', 'â':'a', 'ä':'a', 'ã':'a', 'å':'a',
+      'Ó':'O', 'Ò':'O', 'Ô':'O', 'Ö':'O', 'Õ':'O', 'Ø':'O',
+      'ó':'o', 'ò':'o', 'ô':'o', 'ö':'o', 'õ':'o', 'ø':'o',
+      'É':'E', 'È':'E', 'Ê':'E', 'Ë':'E',
+      'é':'e', 'è':'e', 'ê':'e', 'ë':'e',
       'Ç':'C', 'ç':'c',
-      'Ì':'I', 'Í':'I', 'Î':'I', 'Ï':'I',
-      'ì':'i', 'í':'i', 'î':'i', 'ï':'i',
-      'Ù':'U', 'Ú':'U', 'Û':'U', 'Ü':'U',
-      'ù':'u', 'ú':'u', 'û':'u', 'ü':'u',
+      'Í':'I', 'Ì':'I', 'Î':'I', 'Ï':'I',
+      'í':'i', 'ì':'i', 'î':'i', 'ï':'i',
+      'Ú':'U', 'Ù':'U', 'Û':'U', 'Ü':'U',
+      'ú':'u', 'ù':'u', 'û':'u', 'ü':'u',
       'Ñ':'N', 'ñ':'n',
     };
     return text.split('').map((char) => accents[char] ?? char).join();

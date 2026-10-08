@@ -87,6 +87,9 @@ class BusinessSettings extends Equatable {
   final bool afipEnabled;
   final bool isIibbPerceptionAgent;
   final double defaultIibbPerceptionRate;
+  final String? taxCondition;
+  final String? iibb;
+  final String? activityStartDate;
 
   /// @deprecated Use [features] instead for better type safety.
   bool hasFeature(String featureName) => licenseFeatures.contains(featureName);
@@ -156,6 +159,9 @@ class BusinessSettings extends Equatable {
     bool? afipEnabled,
     bool? isIibbPerceptionAgent,
     double? defaultIibbPerceptionRate,
+    String? taxCondition,
+    String? iibb,
+    String? activityStartDate,
   }) {
     return BusinessSettings(
       companyName: companyName ?? this.companyName,
@@ -183,6 +189,9 @@ class BusinessSettings extends Equatable {
       afipEnabled: afipEnabled ?? this.afipEnabled,
       isIibbPerceptionAgent: isIibbPerceptionAgent ?? this.isIibbPerceptionAgent,
       defaultIibbPerceptionRate: defaultIibbPerceptionRate ?? this.defaultIibbPerceptionRate,
+      taxCondition: taxCondition ?? this.taxCondition,
+      iibb: iibb ?? this.iibb,
+      activityStartDate: activityStartDate ?? this.activityStartDate,
     );
   }
 
@@ -212,6 +221,9 @@ class BusinessSettings extends Equatable {
     this.afipEnabled = false,
     this.isIibbPerceptionAgent = false,
     this.defaultIibbPerceptionRate = 0.0,
+    this.taxCondition,
+    this.iibb,
+    this.activityStartDate,
   });
 
   @override
@@ -241,5 +253,8 @@ class BusinessSettings extends Equatable {
         afipEnabled,
         isIibbPerceptionAgent,
         defaultIibbPerceptionRate,
+        taxCondition,
+        iibb,
+        activityStartDate,
       ];
 }

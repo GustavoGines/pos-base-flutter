@@ -1,4 +1,4 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 import 'dart:typed_data';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
@@ -189,6 +189,17 @@ class AfipFiscalPdfService {
           businessSettings.address!.isNotEmpty) {
         issuerAddress = businessSettings.address!;
       }
+      if (businessSettings.taxCondition != null &&
+          businessSettings.taxCondition!.isNotEmpty) {
+        issuerTaxCondition = businessSettings.taxCondition!;
+      }
+      if (businessSettings.iibb != null && businessSettings.iibb!.isNotEmpty) {
+        issuerIibb = businessSettings.iibb!;
+      }
+      if (businessSettings.activityStartDate != null &&
+          businessSettings.activityStartDate!.isNotEmpty) {
+        issuerStartDate = businessSettings.activityStartDate!;
+      }
     } else if (businessSettings is Map) {
       issuerName = (businessSettings['company_name'] ??
               businessSettings['companyName'] ??
@@ -212,7 +223,7 @@ class AfipFiscalPdfService {
       issuerIibb = (businessSettings['iibb'] ??
               businessSettings['afip_iibb'] ??
               businessSettings['gross_income'] ??
-              issuerCuit)
+              'Exento')
           .toString();
       issuerStartDate = (businessSettings['activity_start_date'] ??
               businessSettings['afip_activity_start_date'] ??
@@ -221,7 +232,7 @@ class AfipFiscalPdfService {
     }
 
     if (issuerIibb.isEmpty) {
-      issuerIibb = issuerCuit;
+      issuerIibb = 'Exento';
     }
 
     // ── 3. Datos del Comprobante ──────────────────────────────────────────────
@@ -244,6 +255,12 @@ class AfipFiscalPdfService {
         electronicInvoice['date'] ??
         sale['created_at'] ??
         DateTime.now());
+
+    final issueTime = sale['created_at'] != null 
+        ? DateFormat('HH:mm').format(DateTime.parse(sale['created_at'].toString()).toLocal()) 
+        : DateFormat('HH:mm').format(DateTime.now());
+        
+    final cashierName = sale['cashier']?['name']?.toString() ?? sale['user']?['name']?.toString() ?? 'Caja';
 
     // ── 4. Datos del Receptor ─────────────────────────────────────────────────
     final receiverDoc = electronicInvoice['doc_number']?.toString() ??
@@ -348,6 +365,8 @@ class AfipFiscalPdfService {
       ptoVtaFormatted: ptoVtaFormatted,
       cbteNroFormatted: cbteNroFormatted,
       issueDate: issueDate,
+      issueTime: issueTime,
+      cashierName: cashierName,
     );
 
     final receiverWidget = _buildReceiverSection(
@@ -411,6 +430,8 @@ class AfipFiscalPdfService {
     required String ptoVtaFormatted,
     required String cbteNroFormatted,
     required String issueDate,
+    required String issueTime,
+    required String cashierName,
   }) {
     return pw.Stack(
       alignment: pw.Alignment.topCenter,
@@ -491,7 +512,9 @@ class AfipFiscalPdfService {
                         style: pw.TextStyle(
                             fontSize: 8.5, fontWeight: pw.FontWeight.bold),
                       ),
-                      pw.Text('Fecha de Emisión: $issueDate',
+                      pw.Text('Fecha de Emisión: $issueDate $issueTime',
+                          style: const pw.TextStyle(fontSize: 8.5)),
+                      pw.Text('Cajero: ${cashierName.toUpperCase()}',
                           style: const pw.TextStyle(fontSize: 8.5)),
                       pw.Text('Concepto: 1 - Productos',
                           style: const pw.TextStyle(fontSize: 8.5)),
