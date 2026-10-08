@@ -239,13 +239,24 @@ class _CustomersScreenState extends State<CustomersScreen> {
                                         Row(
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
-                                            InkWell(
-                                              onTap: () => showDialog(context: context, barrierDismissible: false, builder: (_) => CustomerFormDialog(customer: customer)),
-                                              child: const Padding(padding: EdgeInsets.all(4.0), child: Icon(Icons.edit, size: 16, color: Colors.blueGrey)),
+                                            IconButton(
+                                              icon: const Icon(Icons.edit, size: 18),
+                                              color: Colors.blueGrey,
+                                              padding: const EdgeInsets.all(4.0),
+                                              constraints: const BoxConstraints(),
+                                              splashRadius: 20,
+                                              tooltip: 'Editar cliente',
+                                              onPressed: () => showDialog(context: context, barrierDismissible: false, builder: (_) => CustomerFormDialog(customer: customer)),
                                             ),
-                                            InkWell(
-                                              onTap: () => _confirmDelete(context, customer.id, customer.name),
-                                              child: const Padding(padding: EdgeInsets.all(4.0), child: Icon(Icons.delete_outline, size: 16, color: Colors.blueGrey)),
+                                            const SizedBox(width: 8),
+                                            IconButton(
+                                              icon: const Icon(Icons.delete_outline, size: 18),
+                                              color: Colors.red.shade400,
+                                              padding: const EdgeInsets.all(4.0),
+                                              constraints: const BoxConstraints(),
+                                              splashRadius: 20,
+                                              tooltip: 'Eliminar cliente',
+                                              onPressed: () => _confirmDelete(context, customer.id, customer.name),
                                             ),
                                           ],
                                         )
