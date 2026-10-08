@@ -26,6 +26,7 @@ class BusinessSettingsModel extends BusinessSettings {
     super.businessType,
     super.features,
     super.enableAdvancedPriceTiers,
+    super.afipEnabled,
   });
 
   factory BusinessSettingsModel.fromJson(Map<String, dynamic> json) {
@@ -119,6 +120,7 @@ class BusinessSettingsModel extends BusinessSettings {
       features: featureFlags,
       enableAdvancedPriceTiers: json['enable_advanced_price_tiers'] == '1' ||
           json['enable_advanced_price_tiers'] == true,
+      afipEnabled: json['afip_enabled'] == '1' || json['afip_enabled'] == true,
     );
   }
 
@@ -164,6 +166,7 @@ class BusinessSettingsModel extends BusinessSettings {
       'custom_price_tiers': customPriceTiers,
       // Feature Toggle Multi-Tenant
       'enable_advanced_price_tiers': enableAdvancedPriceTiers ? '1' : '0',
+      'afip_enabled': afipEnabled ? '1' : '0',
     };
   }
 }

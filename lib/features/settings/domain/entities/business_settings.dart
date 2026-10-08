@@ -84,6 +84,7 @@ class BusinessSettings extends Equatable {
   /// - false (default) → Modo Retail Básico: tier dropdown oculto, surcharges de métodos de pago ACTIVOS.
   /// - true → Modo Avanzado (Ferretería/Mayorista): tier dropdown visible, surcharges SUPRIMIDOS (el precio ya incluye el factor).
   final bool enableAdvancedPriceTiers;
+  final bool afipEnabled;
 
   /// @deprecated Use [features] instead for better type safety.
   bool hasFeature(String featureName) => licenseFeatures.contains(featureName);
@@ -150,6 +151,7 @@ class BusinessSettings extends Equatable {
     String? businessType,
     FeatureFlags? features,
     bool? enableAdvancedPriceTiers,
+    bool? afipEnabled,
   }) {
     return BusinessSettings(
       companyName: companyName ?? this.companyName,
@@ -174,6 +176,7 @@ class BusinessSettings extends Equatable {
       businessType: businessType ?? this.businessType,
       features: features ?? this.features,
       enableAdvancedPriceTiers: enableAdvancedPriceTiers ?? this.enableAdvancedPriceTiers,
+      afipEnabled: afipEnabled ?? this.afipEnabled,
     );
   }
 
@@ -200,6 +203,7 @@ class BusinessSettings extends Equatable {
     this.businessType = 'retail',
     this.features = const FeatureFlags(),
     this.enableAdvancedPriceTiers = false,
+    this.afipEnabled = false,
   });
 
   @override

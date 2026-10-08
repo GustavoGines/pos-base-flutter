@@ -454,7 +454,7 @@ class QuotePdfService {
         pageTheme: pw.PageTheme(
           pageFormat: PdfPageFormat.a4,
           margin: const pw.EdgeInsets.all(32),
-          buildBackground: (pw.Context context) {
+          buildForeground: (pw.Context context) {
             if (logoImage == null) return pw.SizedBox();
             return pw.FullPage(
               ignoreMargins: false,
@@ -890,3 +890,4 @@ class QuotePdfService {
     );
   }
 }
+

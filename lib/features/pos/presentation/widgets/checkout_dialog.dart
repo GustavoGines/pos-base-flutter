@@ -1085,6 +1085,11 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   }
 
   Widget _buildFiscalInvoicingSection() {
+    final settings = context.read<SettingsProvider>().settings;
+    if (settings == null || !settings.afipEnabled) {
+      return const SizedBox.shrink();
+    }
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(12),
