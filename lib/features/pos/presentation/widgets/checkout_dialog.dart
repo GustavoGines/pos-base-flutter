@@ -170,7 +170,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   // ── Facturación Fiscal ARCA / AFIP ──
   bool _isFiscalMode = false;
   int _voucherType = 6; // 1 = Factura A, 6 = Factura B, 11 = Factura C
-  int _fiscalDocType = 96; // 80 = CUIT, 86 = CUIL, 96 = DNI, 99 = Consumidor Final
+  int _fiscalDocType = 99; // 80 = CUIT, 86 = CUIL, 96 = DNI, 99 = Consumidor Final
   final _fiscalDocNumberCtrl = TextEditingController();
   final _fiscalReceiverNameCtrl = TextEditingController();
   final _fiscalReceiverAddressCtrl = TextEditingController();
@@ -227,7 +227,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         if (_fiscalDocType == 80 &&
             _fiscalTaxCondition == 'responsable_inscripto' &&
             _selectedCustomer == null) {
-          _fiscalDocType = 96;
+          _fiscalDocType = 99;
           _fiscalTaxCondition = 'consumidor_final';
         }
       }
@@ -322,7 +322,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
               _fiscalDocType = 80;
               _fiscalTaxCondition = 'responsable_inscripto';
             } else {
-              _fiscalDocType = 96;
+              _fiscalDocType = 99;
               _fiscalTaxCondition = 'consumidor_final';
             }
           } else {
@@ -906,6 +906,11 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
 
     Map<String, dynamic>? fiscalPayload;
     if (_isFiscalMode) {
+      if ((_fiscalDocType == 96 || _fiscalDocType == 80 || _fiscalDocType == 86) &&
+          _fiscalDocNumberCtrl.text.trim().isEmpty) {
+        SnackBarService.error(context, 'Debe ingresar el número de documento/CUIT para autorizar en AFIP.');
+        return;
+      }
       fiscalPayload = {
         'voucher_type': _voucherType,
         'doc_type': _fiscalDocType,

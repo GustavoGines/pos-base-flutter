@@ -250,6 +250,14 @@ class PosProvider with ChangeNotifier {
       return result;
     } catch (e) {
       debugPrint('Error en issueFiscalInvoice: $e');
+      final errorStr = e.toString().toLowerCase();
+      // Si es un error de validación de AFIP o de negocio, rethrow para rollback
+      if (errorStr.contains('solicitud fiscal no pudo ser autorizada') || 
+          errorStr.contains('inválido') || 
+          errorStr.contains('422')) {
+        rethrow;
+      }
+      
       _lastElectronicInvoice = null;
       _printerWarning = 'Error al autorizar con AFIP ($e). Venta en contingencia.';
       notifyListeners();
@@ -712,9 +720,16 @@ class PosProvider with ChangeNotifier {
               _lastElectronicInvoice = invRes['invoice'] as Map<String, dynamic>;
             }
           } catch (e) {
-            debugPrint('Contingencia fiscal en processCheckout: $e');
-            _lastElectronicInvoice = null;
-            _printerWarning = 'AFIP fuera de servicio. Se emite Ticket No Fiscal en contingencia.';
+            debugPrint('Rollback de venta por rechazo fiscal duro: $e');
+            try {
+              await voidPendingOrder(sId, shiftId: shiftId);
+            } catch (rollbackError) {
+              debugPrint('Error en rollback automático: $rollbackError');
+            }
+            _errorMessage = 'AFIP rechazó la factura: ${e.toString().replaceAll('Exception: ', '')}';
+            _isLoading = false;
+            notifyListeners();
+            return false;
           }
         }
       }

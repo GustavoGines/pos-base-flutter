@@ -14,6 +14,7 @@ import 'package:frontend_desktop/core/utils/receipt_printer_service.dart';
 import 'package:frontend_desktop/core/providers/local_terminal_provider.dart';
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
 import 'package:frontend_desktop/features/pos/domain/entities/cart_item.dart';
+import 'package:frontend_desktop/features/pos/presentation/providers/pos_provider.dart';
 import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
 import 'package:frontend_desktop/features/catalog/presentation/providers/catalog_provider.dart';
 import 'package:frontend_desktop/features/cash_register/presentation/providers/cash_register_provider.dart';
@@ -1113,6 +1114,27 @@ class _TicketDetailPanel extends StatelessWidget {
             spacing: 16,
             runSpacing: 16,
             children: [
+              if (sale.status == 'pending' || sale.status == 'active')
+                FilledButton.icon(
+                  icon: const Icon(Icons.cloud_upload_outlined),
+                  label: const Text('Emitir a AFIP'),
+                  style: FilledButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16)),
+                  onPressed: () async {
+                    try {
+                      final posProvider = context.read<PosProvider>();
+                      final result = await posProvider.issueFiscalInvoice(sale.id, {});
+                      if (result != null && result['success'] == true) {
+                        SnackBarService.success(context, 'Factura autorizada exitosamente');
+                        context.read<SalesHistoryProvider>().loadSales();
+                      } else {
+                        SnackBarService.error(context, result?['message'] ?? 'Error al emitir factura');
+                      }
+                    } catch (e) {
+                      SnackBarService.error(context, e.toString());
+                    }
+                  },
+                ),
               OutlinedButton.icon(
                 icon: const Icon(Icons.print_outlined),
                 label: const Text('Imprimir Copia'),
@@ -1129,9 +1151,16 @@ class _TicketDetailPanel extends StatelessWidget {
                       if (format == null) return;
                       final isA4 = format == 'a4';
 
+                      Map<String, dynamic>? electronicInvoice;
+                      try {
+                        final posProvider = context.read<PosProvider>();
+                        electronicInvoice = await posProvider.fetchElectronicInvoice(sale.id);
+                      } catch (_) {}
+
                       if (isA4) {
                         final saleJson = {
                           'id': sale.id,
+                          'electronic_invoice': electronicInvoice,
                           'total': sale.total,
                           'total_amount': sale.total,
                           'surcharge_amount': sale.surchargeTotal,
@@ -1234,6 +1263,7 @@ class _TicketDetailPanel extends StatelessWidget {
                             return aCash ? -1 : 1;
                           });
 
+                        ReceiptPrinterService.instance.electronicInvoice = electronicInvoice;
                         await ReceiptPrinterService.instance.printSaleTicket(
                           items: itemsParaImprimir,
                           // BUG SH-3 FIX: usar grandTotal (neto + recargo bancario) para que
