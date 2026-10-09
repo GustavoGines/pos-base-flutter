@@ -1587,17 +1587,14 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       backgroundColor: Colors.white,
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 960, maxHeight: 800),
         child: Container(
-          width: 580,
           padding: const EdgeInsets.all(24),
-          child: SingleChildScrollView(
-            scrollDirection: Axis.vertical,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-              // ──── Header
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+// ──── Header
               if (isPending) ...[
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -1622,6 +1619,18 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
 
               const SizedBox(height: 16),
 
+              Flexible(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      flex: 5,
+                      child: SingleChildScrollView(
+                        child: Padding(
+                          padding: const EdgeInsets.only(right: 8.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
               Container(
                 padding:
                     const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
@@ -2218,61 +2227,6 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
 
               const SizedBox(height: 24),
 
-              // Cliente Selector si usa Cta Corriente
-              if (_hasCuentaCorriente) ...[
-                Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    onTap: _openCustomerPicker,
-                    borderRadius: BorderRadius.circular(8),
-                    child: Ink(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: _selectedCustomer != null
-                            ? Colors.purple.shade50
-                            : Colors.orange.shade50,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                            color: _selectedCustomer != null
-                                ? Colors.purple.shade300
-                                : Colors.orange.shade400),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(Icons.person,
-                              color: _selectedCustomer != null
-                                  ? Colors.purple
-                                  : Colors.orange),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: _selectedCustomer == null
-                                ? Text('Seleccionar Cliente (Cta. Cte.)',
-                                    style: TextStyle(
-                                        color: Colors.orange.shade700,
-                                        fontWeight: FontWeight.bold))
-                                : Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(_selectedCustomer!.name,
-                                          style: TextStyle(
-                                              color: Colors.purple.shade700,
-                                              fontWeight: FontWeight.bold)),
-                                      Text(
-                                          _selectedCustomer!.isInternalAccount
-                                              ? 'Crédito disp: Ilimitado (Cuenta Interna)'
-                                              : 'Crédito disp: \$${_availableCredit.toCurrency()}',
-                                          style: const TextStyle(fontSize: 12)),
-                                    ],
-                                  ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 24),
-              ],
-
               // Efectivo Recibido y Vuelto
               if (_cashRequired > 0) ...[
                 Row(
@@ -2350,6 +2304,77 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                       ),
                     ),
                   ],
+                ),
+                const SizedBox(height: 24),
+              ],
+
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(width: 1, color: Colors.grey.shade300),
+                    const SizedBox(width: 24),
+                    Expanded(
+                      flex: 5,
+                      child: SingleChildScrollView(
+                        child: Padding(
+                          padding: const EdgeInsets.only(right: 8.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+              // Cliente Selector si usa Cta Corriente
+              if (_hasCuentaCorriente) ...[
+                Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: _openCustomerPicker,
+                    borderRadius: BorderRadius.circular(8),
+                    child: Ink(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: _selectedCustomer != null
+                            ? Colors.purple.shade50
+                            : Colors.orange.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                            color: _selectedCustomer != null
+                                ? Colors.purple.shade300
+                                : Colors.orange.shade400),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.person,
+                              color: _selectedCustomer != null
+                                  ? Colors.purple
+                                  : Colors.orange),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _selectedCustomer == null
+                                ? Text('Seleccionar Cliente (Cta. Cte.)',
+                                    style: TextStyle(
+                                        color: Colors.orange.shade700,
+                                        fontWeight: FontWeight.bold))
+                                : Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(_selectedCustomer!.name,
+                                          style: TextStyle(
+                                              color: Colors.purple.shade700,
+                                              fontWeight: FontWeight.bold)),
+                                      Text(
+                                          _selectedCustomer!.isInternalAccount
+                                              ? 'Crédito disp: Ilimitado (Cuenta Interna)'
+                                              : 'Crédito disp: \$${_availableCredit.toCurrency()}',
+                                          style: const TextStyle(fontSize: 12)),
+                                    ],
+                                  ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 24),
               ],
@@ -2644,6 +2669,15 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
 
               const SizedBox(height: 24),
 
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
               // Actions
               Row(
                 children: [
@@ -2686,8 +2720,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
           ),
         ),
       ),
-    ),
-  );
+    );
   }
 }
 
