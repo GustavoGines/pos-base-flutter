@@ -138,7 +138,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   List<PaymentLine> get paymentLines => _lines;
 
   @visibleForTesting
-  void confirmMpPaymentForTesting(PaymentLine line, {
+  void confirmMpPaymentForTesting(
+    PaymentLine line, {
     String mpPaymentId = 'MP-TEST-9988',
     String mpOrderId = 'ORD-TEST-7766',
     String externalReference = 'POS-REF-5544',
@@ -150,6 +151,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       line.mpExternalReference = externalReference;
     });
   }
+
   // Rastreo del último método VÁLIDO por línea para revertir si el usuario
   // intenta seleccionar una opción bloqueada (ej: cuenta_corriente en plan Basic)
   final List<PaymentMethod?> _previousValidMethods = [];
@@ -171,7 +173,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   // ── Facturación Fiscal ARCA / AFIP ──
   bool _isFiscalMode = false;
   int _voucherType = 6; // 1 = Factura A, 6 = Factura B, 11 = Factura C
-  int _fiscalDocType = 99; // 80 = CUIT, 86 = CUIL, 96 = DNI, 99 = Consumidor Final
+  int _fiscalDocType =
+      99; // 80 = CUIT, 86 = CUIL, 96 = DNI, 99 = Consumidor Final
   final _fiscalDocNumberCtrl = TextEditingController();
   final _fiscalReceiverNameCtrl = TextEditingController();
   final _fiscalReceiverAddressCtrl = TextEditingController();
@@ -233,7 +236,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         }
       }
     });
-    SharedPreferences.getInstance().then((prefs) => prefs.setInt('last_voucher_type', newType));
+    SharedPreferences.getInstance()
+        .then((prefs) => prefs.setInt('last_voucher_type', newType));
   }
 
   bool get _isFiscalValid {
@@ -331,7 +335,9 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
           } else {
             // Si hay un cliente seleccionado, asegurar consistencia para Factura A
             if (lastVoucher == 1 && _fiscalDocType != 80) _fiscalDocType = 80;
-            if (lastVoucher == 1 && _fiscalTaxCondition != 'responsable_inscripto') _fiscalTaxCondition = 'responsable_inscripto';
+            if (lastVoucher == 1 &&
+                _fiscalTaxCondition != 'responsable_inscripto')
+              _fiscalTaxCondition = 'responsable_inscripto';
           }
         }
       });
@@ -343,7 +349,9 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     final settings = context.read<SettingsProvider>().settings;
     if (provider.paymentMethods.isNotEmpty) {
       final defaultCash = provider.paymentMethods.firstWhere((p) => p.isCash,
-          orElse: () => provider.paymentMethods.firstWhere((m) => !m.code.contains('transfer'), orElse: () => provider.paymentMethods.first));
+          orElse: () => provider.paymentMethods.firstWhere(
+              (m) => !m.code.contains('transfer'),
+              orElse: () => provider.paymentMethods.first));
       final line = PaymentLine(
         method: defaultCash,
         initialAmount:
@@ -439,7 +447,9 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
 
     final defaultMethod = provider.paymentMethods.firstWhere(
       (m) => m.code != 'cuenta_corriente' && !m.code.contains('transfer'),
-      orElse: () => provider.paymentMethods.firstWhere((m) => !m.code.contains('transfer'), orElse: () => provider.paymentMethods.first),
+      orElse: () => provider.paymentMethods.firstWhere(
+          (m) => !m.code.contains('transfer'),
+          orElse: () => provider.paymentMethods.first),
     );
 
     final line = PaymentLine(
@@ -491,13 +501,13 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   double get _currentIibbAmount {
     final posProvider = context.read<PosProvider>();
     final settings = context.read<SettingsProvider>().settings;
-    return posProvider.calculateIibbPerceptionAmount(settings: settings, customer: _selectedCustomer);
+    return posProvider.calculateIibbPerceptionAmount(
+        settings: settings, customer: _selectedCustomer);
   }
 
   double get _baseTotal => widget.total + _currentIibbAmount;
 
-  double get _grandTotal =>
-      _baseTotal + _totalSurcharge + _shippingCostToApply;
+  double get _grandTotal => _baseTotal + _totalSurcharge + _shippingCostToApply;
   double get _pendingBalance =>
       _baseTotal + _shippingCostToApply - _totalBaseAmount;
 
@@ -672,367 +682,376 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     if (_isSubmitting) return;
     setState(() => _isSubmitting = true);
     try {
-    if (_hasCuentaCorriente) {
-      if (_selectedCustomer == null) {
-        SnackBarService.error(
-            context, 'Debe seleccionar un cliente para fiar.');
-        return;
-      }
-      final ccNeed = _lines
-          .where((l) => l.method?.code == 'cuenta_corriente')
-          .fold(0.0, (s, l) => s + l.total);
-      if (!_selectedCustomer!.isInternalAccount && ccNeed > _availableCredit) {
-        SnackBarService.error(
-            context,
-            'El cliente no tiene límite de crédito suficiente. '
-            'Disponible: \$${_availableCredit.toCurrency()}');
-        return;
-      }
-    }
-
-    final isPending = widget.saleId != null;
-    final posProvider = context.read<PosProvider>();
-    final currentUser = context.read<AuthProvider>().currentUser;
-    final userName = currentUser?['name'] as String?;
-    final settings = context.read<SettingsProvider>().settings;
-
-    // Build Check Details Payload if a cheque is used
-    dynamic checkDetailsPayload;
-    final chequeLines = _lines.where((l) => l.method?.code == 'cheque').toList();
-    if (chequeLines.isNotEmpty) {
-      List<Map<String, dynamic>> checkList = [];
-      for (var chequeLine in chequeLines) {
-        if (chequeLine.checkBankController.text.trim().isEmpty ||
-            chequeLine.checkNumberController.text.trim().isEmpty ||
-            chequeLine.checkIssuerCuitController.text.trim().isEmpty ||
-            chequeLine.checkIssuerNameController.text.trim().isEmpty) {
-          SnackBarService.error(context,
-              'Complete los datos obligatorios de todos los cheques (Banco, Número, CUIT, Firmante).');
+      if (_hasCuentaCorriente) {
+        if (_selectedCustomer == null) {
+          SnackBarService.error(
+              context, 'Debe seleccionar un cliente para fiar.');
           return;
         }
-        checkList.add({
-          'bank_name': chequeLine.checkBankController.text.trim(),
-          'check_number': chequeLine.checkNumberController.text.trim(),
-          'issuer_cuit': chequeLine.checkIssuerCuitController.text.trim(),
-          'issuer_name': chequeLine.checkIssuerNameController.text.trim(),
-          'issue_date': chequeLine.checkIssueDateController.text.trim(),
-          'payment_date': chequeLine.checkPaymentDateController.text.trim(),
-          'amount': chequeLine.total,
-        });
-      }
-      checkDetailsPayload = checkList;
-    }
-
-    // Convert lines to payload
-    List<Map<String, dynamic>> paymentsPayload = _lines
-        .map((l) => {
-              'payment_method_id': l.method!.id,
-              'base_amount': l.amount,
-              'surcharge_amount': l.surcharge,
-              'total_amount': l.total,
-              if (l.mpPaid) ...{
-                'mp_payment_id': l.mpPaymentId,
-                'mp_order_id': l.mpOrderId,
-                'reference_id': l.mpExternalReference,
-              },
-            })
-        .toList();
-
-    // Vista Previa: solo aplica para impresoras térmicas.
-    // Para A4, el provider maneja el visor PDF directamente según showPreview.
-    final localTerminal =
-        Provider.of<LocalTerminalProvider>(context, listen: false);
-    final isA4 = localTerminal.printerFormat.startsWith('a4');
-
-    if (_printReceipt && _showPreview && !isA4) {
-      final cart = posProvider.cart;
-      final isNarrow = localTerminal.printerFormat == 'thermal_58';
-
-      // ──── Replicar EXACTAMENTE la lógica de printSaleTicket ────
-      final bool isComplexPayment = _lines.length > 1 || _totalSurcharge > 0.01;
-      final bool hasTendered = _actualTendered > 0.01;
-
-      final lines = <TicketLine>[
-        // Encabezado
-        if (settings?.companyName != null)
-          TicketLine(settings!.companyName!.toUpperCase(),
-              align: TicketAlign.center, isBold: true, isLarge: true),
-        if (settings?.address != null && settings!.address!.isNotEmpty)
-          TicketLine(settings.address!, align: TicketAlign.center),
-        if (settings?.taxId != null && settings!.taxId!.isNotEmpty)
-          TicketLine('CUIT: ${settings.taxId}',
-              align: TicketAlign.center, isBold: true),
-        const TicketLine.hr(bold: true),
-        TicketLine('COMPROBANTE DE VENTA',
-            align: TicketAlign.center, isBold: true),
-        const TicketLine.hr(),
-        TicketLine(
-            'FECHA: ${DateTime.now().day.toString().padLeft(2, '0')}/${DateTime.now().month.toString().padLeft(2, '0')}/${DateTime.now().year}'),
-        if (userName != null) TicketLine('CAJERO: ${userName.toUpperCase()}'),
-        const TicketLine.hr(),
-
-        // Ítems del carrito
-        ...cart
-            .map((item) => [
-                  TicketLine(
-                    '${item.product.isSoldByWeight ? "${item.quantity.toQty()} kg" : "${item.quantity.toInt()} un"} x \$${item.product.sellingPrice.toCurrency()}',
-                    rightText: '\$${item.subtotal.toCurrency()}',
-                  ),
-                  TicketLine(item.product.name.toUpperCase(), isBold: true),
-                ])
-            .expand((l) => l),
-        const TicketLine.hr(bold: true),
-
-        // ──── Sección de pago (igual que el ticket real) ────
-        if (isComplexPayment) ...[
-          TicketLine('SUBTOTAL:',
-              rightText: '\$${_baseTotal.toCurrency()}', isBold: true),
-          const TicketLine.hr(),
-          // Un renglón por cada método de pago
-          ..._lines.map((l) => TicketLine(
-                (l.method?.name ?? 'PAGO').toUpperCase(),
-                rightText: '\$${l.amount.toCurrency()}',
-                isBold: true,
-              )),
-          if (_totalSurcharge > 0.01)
-            TicketLine('RECARGO BANCARIO:',
-                rightText: '\$${_totalSurcharge.toCurrency()}'),
-          const TicketLine.hr(),
-          if (_shippingCostToApply > 0.01)
-            TicketLine('FLETE / ENVÍO:',
-                rightText: '\$${_shippingCostToApply.toCurrency()}'),
-          TicketLine('TOTAL COBRADO:',
-              rightText: '\$${_grandTotal.toCurrency()}',
-              isBold: true,
-              isLarge: true),
-          if (hasTendered)
-            TicketLine('EFECTIVO RECIBIDO:',
-                rightText: '\$${_actualTendered.toCurrency()}'),
-          if (hasTendered)
-            TicketLine(_change >= 0 ? 'SU VUELTO:' : 'FALTANTE:',
-                rightText: '\$${_change.abs().toCurrency()}', isBold: true),
-        ] else ...[
-          // Venta simple: un pago, sin recargos
-          if (_shippingCostToApply > 0.01)
-            TicketLine('FLETE / ENVÍO:',
-                rightText: '\$${_shippingCostToApply.toCurrency()}'),
-          TicketLine('TOTAL GENERAL:',
-              rightText: '\$${_grandTotal.toCurrency()}',
-              isBold: true,
-              isLarge: true),
-          const TicketLine.hr(),
-          TicketLine('PAGO EN:',
-              rightText: (_lines.isNotEmpty
-                      ? _lines.first.method?.name ?? 'EFECTIVO'
-                      : 'EFECTIVO')
-                  .toUpperCase()),
-          if (hasTendered)
-            TicketLine('EFECTIVO RECIBIDO:',
-                rightText: '\$${_actualTendered.toCurrency()}'),
-          if (hasTendered)
-            TicketLine(_change >= 0 ? 'SU VUELTO:' : 'FALTANTE:',
-                rightText: '\$${_change.abs().toCurrency()}', isBold: true),
-        ],
-        const TicketLine.space(),
-        TicketLine(
-          isNarrow
-              ? '**NO VALIDO COMO FACTURA**'
-              : '*** NO VALIDO COMO FACTURA ***',
-          align: TicketAlign.center,
-        ),
-      ];
-
-      // AGREGADO: Si es split ticket (Retira ya), mostrar también el remito en la vista previa
-      if (_requiresDispatch && _fulfillmentStatus == 'delivered') {
-        lines.add(const TicketLine.space());
-        lines.add(const TicketLine.hr(bold: true)); // Simular corte
-        lines.add(const TicketLine.space());
-        lines.add(const TicketLine('ORDEN DE RETIRO / REMITO',
-            align: TicketAlign.center, isBold: true));
-        lines.add(const TicketLine.hr());
-        lines.add(const TicketLine('REMITO N°: (PROXIMO)'));
-        lines.add(const TicketLine('VENTA ASOC: (PROXIMA)'));
-        lines.add(TicketLine(
-            'FECHA: ${DateTime.now().day.toString().padLeft(2, "0")}/${DateTime.now().month.toString().padLeft(2, "0")}/${DateTime.now().year}'));
-        if (_selectedCustomer != null) {
-          lines.add(TicketLine(
-              'CLIENTE: ${_selectedCustomer!.name.toUpperCase()}',
-              isBold: true));
-        }
-        if (userName != null) {
-          lines.add(TicketLine('VENDIÓ: ${userName.toUpperCase()}'));
-        }
-        lines.add(const TicketLine.hr());
-        lines.add(const TicketLine('ARTICULOS A RETIRAR:', isBold: true));
-        lines.add(const TicketLine.hr());
-
-        for (final item in cart) {
-          final qtyStr = item.product.isSoldByWeight
-              ? '${item.quantity.toStringAsFixed(3)} kg'
-              : '${item.quantity.toInt()} un';
-          lines.add(TicketLine(item.product.name.toUpperCase(),
-              rightText: qtyStr, isBold: true));
-        }
-
-        lines.add(const TicketLine.hr(bold: true));
-        lines.add(const TicketLine.space());
-        lines.add(const TicketLine('FIRMA DESPACHANTE:'));
-        lines.add(const TicketLine.space());
-        lines.add(const TicketLine('__________________________',
-            align: TicketAlign.center));
-        lines.add(const TicketLine.space());
-        lines.add(const TicketLine('FIRMA CLIENTE / RETIRA:'));
-        lines.add(const TicketLine.space());
-        lines.add(const TicketLine('__________________________',
-            align: TicketAlign.center));
-        lines.add(const TicketLine.space());
-      }
-
-      if (!mounted) return;
-      final confirmed = await TicketPreviewDialog.show(
-        context,
-        title: 'Vista Previa — Ticket ${isNarrow ? "58mm" : "80mm"}',
-        lines: lines,
-      );
-      if (!mounted || !confirmed) return;
-    }
-
-    context.read<PosProvider>().setShippingCost(
-        double.tryParse(_shippingCostCtrl.text.replaceAll(',', '.')) ?? 0.0);
-
-    bool success;
-
-    final shiftId = context.read<CashRegisterProvider>().currentShift?.id;
-    final userId = currentUser?['id'] as int?;
-
-    if (shiftId == null) {
-      SnackBarService.error(context, 'No hay turno de caja abierto');
-      return;
-    }
-
-    Map<String, dynamic>? fiscalPayload;
-    if (_isFiscalMode) {
-      if ((_fiscalDocType == 96 || _fiscalDocType == 80 || _fiscalDocType == 86) &&
-          _fiscalDocNumberCtrl.text.trim().isEmpty) {
-        SnackBarService.error(context, 'Debe ingresar el número de documento/CUIT para autorizar en AFIP.');
-        return;
-      }
-      fiscalPayload = {
-        'voucher_type': _voucherType,
-        'doc_type': _fiscalDocType,
-        'doc_number': _fiscalDocNumberCtrl.text
-            .trim()
-            .replaceAll(RegExp(r'[^0-9]'), ''),
-        'receiver_name': _fiscalReceiverNameCtrl.text.trim().isNotEmpty
-            ? _fiscalReceiverNameCtrl.text.trim()
-            : (_selectedCustomer?.name ?? 'Consumidor Final'),
-        'receiver_address': _fiscalReceiverAddressCtrl.text.trim().isNotEmpty
-            ? _fiscalReceiverAddressCtrl.text.trim()
-            : (_selectedCustomer?.fiscalAddress ??
-                _selectedCustomer?.deliveryAddress ??
-                ''),
-        'receiver_tax_condition': _fiscalTaxCondition,
-      };
-    }
-
-    if (_isFiscalMode && fiscalPayload != null) {
-      try {
-        posProvider.setPendingFiscalInvoiceData(fiscalPayload);
-      } catch (_) {}
-    }
-
-    if (isPending) {
-      success = await posProvider.payPendingSale(
-        saleId: widget.saleId!,
-        saleTotal: _grandTotal,
-        totalSurcharge: _totalSurcharge,
-        iibbPerceptionAmount: _currentIibbAmount > 0 ? _currentIibbAmount : null,
-        iibbPerceptionRate: _currentIibbAmount > 0 ? _selectedCustomer?.iibbPerceptionRate : null,
-        payments: paymentsPayload,
-        tenderedAmount: _actualTendered,
-        changeAmount: _change,
-        shiftId: shiftId,
-        localTerminal: localTerminal,
-        userName: userName,
-        settings: _printReceipt ? settings : null,
-        userId: userId,
-        showPreview: _showPreview,
-        checkDetails: checkDetailsPayload,
-      );
-    } else {
-      success = await posProvider.processCheckout(
-        shiftId: shiftId,
-        totalSurcharge: _totalSurcharge,
-        payments: paymentsPayload,
-        tenderedAmount: _actualTendered,
-        changeAmount: _change,
-        printerFormat: localTerminal.printerFormat,
-        localTerminal: localTerminal,
-        userId: userId,
-        customerId: _selectedCustomer?.id,
-        userName: userName,
-        settings: _printReceipt ? settings : null,
-        showPreview: _showPreview,
-        requiresDispatch: _requiresDispatch,
-        fulfillmentStatus: _fulfillmentStatus,
-        checkDetails: checkDetailsPayload,
-        deliveryAddress: _deliveryAddressCtrl.text.trim().isEmpty
-            ? null
-            : _deliveryAddressCtrl.text.trim(),
-      );
-    }
-
-    if (mounted) {
-      if (success) {
-        if (posProvider.printerWarning != null) {
-          SnackBarService.warning(context, posProvider.printerWarning!);
-        }
-
-        // Quick Win: Refrescar alertas de stock al finalizar la venta
-        try {
-          context.read<CatalogProvider>().fetchCriticalAlerts();
-        } catch (e) {
-          debugPrint('Error refreshing stock alerts after sale: $e');
-        }
-
-        Navigator.of(context).pop(true);
-      } else {
-        final errMsg = posProvider.errorMessage ?? '';
-
-        if (errMsg == 'ANNULLED') {
-          Navigator.of(context).pop(false);
+        final ccNeed = _lines
+            .where((l) => l.method?.code == 'cuenta_corriente')
+            .fold(0.0, (s, l) => s + l.total);
+        if (!_selectedCustomer!.isInternalAccount &&
+            ccNeed > _availableCredit) {
+          SnackBarService.error(
+              context,
+              'El cliente no tiene límite de crédito suficiente. '
+              'Disponible: \$${_availableCredit.toCurrency()}');
           return;
         }
+      }
 
-        // ──── Sesión Única: el error viene del ValidateSessionToken middleware ────
-        // El dialog se cierra con false para devolver el control a _handleCheckout
-        // en pos_screen, que es quien muestra el dialog de seguridad naranja y
-        // fuerza el logout + navegación a /login.
-        if (errMsg.contains('SESSION_EXPIRED') ||
-            errMsg.contains('otro dispositivo')) {
-          Navigator.of(context).pop(false);
-          return;
-        }
+      final isPending = widget.saleId != null;
+      final posProvider = context.read<PosProvider>();
+      final currentUser = context.read<AuthProvider>().currentUser;
+      final userName = currentUser?['name'] as String?;
+      final settings = context.read<SettingsProvider>().settings;
 
-        if (errMsg.contains('UNAUTHORIZED_PRICE_DISCOUNT')) {
-          final pin = await AdminPinDialog.verifyAndGetPin(
-            context,
-            action: 'Autorizar Rebajas y Precios Especiales',
-            permissionKey: AppPermissions.applyDiscounts,
-          );
-          if (pin != null && pin.isNotEmpty && mounted) {
-            final client = context.read<ApiClient>();
-            await client.withAdminPin(pin, () async {
-              await _processCheckout();
-            });
+      // Build Check Details Payload if a cheque is used
+      dynamic checkDetailsPayload;
+      final chequeLines =
+          _lines.where((l) => l.method?.code == 'cheque').toList();
+      if (chequeLines.isNotEmpty) {
+        List<Map<String, dynamic>> checkList = [];
+        for (var chequeLine in chequeLines) {
+          if (chequeLine.checkBankController.text.trim().isEmpty ||
+              chequeLine.checkNumberController.text.trim().isEmpty ||
+              chequeLine.checkIssuerCuitController.text.trim().isEmpty ||
+              chequeLine.checkIssuerNameController.text.trim().isEmpty) {
+            SnackBarService.error(context,
+                'Complete los datos obligatorios de todos los cheques (Banco, Número, CUIT, Firmante).');
+            return;
           }
-          return;
+          checkList.add({
+            'bank_name': chequeLine.checkBankController.text.trim(),
+            'check_number': chequeLine.checkNumberController.text.trim(),
+            'issuer_cuit': chequeLine.checkIssuerCuitController.text.trim(),
+            'issuer_name': chequeLine.checkIssuerNameController.text.trim(),
+            'issue_date': chequeLine.checkIssueDateController.text.trim(),
+            'payment_date': chequeLine.checkPaymentDateController.text.trim(),
+            'amount': chequeLine.total,
+          });
+        }
+        checkDetailsPayload = checkList;
+      }
+
+      // Convert lines to payload
+      List<Map<String, dynamic>> paymentsPayload = _lines
+          .map((l) => {
+                'payment_method_id': l.method!.id,
+                'base_amount': l.amount,
+                'surcharge_amount': l.surcharge,
+                'total_amount': l.total,
+                if (l.mpPaid) ...{
+                  'mp_payment_id': l.mpPaymentId,
+                  'mp_order_id': l.mpOrderId,
+                  'reference_id': l.mpExternalReference,
+                },
+              })
+          .toList();
+
+      // Vista Previa: solo aplica para impresoras térmicas.
+      // Para A4, el provider maneja el visor PDF directamente según showPreview.
+      final localTerminal =
+          Provider.of<LocalTerminalProvider>(context, listen: false);
+      final isA4 = localTerminal.printerFormat.startsWith('a4');
+
+      if (_printReceipt && _showPreview && !isA4) {
+        final cart = posProvider.cart;
+        final isNarrow = localTerminal.printerFormat == 'thermal_58';
+
+        // ──── Replicar EXACTAMENTE la lógica de printSaleTicket ────
+        final bool isComplexPayment =
+            _lines.length > 1 || _totalSurcharge > 0.01;
+        final bool hasTendered = _actualTendered > 0.01;
+
+        final lines = <TicketLine>[
+          // Encabezado
+          if (settings?.companyName != null)
+            TicketLine(settings!.companyName!.toUpperCase(),
+                align: TicketAlign.center, isBold: true, isLarge: true),
+          if (settings?.address != null && settings!.address!.isNotEmpty)
+            TicketLine(settings.address!, align: TicketAlign.center),
+          if (settings?.taxId != null && settings!.taxId!.isNotEmpty)
+            TicketLine('CUIT: ${settings.taxId}',
+                align: TicketAlign.center, isBold: true),
+          const TicketLine.hr(bold: true),
+          TicketLine('COMPROBANTE DE VENTA',
+              align: TicketAlign.center, isBold: true),
+          const TicketLine.hr(),
+          TicketLine(
+              'FECHA: ${DateTime.now().day.toString().padLeft(2, '0')}/${DateTime.now().month.toString().padLeft(2, '0')}/${DateTime.now().year}'),
+          if (userName != null) TicketLine('CAJERO: ${userName.toUpperCase()}'),
+          const TicketLine.hr(),
+
+          // Ítems del carrito
+          ...cart
+              .map((item) => [
+                    TicketLine(
+                      '${item.product.isSoldByWeight ? "${item.quantity.toQty()} kg" : "${item.quantity.toInt()} un"} x \$${item.product.sellingPrice.toCurrency()}',
+                      rightText: '\$${item.subtotal.toCurrency()}',
+                    ),
+                    TicketLine(item.product.name.toUpperCase(), isBold: true),
+                  ])
+              .expand((l) => l),
+          const TicketLine.hr(bold: true),
+
+          // ──── Sección de pago (igual que el ticket real) ────
+          if (isComplexPayment) ...[
+            TicketLine('SUBTOTAL:',
+                rightText: '\$${_baseTotal.toCurrency()}', isBold: true),
+            const TicketLine.hr(),
+            // Un renglón por cada método de pago
+            ..._lines.map((l) => TicketLine(
+                  (l.method?.name ?? 'PAGO').toUpperCase(),
+                  rightText: '\$${l.amount.toCurrency()}',
+                  isBold: true,
+                )),
+            if (_totalSurcharge > 0.01)
+              TicketLine('RECARGO BANCARIO:',
+                  rightText: '\$${_totalSurcharge.toCurrency()}'),
+            const TicketLine.hr(),
+            if (_shippingCostToApply > 0.01)
+              TicketLine('FLETE / ENVÍO:',
+                  rightText: '\$${_shippingCostToApply.toCurrency()}'),
+            TicketLine('TOTAL COBRADO:',
+                rightText: '\$${_grandTotal.toCurrency()}',
+                isBold: true,
+                isLarge: true),
+            if (hasTendered)
+              TicketLine('EFECTIVO RECIBIDO:',
+                  rightText: '\$${_actualTendered.toCurrency()}'),
+            if (hasTendered)
+              TicketLine(_change >= 0 ? 'SU VUELTO:' : 'FALTANTE:',
+                  rightText: '\$${_change.abs().toCurrency()}', isBold: true),
+          ] else ...[
+            // Venta simple: un pago, sin recargos
+            if (_shippingCostToApply > 0.01)
+              TicketLine('FLETE / ENVÍO:',
+                  rightText: '\$${_shippingCostToApply.toCurrency()}'),
+            TicketLine('TOTAL GENERAL:',
+                rightText: '\$${_grandTotal.toCurrency()}',
+                isBold: true,
+                isLarge: true),
+            const TicketLine.hr(),
+            TicketLine('PAGO EN:',
+                rightText: (_lines.isNotEmpty
+                        ? _lines.first.method?.name ?? 'EFECTIVO'
+                        : 'EFECTIVO')
+                    .toUpperCase()),
+            if (hasTendered)
+              TicketLine('EFECTIVO RECIBIDO:',
+                  rightText: '\$${_actualTendered.toCurrency()}'),
+            if (hasTendered)
+              TicketLine(_change >= 0 ? 'SU VUELTO:' : 'FALTANTE:',
+                  rightText: '\$${_change.abs().toCurrency()}', isBold: true),
+          ],
+          const TicketLine.space(),
+          TicketLine(
+            isNarrow
+                ? '**NO VALIDO COMO FACTURA**'
+                : '*** NO VALIDO COMO FACTURA ***',
+            align: TicketAlign.center,
+          ),
+        ];
+
+        // AGREGADO: Si es split ticket (Retira ya), mostrar también el remito en la vista previa
+        if (_requiresDispatch && _fulfillmentStatus == 'delivered') {
+          lines.add(const TicketLine.space());
+          lines.add(const TicketLine.hr(bold: true)); // Simular corte
+          lines.add(const TicketLine.space());
+          lines.add(const TicketLine('ORDEN DE RETIRO / REMITO',
+              align: TicketAlign.center, isBold: true));
+          lines.add(const TicketLine.hr());
+          lines.add(const TicketLine('REMITO N°: (PROXIMO)'));
+          lines.add(const TicketLine('VENTA ASOC: (PROXIMA)'));
+          lines.add(TicketLine(
+              'FECHA: ${DateTime.now().day.toString().padLeft(2, "0")}/${DateTime.now().month.toString().padLeft(2, "0")}/${DateTime.now().year}'));
+          if (_selectedCustomer != null) {
+            lines.add(TicketLine(
+                'CLIENTE: ${_selectedCustomer!.name.toUpperCase()}',
+                isBold: true));
+          }
+          if (userName != null) {
+            lines.add(TicketLine('VENDIÓ: ${userName.toUpperCase()}'));
+          }
+          lines.add(const TicketLine.hr());
+          lines.add(const TicketLine('ARTICULOS A RETIRAR:', isBold: true));
+          lines.add(const TicketLine.hr());
+
+          for (final item in cart) {
+            final qtyStr = item.product.isSoldByWeight
+                ? '${item.quantity.toStringAsFixed(3)} kg'
+                : '${item.quantity.toInt()} un';
+            lines.add(TicketLine(item.product.name.toUpperCase(),
+                rightText: qtyStr, isBold: true));
+          }
+
+          lines.add(const TicketLine.hr(bold: true));
+          lines.add(const TicketLine.space());
+          lines.add(const TicketLine('FIRMA DESPACHANTE:'));
+          lines.add(const TicketLine.space());
+          lines.add(const TicketLine('__________________________',
+              align: TicketAlign.center));
+          lines.add(const TicketLine.space());
+          lines.add(const TicketLine('FIRMA CLIENTE / RETIRA:'));
+          lines.add(const TicketLine.space());
+          lines.add(const TicketLine('__________________________',
+              align: TicketAlign.center));
+          lines.add(const TicketLine.space());
         }
 
-        SnackBarService.error(
-            context, errMsg.isNotEmpty ? errMsg : 'Error al procesar el pago');
+        if (!mounted) return;
+        final confirmed = await TicketPreviewDialog.show(
+          context,
+          title: 'Vista Previa — Ticket ${isNarrow ? "58mm" : "80mm"}',
+          lines: lines,
+        );
+        if (!mounted || !confirmed) return;
       }
-    }
+
+      context.read<PosProvider>().setShippingCost(
+          double.tryParse(_shippingCostCtrl.text.replaceAll(',', '.')) ?? 0.0);
+
+      bool success;
+
+      final shiftId = context.read<CashRegisterProvider>().currentShift?.id;
+      final userId = currentUser?['id'] as int?;
+
+      if (shiftId == null) {
+        SnackBarService.error(context, 'No hay turno de caja abierto');
+        return;
+      }
+
+      Map<String, dynamic>? fiscalPayload;
+      if (_isFiscalMode) {
+        if ((_fiscalDocType == 96 ||
+                _fiscalDocType == 80 ||
+                _fiscalDocType == 86) &&
+            _fiscalDocNumberCtrl.text.trim().isEmpty) {
+          SnackBarService.error(context,
+              'Debe ingresar el número de documento/CUIT para autorizar en AFIP.');
+          return;
+        }
+        fiscalPayload = {
+          'voucher_type': _voucherType,
+          'doc_type': _fiscalDocType,
+          'doc_number': _fiscalDocNumberCtrl.text
+              .trim()
+              .replaceAll(RegExp(r'[^0-9]'), ''),
+          'receiver_name': _fiscalReceiverNameCtrl.text.trim().isNotEmpty
+              ? _fiscalReceiverNameCtrl.text.trim()
+              : (_selectedCustomer?.name ?? 'Consumidor Final'),
+          'receiver_address': _fiscalReceiverAddressCtrl.text.trim().isNotEmpty
+              ? _fiscalReceiverAddressCtrl.text.trim()
+              : (_selectedCustomer?.fiscalAddress ??
+                  _selectedCustomer?.deliveryAddress ??
+                  ''),
+          'receiver_tax_condition': _fiscalTaxCondition,
+        };
+      }
+
+      if (_isFiscalMode && fiscalPayload != null) {
+        try {
+          posProvider.setPendingFiscalInvoiceData(fiscalPayload);
+        } catch (_) {}
+      }
+
+      if (isPending) {
+        success = await posProvider.payPendingSale(
+          saleId: widget.saleId!,
+          saleTotal: _grandTotal,
+          totalSurcharge: _totalSurcharge,
+          iibbPerceptionAmount:
+              _currentIibbAmount > 0 ? _currentIibbAmount : null,
+          iibbPerceptionRate: _currentIibbAmount > 0
+              ? _selectedCustomer?.iibbPerceptionRate
+              : null,
+          payments: paymentsPayload,
+          tenderedAmount: _actualTendered,
+          changeAmount: _change,
+          shiftId: shiftId,
+          localTerminal: localTerminal,
+          userName: userName,
+          settings: _printReceipt ? settings : null,
+          userId: userId,
+          showPreview: _showPreview,
+          checkDetails: checkDetailsPayload,
+        );
+      } else {
+        success = await posProvider.processCheckout(
+          shiftId: shiftId,
+          totalSurcharge: _totalSurcharge,
+          payments: paymentsPayload,
+          tenderedAmount: _actualTendered,
+          changeAmount: _change,
+          printerFormat: localTerminal.printerFormat,
+          localTerminal: localTerminal,
+          userId: userId,
+          customerId: _selectedCustomer?.id,
+          userName: userName,
+          settings: _printReceipt ? settings : null,
+          showPreview: _showPreview,
+          requiresDispatch: _requiresDispatch,
+          fulfillmentStatus: _fulfillmentStatus,
+          checkDetails: checkDetailsPayload,
+          deliveryAddress: _deliveryAddressCtrl.text.trim().isEmpty
+              ? null
+              : _deliveryAddressCtrl.text.trim(),
+        );
+      }
+
+      if (mounted) {
+        if (success) {
+          if (posProvider.printerWarning != null) {
+            SnackBarService.warning(context, posProvider.printerWarning!);
+          }
+
+          // Quick Win: Refrescar alertas de stock al finalizar la venta
+          try {
+            context.read<CatalogProvider>().fetchCriticalAlerts();
+          } catch (e) {
+            debugPrint('Error refreshing stock alerts after sale: $e');
+          }
+
+          Navigator.of(context).pop(true);
+        } else {
+          final errMsg = posProvider.errorMessage ?? '';
+
+          if (errMsg == 'ANNULLED') {
+            Navigator.of(context).pop(false);
+            return;
+          }
+
+          // ──── Sesión Única: el error viene del ValidateSessionToken middleware ────
+          // El dialog se cierra con false para devolver el control a _handleCheckout
+          // en pos_screen, que es quien muestra el dialog de seguridad naranja y
+          // fuerza el logout + navegación a /login.
+          if (errMsg.contains('SESSION_EXPIRED') ||
+              errMsg.contains('otro dispositivo')) {
+            Navigator.of(context).pop(false);
+            return;
+          }
+
+          if (errMsg.contains('UNAUTHORIZED_PRICE_DISCOUNT')) {
+            final pin = await AdminPinDialog.verifyAndGetPin(
+              context,
+              action: 'Autorizar Rebajas y Precios Especiales',
+              permissionKey: AppPermissions.applyDiscounts,
+            );
+            if (pin != null && pin.isNotEmpty && mounted) {
+              final client = context.read<ApiClient>();
+              await client.withAdminPin(pin, () async {
+                await _processCheckout();
+              });
+            }
+            return;
+          }
+
+          SnackBarService.error(context,
+              errMsg.isNotEmpty ? errMsg : 'Error al procesar el pago');
+        }
+      }
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
@@ -1044,7 +1063,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         : (line.amount > 0 ? line.amount : _baseTotal);
 
     if (chargeAmount <= 0) {
-      SnackBarService.warning(context, 'El monto a cobrar debe ser mayor a cero');
+      SnackBarService.warning(
+          context, 'El monto a cobrar debe ser mayor a cero');
       return;
     }
 
@@ -1091,7 +1111,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         : (line.amount > 0 ? line.amount : _baseTotal);
 
     if (chargeAmount <= 0) {
-      SnackBarService.warning(context, 'El monto a cobrar debe ser mayor a cero');
+      SnackBarService.warning(
+          context, 'El monto a cobrar debe ser mayor a cero');
       return;
     }
 
@@ -1138,14 +1159,12 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       width: double.infinity,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: _isFiscalMode
-            ? const Color(0xFFF0F4FF)
-            : const Color(0xFFF9FAFB),
+        color:
+            _isFiscalMode ? const Color(0xFFF0F4FF) : const Color(0xFFF9FAFB),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: _isFiscalMode
-              ? const Color(0xFF90CDF4)
-              : const Color(0xFFE2E8F0),
+          color:
+              _isFiscalMode ? const Color(0xFF90CDF4) : const Color(0xFFE2E8F0),
         ),
       ),
       child: Column(
@@ -1162,7 +1181,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                 children: [
                   Icon(
                     _isFiscalMode ? Icons.verified : Icons.receipt_long,
-                    color: _isFiscalMode ? Colors.indigo.shade700 : Colors.black54,
+                    color:
+                        _isFiscalMode ? Colors.indigo.shade700 : Colors.black54,
                     size: 20,
                   ),
                   const SizedBox(width: 8),
@@ -1171,7 +1191,9 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 14,
-                      color: _isFiscalMode ? Colors.indigo.shade900 : Colors.black87,
+                      color: _isFiscalMode
+                          ? Colors.indigo.shade900
+                          : Colors.black87,
                     ),
                   ),
                 ],
@@ -1189,7 +1211,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                   ),
                   ButtonSegment<bool>(
                     value: true,
-                    label: Text('Factura Fiscal ARCA', style: TextStyle(fontSize: 12)),
+                    label: Text('Factura Fiscal ARCA',
+                        style: TextStyle(fontSize: 12)),
                   ),
                 ],
                 selected: {_isFiscalMode},
@@ -1258,41 +1281,49 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                  Wrap(
-                    spacing: 4,
-                    children: [
+                Wrap(
+                  spacing: 4,
+                  children: [
+                    TextButton.icon(
+                      key: const Key('select_customer_fiscal_btn'),
+                      icon: const Icon(Icons.person_search, size: 16),
+                      label: Text(_selectedCustomer == null
+                          ? 'Buscar Cliente'
+                          : 'Cambiar'),
+                      style: TextButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                      ),
+                      onPressed: _openCustomerPicker,
+                    ),
+                    if (_selectedCustomer != null)
                       TextButton.icon(
-                  key: const Key('select_customer_fiscal_btn'),
-                  icon: const Icon(Icons.person_search, size: 16),
-                  label: Text(_selectedCustomer == null ? 'Buscar Cliente' : 'Cambiar'),
-                  style: TextButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  ),
-                  onPressed: _openCustomerPicker,
-                ),
-                      if (_selectedCustomer != null)
-                        TextButton.icon(
-                          icon: const Icon(Icons.person_remove, size: 16, color: Colors.red),
-                          label: const Text('Quitar', style: TextStyle(color: Colors.red)),
-                          style: TextButton.styleFrom(
-                            visualDensity: VisualDensity.compact,
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          ),
-                          onPressed: () {
-                            setState(() {
-                              _selectedCustomer = null;
-                              _fiscalDocType = 99; // Consumidor Final
-                              _fiscalDocNumberCtrl.clear();
-                              _fiscalReceiverNameCtrl.clear();
-                              _fiscalTaxCondition = 'consumidor_final';
-                              _fiscalReceiverAddressCtrl.clear();
-                            });
-                            context.read<PosProvider>().setLastSelectedCustomer(null);
-                          },
+                        icon: const Icon(Icons.person_remove,
+                            size: 16, color: Colors.red),
+                        label: const Text('Quitar',
+                            style: TextStyle(color: Colors.red)),
+                        style: TextButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 4),
                         ),
-                    ],
-                  ),
+                        onPressed: () {
+                          setState(() {
+                            _selectedCustomer = null;
+                            _fiscalDocType = 99; // Consumidor Final
+                            _fiscalDocNumberCtrl.clear();
+                            _fiscalReceiverNameCtrl.clear();
+                            _fiscalTaxCondition = 'consumidor_final';
+                            _fiscalReceiverAddressCtrl.clear();
+                          });
+                          context
+                              .read<PosProvider>()
+                              .setLastSelectedCustomer(null);
+                        },
+                      ),
+                  ],
+                ),
               ],
             ),
             const SizedBox(height: 8),
@@ -1310,19 +1341,34 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                         isDense: true,
                         decoration: InputDecoration(
                           labelText: 'Tipo Doc',
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                          border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8)),
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 10),
                         ),
                         items: const [
-                          DropdownMenuItem(value: 80, child: Text('CUIT (80)', style: TextStyle(fontSize: 12))),
-                          DropdownMenuItem(value: 86, child: Text('CUIL (86)', style: TextStyle(fontSize: 12))),
-                          DropdownMenuItem(value: 96, child: Text('DNI (96)', style: TextStyle(fontSize: 12))),
-                          DropdownMenuItem(value: 99, child: Text('S/D (99)', style: TextStyle(fontSize: 12))),
+                          DropdownMenuItem(
+                              value: 80,
+                              child: Text('CUIT (80)',
+                                  style: TextStyle(fontSize: 12))),
+                          DropdownMenuItem(
+                              value: 86,
+                              child: Text('CUIL (86)',
+                                  style: TextStyle(fontSize: 12))),
+                          DropdownMenuItem(
+                              value: 96,
+                              child: Text('DNI (96)',
+                                  style: TextStyle(fontSize: 12))),
+                          DropdownMenuItem(
+                              value: 99,
+                              child: Text('S/D (99)',
+                                  style: TextStyle(fontSize: 12))),
                         ],
                         onChanged: _voucherType == 1
                             ? null
                             : (val) {
-                                if (val != null) setState(() => _fiscalDocType = val);
+                                if (val != null)
+                                  setState(() => _fiscalDocType = val);
                               },
                       ),
                       const SizedBox(height: 8),
@@ -1332,10 +1378,14 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                         keyboardType: TextInputType.number,
                         decoration: InputDecoration(
                           labelText: 'N° Documento',
-                          hintText: _fiscalDocType == 80 ? '20-12345678-9' : 'DNI / CUIT',
+                          hintText: _fiscalDocType == 80
+                              ? '20-12345678-9'
+                              : 'DNI / CUIT',
                           isDense: true,
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                          border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8)),
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 10),
                           suffixIcon: _buildDocValidationIcon(),
                         ),
                         onChanged: (_) => setState(() {}),
@@ -1356,19 +1406,34 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                         isDense: true,
                         decoration: InputDecoration(
                           labelText: 'Tipo Doc',
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                          border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8)),
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 10),
                         ),
                         items: const [
-                          DropdownMenuItem(value: 80, child: Text('CUIT (80)', style: TextStyle(fontSize: 12))),
-                          DropdownMenuItem(value: 86, child: Text('CUIL (86)', style: TextStyle(fontSize: 12))),
-                          DropdownMenuItem(value: 96, child: Text('DNI (96)', style: TextStyle(fontSize: 12))),
-                          DropdownMenuItem(value: 99, child: Text('S/D (99)', style: TextStyle(fontSize: 12))),
+                          DropdownMenuItem(
+                              value: 80,
+                              child: Text('CUIT (80)',
+                                  style: TextStyle(fontSize: 12))),
+                          DropdownMenuItem(
+                              value: 86,
+                              child: Text('CUIL (86)',
+                                  style: TextStyle(fontSize: 12))),
+                          DropdownMenuItem(
+                              value: 96,
+                              child: Text('DNI (96)',
+                                  style: TextStyle(fontSize: 12))),
+                          DropdownMenuItem(
+                              value: 99,
+                              child: Text('S/D (99)',
+                                  style: TextStyle(fontSize: 12))),
                         ],
                         onChanged: _voucherType == 1
                             ? null
                             : (val) {
-                                if (val != null) setState(() => _fiscalDocType = val);
+                                if (val != null)
+                                  setState(() => _fiscalDocType = val);
                               },
                       ),
                     ),
@@ -1383,10 +1448,14 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                             keyboardType: TextInputType.number,
                             decoration: InputDecoration(
                               labelText: 'N° Documento',
-                              hintText: _fiscalDocType == 80 ? '20-12345678-9' : 'DNI / CUIT',
+                              hintText: _fiscalDocType == 80
+                                  ? '20-12345678-9'
+                                  : 'DNI / CUIT',
                               isDense: true,
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                              border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(8)),
+                              contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 10),
                               suffixIcon: _buildDocValidationIcon(),
                             ),
                             onChanged: (_) => setState(() {}),
@@ -1405,10 +1474,14 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
               controller: _fiscalReceiverNameCtrl,
               decoration: InputDecoration(
                 labelText: 'Razón Social / Nombre Receptor',
-                hintText: _voucherType == 1 ? 'Requerido para Factura A' : 'Consumidor Final',
+                hintText: _voucherType == 1
+                    ? 'Requerido para Factura A'
+                    : 'Consumidor Final',
                 isDense: true,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                border:
+                    OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
               ),
               onChanged: (_) => setState(() {}),
             ),
@@ -1421,25 +1494,41 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       DropdownButtonFormField<String>(
-                        key: ValueKey('fiscal_tax_condition_narrow_$_fiscalTaxCondition'),
+                        key: ValueKey(
+                            'fiscal_tax_condition_narrow_$_fiscalTaxCondition'),
                         initialValue: _fiscalTaxCondition,
                         isExpanded: true,
                         isDense: true,
                         decoration: InputDecoration(
                           labelText: 'Condición IVA',
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                          border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8)),
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 10),
                         ),
                         items: const [
-                          DropdownMenuItem(value: 'consumidor_final', child: Text('Consumidor Final', style: TextStyle(fontSize: 12))),
-                          DropdownMenuItem(value: 'responsable_inscripto', child: Text('Resp. Inscripto', style: TextStyle(fontSize: 12))),
-                          DropdownMenuItem(value: 'monotributo', child: Text('Monotributo', style: TextStyle(fontSize: 12))),
-                          DropdownMenuItem(value: 'exento', child: Text('Exento', style: TextStyle(fontSize: 12))),
+                          DropdownMenuItem(
+                              value: 'consumidor_final',
+                              child: Text('Consumidor Final',
+                                  style: TextStyle(fontSize: 12))),
+                          DropdownMenuItem(
+                              value: 'responsable_inscripto',
+                              child: Text('Resp. Inscripto',
+                                  style: TextStyle(fontSize: 12))),
+                          DropdownMenuItem(
+                              value: 'monotributo',
+                              child: Text('Monotributo',
+                                  style: TextStyle(fontSize: 12))),
+                          DropdownMenuItem(
+                              value: 'exento',
+                              child: Text('Exento',
+                                  style: TextStyle(fontSize: 12))),
                         ],
                         onChanged: _voucherType == 1
                             ? null
                             : (val) {
-                                if (val != null) setState(() => _fiscalTaxCondition = val);
+                                if (val != null)
+                                  setState(() => _fiscalTaxCondition = val);
                               },
                       ),
                       const SizedBox(height: 8),
@@ -1449,8 +1538,10 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                         decoration: InputDecoration(
                           labelText: 'Domicilio Fiscal (Opcional)',
                           isDense: true,
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                          border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8)),
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 10),
                         ),
                       ),
                     ],
@@ -1461,25 +1552,41 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                     Expanded(
                       flex: 2,
                       child: DropdownButtonFormField<String>(
-                        key: ValueKey('fiscal_tax_condition_wide_$_fiscalTaxCondition'),
+                        key: ValueKey(
+                            'fiscal_tax_condition_wide_$_fiscalTaxCondition'),
                         initialValue: _fiscalTaxCondition,
                         isExpanded: true,
                         isDense: true,
                         decoration: InputDecoration(
                           labelText: 'Condición IVA',
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                          border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8)),
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 10),
                         ),
                         items: const [
-                          DropdownMenuItem(value: 'consumidor_final', child: Text('Consumidor Final', style: TextStyle(fontSize: 12))),
-                          DropdownMenuItem(value: 'responsable_inscripto', child: Text('Resp. Inscripto', style: TextStyle(fontSize: 12))),
-                          DropdownMenuItem(value: 'monotributo', child: Text('Monotributo', style: TextStyle(fontSize: 12))),
-                          DropdownMenuItem(value: 'exento', child: Text('Exento', style: TextStyle(fontSize: 12))),
+                          DropdownMenuItem(
+                              value: 'consumidor_final',
+                              child: Text('Consumidor Final',
+                                  style: TextStyle(fontSize: 12))),
+                          DropdownMenuItem(
+                              value: 'responsable_inscripto',
+                              child: Text('Resp. Inscripto',
+                                  style: TextStyle(fontSize: 12))),
+                          DropdownMenuItem(
+                              value: 'monotributo',
+                              child: Text('Monotributo',
+                                  style: TextStyle(fontSize: 12))),
+                          DropdownMenuItem(
+                              value: 'exento',
+                              child: Text('Exento',
+                                  style: TextStyle(fontSize: 12))),
                         ],
                         onChanged: _voucherType == 1
                             ? null
                             : (val) {
-                                if (val != null) setState(() => _fiscalTaxCondition = val);
+                                if (val != null)
+                                  setState(() => _fiscalTaxCondition = val);
                               },
                       ),
                     ),
@@ -1492,8 +1599,10 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                         decoration: InputDecoration(
                           labelText: 'Domicilio Fiscal (Opcional)',
                           isDense: true,
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                          border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8)),
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 10),
                         ),
                       ),
                     ),
@@ -1631,683 +1740,1179 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
-                decoration: BoxDecoration(
-                  color: Colors.blue.shade50,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.blue.shade200),
-                ),
-                // Mostrar el desglose completo SOLO si hay recargos,
-                // si no, mostrar solo el total para evitar confusión con "$0.00 Recargo"
-                child: _totalSurcharge > 0
-                    ? Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceAround,
-                        children: [
-                          Column(
-                            children: [
-                              const Text('Total Base',
-                                  style: TextStyle(
-                                      fontSize: 14, color: Colors.black54)),
-                              Text('\$${_baseTotal.toCurrency()}',
-                                  style: const TextStyle(
-                                      fontSize: 24,
-                                      fontWeight: FontWeight.bold)),
-                            ],
-                          ),
-                          Text('+',
-                              style: TextStyle(
-                                  fontSize: 24, color: Colors.black26)),
-                          Column(
-                            children: [
-                              Text('Recargos',
-                                  style: TextStyle(
-                                      fontSize: 14,
-                                      color: Colors.orange.shade700,
-                                      fontWeight: FontWeight.bold)),
-                              Text('\$${_totalSurcharge.toCurrency()}',
-                                  style: TextStyle(
-                                      fontSize: 24,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.orange.shade700)),
-                            ],
-                          ),
-                          Text('=',
-                              style: TextStyle(
-                                  fontSize: 24, color: Colors.black26)),
-                          Column(
-                            children: [
-                              const Text('Gran Total',
-                                  style: TextStyle(
-                                      fontSize: 14,
-                                      color: Colors.black54,
-                                      fontWeight: FontWeight.bold)),
-                              Text('\$${_grandTotal.toCurrency()}',
-                                  style: TextStyle(
-                                      fontSize: 28,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.blue.shade800)),
-                            ],
-                          ),
-                        ],
-                      )
-                    : Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Flexible(
-                            child: Column(
-                              children: [
-                                const Text('Total a Cobrar',
-                                    style: TextStyle(
-                                        fontSize: 14,
-                                        color: Colors.black54,
-                                        fontWeight: FontWeight.bold)),
-                                FittedBox(
-                                  fit: BoxFit.scaleDown,
-                                  child: Text('\$${_grandTotal.toCurrency()}',
-                                      style: TextStyle(
-                                          fontSize: 32,
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.blue.shade800)),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    vertical: 20, horizontal: 16),
+                                decoration: BoxDecoration(
+                                  color: Colors.blue.shade50,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border:
+                                      Border.all(color: Colors.blue.shade200),
                                 ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-              ),
-
-              const SizedBox(height: 24),
-
-              // ──── Líneas de Pago
-              Column(
-                children: _lines.asMap().entries.map((entry) {
-                  int idx = entry.key;
-                  PaymentLine line = entry.value;
-
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 12.0),
-                    child: Column(
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              flex: 2,
-                              // Key con method.id garantiza que Flutter recree el widget
-                              // si hacemos revert explícito, evitando estados visuales desincronizados
-                              child: DropdownButtonFormField<PaymentMethod>(
-                                key: ValueKey('dd_${idx}_${line.method?.id}'),
-                                isExpanded: true,
-                                icon: Icon(Icons.arrow_drop_down_rounded,
-                                    color: Colors.blue.shade700),
-                                decoration: InputDecoration(
-                                  labelText: 'Método',
-                                  labelStyle:
-                                      TextStyle(color: Colors.blue.shade700),
-                                  filled: true,
-                                  fillColor: Colors.blue.shade50,
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                    borderSide:
-                                        BorderSide(color: Colors.blue.shade200),
-                                  ),
-                                  enabledBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                    borderSide:
-                                        BorderSide(color: Colors.blue.shade200),
-                                  ),
-                                  focusedBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                    borderSide: BorderSide(
-                                        color: Colors.blue.shade500, width: 2),
-                                  ),
-                                  contentPadding: const EdgeInsets.symmetric(
-                                      horizontal: 12, vertical: 12),
-                                ),
-                                initialValue: provider.paymentMethods.contains(line.method) && !(line.method?.code.contains('transfer') ?? false) ? line.method : null,
-                                items: provider.paymentMethods.where((m) => !m.code.contains('transfer')).map((m) {
-                                  final bool isCuentaCorriente =
-                                      m.code == 'cuenta_corriente';
-                                  final bool isCheque = m.code == 'cheque';
-                                  final bool isLocked = (isCuentaCorriente &&
-                                          settings?.features.currentAccounts !=
-                                              true) ||
-                                      (isCheque &&
-                                          settings?.features.checks != true);
-
-                                  return DropdownMenuItem<PaymentMethod>(
-                                    value: m,
-                                    // enabled: true —  el item es clickeable aunque sea Premium.
-                                    // Al hacer click → onChanged muestra el upsell y revierte.
-                                    enabled: true,
-                                    child: Row(
-                                      children: [
-                                        Icon(
-                                          _getIconForMethod(m.code),
-                                          color: Colors.blue.shade700,
-                                          size: 18,
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Expanded(
-                                          child: Text(
-                                            m.name,
-                                            style: TextStyle(
-                                              color: Colors.blue.shade900,
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                            overflow: TextOverflow.ellipsis,
+                                // Mostrar el desglose completo SOLO si hay recargos,
+                                // si no, mostrar solo el total para evitar confusión con "$0.00 Recargo"
+                                child: _totalSurcharge > 0
+                                    ? Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceAround,
+                                        children: [
+                                          Column(
+                                            children: [
+                                              const Text('Total Base',
+                                                  style: TextStyle(
+                                                      fontSize: 14,
+                                                      color: Colors.black54)),
+                                              Text(
+                                                  '\$${_baseTotal.toCurrency()}',
+                                                  style: const TextStyle(
+                                                      fontSize: 24,
+                                                      fontWeight:
+                                                          FontWeight.bold)),
+                                            ],
                                           ),
-                                        ),
-                                        // Hint sutil de que es premium —  no deshabilita ni grisea
-                                        if (isLocked) ...[
-                                          const SizedBox(width: 6),
-                                          Tooltip(
-                                            message:
-                                                'Función Pro —  Hacé clic para conocer más',
-                                            child: Icon(
-                                              Icons.workspace_premium,
-                                              size: 15,
-                                              color: Colors.orange.shade400,
+                                          Text('+',
+                                              style: TextStyle(
+                                                  fontSize: 24,
+                                                  color: Colors.black26)),
+                                          Column(
+                                            children: [
+                                              Text('Recargos',
+                                                  style: TextStyle(
+                                                      fontSize: 14,
+                                                      color: Colors
+                                                          .orange.shade700,
+                                                      fontWeight:
+                                                          FontWeight.bold)),
+                                              Text(
+                                                  '\$${_totalSurcharge.toCurrency()}',
+                                                  style: TextStyle(
+                                                      fontSize: 24,
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                      color: Colors
+                                                          .orange.shade700)),
+                                            ],
+                                          ),
+                                          Text('=',
+                                              style: TextStyle(
+                                                  fontSize: 24,
+                                                  color: Colors.black26)),
+                                          Column(
+                                            children: [
+                                              const Text('Gran Total',
+                                                  style: TextStyle(
+                                                      fontSize: 14,
+                                                      color: Colors.black54,
+                                                      fontWeight:
+                                                          FontWeight.bold)),
+                                              Text(
+                                                  '\$${_grandTotal.toCurrency()}',
+                                                  style: TextStyle(
+                                                      fontSize: 28,
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                      color: Colors
+                                                          .blue.shade800)),
+                                            ],
+                                          ),
+                                        ],
+                                      )
+                                    : Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: [
+                                          Flexible(
+                                            child: Column(
+                                              children: [
+                                                const Text('Total a Cobrar',
+                                                    style: TextStyle(
+                                                        fontSize: 14,
+                                                        color: Colors.black54,
+                                                        fontWeight:
+                                                            FontWeight.bold)),
+                                                FittedBox(
+                                                  fit: BoxFit.scaleDown,
+                                                  child: Text(
+                                                      '\$${_grandTotal.toCurrency()}',
+                                                      style: TextStyle(
+                                                          fontSize: 32,
+                                                          fontWeight:
+                                                              FontWeight.bold,
+                                                          color: Colors
+                                                              .blue.shade800)),
+                                                ),
+                                              ],
                                             ),
                                           ),
                                         ],
+                                      ),
+                              ),
+
+                              const SizedBox(height: 24),
+
+                              // ──── Líneas de Pago
+                              Column(
+                                children: _lines.asMap().entries.map((entry) {
+                                  int idx = entry.key;
+                                  PaymentLine line = entry.value;
+
+                                  return Padding(
+                                    padding:
+                                        const EdgeInsets.only(bottom: 12.0),
+                                    child: Column(
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Expanded(
+                                              flex:
+                                                  4, // Key con method.id garantiza que Flutter recree el widget
+                                              // si hacemos revert explícito, evitando estados visuales desincronizados
+                                              child: DropdownButtonFormField<
+                                                  PaymentMethod>(
+                                                key: ValueKey(
+                                                    'dd_${idx}_${line.method?.id}'),
+                                                isExpanded: true,
+                                                icon: Icon(
+                                                    Icons
+                                                        .arrow_drop_down_rounded,
+                                                    color:
+                                                        Colors.blue.shade700),
+                                                decoration: InputDecoration(
+                                                  labelText: 'Método',
+                                                  labelStyle: TextStyle(
+                                                      color:
+                                                          Colors.blue.shade700),
+                                                  filled: true,
+                                                  fillColor:
+                                                      Colors.blue.shade50,
+                                                  border: OutlineInputBorder(
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            8),
+                                                    borderSide: BorderSide(
+                                                        color: Colors
+                                                            .blue.shade200),
+                                                  ),
+                                                  enabledBorder:
+                                                      OutlineInputBorder(
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            8),
+                                                    borderSide: BorderSide(
+                                                        color: Colors
+                                                            .blue.shade200),
+                                                  ),
+                                                  focusedBorder:
+                                                      OutlineInputBorder(
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            8),
+                                                    borderSide: BorderSide(
+                                                        color: Colors
+                                                            .blue.shade500,
+                                                        width: 2),
+                                                  ),
+                                                  contentPadding:
+                                                      const EdgeInsets
+                                                          .symmetric(
+                                                          horizontal: 4,
+                                                          vertical: 12),
+                                                ),
+                                                initialValue: provider
+                                                            .paymentMethods
+                                                            .contains(
+                                                                line.method) &&
+                                                        !(line.method?.code
+                                                                .contains(
+                                                                    'transfer') ??
+                                                            false)
+                                                    ? line.method
+                                                    : null,
+                                                items: provider.paymentMethods
+                                                    .where((m) => !m.code
+                                                        .contains('transfer'))
+                                                    .map((m) {
+                                                  final bool isCuentaCorriente =
+                                                      m.code ==
+                                                          'cuenta_corriente';
+                                                  final bool isCheque =
+                                                      m.code == 'cheque';
+                                                  final bool isLocked =
+                                                      (isCuentaCorriente &&
+                                                              settings?.features
+                                                                      .currentAccounts !=
+                                                                  true) ||
+                                                          (isCheque &&
+                                                              settings?.features
+                                                                      .checks !=
+                                                                  true);
+
+                                                  return DropdownMenuItem<
+                                                      PaymentMethod>(
+                                                    value: m,
+                                                    // enabled: true —  el item es clickeable aunque sea Premium.
+                                                    // Al hacer click → onChanged muestra el upsell y revierte.
+                                                    enabled: true,
+                                                    child: Row(
+                                                      children: [
+                                                        Icon(
+                                                          _getIconForMethod(
+                                                              m.code),
+                                                          color: Colors
+                                                              .blue.shade700,
+                                                          size: 18,
+                                                        ),
+                                                        const SizedBox(
+                                                            width: 8),
+                                                        Expanded(
+                                                          child: Text(
+                                                            m.name,
+                                                            style: TextStyle(
+                                                              color: Colors.blue
+                                                                  .shade900,
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .w600,
+                                                            ),
+                                                            overflow:
+                                                                TextOverflow
+                                                                    .ellipsis,
+                                                          ),
+                                                        ),
+                                                        // Hint sutil de que es premium —  no deshabilita ni grisea
+                                                        if (isLocked) ...[
+                                                          const SizedBox(
+                                                              width: 6),
+                                                          Tooltip(
+                                                            message:
+                                                                'Función Pro —  Hacé clic para conocer más',
+                                                            child: Icon(
+                                                              Icons
+                                                                  .workspace_premium,
+                                                              size: 15,
+                                                              color: Colors
+                                                                  .orange
+                                                                  .shade400,
+                                                            ),
+                                                          ),
+                                                        ],
+                                                      ],
+                                                    ),
+                                                  );
+                                                }).toList(),
+                                                onChanged: (val) {
+                                                  if (val == null) return;
+
+                                                  final bool
+                                                      isCuentaCorrienteSel =
+                                                      val.code ==
+                                                          'cuenta_corriente';
+                                                  final bool isChequeSel =
+                                                      val.code == 'cheque';
+                                                  final bool isLockedSel =
+                                                      (isCuentaCorrienteSel &&
+                                                              settings?.features
+                                                                      .currentAccounts !=
+                                                                  true) ||
+                                                          (isChequeSel &&
+                                                              settings?.features
+                                                                      .checks !=
+                                                                  true);
+
+                                                  if (isLockedSel) {
+                                                    _showProUpsellDialog(
+                                                        val.name);
+
+                                                    // Revertir explícitamente al último método válido
+                                                    final prev = (idx <
+                                                            _previousValidMethods
+                                                                .length)
+                                                        ? _previousValidMethods[
+                                                            idx]
+                                                        : line.method;
+
+                                                    // Truco Flutter: Primero aceptamos el valor bloqueado para forzar a
+                                                    // que cambie la `ValueKey` y elimine el estado interno bugeado.
+                                                    setState(() => line.updateMethod(
+                                                        val,
+                                                        defaultCardSurcharge:
+                                                            settings
+                                                                ?.globalCardPercentage,
+                                                        disableSurcharge:
+                                                            _isCartAlreadySurcharged));
+
+                                                    // En el microsegundo siguiente, restauramos el método verdadero
+                                                    // Así Flutter se ve forzado a renderizar desde cero con la opción original.
+                                                    WidgetsBinding.instance
+                                                        .addPostFrameCallback(
+                                                            (_) {
+                                                      if (mounted) {
+                                                        setState(() => line.updateMethod(
+                                                            prev,
+                                                            defaultCardSurcharge:
+                                                                settings
+                                                                    ?.globalCardPercentage,
+                                                            disableSurcharge:
+                                                                _isCartAlreadySurcharged));
+                                                      }
+                                                    });
+                                                    return;
+                                                  }
+                                                  setState(() {
+                                                    // Guardar el nuevo método como "previo válido" antes de cambiar
+                                                    if (idx <
+                                                        _previousValidMethods
+                                                            .length) {
+                                                      _previousValidMethods[
+                                                          idx] = val;
+                                                    }
+                                                    line.updateMethod(val,
+                                                        defaultCardSurcharge:
+                                                            settings
+                                                                ?.globalCardPercentage,
+                                                        disableSurcharge:
+                                                            _isCartAlreadySurcharged);
+                                                  });
+                                                  // Sincronizar el campo de efectivo recibido.
+                                                  // Si el método elegido es efectivo → auto-foco para que
+                                                  // el cajero tipee cuánto le dan.
+                                                  _syncCashField(
+                                                      autoFocus: val.isCash);
+                                                },
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Expanded(
+                                              flex: 3,
+                                              child: TextFormField(
+                                                controller: line.controller,
+                                                keyboardType:
+                                                    const TextInputType
+                                                        .numberWithOptions(
+                                                        decimal: true),
+                                                decoration: InputDecoration(
+                                                  labelText: 'Monto a Cubrir',
+                                                  prefixText: '\$ ',
+                                                  border: OutlineInputBorder(
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                              8)),
+                                                ),
+                                              ),
+                                            ),
+                                            if (line.method?.isCash !=
+                                                true) ...[
+                                              const SizedBox(width: 8),
+                                              SizedBox(
+                                                width: 64,
+                                                child: Focus(
+                                                  focusNode:
+                                                      line.percentageFocus,
+                                                  onFocusChange: (hasFocus) {
+                                                    if (!hasFocus &&
+                                                        line.method != null) {
+                                                      final newPct =
+                                                          double.tryParse(line
+                                                                  .percentageController
+                                                                  .text
+                                                                  .replaceAll(
+                                                                      ',',
+                                                                      '.')) ??
+                                                              0.0;
+                                                      if (newPct !=
+                                                          line.method!
+                                                              .surchargeValue) {
+                                                        provider
+                                                            .updatePaymentMethodSurcharge(
+                                                                line.method!.id,
+                                                                newPct);
+                                                      }
+                                                    }
+                                                  },
+                                                  child: TextFormField(
+                                                    controller: line
+                                                        .percentageController,
+                                                    readOnly:
+                                                        _isCartAlreadySurcharged,
+                                                    keyboardType:
+                                                        const TextInputType
+                                                            .numberWithOptions(
+                                                            decimal: true),
+                                                    decoration: InputDecoration(
+                                                      labelText: '% Int.',
+                                                      labelStyle: TextStyle(
+                                                          fontSize: 12,
+                                                          color: Colors
+                                                              .orange.shade700),
+                                                      border:
+                                                          OutlineInputBorder(
+                                                              borderRadius:
+                                                                  BorderRadius
+                                                                      .circular(
+                                                                          8)),
+                                                      contentPadding:
+                                                          const EdgeInsets
+                                                              .symmetric(
+                                                              horizontal: 8,
+                                                              vertical: 12),
+                                                    ),
+                                                    textAlign: TextAlign.center,
+                                                    style: const TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.bold),
+                                                  ),
+                                                ),
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Container(
+                                                width: 80,
+                                                padding:
+                                                    const EdgeInsets.all(8),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.orange.shade50,
+                                                  borderRadius:
+                                                      BorderRadius.circular(8),
+                                                  border: Border.all(
+                                                      color: Colors
+                                                          .orange.shade200),
+                                                ),
+                                                child: Column(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.end,
+                                                  children: [
+                                                    const Text('Extra',
+                                                        style: TextStyle(
+                                                            fontSize: 10,
+                                                            color:
+                                                                Colors.orange)),
+                                                    Text(
+                                                        '\$${line.surcharge.toCurrency()}',
+                                                        style: TextStyle(
+                                                            fontWeight:
+                                                                FontWeight.bold,
+                                                            color: Colors.orange
+                                                                .shade800)),
+                                                  ],
+                                                ),
+                                              ),
+                                            ],
+                                            const SizedBox(width: 8),
+                                            IconButton(
+                                              icon: const Icon(
+                                                  Icons.remove_circle_outline,
+                                                  color: Colors.red),
+                                              onPressed: _lines.length > 1
+                                                  ? () => _removeLine(idx)
+                                                  : null,
+                                            ),
+                                          ],
+                                        ),
+                                        // ── Formulario de cheque (se despliega cuando code == 'cheque') ──
+                                        if (line.method?.code == 'cheque')
+                                          Container(
+                                            padding: const EdgeInsets.all(12),
+                                            margin:
+                                                const EdgeInsets.only(top: 8),
+                                            decoration: BoxDecoration(
+                                              color: Colors.blue.shade50,
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                              border: Border.all(
+                                                  color: Colors.blue.shade200),
+                                            ),
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                const Text(
+                                                    'Detalles del Cheque',
+                                                    style: TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        fontSize: 13,
+                                                        color: Colors.blue)),
+                                                const SizedBox(height: 8),
+                                                Row(
+                                                  children: [
+                                                    Expanded(
+                                                        child: TextField(
+                                                            controller: line
+                                                                .checkBankController,
+                                                            decoration: InputDecoration(
+                                                                labelText:
+                                                                    'Banco',
+                                                                isDense: true,
+                                                                border: OutlineInputBorder(
+                                                                    borderRadius:
+                                                                        BorderRadius.circular(
+                                                                            8)),
+                                                                filled: true,
+                                                                fillColor: Colors
+                                                                    .white))),
+                                                    const SizedBox(width: 8),
+                                                    Expanded(
+                                                        child: TextField(
+                                                            controller: line
+                                                                .checkNumberController,
+                                                            decoration: InputDecoration(
+                                                                labelText:
+                                                                    'Nro Cheque',
+                                                                isDense: true,
+                                                                border: OutlineInputBorder(
+                                                                    borderRadius:
+                                                                        BorderRadius.circular(
+                                                                            8)),
+                                                                filled: true,
+                                                                fillColor: Colors
+                                                                    .white))),
+                                                  ],
+                                                ),
+                                                const SizedBox(height: 8),
+                                                Row(
+                                                  children: [
+                                                    Expanded(
+                                                        child: TextField(
+                                                            controller: line
+                                                                .checkIssuerCuitController,
+                                                            decoration: InputDecoration(
+                                                                labelText:
+                                                                    'CUIT Firmante',
+                                                                isDense: true,
+                                                                border: OutlineInputBorder(
+                                                                    borderRadius:
+                                                                        BorderRadius.circular(
+                                                                            8)),
+                                                                filled: true,
+                                                                fillColor: Colors
+                                                                    .white))),
+                                                    const SizedBox(width: 8),
+                                                    Expanded(
+                                                        child: TextField(
+                                                            controller: line
+                                                                .checkIssuerNameController,
+                                                            decoration: InputDecoration(
+                                                                labelText:
+                                                                    'Nombre Firmante',
+                                                                isDense: true,
+                                                                border: OutlineInputBorder(
+                                                                    borderRadius:
+                                                                        BorderRadius.circular(
+                                                                            8)),
+                                                                filled: true,
+                                                                fillColor: Colors
+                                                                    .white))),
+                                                  ],
+                                                ),
+                                                const SizedBox(height: 8),
+                                                Row(
+                                                  children: [
+                                                    Expanded(
+                                                        child: TextField(
+                                                            controller: line
+                                                                .checkIssueDateController,
+                                                            decoration: InputDecoration(
+                                                                labelText:
+                                                                    'Emisión (YYYY-MM-DD)',
+                                                                isDense: true,
+                                                                border: OutlineInputBorder(
+                                                                    borderRadius:
+                                                                        BorderRadius.circular(
+                                                                            8)),
+                                                                filled: true,
+                                                                fillColor: Colors
+                                                                    .white))),
+                                                    const SizedBox(width: 8),
+                                                    Expanded(
+                                                        child: TextField(
+                                                            controller: line
+                                                                .checkPaymentDateController,
+                                                            decoration: InputDecoration(
+                                                                labelText:
+                                                                    'Cobro (YYYY-MM-DD)',
+                                                                isDense: true,
+                                                                border: OutlineInputBorder(
+                                                                    borderRadius:
+                                                                        BorderRadius.circular(
+                                                                            8)),
+                                                                filled: true,
+                                                                fillColor: Colors
+                                                                    .white))),
+                                                  ],
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+
+                                        // ── Acciones Mercado Pago QR ──
+                                        if (line.method?.code ==
+                                            'mercadopago_qr')
+                                          Padding(
+                                            padding:
+                                                const EdgeInsets.only(top: 8.0),
+                                            child: Align(
+                                              alignment: Alignment.centerLeft,
+                                              child: !line.mpPaid
+                                                  ? FittedBox(
+                                                      fit: BoxFit.scaleDown,
+                                                      alignment:
+                                                          Alignment.centerLeft,
+                                                      child: FilledButton.icon(
+                                                        icon: const Icon(
+                                                            Icons
+                                                                .qr_code_scanner,
+                                                            size: 18),
+                                                        label: const Text(
+                                                            'Generar QR Mercado Pago'),
+                                                        style: FilledButton
+                                                            .styleFrom(
+                                                          backgroundColor:
+                                                              const Color(
+                                                                  0xFF009EE3),
+                                                        ),
+                                                        onPressed: () =>
+                                                            _openMercadoPagoQrModal(
+                                                                line),
+                                                      ),
+                                                    )
+                                                  : Container(
+                                                      padding: const EdgeInsets
+                                                          .symmetric(
+                                                          horizontal: 12,
+                                                          vertical: 8),
+                                                      decoration: BoxDecoration(
+                                                        color: const Color(
+                                                            0xFFE8F5E9),
+                                                        borderRadius:
+                                                            BorderRadius
+                                                                .circular(8),
+                                                        border: Border.all(
+                                                            color: const Color(
+                                                                0xFF2E7D32)),
+                                                      ),
+                                                      child: Row(
+                                                        mainAxisSize:
+                                                            MainAxisSize.min,
+                                                        children: [
+                                                          const Icon(
+                                                              Icons
+                                                                  .check_circle,
+                                                              color: Color(
+                                                                  0xFF2E7D32),
+                                                              size: 18),
+                                                          const SizedBox(
+                                                              width: 8),
+                                                          Flexible(
+                                                            child: Text(
+                                                              'Pago Aprobado (ID: ${line.mpPaymentId ?? line.mpExternalReference})',
+                                                              overflow:
+                                                                  TextOverflow
+                                                                      .ellipsis,
+                                                              style:
+                                                                  const TextStyle(
+                                                                color: Color(
+                                                                    0xFF2E7D32),
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .bold,
+                                                              ),
+                                                            ),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    ),
+                                            ),
+                                          ),
+
+                                        // ── Acciones Mercado Pago Point ──
+                                        if (line.method?.code ==
+                                            'mercadopago_point')
+                                          Padding(
+                                            padding:
+                                                const EdgeInsets.only(top: 8.0),
+                                            child: Align(
+                                              alignment: Alignment.centerLeft,
+                                              child: !line.mpPaid
+                                                  ? FittedBox(
+                                                      fit: BoxFit.scaleDown,
+                                                      alignment:
+                                                          Alignment.centerLeft,
+                                                      child: FilledButton.icon(
+                                                        icon: const Icon(
+                                                            Icons.point_of_sale,
+                                                            size: 18),
+                                                        label: const Text(
+                                                            'Enviar a Posnet Físico'),
+                                                        style: FilledButton
+                                                            .styleFrom(
+                                                          backgroundColor:
+                                                              const Color(
+                                                                  0xFF009EE3),
+                                                        ),
+                                                        onPressed: () =>
+                                                            _sendToPosnetDevice(
+                                                                line),
+                                                      ),
+                                                    )
+                                                  : Container(
+                                                      padding: const EdgeInsets
+                                                          .symmetric(
+                                                          horizontal: 12,
+                                                          vertical: 8),
+                                                      decoration: BoxDecoration(
+                                                        color: const Color(
+                                                            0xFFE8F5E9),
+                                                        borderRadius:
+                                                            BorderRadius
+                                                                .circular(8),
+                                                        border: Border.all(
+                                                            color: const Color(
+                                                                0xFF2E7D32)),
+                                                      ),
+                                                      child: Row(
+                                                        mainAxisSize:
+                                                            MainAxisSize.min,
+                                                        children: [
+                                                          const Icon(
+                                                              Icons
+                                                                  .check_circle,
+                                                              color: Color(
+                                                                  0xFF2E7D32),
+                                                              size: 18),
+                                                          const SizedBox(
+                                                              width: 8),
+                                                          Flexible(
+                                                            child: Text(
+                                                              'Pago Aprobado (ID: ${line.mpPaymentId ?? line.mpExternalReference})',
+                                                              overflow:
+                                                                  TextOverflow
+                                                                      .ellipsis,
+                                                              style:
+                                                                  const TextStyle(
+                                                                color: Color(
+                                                                    0xFF2E7D32),
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .bold,
+                                                              ),
+                                                            ),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    ),
+                                            ),
+                                          ),
                                       ],
                                     ),
                                   );
                                 }).toList(),
-                                onChanged: (val) {
-                                  if (val == null) return;
-
-                                  final bool isCuentaCorrienteSel =
-                                      val.code == 'cuenta_corriente';
-                                  final bool isChequeSel = val.code == 'cheque';
-                                  final bool isLockedSel =
-                                      (isCuentaCorrienteSel &&
-                                              settings?.features
-                                                      .currentAccounts !=
-                                                  true) ||
-                                          (isChequeSel &&
-                                              settings?.features.checks !=
-                                                  true);
-
-                                  if (isLockedSel) {
-                                    _showProUpsellDialog(val.name);
-
-                                    // Revertir explícitamente al último método válido
-                                    final prev =
-                                        (idx < _previousValidMethods.length)
-                                            ? _previousValidMethods[idx]
-                                            : line.method;
-
-                                    // Truco Flutter: Primero aceptamos el valor bloqueado para forzar a
-                                    // que cambie la `ValueKey` y elimine el estado interno bugeado.
-                                    setState(() => line.updateMethod(val,
-                                        defaultCardSurcharge:
-                                            settings?.globalCardPercentage,
-                                        disableSurcharge:
-                                            _isCartAlreadySurcharged));
-
-                                    // En el microsegundo siguiente, restauramos el método verdadero
-                                    // Así Flutter se ve forzado a renderizar desde cero con la opción original.
-                                    WidgetsBinding.instance
-                                        .addPostFrameCallback((_) {
-                                      if (mounted) {
-                                        setState(() => line.updateMethod(prev,
-                                            defaultCardSurcharge:
-                                                settings?.globalCardPercentage,
-                                            disableSurcharge:
-                                                _isCartAlreadySurcharged));
-                                      }
-                                    });
-                                    return;
-                                  }
-                                  setState(() {
-                                    // Guardar el nuevo método como "previo válido" antes de cambiar
-                                    if (idx < _previousValidMethods.length) {
-                                      _previousValidMethods[idx] = val;
-                                    }
-                                    line.updateMethod(val,
-                                        defaultCardSurcharge:
-                                            settings?.globalCardPercentage,
-                                        disableSurcharge:
-                                            _isCartAlreadySurcharged);
-                                  });
-                                  // Sincronizar el campo de efectivo recibido.
-                                  // Si el método elegido es efectivo → auto-foco para que
-                                  // el cajero tipee cuánto le dan.
-                                  _syncCashField(autoFocus: val.isCash);
-                                },
                               ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              flex: 2,
-                              child: TextFormField(
-                                controller: line.controller,
-                                keyboardType:
-                                    const TextInputType.numberWithOptions(
-                                        decimal: true),
-                                decoration: InputDecoration(
-                                  labelText: 'Monto a Cubrir',
-                                  prefixText: '\$ ',
-                                  border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(8)),
+
+                              Align(
+                                alignment: Alignment.centerLeft,
+                                child: TextButton.icon(
+                                  icon: const Icon(Icons.add),
+                                  label:
+                                      const Text('Completar con otro método'),
+                                  onPressed:
+                                      _pendingBalance > 0.01 ? _addLine : null,
                                 ),
                               ),
-                            ),
-                            if (line.method?.isCash != true) ...[
-                              const SizedBox(width: 8),
-                              SizedBox(
-                                width: 64,
-                                child: Focus(
-                                  focusNode: line.percentageFocus,
-                                  onFocusChange: (hasFocus) {
-                                    if (!hasFocus && line.method != null) {
-                                      final newPct = double.tryParse(line
-                                              .percentageController.text
-                                              .replaceAll(',', '.')) ??
-                                          0.0;
-                                      if (newPct !=
-                                          line.method!.surchargeValue) {
-                                        provider.updatePaymentMethodSurcharge(
-                                            line.method!.id, newPct);
-                                      }
-                                    }
-                                  },
-                                  child: TextFormField(
-                                    controller: line.percentageController,
-                                    readOnly: _isCartAlreadySurcharged,
-                                    keyboardType:
-                                        const TextInputType.numberWithOptions(
-                                            decimal: true),
-                                    decoration: InputDecoration(
-                                      labelText: '% Int.',
-                                      labelStyle: TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.orange.shade700),
-                                      border: OutlineInputBorder(
-                                          borderRadius:
-                                              BorderRadius.circular(8)),
-                                      contentPadding:
-                                          const EdgeInsets.symmetric(
-                                              horizontal: 8, vertical: 12),
+
+                              const Divider(height: 32),
+
+                              Wrap(
+                                alignment: WrapAlignment.spaceBetween,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                spacing: 8,
+                                runSpacing: 4,
+                                children: [
+                                  const Text('Saldo Pendiente a Cubrir:',
+                                      style: TextStyle(fontSize: 16)),
+                                  Text(
+                                    _pendingBalance > 0
+                                        ? '\$${_pendingBalance.toCurrency()}'
+                                        : '\$0.00',
+                                    style: TextStyle(
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.bold,
+                                        color: _pendingBalance > 0.01
+                                            ? Colors.red.shade700
+                                            : Colors.green.shade700),
+                                  ),
+                                ],
+                              ),
+
+                              const SizedBox(height: 24),
+
+                              // Efectivo Recibido y Vuelto
+                              if (_cashRequired > 0) ...[
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: TextField(
+                                        controller: _cashTenderedCtrl,
+                                        focusNode: _cashTenderedFocus,
+                                        keyboardType: const TextInputType
+                                            .numberWithOptions(decimal: true),
+                                        textInputAction: TextInputAction.done,
+                                        onTap: () {
+                                          // Selecciona todo el texto pre-cargado para sobreescribirlo rápido
+                                          _cashTenderedCtrl.selection =
+                                              TextSelection(
+                                            baseOffset: 0,
+                                            extentOffset:
+                                                _cashTenderedCtrl.text.length,
+                                          );
+                                        },
+                                        decoration: InputDecoration(
+                                          labelText: 'Efectivo Recibido',
+                                          hintText: 'Ej: 1000.00',
+                                          prefixText: '\$ ',
+                                          filled: true,
+                                          fillColor: Colors.green.shade50,
+                                          border: OutlineInputBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(8)),
+                                          focusedBorder: OutlineInputBorder(
+                                            borderRadius:
+                                                BorderRadius.circular(8),
+                                            borderSide: BorderSide(
+                                                color: Colors.green.shade600,
+                                                width: 2),
+                                          ),
+                                          helperText:
+                                              'Ingresá el monto que entrega el cliente',
+                                          helperStyle: TextStyle(
+                                              fontSize: 11,
+                                              color: Colors.green.shade700),
+                                        ),
+                                      ),
                                     ),
-                                    textAlign: TextAlign.center,
-                                    style: const TextStyle(
-                                        fontWeight: FontWeight.bold),
+                                    const SizedBox(width: 16),
+                                    Expanded(
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 16, vertical: 12),
+                                        decoration: BoxDecoration(
+                                          color: _change >= 0
+                                              ? Colors.green.shade50
+                                              : Colors.red.shade50,
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                          border: Border.all(
+                                              color: _change >= 0
+                                                  ? Colors.green.shade200
+                                                  : Colors.red.shade200),
+                                        ),
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.end,
+                                          children: [
+                                            Text(
+                                                _change >= 0
+                                                    ? 'Vuelto'
+                                                    : 'Faltante',
+                                                style: TextStyle(
+                                                    fontSize: 12,
+                                                    color: _change >= 0
+                                                        ? Colors.green.shade700
+                                                        : Colors.red.shade700)),
+                                            Text(
+                                              _change >= 0
+                                                  ? '\$${_change.toCurrency()}'
+                                                  : '-\$${_change.abs().toCurrency()}',
+                                              style: TextStyle(
+                                                  fontSize: 20,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: _change >= 0
+                                                      ? Colors.green.shade700
+                                                      : Colors.red.shade700),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 24),
+                              ],
+
+                              const SizedBox(height: 24),
+
+                              // ── Toggle Logística a Demanda ──────────────────────────
+                              // Solo visible si el plan tiene la feature 'logistics' habilitada
+                              if (settings?.features.logistics == true &&
+                                  !isPending) ...[
+                                const Divider(),
+                                Material(
+                                  color: _requiresDispatch
+                                      ? Colors.orange.shade50
+                                      : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(10),
+                                  child: InkWell(
+                                    borderRadius: BorderRadius.circular(10),
+                                    onTap: () {
+                                      setState(() {
+                                        _requiresDispatch = !_requiresDispatch;
+                                        context
+                                            .read<PosProvider>()
+                                            .setCurrentLogistics(
+                                                _requiresDispatch,
+                                                _fulfillmentStatus);
+                                        _syncPaymentsWithShipping();
+                                      });
+                                    },
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 4, vertical: 6),
+                                      child: Row(
+                                        children: [
+                                          AnimatedContainer(
+                                            duration: const Duration(
+                                                milliseconds: 200),
+                                            width: 44,
+                                            height: 24,
+                                            decoration: BoxDecoration(
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                              color: _requiresDispatch
+                                                  ? Colors.orange.shade600
+                                                  : Colors.grey.shade300,
+                                            ),
+                                            child: AnimatedAlign(
+                                              duration: const Duration(
+                                                  milliseconds: 200),
+                                              alignment: _requiresDispatch
+                                                  ? Alignment.centerRight
+                                                  : Alignment.centerLeft,
+                                              child: Container(
+                                                margin: const EdgeInsets.all(3),
+                                                width: 18,
+                                                height: 18,
+                                                decoration: const BoxDecoration(
+                                                  color: Colors.white,
+                                                  shape: BoxShape.circle,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 10),
+                                          const Icon(
+                                              Icons.local_shipping_outlined,
+                                              size: 18,
+                                              color: Colors.black54),
+                                          const SizedBox(width: 6),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  'Enviar a Logística (Armar Pedido)',
+                                                  style: TextStyle(
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 13,
+                                                    color: _requiresDispatch
+                                                        ? Colors.orange.shade800
+                                                        : Colors.black87,
+                                                  ),
+                                                ),
+                                                Text(
+                                                  _requiresDispatch
+                                                      ? 'Se creará un remito automáticamente al confirmar'
+                                                      : 'Se entrega en el momento (sin remito)',
+                                                  style: TextStyle(
+                                                    fontSize: 11,
+                                                    color: _requiresDispatch
+                                                        ? Colors.orange.shade600
+                                                        : Colors.grey.shade500,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
                                   ),
                                 ),
-                              ),
-                              const SizedBox(width: 8),
-                              Container(
-                                width: 80,
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: Colors.orange.shade50,
-                                  borderRadius: BorderRadius.circular(8),
-                                  border:
-                                      Border.all(color: Colors.orange.shade200),
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.end,
-                                  children: [
-                                    const Text('Extra',
-                                        style: TextStyle(
-                                            fontSize: 10,
-                                            color: Colors.orange)),
-                                    Text('\$${line.surcharge.toCurrency()}',
-                                        style: TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                            color: Colors.orange.shade800)),
+                                if (_requiresDispatch) ...[
+                                  const SizedBox(height: 12),
+                                  Container(
+                                    margin: const EdgeInsets.only(
+                                        left:
+                                            48), // Indentar a la altura del texto
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: Colors.orange.shade50,
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                          color: Colors.orange.shade200),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        const Text(
+                                          'Estado de Entrega:',
+                                          style: TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 12),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Material(
+                                          type: MaterialType.transparency,
+                                          child: RadioGroup<String>(
+                                            groupValue: _fulfillmentStatus,
+                                            onChanged: (val) {
+                                              if (val != null) {
+                                                setState(() {
+                                                  _fulfillmentStatus = val;
+                                                  context
+                                                      .read<PosProvider>()
+                                                      .setCurrentLogistics(
+                                                          _requiresDispatch,
+                                                          _fulfillmentStatus);
+                                                  _syncPaymentsWithShipping();
+                                                });
+                                              }
+                                            },
+                                            child: Row(
+                                              children: [
+                                                Expanded(
+                                                  child: RadioListTile<String>(
+                                                    title: const Text(
+                                                        'A Preparar (Pendiente)',
+                                                        style: TextStyle(
+                                                            fontSize: 12)),
+                                                    value: 'pending',
+                                                    activeColor:
+                                                        Colors.orange.shade700,
+                                                    contentPadding:
+                                                        EdgeInsets.zero,
+                                                    dense: true,
+                                                    visualDensity:
+                                                        VisualDensity.compact,
+                                                  ),
+                                                ),
+                                                Expanded(
+                                                  child: RadioListTile<String>(
+                                                    title: const Text(
+                                                        'Se lo lleva AHORA',
+                                                        style: TextStyle(
+                                                            fontSize: 12,
+                                                            color: Colors.green,
+                                                            fontWeight:
+                                                                FontWeight
+                                                                    .bold)),
+                                                    value: 'delivered',
+                                                    activeColor: Colors.green,
+                                                    contentPadding:
+                                                        EdgeInsets.zero,
+                                                    dense: true,
+                                                    visualDensity:
+                                                        VisualDensity.compact,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  if (_requiresDispatch &&
+                                      _fulfillmentStatus == 'pending') ...[
+                                    const SizedBox(height: 12),
+                                    Container(
+                                      margin: const EdgeInsets.only(left: 48),
+                                      padding: const EdgeInsets.all(8),
+                                      decoration: BoxDecoration(
+                                        color: Colors.blueGrey.shade50,
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Column(
+                                        children: [
+                                          Row(
+                                            children: [
+                                              const Icon(
+                                                  Icons.local_shipping_outlined,
+                                                  size: 18,
+                                                  color: Colors.blueGrey),
+                                              const SizedBox(width: 8),
+                                              const Text('Flete / Envío:',
+                                                  style: TextStyle(
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                      fontSize: 13)),
+                                              const Spacer(),
+                                              SizedBox(
+                                                width: 120,
+                                                height: 36,
+                                                child: TextField(
+                                                  controller: _shippingCostCtrl,
+                                                  keyboardType:
+                                                      const TextInputType
+                                                          .numberWithOptions(
+                                                          decimal: true),
+                                                  textAlign: TextAlign.right,
+                                                  decoration:
+                                                      const InputDecoration(
+                                                    prefixText: '\$ ',
+                                                    isDense: true,
+                                                    contentPadding:
+                                                        EdgeInsets.symmetric(
+                                                            horizontal: 8,
+                                                            vertical: 8),
+                                                    border:
+                                                        OutlineInputBorder(),
+                                                  ),
+                                                  onChanged: (val) {
+                                                    // El listener de _shippingCostCtrl ya dispara setState() y _syncPaymentsWithShipping()
+                                                  },
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 12),
+                                          Row(
+                                            children: [
+                                              const Icon(
+                                                  Icons.location_on_outlined,
+                                                  size: 18,
+                                                  color: Colors.blueGrey),
+                                              const SizedBox(width: 8),
+                                              Expanded(
+                                                child: TextField(
+                                                  controller:
+                                                      _deliveryAddressCtrl,
+                                                  decoration:
+                                                      const InputDecoration(
+                                                    labelText:
+                                                        'Dirección de Entrega (Opcional)',
+                                                    isDense: true,
+                                                    contentPadding:
+                                                        EdgeInsets.symmetric(
+                                                            horizontal: 8,
+                                                            vertical: 8),
+                                                    border:
+                                                        OutlineInputBorder(),
+                                                    filled: true,
+                                                    fillColor: Colors.white,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      ),
+                                    ),
                                   ],
-                                ),
-                              ),
-                            ],
-                            const SizedBox(width: 8),
-                            IconButton(
-                              icon: const Icon(Icons.remove_circle_outline,
-                                  color: Colors.red),
-                              onPressed: _lines.length > 1
-                                  ? () => _removeLine(idx)
-                                  : null,
-                            ),
-                          ],
-                        ),
-                        // ── Formulario de cheque (se despliega cuando code == 'cheque') ──
-                        if (line.method?.code == 'cheque')
-                          Container(
-                            padding: const EdgeInsets.all(12),
-                            margin: const EdgeInsets.only(top: 8),
-                            decoration: BoxDecoration(
-                              color: Colors.blue.shade50,
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: Colors.blue.shade200),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text('Detalles del Cheque',
-                                    style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 13,
-                                        color: Colors.blue)),
+                                ],
                                 const SizedBox(height: 8),
-                                Row(
-                                  children: [
-                                    Expanded(
-                                        child: TextField(
-                                            controller:
-                                                line.checkBankController,
-                                            decoration: InputDecoration(
-                                                labelText: 'Banco',
-                                                isDense: true,
-                                                border: OutlineInputBorder(
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                            8)),
-                                                filled: true,
-                                                fillColor: Colors.white))),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                        child: TextField(
-                                            controller:
-                                                line.checkNumberController,
-                                            decoration: InputDecoration(
-                                                labelText: 'Nro Cheque',
-                                                isDense: true,
-                                                border: OutlineInputBorder(
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                            8)),
-                                                filled: true,
-                                                fillColor: Colors.white))),
-                                  ],
-                                ),
-                                const SizedBox(height: 8),
-                                Row(
-                                  children: [
-                                    Expanded(
-                                        child: TextField(
-                                            controller:
-                                                line.checkIssuerCuitController,
-                                            decoration: InputDecoration(
-                                                labelText: 'CUIT Firmante',
-                                                isDense: true,
-                                                border: OutlineInputBorder(
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                            8)),
-                                                filled: true,
-                                                fillColor: Colors.white))),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                        child: TextField(
-                                            controller:
-                                                line.checkIssuerNameController,
-                                            decoration: InputDecoration(
-                                                labelText: 'Nombre Firmante',
-                                                isDense: true,
-                                                border: OutlineInputBorder(
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                            8)),
-                                                filled: true,
-                                                fillColor: Colors.white))),
-                                  ],
-                                ),
-                                const SizedBox(height: 8),
-                                Row(
-                                  children: [
-                                    Expanded(
-                                        child: TextField(
-                                            controller:
-                                                line.checkIssueDateController,
-                                            decoration: InputDecoration(
-                                                labelText:
-                                                    'Emisión (YYYY-MM-DD)',
-                                                isDense: true,
-                                                border: OutlineInputBorder(
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                            8)),
-                                                filled: true,
-                                                fillColor: Colors.white))),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                        child: TextField(
-                                            controller:
-                                                line.checkPaymentDateController,
-                                            decoration: InputDecoration(
-                                                labelText: 'Cobro (YYYY-MM-DD)',
-                                                isDense: true,
-                                                border: OutlineInputBorder(
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                            8)),
-                                                filled: true,
-                                                fillColor: Colors.white))),
-                                  ],
-                                ),
                               ],
-                            ),
-                          ),
 
-                        // ── Acciones Mercado Pago QR ──
-                        if (line.method?.code == 'mercadopago_qr')
-                          Padding(
-                            padding: const EdgeInsets.only(top: 8.0),
-                            child: Align(
-                              alignment: Alignment.centerLeft,
-                              child: !line.mpPaid
-                                  ? FittedBox(
-                                      fit: BoxFit.scaleDown,
-                                      alignment: Alignment.centerLeft,
-                                      child: FilledButton.icon(
-                                        icon: const Icon(Icons.qr_code_scanner, size: 18),
-                                        label: const Text('Generar QR Mercado Pago'),
-                                        style: FilledButton.styleFrom(
-                                          backgroundColor: const Color(0xFF009EE3),
-                                        ),
-                                        onPressed: () => _openMercadoPagoQrModal(line),
-                                      ),
-                                    )
-                                  : Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFFE8F5E9),
-                                        borderRadius: BorderRadius.circular(8),
-                                        border: Border.all(color: const Color(0xFF2E7D32)),
-                                      ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          const Icon(Icons.check_circle, color: Color(0xFF2E7D32), size: 18),
-                                          const SizedBox(width: 8),
-                                          Flexible(
-                                            child: Text(
-                                              'Pago Aprobado (ID: ${line.mpPaymentId ?? line.mpExternalReference})',
-                                              overflow: TextOverflow.ellipsis,
-                                              style: const TextStyle(
-                                                color: Color(0xFF2E7D32),
-                                                fontWeight: FontWeight.bold,
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                            ),
-                          ),
-
-                        // ── Acciones Mercado Pago Point ──
-                        if (line.method?.code == 'mercadopago_point')
-                          Padding(
-                            padding: const EdgeInsets.only(top: 8.0),
-                            child: Align(
-                              alignment: Alignment.centerLeft,
-                              child: !line.mpPaid
-                                  ? FittedBox(
-                                      fit: BoxFit.scaleDown,
-                                      alignment: Alignment.centerLeft,
-                                      child: FilledButton.icon(
-                                        icon: const Icon(Icons.point_of_sale, size: 18),
-                                        label: const Text('Enviar a Posnet Físico'),
-                                        style: FilledButton.styleFrom(
-                                          backgroundColor: const Color(0xFF009EE3),
-                                        ),
-                                        onPressed: () => _sendToPosnetDevice(line),
-                                      ),
-                                    )
-                                  : Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFFE8F5E9),
-                                        borderRadius: BorderRadius.circular(8),
-                                        border: Border.all(color: const Color(0xFF2E7D32)),
-                                      ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          const Icon(Icons.check_circle, color: Color(0xFF2E7D32), size: 18),
-                                          const SizedBox(width: 8),
-                                          Flexible(
-                                            child: Text(
-                                              'Pago Aprobado (ID: ${line.mpPaymentId ?? line.mpExternalReference})',
-                                              overflow: TextOverflow.ellipsis,
-                                              style: const TextStyle(
-                                                color: Color(0xFF2E7D32),
-                                                fontWeight: FontWeight.bold,
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  );
-                }).toList(),
-              ),
-
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton.icon(
-                  icon: const Icon(Icons.add),
-                  label: const Text('Completar con otro método'),
-                  onPressed: _pendingBalance > 0.01 ? _addLine : null,
-                ),
-              ),
-
-              const Divider(height: 32),
-
-              Wrap(
-                alignment: WrapAlignment.spaceBetween,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                spacing: 8,
-                runSpacing: 4,
-                children: [
-                  const Text('Saldo Pendiente a Cubrir:',
-                      style: TextStyle(fontSize: 16)),
-                  Text(
-                    _pendingBalance > 0
-                        ? '\$${_pendingBalance.toCurrency()}'
-                        : '\$0.00',
-                    style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: _pendingBalance > 0.01
-                            ? Colors.red.shade700
-                            : Colors.green.shade700),
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 24),
-
-              // Efectivo Recibido y Vuelto
-              if (_cashRequired > 0) ...[
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _cashTenderedCtrl,
-                        focusNode: _cashTenderedFocus,
-                        keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true),
-                        textInputAction: TextInputAction.done,
-                        onTap: () {
-                          // Selecciona todo el texto pre-cargado para sobreescribirlo rápido
-                          _cashTenderedCtrl.selection = TextSelection(
-                            baseOffset: 0,
-                            extentOffset: _cashTenderedCtrl.text.length,
-                          );
-                        },
-                        decoration: InputDecoration(
-                          labelText: 'Efectivo Recibido',
-                          hintText: 'Ej: 1000.00',
-                          prefixText: '\$ ',
-                          filled: true,
-                          fillColor: Colors.green.shade50,
-                          border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8)),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
-                            borderSide: BorderSide(
-                                color: Colors.green.shade600, width: 2),
-                          ),
-                          helperText: 'Ingresá el monto que entrega el cliente',
-                          helperStyle: TextStyle(
-                              fontSize: 11, color: Colors.green.shade700),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 12),
-                        decoration: BoxDecoration(
-                          color: _change >= 0
-                              ? Colors.green.shade50
-                              : Colors.red.shade50,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                              color: _change >= 0
-                                  ? Colors.green.shade200
-                                  : Colors.red.shade200),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Text(_change >= 0 ? 'Vuelto' : 'Faltante',
-                                style: TextStyle(
-                                    fontSize: 12,
-                                    color: _change >= 0
-                                        ? Colors.green.shade700
-                                        : Colors.red.shade700)),
-                            Text(
-                              _change >= 0
-                                  ? '\$${_change.toCurrency()}'
-                                  : '-\$${_change.abs().toCurrency()}',
-                              style: TextStyle(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.bold,
-                                  color: _change >= 0
-                                      ? Colors.green.shade700
-                                      : Colors.red.shade700),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 24),
-              ],
-
+                              const SizedBox(height: 24),
                             ],
                           ),
                         ),
@@ -2324,351 +2929,141 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-              // Cliente Selector si usa Cta Corriente
-              if (_hasCuentaCorriente) ...[
-                Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    onTap: _openCustomerPicker,
-                    borderRadius: BorderRadius.circular(8),
-                    child: Ink(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: _selectedCustomer != null
-                            ? Colors.purple.shade50
-                            : Colors.orange.shade50,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                            color: _selectedCustomer != null
-                                ? Colors.purple.shade300
-                                : Colors.orange.shade400),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(Icons.person,
-                              color: _selectedCustomer != null
-                                  ? Colors.purple
-                                  : Colors.orange),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: _selectedCustomer == null
-                                ? Text('Seleccionar Cliente (Cta. Cte.)',
-                                    style: TextStyle(
-                                        color: Colors.orange.shade700,
-                                        fontWeight: FontWeight.bold))
-                                : Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(_selectedCustomer!.name,
-                                          style: TextStyle(
-                                              color: Colors.purple.shade700,
-                                              fontWeight: FontWeight.bold)),
-                                      Text(
-                                          _selectedCustomer!.isInternalAccount
-                                              ? 'Crédito disp: Ilimitado (Cuenta Interna)'
-                                              : 'Crédito disp: \$${_availableCredit.toCurrency()}',
-                                          style: const TextStyle(fontSize: 12)),
-                                    ],
-                                  ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 24),
-              ],
-
-              // ── Facturación Fiscal (ARCA / AFIP) ──
-              _buildFiscalInvoicingSection(),
-              const SizedBox(height: 16),
-
-              // Options: Imprimir + Vista Previa
-              Wrap(
-                crossAxisAlignment: WrapCrossAlignment.center,
-                alignment: WrapAlignment.spaceBetween,
-                spacing: 8,
-                runSpacing: 4,
-                children: [
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(minWidth: 160, maxWidth: 320),
-                    child: CheckboxListTile(
-                      title: const Text('Imprimir Comprobante',
-                          style: TextStyle(fontWeight: FontWeight.bold)),
-                      value: _printReceipt,
-                      activeColor: Colors.blue.shade600,
-                      contentPadding: EdgeInsets.zero,
-                      controlAffinity: ListTileControlAffinity.leading,
-                      onChanged: (val) async {
-                        if (val != null) {
-                          setState(() => _printReceipt = val);
-                          final prefs = await SharedPreferences.getInstance();
-                          await prefs.setBool('auto_print_receipt', val);
-                        }
-                      },
-                    ),
-                  ),
-                  if (_printReceipt)
-                    Tooltip(
-                      message: 'Ver previa antes de imprimir',
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Checkbox(
-                            value: _showPreview,
-                            activeColor: Colors.orange,
-                            onChanged: (val) async {
-                              if (val != null) {
-                                setState(() => _showPreview = val);
-                                final prefs =
-                                    await SharedPreferences.getInstance();
-                                await prefs.setBool(
-                                    'show_preview_receipt', val);
-                              }
-                            },
-                          ),
-                          const Text('Vista Previa',
-                              style: TextStyle(fontSize: 13)),
-                          const SizedBox(width: 8),
-                        ],
-                      ),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 24),
-
-              // ── Toggle Logística a Demanda ──────────────────────────
-              // Solo visible si el plan tiene la feature 'logistics' habilitada
-              if (settings?.features.logistics == true && !isPending) ...[
-                const Divider(),
-                Material(
-                  color: _requiresDispatch
-                      ? Colors.orange.shade50
-                      : Colors.transparent,
-                  borderRadius: BorderRadius.circular(10),
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(10),
-                    onTap: () {
-                      setState(() {
-                        _requiresDispatch = !_requiresDispatch;
-                        context.read<PosProvider>().setCurrentLogistics(
-                            _requiresDispatch, _fulfillmentStatus);
-                        _syncPaymentsWithShipping();
-                      });
-                    },
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 4, vertical: 6),
-                      child: Row(
-                        children: [
-                          AnimatedContainer(
-                            duration: const Duration(milliseconds: 200),
-                            width: 44,
-                            height: 24,
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(12),
-                              color: _requiresDispatch
-                                  ? Colors.orange.shade600
-                                  : Colors.grey.shade300,
-                            ),
-                            child: AnimatedAlign(
-                              duration: const Duration(milliseconds: 200),
-                              alignment: _requiresDispatch
-                                  ? Alignment.centerRight
-                                  : Alignment.centerLeft,
-                              child: Container(
-                                margin: const EdgeInsets.all(3),
-                                width: 18,
-                                height: 18,
-                                decoration: const BoxDecoration(
-                                  color: Colors.white,
-                                  shape: BoxShape.circle,
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          const Icon(Icons.local_shipping_outlined,
-                              size: 18, color: Colors.black54),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Enviar a Logística (Armar Pedido)',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 13,
-                                    color: _requiresDispatch
-                                        ? Colors.orange.shade800
-                                        : Colors.black87,
+                              // Cliente Selector si usa Cta Corriente
+                              if (_hasCuentaCorriente) ...[
+                                Material(
+                                  color: Colors.transparent,
+                                  child: InkWell(
+                                    onTap: _openCustomerPicker,
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: Ink(
+                                      padding: const EdgeInsets.all(12),
+                                      decoration: BoxDecoration(
+                                        color: _selectedCustomer != null
+                                            ? Colors.purple.shade50
+                                            : Colors.orange.shade50,
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(
+                                            color: _selectedCustomer != null
+                                                ? Colors.purple.shade300
+                                                : Colors.orange.shade400),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Icon(Icons.person,
+                                              color: _selectedCustomer != null
+                                                  ? Colors.purple
+                                                  : Colors.orange),
+                                          const SizedBox(width: 12),
+                                          Expanded(
+                                            child: _selectedCustomer == null
+                                                ? Text(
+                                                    'Seleccionar Cliente (Cta. Cte.)',
+                                                    style: TextStyle(
+                                                        color: Colors
+                                                            .orange.shade700,
+                                                        fontWeight:
+                                                            FontWeight.bold))
+                                                : Column(
+                                                    crossAxisAlignment:
+                                                        CrossAxisAlignment
+                                                            .start,
+                                                    children: [
+                                                      Text(
+                                                          _selectedCustomer!
+                                                              .name,
+                                                          style:
+                                                              TextStyle(
+                                                                  color: Colors
+                                                                      .purple
+                                                                      .shade700,
+                                                                  fontWeight:
+                                                                      FontWeight
+                                                                          .bold)),
+                                                      Text(
+                                                          _selectedCustomer!
+                                                                  .isInternalAccount
+                                                              ? 'Crédito disp: Ilimitado (Cuenta Interna)'
+                                                              : 'Crédito disp: \$${_availableCredit.toCurrency()}',
+                                                          style:
+                                                              const TextStyle(
+                                                                  fontSize:
+                                                                      12)),
+                                                    ],
+                                                  ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
                                   ),
                                 ),
-                                Text(
-                                  _requiresDispatch
-                                      ? 'Se creará un remito automáticamente al confirmar'
-                                      : 'Se entrega en el momento (sin remito)',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: _requiresDispatch
-                                        ? Colors.orange.shade600
-                                        : Colors.grey.shade500,
-                                  ),
-                                ),
+                                const SizedBox(height: 24),
                               ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-                if (_requiresDispatch) ...[
-                  const SizedBox(height: 12),
-                  Container(
-                    margin: const EdgeInsets.only(
-                        left: 48), // Indentar a la altura del texto
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.orange.shade50,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.orange.shade200),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Estado de Entrega:',
-                          style: TextStyle(
-                              fontWeight: FontWeight.bold, fontSize: 12),
-                        ),
-                        const SizedBox(height: 4),
-                        Material(
-                          type: MaterialType.transparency,
-                          child: RadioGroup<String>(
-                            groupValue: _fulfillmentStatus,
-                            onChanged: (val) {
-                              if (val != null) {
-                                setState(() {
-                                  _fulfillmentStatus = val;
-                                  context.read<PosProvider>().setCurrentLogistics(
-                                      _requiresDispatch, _fulfillmentStatus);
-                                  _syncPaymentsWithShipping();
-                                });
-                              }
-                            },
-                            child: Row(
-                            children: [
-                              Expanded(
-                                child: RadioListTile<String>(
-                                  title: const Text('A Preparar (Pendiente)',
-                                      style: TextStyle(fontSize: 12)),
-                                  value: 'pending',
-                                  activeColor: Colors.orange.shade700,
-                                  contentPadding: EdgeInsets.zero,
-                                  dense: true,
-                                  visualDensity: VisualDensity.compact,
-                                ),
-                              ),
-                              Expanded(
-                                child: RadioListTile<String>(
-                                  title: const Text('Se lo lleva AHORA',
-                                      style: TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.green,
-                                          fontWeight: FontWeight.bold)),
-                                  value: 'delivered',
-                                  activeColor: Colors.green,
-                                  contentPadding: EdgeInsets.zero,
-                                  dense: true,
-                                  visualDensity: VisualDensity.compact,
-                                ),
-                              ),
-                            ],
-                          ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  if (_requiresDispatch && _fulfillmentStatus == 'pending') ...[
-                    const SizedBox(height: 12),
-                    Container(
-                      margin: const EdgeInsets.only(left: 48),
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Colors.blueGrey.shade50,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Column(
-                        children: [
-                          Row(
-                            children: [
-                              const Icon(Icons.local_shipping_outlined,
-                                  size: 18, color: Colors.blueGrey),
-                              const SizedBox(width: 8),
-                              const Text('Flete / Envío:',
-                                  style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 13)),
-                              const Spacer(),
-                              SizedBox(
-                                width: 120,
-                                height: 36,
-                                child: TextField(
-                                  controller: _shippingCostCtrl,
-                                  keyboardType:
-                                      const TextInputType.numberWithOptions(
-                                          decimal: true),
-                                  textAlign: TextAlign.right,
-                                  decoration: const InputDecoration(
-                                    prefixText: '\$ ',
-                                    isDense: true,
-                                    contentPadding: EdgeInsets.symmetric(
-                                        horizontal: 8, vertical: 8),
-                                    border: OutlineInputBorder(),
-                                  ),
-                                  onChanged: (val) {
-                                    // El listener de _shippingCostCtrl ya dispara setState() y _syncPaymentsWithShipping()
-                                  },
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          Row(
-                            children: [
-                              const Icon(Icons.location_on_outlined,
-                                  size: 18, color: Colors.blueGrey),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: TextField(
-                                  controller: _deliveryAddressCtrl,
-                                  decoration: const InputDecoration(
-                                    labelText:
-                                        'Dirección de Entrega (Opcional)',
-                                    isDense: true,
-                                    contentPadding: EdgeInsets.symmetric(
-                                        horizontal: 8, vertical: 8),
-                                    border: OutlineInputBorder(),
-                                    filled: true,
-                                    fillColor: Colors.white,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ],
-                const SizedBox(height: 8),
-              ],
 
-              const SizedBox(height: 24),
+                              // ── Facturación Fiscal (ARCA / AFIP) ──
+                              _buildFiscalInvoicingSection(),
+                              const SizedBox(height: 16),
 
+                              // Options: Imprimir + Vista Previa
+                              Wrap(
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                alignment: WrapAlignment.spaceBetween,
+                                spacing: 8,
+                                runSpacing: 4,
+                                children: [
+                                  ConstrainedBox(
+                                    constraints: const BoxConstraints(
+                                        minWidth: 160, maxWidth: 320),
+                                    child: CheckboxListTile(
+                                      title: const Text('Imprimir Comprobante',
+                                          style: TextStyle(
+                                              fontWeight: FontWeight.bold)),
+                                      value: _printReceipt,
+                                      activeColor: Colors.blue.shade600,
+                                      contentPadding: EdgeInsets.zero,
+                                      controlAffinity:
+                                          ListTileControlAffinity.leading,
+                                      onChanged: (val) async {
+                                        if (val != null) {
+                                          setState(() => _printReceipt = val);
+                                          final prefs = await SharedPreferences
+                                              .getInstance();
+                                          await prefs.setBool(
+                                              'auto_print_receipt', val);
+                                        }
+                                      },
+                                    ),
+                                  ),
+                                  if (_printReceipt)
+                                    Tooltip(
+                                      message: 'Ver previa antes de imprimir',
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Checkbox(
+                                            value: _showPreview,
+                                            activeColor: Colors.orange,
+                                            onChanged: (val) async {
+                                              if (val != null) {
+                                                setState(
+                                                    () => _showPreview = val);
+                                                final prefs =
+                                                    await SharedPreferences
+                                                        .getInstance();
+                                                await prefs.setBool(
+                                                    'show_preview_receipt',
+                                                    val);
+                                              }
+                                            },
+                                          ),
+                                          const Text('Vista Previa',
+                                              style: TextStyle(fontSize: 13)),
+                                          const SizedBox(width: 8),
+                                        ],
+                                      ),
+                                    ),
+                                ],
+                              ),
                             ],
                           ),
                         ),
@@ -2699,7 +3094,11 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                         padding: const EdgeInsets.symmetric(vertical: 16),
                         disabledBackgroundColor: Colors.grey.shade300,
                       ),
-                      onPressed: (_canSubmit && !provider.isLoading && !_isSubmitting) ? _processCheckout : null, child: (provider.isLoading || _isSubmitting)
+                      onPressed:
+                          (_canSubmit && !provider.isLoading && !_isSubmitting)
+                              ? _processCheckout
+                              : null,
+                      child: (provider.isLoading || _isSubmitting)
                           ? const SizedBox(
                               width: 24,
                               height: 24,
