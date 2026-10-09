@@ -321,7 +321,7 @@ class PosProvider with ChangeNotifier {
   double get netSubtotal {
     double totalNet = 0.0;
     for (final item in _cart) {
-      final rate = item.product.ivaRate ?? 21.0;
+      final rate = 21.0; // Frontend no mapea iva_rate del producto actualmente
       totalNet += item.subtotal / (1 + (rate / 100.0));
     }
     return (totalNet * 100).roundToDouble() / 100.0;

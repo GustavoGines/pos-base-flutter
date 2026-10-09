@@ -3,6 +3,7 @@
 // Do not manually edit this file.
 
 // ignore_for_file: no_leading_underscores_for_library_prefixes
+
 import 'dart:async' as _i2;
 import 'dart:convert' as _i6;
 import 'dart:typed_data' as _i7;
@@ -86,6 +87,32 @@ class MockApiClient extends _i1.Mock implements _i4.ApiClient {
       );
 
   @override
+  set onPermissionDenied(_i2.Future<String?> Function(String?)? value) =>
+      super.noSuchMethod(
+        Invocation.setter(
+          #onPermissionDenied,
+          value,
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  void setGlobalEphemeralPin(
+    String? pin, [
+    Object? owner,
+  ]) =>
+      super.noSuchMethod(
+        Invocation.method(
+          #setGlobalEphemeralPin,
+          [
+            pin,
+            owner,
+          ],
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
   _i2.Future<T> withAdminPin<T>(
     String? pin,
     _i2.Future<T> Function()? action,
@@ -122,6 +149,15 @@ class MockApiClient extends _i1.Mock implements _i4.ApiClient {
               ),
             ),
       ) as _i2.Future<T>);
+
+  @override
+  void markPinAsVerified(String? pin) => super.noSuchMethod(
+        Invocation.method(
+          #markPinAsVerified,
+          [pin],
+        ),
+        returnValueForMissingStub: null,
+      );
 
   @override
   _i2.Future<_i3.StreamedResponse> send(_i3.BaseRequest? request) =>

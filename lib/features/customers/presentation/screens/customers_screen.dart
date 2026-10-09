@@ -110,9 +110,23 @@ class _CustomersScreenState extends State<CustomersScreen> {
                         color: Colors.grey.shade50,
                         border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
                       ),
-                      child: Row(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Expanded(
+                          const Padding(
+                            padding: EdgeInsets.only(bottom: 12),
+                            child: Text(
+                              'Directorio de Clientes',
+                              style: TextStyle(
+                                fontSize: 18, 
+                                fontWeight: FontWeight.bold,
+                                color: Colors.black87,
+                              ),
+                            ),
+                          ),
+                          Row(
+                            children: [
+                              Expanded(
                             child: TextField(
                               decoration: InputDecoration(
                                 hintText: 'Buscar nombre o DNI...',
@@ -170,8 +184,10 @@ class _CustomersScreenState extends State<CustomersScreen> {
                           )
                         ],
                       ),
-                    ),
-                    // Cargando
+                    ],
+                  ),
+                ),
+                // Cargando
                     if (provider.isLoading) 
                        const LinearProgressIndicator(),
 
@@ -302,11 +318,33 @@ class _EmptyStateDetail extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.account_box_outlined, size: 80, color: Colors.grey.shade300),
-          const SizedBox(height: 16),
-          Text('Seleccione un cliente de la lista', style: TextStyle(color: Colors.grey.shade500, fontSize: 18)),
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.blue.withValues(alpha: 0.05),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(Icons.people_alt_outlined, size: 80, color: Colors.blue.shade300),
+          ),
+          const SizedBox(height: 24),
+          Text(
+            'Gestión de Clientes',
+            style: TextStyle(
+              color: Colors.blueGrey.shade800,
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
           const SizedBox(height: 8),
-          Text('Podrá ver su estado de cuenta y registrar pagos', style: TextStyle(color: Colors.grey.shade400, fontSize: 14)),
+          Text(
+            'Seleccione un cliente de la lista para ver su estado de cuenta,\nregistrar pagos o modificar sus datos fiscales.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Colors.blueGrey.shade400,
+              fontSize: 15,
+              height: 1.5,
+            ),
+          ),
         ],
       ),
     );

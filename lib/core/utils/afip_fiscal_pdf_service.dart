@@ -360,7 +360,9 @@ class AfipFiscalPdfService {
     final subtotal = double.tryParse(
             (sale['subtotal'] ?? sale['total'] ?? totalAmount).toString()) ??
         totalAmount;
-    final discountsOrSurcharges = totalAmount - subtotal;
+        
+    final realSubtotal = subtotal - iibbPerceptionAmount;
+    final discountsOrSurcharges = totalAmount - realSubtotal - iibbPerceptionAmount;
 
     // ── 7. Pie Fiscal (CAE y QR) ──────────────────────────────────────────────
     final cae = electronicInvoice['cae']?.toString() ?? '---';
@@ -965,7 +967,7 @@ class AfipFiscalPdfService {
               child: pw.Column(
                 crossAxisAlignment: pw.CrossAxisAlignment.start,
                 children: [
-                  pw.Text('Subtotal: ${_currencyFmt.format(subtotal)}',
+                  pw.Text('Subtotal: ${_currencyFmt.format(realSubtotal)}',
                       style: const pw.TextStyle(fontSize: 8)),
                   if (discountsOrSurcharges != 0)
                     pw.Text(

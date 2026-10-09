@@ -3,6 +3,7 @@
 // Do not manually edit this file.
 
 // ignore_for_file: no_leading_underscores_for_library_prefixes
+
 import 'dart:async' as _i6;
 import 'dart:typed_data' as _i10;
 
@@ -442,6 +443,15 @@ class MockReceiptPrinterService extends _i1.Mock
       );
 
   @override
+  set electronicInvoice(Map<String, dynamic>? value) => super.noSuchMethod(
+        Invocation.setter(
+          #electronicInvoice,
+          value,
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
   _i6.Future<void> initialize() => (super.noSuchMethod(
         Invocation.method(
           #initialize,
@@ -510,6 +520,7 @@ class MockReceiptPrinterService extends _i1.Mock
     double? tenderedAmount = 0.0,
     double? changeAmount = 0.0,
     double? shippingCost = 0.0,
+    double? iibbPerceptionAmount = 0.0,
     String? paperSizeOverride,
   }) =>
       (super.noSuchMethod(
@@ -530,6 +541,7 @@ class MockReceiptPrinterService extends _i1.Mock
             #tenderedAmount: tenderedAmount,
             #changeAmount: changeAmount,
             #shippingCost: shippingCost,
+            #iibbPerceptionAmount: iibbPerceptionAmount,
             #paperSizeOverride: paperSizeOverride,
           },
         ),
@@ -553,6 +565,7 @@ class MockReceiptPrinterService extends _i1.Mock
     double? surchargeAmount = 0.0,
     double? tenderedAmount = 0.0,
     double? changeAmount = 0.0,
+    double? iibbPerceptionAmount = 0.0,
     String? customerName,
     String? paperSizeOverride,
   }) =>
@@ -575,6 +588,7 @@ class MockReceiptPrinterService extends _i1.Mock
             #surchargeAmount: surchargeAmount,
             #tenderedAmount: tenderedAmount,
             #changeAmount: changeAmount,
+            #iibbPerceptionAmount: iibbPerceptionAmount,
             #customerName: customerName,
             #paperSizeOverride: paperSizeOverride,
           },

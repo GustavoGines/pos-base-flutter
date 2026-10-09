@@ -629,6 +629,7 @@ class ReceiptPrinterService {
     double surchargeAmount = 0.0,
     double tenderedAmount = 0.0,
     double changeAmount = 0.0,
+    double iibbPerceptionAmount = 0.0,
     String? customerName,
     String? paperSizeOverride,
   }) async {
