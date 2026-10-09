@@ -427,7 +427,7 @@ class AfipFiscalPdfService {
       netAmount: netAmount,
       ivaAmount: ivaAmount,
       exemptAmount: exemptAmount,
-      subtotal: subtotal,
+      subtotal: realSubtotal,
       discountsOrSurcharges: discountsOrSurcharges,
       totalAmount: totalAmount,
       ivaBreakdown: electronicInvoice['iva_breakdown'] as List<dynamic>?,
@@ -974,7 +974,7 @@ class AfipFiscalPdfService {
               child: pw.Column(
                 crossAxisAlignment: pw.CrossAxisAlignment.start,
                 children: [
-                  pw.Text('Subtotal: ${_currencyFmt.format(realSubtotal)}',
+                  pw.Text('Subtotal: ${_currencyFmt.format(subtotal)}',
                       style: const pw.TextStyle(fontSize: 8)),
                   if (discountsOrSurcharges != 0)
                     pw.Text(
