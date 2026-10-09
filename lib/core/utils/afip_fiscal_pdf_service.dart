@@ -1,4 +1,4 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 import 'dart:typed_data';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
@@ -553,11 +553,6 @@ class AfipFiscalPdfService {
                       pw.SizedBox(height: 3),
                       pw.Text(
                         'Punto de Venta: $ptoVtaFormatted   Comp. Nro: $cbteNroFormatted',
-                        style: pw.TextStyle(
-                            fontSize: 8.5, fontWeight: pw.FontWeight.bold),
-                      ),
-                      pw.Text(
-                        'Comp. N°: $formattedNumber',
                         style: pw.TextStyle(
                             fontSize: 8.5, fontWeight: pw.FontWeight.bold),
                       ),
