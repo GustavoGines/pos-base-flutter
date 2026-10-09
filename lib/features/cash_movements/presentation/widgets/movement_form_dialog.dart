@@ -924,8 +924,9 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                               Builder(builder: (context) {
                                 final supps = supplierProv.suppliers
                                     .where((s) => s.id == _selectedSupplierId);
-                                if (supps.isEmpty)
+                                if (supps.isEmpty) {
                                   return const SizedBox.shrink();
+                                }
                                 final supplier = supps.first;
 
                                 final isDebt = supplier.balance > 0;

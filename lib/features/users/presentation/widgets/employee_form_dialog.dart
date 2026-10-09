@@ -441,12 +441,14 @@ class _EmployeeFormDialogState extends State<EmployeeFormDialog> {
                                   FilteringTextInputFormatter.digitsOnly
                                 ],
                                 validator: (v) {
-                                  if (!_isEditing && (v == null || v.isEmpty))
+                                  if (!_isEditing && (v == null || v.isEmpty)) {
                                     return 'El PIN es requerido';
+                                  }
                                   if (v != null &&
                                       v.isNotEmpty &&
-                                      v.length != 4)
+                                      v.length != 4) {
                                     return 'El PIN debe tener 4 dígitos';
+                                  }
                                   return null;
                                 },
                               ),

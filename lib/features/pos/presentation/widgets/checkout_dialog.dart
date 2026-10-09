@@ -336,8 +336,9 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
             // Si hay un cliente seleccionado, asegurar consistencia para Factura A
             if (lastVoucher == 1 && _fiscalDocType != 80) _fiscalDocType = 80;
             if (lastVoucher == 1 &&
-                _fiscalTaxCondition != 'responsable_inscripto')
+                _fiscalTaxCondition != 'responsable_inscripto') {
               _fiscalTaxCondition = 'responsable_inscripto';
+            }
           }
         }
       });
@@ -1367,8 +1368,9 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                         onChanged: _voucherType == 1
                             ? null
                             : (val) {
-                                if (val != null)
+                                if (val != null) {
                                   setState(() => _fiscalDocType = val);
+                                }
                               },
                       ),
                       const SizedBox(height: 8),
@@ -1432,8 +1434,9 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                         onChanged: _voucherType == 1
                             ? null
                             : (val) {
-                                if (val != null)
+                                if (val != null) {
                                   setState(() => _fiscalDocType = val);
+                                }
                               },
                       ),
                     ),
@@ -1527,8 +1530,9 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                         onChanged: _voucherType == 1
                             ? null
                             : (val) {
-                                if (val != null)
+                                if (val != null) {
                                   setState(() => _fiscalTaxCondition = val);
+                                }
                               },
                       ),
                       const SizedBox(height: 8),
@@ -1585,8 +1589,9 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                         onChanged: _voucherType == 1
                             ? null
                             : (val) {
-                                if (val != null)
+                                if (val != null) {
                                   setState(() => _fiscalTaxCondition = val);
+                                }
                               },
                       ),
                     ),
