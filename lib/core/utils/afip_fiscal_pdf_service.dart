@@ -466,6 +466,10 @@ class AfipFiscalPdfService {
       itemsTableWidget,
       pw.SizedBox(height: 6),
       totalsWidget,
+      if (_buildPaymentSummary(sale) != null) ...[
+        pw.SizedBox(height: 6),
+        _buildPaymentSummary(sale)!,
+      ],
       pw.SizedBox(height: 6),
       footerWidget,
     ];
@@ -1008,6 +1012,60 @@ class AfipFiscalPdfService {
         ),
       );
     }
+  }
+
+  static pw.Widget? _buildPaymentSummary(Map<String, dynamic> sale) {
+    final hasShipping = (double.tryParse(sale['shipping_cost']?.toString() ?? '0') ?? 0.0) > 0.01;
+    final shippingCost = double.tryParse(sale['shipping_cost']?.toString() ?? '0') ?? 0.0;
+    
+    final payments = sale['payments'] as List<dynamic>? ?? [];
+    final hasTendered = (double.tryParse(sale['tendered_amount']?.toString() ?? '0') ?? 0.0) > 0.01;
+    final tendered = double.tryParse(sale['tendered_amount']?.toString() ?? '0') ?? 0.0;
+    final change = double.tryParse(sale['change_amount']?.toString() ?? '0') ?? 0.0;
+
+    final paymentsRows = <pw.Widget>[];
+    if (hasShipping) {
+      paymentsRows.add(pw.Row(
+        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+        children: [pw.Text('Flete / Envio', style: const pw.TextStyle(fontSize: 8)), pw.Text(_currencyFmt.format(shippingCost), style: const pw.TextStyle(fontSize: 8))],
+      ));
+    }
+    for (final p in payments) {
+      final name = p['payment_method']?['name']?.toString() ?? 'Pago';
+      final amt = double.tryParse(p['amount']?.toString() ?? '0') ?? 0.0;
+      paymentsRows.add(pw.Row(
+        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+        children: [pw.Text(name, style: const pw.TextStyle(fontSize: 8)), pw.Text(_currencyFmt.format(amt), style: const pw.TextStyle(fontSize: 8))],
+      ));
+    }
+    if (hasTendered) {
+      paymentsRows.add(pw.Row(
+        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+        children: [pw.Text('Efectivo Recibido', style: const pw.TextStyle(fontSize: 8)), pw.Text(_currencyFmt.format(tendered), style: const pw.TextStyle(fontSize: 8))],
+      ));
+      paymentsRows.add(pw.Row(
+        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+        children: [pw.Text('Su Vuelto', style: const pw.TextStyle(fontSize: 8)), pw.Text(_currencyFmt.format(change), style: const pw.TextStyle(fontSize: 8))],
+      ));
+    }
+
+    if (paymentsRows.isEmpty) return null;
+
+    return pw.Container(
+      decoration: pw.BoxDecoration(
+        border: pw.Border.all(color: PdfColors.black, width: 1.0),
+        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(2)),
+      ),
+      padding: const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Text('Detalle de Pagos:', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
+          pw.SizedBox(height: 3),
+          ...paymentsRows,
+        ],
+      ),
+    );
   }
 
   // ─────────────────────────────────────────────────────────────────────────
