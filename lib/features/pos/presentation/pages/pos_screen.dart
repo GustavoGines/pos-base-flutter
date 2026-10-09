@@ -2771,6 +2771,9 @@ class _PosScreenState extends State<PosScreen> {
                                         if (dialogCtx.mounted) {
                                           SnackBarService.error(dialogCtx, 'No se pudo anular la venta: ${posProvider.errorMessage ?? "Error desconocido"}');
                                         }
+                                        setState(() {
+                                          isVoiding = false;
+                                        });
                                         return;
                                       }
                                       // Restaurar carrito al estado previo a la venta

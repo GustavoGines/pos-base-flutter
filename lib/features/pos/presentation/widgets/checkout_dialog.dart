@@ -131,6 +131,7 @@ class CheckoutDialog extends StatefulWidget {
 }
 
 class _CheckoutDialogState extends State<CheckoutDialog> {
+  bool _isSubmitting = false;
   final List<PaymentLine> _lines = [];
 
   @visibleForTesting
@@ -668,6 +669,9 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   }
 
   Future<void> _processCheckout() async {
+    if (_isSubmitting) return;
+    setState(() => _isSubmitting = true);
+    try {
     if (_hasCuentaCorriente) {
       if (_selectedCustomer == null) {
         SnackBarService.error(
@@ -1028,6 +1032,9 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         SnackBarService.error(
             context, errMsg.isNotEmpty ? errMsg : 'Error al procesar el pago');
       }
+    }
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
     }
   }
 
@@ -2658,10 +2665,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                         padding: const EdgeInsets.symmetric(vertical: 16),
                         disabledBackgroundColor: Colors.grey.shade300,
                       ),
-                      onPressed: (_canSubmit && !provider.isLoading)
-                          ? _processCheckout
-                          : null,
-                      child: provider.isLoading
+                      onPressed: (_canSubmit && !provider.isLoading && !_isSubmitting) ? _processCheckout : null, child: (provider.isLoading || _isSubmitting)
                           ? const SizedBox(
                               width: 24,
                               height: 24,

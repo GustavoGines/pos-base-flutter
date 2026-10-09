@@ -183,18 +183,21 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
                     Expanded(
                       child: filteredSales.isEmpty && !provider.isLoading
                           ? _EmptyStateList()
-                          : ListView.separated(
-                              itemCount: filteredSales.length,
-                              separatorBuilder: (context, index) =>
-                                  const Divider(height: 1),
-                              itemBuilder: (ctx, i) {
-                                final sale = filteredSales[i];
-                                return _SaleListTile(
-                                  sale: sale,
-                                  isSelected: _selectedSale?.id == sale.id,
-                                  onTap: () => _onSaleSelected(sale),
-                                );
-                              },
+                          : IgnorePointer(
+                              ignoring: provider.isLoading,
+                              child: ListView.separated(
+                                itemCount: filteredSales.length,
+                                separatorBuilder: (context, index) =>
+                                    const Divider(height: 1),
+                                itemBuilder: (ctx, i) {
+                                  final sale = filteredSales[i];
+                                  return _SaleListTile(
+                                    sale: sale,
+                                    isSelected: _selectedSale?.id == sale.id,
+                                    onTap: () => _onSaleSelected(sale),
+                                  );
+                                },
+                              ),
                             ),
                     ),
                   ],
@@ -843,7 +846,9 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
   @override
   void didUpdateWidget(covariant _TicketDetailPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.sale.id != widget.sale.id) {
+    if (oldWidget.sale.id != widget.sale.id ||
+        oldWidget.sale.status != widget.sale.status ||
+        oldWidget.sale.electronicInvoice != widget.sale.electronicInvoice) {
       _resolveInvoice();
     }
   }
@@ -1157,6 +1162,10 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
       invoice['cae'] = invoice['credit_note_cae'];
       invoice['cae_expiration'] = invoice['credit_note_expiration'];
       invoice['issued_at'] = invoice['credit_note_issued_at'];
+      final pos = invoice['point_of_sale'] ?? 1;
+      final num = invoice['credit_note_number'] ?? 0;
+      invoice['formatted_number'] = '${pos.toString().padLeft(5, '0')}-${num.toString().padLeft(8, '0')}';
+      invoice['qr_data'] = invoice['credit_note_qr_data'];
     }
 
     try {

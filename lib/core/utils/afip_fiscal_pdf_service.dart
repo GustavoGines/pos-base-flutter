@@ -1,4 +1,4 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 import 'dart:typed_data';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
@@ -432,10 +432,27 @@ class AfipFiscalPdfService {
       caeExpiration: caeExpiration,
     );
 
+        final isCreditNote = [3, 8, 13, 113].contains(voucherType);
+
     return [
       headerWidget,
       pw.SizedBox(height: 6),
       receiverWidget,
+      if (isCreditNote) pw.SizedBox(height: 6),
+      if (isCreditNote) pw.Container(
+        decoration: pw.BoxDecoration(
+          border: pw.Border.all(color: PdfColors.black, width: 1.0),
+          borderRadius: const pw.BorderRadius.all(pw.Radius.circular(2)),
+        ),
+        padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        child: pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+          children: [
+            pw.Text('COMPROBANTE ASOCIADO (RG 1415)', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
+            pw.Text('Factura Original Autorizada', style: pw.TextStyle(fontSize: 8)),
+          ]
+        )
+      ),
       pw.SizedBox(height: 6),
       itemsTableWidget,
       pw.SizedBox(height: 6),

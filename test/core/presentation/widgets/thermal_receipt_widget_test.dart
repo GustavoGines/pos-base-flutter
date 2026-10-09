@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:frontend_desktop/core/presentation/widgets/thermal_receipt_widget.dart';
@@ -118,7 +118,7 @@ void main() {
       expect(tester.takeException(), isNull);
 
       // Verify AFIP fiscal elements exist
-      expect(find.text('FACTURA A N° 00003-00000142'), findsOneWidget);
+      expect(find.text('FACTURA A Nro 00003-00000142'), findsOneWidget);
       expect(find.text('PUNTO DE VENTA: 00003'), findsOneWidget);
       expect(find.text('CAE: 74239847120394'), findsOneWidget);
       expect(find.text('VTO. CAE: 2026-10-25'), findsOneWidget);
@@ -156,7 +156,7 @@ void main() {
       expect(tester.takeException(), isNull);
 
       // Verify AFIP fiscal elements
-      expect(find.text('FACTURA A N° 00003-00000142'), findsOneWidget);
+      expect(find.text('FACTURA A Nro 00003-00000142'), findsOneWidget);
       expect(find.text('PUNTO DE VENTA: 00003'), findsOneWidget);
       expect(find.text('CAE: 74239847120394'), findsOneWidget);
       expect(find.text('VTO. CAE: 2026-10-25'), findsOneWidget);

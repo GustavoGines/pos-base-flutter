@@ -17,7 +17,7 @@ class SalesHistoryRemoteDataSource {
     final uri = Uri.parse('$baseUrl/sales').replace(queryParameters: queryParams);
     final response = await client.get(uri, headers: {'Accept': 'application/json'});
     if (response.statusCode == 200) {
-      final List<dynamic> list = json.decode(response.body);
+      final List<dynamic> list = _safeDecode(response);
       return list.map((j) => SaleRecord.fromJson(j as Map<String, dynamic>)).toList();
     } else {
       throw Exception('Error al obtener ventas (${response.statusCode})');
@@ -35,10 +35,10 @@ class SalesHistoryRemoteDataSource {
       body: json.encode({'cash_shift_id': shiftId}),
     ).timeout(const Duration(seconds: 30));
     if (response.statusCode == 200) {
-      final body = json.decode(response.body) as Map<String, dynamic>;
+      final body = _safeDecode(response) as Map<String, dynamic>;
       return SaleRecord.fromJson(body['sale'] as Map<String, dynamic>);
     } else {
-      final error = json.decode(response.body);
+      final error = _safeDecode(response);
       throw Exception(error['message'] ?? 'Error al anular la venta');
     }
   }
@@ -48,9 +48,16 @@ class SalesHistoryRemoteDataSource {
     final uri = Uri.parse('$baseUrl/sales/$saleId');
     final response = await client.get(uri, headers: {'Accept': 'application/json'});
     if (response.statusCode == 200) {
-      return json.decode(response.body) as Map<String, dynamic>;
+      return _safeDecode(response) as Map<String, dynamic>;
     } else {
       throw Exception('Error al obtener detalle de venta ($saleId): ${response.statusCode}');
+    }
+  }
+  dynamic _safeDecode(http.Response response) {
+    try {
+      return json.decode(response.body);
+    } on FormatException {
+      throw Exception('Error del servidor (${response.statusCode}): respuesta no válida (posible error 500).');
     }
   }
 }

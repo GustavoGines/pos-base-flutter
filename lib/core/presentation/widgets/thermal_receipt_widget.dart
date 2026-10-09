@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:frontend_desktop/features/settings/domain/entities/business_settings.dart';
@@ -239,12 +239,15 @@ class ThermalReceiptWidget extends StatelessWidget {
         invoice['voucher_number']?.toString() ??
         (saleNumber ?? '00001');
     final pv = invoice['point_of_sale']?.toString().padLeft(5, '0') ?? '00001';
+    final vType = int.tryParse(invoice['voucher_type']?.toString() ?? '0') ?? 0;
+    final isNotaCredito = [3, 8, 13, 113].contains(vType);
+    final tipoComp = isNotaCredito ? 'NOTA DE CREDITO' : 'FACTURA';
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         _buildCenterText(
-          'FACTURA $letter N° $nro',
+          '$tipoComp $letter Nro $nro',
           fontSize: 13.5 * factor,
           isBold: true,
         ),

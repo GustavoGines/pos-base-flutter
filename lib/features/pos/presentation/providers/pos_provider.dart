@@ -639,7 +639,7 @@ class PosProvider with ChangeNotifier {
     double? iibbPerceptionAmount,
     double? iibbPerceptionRate,
   }) async {
-    if (_cart.isEmpty) return false;
+    if (_cart.isEmpty || _isLoading) return false;
 
     _isLoading = true;
     _errorMessage = null;
