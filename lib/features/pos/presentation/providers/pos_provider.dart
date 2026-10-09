@@ -896,27 +896,43 @@ class PosProvider with ChangeNotifier {
                                           ),
                                         );
 
-                                        if (confirm == true) {
-                                          setState(() { isVoiding = true; });
-                                          try {
-                                            // 1. Anular en el servidor
-                                            await voidPendingOrder(int.parse(extractedSaleId!), shiftId: shiftId);
-                                            // 2. Restaurar carrito localmente
-                                            _cart.clear();
-                                            _cart.addAll(_lastSaleCart);
-                                            _shippingCost = _lastSaleShippingCost ?? 0.0;
-                                            notifyListeners();
-                                            // 3. Salir de la vista previa indicando anulación
-                                            if (dialogCtx.mounted) {
-                                              SnackBarService.warning(dialogCtx, 'Venta anulada. Los productos han vuelto al carrito.');
-                                              Navigator.pop(dialogCtx, 'annulled');
+                                        final hasPermission = await AdminPinDialog.protectAction(
+                                          dialogCtx,
+                                          action: 'Anulación de Venta',
+                                          permissionKey: AppPermissions.voidSales,
+                                          onAuthorized: () async {
+                                            setState(() { isVoiding = true; });
+                                            try {
+                                              // 1. Anular en el servidor
+                                              final success = await voidPendingOrder(int.parse(extractedSaleId!), shiftId: shiftId);
+                                              if (!success) {
+                                                if (dialogCtx.mounted) {
+                                                  SnackBarService.error(dialogCtx, 'No se pudo anular la venta: ${_errorMessage ?? "Error desconocido"}');
+                                                }
+                                                setState(() { isVoiding = false; });
+                                                return;
+                                              }
+                                              // 2. Restaurar carrito localmente
+                                              _cart.clear();
+                                              _cart.addAll(_lastSaleCart);
+                                              _shippingCost = _lastSaleShippingCost ?? 0.0;
+                                              notifyListeners();
+                                              // 3. Salir de la vista previa indicando anulación
+                                              if (dialogCtx.mounted) {
+                                                SnackBarService.warning(dialogCtx, 'Venta anulada. Los productos han vuelto al carrito.');
+                                                Navigator.pop(dialogCtx, 'annulled');
+                                              }
+                                            } catch (e) {
+                                              if (dialogCtx.mounted) {
+                                                SnackBarService.error(dialogCtx, 'Error al anular: $e');
+                                              }
+                                              setState(() { isVoiding = false; });
                                             }
-                                          } catch (e) {
-                                            if (dialogCtx.mounted) {
-                                              SnackBarService.error(dialogCtx, 'Error al anular: $e');
-                                            }
-                                            setState(() { isVoiding = false; });
-                                          }
+                                          },
+                                        );
+                                        
+                                        if (hasPermission != true) {
+                                          setState(() { isVoiding = false; });
                                         }
                                       },
                                       icon: const Icon(Icons.delete_forever, color: Colors.red),
@@ -1315,26 +1331,43 @@ class PosProvider with ChangeNotifier {
                                             ),
                                           );
                                           if (confirm == true) {
-                                            setState(() => isVoiding = true);
-                                            try {
-                                              await voidPendingOrder(saleId, shiftId: shiftId);
-                                              // Restaurar carrito al estado previo
-                                              _cart.clear();
-                                              _cart.addAll(_lastSaleCart);
-                                              _shippingCost = shippingCost;
-                                              notifyListeners();
-                                              if (dialogCtx.mounted) {
-                                                SnackBarService.warning(
-                                                    dialogCtx,
-                                                    'Venta anulada. Los productos han vuelto al carrito.');
-                                                Navigator.pop(dialogCtx, 'annulled');
-                                              }
-                                            } catch (e) {
-                                              if (dialogCtx.mounted) {
-                                                SnackBarService.error(
-                                                    dialogCtx, 'Error al anular: $e');
-                                                setState(() => isVoiding = false);
-                                              }
+                                            final hasPermission = await AdminPinDialog.protectAction(
+                                              dialogCtx,
+                                              action: 'Anulación de Venta',
+                                              permissionKey: AppPermissions.voidSales,
+                                              onAuthorized: () async {
+                                                setState(() => isVoiding = true);
+                                                try {
+                                                  final success = await voidPendingOrder(saleId, shiftId: shiftId);
+                                                  if (!success) {
+                                                    if (dialogCtx.mounted) {
+                                                      SnackBarService.error(dialogCtx, 'No se pudo anular la venta: ${_errorMessage ?? "Error desconocido"}');
+                                                    }
+                                                    setState(() => isVoiding = false);
+                                                    return;
+                                                  }
+                                                  // Restaurar carrito al estado previo
+                                                  _cart.clear();
+                                                  _cart.addAll(_lastSaleCart);
+                                                  _shippingCost = shippingCost;
+                                                  notifyListeners();
+                                                  if (dialogCtx.mounted) {
+                                                    SnackBarService.warning(
+                                                        dialogCtx,
+                                                        'Venta anulada. Los productos han vuelto al carrito.');
+                                                    Navigator.pop(dialogCtx, 'annulled');
+                                                  }
+                                                } catch (e) {
+                                                  if (dialogCtx.mounted) {
+                                                    SnackBarService.error(
+                                                        dialogCtx, 'Error al anular: $e');
+                                                    setState(() => isVoiding = false);
+                                                  }
+                                                }
+                                              },
+                                            );
+                                            if (hasPermission != true) {
+                                              setState(() => isVoiding = false);
                                             }
                                           }
                                         },

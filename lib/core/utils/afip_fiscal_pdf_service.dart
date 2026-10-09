@@ -167,6 +167,13 @@ class AfipFiscalPdfService {
     final voucherType = int.tryParse(rawVoucherType.toString()) ?? defaultCode;
     final voucherCodeText = 'COD. ${voucherType.toString().padLeft(2, '0')}';
 
+    String voucherTitle = 'FACTURA';
+    if (<int>[3, 8, 13].contains(voucherType)) {
+      voucherTitle = 'NOTA DE CRÉDITO';
+    } else if (<int>[2, 7, 12].contains(voucherType)) {
+      voucherTitle = 'NOTA DE DÉBITO';
+    }
+
     // ── 2. Datos del Emisor ───────────────────────────────────────────────────
     String issuerName = 'Mi Negocio';
     String issuerCuit = '30-00000000-0';
@@ -517,7 +524,7 @@ class AfipFiscalPdfService {
                     crossAxisAlignment: pw.CrossAxisAlignment.start,
                     children: [
                       pw.Text(
-                        'FACTURA $voucherLetter',
+                        '$voucherTitle $voucherLetter',
                         style: pw.TextStyle(
                           fontSize: 14,
                           fontWeight: pw.FontWeight.bold,

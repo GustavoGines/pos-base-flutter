@@ -2763,10 +2763,16 @@ class _PosScreenState extends State<PosScreen> {
                                   permissionKey: AppPermissions.voidSales,
                                   onAuthorized: () async {
                                     try {
-                                      await posProvider.voidPendingOrder(
+                                      final success = await posProvider.voidPendingOrder(
                                         posProvider.lastSaleId,
                                         shiftId: currentShift.id,
                                       );
+                                      if (!success) {
+                                        if (dialogCtx.mounted) {
+                                          SnackBarService.error(dialogCtx, 'No se pudo anular la venta: ${posProvider.errorMessage ?? "Error desconocido"}');
+                                        }
+                                        return;
+                                      }
                                       // Restaurar carrito al estado previo a la venta
                                       posProvider.restoreLastSaleCart();
 

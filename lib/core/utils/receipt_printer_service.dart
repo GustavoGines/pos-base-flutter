@@ -1,4 +1,4 @@
-import 'package:frontend_desktop/core/utils/currency_formatter.dart';
+﻿import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
@@ -320,11 +320,18 @@ class ReceiptPrinterService {
     final invoice = electronicInvoice;
     if (invoice != null) {
       final letter = invoice['voucher_letter']?.toString().toUpperCase() ?? 'B';
+      final type = int.tryParse(invoice['voucher_type']?.toString() ?? '6') ?? 6;
+      String voucherTitle = 'FACTURA';
+      if (<int>[3, 8, 13].contains(type)) {
+        voucherTitle = 'NOTA DE CRÉDITO';
+      } else if (<int>[2, 7, 12].contains(type)) {
+        voucherTitle = 'NOTA DE DÉBITO';
+      }
       final nro = invoice['formatted_number']?.toString() ??
           invoice['voucher_number']?.toString() ??
           (receiptNumber ?? '00001');
       bytes += generator.text(
-        'FACTURA $letter N° $nro',
+        '$voucherTitle $letter N° $nro',
         styles: const PosStyles(
           align: PosAlign.center,
           bold: true,
@@ -653,11 +660,18 @@ class ReceiptPrinterService {
     final invoice = electronicInvoice;
     if (invoice != null) {
       final letter = invoice['voucher_letter']?.toString().toUpperCase() ?? 'B';
+      final type = int.tryParse(invoice['voucher_type']?.toString() ?? '6') ?? 6;
+      String voucherTitle = 'FACTURA';
+      if (<int>[3, 8, 13].contains(type)) {
+        voucherTitle = 'NOTA DE CRÉDITO';
+      } else if (<int>[2, 7, 12].contains(type)) {
+        voucherTitle = 'NOTA DE DÉBITO';
+      }
       final nro = invoice['formatted_number']?.toString() ??
           invoice['voucher_number']?.toString() ??
           (receiptNumber ?? '00001');
       bytes += generator.text(
-        'FACTURA $letter N° $nro',
+        '$voucherTitle $letter N° $nro',
         styles: const PosStyles(
           align: PosAlign.center,
           bold: true,
