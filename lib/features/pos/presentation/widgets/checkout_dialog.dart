@@ -1762,10 +1762,12 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                                 // Mostrar el desglose completo SOLO si hay recargos,
                                 // si no, mostrar solo el total para evitar confusión con "$0.00 Recargo"
                                 child: (_totalSurcharge > 0 || _currentIibbAmount > 0)
-                                    ? Row(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.spaceAround,
-                                        children: [
+                                    ? FittedBox(
+                                        fit: BoxFit.scaleDown,
+                                        child: Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.spaceAround,
+                                          children: [
                                           Column(
                                             children: [
                                               const Text('Subtotal',
@@ -1851,7 +1853,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                                             ],
                                           ),
                                         ],
-                                      )
+                                      ),
+                                    )
                                     : Row(
                                         mainAxisAlignment:
                                             MainAxisAlignment.center,

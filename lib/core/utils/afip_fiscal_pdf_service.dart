@@ -312,7 +312,14 @@ class AfipFiscalPdfService {
             sale['customer']?['address'] ??
             sale['delivery_address'] ??
             '---';
-    final paymentCondition = 'Contado';
+    String paymentCondition = 'Contado';
+    if (sale['payments'] != null && (sale['payments'] as List).isNotEmpty) {
+      final List<dynamic> payments = sale['payments'];
+      final List<String> methods = payments.map((p) => p['payment_method']?['name']?.toString() ?? 'Efectivo').toList();
+      paymentCondition = methods.toSet().join(' + ');
+    } else if (sale['payment_status'] == 'pending') {
+      paymentCondition = 'Cuenta Corriente';
+    }
 
     // ── 5. Ítems de la Venta ──────────────────────────────────────────────────
     final items = sale['items'] as List<dynamic>? ?? [];
