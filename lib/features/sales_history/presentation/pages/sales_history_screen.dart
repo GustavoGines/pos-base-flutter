@@ -947,8 +947,19 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
                 context, 'Ticket #${sale.id} anulado con éxito. Stock restaurado.');
             context.read<CatalogProvider>().fetchCriticalAlerts();
           } else {
-            SnackBarService.error(
-                context, provider.errorMessage ?? 'Error al anular el ticket.');
+            showDialog(
+              context: context,
+              builder: (ctx) => AlertDialog(
+                title: const Text('Error de AFIP / Anulación', style: TextStyle(color: Colors.red)),
+                content: Text(provider.errorMessage ?? 'Error al anular el ticket.'),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('CERRAR'),
+                  )
+                ],
+              ),
+            );
           }
         }
       },
@@ -1105,7 +1116,7 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
     }
   }
 
-  Future<void> _handlePrintAfipInvoice(BuildContext context) async {
+  Future<void> _handlePrintAfipInvoice(BuildContext context, {bool isCreditNote = false}) async {
     final sale = widget.sale;
     final settings = context.read<SettingsProvider>().settings;
     final localTerminal = context.read<LocalTerminalProvider>();
@@ -1131,6 +1142,21 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
             'Esta venta no posee comprobante fiscal electrónico autorizado.');
       }
       return;
+    }
+
+    if (isCreditNote) {
+      if (invoice['credit_note_cae'] == null) {
+        if (context.mounted) {
+          SnackBarService.error(context, 'Esta venta no posee Nota de Crédito autorizada.');
+        }
+        return;
+      }
+      invoice = Map<String, dynamic>.from(invoice);
+      invoice['voucher_type'] = invoice['credit_note_voucher_type'];
+      invoice['voucher_number'] = invoice['credit_note_number'];
+      invoice['cae'] = invoice['credit_note_cae'];
+      invoice['cae_expiration'] = invoice['credit_note_expiration'];
+      invoice['issued_at'] = invoice['credit_note_issued_at'];
     }
 
     try {
@@ -1541,6 +1567,16 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
                         horizontal: 24, vertical: 16),
                   ),
                   onPressed: () => _handlePrintAfipInvoice(context),
+                ),
+              if (sale.isVoided && _electronicInvoice != null && _electronicInvoice!['credit_note_cae'] != null)
+                FilledButton.icon(
+                  icon: const Icon(Icons.assignment_return_outlined),
+                  label: const Text('Imprimir Nota de Crédito'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Colors.purple.shade700,
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                  ),
+                  onPressed: () => _handlePrintAfipInvoice(context, isCreditNote: true),
                 ),
               if (!sale.isVoided) ...[
                 FilledButton.icon(
