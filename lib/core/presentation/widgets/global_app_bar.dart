@@ -49,7 +49,10 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            SizedBox(
+            Container(
+              decoration: BoxDecoration(
+                border: Border(bottom: BorderSide(color: Colors.grey.shade300, width: 1.5)),
+              ),
               height: kToolbarHeight,
               child: Row(
             children: [
@@ -355,7 +358,7 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
               ),
             ],
           ),
-        ), // ← cierra SizedBox(height: kToolbarHeight)
+        ), // ← cierra Container(height: kToolbarHeight)
         if (bottom != null) bottom!,
           ], // ← cierra Column.children
         ), // ← cierra Column
