@@ -621,7 +621,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
             _deliveryAddressCtrl.text = c.deliveryAddress ?? '';
             _syncCustomerWithFiscal(c);
           });
-          context.read<PosProvider>().setLastSelectedCustomer(c);
+          context.read<PosProvider>().selectCustomer(c);
           final localTerminal = context.read<LocalTerminalProvider>();
           if (localTerminal.lockedPriceTier == 'none' &&
               c.defaultPriceTier != null &&
@@ -983,6 +983,11 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         success = await posProvider.processCheckout(
           shiftId: shiftId,
           totalSurcharge: _totalSurcharge,
+          iibbPerceptionAmount:
+              _currentIibbAmount > 0 ? _currentIibbAmount : null,
+          iibbPerceptionRate: _currentIibbAmount > 0
+              ? _selectedCustomer?.iibbPerceptionRate
+              : null,
           payments: paymentsPayload,
           tenderedAmount: _actualTendered,
           changeAmount: _change,
@@ -1320,7 +1325,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                           });
                           context
                               .read<PosProvider>()
-                              .setLastSelectedCustomer(null);
+                              .selectCustomer(null);
                         },
                       ),
                   ],
@@ -1756,49 +1761,74 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                                 ),
                                 // Mostrar el desglose completo SOLO si hay recargos,
                                 // si no, mostrar solo el total para evitar confusión con "$0.00 Recargo"
-                                child: _totalSurcharge > 0
+                                child: (_totalSurcharge > 0 || _currentIibbAmount > 0)
                                     ? Row(
                                         mainAxisAlignment:
                                             MainAxisAlignment.spaceAround,
                                         children: [
                                           Column(
                                             children: [
-                                              const Text('Total Base',
+                                              const Text('Subtotal',
                                                   style: TextStyle(
                                                       fontSize: 14,
                                                       color: Colors.black54)),
                                               Text(
-                                                  '\$${_baseTotal.toCurrency()}',
+                                                  '\$${widget.total.toCurrency()}',
                                                   style: const TextStyle(
                                                       fontSize: 24,
                                                       fontWeight:
                                                           FontWeight.bold)),
                                             ],
                                           ),
-                                          Text('+',
-                                              style: TextStyle(
-                                                  fontSize: 24,
-                                                  color: Colors.black26)),
-                                          Column(
-                                            children: [
-                                              Text('Recargos',
-                                                  style: TextStyle(
-                                                      fontSize: 14,
-                                                      color: Colors
-                                                          .orange.shade700,
-                                                      fontWeight:
-                                                          FontWeight.bold)),
-                                              Text(
-                                                  '\$${_totalSurcharge.toCurrency()}',
-                                                  style: TextStyle(
-                                                      fontSize: 24,
-                                                      fontWeight:
-                                                          FontWeight.bold,
-                                                      color: Colors
-                                                          .orange.shade700)),
-                                            ],
-                                          ),
-                                          Text('=',
+                                          if (_currentIibbAmount > 0) ...[
+                                            const Text('+',
+                                                style: TextStyle(
+                                                    fontSize: 24,
+                                                    color: Colors.black26)),
+                                            Column(
+                                              children: [
+                                                const Text('Perc. IIBB',
+                                                    style: TextStyle(
+                                                        fontSize: 14,
+                                                        color: Colors.black54,
+                                                        fontWeight:
+                                                            FontWeight.bold)),
+                                                Text(
+                                                    '\$${_currentIibbAmount.toCurrency()}',
+                                                    style: const TextStyle(
+                                                        fontSize: 24,
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        color: Colors.black87)),
+                                              ],
+                                            ),
+                                          ],
+                                          if (_totalSurcharge > 0) ...[
+                                            const Text('+',
+                                                style: TextStyle(
+                                                    fontSize: 24,
+                                                    color: Colors.black26)),
+                                            Column(
+                                              children: [
+                                                Text('Recargos',
+                                                    style: TextStyle(
+                                                        fontSize: 14,
+                                                        color: Colors
+                                                            .orange.shade700,
+                                                        fontWeight:
+                                                            FontWeight.bold)),
+                                                Text(
+                                                    '\$${_totalSurcharge.toCurrency()}',
+                                                    style: TextStyle(
+                                                        fontSize: 24,
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        color: Colors
+                                                            .orange.shade700)),
+                                              ],
+                                            ),
+                                          ],
+                                          const Text('=',
                                               style: TextStyle(
                                                   fontSize: 24,
                                                   color: Colors.black26)),

@@ -2153,7 +2153,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       child: const Icon(Icons.account_balance, color: Color(0xFF2E7D32)),
                     ),
                     title: const Text(
-                      'Agente de Percepción IIBB / ATP',
+                      'Agente de Percepción Ingresos Brutos (IIBB)',
                       style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
                     ),
                     subtitle: const Text(

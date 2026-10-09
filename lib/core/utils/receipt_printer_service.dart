@@ -1,4 +1,4 @@
-﻿import 'package:frontend_desktop/core/utils/currency_formatter.dart';
+import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
@@ -250,6 +250,7 @@ class ReceiptPrinterService {
     double tenderedAmount = 0.0,
     double changeAmount = 0.0,
     double shippingCost = 0.0,
+    double iibbPerceptionAmount = 0.0,
     String? paperSizeOverride,
   }) async {
     // Guardia: si la impresora está desactivada, no hacer nada
@@ -435,12 +436,17 @@ class ReceiptPrinterService {
     final grandTotal = total + surchargeAmount;
     final hasTendered = tenderedAmount > 0.01;
 
-    final bool isComplexPayment = paymentDetails.length > 1 || hasSurcharge || hasShipping;
+    final hasPerception = iibbPerceptionAmount > 0.01;
+    final bool isComplexPayment = paymentDetails.length > 1 || hasSurcharge || hasShipping || hasPerception;
 
     if (isComplexPayment) {
-      // Caso 3: Venta Compleja (Múltiples métodos, Envío o Recargos)
-      bytes += _labelValue(generator, 'SUBTOTAL:', '\$${_formatPrice(total - shippingCost)}');
+      // Caso 3: Venta Compleja (Múltiples métodos, Envío, Recargos, o Percepciones)
+      bytes += _labelValue(generator, 'SUBTOTAL:', '\$${_formatPrice(total - shippingCost - iibbPerceptionAmount)}');
       
+      if (hasPerception) {
+        bytes += _labelValue(generator, 'PERC. IIBB:', '\$${_formatPrice(iibbPerceptionAmount)}');
+      }
+
       if (hasShipping) {
         bytes += _labelValue(generator, 'FLETE / ENVIO:', '\$${_formatPrice(shippingCost)}');
       }
@@ -727,8 +733,10 @@ class ReceiptPrinterService {
     final hasShipping = shippingCost > 0.01;
     final grandTotal = total + surchargeAmount;
 
-    if (paymentDetails.length > 1 || hasSurcharge || hasShipping) {
-      bytes += _labelValue(generator, 'SUBTOTAL:', '\$${_formatPrice(total - shippingCost)}');
+    final hasPerception = iibbPerceptionAmount > 0.01;
+    if (paymentDetails.length > 1 || hasSurcharge || hasShipping || hasPerception) {
+      bytes += _labelValue(generator, 'SUBTOTAL:', '\$${_formatPrice(total - shippingCost - iibbPerceptionAmount)}');
+      if (hasPerception) bytes += _labelValue(generator, 'PERC. IIBB:', '\$${_formatPrice(iibbPerceptionAmount)}');
       if (hasShipping) bytes += _labelValue(generator, 'FLETE / ENVIO:', '\$${_formatPrice(shippingCost)}');
       if (paymentDetails.isNotEmpty) {
         bytes += generator.hr(ch: '-');

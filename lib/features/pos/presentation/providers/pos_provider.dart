@@ -319,7 +319,12 @@ class PosProvider with ChangeNotifier {
 
   /// Base imponible neta gravada estimada (Subtotal con IVA / 1.21)
   double get netSubtotal {
-    return (cartSubtotal / 1.21 * 100).roundToDouble() / 100.0;
+    double totalNet = 0.0;
+    for (final item in _cart) {
+      final rate = item.product.ivaRate ?? 21.0;
+      totalNet += item.subtotal / (1 + (rate / 100.0));
+    }
+    return (totalNet * 100).roundToDouble() / 100.0;
   }
   double get cartNetSubtotal => netSubtotal;
 
@@ -359,15 +364,18 @@ class PosProvider with ChangeNotifier {
   /// Helper que permite validar percepción pasando BusinessSettings opcionales
   bool checkAppliesIibbPerception({BusinessSettings? settings, Customer? customer}) {
     final isAgent = settings?.isIibbPerceptionAgent ?? _isIibbPerceptionAgent;
+    final targetCustomer = customer ?? _selectedCustomer;
     return isAgent &&
-        (_selectedCustomer?.appliesIibbPerception == true) &&
-        ((_selectedCustomer?.iibbPerceptionRate ?? 0.0) > 0);
+        (targetCustomer?.appliesIibbPerception == true) &&
+        ((targetCustomer?.iibbPerceptionRate ?? 0.0) > 0);
   }
 
   /// Helper que calcula el monto de percepción pasando BusinessSettings opcionales
   double calculateIibbPerceptionAmount({BusinessSettings? settings, Customer? customer}) {
     if (!checkAppliesIibbPerception(settings: settings, customer: customer)) return 0.0;
-    return ((netSubtotal * (iibbPerceptionRate / 100.0)) * 100).roundToDouble() / 100.0;
+    final targetCustomer = customer ?? _selectedCustomer;
+    final rate = targetCustomer?.iibbPerceptionRate ?? 0.0;
+    return ((netSubtotal * (rate / 100.0)) * 100).roundToDouble() / 100.0;
   }
 
   // Garantiza que siempre tengamos un printerService, incluso si no se inyecta
@@ -1019,6 +1027,7 @@ class PosProvider with ChangeNotifier {
               tenderedAmount: tenderedAmount,
               changeAmount: changeAmount,
               shippingCost: shippingCostSnapshot,
+              iibbPerceptionAmount: effectivePerceptionAmount,
             );
           }
         }
@@ -1428,6 +1437,7 @@ class PosProvider with ChangeNotifier {
                 surchargeAmount: totalSurcharge,
                 tenderedAmount: tenderedAmount,
                 changeAmount: changeAmount,
+                iibbPerceptionAmount: iibbPerceptionAmount ?? 0.0,
               );
             }
           } catch (e) {
