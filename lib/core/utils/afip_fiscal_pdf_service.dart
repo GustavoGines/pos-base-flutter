@@ -383,6 +383,7 @@ class AfipFiscalPdfService {
 
     // ── 8. Construcción de Secciones Visuales ──────────────────────────────────
     final headerWidget = _buildAfipHeader(
+      voucherTitle: voucherTitle,
       voucherLetter: voucherLetter,
       voucherCodeText: voucherCodeText,
       issuerName: issuerName,
@@ -448,6 +449,7 @@ class AfipFiscalPdfService {
   // Componente 1: Cabecera Oficial AFIP RG 1415
   // ─────────────────────────────────────────────────────────────────────────
   static pw.Widget _buildAfipHeader({
+    required String voucherTitle,
     required String voucherLetter,
     required String voucherCodeText,
     required String issuerName,

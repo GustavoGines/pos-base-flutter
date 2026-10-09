@@ -21,6 +21,8 @@ import 'package:frontend_desktop/core/utils/a4_split_pdf_service.dart';
 import 'package:frontend_desktop/core/utils/afip_fiscal_pdf_service.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import 'package:frontend_desktop/features/customers/models/customer_model.dart';
+import 'package:frontend_desktop/features/auth/presentation/widgets/admin_pin_dialog.dart';
+import 'package:frontend_desktop/core/constants/app_permissions.dart';
 
 class PosProvider with ChangeNotifier {
   final ProcessSaleUseCase processSaleUseCase;
@@ -896,11 +898,12 @@ class PosProvider with ChangeNotifier {
                                           ),
                                         );
 
-                                        final hasPermission = await AdminPinDialog.protectAction(
-                                          dialogCtx,
-                                          action: 'Anulación de Venta',
-                                          permissionKey: AppPermissions.voidSales,
-                                          onAuthorized: () async {
+                                        if (confirm == true) {
+                                          final hasPermission = await AdminPinDialog.protectAction(
+                                            dialogCtx,
+                                            action: 'Anulación de Venta',
+                                            permissionKey: AppPermissions.voidSales,
+                                            onAuthorized: () async {
                                             setState(() { isVoiding = true; });
                                             try {
                                               // 1. Anular en el servidor
@@ -933,6 +936,7 @@ class PosProvider with ChangeNotifier {
                                         
                                         if (hasPermission != true) {
                                           setState(() { isVoiding = false; });
+                                        }
                                         }
                                       },
                                       icon: const Icon(Icons.delete_forever, color: Colors.red),
