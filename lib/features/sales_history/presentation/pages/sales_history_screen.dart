@@ -19,6 +19,7 @@ import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
 import 'package:frontend_desktop/features/catalog/presentation/providers/catalog_provider.dart';
 import 'package:frontend_desktop/features/cash_register/presentation/providers/cash_register_provider.dart';
 import 'package:frontend_desktop/core/utils/a4_split_pdf_service.dart';
+import 'package:frontend_desktop/core/utils/afip_fiscal_pdf_service.dart';
 import 'package:printing/printing.dart';
 
 import 'package:frontend_desktop/core/presentation/widgets/print_format_selector.dart';
@@ -820,13 +821,69 @@ class _EmptyStateDetail extends StatelessWidget {
 
 // ─── Panel Derecho: Detalle del Ticket ───────────────────────────────────────
 
-class _TicketDetailPanel extends StatelessWidget {
+class _TicketDetailPanel extends StatefulWidget {
   final SaleRecord sale;
   final SalesHistoryProvider provider;
 
   const _TicketDetailPanel({required this.sale, required this.provider});
 
+  @override
+  State<_TicketDetailPanel> createState() => _TicketDetailPanelState();
+}
+
+class _TicketDetailPanelState extends State<_TicketDetailPanel> {
+  Map<String, dynamic>? _electronicInvoice;
+
+  @override
+  void initState() {
+    super.initState();
+    _resolveInvoice();
+  }
+
+  @override
+  void didUpdateWidget(covariant _TicketDetailPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.sale.id != widget.sale.id) {
+      _resolveInvoice();
+    }
+  }
+
+  Future<void> _resolveInvoice() async {
+    if (widget.sale.electronicInvoice != null) {
+      if (mounted) {
+        setState(() {
+          _electronicInvoice = widget.sale.electronicInvoice;
+        });
+      }
+      return;
+    }
+
+    if (widget.sale.hasCae ||
+        widget.sale.invoiceStatus == 'invoiced' ||
+        widget.sale.status == 'completed' ||
+        widget.sale.status == 'active') {
+      try {
+        final inv =
+            await context.read<PosProvider>().fetchElectronicInvoice(widget.sale.id);
+        if (mounted) {
+          setState(() {
+            _electronicInvoice = inv;
+          });
+        }
+      } catch (_) {
+      }
+    } else {
+      if (mounted) {
+        setState(() {
+          _electronicInvoice = null;
+        });
+      }
+    }
+  }
+
   Future<void> _handleVoid(BuildContext context) async {
+    final sale = widget.sale;
+    final provider = widget.provider;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -898,8 +955,339 @@ class _TicketDetailPanel extends StatelessWidget {
     );
   }
 
+  Future<void> _handlePrintInternalCopy(BuildContext context) async {
+    final sale = widget.sale;
+    final settings = context.read<SettingsProvider>().settings;
+    final localTerminal = context.read<LocalTerminalProvider>();
+    if (settings == null) {
+      SnackBarService.error(context, 'Configuración de impresora no disponible.');
+      return;
+    }
+
+    try {
+      final format = await PrintFormatSelector.show(context);
+      if (format == null) return;
+      final isA4 = format == 'a4';
+
+      if (isA4) {
+        final saleJson = {
+          'id': sale.id,
+          'electronic_invoice': null,
+          'total': sale.total,
+          'total_amount': sale.total,
+          'surcharge_amount': sale.surchargeTotal,
+          'tendered_amount': sale.grandTotal,
+          'change_amount': 0,
+          'customer_name': 'Consumidor Final',
+          'created_at': sale.createdAt.toIso8601String(),
+          'cashier': {'name': sale.cashierName ?? sale.userName ?? 'Cajero'},
+          'cashier_name': sale.cashierName ?? sale.userName ?? 'Cajero',
+          'user': {'name': sale.userName ?? 'Cajero'},
+          'userName': sale.userName ?? 'Cajero',
+          'items': sale.items.map((i) => {
+            'subtotal': i.subtotal,
+            'quantity': i.quantity,
+            'unit_price': i.unitPrice,
+            'product_name': i.productName,
+            'product': {
+              'name': i.productName,
+              'is_sold_by_weight': i.isSoldByWeight,
+            }
+          }).toList(),
+          'payments': sale.payments.map((p) => {
+            'amount': p.baseAmount,
+            'payment_method': {
+              'name': p.methodName,
+            }
+          }).toList(),
+        };
+
+        final pdfBytes = await A4SplitPdfService.generateA4SingleReceipt(
+          sale: saleJson,
+          businessName: settings.companyName ?? 'MI NEGOCIO',
+          businessAddress: settings.address,
+          phone: settings.phone ?? '',
+          cuit: settings.taxId ?? '',
+          vendorName: sale.userName,
+          paperSize: localTerminal.pdfPaperSize,
+        );
+
+        if (context.mounted) {
+          await showDialog(
+            context: context,
+            builder: (ctx) => Dialog(
+              child: SizedBox(
+                width: 800,
+                height: 600,
+                child: Column(
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Padding(
+                          padding: EdgeInsets.all(16.0),
+                          child: Text('Vista Previa de Copia Interna',
+                              style: TextStyle(
+                                  fontSize: 18, fontWeight: FontWeight.bold)),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close),
+                          onPressed: () => Navigator.pop(ctx),
+                        ),
+                      ],
+                    ),
+                    Expanded(
+                      child: PdfPreview(
+                        build: (format) async => pdfBytes,
+                        canChangePageFormat: false,
+                        canChangeOrientation: false,
+                        pdfFileName: 'Copia_Ticket_${sale.id}.pdf',
+                        canDebug: false,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }
+      } else {
+        final itemsParaImprimir = sale.items.map((item) {
+          return CartItem(
+            product: Product(
+              id: item.productId ?? 0,
+              name: item.productName,
+              sellingPrice: item.unitPrice,
+              costPrice: item.unitPrice,
+              isSoldByWeight: item.isSoldByWeight,
+              stock: 0,
+              internalCode: '',
+              barcode: '',
+              active: true,
+            ),
+            quantity: item.quantity,
+          );
+        }).toList();
+
+        final paymentDetails = sale.payments.map((p) => {
+          'name': p.methodName,
+          'amount': p.baseAmount,
+          '_isCash': p.isCash,
+        }).toList()
+          ..sort((a, b) {
+            final aCash = a['_isCash'] as bool;
+            final bCash = b['_isCash'] as bool;
+            if (aCash == bCash) return 0;
+            return aCash ? -1 : 1;
+          });
+
+        ReceiptPrinterService.instance.electronicInvoice = null;
+        await ReceiptPrinterService.instance.printSaleTicket(
+          items: itemsParaImprimir,
+          total: sale.grandTotal,
+          settings: settings,
+          localTerminal: localTerminal,
+          paymentDetails: paymentDetails,
+          receiptNumber: sale.id.toString(),
+          userName: sale.userName,
+          cashierName: sale.cashierName,
+          surchargeAmount: sale.surchargeTotal,
+        );
+        if (context.mounted) {
+          SnackBarService.success(
+              context, 'Copia Interna #${sale.id} enviada a la impresora.');
+        }
+      }
+    } catch (e) {
+      if (context.mounted) {
+        SnackBarService.error(context, 'Error de impresión: $e');
+      }
+    }
+  }
+
+  Future<void> _handlePrintAfipInvoice(BuildContext context) async {
+    final sale = widget.sale;
+    final settings = context.read<SettingsProvider>().settings;
+    final localTerminal = context.read<LocalTerminalProvider>();
+    if (settings == null) {
+      SnackBarService.error(context, 'Configuración de impresora no disponible.');
+      return;
+    }
+
+    Map<String, dynamic>? invoice = _electronicInvoice ?? sale.electronicInvoice;
+    if (invoice == null || invoice['cae'] == null) {
+      try {
+        final posProvider = context.read<PosProvider>();
+        invoice = await posProvider.fetchElectronicInvoice(sale.id);
+        if (mounted && invoice != null) {
+          setState(() => _electronicInvoice = invoice);
+        }
+      } catch (_) {}
+    }
+
+    if (invoice == null || (invoice['cae'] ?? '').toString().trim().isEmpty) {
+      if (context.mounted) {
+        SnackBarService.error(context,
+            'Esta venta no posee comprobante fiscal electrónico autorizado.');
+      }
+      return;
+    }
+
+    try {
+      final format = await PrintFormatSelector.show(context);
+      if (format == null) return;
+      final isA4 = format == 'a4';
+
+      if (isA4) {
+        final salePayload = {
+          'id': sale.id,
+          'electronic_invoice': invoice,
+          'total': sale.total,
+          'total_amount': sale.total,
+          'surcharge_amount': sale.surchargeTotal,
+          'tendered_amount': sale.grandTotal,
+          'change_amount': 0,
+          'customer_name': invoice['receiver_name'] ?? 'Consumidor Final',
+          'customer': {
+            'name': invoice['receiver_name'] ?? 'Consumidor Final',
+            'tax_id': invoice['doc_number'] ?? '---',
+            'address': invoice['receiver_address'] ?? '---',
+          },
+          'created_at': sale.createdAt.toIso8601String(),
+          'cashier': {'name': sale.cashierName ?? sale.userName ?? 'Cajero'},
+          'cashier_name': sale.cashierName ?? sale.userName ?? 'Cajero',
+          'user': {'name': sale.userName ?? 'Cajero'},
+          'userName': sale.userName ?? 'Cajero',
+          'iibb_perception_amount': sale.iibbPerceptionAmount,
+          'iibb_perception_rate': sale.iibbPerceptionRate,
+          'items': sale.items.map((i) => {
+            'subtotal': i.subtotal,
+            'quantity': i.quantity,
+            'unit_price': i.unitPrice,
+            'product_name': i.productName,
+            'product': {
+              'name': i.productName,
+              'is_sold_by_weight': i.isSoldByWeight,
+            }
+          }).toList(),
+          'payments': sale.payments.map((p) => {
+            'amount': p.baseAmount,
+            'payment_method': {
+              'name': p.methodName,
+            }
+          }).toList(),
+        };
+
+        final pdfBytes = await AfipFiscalPdfService.generateFiscalInvoice(
+          sale: salePayload,
+          electronicInvoice: invoice,
+          businessSettings: settings,
+          paperSize: localTerminal.pdfPaperSize,
+        );
+
+        if (context.mounted) {
+          await showDialog(
+            context: context,
+            builder: (ctx) => Dialog(
+              child: SizedBox(
+                width: 800,
+                height: 600,
+                child: Column(
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: Text(
+                            'Factura AFIP #${invoice?['formatted_number'] ?? sale.id}',
+                            style: const TextStyle(
+                                fontSize: 18, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close),
+                          onPressed: () => Navigator.pop(ctx),
+                        ),
+                      ],
+                    ),
+                    Expanded(
+                      child: PdfPreview(
+                        build: (format) async => pdfBytes,
+                        canChangePageFormat: false,
+                        canChangeOrientation: false,
+                        pdfFileName: 'Factura_AFIP_${sale.id}.pdf',
+                        canDebug: false,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }
+      } else {
+        final itemsParaImprimir = sale.items.map((item) {
+          return CartItem(
+            product: Product(
+              id: item.productId ?? 0,
+              name: item.productName,
+              sellingPrice: item.unitPrice,
+              costPrice: item.unitPrice,
+              isSoldByWeight: item.isSoldByWeight,
+              stock: 0,
+              internalCode: '',
+              barcode: '',
+              active: true,
+            ),
+            quantity: item.quantity,
+          );
+        }).toList();
+
+        final paymentDetails = sale.payments.map((p) => {
+          'name': p.methodName,
+          'amount': p.baseAmount,
+          '_isCash': p.isCash,
+        }).toList()
+          ..sort((a, b) {
+            final aCash = a['_isCash'] as bool;
+            final bCash = b['_isCash'] as bool;
+            if (aCash == bCash) return 0;
+            return aCash ? -1 : 1;
+          });
+
+        ReceiptPrinterService.instance.electronicInvoice = invoice;
+        await ReceiptPrinterService.instance.printSaleTicket(
+          items: itemsParaImprimir,
+          total: sale.grandTotal,
+          settings: settings,
+          localTerminal: localTerminal,
+          paymentDetails: paymentDetails,
+          receiptNumber: sale.id.toString(),
+          userName: sale.userName,
+          cashierName: sale.cashierName,
+          surchargeAmount: sale.surchargeTotal,
+        );
+        if (context.mounted) {
+          SnackBarService.success(
+              context, 'Factura AFIP #${sale.id} enviada a la impresora.');
+        }
+      }
+    } catch (e) {
+      if (context.mounted) {
+        SnackBarService.error(context, 'Error de impresión fiscal: $e');
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final sale = widget.sale;
+    final provider = widget.provider;
+    final hasCae = sale.hasCae ||
+        (_electronicInvoice != null &&
+            (_electronicInvoice!['cae'] != null &&
+                _electronicInvoice!['cae'].toString().trim().isNotEmpty));
     final dateStr =
         DateFormat('dd/MM/yyyy HH:mm:ss').format(sale.createdAt);
     final hasSurcharge = sale.surchargeTotal > 0;
@@ -1114,7 +1502,7 @@ class _TicketDetailPanel extends StatelessWidget {
             spacing: 16,
             runSpacing: 16,
             children: [
-              if (sale.status == 'pending' || sale.status == 'active')
+              if (!hasCae && (sale.status == 'pending' || sale.status == 'active'))
                 FilledButton.icon(
                   icon: const Icon(Icons.cloud_upload_outlined),
                   label: const Text('Emitir a AFIP'),
@@ -1136,164 +1524,24 @@ class _TicketDetailPanel extends StatelessWidget {
                   },
                 ),
               OutlinedButton.icon(
-                icon: const Icon(Icons.print_outlined),
-                label: const Text('Imprimir Copia'),
+                icon: const Icon(Icons.receipt_long_outlined),
+                label: const Text('Imprimir Copia Interna'),
                 style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(
                         horizontal: 24, vertical: 16)),
-                onPressed: () async {
-                  final settings =
-                      context.read<SettingsProvider>().settings;
-                  final localTerminal = context.read<LocalTerminalProvider>();
-                  if (settings != null) {
-                    try {
-                      final format = await PrintFormatSelector.show(context);
-                      if (format == null) return;
-                      final isA4 = format == 'a4';
-
-                      Map<String, dynamic>? electronicInvoice;
-                      try {
-                        final posProvider = context.read<PosProvider>();
-                        electronicInvoice = await posProvider.fetchElectronicInvoice(sale.id);
-                      } catch (_) {}
-
-                      if (isA4) {
-                        final saleJson = {
-                          'id': sale.id,
-                          'electronic_invoice': electronicInvoice,
-                          'total': sale.total,
-                          'total_amount': sale.total,
-                          'surcharge_amount': sale.surchargeTotal,
-                          'tendered_amount': sale.grandTotal,
-                          'change_amount': 0,
-                          'customer_name': 'Consumidor Final',
-                          'items': sale.items.map((i) => {
-                            'subtotal': i.subtotal,
-                            'quantity': i.quantity,
-                            'product_name': i.productName,
-                            'product': {
-                               'name': i.productName,
-                               'is_sold_by_weight': i.isSoldByWeight,
-                            }
-                          }).toList(),
-                          'payments': sale.payments.map((p) => {
-                            'amount': p.baseAmount,
-                            'payment_method': {
-                              'name': p.methodName,
-                            }
-                          }).toList(),
-                        };
-
-                        final pdfBytes = await A4SplitPdfService.generateA4SingleReceipt(
-                          sale: saleJson,
-                          businessName: settings.companyName ?? 'MI NEGOCIO',
-                          businessAddress: settings.address,
-                          phone: settings.phone ?? '',
-                          cuit: settings.taxId ?? '',
-                          vendorName: sale.userName,
-                          paperSize: localTerminal.pdfPaperSize,
-                        );
-
-                        if (context.mounted) {
-                          await showDialog(
-                            context: context,
-                            builder: (ctx) {
-                              return Dialog(
-                                child: SizedBox(
-                                  width: 800,
-                                  height: 600,
-                                  child: Column(
-                                    children: [
-                                      Row(
-                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                        children: [
-                                          const Padding(
-                                            padding: EdgeInsets.all(16.0),
-                                            child: Text('Vista Previa de Copia', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                                          ),
-                                          IconButton(
-                                            icon: const Icon(Icons.close),
-                                            onPressed: () => Navigator.pop(ctx),
-                                          ),
-                                        ],
-                                      ),
-                                      Expanded(
-                                        child: PdfPreview(
-                                          build: (format) async => pdfBytes,
-                                          canChangePageFormat: false,
-                                          canChangeOrientation: false,
-                                          pdfFileName: 'Copia_Ticket_${sale.id}.pdf',
-                                          canDebug: false,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              );
-                            },
-                          );
-                        }
-                      } else {
-                        final itemsParaImprimir = sale.items.map((item) {
-                          return CartItem(
-                            product: Product(
-                              id: item.productId ?? 0,
-                              name: item.productName,
-                              sellingPrice: item.unitPrice,
-                              costPrice: item.unitPrice,
-                              isSoldByWeight: item.isSoldByWeight,
-                              stock: 0,
-                              internalCode: '',
-                              barcode: '',
-                              active: true,
-                            ),
-                            quantity: item.quantity,
-                          );
-                        }).toList();
-
-                        final paymentDetails = sale.payments.map((p) => {
-                          'name': p.methodName,
-                          'amount': p.baseAmount,
-                          '_isCash': p.isCash,
-                        }).toList()
-                          ..sort((a, b) {
-                            final aCash = a['_isCash'] as bool;
-                            final bCash = b['_isCash'] as bool;
-                            if (aCash == bCash) return 0;
-                            return aCash ? -1 : 1;
-                          });
-
-                        ReceiptPrinterService.instance.electronicInvoice = electronicInvoice;
-                        await ReceiptPrinterService.instance.printSaleTicket(
-                          items: itemsParaImprimir,
-                          // BUG SH-3 FIX: usar grandTotal (neto + recargo bancario) para que
-                          // la copia del ticket refleje exactamente lo cobrado al cliente.
-                          total: sale.grandTotal,
-                          settings: settings,
-                          localTerminal: localTerminal,
-                          paymentDetails: paymentDetails,
-                          receiptNumber: sale.id.toString(),
-                          userName: sale.userName,
-                          cashierName: sale.cashierName,
-                          surchargeAmount: sale.surchargeTotal,
-                        );
-                        if (context.mounted) {
-                          SnackBarService.success(context,
-                              'Ticket #${sale.id} enviado a la impresora.');
-                        }
-                      }
-                    } catch (e) {
-                      if (context.mounted) {
-                        SnackBarService.error(
-                            context, 'Error de impresión: $e');
-                      }
-                    }
-                  } else {
-                    SnackBarService.error(
-                        context, 'Configuración de impresora no disponible.');
-                  }
-                },
+                onPressed: () => _handlePrintInternalCopy(context),
               ),
+              if (hasCae)
+                FilledButton.icon(
+                  icon: const Icon(Icons.verified_outlined),
+                  label: const Text('Imprimir Factura AFIP'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Colors.teal.shade700,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 24, vertical: 16),
+                  ),
+                  onPressed: () => _handlePrintAfipInvoice(context),
+                ),
               if (!sale.isVoided) ...[
                 FilledButton.icon(
                   icon: provider.isLoading

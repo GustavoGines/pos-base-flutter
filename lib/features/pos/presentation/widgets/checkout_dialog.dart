@@ -240,19 +240,21 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     final docNum = _fiscalDocNumberCtrl.text.trim();
     if (_voucherType == 1) {
       if (_fiscalDocType != 80) return false;
-      if (!AfipModulo11.isValid(docNum)) return false;
+      if (docNum.isEmpty || !AfipModulo11.isValid(docNum)) return false;
       if (_fiscalTaxCondition != 'responsable_inscripto') return false;
       if (_fiscalReceiverNameCtrl.text.trim().isEmpty) return false;
       return true;
     } else if (_voucherType == 6 || _voucherType == 11) {
-      if ((_fiscalDocType == 80 || _fiscalDocType == 86) &&
-          !AfipModulo11.isValid(docNum)) {
-        return false;
+      if (_fiscalDocType == 80 || _fiscalDocType == 86) {
+        if (docNum.isEmpty || !AfipModulo11.isValid(docNum)) {
+          return false;
+        }
       }
-      if (_fiscalDocType == 96 &&
-          docNum.isNotEmpty &&
-          docNum.replaceAll(RegExp(r'\D'), '').length < 7) {
-        return false;
+      if (_fiscalDocType == 96) {
+        final digits = docNum.replaceAll(RegExp(r'\D'), '');
+        if (digits.length < 7 || digits.length > 8) {
+          return false;
+        }
       }
       return true;
     }

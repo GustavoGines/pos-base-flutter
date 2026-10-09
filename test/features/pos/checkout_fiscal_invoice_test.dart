@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
@@ -84,6 +84,18 @@ class FakeFiscalPosProvider extends ChangeNotifier implements PosProvider {
   @override
   String? get printerWarning => null;
 
+  @override
+  double calculateIibbPerceptionAmount({BusinessSettings? settings, Customer? customer, double? overrideTotal}) => 0.0;
+
+  @override
+  bool checkAppliesIibbPerception({BusinessSettings? settings, Customer? customer}) => false;
+
+  @override
+  double get iibbPerceptionAmount => 0.0;
+
+  @override
+  double get iibbPerceptionRate => 0.0;
+
   Map<String, dynamic>? capturedFiscalInvoiceData;
   List<Map<String, dynamic>>? capturedPayments;
 
@@ -164,6 +176,7 @@ class FakeSettingsProvider extends ChangeNotifier implements SettingsProvider {
     companyName: 'Comercio Fiscal Test',
     taxId: '30-50001091-2',
     address: 'Av. Libertador 1234, CABA',
+    afipEnabled: true,
     features: FeatureFlags(fastPos: true, logistics: false),
   );
 
@@ -336,7 +349,7 @@ void main() {
 
       // Verifica el toggle de comprobante
       expect(find.byKey(const Key('fiscal_mode_segmented_button')), findsOneWidget);
-      expect(find.text('Ticket ComÃºn'), findsOneWidget);
+      expect(find.text('Ticket Común'), findsOneWidget);
       expect(find.text('Factura Fiscal ARCA'), findsOneWidget);
 
       // Los controles de Factura Fiscal estÃ¡n ocultos inicialmente
@@ -393,21 +406,21 @@ void main() {
         await tester.enterText(find.byKey(const Key('fiscal_receiver_name_field')), 'Empresa Falsa SA');
       await tester.pumpAndSettle();
 
-      // Feedback en tiempo real muestra error de MÃ³dulo 11
+      // Feedback en tiempo real muestra error de Módulo 11
       expect(find.byKey(const Key('cuit_invalid_feedback')), findsOneWidget);
-      expect(find.text('CUIT/CUIL invÃ¡lido (falla MÃ³dulo 11)'), findsOneWidget);
+      expect(find.text('CUIT/CUIL inválido (falla Módulo 11)'), findsOneWidget);
 
       submitBtn = tester.widget<ElevatedButton>(find.widgetWithText(ElevatedButton, 'CONFIRMAR PAGO'));
       expect(submitBtn.onPressed, isNull);
 
-      // Ingresar CUIT vÃ¡lido
+      // Ingresar CUIT válido
       await tester.ensureVisible(find.byKey(const Key('fiscal_doc_number_field')));
         await tester.enterText(find.byKey(const Key('fiscal_doc_number_field')), '30-50001091-2');
       await tester.pumpAndSettle();
 
-      // Feedback muestra Ã©xito de MÃ³dulo 11
+      // Feedback muestra éxito de Módulo 11
       expect(find.byKey(const Key('cuit_valid_feedback')), findsOneWidget);
-      expect(find.text('CUIT/CUIL vÃ¡lido (MÃ³dulo 11 OK)'), findsOneWidget);
+      expect(find.text('CUIT/CUIL válido (Módulo 11 OK)'), findsOneWidget);
 
       // Ahora el botÃ³n debe estar habilitado
       submitBtn = tester.widget<ElevatedButton>(find.widgetWithText(ElevatedButton, 'CONFIRMAR PAGO'));

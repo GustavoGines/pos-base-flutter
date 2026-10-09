@@ -84,6 +84,8 @@ class SaleRecord {
   final String? cashierName;
   final double? iibbPerceptionAmount;
   final double? iibbPerceptionRate;
+  final String invoiceStatus;
+  final Map<String, dynamic>? electronicInvoice;
 
   const SaleRecord({
     required this.id,
@@ -99,10 +101,16 @@ class SaleRecord {
     this.cashierName,
     this.iibbPerceptionAmount,
     this.iibbPerceptionRate,
+    this.invoiceStatus = 'none',
+    this.electronicInvoice,
   });
 
   bool get isVoided => status == 'voided';
   bool get isPending => status == 'pending';
+  bool get hasCae =>
+      electronicInvoice != null &&
+      (electronicInvoice!['cae'] != null &&
+          electronicInvoice!['cae'].toString().trim().isNotEmpty);
 
   /// Sumatoria real de recargos de todos los pagos (calculado desde sale_payments).
   double get surchargeTotal =>
@@ -154,6 +162,9 @@ class SaleRecord {
       iibbPerceptionRate: json['iibb_perception_rate'] != null
           ? double.tryParse(json['iibb_perception_rate'].toString())
           : null,
+      invoiceStatus: json['invoice_status'] as String? ?? 'none',
+      electronicInvoice: json['electronic_invoice'] as Map<String, dynamic>? ??
+          json['electronicInvoice'] as Map<String, dynamic>?,
     );
   }
 }

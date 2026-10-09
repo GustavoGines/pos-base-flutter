@@ -256,11 +256,34 @@ class AfipFiscalPdfService {
         sale['created_at'] ??
         DateTime.now());
 
-    final issueTime = sale['created_at'] != null 
-        ? DateFormat('HH:mm').format(DateTime.parse(sale['created_at'].toString()).toLocal()) 
-        : DateFormat('HH:mm').format(DateTime.now());
-        
-    final cashierName = sale['cashier']?['name']?.toString() ?? sale['user']?['name']?.toString() ?? 'Caja';
+    String issueTime;
+    try {
+      final rawCreatedAt = sale['created_at'] ?? electronicInvoice['issued_at'];
+      if (rawCreatedAt != null) {
+        if (rawCreatedAt is DateTime) {
+          issueTime = DateFormat('HH:mm').format(rawCreatedAt.toLocal());
+        } else {
+          final str = rawCreatedAt.toString().trim();
+          if (str.isNotEmpty) {
+            issueTime = DateFormat('HH:mm').format(DateTime.parse(str).toLocal());
+          } else {
+            issueTime = DateFormat('HH:mm').format(DateTime.now());
+          }
+        }
+      } else {
+        issueTime = DateFormat('HH:mm').format(DateTime.now());
+      }
+    } catch (_) {
+      issueTime = DateFormat('HH:mm').format(DateTime.now());
+    }
+
+    final cashierName = sale['cashier']?['name']?.toString() ??
+        sale['cashier_name']?.toString() ??
+        sale['cashierName']?.toString() ??
+        sale['userName']?.toString() ??
+        sale['user_name']?.toString() ??
+        sale['user']?['name']?.toString() ??
+        'Cajero';
 
     // ── 4. Datos del Receptor ─────────────────────────────────────────────────
     final receiverDoc = electronicInvoice['doc_number']?.toString() ??
