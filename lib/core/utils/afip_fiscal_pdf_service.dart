@@ -555,13 +555,26 @@ class AfipFiscalPdfService {
                   child: pw.Column(
                     crossAxisAlignment: pw.CrossAxisAlignment.start,
                     children: [
-                      pw.Text(
-                        '$voucherTitle $voucherLetter',
-                        style: pw.TextStyle(
-                          fontSize: 14,
-                          fontWeight: pw.FontWeight.bold,
-                          color: PdfColors.black,
-                        ),
+                      pw.Row(
+                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                        crossAxisAlignment: pw.CrossAxisAlignment.start,
+                        children: [
+                          pw.Text(
+                            voucherTitle,
+                            style: pw.TextStyle(
+                              fontSize: 14,
+                              fontWeight: pw.FontWeight.bold,
+                              color: PdfColors.black,
+                            ),
+                          ),
+                          pw.Text(
+                            'ORIGINAL',
+                            style: pw.TextStyle(
+                              fontSize: 10,
+                              color: PdfColors.black,
+                            ),
+                          ),
+                        ],
                       ),
                       pw.SizedBox(height: 3),
                       pw.Text(
