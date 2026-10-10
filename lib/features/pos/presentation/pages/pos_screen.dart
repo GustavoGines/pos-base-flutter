@@ -886,7 +886,7 @@ class _PosScreenState extends State<PosScreen> {
 
     final success = await showDialog<bool>(
       context: context,
-      barrierDismissible: false,
+      barrierDismissible: true,
       builder: (_) => CheckoutDialog(total: posProvider.cartSubtotal),
     );
 
