@@ -184,11 +184,13 @@ class AfipFiscalPdfService {
           if (logoBytes != null) {
             return pw.FullPage(
               ignoreMargins: false,
-              child: pw.Center(
+              child: pw.Container(
+                alignment: pw.Alignment.topCenter,
+                padding: const pw.EdgeInsets.only(top: 220), // Alineado con la tabla de ítems
                 child: pw.Watermark(
                   child: pw.Opacity(
                     opacity: 0.35,
-                    child: pw.Image(pw.MemoryImage(logoBytes), width: 350),
+                    child: pw.Image(pw.MemoryImage(logoBytes), width: 320),
                   ),
                 ),
               ),
