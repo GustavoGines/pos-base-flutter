@@ -1,5 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
+import 'dart:io';
+import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -62,6 +64,27 @@ class AfipFiscalPdfService {
     bool compress = true,
     pw.ThemeData? theme,
   }) async {
+    // If logoBytes is not provided, try to fetch it from businessSettings
+    if (logoBytes == null && businessSettings is BusinessSettings) {
+      final url = businessSettings.effectiveLogoUrl;
+      if (url != null && url.isNotEmpty) {
+        try {
+          if (url.startsWith('http')) {
+            final response = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 3));
+            if (response.statusCode == 200) {
+              logoBytes = response.bodyBytes;
+            }
+          } else {
+            final file = File(url);
+            if (file.existsSync()) {
+              logoBytes = await file.readAsBytes();
+            }
+          }
+        } catch (_) {
+          // ignore fetching errors to not block PDF generation
+        }
+      }
+    }
     pw.ThemeData? effectiveTheme = theme;
     if (effectiveTheme == null) {
       try {
