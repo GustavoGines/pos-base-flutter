@@ -108,6 +108,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _tiendanubeAccessTokenCtrl = TextEditingController();
   final _wooCommerceConsumerKeyCtrl = TextEditingController();
   final _wooCommerceConsumerSecretCtrl = TextEditingController();
+  final _meliClientIdCtrl = TextEditingController();
+  final _meliClientSecretCtrl = TextEditingController();
   bool _integrationsLoaded = false;
   bool _isLoadingIntegrations = false;
 
@@ -259,6 +261,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _afipHasCert = data['afip_has_cert'] == true;
           _afipHasKey = data['afip_has_key'] == true;
           _afipCertExpiresAt = data['afip_cert_expires_at']?.toString();
+          
+          _ecommerceEnabled = data['ecommerce_enabled'] == true ||
+              data['ecommerce_enabled'] == '1' ||
+              data['ecommerce_enabled'] == 1;
+          _tiendanubeAccessTokenCtrl.text = data['tiendanube_token']?.toString() ?? '';
+          _wooCommerceConsumerKeyCtrl.text = data['woo_key']?.toString() ?? '';
+          _wooCommerceConsumerSecretCtrl.text = data['woo_secret']?.toString() ?? '';
+          _meliClientIdCtrl.text = data['meli_client_id']?.toString() ?? '';
+          _meliClientSecretCtrl.text = data['meli_client_secret']?.toString() ?? '';
+          
           _integrationsLoaded = true;
         });
       }
@@ -509,6 +521,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
         'afip_cuit': _afipCuitCtrl.text.trim(),
         'afip_pto_vta': ptoVta,
         'afip_environment': _afipEnvironment,
+        'ecommerce_enabled': _ecommerceEnabled ? '1' : '0',
+        'tiendanube_token': _tiendanubeAccessTokenCtrl.text.trim(),
+        'woo_key': _wooCommerceConsumerKeyCtrl.text.trim(),
+        'woo_secret': _wooCommerceConsumerSecretCtrl.text.trim(),
+        'meli_client_id': _meliClientIdCtrl.text.trim(),
+        'meli_client_secret': _meliClientSecretCtrl.text.trim(),
       };
 
       final success = await provider.saveIntegrations(data);
@@ -566,6 +584,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _tiendanubeAccessTokenCtrl.dispose();
     _wooCommerceConsumerKeyCtrl.dispose();
     _wooCommerceConsumerSecretCtrl.dispose();
+    _meliClientIdCtrl.dispose();
+    _meliClientSecretCtrl.dispose();
     super.dispose();
   }
 
@@ -1475,6 +1495,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
               decoration: InputDecoration(
                 labelText: 'WooCommerce Consumer Secret',
                 prefixIcon: const Icon(Icons.lock_outline),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              obscureText: true,
+            ),
+            const SizedBox(height: 16),
+            
+            // MercadoLibre Client ID
+            TextFormField(
+              key: const ValueKey('field_meli_id'),
+              controller: _meliClientIdCtrl,
+              decoration: InputDecoration(
+                labelText: 'MercadoLibre Client ID',
+                prefixIcon: const Icon(Icons.app_registration),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // MercadoLibre Client Secret
+            TextFormField(
+              key: const ValueKey('field_meli_secret'),
+              controller: _meliClientSecretCtrl,
+              decoration: InputDecoration(
+                labelText: 'MercadoLibre Client Secret',
+                prefixIcon: const Icon(Icons.vpn_key),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
               ),
               obscureText: true,
