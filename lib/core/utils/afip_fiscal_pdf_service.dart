@@ -66,22 +66,36 @@ class AfipFiscalPdfService {
   }) async {
     // If logoBytes is not provided, try to fetch it from businessSettings
     if (logoBytes == null && businessSettings is BusinessSettings) {
-      final url = businessSettings.effectiveLogoUrl;
-      if (url != null && url.isNotEmpty) {
+      final logoPath = businessSettings.logoPath;
+      if (logoPath != null && logoPath.isNotEmpty) {
+        // Optimización local: Intentar leer el archivo directamente desde el disco si estamos en el mismo entorno Laragon
         try {
-          if (url.startsWith('http')) {
-            final response = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 3));
-            if (response.statusCode == 200) {
-              logoBytes = response.bodyBytes;
-            }
-          } else {
-            final file = File(url);
-            if (file.existsSync()) {
-              logoBytes = await file.readAsBytes();
-            }
+          final localFile = File('../pos-backend/public/storage/$logoPath');
+          if (localFile.existsSync()) {
+            logoBytes = localFile.readAsBytesSync();
           }
-        } catch (_) {
-          // ignore fetching errors to not block PDF generation
+        } catch (_) {}
+      }
+      
+      // Fallback a HTTP si no se pudo leer localmente
+      if (logoBytes == null) {
+        final url = businessSettings.effectiveLogoUrl;
+        if (url != null && url.isNotEmpty) {
+          try {
+            if (url.startsWith('http')) {
+              final response = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 3));
+              if (response.statusCode == 200) {
+                logoBytes = response.bodyBytes;
+              }
+            } else {
+              final file = File(url);
+              if (file.existsSync()) {
+                logoBytes = await file.readAsBytes();
+              }
+            }
+          } catch (_) {
+            // ignore fetching errors
+          }
         }
       }
     }
@@ -165,7 +179,7 @@ class AfipFiscalPdfService {
               ignoreMargins: false,
               child: pw.Center(
                 child: pw.Opacity(
-                  opacity: 0.12, // Opacidad baja para marca de agua
+                  opacity: 0.25, // Opacidad aumentada para que sea visible
                   child: pw.Image(pw.MemoryImage(logoBytes), width: 350), // Tamaño grande en el centro
                 ),
               ),
