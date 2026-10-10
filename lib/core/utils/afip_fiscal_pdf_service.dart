@@ -545,9 +545,9 @@ class AfipFiscalPdfService {
             borderRadius: const pw.BorderRadius.all(pw.Radius.circular(2)),
           ),
           padding: const pw.EdgeInsets.all(8),
-          child: pw.IntrinsicHeight(
+          child: pw.Container(
             child: pw.Row(
-              crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
                 // Emisor (Columna Izquierda)
                 pw.Expanded(
@@ -618,6 +618,7 @@ class AfipFiscalPdfService {
                 // Línea Divisoria Vertical Central
                 pw.Container(
                   width: 1,
+                  height: 125,
                   color: PdfColors.black,
                 ),
 
