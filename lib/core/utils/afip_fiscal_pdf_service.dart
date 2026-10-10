@@ -133,6 +133,7 @@ class AfipFiscalPdfService {
 
     final page = buildFiscalPage(
       widgets: widgets,
+      logoBytes: logoBytes,
       paperSize: paperSize,
     );
 
@@ -147,6 +148,7 @@ class AfipFiscalPdfService {
   /// Builds the [pw.MultiPage] containing the fiscal invoice widgets.
   static pw.MultiPage buildFiscalPage({
     required List<pw.Widget> widgets,
+    Uint8List? logoBytes,
     String paperSize = 'a4',
   }) {
     final pageFormat = paperSize.toLowerCase() == 'letter'
@@ -157,6 +159,20 @@ class AfipFiscalPdfService {
       pageTheme: pw.PageTheme(
         pageFormat: pageFormat,
         margin: const pw.EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+        buildBackground: (pw.Context context) {
+          if (logoBytes != null) {
+            return pw.FullPage(
+              ignoreMargins: false,
+              child: pw.Center(
+                child: pw.Opacity(
+                  opacity: 0.12, // Opacidad baja para marca de agua
+                  child: pw.Image(pw.MemoryImage(logoBytes), width: 350), // Tamaño grande en el centro
+                ),
+              ),
+            );
+          }
+          return pw.SizedBox(); // Sin fondo
+        },
       ),
       build: (pw.Context context) => widgets,
     );
@@ -436,7 +452,6 @@ class AfipFiscalPdfService {
       issuerCuit: issuerCuit,
       issuerAddress: issuerAddress,
       issuerPhone: issuerPhone,
-      logoBytes: logoBytes,
       issuerTaxCondition: issuerTaxCondition,
       issuerIibb: issuerIibb,
       issuerStartDate: issuerStartDate,
@@ -525,7 +540,6 @@ class AfipFiscalPdfService {
     required String issuerCuit,
     required String issuerAddress,
     String issuerPhone = '',
-    Uint8List? logoBytes,
     required String issuerTaxCondition,
     required String issuerIibb,
     required String issuerStartDate,
@@ -556,21 +570,14 @@ class AfipFiscalPdfService {
                     child: pw.Column(
                       crossAxisAlignment: pw.CrossAxisAlignment.start,
                       children: [
-                        if (logoBytes != null)
-                          pw.Container(
-                            height: 45,
-                            alignment: pw.Alignment.centerLeft,
-                            child: pw.Image(pw.MemoryImage(logoBytes), fit: pw.BoxFit.contain),
-                          )
-                        else
-                          pw.Text(
-                            issuerName.toUpperCase(),
-                            style: pw.TextStyle(
-                              fontSize: 16,
-                              fontWeight: pw.FontWeight.bold,
-                              color: PdfColors.black,
-                            ),
+                        pw.Text(
+                          issuerName.toUpperCase(),
+                          style: pw.TextStyle(
+                            fontSize: 16,
+                            fontWeight: pw.FontWeight.bold,
+                            color: PdfColors.black,
                           ),
+                        ),
                         pw.SizedBox(height: 8),
                         pw.Row(
                           crossAxisAlignment: pw.CrossAxisAlignment.start,
