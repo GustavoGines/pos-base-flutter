@@ -70,9 +70,16 @@ class AfipFiscalPdfService {
       if (logoPath != null && logoPath.isNotEmpty) {
         // Optimización local: Intentar leer el archivo directamente desde el disco si estamos en el mismo entorno Laragon
         try {
-          final localFile = File('../pos-backend/public/storage/$logoPath');
-          if (localFile.existsSync()) {
-            logoBytes = localFile.readAsBytesSync();
+          final pathsToTry = [
+            'C:/laragon/www/Sistema_POS/pos-backend/public/storage/$logoPath',
+            '../pos-backend/public/storage/$logoPath',
+          ];
+          for (final p in pathsToTry) {
+            final localFile = File(p);
+            if (localFile.existsSync()) {
+              logoBytes = localFile.readAsBytesSync();
+              break;
+            }
           }
         } catch (_) {}
       }
@@ -178,14 +185,16 @@ class AfipFiscalPdfService {
             return pw.FullPage(
               ignoreMargins: false,
               child: pw.Center(
-                child: pw.Opacity(
-                  opacity: 0.25, // Opacidad aumentada para que sea visible
-                  child: pw.Image(pw.MemoryImage(logoBytes), width: 350), // Tamaño grande en el centro
+                child: pw.Watermark(
+                  child: pw.Opacity(
+                    opacity: 0.35,
+                    child: pw.Image(pw.MemoryImage(logoBytes), width: 350),
+                  ),
                 ),
               ),
             );
           }
-          return pw.SizedBox(); // Sin fondo
+          return pw.SizedBox();
         },
       ),
       build: (pw.Context context) => widgets,
