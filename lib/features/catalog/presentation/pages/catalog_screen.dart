@@ -190,7 +190,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
           appBar: GlobalAppBar(currentRoute: '/catalog'),
           body: Column(
             children: [
-              // ── Toolbar: Search + Actions ─────────────────────────
+              // â”€â”€ Toolbar: Search + Actions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
                 child: LayoutBuilder(
@@ -287,19 +287,65 @@ class _CatalogScreenState extends State<CatalogScreen> {
                                   if (auth && context.mounted) _showBulkUpdateDialog(context, provider);
                                 },
                         ),
-                        OutlinedButton.icon(
-                          icon: const Icon(Icons.upload_file, size: 18, color: Colors.green),
-                          label: const Text('Importar Excel', style: TextStyle(color: Colors.green)),
-                          style: OutlinedButton.styleFrom(side: const BorderSide(color: Colors.green)),
-                          onPressed: () async {
-                            final auth = await AdminPinDialog.verify(context, action: 'Importar Catálogo', permissionKey: 'manage_catalog');
-                            if (auth && context.mounted) {
-                              showDialog(
-                                context: context,
-                                builder: (_) => const CatalogImportDialog(),
-                              );
+                        PopupMenuButton<String>(
+                          tooltip: 'Opciones de Excel',
+                          offset: const Offset(0, 40),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+                            const PopupMenuItem<String>(
+                              value: 'import',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.upload_file, color: Colors.green, size: 20),
+                                  SizedBox(width: 8),
+                                  Text('Importar Excel'),
+                                ],
+                              ),
+                            ),
+                            const PopupMenuItem<String>(
+                              value: 'export',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.download, color: Colors.green, size: 20),
+                                  SizedBox(width: 8),
+                                  Text('Exportar Lista'),
+                                ],
+                              ),
+                            ),
+                          ],
+                          onSelected: (String result) async {
+                            if (result == 'import') {
+                              final auth = await AdminPinDialog.verify(context, action: 'Importar Catálogo', permissionKey: 'manage_catalog');
+                              if (auth && context.mounted) {
+                                showDialog(
+                                  context: context,
+                                  builder: (_) => const CatalogImportDialog(),
+                                );
+                              }
+                            } else if (result == 'export') {
+                              final auth = await AdminPinDialog.verify(context, action: 'Exportar Catálogo', permissionKey: 'manage_catalog');
+                              if (auth && context.mounted) {
+                                provider.exportCatalogToExcel(context);
+                              }
                             }
                           },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            decoration: BoxDecoration(
+                              border: Border.all(color: Colors.green),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.table_view, size: 18, color: Colors.green),
+                                SizedBox(width: 8),
+                                Text('Excel', style: TextStyle(color: Colors.green, fontWeight: FontWeight.w500)),
+                                SizedBox(width: 4),
+                                Icon(Icons.arrow_drop_down, size: 18, color: Colors.green),
+                              ],
+                            ),
+                          ),
                         ),
                         const SizedBox(width: 8),
                         FilledButton.icon(
@@ -338,7 +384,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                   },
                 ),
               ),
-              // ── Loading bar ──────────────────────────────────────
+              // â”€â”€ Loading bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
               if (provider.isLoading) const LinearProgressIndicator(),
               if (provider.errorMessage != null)
                 Container(
@@ -346,9 +392,9 @@ class _CatalogScreenState extends State<CatalogScreen> {
                   padding: const EdgeInsets.all(8),
                   child: Text(provider.errorMessage!, style: TextStyle(color: Colors.red.shade700)),
                 ),
-              // ── Barra de acciones en lote (encima del checkbox "seleccionar todos") ──
+              // â”€â”€ Barra de acciones en lote (encima del checkbox "seleccionar todos") â”€â”€
               if (_selectedProducts.isNotEmpty) _buildBulkActionsBar(provider),
-              // ── Product Table ───────────────────────────────────────────────
+              // â”€â”€ Product Table â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
               Expanded(
                 child: provider.products.isEmpty && !provider.isLoading
                     ? Center(
@@ -377,7 +423,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                         },
                       ),
               ),
-              // ── Pagination Controls ───────────────────────────────
+              // â”€â”€ Pagination Controls â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
               if (!provider.isLoading && provider.lastPage > 1)
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -1227,9 +1273,9 @@ class _CatalogScreenState extends State<CatalogScreen> {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // FORMULARIO CREAR / EDITAR PRODUCTO
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 class ProductFormDialog extends StatefulWidget {
   final CatalogProvider provider;
   final Product? product;
@@ -2695,7 +2741,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                   decoration: InputDecoration(
                     labelText: 'Días de Vencimiento (opcional)',
                     prefixIcon: const Icon(Icons.hourglass_bottom_outlined),
-                    helperText: 'Ej: 90 → VTO = hoy + 90 días. Dejar vacío si no vence.',
+                    helperText: 'Ej: 90 â†’ VTO = hoy + 90 días. Dejar vacío si no vence.',
                     suffixText: 'días',
                     border: const OutlineInputBorder(),
                   ),
@@ -2853,9 +2899,9 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // PICKER DE INGREDIENTES PARA COMBO — busca en el backend, no en memoria local
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 class _ComboIngredientPickerDialog extends StatefulWidget {
   final CatalogProvider provider;
   final int? excludeProductId;       // El producto que se está editando (para excluirlo)
@@ -3002,9 +3048,9 @@ class _ComboIngredientPickerDialogState extends State<_ComboIngredientPickerDial
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // MODAL DE AUMENTO MASIVO DE PRECIOS
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 class BulkPriceUpdateDialog extends StatefulWidget {
 
   final CatalogProvider provider;
@@ -3284,8 +3330,8 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
                     border: OutlineInputBorder(),
                   ),
                   items: [
-                    const DropdownMenuItem<int?>(value: null, child: Text('📦 Todas las categorías', overflow: TextOverflow.ellipsis)),
-                    ...categories.map((c) => DropdownMenuItem<int?>(value: c.id, child: Text('📂 ${c.name}', overflow: TextOverflow.ellipsis))),
+                    const DropdownMenuItem<int?>(value: null, child: Text('ðŸ“¦ Todas las categorías', overflow: TextOverflow.ellipsis)),
+                    ...categories.map((c) => DropdownMenuItem<int?>(value: c.id, child: Text('ðŸ“‚ ${c.name}', overflow: TextOverflow.ellipsis))),
                   ],
                   onChanged: (val) => setState(() => _selectedCategoryId = val),
                 ),
@@ -3299,8 +3345,8 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
                     border: OutlineInputBorder(),
                   ),
                   items: [
-                    const DropdownMenuItem<int?>(value: null, child: Text('🏷️ Todas las marcas', overflow: TextOverflow.ellipsis)),
-                    ...brands.map((b) => DropdownMenuItem<int?>(value: b.id, child: Text('🏷️ ${b.name}', overflow: TextOverflow.ellipsis))),
+                    const DropdownMenuItem<int?>(value: null, child: Text('ðŸ·ï¸ Todas las marcas', overflow: TextOverflow.ellipsis)),
+                    ...brands.map((b) => DropdownMenuItem<int?>(value: b.id, child: Text('ðŸ·ï¸ ${b.name}', overflow: TextOverflow.ellipsis))),
                   ],
                   onChanged: (val) => setState(() => _selectedBrandId = val),
                 ),
@@ -3459,5 +3505,6 @@ class _BulkPriceHistoryDialogState extends State<BulkPriceHistoryDialog> {
     );
   }
 }
+
 
 

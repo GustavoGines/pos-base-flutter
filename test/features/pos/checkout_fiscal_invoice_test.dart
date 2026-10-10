@@ -35,7 +35,7 @@ class FakeFiscalPosProvider extends ChangeNotifier implements PosProvider {
     ),
     PaymentMethod(
       id: 2,
-      name: 'Tarjeta DÃ©bito',
+      name: 'Tarjeta Débito',
       code: 'debito',
       surchargeType: 'none',
       surchargeValue: 0.0,
@@ -230,7 +230,7 @@ class FakeCustomerProvider extends ChangeNotifier implements CustomerProvider {
     ),
     Customer(
       id: 20,
-      name: 'Juan PÃ©rez',
+      name: 'Juan Pérez',
       documentNumber: '35123456',
       documentType: 96,
       taxCondition: 'consumidor_final',
@@ -311,7 +311,7 @@ Widget buildFiscalTestApp({
 void main() {
   group('AfipModulo11 Unit Tests', () {
     test('Validates official Modulo 11 CUIT with multiplier algorithm', () {
-      // CUITs oficiales reales vÃ¡lidos
+      // CUITs oficiales reales válidos
       expect(AfipModulo11.isValid('30-50001091-2'), isTrue);
       expect(AfipModulo11.validateCuit('30500010912'), isTrue);
       expect(AfipModulo11.isValid('20-12345678-6'), isTrue);
@@ -325,9 +325,9 @@ void main() {
     test('Rejects invalid CUIT (wrong check digit, wrong length, wrong prefix)', () {
       expect(AfipModulo11.isValid('20-12345678-9'), isFalse);
       expect(AfipModulo11.validateCuit('20123456789'), isFalse);
-      expect(AfipModulo11.isValid('20-12345678-4'), isFalse); // DÃ­gito verificador incorrecto (espera 6)
+      expect(AfipModulo11.isValid('20-12345678-4'), isFalse); // Dígito verificador incorrecto (espera 6)
       expect(AfipModulo11.isValid('123456'), isFalse);
-      expect(AfipModulo11.isValid('99-12345678-0'), isFalse); // Prefijo 99 invÃ¡lido para CUIT
+      expect(AfipModulo11.isValid('99-12345678-0'), isFalse); // Prefijo 99 inválido para CUIT
       expect(AfipModulo11.isValid(null), isFalse);
       expect(AfipModulo11.isValid(''), isFalse);
     });
@@ -335,14 +335,14 @@ void main() {
     test('Validates Argentine DNI format correctly', () {
       expect(AfipModulo11.validateDni('35123456'), isTrue);
       expect(AfipModulo11.validateDni('8123456'), isTrue);
-      expect(AfipModulo11.validateDni('12345'), isFalse); // < 7 dÃ­gitos
-      expect(AfipModulo11.validateDni('999999999'), isFalse); // > 8 dÃ­gitos
+      expect(AfipModulo11.validateDni('12345'), isFalse); // < 7 dígitos
+      expect(AfipModulo11.validateDni('999999999'), isFalse); // > 8 dígitos
       expect(AfipModulo11.validateDni(null), isFalse);
     });
   });
 
   group('CheckoutDialog Fiscal Invoicing Widget Tests', () {
-    testWidgets('Initializes in Ticket ComÃºn mode without fiscal controls displayed', (tester) async {
+    testWidgets('Initializes in Ticket Común mode without fiscal controls displayed', (tester) async {
       final posProvider = FakeFiscalPosProvider();
       await tester.pumpWidget(buildFiscalTestApp(posProvider: posProvider));
       await tester.pumpAndSettle();
@@ -352,11 +352,11 @@ void main() {
       expect(find.text('Ticket Común'), findsOneWidget);
       expect(find.text('Factura Fiscal ARCA'), findsOneWidget);
 
-      // Los controles de Factura Fiscal estÃ¡n ocultos inicialmente
+      // Los controles de Factura Fiscal están ocultos inicialmente
       expect(find.byKey(const Key('voucher_type_segmented_button')), findsNothing);
       expect(find.byKey(const Key('fiscal_doc_number_field')), findsNothing);
 
-      // BotÃ³n confirmar pago estÃ¡ habilitado en modo comÃºn
+      // Botón confirmar pago está habilitado en modo común
       final submitBtn = tester.widget<ElevatedButton>(find.widgetWithText(ElevatedButton, 'CONFIRMAR PAGO'));
       expect(submitBtn.onPressed, isNotNull);
     });
@@ -395,11 +395,11 @@ void main() {
         await tester.tap(find.text('Factura A'));
       await tester.pumpAndSettle();
 
-      // BotÃ³n debe estar deshabilitado porque CUIT estÃ¡ vacÃ­o y nombre estÃ¡ vacÃ­o
+      // Botón debe estar deshabilitado porque CUIT está vacío y nombre está vacío
       var submitBtn = tester.widget<ElevatedButton>(find.widgetWithText(ElevatedButton, 'CONFIRMAR PAGO'));
       expect(submitBtn.onPressed, isNull);
 
-      // Ingresar CUIT invÃ¡lido
+      // Ingresar CUIT inválido
       await tester.ensureVisible(find.byKey(const Key('fiscal_doc_number_field')));
         await tester.enterText(find.byKey(const Key('fiscal_doc_number_field')), '20-12345678-9');
       await tester.ensureVisible(find.byKey(const Key('fiscal_receiver_name_field')));
@@ -422,7 +422,7 @@ void main() {
       expect(find.byKey(const Key('cuit_valid_feedback')), findsOneWidget);
       expect(find.text('CUIT/CUIL válido (Módulo 11 OK)'), findsOneWidget);
 
-      // Ahora el botÃ³n debe estar habilitado
+      // Ahora el botón debe estar habilitado
       submitBtn = tester.widget<ElevatedButton>(find.widgetWithText(ElevatedButton, 'CONFIRMAR PAGO'));
       expect(submitBtn.onPressed, isNotNull);
     });
@@ -445,9 +445,9 @@ void main() {
       await tester.ensureVisible(find.byKey(const Key('fiscal_doc_number_field')));
         await tester.enterText(find.byKey(const Key('fiscal_doc_number_field')), '30-50001091-2');
       await tester.ensureVisible(find.byKey(const Key('fiscal_receiver_name_field')));
-        await tester.enterText(find.byKey(const Key('fiscal_receiver_name_field')), 'Banco NaciÃ³n SA');
+        await tester.enterText(find.byKey(const Key('fiscal_receiver_name_field')), 'Banco Nación SA');
       await tester.ensureVisible(find.byKey(const Key('fiscal_receiver_address_field')));
-        await tester.enterText(find.byKey(const Key('fiscal_receiver_address_field')), 'BartolomÃ© Mitre 326, CABA');
+        await tester.enterText(find.byKey(const Key('fiscal_receiver_address_field')), 'Bartolomé Mitre 326, CABA');
       await tester.pumpAndSettle();
 
       // Confirmar pago
@@ -460,9 +460,9 @@ void main() {
       expect(payload['voucher_type'], equals(1));
       expect(payload['doc_type'], equals(80));
       expect(payload['doc_number'], equals('30500010912'));
-      expect(payload['receiver_name'], equals('Banco NaciÃ³n SA'));
+      expect(payload['receiver_name'], equals('Banco Nación SA'));
       expect(payload['receiver_tax_condition'], equals('responsable_inscripto'));
-      expect(payload['receiver_address'], equals('BartolomÃ© Mitre 326, CABA'));
+      expect(payload['receiver_address'], equals('Bartolomé Mitre 326, CABA'));
     });
 
     testWidgets('Factura B allows Consumidor Final and passes voucher_type 6', (tester) async {
@@ -510,7 +510,7 @@ void main() {
       await tester.pumpWidget(buildFiscalTestApp(posProvider: posProvider));
       await tester.pumpAndSettle();
 
-      // Activar Factura Fiscal en pantalla pequeÃ±a
+      // Activar Factura Fiscal en pantalla pequeña
       await tester.ensureVisible(find.text('Factura Fiscal ARCA'));
         await tester.tap(find.text('Factura Fiscal ARCA'));
       await tester.pumpAndSettle();
@@ -525,7 +525,7 @@ void main() {
         await tester.enterText(find.byKey(const Key('fiscal_doc_number_field')), '30-50001091-2');
       await tester.pumpAndSettle();
 
-      // Verificar que ningÃºn error de overflow fue capturado
+      // Verificar que ningún error de overflow fue capturado
       expect(tester.takeException(), isNull);
     });
 

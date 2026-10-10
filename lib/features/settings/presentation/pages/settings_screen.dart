@@ -599,7 +599,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     final provider = context.read<SettingsProvider>();
 
-    // ━━━━━━━━ IMPORTANTE: guardar URL y ruta local PRIMERO í¢â€â‚¬í¢â€â‚¬í¢â€â‚¬í¢â€â‚¬í¢â€â‚¬í¢â€â‚¬í¢â€â‚¬í¢â€â‚¬í¢â€â‚¬í¢â€â‚¬í¢â€â‚¬í¢â€â‚¬í¢â€â‚¬í¢â€â‚¬í¢â€â‚¬í¢â€â‚¬í¢â€â‚¬í¢â€â‚¬í¢â€â‚¬í¢â€â‚¬í¢â€â‚¬í¢â€â‚¬í¢â€â‚¬í¢â€â‚¬í¢â€â‚¬í¢â€â‚¬
+    // ━━━━━━━━ IMPORTANTE: guardar URL y ruta local PRIMERO í¢”€í¢”€í¢”€í¢”€í¢”€í¢”€í¢”€í¢”€í¢”€í¢”€í¢”€í¢”€í¢”€í¢”€í¢”€í¢”€í¢”€í¢”€í¢”€í¢”€í¢”€í¢”€í¢”€í¢”€í¢”€í¢”€
     // Si el usuario cambió la URL del servidor, el request de saveSettings debe
     // usar ya la nueva URL. De lo contrario falla con "No se puede conectar".
     final newUrl = _serverUrlCtrl.text.trim();
@@ -813,7 +813,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (!mounted) return;
 
       if (frontendUpdate != null && backendUpdate != null) {
-        // ESCENARIO 1: ACTUALIZACIíƒâ€œN DOBLE (INTEGRAL)
+        // ESCENARIO 1: ACTUALIZACIíƒ“N DOBLE (INTEGRAL)
         // No damos a elegir, forzamos el flujo integral empezando por el frontend
         showDialog(
           context: context,
@@ -2683,7 +2683,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       isLocked ? Colors.grey.shade400 : const Color(0xFF3F51B5),
                   onChanged: (val) {
                     if (isLocked) {
-                      // Mostrar upsell í¢â‚¬â€ no cambiar el estado local
+                      // Mostrar upsell í¢€” no cambiar el estado local
                       PlanUpgradeDialog.show(
                         context,
                         title: 'Plan Avanzado Requerido',

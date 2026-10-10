@@ -1,5 +1,10 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:frontend_desktop/core/config/app_config.dart';
+import 'package:http/http.dart' as http;
+import 'package:file_picker/file_picker.dart';
 import '../../domain/entities/product.dart';
 import '../../domain/entities/category.dart';
 import '../../domain/entities/brand.dart';
@@ -658,6 +663,78 @@ class CatalogProvider with ChangeNotifier {
     } finally {
       _isLoading = false;
       notifyListeners();
+    }
+  }
+
+  Future<void> exportCatalogToExcel(BuildContext context) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final baseUrl = prefs.getString('api_base_url') ?? AppConfig.kApiBaseUrl;
+      final token = prefs.getString('pos_session_token');
+      final uri = Uri.parse('$baseUrl/catalog/products/export');
+
+      if (!context.mounted) return;
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const AlertDialog(
+          content: Row(
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(width: 20),
+              Text('Generando y descargando Excel...'),
+            ],
+          ),
+        ),
+      );
+
+      final response = await http.get(
+        uri,
+        headers: {
+          'X-Session-Token': token ?? '',
+          'Accept': 'application/json',
+        },
+      );
+
+      if (context.mounted) Navigator.of(context).pop(); // Cerrar loader
+
+      if (response.statusCode == 200) {
+        final now = DateTime.now();
+        final formattedDate = '${now.day.toString().padLeft(2, '0')}_${now.month.toString().padLeft(2, '0')}_${now.year}';
+        
+        String? outputFile = await FilePicker.platform.saveFile(
+          dialogTitle: 'Guardar Lista de Precios',
+          fileName: 'lista_precios_$formattedDate.xlsx',
+          type: FileType.custom,
+          allowedExtensions: ['xlsx'],
+        );
+
+        if (outputFile != null) {
+          final file = File(outputFile);
+          await file.writeAsBytes(response.bodyBytes);
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Excel guardado exitosamente.')),
+            );
+          }
+        }
+      } else {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error del servidor: ${response.statusCode}')),
+          );
+        }
+      }
+    } catch (e) {
+      // Cerrar loader si está abierto
+      if (context.mounted && Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al exportar: $e')),
+        );
+      }
     }
   }
 

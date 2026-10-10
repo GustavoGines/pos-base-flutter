@@ -4,6 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:frontend_desktop/core/config/app_config.dart';
 import 'package:desktop_drop/desktop_drop.dart';
 import '../providers/catalog_provider.dart';
 
@@ -64,8 +65,8 @@ class _CatalogImportDialogState extends State<CatalogImportDialog> {
   Future<void> _downloadTemplate() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final baseUrl = prefs.getString('api_base_url') ?? 'http://127.0.0.1:8000/api';
-      final token = prefs.getString('auth_token');
+      final baseUrl = prefs.getString('api_base_url') ?? AppConfig.kApiBaseUrl;
+      final token = prefs.getString('pos_session_token');
       final uri = Uri.parse('$baseUrl/catalog/products/import-template?token=$token');
       if (await canLaunchUrl(uri)) {
         await launchUrl(uri);
