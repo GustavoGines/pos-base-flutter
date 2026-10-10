@@ -412,29 +412,112 @@ class _CustomerDetailPanel extends StatelessWidget {
                       const SizedBox(width: 16),
                       Text(customer.name,
                           style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+                      const SizedBox(width: 12),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.shade50,
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(color: Colors.blue.shade200),
+                        ),
+                        child: Text(
+                          customer.taxCondition == 'consumidor_final' ? 'Consumidor Final' :
+                          customer.taxCondition == 'responsable_inscripto' ? 'Resp. Inscripto' :
+                          customer.taxCondition == 'monotributo' ? 'Monotributo' :
+                          customer.taxCondition == 'exento' ? 'IVA Exento' : 'IVA No Definido',
+                          style: TextStyle(fontSize: 12, color: Colors.blue.shade700, fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                      if (customer.appliesIibbPerception) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.purple.shade50,
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: Colors.purple.shade200),
+                          ),
+                          child: Text(
+                            'Sujeto IIBB',
+                            style: TextStyle(fontSize: 12, color: Colors.purple.shade700, fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ],
+                      if (customer.isInternalAccount) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.orange.shade50,
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: Colors.orange.shade200),
+                          ),
+                          child: Text(
+                            'Consumo Interno',
+                            style: TextStyle(fontSize: 12, color: Colors.orange.shade800, fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                   const SizedBox(height: 8),
-                  Row(
+                  Wrap(
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 16,
+                    runSpacing: 8,
                     children: [
-                      Icon(Icons.badge_outlined, size: 14, color: Colors.grey.shade600),
-                      const SizedBox(width: 6),
-                      Text('DNI: ${customer.documentNumber}',
-                          style: TextStyle(color: Colors.grey.shade600, fontSize: 14)),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.badge_outlined, size: 14, color: Colors.grey.shade600),
+                          const SizedBox(width: 6),
+                          Text('${customer.documentType == 80 ? "CUIT" : (customer.documentType == 86 ? "CUIL" : "DNI")}: ${customer.documentNumber}',
+                              style: TextStyle(color: Colors.grey.shade600, fontSize: 14)),
+                        ],
+                      ),
                       if (customer.phone != null && customer.phone!.isNotEmpty) ...[
-                        const SizedBox(width: 16),
-                        Icon(Icons.phone_outlined, size: 14, color: Colors.grey.shade600),
-                        const SizedBox(width: 4),
-                        Text(customer.phone!,
-                            style: TextStyle(color: Colors.grey.shade600, fontSize: 14)),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.phone_outlined, size: 14, color: Colors.grey.shade600),
+                            const SizedBox(width: 4),
+                            Text(customer.phone!,
+                                style: TextStyle(color: Colors.grey.shade600, fontSize: 14)),
+                          ],
+                        ),
+                      ],
+                      if (customer.deliveryAddress != null && customer.deliveryAddress!.isNotEmpty) ...[
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.location_on_outlined, size: 14, color: Colors.grey.shade600),
+                            const SizedBox(width: 4),
+                            Text(customer.deliveryAddress!,
+                                style: TextStyle(color: Colors.grey.shade600, fontSize: 14)),
+                          ],
+                        ),
+                      ] else if (customer.fiscalAddress != null && customer.fiscalAddress!.isNotEmpty) ...[
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.location_city_outlined, size: 14, color: Colors.grey.shade600),
+                            const SizedBox(width: 4),
+                            Text(customer.fiscalAddress!,
+                                style: TextStyle(color: Colors.grey.shade600, fontSize: 14)),
+                          ],
+                        ),
                       ],
                       if (customer.creditLimit > 0) ...[
-                        const SizedBox(width: 16),
-                        Icon(Icons.credit_score_outlined, size: 14, color: Colors.blueGrey.shade600),
-                        const SizedBox(width: 4),
-                        Text('Límite: \$${customer.creditLimit.toCurrency()}',
-                            style: TextStyle(
-                                color: Colors.blueGrey.shade800, fontWeight: FontWeight.w500)),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.credit_score_outlined, size: 14, color: Colors.blueGrey.shade600),
+                            const SizedBox(width: 4),
+                            Text('Límite: \$${customer.creditLimit.toCurrency()} (Disp: \$${(customer.creditLimit - customer.balance).clamp(0, double.infinity).toCurrency()})',
+                                style: TextStyle(
+                                    color: Colors.blueGrey.shade800, fontWeight: FontWeight.w500)),
+                          ],
+                        ),
                       ],
                     ],
                   ),
