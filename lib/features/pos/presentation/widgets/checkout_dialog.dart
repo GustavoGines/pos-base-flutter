@@ -304,7 +304,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     // (No llamamos a setShippingCost del provider para no alterar el total del fondo prematuramente)
     _shippingCostCtrl.addListener(() {
       setState(() {});
-      _syncPaymentsWithShipping();
+      _syncPaymentsWithGrandTotal();
     });
     _loadPreferences();
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -422,7 +422,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
 
   /// Cuando el flete cambia y hay UNA SOLA línea de pago, actualiza el
   /// monto automáticamente para que el Saldo Pendiente quede en $0.
-  void _syncPaymentsWithShipping() {
+  void _syncPaymentsWithGrandTotal() {
     if (_lines.length != 1) return; // Solo auto-sync con pago único
     final newTotal = _baseTotal + _shippingCostToApply;
     final line = _lines[0];
@@ -620,6 +620,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
             _selectedCustomer = c;
             _deliveryAddressCtrl.text = c.deliveryAddress ?? '';
             _syncCustomerWithFiscal(c);
+            _syncPaymentsWithGrandTotal();
           });
           context.read<PosProvider>().selectCustomer(c);
           final localTerminal = context.read<LocalTerminalProvider>();
@@ -1322,6 +1323,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                             _fiscalReceiverNameCtrl.clear();
                             _fiscalTaxCondition = 'consumidor_final';
                             _fiscalReceiverAddressCtrl.clear();
+                            _syncPaymentsWithGrandTotal();
                           });
                           context
                               .read<PosProvider>()
@@ -2697,7 +2699,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                                             .setCurrentLogistics(
                                                 _requiresDispatch,
                                                 _fulfillmentStatus);
-                                        _syncPaymentsWithShipping();
+                                        _syncPaymentsWithGrandTotal();
                                       });
                                     },
                                     child: Padding(
@@ -2811,7 +2813,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                                                       .setCurrentLogistics(
                                                           _requiresDispatch,
                                                           _fulfillmentStatus);
-                                                  _syncPaymentsWithShipping();
+                                                  _syncPaymentsWithGrandTotal();
                                                 });
                                               }
                                             },
@@ -2906,7 +2908,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                                                         OutlineInputBorder(),
                                                   ),
                                                   onChanged: (val) {
-                                                    // El listener de _shippingCostCtrl ya dispara setState() y _syncPaymentsWithShipping()
+                                                    // El listener de _shippingCostCtrl ya dispara setState() y _syncPaymentsWithGrandTotal()
                                                   },
                                                 ),
                                               ),
