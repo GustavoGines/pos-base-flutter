@@ -633,7 +633,7 @@ class AfipFiscalPdfService {
                 // Línea Divisoria Vertical Central
                 pw.Container(
                   width: 1,
-                  height: 125,
+                  height: 82,
                   color: PdfColors.black,
                 ),
 
