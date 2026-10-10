@@ -180,24 +180,6 @@ class AfipFiscalPdfService {
       pageTheme: pw.PageTheme(
         pageFormat: pageFormat,
         margin: const pw.EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-        buildBackground: (pw.Context context) {
-          if (logoBytes != null) {
-            return pw.FullPage(
-              ignoreMargins: false,
-              child: pw.Container(
-                alignment: pw.Alignment.topCenter,
-                padding: const pw.EdgeInsets.only(top: 220), // Alineado con la tabla de ítems
-                child: pw.Watermark(
-                  child: pw.Opacity(
-                    opacity: 0.35,
-                    child: pw.Image(pw.MemoryImage(logoBytes), width: 320),
-                  ),
-                ),
-              ),
-            );
-          }
-          return pw.SizedBox();
-        },
       ),
       build: (pw.Context context) => widgets,
     );
@@ -518,6 +500,7 @@ class AfipFiscalPdfService {
       qrData: qrData,
       cae: cae,
       caeExpiration: caeExpiration,
+      logoBytes: logoBytes,
     );
 
         final isCreditNote = [3, 8, 13, 113].contains(voucherType);
@@ -1195,6 +1178,7 @@ class AfipFiscalPdfService {
     required String qrData,
     required String cae,
     required String caeExpiration,
+    Uint8List? logoBytes,
   }) {
     return pw.Container(
       decoration: pw.BoxDecoration(
@@ -1213,17 +1197,27 @@ class AfipFiscalPdfService {
             height: 60,
           ),
           pw.SizedBox(width: 10),
-          // Leyenda Legal AFIP
+          // Leyenda Legal AFIP y CAE (Agrupados en el medio)
           pw.Expanded(
             child: pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
                 pw.Text(
-                  'Comprobante Autorizado por AFIP (RG 4892)',
+                  'CAE N°: $cae',
                   style: pw.TextStyle(
-                      fontSize: 8.5, fontWeight: pw.FontWeight.bold),
+                      fontSize: 9.5, fontWeight: pw.FontWeight.bold),
                 ),
                 pw.SizedBox(height: 2),
+                pw.Text(
+                  'Fecha de Vto. de CAE: $caeExpiration',
+                  style: const pw.TextStyle(fontSize: 8),
+                ),
+                pw.SizedBox(height: 8),
+                pw.Text(
+                  'Comprobante Autorizado por AFIP (RG 4892)',
+                  style: pw.TextStyle(
+                      fontSize: 7.5, fontWeight: pw.FontWeight.bold),
+                ),
                 pw.Text(
                   'Esta Administración Federal no se responsabiliza por los datos ingresados en el detalle de la operación.',
                   style: const pw.TextStyle(
@@ -1232,23 +1226,16 @@ class AfipFiscalPdfService {
               ],
             ),
           ),
-          pw.SizedBox(width: 10),
-          // CAE y Vencimiento
-          pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.end,
-            children: [
-              pw.Text(
-                'CAE N°: $cae',
-                style: pw.TextStyle(
-                    fontSize: 9.5, fontWeight: pw.FontWeight.bold),
-              ),
-              pw.SizedBox(height: 2),
-              pw.Text(
-                'Fecha de Vto. de CAE: $caeExpiration',
-                style: const pw.TextStyle(fontSize: 8),
-              ),
-            ],
-          ),
+          // Logo (a la derecha de todo, donde estaba el CAE)
+          if (logoBytes != null) ...[
+            pw.SizedBox(width: 10),
+            pw.Container(
+              width: 55,
+              height: 55,
+              alignment: pw.Alignment.centerRight,
+              child: pw.Image(pw.MemoryImage(logoBytes), fit: pw.BoxFit.contain),
+            ),
+          ],
         ],
       ),
     );
