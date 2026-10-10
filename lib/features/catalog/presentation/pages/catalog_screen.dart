@@ -223,64 +223,6 @@ class _CatalogScreenState extends State<CatalogScreen> {
                       runSpacing: 8,
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-                        if (_selectedProducts.isNotEmpty) ...[
-                          PopupMenuButton<int>(
-                            tooltip: 'Acciones en Lote',
-                            offset: const Offset(0, 45),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                            onSelected: (val) {
-                              switch (val) {
-                                case 1: _bulkUpdateCategory(provider); break;
-                                case 2: _bulkToggleActive(provider); break;
-                                case 3:
-                                  AdminPinDialog.verify(context, action: 'Aumento Masivo Lote', permissionKey: 'manage_catalog').then((auth) {
-                                    if (auth && context.mounted) {
-                                      showDialog(context: context, builder: (_) => BulkPriceUpdateDialog(provider: provider, targetProductIds: _selectedProducts.keys.toList())).then((_) => setState(() => _selectedProducts.clear()));
-                                    }
-                                  });
-                                  break;
-                                case 4: showDialog(context: context, builder: (_) => PrintLabelsDialog(products: _selectedProducts.values.toList())); break;
-                                case 5: _confirmBulkDelete(provider); break;
-                                case 6: setState(() => _selectedProducts.clear()); break;
-                                case 7: _bulkUpdateSupplier(provider); break;
-                                case 8: _bulkUpdateBrand(provider); break;
-                                case 12: _bulkGenerateQuote(); break;
-                              }
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                              decoration: BoxDecoration(
-                                color: Colors.blue.shade800,
-                                borderRadius: BorderRadius.circular(8),
-                                boxShadow: [BoxShadow(color: Colors.blue.withValues(alpha: 0.3), blurRadius: 4, offset: const Offset(0, 2))],
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(Icons.checklist, color: Colors.white, size: 18),
-                                  const SizedBox(width: 8),
-                                  Text('Lote (${_selectedProducts.length})', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                                  const SizedBox(width: 4),
-                                  const Icon(Icons.keyboard_arrow_down, color: Colors.white, size: 20),
-                                ],
-                              ),
-                            ),
-                            itemBuilder: (context) => [
-                              const PopupMenuItem(value: 1, child: Row(children: [Icon(Icons.folder_outlined, color: Colors.orange, size: 20), SizedBox(width: 12), Expanded(child: Text('Asignar Categoría'))])),
-                              const PopupMenuItem(value: 8, child: Row(children: [Icon(Icons.branding_watermark_outlined, color: Colors.indigo, size: 20), SizedBox(width: 12), Expanded(child: Text('Asignar Marca'))])),
-                              const PopupMenuItem(value: 7, child: Row(children: [Icon(Icons.local_shipping_outlined, color: Colors.brown, size: 20), SizedBox(width: 12), Expanded(child: Text('Asignar Proveedor'))])),
-                              const PopupMenuItem(value: 12, child: Row(children: [Icon(Icons.request_quote_outlined, color: Colors.teal, size: 20), SizedBox(width: 12), Expanded(child: Text('Generar Presupuesto'))])),
-                              const PopupMenuItem(value: 2, child: Row(children: [Icon(Icons.power_settings_new, color: Colors.teal, size: 20), SizedBox(width: 12), Expanded(child: Text('Cambiar Estado'))])),
-                              const PopupMenuItem(value: 3, child: Row(children: [Icon(Icons.trending_up, color: Colors.deepOrange, size: 20), SizedBox(width: 12), Expanded(child: Text('Actualizar Precios'))])),
-                              const PopupMenuItem(value: 4, child: Row(children: [Icon(Icons.print_outlined, color: Colors.deepPurple, size: 20), SizedBox(width: 12), Expanded(child: Text('Imprimir Etiquetas'))])),
-                              const PopupMenuDivider(),
-                              const PopupMenuItem(value: 5, child: Row(children: [Icon(Icons.delete_outline, color: Colors.red, size: 20), SizedBox(width: 12), Expanded(child: Text('Eliminar Todo'))])),
-                              const PopupMenuDivider(),
-                              const PopupMenuItem(value: 6, child: Row(children: [Icon(Icons.deselect, color: Colors.grey, size: 20), SizedBox(width: 12), Expanded(child: Text('Cancelar Selección'))])),
-                            ],
-                          ),
-                          const SizedBox(width: 12),
-                        ],
                         IconButton(
                           icon: const Icon(Icons.refresh, color: Colors.blue),
                           tooltip: 'Recargar Catálogo',
@@ -404,6 +346,8 @@ class _CatalogScreenState extends State<CatalogScreen> {
                   padding: const EdgeInsets.all(8),
                   child: Text(provider.errorMessage!, style: TextStyle(color: Colors.red.shade700)),
                 ),
+              // ── Barra de acciones en lote (encima del checkbox "seleccionar todos") ──
+              if (_selectedProducts.isNotEmpty) _buildBulkActionsBar(provider),
               // ── Product Table ───────────────────────────────────────────────
               Expanded(
                 child: provider.products.isEmpty && !provider.isLoading
@@ -445,6 +389,11 @@ class _CatalogScreenState extends State<CatalogScreen> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       IconButton(
+                        icon: const Icon(Icons.first_page),
+                        onPressed: provider.currentPage > 1 ? () => provider.loadProducts(page: 1) : null,
+                        tooltip: 'Primera página',
+                      ),
+                      IconButton(
                         icon: const Icon(Icons.chevron_left),
                         onPressed: provider.hasPrevPage ? () => provider.prevPage() : null,
                         tooltip: 'Página anterior',
@@ -460,6 +409,11 @@ class _CatalogScreenState extends State<CatalogScreen> {
                         onPressed: provider.hasNextPage ? () => provider.nextPage() : null,
                         tooltip: 'Página siguiente',
                       ),
+                      IconButton(
+                        icon: const Icon(Icons.last_page),
+                        onPressed: provider.currentPage < provider.lastPage ? () => provider.loadProducts(page: provider.lastPage) : null,
+                        tooltip: 'Última página',
+                      ),
                     ],
                   ),
                 ),
@@ -467,6 +421,92 @@ class _CatalogScreenState extends State<CatalogScreen> {
           ),
         );
       },
+    );
+  }
+
+  /// Barra contextual de acciones en lote, alineada a la izquierda
+  /// justo encima del checkbox "seleccionar todos" de la tabla.
+  Widget _buildBulkActionsBar(CatalogProvider provider) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(8, 6, 16, 6),
+      decoration: BoxDecoration(
+        color: Colors.blue.shade50,
+        border: Border(top: BorderSide(color: Colors.blue.shade100)),
+      ),
+      child: Row(
+        children: [
+          PopupMenuButton<int>(
+            tooltip: 'Acciones en Lote',
+            offset: const Offset(0, 45),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            onSelected: (val) {
+              switch (val) {
+                case 1: _bulkUpdateCategory(provider); break;
+                case 2: _bulkToggleActive(provider); break;
+                case 3:
+                  AdminPinDialog.verify(context, action: 'Aumento Masivo Lote', permissionKey: 'manage_catalog').then((auth) {
+                    if (auth && context.mounted) {
+                      showDialog(context: context, builder: (_) => BulkPriceUpdateDialog(provider: provider, targetProductIds: _selectedProducts.keys.toList())).then((_) => setState(() => _selectedProducts.clear()));
+                    }
+                  });
+                  break;
+                case 4: showDialog(context: context, builder: (_) => PrintLabelsDialog(products: _selectedProducts.values.toList())); break;
+                case 5: _confirmBulkDelete(provider); break;
+                case 6: setState(() => _selectedProducts.clear()); break;
+                case 7: _bulkUpdateSupplier(provider); break;
+                case 8: _bulkUpdateBrand(provider); break;
+                case 12: _bulkGenerateQuote(); break;
+              }
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem(value: 1, child: Row(children: [Icon(Icons.folder_outlined, color: Colors.orange, size: 20), SizedBox(width: 12), Expanded(child: Text('Asignar Categoría'))])),
+              const PopupMenuItem(value: 8, child: Row(children: [Icon(Icons.branding_watermark_outlined, color: Colors.indigo, size: 20), SizedBox(width: 12), Expanded(child: Text('Asignar Marca'))])),
+              const PopupMenuItem(value: 7, child: Row(children: [Icon(Icons.local_shipping_outlined, color: Colors.brown, size: 20), SizedBox(width: 12), Expanded(child: Text('Asignar Proveedor'))])),
+              const PopupMenuItem(value: 12, child: Row(children: [Icon(Icons.request_quote_outlined, color: Colors.teal, size: 20), SizedBox(width: 12), Expanded(child: Text('Generar Presupuesto'))])),
+              const PopupMenuItem(value: 2, child: Row(children: [Icon(Icons.power_settings_new, color: Colors.teal, size: 20), SizedBox(width: 12), Expanded(child: Text('Cambiar Estado'))])),
+              const PopupMenuItem(value: 3, child: Row(children: [Icon(Icons.trending_up, color: Colors.deepOrange, size: 20), SizedBox(width: 12), Expanded(child: Text('Actualizar Precios'))])),
+              const PopupMenuItem(value: 4, child: Row(children: [Icon(Icons.print_outlined, color: Colors.deepPurple, size: 20), SizedBox(width: 12), Expanded(child: Text('Imprimir Etiquetas'))])),
+              const PopupMenuDivider(),
+              const PopupMenuItem(value: 5, child: Row(children: [Icon(Icons.delete_outline, color: Colors.red, size: 20), SizedBox(width: 12), Expanded(child: Text('Eliminar Todo'))])),
+              const PopupMenuDivider(),
+              const PopupMenuItem(value: 6, child: Row(children: [Icon(Icons.deselect, color: Colors.grey, size: 20), SizedBox(width: 12), Expanded(child: Text('Cancelar Selección'))])),
+            ],
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade800,
+                borderRadius: BorderRadius.circular(8),
+                boxShadow: [BoxShadow(color: Colors.blue.withValues(alpha: 0.3), blurRadius: 4, offset: const Offset(0, 2))],
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.checklist, color: Colors.white, size: 18),
+                  const SizedBox(width: 8),
+                  Text('Lote (${_selectedProducts.length})', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  const SizedBox(width: 4),
+                  const Icon(Icons.keyboard_arrow_down, color: Colors.white, size: 20),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Flexible(
+            child: Text(
+              '${_selectedProducts.length} producto(s) seleccionado(s)',
+              style: TextStyle(color: Colors.blue.shade900, fontSize: 13),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(width: 8),
+          TextButton.icon(
+            icon: const Icon(Icons.close, size: 16),
+            label: const Text('Limpiar'),
+            onPressed: () => setState(() => _selectedProducts.clear()),
+          ),
+        ],
+      ),
     );
   }
 
