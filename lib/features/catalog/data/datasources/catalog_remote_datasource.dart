@@ -28,6 +28,7 @@ abstract class CatalogRemoteDataSource {
   // Product CRUD
   Future<ProductModel> createProduct(Map<String, dynamic> productData);
   Future<ProductModel> updateProduct(int id, Map<String, dynamic> productData);
+  Future<Map<String, dynamic>> importProducts(List<int> fileBytes, String filename);
   Future<void> deleteProduct(int id);
   Future<Map<String, dynamic>> bulkDeleteProducts(List<int> ids);
   Future<Map<String, dynamic>> bulkUpdateProducts(
@@ -734,6 +735,43 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
           errStr.contains('ClientException')) {
         throw Exception('Error de conexión: No se encontró el servidor. Verifica la URL configurada.');
       }
+      rethrow;
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> importProducts(List<int> fileBytes, String filename) async {
+    try {
+      final request = http.MultipartRequest(
+        'POST',
+        Uri.parse('$baseUrl/catalog/products/import'),
+      );
+      
+      // Use the client's headers (e.g., auth tokens) if we were using a generic interceptor.
+      // Wait, client is an http.Client. We might need to copy headers from ApiClient if it's customized.
+      // But looking at uploadProductImage, we can see how it's done. Wait, let's just do what uploadProductImage does.
+      
+      request.files.add(
+        http.MultipartFile.fromBytes(
+          'file',
+          fileBytes,
+          filename: filename,
+        ),
+      );
+
+      request.headers['Accept'] = 'application/json';
+      // If we are using ApiClient, it intercepts normal requests, but MultipartRequest is a separate object.
+      // Let's send the request via the client to apply interceptors:
+      final streamedResponse = await client.send(request);
+      final response = await http.Response.fromStream(streamedResponse);
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return json.decode(response.body);
+      } else {
+        throw Exception(_parseApiError(response.body, 'Error al importar catálogo.'));
+      }
+    } catch (e) {
+      print('=== API Error en importProducts: $e ===');
       rethrow;
     }
   }

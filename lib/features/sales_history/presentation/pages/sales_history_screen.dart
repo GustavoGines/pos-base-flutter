@@ -676,14 +676,20 @@ class _SaleListTile extends StatelessWidget {
                             fontSize: 11,
                             fontWeight: FontWeight.bold)),
                   ),
-                const Spacer(),
-                Text(
-                  '\$${sale.total.toCurrency()}',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: sale.isVoided ? Colors.grey : Colors.green.shade800,
-                    decoration: sale.isVoided ? TextDecoration.lineThrough : null,
+                const SizedBox(width: 8),
+                Expanded(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerRight,
+                    child: Text(
+                      '\$${sale.total.toCurrency()}',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: sale.isVoided ? Colors.grey : Colors.green.shade800,
+                        decoration: sale.isVoided ? TextDecoration.lineThrough : null,
+                      ),
+                    ),
                   ),
                 ),
               ],
@@ -740,37 +746,43 @@ class _SaleListTile extends StatelessWidget {
                   
                 // Derecha: Ítems y Cajero
                 const SizedBox(width: 8),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.inventory_2_outlined, size: 12, color: Colors.grey.shade500),
-                    const SizedBox(width: 3),
-                    Text(
-                        '${sale.items.length} ítem${sale.items.length != 1 ? 's' : ''}',
-                        style: TextStyle(color: Colors.grey.shade600, fontSize: 12, fontWeight: FontWeight.w500)),
-                    if (sale.userName != null) ...[
-                      const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 4),
-                        child: Text('•', style: TextStyle(color: Colors.grey)),
-                      ),
-                      Icon(Icons.person_outline, size: 12, color: Colors.blueGrey.shade400),
-                      const SizedBox(width: 3),
-                      Container(
-                        constraints: const BoxConstraints(maxWidth: 85),
-                        child: Text(
-                          (sale.cashierName == null || sale.userName == sale.cashierName)
-                              ? sale.userName!
-                              : '${sale.userName}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                              color: Colors.blueGrey.shade700,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500),
-                        ),
-                      ),
-                    ],
-                  ],
+                Flexible(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerRight,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.inventory_2_outlined, size: 12, color: Colors.grey.shade500),
+                        const SizedBox(width: 3),
+                        Text(
+                            '${sale.items.length} ítem${sale.items.length != 1 ? 's' : ''}',
+                            style: TextStyle(color: Colors.grey.shade600, fontSize: 12, fontWeight: FontWeight.w500)),
+                        if (sale.userName != null) ...[
+                          const Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 4),
+                            child: Text('•', style: TextStyle(color: Colors.grey)),
+                          ),
+                          Icon(Icons.person_outline, size: 12, color: Colors.blueGrey.shade400),
+                          const SizedBox(width: 3),
+                          Container(
+                            constraints: const BoxConstraints(maxWidth: 85),
+                            child: Text(
+                              (sale.cashierName == null || sale.userName == sale.cashierName)
+                                  ? sale.userName!
+                                  : '${sale.userName}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                  color: Colors.blueGrey.shade700,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
                 ),
               ],
             ),

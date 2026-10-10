@@ -24,6 +24,7 @@ abstract class CatalogRepository {
   // Product CRUD
   Future<Product> createProduct(Map<String, dynamic> productData);
   Future<Product> updateProduct(int id, Map<String, dynamic> productData);
+  Future<Map<String, dynamic>> importProducts(List<int> fileBytes, String filename);
   Future<void> deleteProduct(int id);
   Future<Map<String, dynamic>> bulkDeleteProducts(List<int> ids);
   Future<Map<String, dynamic>> bulkUpdateProducts(

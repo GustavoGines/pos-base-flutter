@@ -661,6 +661,24 @@ class CatalogProvider with ChangeNotifier {
     }
   }
 
+  Future<Map<String, dynamic>> importProducts({required List<int> fileBytes, required String filename}) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      final result = await repository.importProducts(fileBytes, filename);
+      // Reload products after a successful import
+      await loadProducts(page: 1);
+      return result;
+    } catch (e) {
+      _errorMessage = e.toString();
+      rethrow;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
   Future<bool> deleteBrand(int id) async {
     _isLoading = true;
     _errorMessage = null;

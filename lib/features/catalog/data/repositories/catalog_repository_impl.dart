@@ -202,4 +202,9 @@ class CatalogRepositoryImpl implements CatalogRepository {
   Future<void> deleteProductImage(int productId) async {
     return await remoteDataSource.deleteProductImage(productId);
   }
+
+  @override
+  Future<Map<String, dynamic>> importProducts(List<int> fileBytes, String filename) async {
+    return await remoteDataSource.importProducts(fileBytes, filename);
+  }
 }

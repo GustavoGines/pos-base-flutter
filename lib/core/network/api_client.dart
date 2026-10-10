@@ -191,7 +191,7 @@ class ApiClient extends http.BaseClient {
       final List<int>? bodyBytes = (request is http.Request) ? request.bodyBytes : null;
       final Encoding encoding = (request is http.Request) ? request.encoding : utf8;
 
-      final response = await _inner.send(request).timeout(const Duration(seconds: 20));
+      final response = await _inner.send(request).timeout(const Duration(seconds: 300));
 
       // ── Intercepción de 401: Sesión expirada ─────────────────────────────
       // El backend devuelve 401 en dos casos:
@@ -300,7 +300,7 @@ class ApiClient extends http.BaseClient {
               }
               retryRequest.headers['Connection'] = 'close';
 
-              final retryResponse = await _inner.send(retryRequest).timeout(const Duration(seconds: 20));
+              final retryResponse = await _inner.send(retryRequest).timeout(const Duration(seconds: 300));
 
               // ── Intercepción de 401 en el reintento (Sesión expirada durante espera del PIN) ──
               if (retryResponse.statusCode == 401) {

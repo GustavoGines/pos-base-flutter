@@ -10,6 +10,7 @@ import 'package:frontend_desktop/features/catalog/presentation/providers/catalog
 import '../widgets/stock_adjustment_dialog.dart';
 import '../../domain/entities/product.dart';
 import '../../domain/entities/category.dart';
+import '../widgets/catalog_import_dialog.dart';
 import '../../domain/entities/brand.dart';
 import 'package:frontend_desktop/core/presentation/widgets/plan_upgrade_dialog.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
@@ -343,6 +344,20 @@ class _CatalogScreenState extends State<CatalogScreen> {
                                   final auth = await AdminPinDialog.verify(context, action: 'Aumento Masivo de Precios', permissionKey: 'manage_catalog');
                                   if (auth && context.mounted) _showBulkUpdateDialog(context, provider);
                                 },
+                        ),
+                        OutlinedButton.icon(
+                          icon: const Icon(Icons.upload_file, size: 18, color: Colors.green),
+                          label: const Text('Importar Excel', style: TextStyle(color: Colors.green)),
+                          style: OutlinedButton.styleFrom(side: const BorderSide(color: Colors.green)),
+                          onPressed: () async {
+                            final auth = await AdminPinDialog.verify(context, action: 'Importar Catálogo', permissionKey: 'manage_catalog');
+                            if (auth && context.mounted) {
+                              showDialog(
+                                context: context,
+                                builder: (_) => const CatalogImportDialog(),
+                              );
+                            }
+                          },
                         ),
                         const SizedBox(width: 8),
                         FilledButton.icon(
