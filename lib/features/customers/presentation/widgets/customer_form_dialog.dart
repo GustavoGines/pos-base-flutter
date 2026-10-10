@@ -63,6 +63,16 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
 
+    if (_appliesIibbPerception && _documentType != 80) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Para aplicar percepciones IIBB, el tipo de documento debe ser CUIT (80).'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     setState(() => _isSubmitting = true);
 
     await AdminPinDialog.protectAction(
@@ -173,7 +183,15 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
                   
                 ],
                 onChanged: (val) {
-                  if (val != null) setState(() => _documentType = val);
+                  if (val != null) {
+                    setState(() {
+                      _documentType = val;
+                      if (val == 96) {
+                        _taxCondition = 'consumidor_final'; // Auto-corregir a Consumidor Final si elige DNI
+                        _appliesIibbPerception = false; // Desactivar percepción si elige DNI
+                      }
+                    });
+                  }
                 },
               ),
               const SizedBox(height: 16),
@@ -190,6 +208,10 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
                   border: const OutlineInputBorder(),
                 ),
                 keyboardType: TextInputType.number,
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  LengthLimitingTextInputFormatter(_documentType == 96 ? 8 : 11),
+                ],
                 validator: (val) {
                   final text = val?.trim() ?? '';
                   if (text.isEmpty) {
@@ -229,7 +251,20 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
                       value: 'exento', child: Text('IVA Exento')),
                 ],
                 onChanged: (val) {
-                  if (val != null) setState(() => _taxCondition = val);
+                  if (val != null) {
+                    setState(() {
+                      _taxCondition = val;
+                      if (val == 'responsable_inscripto' || val == 'monotributo') {
+                        _documentType = 80; // Forzar CUIT automáticamente
+                      } else if (val == 'consumidor_final') {
+                        _documentType = 96; // Forzar DNI automáticamente
+                        _appliesIibbPerception = false; // Desactivar percepción para Consumidor Final
+                      } else if (val == 'exento') {
+                        _documentType = 80; // Los exentos suelen operar con CUIT
+                        _appliesIibbPerception = false; // Los exentos no sufren percepción
+                      }
+                    });
+                  }
                 },
               ),
               const SizedBox(height: 16),
@@ -289,6 +324,13 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
                 onChanged: (val) {
                   setState(() {
                     _appliesIibbPerception = val;
+                    if (val) {
+                      _documentType = 80; // Forzar CUIT automáticamente al activar
+                      if (_taxCondition == 'consumidor_final' || _taxCondition == 'exento') {
+                        _taxCondition = 'responsable_inscripto'; // Auto-corregir IVA
+                      }
+                      _isInternalAccount = false; // No se percibe a cuentas internas
+                    }
                     if (val && _iibbRateController.text.trim().isEmpty) {
                       try {
                         final defaultRate = context.read<SettingsProvider?>()?.settings?.defaultIibbPerceptionRate;
