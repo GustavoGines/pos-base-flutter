@@ -862,7 +862,7 @@ class PosProvider with ChangeNotifier {
               if (showPreview) {
                 final result = await showDialog<String>(
                   context: ctx,
-                  barrierDismissible: false,
+                  barrierDismissible: true,
                   builder: (dialogCtx) {
                     bool isVoiding = false;
                     return StatefulBuilder(
@@ -1294,7 +1294,7 @@ class PosProvider with ChangeNotifier {
 
                   final result = await showDialog<String>(
                     context: ctx,
-                    barrierDismissible: false,
+                    barrierDismissible: true,
                     builder: (dialogCtx) {
                       bool isVoiding = false;
                       return StatefulBuilder(
