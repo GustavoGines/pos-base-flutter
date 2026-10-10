@@ -522,89 +522,89 @@ class AfipFiscalPdfService {
             borderRadius: const pw.BorderRadius.all(pw.Radius.circular(2)),
           ),
           padding: const pw.EdgeInsets.all(8),
-          child: pw.Row(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
-            children: [
-              // Emisor (Columna Izquierda)
-              pw.Expanded(
-                child: pw.Padding(
-                  padding: const pw.EdgeInsets.only(right: 28),
-                  child: pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.start,
-                    children: [
-                      if (logoBytes != null)
-                        pw.Container(
-                          height: 45,
-                          alignment: pw.Alignment.centerLeft,
-                          child: pw.Image(pw.MemoryImage(logoBytes), fit: pw.BoxFit.contain),
-                        )
-                      else
-                        pw.Text(
-                          issuerName.toUpperCase(),
-                          style: pw.TextStyle(
-                            fontSize: 16,
-                            fontWeight: pw.FontWeight.bold,
-                            color: PdfColors.black,
+          child: pw.IntrinsicHeight(
+            child: pw.Row(
+              crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+              children: [
+                // Emisor (Columna Izquierda)
+                pw.Expanded(
+                  child: pw.Padding(
+                    padding: const pw.EdgeInsets.only(right: 28),
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        if (logoBytes != null)
+                          pw.Container(
+                            height: 45,
+                            alignment: pw.Alignment.centerLeft,
+                            child: pw.Image(pw.MemoryImage(logoBytes), fit: pw.BoxFit.contain),
+                          )
+                        else
+                          pw.Text(
+                            issuerName.toUpperCase(),
+                            style: pw.TextStyle(
+                              fontSize: 16,
+                              fontWeight: pw.FontWeight.bold,
+                              color: PdfColors.black,
+                            ),
                           ),
-                        ),
-                      pw.SizedBox(height: 8),
-                      pw.Row(
-                        crossAxisAlignment: pw.CrossAxisAlignment.start,
-                        children: [
-                          pw.Expanded(
-                            flex: 5,
-                            child: pw.Column(
-                              crossAxisAlignment: pw.CrossAxisAlignment.start,
-                              children: [
-                                pw.Text('Razón Social: $issuerName',
-                                    style: const pw.TextStyle(fontSize: 7.5)),
-                                pw.Text('Domicilio Comercial: $issuerAddress',
-                                    style: const pw.TextStyle(fontSize: 7.5)),
-                                if (issuerPhone.isNotEmpty)
-                                  pw.Text('Teléfono: $issuerPhone',
+                        pw.SizedBox(height: 8),
+                        pw.Row(
+                          crossAxisAlignment: pw.CrossAxisAlignment.start,
+                          children: [
+                            pw.Expanded(
+                              flex: 5,
+                              child: pw.Column(
+                                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                                children: [
+                                  pw.Text('Razón Social: $issuerName',
                                       style: const pw.TextStyle(fontSize: 7.5)),
-                                pw.Text('Cond. frente al IVA: $issuerTaxCondition',
-                                    style: pw.TextStyle(
-                                        fontSize: 7.5, fontWeight: pw.FontWeight.bold)),
-                              ],
+                                  pw.Text('Domicilio Comercial: $issuerAddress',
+                                      style: const pw.TextStyle(fontSize: 7.5)),
+                                  if (issuerPhone.isNotEmpty)
+                                    pw.Text('Teléfono: $issuerPhone',
+                                        style: const pw.TextStyle(fontSize: 7.5)),
+                                  pw.Text('Cond. frente al IVA: $issuerTaxCondition',
+                                      style: pw.TextStyle(
+                                          fontSize: 7.5, fontWeight: pw.FontWeight.bold)),
+                                ],
+                              ),
                             ),
-                          ),
-                          pw.SizedBox(width: 4),
-                          pw.Expanded(
-                            flex: 4,
-                            child: pw.Column(
-                              crossAxisAlignment: pw.CrossAxisAlignment.start,
-                              children: [
-                                pw.Text('CUIT: $issuerCuit',
-                                    style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold)),
-                                pw.Text('Ingresos Brutos: $issuerIibb',
-                                    style: const pw.TextStyle(fontSize: 7.5)),
-                                pw.Text('Inicio de Actividades: $issuerStartDate',
-                                    style: const pw.TextStyle(fontSize: 7.5)),
-                              ],
+                            pw.SizedBox(width: 4),
+                            pw.Expanded(
+                              flex: 4,
+                              child: pw.Column(
+                                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                                children: [
+                                  pw.Text('CUIT: $issuerCuit',
+                                      style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold)),
+                                  pw.Text('Ingresos Brutos: $issuerIibb',
+                                      style: const pw.TextStyle(fontSize: 7.5)),
+                                  pw.Text('Inicio de Actividades: $issuerStartDate',
+                                      style: const pw.TextStyle(fontSize: 7.5)),
+                                ],
+                              ),
                             ),
-                          ),
-                        ],
-                      ),
-                    ],
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
 
-              // Línea Divisoria Vertical Central
-              pw.Container(
-                width: 1,
-                height: 115,
-                color: PdfColors.black,
-              ),
+                // Línea Divisoria Vertical Central
+                pw.Container(
+                  width: 1,
+                  color: PdfColors.black,
+                ),
 
-              // Comprobante (Columna Derecha)
-              pw.Expanded(
-                child: pw.Padding(
-                  padding: const pw.EdgeInsets.only(left: 28),
-                  child: pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.start,
-                    children: [
+                // Comprobante (Columna Derecha)
+                pw.Expanded(
+                  child: pw.Padding(
+                    padding: const pw.EdgeInsets.only(left: 28),
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
                       pw.Row(
                         mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                         crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -644,7 +644,8 @@ class AfipFiscalPdfService {
                   ),
                 ),
               ),
-            ],
+              ],
+            ),
           ),
         ),
 
