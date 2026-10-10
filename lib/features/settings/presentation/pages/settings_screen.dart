@@ -103,6 +103,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final ExpansibleController _mpExpCtrl = ExpansibleController();
   final ExpansibleController _afipExpCtrl = ExpansibleController();
   String? _afipCertExpiresAt;
+  final ExpansibleController _ecommerceExpCtrl = ExpansibleController();
+  bool _ecommerceEnabled = false;
+  final _tiendanubeAccessTokenCtrl = TextEditingController();
+  final _wooCommerceConsumerKeyCtrl = TextEditingController();
+  final _wooCommerceConsumerSecretCtrl = TextEditingController();
   bool _integrationsLoaded = false;
   bool _isLoadingIntegrations = false;
 
@@ -558,6 +563,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _afipCuitCtrl.dispose();
     _afipPtoVtaCtrl.dispose();
     _afipKeyPassphraseCtrl.dispose();
+    _tiendanubeAccessTokenCtrl.dispose();
+    _wooCommerceConsumerKeyCtrl.dispose();
+    _wooCommerceConsumerSecretCtrl.dispose();
     super.dispose();
   }
 
@@ -689,6 +697,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       'remote_access': '🌐 Acceso Remoto (Cloudflare / Internet)',
       'suppliers': '📦 Gestión de Proveedores (B2B)',
       'expenses': '💸 Gestión de Gastos y Movimientos',
+      'multi_rubro': '🏬 Gestión Multi-Rubro',
+      'ecommerce_sync': '🌐 Sincronización E-Commerce',
     };
     return dictionary[featureCode] ?? featureCode.toUpperCase();
   }
@@ -1229,6 +1239,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             // ARCA / AFIP Card
             _buildAfipCard(isNarrow),
             const SizedBox(height: 32),
+
+            // E-Commerce Card
+            _buildEcommerceCard(isNarrow),
+            const SizedBox(height: 32),
           ],
         );
       },
@@ -1305,6 +1319,168 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildEcommerceStatusBadge() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: _ecommerceEnabled ? Colors.green.shade50 : Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+            color: _ecommerceEnabled ? Colors.green.shade200 : Colors.grey.shade300),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: _ecommerceEnabled ? Colors.green.shade600 : Colors.grey.shade500,
+            ),
+          ),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              _ecommerceEnabled ? 'Activo' : 'Inactivo',
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: _ecommerceEnabled ? Colors.green.shade700 : Colors.grey.shade600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEcommerceCard(bool isNarrow) {
+    return Card(
+      elevation: 0,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: Colors.grey.shade200),
+      ),
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          controller: _ecommerceExpCtrl,
+          initiallyExpanded: false,
+          tilePadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+          childrenPadding: const EdgeInsets.only(left: 24, right: 24, bottom: 24),
+          trailing: Switch(
+            value: _ecommerceEnabled,
+            activeThumbColor: const Color(0xFF673AB7),
+            onChanged: (val) {
+              setState(() => _ecommerceEnabled = val);
+              if (val) {
+                _ecommerceExpCtrl.expand();
+              } else {
+                _ecommerceExpCtrl.collapse();
+              }
+            },
+          ),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF673AB7).withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(Icons.shopping_cart_outlined,
+                    color: Color(0xFF673AB7), size: 28),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (isNarrow) ...[
+                      const Text(
+                        'E-Commerce y Omnicanalidad',
+                        style: TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.bold),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 6),
+                      _buildEcommerceStatusBadge(),
+                    ] else ...[
+                      Row(
+                        children: [
+                          Flexible(
+                            child: const Text(
+                              'E-Commerce y Omnicanalidad',
+                              style: TextStyle(
+                                  fontSize: 18, fontWeight: FontWeight.bold),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          _buildEcommerceStatusBadge(),
+                        ],
+                      ),
+                    ],
+                    const SizedBox(height: 4),
+                    Text(
+                      'Sincronizá tu stock local con MercadoLibre, TiendaNube y WooCommerce.',
+                      style: TextStyle(
+                          fontSize: 13, color: Colors.grey.shade600),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          children: [
+            const Divider(height: 1),
+            const SizedBox(height: 16),
+            
+            // TiendaNube Access Token
+            TextFormField(
+              key: const ValueKey('field_tiendanube_token'),
+              controller: _tiendanubeAccessTokenCtrl,
+              decoration: InputDecoration(
+                labelText: 'TiendaNube Access Token',
+                prefixIcon: const Icon(Icons.cloud_queue),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                helperText: 'Token de acceso de la API de TiendaNube',
+              ),
+            ),
+            const SizedBox(height: 16),
+            
+            // WooCommerce Consumer Key
+            TextFormField(
+              key: const ValueKey('field_woo_key'),
+              controller: _wooCommerceConsumerKeyCtrl,
+              decoration: InputDecoration(
+                labelText: 'WooCommerce Consumer Key',
+                prefixIcon: const Icon(Icons.key),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // WooCommerce Consumer Secret
+            TextFormField(
+              key: const ValueKey('field_woo_secret'),
+              controller: _wooCommerceConsumerSecretCtrl,
+              decoration: InputDecoration(
+                labelText: 'WooCommerce Consumer Secret',
+                prefixIcon: const Icon(Icons.lock_outline),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              obscureText: true,
+            ),
+          ],
+        ),
       ),
     );
   }
