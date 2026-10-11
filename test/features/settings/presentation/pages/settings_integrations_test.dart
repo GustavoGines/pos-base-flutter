@@ -11,6 +11,7 @@ import 'package:frontend_desktop/core/constants/app_permissions.dart';
 import 'package:frontend_desktop/core/providers/local_terminal_provider.dart';
 import 'package:frontend_desktop/core/services/license_heartbeat_service.dart';
 import 'package:frontend_desktop/features/auth/presentation/providers/auth_provider.dart';
+import 'package:frontend_desktop/features/auth/presentation/widgets/admin_pin_dialog.dart';
 import 'package:frontend_desktop/features/reports/presentation/providers/inventory_alerts_provider.dart';
 import 'package:frontend_desktop/features/settings/data/datasources/settings_remote_datasource.dart';
 import 'package:frontend_desktop/features/settings/domain/entities/business_settings.dart';
@@ -796,6 +797,43 @@ void main() {
       expect(settingsProv.testConnectionCalled, isFalse);
       // Warning SnackBar is shown
       expect(find.textContaining('Debe ingresar un Access Token para probar la conexión.'), findsOneWidget);
+    });
+
+    testWidgets('Non-admin user without permission is prompted with AdminPinDialog when revealing secrets', (tester) async {
+      final unauthorizedAuth = FakeAuthProvider(isAdmin: false, permissions: {AppPermissions.manageSettings});
+      final settingsProv = FakeIntegrationsSettingsProvider();
+
+      await tester.pumpWidget(buildSettingsScreenApp(
+        settingsProv: settingsProv,
+        authProv: unauthorizedAuth,
+      ));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      // Switch to Integraciones
+      await tester.tap(find.text('Integraciones'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      // Expand Mercado Pago tile
+      final mpHeader = find.text('Mercado Pago');
+      await tester.ensureVisible(mpHeader);
+      await tester.tap(mpHeader);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      // Tap on secret reveal icon button of MP Access Token
+      final tokenField = find.byKey(const ValueKey('field_mp_access_token'));
+      await tester.ensureVisible(tokenField);
+      final visibilityIcon = find.descendant(of: tokenField, matching: find.byType(IconButton));
+      expect(visibilityIcon, findsOneWidget);
+
+      await tester.tap(visibilityIcon);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+
+      // AdminPinDialog is displayed!
+      expect(find.byType(AdminPinDialog), findsOneWidget);
     });
   });
 }

@@ -302,6 +302,13 @@ class A4SplitPdfService {
     final isFiscal = invoice != null;
     final voucherLetter = isFiscal ? (invoice['voucher_letter']?.toString().toUpperCase() ?? 'B') : '';
     final voucherCode = isFiscal ? (invoice['voucher_type'] ?? (voucherLetter == 'A' ? 1 : (voucherLetter == 'C' ? 11 : 6))) : 0;
+    final voucherCodeInt = int.tryParse(voucherCode.toString()) ?? 0;
+    String voucherTitle = 'FACTURA';
+    if (<int>[3, 8, 13].contains(voucherCodeInt)) {
+      voucherTitle = 'NOTA DE CRÉDITO';
+    } else if (<int>[2, 7, 12].contains(voucherCodeInt)) {
+      voucherTitle = 'NOTA DE DÉBITO';
+    }
     final formattedNumber = isFiscal
         ? (invoice['formatted_number']?.toString() ??
             invoice['voucher_number']?.toString() ??
@@ -371,7 +378,7 @@ class A4SplitPdfService {
               child: pw.Column(
                 crossAxisAlignment: pw.CrossAxisAlignment.end,
                 children: [
-                  pw.Text('FACTURA $voucherLetter',
+                  pw.Text('$voucherTitle $voucherLetter',
                       style: pw.TextStyle(
                           color: PdfColors.black,
                           fontSize: isCompact ? 13 : 16,

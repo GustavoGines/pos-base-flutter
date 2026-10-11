@@ -193,7 +193,7 @@ class AfipFiscalPdfService {
     Uint8List? logoBytes,
     String paperSize = 'a4',
   }) {
-    // ── 1. Resolução de Letra e Código de Comprobante AFIP ───────────────────
+    // ── 1. Resolución de Letra y Código de Comprobante AFIP ───────────────────
     final rawLetter = (electronicInvoice['voucher_letter'] ?? 'B')
         .toString()
         .trim()

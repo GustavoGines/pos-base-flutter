@@ -1,10 +1,13 @@
+import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:frontend_desktop/core/config/app_config.dart';
+import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import 'package:desktop_drop/desktop_drop.dart';
 import '../providers/catalog_provider.dart';
 
@@ -63,22 +66,52 @@ class _CatalogImportDialogState extends State<CatalogImportDialog> {
   }
 
   Future<void> _downloadTemplate() async {
+    setState(() => _isLoading = true);
     try {
       final prefs = await SharedPreferences.getInstance();
       final baseUrl = prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
       final token = prefs.getString('pos_session_token');
-      final uri = Uri.parse('$baseUrl/catalog/products/import-template?token=$token');
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri);
+
+      final downloadUri = Uri.parse('$baseUrl/catalog/products/import-template');
+      final response = await http.get(
+        downloadUri,
+        headers: {
+          if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
+          'Accept': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/octet-stream, */*',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        String? outputFile = await FilePicker.platform.saveFile(
+          dialogTitle: 'Guardar Plantilla de Importación',
+          fileName: 'plantilla_importacion_productos.xlsx',
+          type: FileType.custom,
+          allowedExtensions: ['xlsx'],
+        );
+
+        if (outputFile != null) {
+          final file = File(outputFile);
+          await file.writeAsBytes(response.bodyBytes);
+          if (mounted) {
+            SnackBarService.success(context, 'Plantilla guardada exitosamente.');
+          }
+        }
       } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('No se pudo abrir el enlace para descargar la plantilla.')),
-          );
+        // Fallback a navegador si la descarga directa requiere redirección externa
+        final fallbackUri = Uri.parse('$baseUrl/catalog/products/import-template?token=$token');
+        if (await canLaunchUrl(fallbackUri)) {
+          await launchUrl(fallbackUri);
+        } else if (mounted) {
+          SnackBarService.error(context, 'Error al descargar plantilla (${response.statusCode}).');
         }
       }
     } catch (e) {
       debugPrint('Error downloading template: $e');
+      if (mounted) {
+        SnackBarService.error(context, 'Error al descargar la plantilla: $e');
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 

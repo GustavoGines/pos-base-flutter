@@ -18,7 +18,9 @@ import '../../../updater/data/services/update_service.dart';
 import '../../../updater/presentation/widgets/update_dialog.dart';
 import '../../../pos/presentation/providers/pos_provider.dart';
 import '../widgets/mobile_app_qr_section.dart';
+import '../widgets/ecommerce_sync_logs_dialog.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
+import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
 import '../../../../core/constants/app_permissions.dart';
 import '../../domain/entities/ecommerce_integration.dart';
 
@@ -564,6 +566,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  Future<void> _toggleSecretVisibility({
+    required String action,
+    required bool isCurrentlyObscured,
+    required void Function(bool) onToggle,
+  }) async {
+    if (isCurrentlyObscured) {
+      final ok = await AdminPinDialog.verify(
+        context,
+        action: action,
+        permissionKey: null,
+      );
+      if (!ok || !mounted) return;
+    }
+    setState(() => onToggle(!isCurrentlyObscured));
+  }
+
   Future<bool> _saveIntegrations({bool showFeedback = true}) async {
     final auth = context.read<AuthProvider?>();
     final canManageSettings =
@@ -575,6 +593,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
       }
       return false;
     }
+
+    final authorized = await AdminPinDialog.verify(
+      context,
+      action: 'Guardar Credenciales de Integración',
+      permissionKey: AppPermissions.manageSettings,
+    );
+    if (!authorized) return false;
 
     if (_isTestingMpConnection) {
       if (showFeedback && mounted) {
@@ -2037,7 +2062,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 suffixIcon: IconButton(
                   icon: Icon(_obscureMeliSecret ? Icons.visibility : Icons.visibility_off),
                   tooltip: _obscureMeliSecret ? 'Mostrar secreto' : 'Ocultar secreto',
-                  onPressed: () => setState(() => _obscureMeliSecret = !_obscureMeliSecret),
+                  onPressed: () => _toggleSecretVisibility(
+                    action: 'Revelar Secreto de Mercado Libre',
+                    isCurrentlyObscured: _obscureMeliSecret,
+                    onToggle: (v) => _obscureMeliSecret = v,
+                  ),
                 ),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                 helperText: 'Clave secreta. Los valores guardados se protegen en el servidor.',
@@ -2180,7 +2209,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 suffixIcon: IconButton(
                   icon: Icon(_obscureWooSecret ? Icons.visibility : Icons.visibility_off),
                   tooltip: _obscureWooSecret ? 'Mostrar secreto' : 'Ocultar secreto',
-                  onPressed: () => setState(() => _obscureWooSecret = !_obscureWooSecret),
+                  onPressed: () => _toggleSecretVisibility(
+                    action: 'Revelar Secreto de WooCommerce',
+                    isCurrentlyObscured: _obscureWooSecret,
+                    onToggle: (v) => _obscureWooSecret = v,
+                  ),
                 ),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                 helperText: 'Clave secreta Consumer Secret generada en WooCommerce REST API',
@@ -2313,7 +2346,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 suffixIcon: IconButton(
                   icon: Icon(_obscureTiendanubeToken ? Icons.visibility : Icons.visibility_off),
                   tooltip: _obscureTiendanubeToken ? 'Mostrar token' : 'Ocultar token',
-                  onPressed: () => setState(() => _obscureTiendanubeToken = !_obscureTiendanubeToken),
+                  onPressed: () => _toggleSecretVisibility(
+                    action: 'Revelar Token de Tienda Nube',
+                    isCurrentlyObscured: _obscureTiendanubeToken,
+                    onToggle: (v) => _obscureTiendanubeToken = v,
+                  ),
                 ),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                 helperText: 'Token de acceso API provisto por Tienda Nube / Nuvemshop',
@@ -2458,6 +2495,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
           children: [
             const Divider(height: 1),
             const SizedBox(height: 16),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 16.0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  OutlinedButton.icon(
+                    key: const ValueKey('btn_view_ecommerce_logs'),
+                    onPressed: () => EcommerceSyncLogsDialog.show(context),
+                    icon: const Icon(Icons.history_outlined, size: 18),
+                    label: const Text('Bitácora de Sincronización'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF673AB7),
+                      side: const BorderSide(color: Color(0xFF673AB7)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
             _buildMercadoLibreSection(isNarrow),
             _buildWooCommerceSection(isNarrow),
             _buildTiendaNubeSection(isNarrow),
@@ -2570,8 +2626,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       : Icons.visibility_off_outlined),
                   tooltip:
                       _obscureMpToken ? 'Mostrar token' : 'Ocultar token',
-                  onPressed: () =>
-                      setState(() => _obscureMpToken = !_obscureMpToken),
+                  onPressed: () => _toggleSecretVisibility(
+                    action: 'Revelar Token de Mercado Pago',
+                    isCurrentlyObscured: _obscureMpToken,
+                    onToggle: (v) => _obscureMpToken = v,
+                  ),
                 ),
               ),
             ),
@@ -2588,7 +2647,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 hint: 'whsec_...',
               ).copyWith(
                 helperText:
-                    'Clave de firma para validar notificaciones automí¡ticas de pago.',
+                    'Clave de firma para validar notificaciones automáticas de pago.',
                 helperMaxLines: 2,
                 suffixIcon: IconButton(
                   icon: Icon(_obscureMpSecret
@@ -2596,8 +2655,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       : Icons.visibility_off_outlined),
                   tooltip:
                       _obscureMpSecret ? 'Mostrar secret' : 'Ocultar secret',
-                  onPressed: () =>
-                      setState(() => _obscureMpSecret = !_obscureMpSecret),
+                  onPressed: () => _toggleSecretVisibility(
+                    action: 'Revelar Webhook Secret de Mercado Pago',
+                    isCurrentlyObscured: _obscureMpSecret,
+                    onToggle: (v) => _obscureMpSecret = v,
+                  ),
                 ),
               ),
             ),
@@ -3006,7 +3068,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
             const SizedBox(height: 16),
 
-            // Campo de contraseí±a de clave privada (opcional)
+            // Campo de contraseña de clave privada (opcional)
             TextFormField(
               key: const ValueKey('field_afip_key_passphrase'),
               controller: _afipKeyPassphraseCtrl,
@@ -3014,7 +3076,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               decoration: _inputDecoration(
                 'Contraseña de Clave Privada (Opcional)',
                 Icons.lock_outline,
-                hint: 'Dejar vací­o si la clave no tiene contraseña',
+                hint: 'Dejar vacío si la clave no tiene contraseña',
               ).copyWith(
                 helperText:
                     'Solo requerida si la clave privada (.key) fue cifrada con contraseña.',
@@ -3025,8 +3087,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   tooltip: _obscureAfipPassphrase
                       ? 'Mostrar contraseña'
                       : 'Ocultar contraseña',
-                  onPressed: () => setState(
-                      () => _obscureAfipPassphrase = !_obscureAfipPassphrase),
+                  onPressed: () => _toggleSecretVisibility(
+                    action: 'Revelar Clave de Certificado AFIP',
+                    isCurrentlyObscured: _obscureAfipPassphrase,
+                    onToggle: (v) => _obscureAfipPassphrase = v,
+                  ),
                 ),
               ),
             ),
@@ -3621,7 +3686,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       isLocked ? Colors.grey.shade400 : const Color(0xFF3F51B5),
                   onChanged: (val) {
                     if (isLocked) {
-                      // Mostrar upsell í¢€” no cambiar el estado local
+                      // Mostrar upsell — no cambiar el estado local
                       PlanUpgradeDialog.show(
                         context,
                         title: 'Plan Avanzado Requerido',
@@ -3634,7 +3699,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         onNavigateToSettings: () => setState(() =>
                             _activeSection = SettingsSection.subscription),
                       );
-                      return; // í¢â€ Â bloquea el setState
+                      return; // Bloquea el setState
                     }
                     setState(() => _advancedPriceTiersEnabled = val);
                   },
@@ -4087,7 +4152,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         const Padding(
           padding: EdgeInsets.only(left: 12, top: 8),
           child: Text(
-            'í¢Å¡Â í¯Â¸Â Esta ruta es necesaria para que las actualizaciones automí¡ticas puedan reemplazar los archivos del servidor local.',
+            '⚠️  Esta ruta es necesaria para que las actualizaciones automáticas puedan reemplazar los archivos del servidor local.',
             style: TextStyle(
                 fontSize: 12,
                 color: Colors.orange,

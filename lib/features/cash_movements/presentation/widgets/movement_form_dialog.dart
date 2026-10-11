@@ -1,7 +1,11 @@
+import 'dart:convert';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../../../core/network/api_client.dart';
 import '../../../../core/presentation/widgets/print_format_selector.dart';
 import '../../providers/cash_movement_provider.dart';
 import '../../providers/expense_category_provider.dart';
@@ -62,6 +66,10 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
 
   final _descriptionController = TextEditingController();
   final _receiptController = TextEditingController();
+
+  String? _receiptFileUrl;
+  String? _receiptFileName;
+  bool _isUploadingFile = false;
 
   int? _selectedSupplierId;
   int? _expenseCategoryId;
@@ -243,6 +251,78 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
     });
   }
 
+  Future<void> _pickAndUploadReceipt() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['jpg', 'jpeg', 'png', 'pdf'],
+    );
+
+    if (result != null && result.files.single.path != null) {
+      final filePath = result.files.single.path!;
+      final fileName = result.files.single.name;
+
+      setState(() => _isUploadingFile = true);
+      try {
+        final cashProv = context.read<CashMovementProvider>();
+        final apiClient = context.read<ApiClient>();
+
+        final uri = Uri.parse('${cashProv.baseUrl}/cash-movements/upload');
+        final request = http.MultipartRequest('POST', uri);
+
+        if (apiClient.sessionToken != null) {
+          request.headers['X-Session-Token'] = apiClient.sessionToken!;
+        }
+
+        request.files.add(await http.MultipartFile.fromPath('file', filePath));
+
+        final streamed = await request.send();
+        final response = await http.Response.fromStream(streamed);
+
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body);
+          final uploadedUrl = data['url'] ?? data['path'];
+          if (mounted) {
+            setState(() {
+              _receiptFileUrl = uploadedUrl;
+              _receiptFileName = fileName;
+              _isUploadingFile = false;
+            });
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Comprobante adjuntado correctamente.'),
+                backgroundColor: Colors.teal,
+              ),
+            );
+          }
+        } else {
+          String errMsg = 'Error al subir comprobante (HTTP ${response.statusCode})';
+          try {
+            final errBody = json.decode(response.body);
+            errMsg = errBody['message'] ?? errMsg;
+          } catch (_) {}
+          throw Exception(errMsg);
+        }
+      } catch (e) {
+        if (mounted) {
+          setState(() => _isUploadingFile = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Fallo la subida del comprobante: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  void _removeReceipt() {
+    setState(() {
+      _receiptFileUrl = null;
+      _receiptFileName = null;
+    });
+  }
+
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -403,6 +483,7 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
         'expense_category_id': (_expenseCategoryId == -1) ? null : _expenseCategoryId,
         'description': _descriptionController.text,
         'receipt_number': _receiptController.text,
+        'receipt_file_url': _receiptFileUrl,
         'supplier_id': (_type == 'supplier_payment' || _category == 'Cobro de Saldo a Favor') ? _selectedSupplierId : null,
         'payments': _payments
             .map((p) => {
@@ -1029,6 +1110,56 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                               labelText: 'Nº Comprobante (Opc.)'),
                         ),
                       ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: _isUploadingFile ? null : _pickAndUploadReceipt,
+                        icon: _isUploadingFile
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : Icon(
+                                _receiptFileUrl != null ? Icons.attach_file : Icons.add_photo_alternate_outlined,
+                                size: 18,
+                              ),
+                        label: Text(
+                          _isUploadingFile
+                              ? 'Subiendo...'
+                              : (_receiptFileUrl != null ? 'Comprobante Adjunto ✓' : 'Adjuntar Comprobante'),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: _receiptFileUrl != null ? Colors.teal.shade700 : Colors.blue.shade700,
+                          side: BorderSide(
+                            color: _receiptFileUrl != null ? Colors.teal.shade300 : Colors.blue.shade300,
+                          ),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ),
+                      if (_receiptFileUrl != null) ...[
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _receiptFileName ?? 'Archivo adjunto',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.teal.shade800,
+                              fontWeight: FontWeight.w500,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Quitar comprobante',
+                          icon: const Icon(Icons.close, size: 18, color: Colors.red),
+                          onPressed: _removeReceipt,
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ],
                     ],
                   ),
 

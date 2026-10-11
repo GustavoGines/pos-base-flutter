@@ -2747,7 +2747,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                   decoration: InputDecoration(
                     labelText: 'Días de Vencimiento (opcional)',
                     prefixIcon: const Icon(Icons.hourglass_bottom_outlined),
-                    helperText: 'Ej: 90 â†’ VTO = hoy + 90 días. Dejar vacío si no vence.',
+                    helperText: 'Ej: 90 → VTO = hoy + 90 días. Dejar vacío si no vence.',
                     suffixText: 'días',
                     border: const OutlineInputBorder(),
                   ),
