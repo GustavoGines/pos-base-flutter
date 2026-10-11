@@ -1,8 +1,10 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 import 'package:frontend_desktop/core/utils/image_url_resolver.dart';
 import '../models/business_settings_model.dart';
+import '../models/ecommerce_integration_model.dart';
 
 abstract class SettingsRemoteDataSource {
   Future<BusinessSettingsModel> fetchSettings();
@@ -19,6 +21,12 @@ abstract class SettingsRemoteDataSource {
     required String keyFilename,
     String? keyPassphrase,
   });
+  Future<List<EcommerceIntegrationModel>> fetchEcommerceIntegrations();
+  Future<EcommerceIntegrationModel> createEcommerceIntegration(Map<String, dynamic> data);
+  Future<EcommerceIntegrationModel> updateEcommerceIntegration(int id, Map<String, dynamic> data);
+  Future<bool> deleteEcommerceIntegration(int id);
+  Future<Map<String, dynamic>> testEcommerceConnection(int id);
+  Future<EcommerceIntegrationModel> toggleEcommerceActive(int id);
 }
 
 class SettingsRemoteDataSourceImpl implements SettingsRemoteDataSource {
@@ -56,7 +64,7 @@ class SettingsRemoteDataSourceImpl implements SettingsRemoteDataSource {
     } on FormatException catch (e) {
       throw Exception(e.message);
     } catch (e) {
-      print('=== API Error en fetchSettings: $e ===');
+      debugPrint('=== API Error en fetchSettings: $e ===');
       final errStr = e.toString();
       if (errStr.contains('SocketException') ||
           errStr.contains('TimeoutException') ||
@@ -96,7 +104,7 @@ class SettingsRemoteDataSourceImpl implements SettingsRemoteDataSource {
     } on FormatException catch (e) {
       throw Exception(e.message);
     } catch (e) {
-      print('=== API Error en updateSettings: $e ===');
+      debugPrint('=== API Error en updateSettings: $e ===');
       final errStr = e.toString();
       if (errStr.contains('SocketException') ||
           errStr.contains('TimeoutException') ||
@@ -178,7 +186,7 @@ class SettingsRemoteDataSourceImpl implements SettingsRemoteDataSource {
     } on FormatException catch (e) {
       throw Exception(e.message);
     } catch (e) {
-      print('=== API Error en uploadLogo: $e ===');
+      debugPrint('=== API Error en uploadLogo: $e ===');
       final errStr = e.toString();
       if (errStr.contains('SocketException') ||
           errStr.contains('TimeoutException') ||
@@ -365,6 +373,245 @@ class SettingsRemoteDataSourceImpl implements SettingsRemoteDataSource {
         throw Exception('Error interno del servidor. Contacte a soporte técnico.');
       } else {
         throw Exception(_parseApiError(response.body, 'Error al subir certificados de AFIP (Status: ${response.statusCode})'));
+      }
+    } on FormatException catch (e) {
+      throw Exception(e.message);
+    } catch (e) {
+      final errStr = e.toString();
+      if (errStr.contains('SocketException') ||
+          errStr.contains('TimeoutException') ||
+          errStr.contains('ClientException')) {
+        throw Exception('Error de conexión: No se encontró el servidor. Verifica la URL configurada.');
+      }
+      rethrow;
+    }
+  }
+
+  @override
+  Future<List<EcommerceIntegrationModel>> fetchEcommerceIntegrations() async {
+    try {
+      final response = await client.get(
+        Uri.parse('$baseUrl/ecommerce/integrations'),
+        headers: {'Accept': 'application/json'},
+      );
+
+      if (response.statusCode == 200) {
+        try {
+          final decoded = json.decode(response.body);
+          if (decoded is List) {
+            return decoded
+                .map((item) => EcommerceIntegrationModel.fromJson(item as Map<String, dynamic>))
+                .toList();
+          }
+          return [];
+        } catch (_) {
+          throw const FormatException('La respuesta del servidor no es un JSON válido.');
+        }
+      } else if (response.statusCode == 404) {
+        throw Exception('Error de conexión: No se encontró el servidor. Verifica la URL configurada.');
+      } else if (response.statusCode == 500) {
+        throw Exception('Error interno del servidor. Contacte a soporte técnico.');
+      } else {
+        throw Exception(_parseApiError(response.body, 'Error al obtener integraciones de e-commerce (Status: ${response.statusCode})'));
+      }
+    } on FormatException catch (e) {
+      throw Exception(e.message);
+    } catch (e) {
+      final errStr = e.toString();
+      if (errStr.contains('SocketException') ||
+          errStr.contains('TimeoutException') ||
+          errStr.contains('ClientException')) {
+        throw Exception('Error de conexión: No se encontró el servidor. Verifica la URL configurada.');
+      }
+      rethrow;
+    }
+  }
+
+  @override
+  Future<EcommerceIntegrationModel> createEcommerceIntegration(Map<String, dynamic> data) async {
+    try {
+      final response = await client.post(
+        Uri.parse('$baseUrl/ecommerce/integrations'),
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: json.encode(data),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        try {
+          final decoded = json.decode(response.body) as Map<String, dynamic>;
+          final integrationJson = decoded['integration'] ?? decoded;
+          return EcommerceIntegrationModel.fromJson(integrationJson as Map<String, dynamic>);
+        } catch (_) {
+          throw const FormatException('La respuesta del servidor no es un JSON válido.');
+        }
+      } else if (response.statusCode == 404) {
+        throw Exception('Error de conexión: No se encontró el servidor. Verifica la URL configurada.');
+      } else if (response.statusCode == 500) {
+        throw Exception('Error interno del servidor. Contacte a soporte técnico.');
+      } else {
+        throw Exception(_parseApiError(response.body, 'Error al crear integración de e-commerce (Status: ${response.statusCode})'));
+      }
+    } on FormatException catch (e) {
+      throw Exception(e.message);
+    } catch (e) {
+      final errStr = e.toString();
+      if (errStr.contains('SocketException') ||
+          errStr.contains('TimeoutException') ||
+          errStr.contains('ClientException')) {
+        throw Exception('Error de conexión: No se encontró el servidor. Verifica la URL configurada.');
+      }
+      rethrow;
+    }
+  }
+
+  @override
+  Future<EcommerceIntegrationModel> updateEcommerceIntegration(int id, Map<String, dynamic> data) async {
+    try {
+      final response = await client.put(
+        Uri.parse('$baseUrl/ecommerce/integrations/$id'),
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: json.encode(data),
+      );
+
+      if (response.statusCode == 200) {
+        try {
+          final decoded = json.decode(response.body) as Map<String, dynamic>;
+          final integrationJson = decoded['integration'] ?? decoded;
+          return EcommerceIntegrationModel.fromJson(integrationJson as Map<String, dynamic>);
+        } catch (_) {
+          throw const FormatException('La respuesta del servidor no es un JSON válido.');
+        }
+      } else if (response.statusCode == 404) {
+        throw Exception('Error de conexión: No se encontró el servidor. Verifica la URL configurada.');
+      } else if (response.statusCode == 500) {
+        throw Exception('Error interno del servidor. Contacte a soporte técnico.');
+      } else {
+        throw Exception(_parseApiError(response.body, 'Error al actualizar integración de e-commerce (Status: ${response.statusCode})'));
+      }
+    } on FormatException catch (e) {
+      throw Exception(e.message);
+    } catch (e) {
+      final errStr = e.toString();
+      if (errStr.contains('SocketException') ||
+          errStr.contains('TimeoutException') ||
+          errStr.contains('ClientException')) {
+        throw Exception('Error de conexión: No se encontró el servidor. Verifica la URL configurada.');
+      }
+      rethrow;
+    }
+  }
+
+  @override
+  Future<bool> deleteEcommerceIntegration(int id) async {
+    try {
+      final response = await client.delete(
+        Uri.parse('$baseUrl/ecommerce/integrations/$id'),
+        headers: {'Accept': 'application/json'},
+      );
+
+      if (response.statusCode == 200) {
+        return true;
+      } else if (response.statusCode == 404) {
+        throw Exception('Error de conexión: No se encontró el servidor. Verifica la URL configurada.');
+      } else if (response.statusCode == 500) {
+        throw Exception('Error interno del servidor. Contacte a soporte técnico.');
+      } else {
+        throw Exception(_parseApiError(response.body, 'Error al eliminar integración de e-commerce (Status: ${response.statusCode})'));
+      }
+    } on FormatException catch (e) {
+      throw Exception(e.message);
+    } catch (e) {
+      final errStr = e.toString();
+      if (errStr.contains('SocketException') ||
+          errStr.contains('TimeoutException') ||
+          errStr.contains('ClientException')) {
+        throw Exception('Error de conexión: No se encontró el servidor. Verifica la URL configurada.');
+      }
+      rethrow;
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> testEcommerceConnection(int id) async {
+    try {
+      final response = await client.post(
+        Uri.parse('$baseUrl/ecommerce/integrations/$id/test-connection'),
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+      );
+
+      final Map<String, dynamic> decoded;
+      try {
+        decoded = json.decode(response.body) as Map<String, dynamic>;
+      } catch (_) {
+        throw const FormatException('La respuesta del servidor no es un JSON válido.');
+      }
+
+      if (response.statusCode == 200) {
+        return {
+          'success': decoded['success'] == true,
+          'message': decoded['message']?.toString() ?? 'Conexión exitosa',
+          ...decoded,
+        };
+      } else {
+        return {
+          'success': false,
+          'message': decoded['message']?.toString() ?? 'Error al conectar con la plataforma',
+          ...decoded,
+        };
+      }
+    } on FormatException catch (e) {
+      return {'success': false, 'message': e.message};
+    } catch (e) {
+      final errStr = e.toString();
+      if (errStr.contains('SocketException') ||
+          errStr.contains('TimeoutException') ||
+          errStr.contains('ClientException')) {
+        return {
+          'success': false,
+          'message': 'No se pudo conectar con el servidor principal.',
+        };
+      }
+      return {
+        'success': false,
+        'message': 'Error inesperado al probar la conexión: $e',
+      };
+    }
+  }
+
+  @override
+  Future<EcommerceIntegrationModel> toggleEcommerceActive(int id) async {
+    try {
+      final response = await client.post(
+        Uri.parse('$baseUrl/ecommerce/integrations/$id/toggle-active'),
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        try {
+          final decoded = json.decode(response.body) as Map<String, dynamic>;
+          final integrationJson = decoded['integration'] ?? decoded;
+          return EcommerceIntegrationModel.fromJson(integrationJson as Map<String, dynamic>);
+        } catch (_) {
+          throw const FormatException('La respuesta del servidor no es un JSON válido.');
+        }
+      } else if (response.statusCode == 404) {
+        throw Exception('Error de conexión: No se encontró el servidor. Verifica la URL configurada.');
+      } else if (response.statusCode == 500) {
+        throw Exception('Error interno del servidor. Contacte a soporte técnico.');
+      } else {
+        throw Exception(_parseApiError(response.body, 'Error al cambiar estado de la integración (Status: ${response.statusCode})'));
       }
     } on FormatException catch (e) {
       throw Exception(e.message);

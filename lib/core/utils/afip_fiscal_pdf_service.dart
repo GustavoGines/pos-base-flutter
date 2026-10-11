@@ -224,6 +224,7 @@ class AfipFiscalPdfService {
     } else if (<int>[2, 7, 12].contains(voucherType)) {
       voucherTitle = 'NOTA DE DÉBITO';
     }
+    voucherTitle = '$voucherTitle $voucherLetter';
 
     // ── 2. Datos del Emisor ───────────────────────────────────────────────────
     String issuerName = 'Mi Negocio';
@@ -667,7 +668,7 @@ class AfipFiscalPdfService {
                       ),
                       pw.SizedBox(height: 3),
                       pw.Text(
-                        'Punto de Venta: $ptoVtaFormatted   Comp. Nro: $cbteNroFormatted',
+                        'Punto de Venta: $ptoVtaFormatted   Comp. Nro: $cbteNroFormatted ($formattedNumber)',
                         style: pw.TextStyle(
                             fontSize: 8.5, fontWeight: pw.FontWeight.bold),
                       ),

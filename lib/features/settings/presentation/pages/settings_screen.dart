@@ -20,6 +20,7 @@ import '../../../pos/presentation/providers/pos_provider.dart';
 import '../widgets/mobile_app_qr_section.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
 import '../../../../core/constants/app_permissions.dart';
+import '../../domain/entities/ecommerce_integration.dart';
 
 enum SettingsSection { general, prices, subscription, network, integrations, mobileApp }
 
@@ -105,11 +106,42 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String? _afipCertExpiresAt;
   final ExpansibleController _ecommerceExpCtrl = ExpansibleController();
   bool _ecommerceEnabled = false;
+  final _tiendanubeStoreIdCtrl = TextEditingController();
   final _tiendanubeAccessTokenCtrl = TextEditingController();
+  final _wooCommerceBaseUrlCtrl = TextEditingController();
   final _wooCommerceConsumerKeyCtrl = TextEditingController();
   final _wooCommerceConsumerSecretCtrl = TextEditingController();
   final _meliClientIdCtrl = TextEditingController();
   final _meliClientSecretCtrl = TextEditingController();
+
+  bool _obscureTiendanubeToken = true;
+  bool _obscureWooSecret = true;
+  bool _obscureMeliSecret = true;
+
+  int? _meliIntegrationId;
+  bool _meliActive = true;
+  bool _meliSyncStock = true;
+  bool _meliAutoPause = true;
+  String _meliHealthStatus = 'unknown';
+  bool _isTestingMeli = false;
+  String? _originalMeliSecret;
+
+  int? _wooIntegrationId;
+  bool _wooActive = true;
+  bool _wooSyncStock = true;
+  bool _wooAutoPause = true;
+  String _wooHealthStatus = 'unknown';
+  bool _isTestingWoo = false;
+  String? _originalWooSecret;
+
+  int? _tiendanubeIntegrationId;
+  bool _tiendanubeActive = true;
+  bool _tiendanubeSyncStock = true;
+  bool _tiendanubeAutoPause = true;
+  String _tiendanubeHealthStatus = 'unknown';
+  bool _isTestingTiendanube = false;
+  String? _originalTiendanubeToken;
+
   bool _integrationsLoaded = false;
   bool _isLoadingIntegrations = false;
 
@@ -177,7 +209,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
       final auth = context.read<AuthProvider?>();
       final canManageSettings =
-          auth == null || auth.isAdmin || auth.hasPermission(AppPermissions.manageSettings);
+          auth != null && (auth.isAdmin || auth.hasPermission(AppPermissions.manageSettings));
       if (canManageSettings) {
         _loadIntegrationsData();
       }
@@ -223,13 +255,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _loadIntegrationsData() async {
     final auth = context.read<AuthProvider?>();
     final canManageSettings =
-        auth == null || auth.isAdmin || auth.hasPermission(AppPermissions.manageSettings);
+        auth != null && (auth.isAdmin || auth.hasPermission(AppPermissions.manageSettings));
     if (!canManageSettings) return;
 
     setState(() => _isLoadingIntegrations = true);
     try {
       final provider = context.read<SettingsProvider>();
       final data = await provider.loadIntegrations(isSilent: true);
+      List<EcommerceIntegration> ecomList = [];
+      try {
+        ecomList = await provider.loadEcommerceIntegrations(isSilent: true);
+      } catch (e) {
+        debugPrint('[SettingsScreen] Info: no se cargaron integraciones e-commerce: $e');
+      }
       if (data != null && mounted) {
         setState(() {
           _mpAccessTokenCtrl.text = data['mp_access_token']?.toString() ?? '';
@@ -270,8 +308,62 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _wooCommerceConsumerSecretCtrl.text = data['woo_secret']?.toString() ?? '';
           _meliClientIdCtrl.text = data['meli_client_id']?.toString() ?? '';
           _meliClientSecretCtrl.text = data['meli_client_secret']?.toString() ?? '';
+
+          for (final item in ecomList) {
+            if (item.platform == 'mercadolibre') {
+              _meliIntegrationId = item.id;
+              _meliClientIdCtrl.text = item.clientId ?? '';
+              _meliClientSecretCtrl.text = item.clientSecret ?? '';
+              _originalMeliSecret = item.clientSecret;
+              _meliActive = item.isActive;
+              _meliSyncStock = item.syncStockEnabled;
+              _meliAutoPause = item.autoPauseOnZeroStock;
+              _meliHealthStatus = item.lastHealthStatus;
+            } else if (item.platform == 'woocommerce') {
+              _wooIntegrationId = item.id;
+              _wooCommerceBaseUrlCtrl.text = item.baseUrl ?? '';
+              _wooCommerceConsumerKeyCtrl.text = item.clientId ?? '';
+              _wooCommerceConsumerSecretCtrl.text = item.clientSecret ?? '';
+              _originalWooSecret = item.clientSecret;
+              _wooActive = item.isActive;
+              _wooSyncStock = item.syncStockEnabled;
+              _wooAutoPause = item.autoPauseOnZeroStock;
+              _wooHealthStatus = item.lastHealthStatus;
+            } else if (item.platform == 'tiendanube') {
+              _tiendanubeIntegrationId = item.id;
+              _tiendanubeStoreIdCtrl.text = item.storeId ?? '';
+              _tiendanubeAccessTokenCtrl.text = item.accessToken ?? '';
+              _originalTiendanubeToken = item.accessToken;
+              _tiendanubeActive = item.isActive;
+              _tiendanubeSyncStock = item.syncStockEnabled;
+              _tiendanubeAutoPause = item.autoPauseOnZeroStock;
+              _tiendanubeHealthStatus = item.lastHealthStatus;
+            }
+          }
+          if (ecomList.any((e) => e.isActive)) {
+            _ecommerceEnabled = true;
+          }
           
           _integrationsLoaded = true;
+        });
+
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          try {
+            if (_mpQrEnabled && !_mpExpCtrl.isExpanded) {
+              _mpExpCtrl.expand();
+            }
+          } catch (_) {}
+          try {
+            if (_afipEnabled && !_afipExpCtrl.isExpanded) {
+              _afipExpCtrl.expand();
+            }
+          } catch (_) {}
+          try {
+            if (_ecommerceEnabled && !_ecommerceExpCtrl.isExpanded) {
+              _ecommerceExpCtrl.expand();
+            }
+          } catch (_) {}
         });
       }
     } catch (e) {
@@ -287,7 +379,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (_isSavingIntegrations) return;
     final auth = context.read<AuthProvider?>();
     final canManageSettings =
-        auth == null || auth.isAdmin || auth.hasPermission(AppPermissions.manageSettings);
+        auth != null && (auth.isAdmin || auth.hasPermission(AppPermissions.manageSettings));
     if (!canManageSettings) {
       if (mounted) {
         SnackBarService.error(
@@ -400,7 +492,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     final auth = context.read<AuthProvider?>();
     final canManageSettings =
-        auth == null || auth.isAdmin || auth.hasPermission(AppPermissions.manageSettings);
+        auth != null && (auth.isAdmin || auth.hasPermission(AppPermissions.manageSettings));
     if (!canManageSettings) {
       if (mounted) {
         SnackBarService.error(context, 'No tienes permisos para modificar la configuración de ARCA.');
@@ -411,7 +503,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final cuit = _afipCuitCtrl.text.trim().replaceAll(RegExp(r'\D'), '');
     if (cuit.isEmpty || cuit.length < 10) {
       if (mounted) {
-        SnackBarService.warning(context, 'Debe ingresar un CUIT comercial ví¡lido.');
+        SnackBarService.warning(context, 'Debe ingresar un CUIT comercial válido.');
       }
       return;
     }
@@ -470,7 +562,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<bool> _saveIntegrations({bool showFeedback = true}) async {
     final auth = context.read<AuthProvider?>();
     final canManageSettings =
-        auth == null || auth.isAdmin || auth.hasPermission(AppPermissions.manageSettings);
+        auth != null && (auth.isAdmin || auth.hasPermission(AppPermissions.manageSettings));
     if (!canManageSettings) {
       if (showFeedback && mounted) {
         SnackBarService.error(
@@ -505,7 +597,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         if (parsed == null || parsed < 1 || parsed > 99999) {
           if (showFeedback && mounted) {
             SnackBarService.error(
-                context, 'El Punto de Venta debe ser un níºmero entre 1 y 99999.');
+                context, 'El Punto de Venta debe ser un número entre 1 y 99999.');
           }
           return false;
         }
@@ -531,6 +623,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
       final success = await provider.saveIntegrations(data);
       if (!mounted) return false;
+
+      // Guardar también plataformas de E-Commerce si tienen credenciales o IDs
+      if (_meliClientIdCtrl.text.isNotEmpty || _meliIntegrationId != null) {
+        await _saveMeliIntegration(showFeedback: false);
+      }
+      if (_wooCommerceBaseUrlCtrl.text.isNotEmpty || _wooCommerceConsumerKeyCtrl.text.isNotEmpty || _wooIntegrationId != null) {
+        await _saveWooIntegration(showFeedback: false);
+      }
+      if (_tiendanubeStoreIdCtrl.text.isNotEmpty || _tiendanubeAccessTokenCtrl.text.isNotEmpty || _tiendanubeIntegrationId != null) {
+        await _saveTiendanubeIntegration(showFeedback: false);
+      }
 
       if (success) {
         if (showFeedback) {
@@ -558,6 +661,357 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  Future<bool> _saveMeliIntegration({bool showFeedback = true}) async {
+    final clientId = _meliClientIdCtrl.text.trim();
+    final clientSecret = _meliClientSecretCtrl.text.trim();
+
+    if (clientId.isEmpty) {
+      if (showFeedback && mounted) {
+        SnackBarService.warning(context, 'Debe ingresar Client ID para guardar Mercado Libre.');
+      }
+      return false;
+    }
+
+    try {
+      final provider = context.read<SettingsProvider>();
+      final data = <String, dynamic>{
+        'platform': 'mercadolibre',
+        'name': 'Mercado Libre',
+        'client_id': clientId,
+        'is_active': _meliActive,
+        'sync_stock_enabled': _meliSyncStock,
+        'auto_pause_on_zero_stock': _meliAutoPause,
+      };
+
+      if (clientSecret.isNotEmpty) {
+        data['client_secret'] = clientSecret;
+      }
+
+      final saved = await provider.saveEcommerceIntegration(data, id: _meliIntegrationId);
+      if (saved != null) {
+        if (mounted) {
+          setState(() {
+            _meliIntegrationId = saved.id;
+            _originalMeliSecret = saved.clientSecret;
+            if (saved.clientSecret != null && saved.clientSecret!.isNotEmpty) {
+              _meliClientSecretCtrl.text = saved.clientSecret!;
+            }
+          });
+          if (showFeedback) {
+            SnackBarService.success(context, 'Configuración de Mercado Libre guardada correctamente.');
+          }
+        }
+        return true;
+      }
+      return false;
+    } catch (e) {
+      if (showFeedback && mounted) {
+        SnackBarService.error(context, 'Error al guardar Mercado Libre: $e');
+      }
+      return false;
+    }
+  }
+
+  Future<bool> _saveWooIntegration({bool showFeedback = true}) async {
+    final baseUrl = _wooCommerceBaseUrlCtrl.text.trim();
+    final clientId = _wooCommerceConsumerKeyCtrl.text.trim();
+    final clientSecret = _wooCommerceConsumerSecretCtrl.text.trim();
+
+    if (baseUrl.isEmpty || clientId.isEmpty) {
+      if (showFeedback && mounted) {
+        SnackBarService.warning(context, 'Debe ingresar URL de la tienda y Consumer Key para guardar WooCommerce.');
+      }
+      return false;
+    }
+
+    try {
+      final provider = context.read<SettingsProvider>();
+      final data = <String, dynamic>{
+        'platform': 'woocommerce',
+        'name': 'WooCommerce',
+        'base_url': baseUrl,
+        'client_id': clientId,
+        'is_active': _wooActive,
+        'sync_stock_enabled': _wooSyncStock,
+        'auto_pause_on_zero_stock': _wooAutoPause,
+      };
+
+      if (clientSecret.isNotEmpty) {
+        data['client_secret'] = clientSecret;
+      }
+
+      final saved = await provider.saveEcommerceIntegration(data, id: _wooIntegrationId);
+      if (saved != null) {
+        if (mounted) {
+          setState(() {
+            _wooIntegrationId = saved.id;
+            _originalWooSecret = saved.clientSecret;
+            if (saved.clientSecret != null && saved.clientSecret!.isNotEmpty) {
+              _wooCommerceConsumerSecretCtrl.text = saved.clientSecret!;
+            }
+          });
+          if (showFeedback) {
+            SnackBarService.success(context, 'Configuración de WooCommerce guardada correctamente.');
+          }
+        }
+        return true;
+      }
+      return false;
+    } catch (e) {
+      if (showFeedback && mounted) {
+        SnackBarService.error(context, 'Error al guardar WooCommerce: $e');
+      }
+      return false;
+    }
+  }
+
+  Future<bool> _saveTiendanubeIntegration({bool showFeedback = true}) async {
+    final storeId = _tiendanubeStoreIdCtrl.text.trim();
+    final accessToken = _tiendanubeAccessTokenCtrl.text.trim();
+
+    if (storeId.isEmpty) {
+      if (showFeedback && mounted) {
+        SnackBarService.warning(context, 'Debe ingresar Store ID para guardar Tienda Nube.');
+      }
+      return false;
+    }
+
+    try {
+      final provider = context.read<SettingsProvider>();
+      final data = <String, dynamic>{
+        'platform': 'tiendanube',
+        'name': 'Tienda Nube',
+        'store_id': storeId,
+        'is_active': _tiendanubeActive,
+        'sync_stock_enabled': _tiendanubeSyncStock,
+        'auto_pause_on_zero_stock': _tiendanubeAutoPause,
+      };
+
+      if (accessToken.isNotEmpty) {
+        data['access_token'] = accessToken;
+      }
+
+      final saved = await provider.saveEcommerceIntegration(data, id: _tiendanubeIntegrationId);
+      if (saved != null) {
+        if (mounted) {
+          setState(() {
+            _tiendanubeIntegrationId = saved.id;
+            _originalTiendanubeToken = saved.accessToken;
+            if (saved.accessToken != null && saved.accessToken!.isNotEmpty) {
+              _tiendanubeAccessTokenCtrl.text = saved.accessToken!;
+            }
+          });
+          if (showFeedback) {
+            SnackBarService.success(context, 'Configuración de Tienda Nube guardada correctamente.');
+          }
+        }
+        return true;
+      }
+      return false;
+    } catch (e) {
+      if (showFeedback && mounted) {
+        SnackBarService.error(context, 'Error al guardar Tienda Nube: $e');
+      }
+      return false;
+    }
+  }
+
+  Future<void> _testMeliConnection() async {
+    if (_isTestingMeli) return;
+    final auth = context.read<AuthProvider?>();
+    final canManageSettings =
+        auth != null && (auth.isAdmin || auth.hasPermission(AppPermissions.manageSettings));
+    if (!canManageSettings) {
+      if (mounted) SnackBarService.error(context, 'No tienes permisos para probar la conexión.');
+      return;
+    }
+
+    final clientId = _meliClientIdCtrl.text.trim();
+    final clientSecret = _meliClientSecretCtrl.text.trim();
+    if (clientId.isEmpty) {
+      if (mounted) SnackBarService.warning(context, 'Debe ingresar Client ID / App ID para probar la conexión con Mercado Libre.');
+      return;
+    }
+    if (clientSecret.isEmpty && (_originalMeliSecret == null || _originalMeliSecret!.isEmpty)) {
+      if (mounted) SnackBarService.warning(context, 'Debe ingresar Client Secret para probar la conexión con Mercado Libre.');
+      return;
+    }
+
+    setState(() => _isTestingMeli = true);
+    try {
+      final provider = context.read<SettingsProvider>();
+      final saved = await _saveMeliIntegration(showFeedback: false);
+      if (!saved) {
+        if (mounted) SnackBarService.error(context, 'No se pudo guardar la configuración de Mercado Libre antes de probar.');
+        return;
+      }
+
+      if (_meliIntegrationId != null) {
+        final result = await provider.testEcommerceConnection(_meliIntegrationId!);
+        if (!mounted) return;
+        if (result['success'] == true) {
+          setState(() => _meliHealthStatus = 'connected');
+          SnackBarService.success(context, 'Conexión con Mercado Libre exitosa. ${result['message'] ?? ''}'.trim());
+        } else {
+          setState(() => _meliHealthStatus = 'error');
+          SnackBarService.error(context, result['message']?.toString() ?? 'Error al conectar con Mercado Libre.');
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _meliHealthStatus = 'error');
+        SnackBarService.error(context, 'Error al probar conexión con Mercado Libre: $e');
+      }
+    } finally {
+      if (mounted) setState(() => _isTestingMeli = false);
+    }
+  }
+
+  Future<void> _testWooConnection() async {
+    if (_isTestingWoo) return;
+    final auth = context.read<AuthProvider?>();
+    final canManageSettings =
+        auth != null && (auth.isAdmin || auth.hasPermission(AppPermissions.manageSettings));
+    if (!canManageSettings) {
+      if (mounted) SnackBarService.error(context, 'No tienes permisos para probar la conexión.');
+      return;
+    }
+
+    final baseUrl = _wooCommerceBaseUrlCtrl.text.trim();
+    final clientId = _wooCommerceConsumerKeyCtrl.text.trim();
+    final clientSecret = _wooCommerceConsumerSecretCtrl.text.trim();
+
+    if (baseUrl.isEmpty) {
+      if (mounted) SnackBarService.warning(context, 'Debe ingresar la URL base para probar la conexión con WooCommerce.');
+      return;
+    }
+    if (clientId.isEmpty) {
+      if (mounted) SnackBarService.warning(context, 'Debe ingresar Consumer Key para probar la conexión con WooCommerce.');
+      return;
+    }
+    if (clientSecret.isEmpty && (_originalWooSecret == null || _originalWooSecret!.isEmpty)) {
+      if (mounted) SnackBarService.warning(context, 'Debe ingresar Consumer Secret para probar la conexión con WooCommerce.');
+      return;
+    }
+
+    setState(() => _isTestingWoo = true);
+    try {
+      final provider = context.read<SettingsProvider>();
+      final saved = await _saveWooIntegration(showFeedback: false);
+      if (!saved) {
+        if (mounted) SnackBarService.error(context, 'No se pudo guardar la configuración de WooCommerce antes de probar.');
+        return;
+      }
+
+      if (_wooIntegrationId != null) {
+        final result = await provider.testEcommerceConnection(_wooIntegrationId!);
+        if (!mounted) return;
+        if (result['success'] == true) {
+          setState(() => _wooHealthStatus = 'connected');
+          SnackBarService.success(context, 'Conexión con WooCommerce exitosa. ${result['message'] ?? ''}'.trim());
+        } else {
+          setState(() => _wooHealthStatus = 'error');
+          SnackBarService.error(context, result['message']?.toString() ?? 'Error al conectar con WooCommerce.');
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _wooHealthStatus = 'error');
+        SnackBarService.error(context, 'Error al probar conexión con WooCommerce: $e');
+      }
+    } finally {
+      if (mounted) setState(() => _isTestingWoo = false);
+    }
+  }
+
+  Future<void> _testTiendanubeConnection() async {
+    if (_isTestingTiendanube) return;
+    final auth = context.read<AuthProvider?>();
+    final canManageSettings =
+        auth != null && (auth.isAdmin || auth.hasPermission(AppPermissions.manageSettings));
+    if (!canManageSettings) {
+      if (mounted) SnackBarService.error(context, 'No tienes permisos para probar la conexión.');
+      return;
+    }
+
+    final storeId = _tiendanubeStoreIdCtrl.text.trim();
+    final accessToken = _tiendanubeAccessTokenCtrl.text.trim();
+
+    if (storeId.isEmpty) {
+      if (mounted) SnackBarService.warning(context, 'Debe ingresar Store ID para probar la conexión con Tienda Nube.');
+      return;
+    }
+    if (accessToken.isEmpty && (_originalTiendanubeToken == null || _originalTiendanubeToken!.isEmpty)) {
+      if (mounted) SnackBarService.warning(context, 'Debe ingresar Access Token para probar la conexión con Tienda Nube.');
+      return;
+    }
+
+    setState(() => _isTestingTiendanube = true);
+    try {
+      final provider = context.read<SettingsProvider>();
+      final saved = await _saveTiendanubeIntegration(showFeedback: false);
+      if (!saved) {
+        if (mounted) SnackBarService.error(context, 'No se pudo guardar la configuración de Tienda Nube antes de probar.');
+        return;
+      }
+
+      if (_tiendanubeIntegrationId != null) {
+        final result = await provider.testEcommerceConnection(_tiendanubeIntegrationId!);
+        if (!mounted) return;
+        if (result['success'] == true) {
+          setState(() => _tiendanubeHealthStatus = 'connected');
+          SnackBarService.success(context, 'Conexión con Tienda Nube exitosa. ${result['message'] ?? ''}'.trim());
+        } else {
+          setState(() => _tiendanubeHealthStatus = 'error');
+          SnackBarService.error(context, result['message']?.toString() ?? 'Error al conectar con Tienda Nube.');
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _tiendanubeHealthStatus = 'error');
+        SnackBarService.error(context, 'Error al probar conexión con Tienda Nube: $e');
+      }
+    } finally {
+      if (mounted) setState(() => _isTestingTiendanube = false);
+    }
+  }
+
+  Future<void> _toggleMeliActive(bool val) async {
+    setState(() => _meliActive = val);
+    if (_meliIntegrationId != null) {
+      try {
+        final provider = context.read<SettingsProvider>();
+        await provider.toggleEcommerceActive(_meliIntegrationId!);
+      } catch (e) {
+        debugPrint('[SettingsScreen] Error toggling meli active: $e');
+      }
+    }
+  }
+
+  Future<void> _toggleWooActive(bool val) async {
+    setState(() => _wooActive = val);
+    if (_wooIntegrationId != null) {
+      try {
+        final provider = context.read<SettingsProvider>();
+        await provider.toggleEcommerceActive(_wooIntegrationId!);
+      } catch (e) {
+        debugPrint('[SettingsScreen] Error toggling woo active: $e');
+      }
+    }
+  }
+
+  Future<void> _toggleTiendanubeActive(bool val) async {
+    setState(() => _tiendanubeActive = val);
+    if (_tiendanubeIntegrationId != null) {
+      try {
+        final provider = context.read<SettingsProvider>();
+        await provider.toggleEcommerceActive(_tiendanubeIntegrationId!);
+      } catch (e) {
+        debugPrint('[SettingsScreen] Error toggling tiendanube active: $e');
+      }
+    }
+  }
+
   @override
   void dispose() {
     _companyNameCtrl.dispose();
@@ -581,7 +1035,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _afipCuitCtrl.dispose();
     _afipPtoVtaCtrl.dispose();
     _afipKeyPassphraseCtrl.dispose();
+    _tiendanubeStoreIdCtrl.dispose();
     _tiendanubeAccessTokenCtrl.dispose();
+    _wooCommerceBaseUrlCtrl.dispose();
     _wooCommerceConsumerKeyCtrl.dispose();
     _wooCommerceConsumerSecretCtrl.dispose();
     _meliClientIdCtrl.dispose();
@@ -855,7 +1311,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final provider = context.watch<SettingsProvider>();
     final auth = context.watch<AuthProvider?>();
     final canManageSettings =
-        auth == null || auth.isAdmin || auth.hasPermission(AppPermissions.manageSettings);
+        auth != null && (auth.isAdmin || auth.hasPermission(AppPermissions.manageSettings));
 
     final isBusy =
         provider.isLoading || _isUploadingLogo || _isSavingIntegrations || _isTestingMpConnection;
@@ -1176,7 +1632,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       case SettingsSection.integrations:
         final auth = context.watch<AuthProvider?>();
         final canManageSettings =
-            auth == null || auth.isAdmin || auth.hasPermission(AppPermissions.manageSettings);
+            auth != null && (auth.isAdmin || auth.hasPermission(AppPermissions.manageSettings));
         if (!canManageSettings) {
           return const Center(
             child: Padding(
@@ -1380,6 +1836,532 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  Widget _buildChannelActiveBadge(bool active) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: active ? Colors.green.shade50 : Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+            color: active ? Colors.green.shade200 : Colors.grey.shade300),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: active ? Colors.green.shade600 : Colors.grey.shade500,
+            ),
+          ),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              active ? 'Activo' : 'Inactivo',
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: active ? Colors.green.shade700 : Colors.grey.shade600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildChannelHealthBadge(String status) {
+    final isConnected = status == 'connected';
+    final isError = status == 'error';
+    final color = isConnected
+        ? Colors.teal
+        : (isError ? Colors.red : Colors.grey);
+    final label = isConnected
+        ? 'Conectado'
+        : (isError ? 'Error Conexión' : 'Sin probar');
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.shade200),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            isConnected
+                ? Icons.check_circle_outline
+                : (isError ? Icons.error_outline : Icons.help_outline),
+            size: 11,
+            color: color.shade700,
+          ),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              label,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: color.shade700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSwitchRow({
+    required Key key,
+    required String title,
+    required String subtitle,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+    Color activeColor = const Color(0xFF673AB7),
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Switch(
+            key: key,
+            value: value,
+            activeThumbColor: activeColor,
+            onChanged: onChanged,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMercadoLibreSection(bool isNarrow) {
+    const brandColor = Color(0xFFF57F17);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 24),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: brandColor.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.storefront, color: brandColor, size: 22),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    const Text(
+                      'Mercado Libre',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
+                    _buildChannelActiveBadge(_meliActive),
+                    _buildChannelHealthBadge(_meliHealthStatus),
+                  ],
+                ),
+              ),
+              Switch(
+                key: const ValueKey('switch_meli_active'),
+                value: _meliActive,
+                activeThumbColor: brandColor,
+                onChanged: _toggleMeliActive,
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          TextFormField(
+            key: const ValueKey('field_meli_id'),
+            controller: _meliClientIdCtrl,
+            decoration: InputDecoration(
+              labelText: 'Client ID / App ID',
+              prefixIcon: const Icon(Icons.app_registration),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              helperText: 'App ID provisto en el portal de desarrolladores de Mercado Libre',
+            ),
+          ),
+          const SizedBox(height: 14),
+          TextFormField(
+            key: const ValueKey('field_meli_secret'),
+            controller: _meliClientSecretCtrl,
+            obscureText: _obscureMeliSecret,
+            decoration: InputDecoration(
+              labelText: 'Client Secret',
+              prefixIcon: const Icon(Icons.vpn_key),
+              suffixIcon: IconButton(
+                icon: Icon(_obscureMeliSecret ? Icons.visibility : Icons.visibility_off),
+                tooltip: _obscureMeliSecret ? 'Mostrar secreto' : 'Ocultar secreto',
+                onPressed: () => setState(() => _obscureMeliSecret = !_obscureMeliSecret),
+              ),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              helperText: 'Clave secreta. Los valores guardados se protegen en el servidor.',
+            ),
+          ),
+          const SizedBox(height: 14),
+          _buildSwitchRow(
+            key: const ValueKey('switch_meli_sync_stock'),
+            title: 'Sincronizar Stock',
+            subtitle: 'Replicar automáticamente el stock de ventas físicas hacia Mercado Libre',
+            value: _meliSyncStock,
+            activeColor: brandColor,
+            onChanged: (val) => setState(() => _meliSyncStock = val),
+          ),
+          _buildSwitchRow(
+            key: const ValueKey('switch_meli_auto_pause'),
+            title: 'Pausar publicación al agotar stock',
+            subtitle: 'Pausa automáticamente la publicación al quedar en cero para evitar sobreventas',
+            value: _meliAutoPause,
+            activeColor: brandColor,
+            onChanged: (val) => setState(() => _meliAutoPause = val),
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 12,
+            runSpacing: 8,
+            children: [
+              FilledButton.icon(
+                key: const ValueKey('btn_test_meli_connection'),
+                onPressed: _isTestingMeli ? null : _testMeliConnection,
+                icon: _isTestingMeli
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Icon(Icons.wifi_tethering, size: 18),
+                label: const Text('Probar Conexión'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: brandColor,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+              OutlinedButton.icon(
+                key: const ValueKey('btn_save_meli'),
+                onPressed: () => _saveMeliIntegration(showFeedback: true),
+                icon: const Icon(Icons.save_outlined, size: 18),
+                label: const Text('Guardar Mercado Libre'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: brandColor,
+                  side: const BorderSide(color: brandColor),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWooCommerceSection(bool isNarrow) {
+    const brandColor = Color(0xFF7F54B3);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 24),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: brandColor.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.shopping_basket_outlined, color: brandColor, size: 22),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    const Text(
+                      'WooCommerce',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
+                    _buildChannelActiveBadge(_wooActive),
+                    _buildChannelHealthBadge(_wooHealthStatus),
+                  ],
+                ),
+              ),
+              Switch(
+                key: const ValueKey('switch_woo_active'),
+                value: _wooActive,
+                activeThumbColor: brandColor,
+                onChanged: _toggleWooActive,
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          TextFormField(
+            key: const ValueKey('field_woo_url'),
+            controller: _wooCommerceBaseUrlCtrl,
+            decoration: InputDecoration(
+              labelText: 'URL de la Tienda (Base URL)',
+              hintText: 'https://mitienda.com',
+              prefixIcon: const Icon(Icons.language),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              helperText: 'Dirección completa del sitio WordPress donde corre WooCommerce',
+            ),
+          ),
+          const SizedBox(height: 14),
+          TextFormField(
+            key: const ValueKey('field_woo_key'),
+            controller: _wooCommerceConsumerKeyCtrl,
+            decoration: InputDecoration(
+              labelText: 'Consumer Key (client_id)',
+              prefixIcon: const Icon(Icons.key),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+          ),
+          const SizedBox(height: 14),
+          TextFormField(
+            key: const ValueKey('field_woo_secret'),
+            controller: _wooCommerceConsumerSecretCtrl,
+            obscureText: _obscureWooSecret,
+            decoration: InputDecoration(
+              labelText: 'Consumer Secret (client_secret)',
+              prefixIcon: const Icon(Icons.lock_outline),
+              suffixIcon: IconButton(
+                icon: Icon(_obscureWooSecret ? Icons.visibility : Icons.visibility_off),
+                tooltip: _obscureWooSecret ? 'Mostrar secreto' : 'Ocultar secreto',
+                onPressed: () => setState(() => _obscureWooSecret = !_obscureWooSecret),
+              ),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              helperText: 'Clave secreta Consumer Secret generada en WooCommerce REST API',
+            ),
+          ),
+          const SizedBox(height: 14),
+          _buildSwitchRow(
+            key: const ValueKey('switch_woo_sync_stock'),
+            title: 'Sincronizar Stock',
+            subtitle: 'Replicar automáticamente el stock de ventas físicas hacia WooCommerce',
+            value: _wooSyncStock,
+            activeColor: brandColor,
+            onChanged: (val) => setState(() => _wooSyncStock = val),
+          ),
+          _buildSwitchRow(
+            key: const ValueKey('switch_woo_auto_pause'),
+            title: 'Pausar compras al agotar stock',
+            subtitle: 'Forzar "outofstock" y deshabilitar pedidos en espera (backorders: no)',
+            value: _wooAutoPause,
+            activeColor: brandColor,
+            onChanged: (val) => setState(() => _wooAutoPause = val),
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 12,
+            runSpacing: 8,
+            children: [
+              FilledButton.icon(
+                key: const ValueKey('btn_test_woo_connection'),
+                onPressed: _isTestingWoo ? null : _testWooConnection,
+                icon: _isTestingWoo
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Icon(Icons.wifi_tethering, size: 18),
+                label: const Text('Probar Conexión'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: brandColor,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+              OutlinedButton.icon(
+                key: const ValueKey('btn_save_woo'),
+                onPressed: () => _saveWooIntegration(showFeedback: true),
+                icon: const Icon(Icons.save_outlined, size: 18),
+                label: const Text('Guardar WooCommerce'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: brandColor,
+                  side: const BorderSide(color: brandColor),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTiendaNubeSection(bool isNarrow) {
+    const brandColor = Color(0xFF2B358F);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: brandColor.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.cloud_outlined, color: brandColor, size: 22),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    const Text(
+                      'Tienda Nube',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
+                    _buildChannelActiveBadge(_tiendanubeActive),
+                    _buildChannelHealthBadge(_tiendanubeHealthStatus),
+                  ],
+                ),
+              ),
+              Switch(
+                key: const ValueKey('switch_tiendanube_active'),
+                value: _tiendanubeActive,
+                activeThumbColor: brandColor,
+                onChanged: _toggleTiendanubeActive,
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          TextFormField(
+            key: const ValueKey('field_tiendanube_store_id'),
+            controller: _tiendanubeStoreIdCtrl,
+            decoration: InputDecoration(
+              labelText: 'Store ID (store_id)',
+              hintText: '1234567',
+              prefixIcon: const Icon(Icons.numbers),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              helperText: 'Identificador numérico de la tienda asignado por Tienda Nube',
+            ),
+          ),
+          const SizedBox(height: 14),
+          TextFormField(
+            key: const ValueKey('field_tiendanube_token'),
+            controller: _tiendanubeAccessTokenCtrl,
+            obscureText: _obscureTiendanubeToken,
+            decoration: InputDecoration(
+              labelText: 'Access Token',
+              prefixIcon: const Icon(Icons.security),
+              suffixIcon: IconButton(
+                icon: Icon(_obscureTiendanubeToken ? Icons.visibility : Icons.visibility_off),
+                tooltip: _obscureTiendanubeToken ? 'Mostrar token' : 'Ocultar token',
+                onPressed: () => setState(() => _obscureTiendanubeToken = !_obscureTiendanubeToken),
+              ),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              helperText: 'Token de acceso API provisto por Tienda Nube / Nuvemshop',
+            ),
+          ),
+          const SizedBox(height: 14),
+          _buildSwitchRow(
+            key: const ValueKey('switch_tiendanube_sync_stock'),
+            title: 'Sincronizar Stock',
+            subtitle: 'Replicar automáticamente el stock de ventas físicas hacia Tienda Nube',
+            value: _tiendanubeSyncStock,
+            activeColor: brandColor,
+            onChanged: (val) => setState(() => _tiendanubeSyncStock = val),
+          ),
+          _buildSwitchRow(
+            key: const ValueKey('switch_tiendanube_auto_pause'),
+            title: 'Pausar variantes al agotar stock',
+            subtitle: 'Establecer cantidad cero en todas las variantes al agotarse en local',
+            value: _tiendanubeAutoPause,
+            activeColor: brandColor,
+            onChanged: (val) => setState(() => _tiendanubeAutoPause = val),
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 12,
+            runSpacing: 8,
+            children: [
+              FilledButton.icon(
+                key: const ValueKey('btn_test_tiendanube_connection'),
+                onPressed: _isTestingTiendanube ? null : _testTiendanubeConnection,
+                icon: _isTestingTiendanube
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Icon(Icons.wifi_tethering, size: 18),
+                label: const Text('Probar Conexión'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: brandColor,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+              OutlinedButton.icon(
+                key: const ValueKey('btn_save_tiendanube'),
+                onPressed: () => _saveTiendanubeIntegration(showFeedback: true),
+                icon: const Icon(Icons.save_outlined, size: 18),
+                label: const Text('Guardar Tienda Nube'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: brandColor,
+                  side: const BorderSide(color: brandColor),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildEcommerceCard(bool isNarrow) {
     return Card(
       elevation: 0,
@@ -1392,7 +2374,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
           controller: _ecommerceExpCtrl,
-          initiallyExpanded: false,
+          initiallyExpanded: _ecommerceEnabled,
           tilePadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
           childrenPadding: const EdgeInsets.only(left: 24, right: 24, bottom: 24),
           trailing: Switch(
@@ -1450,7 +2432,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ],
                     const SizedBox(height: 4),
                     Text(
-                      'Sincronizá tu stock local con MercadoLibre, TiendaNube y WooCommerce.',
+                      'Sincronizá tu stock local con Mercado Libre, WooCommerce y Tienda Nube.',
                       style: TextStyle(
                           fontSize: 13, color: Colors.grey.shade600),
                     ),
@@ -1462,68 +2444,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
           children: [
             const Divider(height: 1),
             const SizedBox(height: 16),
-            
-            // TiendaNube Access Token
-            TextFormField(
-              key: const ValueKey('field_tiendanube_token'),
-              controller: _tiendanubeAccessTokenCtrl,
-              decoration: InputDecoration(
-                labelText: 'TiendaNube Access Token',
-                prefixIcon: const Icon(Icons.cloud_queue),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                helperText: 'Token de acceso de la API de TiendaNube',
-              ),
-            ),
-            const SizedBox(height: 16),
-            
-            // WooCommerce Consumer Key
-            TextFormField(
-              key: const ValueKey('field_woo_key'),
-              controller: _wooCommerceConsumerKeyCtrl,
-              decoration: InputDecoration(
-                labelText: 'WooCommerce Consumer Key',
-                prefixIcon: const Icon(Icons.key),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // WooCommerce Consumer Secret
-            TextFormField(
-              key: const ValueKey('field_woo_secret'),
-              controller: _wooCommerceConsumerSecretCtrl,
-              decoration: InputDecoration(
-                labelText: 'WooCommerce Consumer Secret',
-                prefixIcon: const Icon(Icons.lock_outline),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-              ),
-              obscureText: true,
-            ),
-            const SizedBox(height: 16),
-            
-            // MercadoLibre Client ID
-            TextFormField(
-              key: const ValueKey('field_meli_id'),
-              controller: _meliClientIdCtrl,
-              decoration: InputDecoration(
-                labelText: 'MercadoLibre Client ID',
-                prefixIcon: const Icon(Icons.app_registration),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // MercadoLibre Client Secret
-            TextFormField(
-              key: const ValueKey('field_meli_secret'),
-              controller: _meliClientSecretCtrl,
-              decoration: InputDecoration(
-                labelText: 'MercadoLibre Client Secret',
-                prefixIcon: const Icon(Icons.vpn_key),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-              ),
-              obscureText: true,
-            ),
+            _buildMercadoLibreSection(isNarrow),
+            _buildWooCommerceSection(isNarrow),
+            _buildTiendaNubeSection(isNarrow),
           ],
         ),
       ),
@@ -1542,7 +2465,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
           controller: _mpExpCtrl,
-          initiallyExpanded: false,
+          initiallyExpanded: _mpQrEnabled,
           tilePadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
           childrenPadding: const EdgeInsets.only(left: 24, right: 24, bottom: 24),
           trailing: Switch(
@@ -1759,7 +2682,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
           controller: _afipExpCtrl,
-          initiallyExpanded: false,
+          initiallyExpanded: _afipEnabled,
           tilePadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
           childrenPadding: const EdgeInsets.only(left: 24, right: 24, bottom: 24),
           trailing: Switch(
@@ -2307,6 +3230,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   const Text('Condición frente al IVA', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Colors.black87)),
                   const SizedBox(height: 8),
                   DropdownButtonFormField<String>(
+                    isExpanded: true,
                     initialValue: _selectedTaxCondition,
                     decoration: InputDecoration(
                       prefixIcon: const Icon(Icons.account_balance_outlined, color: Colors.black54),
@@ -2724,6 +3648,84 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           );
         }),
+        // ── Percepciones IIBB (Módulo Mayorista) ───────────────────────
+        Container(
+          margin: const EdgeInsets.only(top: 24),
+          decoration: BoxDecoration(
+            color: _isIibbPerceptionAgent
+                ? const Color(0xFF2E7D32).withValues(alpha: 0.05)
+                : Colors.grey.shade50,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: _isIibbPerceptionAgent
+                  ? const Color(0xFF2E7D32).withValues(alpha: 0.4)
+                  : Colors.grey.shade200,
+              width: 1.5,
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Material(
+                  color: Colors.transparent,
+                  child: SwitchListTile(
+                    key: const ValueKey('switch_iibb_perception_agent'),
+                    contentPadding: EdgeInsets.zero,
+                    secondary: Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF2E7D32).withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.account_balance, color: Color(0xFF2E7D32)),
+                    ),
+                    title: const Text(
+                      'Agente de Percepción IIBB (Módulo Mayorista)',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                    ),
+                    subtitle: const Text(
+                      'Habilita la aplicación de percepciones de Ingresos Brutos a clientes alcanzados en ventas.',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                    value: _isIibbPerceptionAgent,
+                    activeThumbColor: const Color(0xFF2E7D32),
+                    onChanged: (val) => setState(() => _isIibbPerceptionAgent = val),
+                  ),
+                ),
+                if (_isIibbPerceptionAgent) ...[
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    key: const ValueKey('field_default_iibb_rate'),
+                    controller: _defaultIibbRateCtrl,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(RegExp(r'^\d*[\.,]?\d{0,2}')),
+                    ],
+                    decoration: InputDecoration(
+                      labelText: 'Alícuota por defecto IIBB (%)',
+                      hintText: 'Ej: 3.0',
+                      prefixIcon: const Icon(Icons.percent, size: 20),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                      filled: true,
+                      fillColor: Colors.white,
+                    ),
+                    validator: (val) {
+                      if (!_isIibbPerceptionAgent) return null;
+                      if (val == null || val.trim().isEmpty) return null;
+                      final parsed = double.tryParse(val.trim().replaceAll(',', '.'));
+                      if (parsed == null || parsed < 0 || parsed > 100) {
+                        return 'Ingrese una alícuota válida (0 - 100%)';
+                      }
+                      return null;
+                    },
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
         if (provider.settings?.features.multiplePrices == true) ...[
           const SizedBox(height: 48),
           _buildCustomTiersSection(enabled: _advancedPriceTiersEnabled),
@@ -2794,8 +3796,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 children: _customTiers.asMap().entries.map((entry) {
                   final idx = entry.key;
                   final tier = entry.value;
-                  final name = tier['name'];
-                  final mod = (tier['modifier'] as num).toDouble();
+                  final name = tier['name']?.toString() ?? '';
+                  final modVal = tier['modifier'] ?? tier['percentage'] ?? 0.0;
+                  final mod = (modVal is num)
+                      ? modVal.toDouble()
+                      : (double.tryParse(modVal.toString()) ?? 0.0);
                   final sign = mod >= 0 ? '+' : '';
                   return GestureDetector(
                     onTap: () async {

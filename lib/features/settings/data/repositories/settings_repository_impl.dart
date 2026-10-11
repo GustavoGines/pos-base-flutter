@@ -1,4 +1,5 @@
 import '../../domain/entities/business_settings.dart';
+import '../../domain/entities/ecommerce_integration.dart';
 import '../../domain/repositories/settings_repository.dart';
 import '../datasources/settings_remote_datasource.dart';
 
@@ -57,9 +58,40 @@ class SettingsRepositoryImpl implements SettingsRepository {
   }
 
   @override
+  Future<List<EcommerceIntegration>> getEcommerceIntegrations() async {
+    return await remoteDataSource.fetchEcommerceIntegrations();
+  }
+
+  @override
+  Future<EcommerceIntegration> createEcommerceIntegration(Map<String, dynamic> data) async {
+    return await remoteDataSource.createEcommerceIntegration(data);
+  }
+
+  @override
+  Future<EcommerceIntegration> updateEcommerceIntegration(int id, Map<String, dynamic> data) async {
+    return await remoteDataSource.updateEcommerceIntegration(id, data);
+  }
+
+  @override
+  Future<bool> deleteEcommerceIntegration(int id) async {
+    return await remoteDataSource.deleteEcommerceIntegration(id);
+  }
+
+  @override
+  Future<Map<String, dynamic>> testEcommerceConnection(int id) async {
+    return await remoteDataSource.testEcommerceConnection(id);
+  }
+
+  @override
+  Future<EcommerceIntegration> toggleEcommerceActive(int id) async {
+    return await remoteDataSource.toggleEcommerceActive(id);
+  }
+
+  @override
   void updateBaseUrl(String newUrl) {
     if (remoteDataSource is SettingsRemoteDataSourceImpl) {
       (remoteDataSource as SettingsRemoteDataSourceImpl).updateBaseUrl(newUrl);
     }
   }
 }
+

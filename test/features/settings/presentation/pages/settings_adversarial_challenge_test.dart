@@ -1,4 +1,4 @@
-﻿
+
 import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -16,6 +16,7 @@ import 'package:frontend_desktop/features/cash_register/domain/entities/cash_reg
 import 'package:frontend_desktop/features/cash_register/presentation/providers/cash_register_provider.dart';
 import 'package:frontend_desktop/features/reports/presentation/providers/inventory_alerts_provider.dart';
 import 'package:frontend_desktop/features/settings/domain/entities/business_settings.dart';
+import 'package:frontend_desktop/features/settings/domain/entities/ecommerce_integration.dart';
 import 'package:frontend_desktop/features/settings/presentation/pages/settings_screen.dart';
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
 
@@ -281,6 +282,12 @@ class FakeAdversarialSettingsProvider extends ChangeNotifier implements Settings
   @override
   void updateBaseUrl(String newUrl) {}
   @override
+  List<EcommerceIntegration> get ecommerceIntegrations => [];
+  @override
+  bool get isLoadingEcommerce => false;
+  @override
+  Future<List<EcommerceIntegration>> loadEcommerceIntegrations({bool isSilent = false}) async => [];
+  @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
@@ -347,7 +354,7 @@ void main() {
       await tester.tap(tabFinder.first);
     }
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 150));
+    await tester.pump(const Duration(milliseconds: 350));
   }
 
   void assertZeroRenderFlexOverflow(WidgetTester tester, String contextDescription) {
@@ -570,6 +577,7 @@ void main() {
         // Clear cert file
         final clearBtns = find.byTooltip('Quitar archivo');
         expect(clearBtns, findsNWidgets(2));
+        await tester.ensureVisible(clearBtns.first);
         await tester.tap(clearBtns.first);
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 100));
@@ -580,6 +588,7 @@ void main() {
         // Clear key file
         final remainingClearBtn = find.byTooltip('Quitar archivo');
         expect(remainingClearBtn, findsOneWidget);
+        await tester.ensureVisible(remainingClearBtn.first);
         await tester.tap(remainingClearBtn.first);
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 100));

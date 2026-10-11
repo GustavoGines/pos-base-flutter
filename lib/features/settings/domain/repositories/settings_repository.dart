@@ -1,4 +1,5 @@
 import '../entities/business_settings.dart';
+import '../entities/ecommerce_integration.dart';
 
 abstract class SettingsRepository {
   Future<BusinessSettings> getSettings();
@@ -15,5 +16,12 @@ abstract class SettingsRepository {
     required String keyFilename,
     String? keyPassphrase,
   });
+  Future<List<EcommerceIntegration>> getEcommerceIntegrations();
+  Future<EcommerceIntegration> createEcommerceIntegration(Map<String, dynamic> data);
+  Future<EcommerceIntegration> updateEcommerceIntegration(int id, Map<String, dynamic> data);
+  Future<bool> deleteEcommerceIntegration(int id);
+  Future<Map<String, dynamic>> testEcommerceConnection(int id);
+  Future<EcommerceIntegration> toggleEcommerceActive(int id);
   void updateBaseUrl(String newUrl);
 }
+

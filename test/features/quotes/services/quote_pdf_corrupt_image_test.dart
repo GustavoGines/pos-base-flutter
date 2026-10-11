@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -46,9 +46,9 @@ void main() {
         httpClient: mockClient,
       );
       expect(pdfBytes, isNotNull);
-      print('RESULT: generateQuotePdf succeeded with size ${pdfBytes.length}');
+      debugPrint('RESULT: generateQuotePdf succeeded with size ${pdfBytes.length}');
     } catch (e, stack) {
-      print('RESULT: generateQuotePdf THREW: $e\n$stack');
+      debugPrint('RESULT: generateQuotePdf THREW: $e\n$stack');
       rethrow;
     }
   });

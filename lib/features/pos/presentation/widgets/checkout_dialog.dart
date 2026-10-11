@@ -1190,36 +1190,44 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                     _isFiscalMode ? Icons.verified : Icons.receipt_long,
                     color:
                         _isFiscalMode ? Colors.indigo.shade700 : Colors.black54,
-                    size: 20,
+                    size: 18,
                   ),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Tipo de Comprobante:',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                      color: _isFiscalMode
-                          ? Colors.indigo.shade900
-                          : Colors.black87,
+                  const SizedBox(width: 4),
+                  Flexible(
+                    child: Text(
+                      'Tipo de Comprobante:',
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        letterSpacing: -0.2,
+                        color: _isFiscalMode
+                            ? Colors.indigo.shade900
+                            : Colors.black87,
+                      ),
                     ),
                   ),
                 ],
               ),
               SegmentedButton<bool>(
                 key: const Key('fiscal_mode_segmented_button'),
+                showSelectedIcon: false,
                 style: const ButtonStyle(
                   visualDensity: VisualDensity.compact,
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  padding: WidgetStatePropertyAll(
+                    EdgeInsets.symmetric(horizontal: 4, vertical: 0),
+                  ),
                 ),
                 segments: const [
                   ButtonSegment<bool>(
                     value: false,
-                    label: Text('Ticket Común', style: TextStyle(fontSize: 12)),
+                    label: Text('Ticket Común', style: TextStyle(fontSize: 11)),
                   ),
                   ButtonSegment<bool>(
                     value: true,
                     label: Text('Factura Fiscal ARCA',
-                        style: TextStyle(fontSize: 12)),
+                        style: TextStyle(fontSize: 11)),
                   ),
                 ],
                 selected: {_isFiscalMode},
@@ -1249,14 +1257,27 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                 ),
                 SegmentedButton<int>(
                   key: const Key('voucher_type_segmented_button'),
+                  showSelectedIcon: false,
                   style: const ButtonStyle(
                     visualDensity: VisualDensity.compact,
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    padding: WidgetStatePropertyAll(
+                      EdgeInsets.symmetric(horizontal: 4, vertical: 0),
+                    ),
                   ),
                   segments: const [
-                    ButtonSegment<int>(value: 1, label: Text('Factura A')),
-                    ButtonSegment<int>(value: 6, label: Text('Factura B')),
-                    ButtonSegment<int>(value: 11, label: Text('Factura C')),
+                    ButtonSegment<int>(
+                      value: 1,
+                      label: Text('Factura A', style: TextStyle(fontSize: 11)),
+                    ),
+                    ButtonSegment<int>(
+                      value: 6,
+                      label: Text('Factura B', style: TextStyle(fontSize: 11)),
+                    ),
+                    ButtonSegment<int>(
+                      value: 11,
+                      label: Text('Factura C', style: TextStyle(fontSize: 11)),
+                    ),
                   ],
                   selected: {_voucherType},
                   onSelectionChanged: (newVal) {
@@ -3096,9 +3117,12 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                                               }
                                             },
                                           ),
-                                          const Text('Vista Previa',
-                                              style: TextStyle(fontSize: 13)),
-                                          const SizedBox(width: 8),
+                                          Flexible(
+                                            child: const Text('Vista Previa',
+                                                style: TextStyle(fontSize: 12),
+                                                overflow: TextOverflow.ellipsis),
+                                          ),
+                                          const SizedBox(width: 4),
                                         ],
                                       ),
                                     ),

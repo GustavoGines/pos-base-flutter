@@ -1,6 +1,6 @@
 import 'dart:convert';
-import 'dart:typed_data';
 import 'package:frontend_desktop/features/pos/domain/entities/cart_item.dart';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:frontend_desktop/features/catalog/data/models/product_model.dart';
 
@@ -84,7 +84,7 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
         throw Exception('Error al descargar PDF (HTTP ${response.statusCode})');
       }
     } catch (e) {
-      print('=== API Error en downloadTicketPdf: $e ===');
+      debugPrint('=== API Error en downloadTicketPdf: $e ===');
       rethrow;
     }
   }
@@ -107,7 +107,7 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
         throw Exception('Failed to search products (Status: ${response.statusCode})');
       }
     } catch (e) {
-      print('=== API Error en searchProducts: $e ===');
+      debugPrint('=== API Error en searchProducts: $e ===');
       rethrow;
     }
   }
@@ -125,7 +125,7 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
         throw Exception('Error al cargar métodos de pago (HTTP ${response.statusCode})');
       }
     } catch (e) {
-      print('=== API Error en fetchPaymentMethods: $e ===');
+      debugPrint('=== API Error en fetchPaymentMethods: $e ===');
       rethrow;
     }
   }
@@ -145,7 +145,7 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
         throw Exception('Error al actualizar recargo (HTTP ${response.statusCode})');
       }
     } catch (e) {
-      print('=== API Error en updatePaymentMethodSurcharge: $e ===');
+      debugPrint('=== API Error en updatePaymentMethodSurcharge: $e ===');
       rethrow;
     }
   }
@@ -242,7 +242,7 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
         throw Exception('Error al procesar venta: $detail (HTTP ${response.statusCode})');
       }
     } catch (e) {
-      print('=== API Error en processSale: $e ===');
+      debugPrint('=== API Error en processSale: $e ===');
       rethrow;
     }
   }
@@ -260,7 +260,7 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
         throw Exception('Error al cargar órdenes pendientes (HTTP ${response.statusCode})');
       }
     } catch (e) {
-      print('=== API Error en fetchPendingSales: $e ===');
+      debugPrint('=== API Error en fetchPendingSales: $e ===');
       rethrow;
     }
   }
@@ -323,7 +323,7 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
         throw Exception('Error al cobrar orden: $detail (HTTP ${response.statusCode})');
       }
     } catch (e) {
-      print('=== API Error en payPendingSale: $e ===');
+      debugPrint('=== API Error en payPendingSale: $e ===');
       rethrow;
     }
   }
@@ -353,7 +353,7 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
         throw Exception('Error al anular orden pendiente (HTTP ${response.statusCode}): $detail');
       }
     } catch (e) {
-      print('=== API Error en voidPendingSale: $e ===');
+      debugPrint('=== API Error en voidPendingSale: $e ===');
       rethrow;
     }
   }
@@ -375,7 +375,7 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
       }
       return json.decode(response.body);
     } catch (e) {
-      print('=== API Error en createDeliveryNoteFromSale: $e ===');
+      debugPrint('=== API Error en createDeliveryNoteFromSale: $e ===');
       rethrow;
     }
   }
@@ -409,7 +409,7 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
         throw Exception(message);
       }
     } catch (e) {
-      print('=== API Error en issueFiscalInvoice: $e ===');
+      debugPrint('=== API Error en issueFiscalInvoice: $e ===');
       rethrow;
     }
   }
@@ -430,7 +430,7 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
         throw Exception('Error al obtener factura electrónica (HTTP ${response.statusCode})');
       }
     } catch (e) {
-      print('=== API Error en fetchElectronicInvoice: $e ===');
+      debugPrint('=== API Error en fetchElectronicInvoice: $e ===');
       rethrow;
     }
   }

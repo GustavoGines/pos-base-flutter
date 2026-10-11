@@ -14,6 +14,7 @@ import 'package:frontend_desktop/features/auth/presentation/providers/auth_provi
 import 'package:frontend_desktop/features/reports/presentation/providers/inventory_alerts_provider.dart';
 import 'package:frontend_desktop/features/settings/data/datasources/settings_remote_datasource.dart';
 import 'package:frontend_desktop/features/settings/domain/entities/business_settings.dart';
+import 'package:frontend_desktop/features/settings/domain/entities/ecommerce_integration.dart';
 import 'package:frontend_desktop/features/settings/presentation/pages/settings_screen.dart';
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
 
@@ -153,6 +154,74 @@ class FakeIntegrationsSettingsProvider extends ChangeNotifier implements Setting
       'message': testConnectionMessage,
       'nickname': 'TEST_STORE_USER',
     };
+  }
+
+  final List<EcommerceIntegration> _ecommerceIntegrations = [];
+  @override
+  List<EcommerceIntegration> get ecommerceIntegrations => _ecommerceIntegrations;
+  @override
+  bool get isLoadingEcommerce => false;
+  int loadEcommerceIntegrationsCallCount = 0;
+  bool saveEcommerceIntegrationCalled = false;
+  Map<String, dynamic>? lastSavedEcommerceData;
+  int? lastSavedEcommerceId;
+  bool testEcommerceConnectionCalled = false;
+  int? lastTestedEcommerceId;
+  bool toggleEcommerceActiveCalled = false;
+  int? lastToggledEcommerceId;
+
+  @override
+  EcommerceIntegration? getIntegrationByPlatform(String platform) {
+    try {
+      return _ecommerceIntegrations.firstWhere((e) => e.platform == platform);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  @override
+  Future<List<EcommerceIntegration>> loadEcommerceIntegrations({bool isSilent = false}) async {
+    loadEcommerceIntegrationsCallCount++;
+    if (shouldFailLoad) return [];
+    return _ecommerceIntegrations;
+  }
+
+  @override
+  Future<EcommerceIntegration?> saveEcommerceIntegration(Map<String, dynamic> data, {int? id}) async {
+    saveEcommerceIntegrationCalled = true;
+    lastSavedEcommerceData = data;
+    lastSavedEcommerceId = id;
+    return EcommerceIntegration(
+      id: id ?? 1,
+      platform: data['platform']?.toString() ?? 'mercadolibre',
+      name: data['name']?.toString() ?? 'Test',
+      isActive: data['is_active'] == true,
+      syncStockEnabled: data['sync_stock_enabled'] == true,
+      autoPauseOnZeroStock: data['auto_pause_on_zero_stock'] == true,
+      clientId: data['client_id']?.toString(),
+      clientSecret: data['client_secret']?.toString(),
+      storeId: data['store_id']?.toString(),
+      baseUrl: data['base_url']?.toString(),
+    );
+  }
+
+  @override
+  Future<Map<String, dynamic>> testEcommerceConnection(int id) async {
+    testEcommerceConnectionCalled = true;
+    lastTestedEcommerceId = id;
+    return {'success': true, 'message': 'Conexión exitosa'};
+  }
+
+  @override
+  Future<EcommerceIntegration?> toggleEcommerceActive(int id) async {
+    toggleEcommerceActiveCalled = true;
+    lastToggledEcommerceId = id;
+    return null;
+  }
+
+  @override
+  Future<bool> deleteEcommerceIntegration(int id) async {
+    return true;
   }
 
   @override

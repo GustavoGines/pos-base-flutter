@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:frontend_desktop/features/settings/domain/entities/business_settings.dart';
+import 'package:frontend_desktop/features/settings/domain/entities/ecommerce_integration.dart';
 import 'package:frontend_desktop/features/settings/domain/usecases/get_settings_usecase.dart';
 import 'package:frontend_desktop/features/settings/domain/usecases/update_settings_usecase.dart';
 import 'package:frontend_desktop/core/services/license_heartbeat_service.dart';
@@ -66,6 +67,20 @@ class SettingsProvider with ChangeNotifier {
   bool _isUploadingCertificates = false;
   bool get isUploadingCertificates => _isUploadingCertificates;
 
+  List<EcommerceIntegration> _ecommerceIntegrations = [];
+  List<EcommerceIntegration> get ecommerceIntegrations => _ecommerceIntegrations;
+
+  bool _isLoadingEcommerce = false;
+  bool get isLoadingEcommerce => _isLoadingEcommerce;
+
+  EcommerceIntegration? getIntegrationByPlatform(String platform) {
+    try {
+      return _ecommerceIntegrations.firstWhere((i) => i.platform == platform);
+    } catch (_) {
+      return null;
+    }
+  }
+
   SettingsProvider({
     required this.getSettingsUseCase,
     required this.updateSettingsUseCase,
@@ -116,11 +131,11 @@ class SettingsProvider with ChangeNotifier {
       
       // DEBUG: Inspección de permisos PRO
       if (_settings != null) {
-        print('=== DEBUG LICENCIA ===');
-        print('Plan: ${_settings!.licensePlanType}');
-        print('Features Dictionary Loaded: ${_settings!.features}');
-        print('Advanced Reports: ${_settings!.features.advancedReports}');
-        print('=======================');
+        debugPrint('=== DEBUG LICENCIA ===');
+        debugPrint('Plan: ${_settings!.licensePlanType}');
+        debugPrint('Features Dictionary Loaded: ${_settings!.features}');
+        debugPrint('Advanced Reports: ${_settings!.features.advancedReports}');
+        debugPrint('=======================');
       }
       
       // Iniciar el sistema de seguridad DRM
@@ -135,9 +150,9 @@ class SettingsProvider with ChangeNotifier {
       _checkAndSyncSilentlyOnStartup();
     } catch (e, stack) {
       if (!isSilent) {
-        print('=== ERROR CRITICO CARGANDO SETTINGS ===');
-        print('Error: $e');
-        print('Stack: $stack');
+        debugPrint('=== ERROR CRITICO CARGANDO SETTINGS ===');
+        debugPrint('Error: $e');
+        debugPrint('Stack: $stack');
       }
       _errorMessage = e.toString().replaceAll('Exception: ', '');
       rethrow;
@@ -313,6 +328,126 @@ class SettingsProvider with ChangeNotifier {
       _isUploadingCertificates = false;
       _isLoading = false;
       notifyListeners();
+    }
+  }
+
+  Future<List<EcommerceIntegration>> loadEcommerceIntegrations({bool isSilent = false}) async {
+    if (!isSilent) {
+      _isLoadingEcommerce = true;
+      notifyListeners();
+    }
+    try {
+      final repo = updateSettingsUseCase.repository;
+      final list = await repo.getEcommerceIntegrations();
+      _ecommerceIntegrations = list;
+      return list;
+    } catch (e) {
+      debugPrint('[SettingsProvider] Error al cargar integraciones e-commerce: $e');
+      if (!isSilent) {
+        _errorMessage = e.toString().replaceAll('Exception: ', '');
+      }
+      return _ecommerceIntegrations;
+    } finally {
+      if (!isSilent) {
+        _isLoadingEcommerce = false;
+        notifyListeners();
+      }
+    }
+  }
+
+  Future<EcommerceIntegration?> saveEcommerceIntegration(Map<String, dynamic> data, {int? id}) async {
+    _isLoadingEcommerce = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      final repo = updateSettingsUseCase.repository;
+      final EcommerceIntegration saved;
+      if (id != null) {
+        saved = await repo.updateEcommerceIntegration(id, data);
+        final index = _ecommerceIntegrations.indexWhere((i) => i.id == id);
+        if (index != -1) {
+          _ecommerceIntegrations[index] = saved;
+        } else {
+          _ecommerceIntegrations.add(saved);
+        }
+      } else {
+        saved = await repo.createEcommerceIntegration(data);
+        final index = _ecommerceIntegrations.indexWhere((i) => i.platform == saved.platform);
+        if (index != -1) {
+          _ecommerceIntegrations[index] = saved;
+        } else {
+          _ecommerceIntegrations.add(saved);
+        }
+      }
+      notifyListeners();
+      return saved;
+    } catch (e) {
+      debugPrint('[SettingsProvider] Error al guardar integración e-commerce: $e');
+      _errorMessage = e.toString().replaceAll('Exception: ', '');
+      rethrow;
+    } finally {
+      _isLoadingEcommerce = false;
+      notifyListeners();
+    }
+  }
+
+  Future<Map<String, dynamic>> testEcommerceConnection(int id) async {
+    try {
+      final repo = updateSettingsUseCase.repository;
+      final result = await repo.testEcommerceConnection(id);
+      final isSuccess = result['success'] == true;
+      final newStatus = isSuccess ? 'connected' : 'error';
+      final index = _ecommerceIntegrations.indexWhere((i) => i.id == id);
+      if (index != -1) {
+        _ecommerceIntegrations[index] = _ecommerceIntegrations[index].copyWith(
+          lastHealthStatus: newStatus,
+          lastHealthCheckAt: DateTime.now().toIso8601String(),
+        );
+        notifyListeners();
+      }
+      return result;
+    } catch (e) {
+      debugPrint('[SettingsProvider] Error al probar conexión e-commerce: $e');
+      return {
+        'success': false,
+        'message': e.toString().replaceAll('Exception: ', ''),
+      };
+    }
+  }
+
+  Future<EcommerceIntegration?> toggleEcommerceActive(int id) async {
+    try {
+      final repo = updateSettingsUseCase.repository;
+      final updated = await repo.toggleEcommerceActive(id);
+      final index = _ecommerceIntegrations.indexWhere((i) => i.id == id);
+      if (index != -1) {
+        _ecommerceIntegrations[index] = updated;
+      } else {
+        _ecommerceIntegrations.add(updated);
+      }
+      notifyListeners();
+      return updated;
+    } catch (e) {
+      debugPrint('[SettingsProvider] Error al cambiar activo de e-commerce: $e');
+      _errorMessage = e.toString().replaceAll('Exception: ', '');
+      rethrow;
+    }
+  }
+
+  Future<bool> deleteEcommerceIntegration(int id) async {
+    try {
+      final repo = updateSettingsUseCase.repository;
+      final success = await repo.deleteEcommerceIntegration(id);
+      if (success) {
+        _ecommerceIntegrations.removeWhere((i) => i.id == id);
+        notifyListeners();
+      }
+      return success;
+    } catch (e) {
+      debugPrint('[SettingsProvider] Error al eliminar integración e-commerce: $e');
+      _errorMessage = e.toString().replaceAll('Exception: ', '');
+      return false;
     }
   }
 

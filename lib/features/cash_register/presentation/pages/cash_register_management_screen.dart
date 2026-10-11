@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../../../core/network/api_client.dart';
+import '../../../../core/config/app_config.dart';
 import '../../../../core/presentation/widgets/global_app_bar.dart';
 import '../../domain/entities/cash_register.dart';
 import '../providers/cash_register_provider.dart';
@@ -16,7 +17,7 @@ class CashRegisterManagementScreen extends StatefulWidget {
 
 class _CashRegisterManagementScreenState extends State<CashRegisterManagementScreen> {
   bool _isLoading = false;
-  String _baseUrl = 'http://127.0.0.1/Sistema_POS/pos-backend/public/api';
+  String _baseUrl = AppConfig.kApiBaseUrl;
 
   @override
   void initState() {
@@ -28,7 +29,7 @@ class _CashRegisterManagementScreenState extends State<CashRegisterManagementScr
     final prefs = await SharedPreferences.getInstance();
     if (mounted) {
       setState(() {
-        _baseUrl = prefs.getString('pos_api') ?? 'http://127.0.0.1/Sistema_POS/pos-backend/public/api';
+        _baseUrl = prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
       });
     }
   }
@@ -80,17 +81,15 @@ class _CashRegisterManagementScreenState extends State<CashRegisterManagementScr
   }
 
   Future<void> _createRegister(String name) async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('pos_session_token') ?? '';
+    final apiClient = context.read<ApiClient>();
     
     setState(() => _isLoading = true);
     try {
-      final response = await http.post(
+      final response = await apiClient.post(
         Uri.parse('$_baseUrl/registers'),
         headers: {
           'Content-Type': 'application/json', 
           'Accept': 'application/json',
-          'X-Session-Token': token,
         },
         body: jsonEncode({'name': name}),
       );
@@ -108,17 +107,15 @@ class _CashRegisterManagementScreenState extends State<CashRegisterManagementScr
   }
 
   Future<void> _updateRegister(int id, String name) async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('pos_session_token') ?? '';
+    final apiClient = context.read<ApiClient>();
 
     setState(() => _isLoading = true);
     try {
-      final response = await http.put(
+      final response = await apiClient.put(
         Uri.parse('$_baseUrl/registers/$id'),
         headers: {
           'Content-Type': 'application/json', 
           'Accept': 'application/json',
-          'X-Session-Token': token,
         },
         body: jsonEncode({'name': name}),
       );
@@ -154,16 +151,14 @@ class _CashRegisterManagementScreenState extends State<CashRegisterManagementScr
 
     if (confirmar != true) return;
 
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('pos_session_token') ?? '';
+    final apiClient = context.read<ApiClient>();
 
     setState(() => _isLoading = true);
     try {
-      final response = await http.delete(
+      final response = await apiClient.delete(
         Uri.parse('$_baseUrl/registers/$id'),
         headers: {
           'Accept': 'application/json',
-          'X-Session-Token': token,
         },
       );
       if (response.statusCode == 200) {

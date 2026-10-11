@@ -669,7 +669,7 @@ class CatalogProvider with ChangeNotifier {
   Future<void> exportCatalogToExcel(BuildContext context) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final baseUrl = prefs.getString('api_base_url') ?? AppConfig.kApiBaseUrl;
+      final baseUrl = prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
       final token = prefs.getString('pos_session_token');
       final uri = Uri.parse('$baseUrl/catalog/products/export');
 

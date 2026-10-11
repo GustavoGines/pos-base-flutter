@@ -204,7 +204,7 @@ void main() {
       final err = tester.takeException();
       if (err is FlutterError) {
         for (final d in err.diagnostics) {
-          print(d.toStringDeep());
+          debugPrint(d.toStringDeep());
         }
       }
       expect(err, isNull);

@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -117,6 +117,18 @@ class FakePosProvider extends ChangeNotifier implements PosProvider {
     lastProcessedPayments = payments;
     return true;
   }
+
+  @override
+  double calculateIibbPerceptionAmount({BusinessSettings? settings, Customer? customer, double? overrideTotal}) => 0.0;
+
+  @override
+  bool checkAppliesIibbPerception({BusinessSettings? settings, Customer? customer}) => false;
+
+  @override
+  double get iibbPerceptionAmount => 0.0;
+
+  @override
+  double get iibbPerceptionRate => 0.0;
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);

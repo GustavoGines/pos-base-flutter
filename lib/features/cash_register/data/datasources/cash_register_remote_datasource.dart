@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/cash_register_shift_model.dart';
 
@@ -55,7 +56,7 @@ class CashRegisterRemoteDataSourceImpl implements CashRegisterRemoteDataSource {
         throw Exception('Failed to load current shift (Status: ${response.statusCode})');
       }
     } catch (e) {
-      print('=== API Error en getCurrentShift: $e ===');
+      debugPrint('=== API Error en getCurrentShift: $e ===');
       rethrow;
     }
   }
@@ -76,7 +77,7 @@ class CashRegisterRemoteDataSourceImpl implements CashRegisterRemoteDataSource {
         throw Exception('Failed to load shifts history (Status: ${response.statusCode})');
       }
     } catch (e) {
-      print('=== API Error en getAllShifts: $e ===');
+      debugPrint('=== API Error en getAllShifts: $e ===');
       rethrow;
     }
   }
@@ -106,7 +107,7 @@ class CashRegisterRemoteDataSourceImpl implements CashRegisterRemoteDataSource {
         throw Exception(errorMsg);
       }
     } catch (e) {
-      print('=== API Error en openShift: $e ===');
+      debugPrint('=== API Error en openShift: $e ===');
       rethrow;
     }
   }
@@ -151,7 +152,7 @@ class CashRegisterRemoteDataSourceImpl implements CashRegisterRemoteDataSource {
             responseBody['message'] ?? 'Failed to close shift (Status: ${response.statusCode})');
       }
     } catch (e) {
-      print('=== API Error en closeShift: $e ===');
+      debugPrint('=== API Error en closeShift: $e ===');
       rethrow;
     }
   }
@@ -170,7 +171,7 @@ class CashRegisterRemoteDataSourceImpl implements CashRegisterRemoteDataSource {
         throw Exception('Failed to load registers (Status: ${response.statusCode})');
       }
     } catch (e) {
-      print('=== API Error en getRegisters: $e ===');
+      debugPrint('=== API Error en getRegisters: $e ===');
       rethrow;
     }
   }

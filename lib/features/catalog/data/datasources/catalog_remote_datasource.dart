@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 import 'package:frontend_desktop/core/utils/image_url_resolver.dart';
@@ -146,7 +147,7 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
         throw Exception('Failed to load categories (Status: ${response.statusCode})');
       }
     } catch (e) {
-      print('=== API Error en fetchCategories: $e ===');
+      debugPrint('=== API Error en fetchCategories: $e ===');
       rethrow;
     }
   }
@@ -165,7 +166,7 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
         throw Exception('Failed to load brands (Status: ${response.statusCode})');
       }
     } catch (e) {
-      print('=== API Error en fetchBrands: $e ===');
+      debugPrint('=== API Error en fetchBrands: $e ===');
       rethrow;
     }
   }
@@ -184,7 +185,7 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
         throw Exception(_parseApiError(response.body, 'Error al crear marca.'));
       }
     } catch (e) {
-      print('=== API Error en createBrand: $e ===');
+      debugPrint('=== API Error en createBrand: $e ===');
       rethrow;
     }
   }
@@ -203,7 +204,7 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
         throw Exception(_parseApiError(response.body, 'Error al actualizar marca.'));
       }
     } catch (e) {
-      print('=== API Error en updateBrand: $e ===');
+      debugPrint('=== API Error en updateBrand: $e ===');
       rethrow;
     }
   }
@@ -223,7 +224,7 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
         throw Exception('Error al eliminar marca (Status: ${response.statusCode})');
       }
     } catch (e) {
-      print('=== API Error en deleteBrand: $e ===');
+      debugPrint('=== API Error en deleteBrand: $e ===');
       rethrow;
     }
   }
@@ -243,7 +244,7 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
         throw Exception('Failed to load rubros (Status: ${response.statusCode})');
       }
     } catch (e) {
-      print('=== API Error en fetchRubros: $e ===');
+      debugPrint('=== API Error en fetchRubros: $e ===');
       rethrow;
     }
   }
@@ -262,7 +263,7 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
         throw Exception(_parseApiError(response.body, 'Error al crear rubro.'));
       }
     } catch (e) {
-      print('=== API Error en createRubro: $e ===');
+      debugPrint('=== API Error en createRubro: $e ===');
       rethrow;
     }
   }
@@ -281,7 +282,7 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
         throw Exception(_parseApiError(response.body, 'Error al actualizar rubro.'));
       }
     } catch (e) {
-      print('=== API Error en updateRubro: $e ===');
+      debugPrint('=== API Error en updateRubro: $e ===');
       rethrow;
     }
   }
@@ -301,7 +302,7 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
         throw Exception('Error al eliminar rubro (Status: ${response.statusCode})');
       }
     } catch (e) {
-      print('=== API Error en deleteRubro: $e ===');
+      debugPrint('=== API Error en deleteRubro: $e ===');
       rethrow;
     }
   }
@@ -324,7 +325,7 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
         throw Exception(_parseApiError(response.body, 'Error al crear categoría.'));
       }
     } catch (e) {
-      print('=== API Error en createCategory: $e ===');
+      debugPrint('=== API Error en createCategory: $e ===');
       rethrow;
     }
   }
@@ -347,7 +348,7 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
         throw Exception(_parseApiError(response.body, 'Error al actualizar categoría.'));
       }
     } catch (e) {
-      print('=== API Error en updateCategory: $e ===');
+      debugPrint('=== API Error en updateCategory: $e ===');
       rethrow;
     }
   }
@@ -367,7 +368,7 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
         throw Exception('Error al eliminar categoría (Status: ${response.statusCode})');
       }
     } catch (e) {
-      print('=== API Error en deleteCategory: $e ===');
+      debugPrint('=== API Error en deleteCategory: $e ===');
       rethrow;
     }
   }
@@ -386,7 +387,7 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
         throw Exception(_parseApiError(response.body, 'Error al crear producto.'));
       }
     } catch (e) {
-      print('=== API Error en createProduct: $e ===');
+      debugPrint('=== API Error en createProduct: $e ===');
       rethrow;
     }
   }
@@ -405,7 +406,7 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
         throw Exception(_parseApiError(response.body, 'Error al actualizar producto.'));
       }
     } catch (e) {
-      print('=== API Error en updateProduct: $e ===');
+      debugPrint('=== API Error en updateProduct: $e ===');
       rethrow;
     }
   }
@@ -421,7 +422,7 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
         throw Exception('Failed to delete product (Status: ${response.statusCode})');
       }
     } catch (e) {
-      print('=== API Error en deleteProduct: $e ===');
+      debugPrint('=== API Error en deleteProduct: $e ===');
       rethrow;
     }
   }
@@ -440,7 +441,7 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
         throw Exception('Error al eliminar productos: ${response.body}');
       }
     } catch (e) {
-      print('=== API Error en bulkDeleteProducts: $e ===');
+      debugPrint('=== API Error en bulkDeleteProducts: $e ===');
       rethrow;
     }
   }
@@ -489,7 +490,7 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
         throw Exception('Error al actualizar productos masivamente: ${response.body}');
       }
     } catch (e) {
-      print('=== API Error en bulkUpdateProducts: $e ===');
+      debugPrint('=== API Error en bulkUpdateProducts: $e ===');
       rethrow;
     }
   }
@@ -524,7 +525,7 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
         throw Exception('Error al actualizar precios masivamente: ${response.body}');
       }
     } catch (e) {
-      print('=== API Error en bulkPriceUpdate: $e ===');
+      debugPrint('=== API Error en bulkPriceUpdate: $e ===');
       rethrow;
     }
   }
@@ -559,7 +560,7 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
         throw Exception('Error al previsualizar la actualización de precios: ${response.body}');
       }
     } catch (e) {
-      print('=== API Error en bulkPricePreview: $e ===');
+      debugPrint('=== API Error en bulkPricePreview: $e ===');
       rethrow;
     }
   }
@@ -610,7 +611,7 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
         throw Exception(error['message'] ?? 'Error al ajustar stock (${response.statusCode})');
       }
     } catch (e) {
-      print('=== API Error en adjustStock: $e ===');
+      debugPrint('=== API Error en adjustStock: $e ===');
       rethrow;
     }
   }
@@ -629,7 +630,7 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
         throw Exception('Error al cargar alertas críticas (${response.statusCode})');
       }
     } catch (e) {
-      print('=== API Error en fetchCriticalAlerts: $e ===');
+      debugPrint('=== API Error en fetchCriticalAlerts: $e ===');
       rethrow;
     }
   }
@@ -648,7 +649,7 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
         throw Exception('Error al obtener stock bulk (${response.statusCode})');
       }
     } catch (e) {
-      print('=== API Error en fetchBulkStock: $e ===');
+      debugPrint('=== API Error en fetchBulkStock: $e ===');
       rethrow;
     }
   }
@@ -703,7 +704,7 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
     } on FormatException catch (e) {
       throw Exception(e.message);
     } catch (e) {
-      print('=== API Error en uploadProductImage: $e ===');
+      debugPrint('=== API Error en uploadProductImage: $e ===');
       final errStr = e.toString();
       if (errStr.contains('SocketException') ||
           errStr.contains('TimeoutException') ||
@@ -728,7 +729,7 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
     } on FormatException catch (e) {
       throw Exception(e.message);
     } catch (e) {
-      print('=== API Error en deleteProductImage: $e ===');
+      debugPrint('=== API Error en deleteProductImage: $e ===');
       final errStr = e.toString();
       if (errStr.contains('SocketException') ||
           errStr.contains('TimeoutException') ||
@@ -771,7 +772,7 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
         throw Exception(_parseApiError(response.body, 'Error al importar catálogo.'));
       }
     } catch (e) {
-      print('=== API Error en importProducts: $e ===');
+      debugPrint('=== API Error en importProducts: $e ===');
       rethrow;
     }
   }

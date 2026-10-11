@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import '../../../../core/utils/image_url_resolver.dart';
 import '../../domain/entities/business_settings.dart';
 
@@ -50,7 +51,7 @@ class BusinessSettingsModel extends BusinessSettings {
           }
         } catch (e) {
           // Log silencioso si falla la decodificación del string
-          print('Error decodificando license_features_dict: $e');
+          debugPrint('Error decodificando license_features_dict: $e');
         }
       }
     }
