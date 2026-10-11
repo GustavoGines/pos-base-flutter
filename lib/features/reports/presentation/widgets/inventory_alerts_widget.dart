@@ -87,71 +87,30 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
                 duration: const Duration(milliseconds: 1000),
                 curve: Curves.elasticOut,
                 builder: (context, value, child) {
-                  return Stack(
-                    clipBehavior: Clip.none,
-                    alignment: Alignment.center,
-                    children: [
-                      Transform.rotate(
-                        angle: count > 0 ? (0.3 * (1.0 - value)) : 0,
-                        child: IconButton(
-                          tooltip: count == 0
-                              ? 'Sin alertas de stock'
-                              : '$count producto${count > 1 ? 's' : ''} con bajo stock',
-                          icon: Icon(
-                            count > 0
-                                ? Icons.notifications_active
-                                : Icons.notifications_none,
-                            color: hasCritical
-                                ? Colors.red.shade600
-                                : count > 0
-                                    ? Colors.orange.shade700
-                                    : Colors.blueGrey.shade400,
-                          ),
-                          onPressed: _toggleOverlay,
+                  return Badge(
+                    isLabelVisible: count > 0,
+                    label: Text(count > 9 ? '9+' : count.toString(), style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white)),
+                    backgroundColor: hasCritical ? Colors.red.shade600 : Colors.orange.shade600,
+                    offset: const Offset(-4, 4),
+                    child: Transform.rotate(
+                      angle: count > 0 ? (0.3 * (1.0 - value)) : 0,
+                      child: IconButton(
+                        tooltip: count == 0
+                            ? 'Sin alertas de stock'
+                            : '$count producto${count > 1 ? 's' : ''} con bajo stock',
+                        icon: Icon(
+                          count > 0
+                              ? Icons.notifications_active
+                              : Icons.notifications_none,
+                          color: hasCritical
+                              ? Colors.red.shade600
+                              : count > 0
+                                  ? Colors.orange.shade700
+                                  : Colors.blueGrey.shade400,
                         ),
+                        onPressed: _toggleOverlay,
                       ),
-                      if (count > 0)
-                        Positioned(
-                          top: 6,
-                          right: 6,
-                          child: IgnorePointer(
-                            child: Transform.scale(
-                              scale: 0.8 + (0.2 * value),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 4, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: hasCritical
-                                      ? Colors.red.shade600
-                                      : Colors.orange.shade600,
-                                  borderRadius: BorderRadius.circular(10),
-                                  border: Border.all(
-                                      color: Colors.white, width: 1.5),
-                                  boxShadow: [
-                                    BoxShadow(
-                                        color: hasCritical
-                                            ? Colors.red.withValues(alpha: 0.4)
-                                            : Colors.orange
-                                                .withValues(alpha: 0.4),
-                                        blurRadius: 4,
-                                        spreadRadius: 1),
-                                  ],
-                                ),
-                                constraints: const BoxConstraints(
-                                    minWidth: 16, minHeight: 16),
-                                child: Text(
-                                  count > 9 ? '9+' : count.toString(),
-                                  style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 9,
-                                      fontWeight: FontWeight.bold),
-                                  textAlign: TextAlign.center,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                    ],
+                    ),
                   );
                 },
               );
