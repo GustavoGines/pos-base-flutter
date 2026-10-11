@@ -105,6 +105,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final ExpansibleController _afipExpCtrl = ExpansibleController();
   String? _afipCertExpiresAt;
   final ExpansibleController _ecommerceExpCtrl = ExpansibleController();
+  final ExpansibleController _meliExpCtrl = ExpansibleController();
+  final ExpansibleController _wooExpCtrl = ExpansibleController();
+  final ExpansibleController _tnExpCtrl = ExpansibleController();
   bool _ecommerceEnabled = false;
   final _tiendanubeStoreIdCtrl = TextEditingController();
   final _tiendanubeAccessTokenCtrl = TextEditingController();
@@ -346,25 +349,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           
           _integrationsLoaded = true;
         });
-
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted) return;
-          try {
-            if (_mpQrEnabled && !_mpExpCtrl.isExpanded) {
-              _mpExpCtrl.expand();
-            }
-          } catch (_) {}
-          try {
-            if (_afipEnabled && !_afipExpCtrl.isExpanded) {
-              _afipExpCtrl.expand();
-            }
-          } catch (_) {}
-          try {
-            if (_ecommerceEnabled && !_ecommerceExpCtrl.isExpanded) {
-              _ecommerceExpCtrl.expand();
-            }
-          } catch (_) {}
-        });
       }
     } catch (e) {
       debugPrint('[SettingsScreen] Error al cargar integraciones: $e');
@@ -373,6 +357,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
         setState(() => _isLoadingIntegrations = false);
       }
     }
+  }
+
+  void _collapseAllIntegrations() {
+    try {
+      if (_mpExpCtrl.isExpanded) _mpExpCtrl.collapse();
+    } catch (_) {}
+    try {
+      if (_afipExpCtrl.isExpanded) _afipExpCtrl.collapse();
+    } catch (_) {}
+    try {
+      if (_ecommerceExpCtrl.isExpanded) _ecommerceExpCtrl.collapse();
+    } catch (_) {}
+    try {
+      if (_meliExpCtrl.isExpanded) _meliExpCtrl.collapse();
+    } catch (_) {}
+    try {
+      if (_wooExpCtrl.isExpanded) _wooExpCtrl.collapse();
+    } catch (_) {}
+    try {
+      if (_tnExpCtrl.isExpanded) _tnExpCtrl.collapse();
+    } catch (_) {}
   }
 
   Future<void> _testMercadoPagoConnection() async {
@@ -1055,7 +1060,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     final provider = context.read<SettingsProvider>();
 
-    // ━━━━━━━━ IMPORTANTE: guardar URL y ruta local PRIMERO í¢”€í¢”€í¢”€í¢”€í¢”€í¢”€í¢”€í¢”€í¢”€í¢”€í¢”€í¢”€í¢”€í¢”€í¢”€í¢”€í¢”€í¢”€í¢”€í¢”€í¢”€í¢”€í¢”€í¢”€í¢”€í¢”€
+    // ━━━━━━━━ IMPORTANTE: guardar URL y ruta local PRIMERO ━━━━━━━━━━━━━━━━━━━━━━━━━
     // Si el usuario cambió la URL del servidor, el request de saveSettings debe
     // usar ya la nueva URL. De lo contrario falla con "No se puede conectar".
     final newUrl = _serverUrlCtrl.text.trim();
@@ -1439,6 +1444,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
         onSelected: isBusy
             ? null
             : (_) {
+                if (_activeSection == SettingsSection.integrations && section != SettingsSection.integrations) {
+                  _collapseAllIntegrations();
+                }
                 setState(() => _activeSection = section);
                 if (section == SettingsSection.integrations &&
                     !_integrationsLoaded) {
@@ -1573,6 +1581,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       onTap: isBusy
           ? null
           : () {
+              if (_activeSection == SettingsSection.integrations && section != SettingsSection.integrations) {
+                _collapseAllIntegrations();
+              }
               setState(() => _activeSection = section);
               if (section == SettingsSection.integrations &&
                   !_integrationsLoaded) {
@@ -1959,405 +1970,408 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Widget _buildMercadoLibreSection(bool isNarrow) {
     const brandColor = Color(0xFFF57F17);
-    return Container(
-      margin: const EdgeInsets.only(bottom: 24),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.grey.shade50,
+    return Card(
+      elevation: 0,
+      margin: const EdgeInsets.only(bottom: 16),
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
+        side: BorderSide(color: Colors.grey.shade200),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+      color: Colors.grey.shade50,
+      clipBehavior: Clip.antiAlias,
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          controller: _meliExpCtrl,
+          initiallyExpanded: false,
+          tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          childrenPadding: const EdgeInsets.only(left: 16, right: 16, bottom: 16),
+          leading: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: brandColor.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Icon(Icons.storefront, color: brandColor, size: 22),
+          ),
+          title: Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: brandColor.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(Icons.storefront, color: brandColor, size: 22),
+              const Text(
+                'Mercado Libre',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Wrap(
-                  spacing: 8,
-                  runSpacing: 4,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    const Text(
-                      'Mercado Libre',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                    ),
-                    _buildChannelActiveBadge(_meliActive),
-                    _buildChannelHealthBadge(_meliHealthStatus),
-                  ],
-                ),
-              ),
-              Switch(
-                key: const ValueKey('switch_meli_active'),
-                value: _meliActive,
-                activeThumbColor: brandColor,
-                onChanged: _toggleMeliActive,
-              ),
+              _buildChannelActiveBadge(_meliActive),
+              _buildChannelHealthBadge(_meliHealthStatus),
             ],
           ),
-          const SizedBox(height: 16),
-          TextFormField(
-            key: const ValueKey('field_meli_id'),
-            controller: _meliClientIdCtrl,
-            decoration: InputDecoration(
-              labelText: 'Client ID / App ID',
-              prefixIcon: const Icon(Icons.app_registration),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-              helperText: 'App ID provisto en el portal de desarrolladores de Mercado Libre',
+          trailing: Switch(
+            key: const ValueKey('switch_meli_active'),
+            value: _meliActive,
+            activeThumbColor: brandColor,
+            onChanged: _toggleMeliActive,
+          ),
+          children: [
+            const Divider(height: 1),
+            const SizedBox(height: 16),
+            TextFormField(
+              key: const ValueKey('field_meli_id'),
+              controller: _meliClientIdCtrl,
+              decoration: InputDecoration(
+                labelText: 'Client ID / App ID',
+                prefixIcon: const Icon(Icons.app_registration),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                helperText: 'App ID provisto en el portal de desarrolladores de Mercado Libre',
+              ),
             ),
-          ),
-          const SizedBox(height: 14),
-          TextFormField(
-            key: const ValueKey('field_meli_secret'),
-            controller: _meliClientSecretCtrl,
-            obscureText: _obscureMeliSecret,
-            decoration: InputDecoration(
-              labelText: 'Client Secret',
-              prefixIcon: const Icon(Icons.vpn_key),
-              suffixIcon: IconButton(
-                icon: Icon(_obscureMeliSecret ? Icons.visibility : Icons.visibility_off),
-                tooltip: _obscureMeliSecret ? 'Mostrar secreto' : 'Ocultar secreto',
-                onPressed: () => setState(() => _obscureMeliSecret = !_obscureMeliSecret),
+            const SizedBox(height: 14),
+            TextFormField(
+              key: const ValueKey('field_meli_secret'),
+              controller: _meliClientSecretCtrl,
+              obscureText: _obscureMeliSecret,
+              decoration: InputDecoration(
+                labelText: 'Client Secret',
+                prefixIcon: const Icon(Icons.vpn_key),
+                suffixIcon: IconButton(
+                  icon: Icon(_obscureMeliSecret ? Icons.visibility : Icons.visibility_off),
+                  tooltip: _obscureMeliSecret ? 'Mostrar secreto' : 'Ocultar secreto',
+                  onPressed: () => setState(() => _obscureMeliSecret = !_obscureMeliSecret),
+                ),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                helperText: 'Clave secreta. Los valores guardados se protegen en el servidor.',
               ),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-              helperText: 'Clave secreta. Los valores guardados se protegen en el servidor.',
             ),
-          ),
-          const SizedBox(height: 14),
-          _buildSwitchRow(
-            key: const ValueKey('switch_meli_sync_stock'),
-            title: 'Sincronizar Stock',
-            subtitle: 'Replicar automáticamente el stock de ventas físicas hacia Mercado Libre',
-            value: _meliSyncStock,
-            activeColor: brandColor,
-            onChanged: (val) => setState(() => _meliSyncStock = val),
-          ),
-          _buildSwitchRow(
-            key: const ValueKey('switch_meli_auto_pause'),
-            title: 'Pausar publicación al agotar stock',
-            subtitle: 'Pausa automáticamente la publicación al quedar en cero para evitar sobreventas',
-            value: _meliAutoPause,
-            activeColor: brandColor,
-            onChanged: (val) => setState(() => _meliAutoPause = val),
-          ),
-          const SizedBox(height: 14),
-          Wrap(
-            spacing: 12,
-            runSpacing: 8,
-            children: [
-              FilledButton.icon(
-                key: const ValueKey('btn_test_meli_connection'),
-                onPressed: _isTestingMeli ? null : _testMeliConnection,
-                icon: _isTestingMeli
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                      )
-                    : const Icon(Icons.wifi_tethering, size: 18),
-                label: const Text('Probar Conexión'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: brandColor,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            const SizedBox(height: 14),
+            _buildSwitchRow(
+              key: const ValueKey('switch_meli_sync_stock'),
+              title: 'Sincronizar Stock',
+              subtitle: 'Replicar automáticamente el stock de ventas físicas hacia Mercado Libre',
+              value: _meliSyncStock,
+              activeColor: brandColor,
+              onChanged: (val) => setState(() => _meliSyncStock = val),
+            ),
+            _buildSwitchRow(
+              key: const ValueKey('switch_meli_auto_pause'),
+              title: 'Pausar publicación al agotar stock',
+              subtitle: 'Pausa automáticamente la publicación al quedar en cero para evitar sobreventas',
+              value: _meliAutoPause,
+              activeColor: brandColor,
+              onChanged: (val) => setState(() => _meliAutoPause = val),
+            ),
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 12,
+              runSpacing: 8,
+              children: [
+                FilledButton.icon(
+                  key: const ValueKey('btn_test_meli_connection'),
+                  onPressed: _isTestingMeli ? null : _testMeliConnection,
+                  icon: _isTestingMeli
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        )
+                      : const Icon(Icons.wifi_tethering, size: 18),
+                  label: const Text('Probar Conexión'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: brandColor,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
                 ),
-              ),
-              OutlinedButton.icon(
-                key: const ValueKey('btn_save_meli'),
-                onPressed: () => _saveMeliIntegration(showFeedback: true),
-                icon: const Icon(Icons.save_outlined, size: 18),
-                label: const Text('Guardar Mercado Libre'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: brandColor,
-                  side: const BorderSide(color: brandColor),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                OutlinedButton.icon(
+                  key: const ValueKey('btn_save_meli'),
+                  onPressed: () => _saveMeliIntegration(showFeedback: true),
+                  icon: const Icon(Icons.save_outlined, size: 18),
+                  label: const Text('Guardar Mercado Libre'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: brandColor,
+                    side: const BorderSide(color: brandColor),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
                 ),
-              ),
-            ],
-          ),
-        ],
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildWooCommerceSection(bool isNarrow) {
     const brandColor = Color(0xFF7F54B3);
-    return Container(
-      margin: const EdgeInsets.only(bottom: 24),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.grey.shade50,
+    return Card(
+      elevation: 0,
+      margin: const EdgeInsets.only(bottom: 16),
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
+        side: BorderSide(color: Colors.grey.shade200),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+      color: Colors.grey.shade50,
+      clipBehavior: Clip.antiAlias,
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          controller: _wooExpCtrl,
+          initiallyExpanded: false,
+          tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          childrenPadding: const EdgeInsets.only(left: 16, right: 16, bottom: 16),
+          leading: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: brandColor.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Icon(Icons.shopping_basket_outlined, color: brandColor, size: 22),
+          ),
+          title: Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: brandColor.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(Icons.shopping_basket_outlined, color: brandColor, size: 22),
+              const Text(
+                'WooCommerce',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Wrap(
-                  spacing: 8,
-                  runSpacing: 4,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    const Text(
-                      'WooCommerce',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                    ),
-                    _buildChannelActiveBadge(_wooActive),
-                    _buildChannelHealthBadge(_wooHealthStatus),
-                  ],
-                ),
-              ),
-              Switch(
-                key: const ValueKey('switch_woo_active'),
-                value: _wooActive,
-                activeThumbColor: brandColor,
-                onChanged: _toggleWooActive,
-              ),
+              _buildChannelActiveBadge(_wooActive),
+              _buildChannelHealthBadge(_wooHealthStatus),
             ],
           ),
-          const SizedBox(height: 16),
-          TextFormField(
-            key: const ValueKey('field_woo_url'),
-            controller: _wooCommerceBaseUrlCtrl,
-            decoration: InputDecoration(
-              labelText: 'URL de la Tienda (Base URL)',
-              hintText: 'https://mitienda.com',
-              prefixIcon: const Icon(Icons.language),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-              helperText: 'Dirección completa del sitio WordPress donde corre WooCommerce',
-            ),
+          trailing: Switch(
+            key: const ValueKey('switch_woo_active'),
+            value: _wooActive,
+            activeThumbColor: brandColor,
+            onChanged: _toggleWooActive,
           ),
-          const SizedBox(height: 14),
-          TextFormField(
-            key: const ValueKey('field_woo_key'),
-            controller: _wooCommerceConsumerKeyCtrl,
-            decoration: InputDecoration(
-              labelText: 'Consumer Key (client_id)',
-              prefixIcon: const Icon(Icons.key),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-            ),
-          ),
-          const SizedBox(height: 14),
-          TextFormField(
-            key: const ValueKey('field_woo_secret'),
-            controller: _wooCommerceConsumerSecretCtrl,
-            obscureText: _obscureWooSecret,
-            decoration: InputDecoration(
-              labelText: 'Consumer Secret (client_secret)',
-              prefixIcon: const Icon(Icons.lock_outline),
-              suffixIcon: IconButton(
-                icon: Icon(_obscureWooSecret ? Icons.visibility : Icons.visibility_off),
-                tooltip: _obscureWooSecret ? 'Mostrar secreto' : 'Ocultar secreto',
-                onPressed: () => setState(() => _obscureWooSecret = !_obscureWooSecret),
+          children: [
+            const Divider(height: 1),
+            const SizedBox(height: 16),
+            TextFormField(
+              key: const ValueKey('field_woo_url'),
+              controller: _wooCommerceBaseUrlCtrl,
+              decoration: InputDecoration(
+                labelText: 'URL de la Tienda (Base URL)',
+                hintText: 'https://mitienda.com',
+                prefixIcon: const Icon(Icons.language),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                helperText: 'Dirección completa del sitio WordPress donde corre WooCommerce',
               ),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-              helperText: 'Clave secreta Consumer Secret generada en WooCommerce REST API',
             ),
-          ),
-          const SizedBox(height: 14),
-          _buildSwitchRow(
-            key: const ValueKey('switch_woo_sync_stock'),
-            title: 'Sincronizar Stock',
-            subtitle: 'Replicar automáticamente el stock de ventas físicas hacia WooCommerce',
-            value: _wooSyncStock,
-            activeColor: brandColor,
-            onChanged: (val) => setState(() => _wooSyncStock = val),
-          ),
-          _buildSwitchRow(
-            key: const ValueKey('switch_woo_auto_pause'),
-            title: 'Pausar compras al agotar stock',
-            subtitle: 'Forzar "outofstock" y deshabilitar pedidos en espera (backorders: no)',
-            value: _wooAutoPause,
-            activeColor: brandColor,
-            onChanged: (val) => setState(() => _wooAutoPause = val),
-          ),
-          const SizedBox(height: 14),
-          Wrap(
-            spacing: 12,
-            runSpacing: 8,
-            children: [
-              FilledButton.icon(
-                key: const ValueKey('btn_test_woo_connection'),
-                onPressed: _isTestingWoo ? null : _testWooConnection,
-                icon: _isTestingWoo
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                      )
-                    : const Icon(Icons.wifi_tethering, size: 18),
-                label: const Text('Probar Conexión'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: brandColor,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            const SizedBox(height: 14),
+            TextFormField(
+              key: const ValueKey('field_woo_key'),
+              controller: _wooCommerceConsumerKeyCtrl,
+              decoration: InputDecoration(
+                labelText: 'Consumer Key (client_id)',
+                prefixIcon: const Icon(Icons.key),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+            ),
+            const SizedBox(height: 14),
+            TextFormField(
+              key: const ValueKey('field_woo_secret'),
+              controller: _wooCommerceConsumerSecretCtrl,
+              obscureText: _obscureWooSecret,
+              decoration: InputDecoration(
+                labelText: 'Consumer Secret (client_secret)',
+                prefixIcon: const Icon(Icons.lock_outline),
+                suffixIcon: IconButton(
+                  icon: Icon(_obscureWooSecret ? Icons.visibility : Icons.visibility_off),
+                  tooltip: _obscureWooSecret ? 'Mostrar secreto' : 'Ocultar secreto',
+                  onPressed: () => setState(() => _obscureWooSecret = !_obscureWooSecret),
                 ),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                helperText: 'Clave secreta Consumer Secret generada en WooCommerce REST API',
               ),
-              OutlinedButton.icon(
-                key: const ValueKey('btn_save_woo'),
-                onPressed: () => _saveWooIntegration(showFeedback: true),
-                icon: const Icon(Icons.save_outlined, size: 18),
-                label: const Text('Guardar WooCommerce'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: brandColor,
-                  side: const BorderSide(color: brandColor),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            const SizedBox(height: 14),
+            _buildSwitchRow(
+              key: const ValueKey('switch_woo_sync_stock'),
+              title: 'Sincronizar Stock',
+              subtitle: 'Replicar automáticamente el stock de ventas físicas hacia WooCommerce',
+              value: _wooSyncStock,
+              activeColor: brandColor,
+              onChanged: (val) => setState(() => _wooSyncStock = val),
+            ),
+            _buildSwitchRow(
+              key: const ValueKey('switch_woo_auto_pause'),
+              title: 'Pausar compras al agotar stock',
+              subtitle: 'Forzar "outofstock" y deshabilitar pedidos en espera (backorders: no)',
+              value: _wooAutoPause,
+              activeColor: brandColor,
+              onChanged: (val) => setState(() => _wooAutoPause = val),
+            ),
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 12,
+              runSpacing: 8,
+              children: [
+                FilledButton.icon(
+                  key: const ValueKey('btn_test_woo_connection'),
+                  onPressed: _isTestingWoo ? null : _testWooConnection,
+                  icon: _isTestingWoo
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        )
+                      : const Icon(Icons.wifi_tethering, size: 18),
+                  label: const Text('Probar Conexión'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: brandColor,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
                 ),
-              ),
-            ],
-          ),
-        ],
+                OutlinedButton.icon(
+                  key: const ValueKey('btn_save_woo'),
+                  onPressed: () => _saveWooIntegration(showFeedback: true),
+                  icon: const Icon(Icons.save_outlined, size: 18),
+                  label: const Text('Guardar WooCommerce'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: brandColor,
+                    side: const BorderSide(color: brandColor),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildTiendaNubeSection(bool isNarrow) {
     const brandColor = Color(0xFF2B358F);
-    return Container(
+    return Card(
+      elevation: 0,
       margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.grey.shade50,
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
+        side: BorderSide(color: Colors.grey.shade200),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+      color: Colors.grey.shade50,
+      clipBehavior: Clip.antiAlias,
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          controller: _tnExpCtrl,
+          initiallyExpanded: false,
+          tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          childrenPadding: const EdgeInsets.only(left: 16, right: 16, bottom: 16),
+          leading: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: brandColor.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Icon(Icons.cloud_outlined, color: brandColor, size: 22),
+          ),
+          title: Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: brandColor.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(Icons.cloud_outlined, color: brandColor, size: 22),
+              const Text(
+                'Tienda Nube',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Wrap(
-                  spacing: 8,
-                  runSpacing: 4,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    const Text(
-                      'Tienda Nube',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                    ),
-                    _buildChannelActiveBadge(_tiendanubeActive),
-                    _buildChannelHealthBadge(_tiendanubeHealthStatus),
-                  ],
-                ),
-              ),
-              Switch(
-                key: const ValueKey('switch_tiendanube_active'),
-                value: _tiendanubeActive,
-                activeThumbColor: brandColor,
-                onChanged: _toggleTiendanubeActive,
-              ),
+              _buildChannelActiveBadge(_tiendanubeActive),
+              _buildChannelHealthBadge(_tiendanubeHealthStatus),
             ],
           ),
-          const SizedBox(height: 16),
-          TextFormField(
-            key: const ValueKey('field_tiendanube_store_id'),
-            controller: _tiendanubeStoreIdCtrl,
-            decoration: InputDecoration(
-              labelText: 'Store ID (store_id)',
-              hintText: '1234567',
-              prefixIcon: const Icon(Icons.numbers),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-              helperText: 'Identificador numérico de la tienda asignado por Tienda Nube',
+          trailing: Switch(
+            key: const ValueKey('switch_tiendanube_active'),
+            value: _tiendanubeActive,
+            activeThumbColor: brandColor,
+            onChanged: _toggleTiendanubeActive,
+          ),
+          children: [
+            const Divider(height: 1),
+            const SizedBox(height: 16),
+            TextFormField(
+              key: const ValueKey('field_tiendanube_store_id'),
+              controller: _tiendanubeStoreIdCtrl,
+              decoration: InputDecoration(
+                labelText: 'Store ID (store_id)',
+                hintText: '1234567',
+                prefixIcon: const Icon(Icons.numbers),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                helperText: 'Identificador numérico de la tienda asignado por Tienda Nube',
+              ),
             ),
-          ),
-          const SizedBox(height: 14),
-          TextFormField(
-            key: const ValueKey('field_tiendanube_token'),
-            controller: _tiendanubeAccessTokenCtrl,
-            obscureText: _obscureTiendanubeToken,
-            decoration: InputDecoration(
-              labelText: 'Access Token',
-              prefixIcon: const Icon(Icons.security),
-              suffixIcon: IconButton(
-                icon: Icon(_obscureTiendanubeToken ? Icons.visibility : Icons.visibility_off),
-                tooltip: _obscureTiendanubeToken ? 'Mostrar token' : 'Ocultar token',
-                onPressed: () => setState(() => _obscureTiendanubeToken = !_obscureTiendanubeToken),
+            const SizedBox(height: 14),
+            TextFormField(
+              key: const ValueKey('field_tiendanube_token'),
+              controller: _tiendanubeAccessTokenCtrl,
+              obscureText: _obscureTiendanubeToken,
+              decoration: InputDecoration(
+                labelText: 'Access Token',
+                prefixIcon: const Icon(Icons.security),
+                suffixIcon: IconButton(
+                  icon: Icon(_obscureTiendanubeToken ? Icons.visibility : Icons.visibility_off),
+                  tooltip: _obscureTiendanubeToken ? 'Mostrar token' : 'Ocultar token',
+                  onPressed: () => setState(() => _obscureTiendanubeToken = !_obscureTiendanubeToken),
+                ),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                helperText: 'Token de acceso API provisto por Tienda Nube / Nuvemshop',
               ),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-              helperText: 'Token de acceso API provisto por Tienda Nube / Nuvemshop',
             ),
-          ),
-          const SizedBox(height: 14),
-          _buildSwitchRow(
-            key: const ValueKey('switch_tiendanube_sync_stock'),
-            title: 'Sincronizar Stock',
-            subtitle: 'Replicar automáticamente el stock de ventas físicas hacia Tienda Nube',
-            value: _tiendanubeSyncStock,
-            activeColor: brandColor,
-            onChanged: (val) => setState(() => _tiendanubeSyncStock = val),
-          ),
-          _buildSwitchRow(
-            key: const ValueKey('switch_tiendanube_auto_pause'),
-            title: 'Pausar variantes al agotar stock',
-            subtitle: 'Establecer cantidad cero en todas las variantes al agotarse en local',
-            value: _tiendanubeAutoPause,
-            activeColor: brandColor,
-            onChanged: (val) => setState(() => _tiendanubeAutoPause = val),
-          ),
-          const SizedBox(height: 14),
-          Wrap(
-            spacing: 12,
-            runSpacing: 8,
-            children: [
-              FilledButton.icon(
-                key: const ValueKey('btn_test_tiendanube_connection'),
-                onPressed: _isTestingTiendanube ? null : _testTiendanubeConnection,
-                icon: _isTestingTiendanube
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                      )
-                    : const Icon(Icons.wifi_tethering, size: 18),
-                label: const Text('Probar Conexión'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: brandColor,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            const SizedBox(height: 14),
+            _buildSwitchRow(
+              key: const ValueKey('switch_tiendanube_sync_stock'),
+              title: 'Sincronizar Stock',
+              subtitle: 'Replicar automáticamente el stock de ventas físicas hacia Tienda Nube',
+              value: _tiendanubeSyncStock,
+              activeColor: brandColor,
+              onChanged: (val) => setState(() => _tiendanubeSyncStock = val),
+            ),
+            _buildSwitchRow(
+              key: const ValueKey('switch_tiendanube_auto_pause'),
+              title: 'Pausar variantes al agotar stock',
+              subtitle: 'Establecer cantidad cero en todas las variantes al agotarse en local',
+              value: _tiendanubeAutoPause,
+              activeColor: brandColor,
+              onChanged: (val) => setState(() => _tiendanubeAutoPause = val),
+            ),
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 12,
+              runSpacing: 8,
+              children: [
+                FilledButton.icon(
+                  key: const ValueKey('btn_test_tiendanube_connection'),
+                  onPressed: _isTestingTiendanube ? null : _testTiendanubeConnection,
+                  icon: _isTestingTiendanube
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        )
+                      : const Icon(Icons.wifi_tethering, size: 18),
+                  label: const Text('Probar Conexión'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: brandColor,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
                 ),
-              ),
-              OutlinedButton.icon(
-                key: const ValueKey('btn_save_tiendanube'),
-                onPressed: () => _saveTiendanubeIntegration(showFeedback: true),
-                icon: const Icon(Icons.save_outlined, size: 18),
-                label: const Text('Guardar Tienda Nube'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: brandColor,
-                  side: const BorderSide(color: brandColor),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                OutlinedButton.icon(
+                  key: const ValueKey('btn_save_tiendanube'),
+                  onPressed: () => _saveTiendanubeIntegration(showFeedback: true),
+                  icon: const Icon(Icons.save_outlined, size: 18),
+                  label: const Text('Guardar Tienda Nube'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: brandColor,
+                    side: const BorderSide(color: brandColor),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
                 ),
-              ),
-            ],
-          ),
-        ],
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -2374,7 +2388,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
           controller: _ecommerceExpCtrl,
-          initiallyExpanded: _ecommerceEnabled,
+          initiallyExpanded: false,
           tilePadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
           childrenPadding: const EdgeInsets.only(left: 24, right: 24, bottom: 24),
           trailing: Switch(
@@ -2465,7 +2479,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
           controller: _mpExpCtrl,
-          initiallyExpanded: _mpQrEnabled,
+          initiallyExpanded: false,
           tilePadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
           childrenPadding: const EdgeInsets.only(left: 24, right: 24, bottom: 24),
           trailing: Switch(
@@ -2523,7 +2537,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ],
                     const SizedBox(height: 4),
                     Text(
-                      'Cobro con QR In-Store y terminales fí­sicas Point',
+                      'Cobro con QR In-Store y terminales físicas Point',
                       style: TextStyle(
                           fontSize: 13, color: Colors.grey.shade600),
                     ),
@@ -2682,7 +2696,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
           controller: _afipExpCtrl,
-          initiallyExpanded: _afipEnabled,
+          initiallyExpanded: false,
           tilePadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
           childrenPadding: const EdgeInsets.only(left: 24, right: 24, bottom: 24),
           trailing: Switch(
@@ -3934,7 +3948,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             runSpacing: 12,
             children: (provider.allowedAddons.isEmpty)
                 ? [
-                    const Text('No hay addons especí­ficos activos.',
+                    const Text('No hay addons específicos activos.',
                         style: TextStyle(color: Colors.grey))
                   ]
                 : provider.allowedAddons
@@ -3951,46 +3965,61 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     .toList(),
           ),
           const SizedBox(height: 32),
-          const SizedBox(height: 32),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _isSyncingLicense ? null : _syncLicense,
-                  icon: _isSyncingLicense
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Icon(Icons.sync),
-                  label: const Text('FORZAR SINCRONIZACIÓN'),
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 24, vertical: 16),
-                    side: BorderSide(color: Colors.grey.shade300),
-                  ),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final isNarrow = constraints.maxWidth < 500;
+              final syncBtn = OutlinedButton.icon(
+                onPressed: _isSyncingLicense ? null : _syncLicense,
+                icon: _isSyncingLicense
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.sync),
+                label: const Text('FORZAR SINCRONIZACIÓN'),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 24, vertical: 16),
+                  side: BorderSide(color: Colors.grey.shade300),
                 ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: FilledButton.icon(
-                  onPressed: _isCheckingUpdate ? null : _checkForUpdate,
-                  icon: _isCheckingUpdate
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(
-                              strokeWidth: 2, color: Colors.white))
-                      : const Icon(Icons.system_update_alt),
-                  label: const Text('BUSCAR ACTUALIZACIONES'),
-                  style: FilledButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 24, vertical: 16),
-                    backgroundColor: const Color(0xFF3F51B5),
-                  ),
+              );
+
+              final updateBtn = FilledButton.icon(
+                onPressed: _isCheckingUpdate ? null : _checkForUpdate,
+                icon: _isCheckingUpdate
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white))
+                    : const Icon(Icons.system_update_alt),
+                label: const Text('BUSCAR ACTUALIZACIONES'),
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 24, vertical: 16),
+                  backgroundColor: const Color(0xFF3F51B5),
                 ),
-              ),
-            ],
+              );
+
+              if (isNarrow) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    syncBtn,
+                    const SizedBox(height: 12),
+                    updateBtn,
+                  ],
+                );
+              }
+
+              return Row(
+                children: [
+                  Expanded(child: syncBtn),
+                  const SizedBox(width: 16),
+                  Expanded(child: updateBtn),
+                ],
+              );
+            },
           ),
           if (_appVersion.isNotEmpty) ...[
             const SizedBox(height: 16),

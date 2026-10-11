@@ -505,12 +505,38 @@ void main() {
       await tester.pump(const Duration(milliseconds: 350));
 
       // E-commerce card title
-      expect(find.text('E-Commerce y Omnicanalidad'), findsOneWidget);
+      final ecomHeader = find.text('E-Commerce y Omnicanalidad');
+      expect(ecomHeader, findsOneWidget);
+
+      // Expand E-Commerce card
+      await tester.ensureVisible(ecomHeader);
+      await tester.tap(ecomHeader);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
 
       // Verify sections are present
       expect(find.text('Mercado Libre'), findsWidgets);
       expect(find.text('WooCommerce'), findsWidgets);
       expect(find.text('Tienda Nube'), findsWidgets);
+
+      // Expand sub-accordions to reveal fields
+      final meliHeader = find.text('Mercado Libre').first;
+      await tester.ensureVisible(meliHeader);
+      await tester.tap(meliHeader);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+
+      final wooHeader = find.text('WooCommerce').first;
+      await tester.ensureVisible(wooHeader);
+      await tester.tap(wooHeader);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+
+      final tnHeader = find.text('Tienda Nube').first;
+      await tester.ensureVisible(tnHeader);
+      await tester.tap(tnHeader);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
 
       // Verify fields
       expect(find.byKey(const ValueKey('field_meli_id')), findsOneWidget);
@@ -534,6 +560,18 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
 
       await tester.tap(find.text('Integraciones'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+
+      // Expand E-Commerce card
+      final ecomHeader = find.text('E-Commerce y Omnicanalidad');
+      await tester.ensureVisible(ecomHeader);
+      await tester.tap(ecomHeader);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+
+      // Expand Mercado Libre sub-accordion
+      await tester.tap(find.text('Mercado Libre').first);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 350));
 
@@ -564,6 +602,13 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 350));
 
+      // Expand E-Commerce card
+      final ecomHeader = find.text('E-Commerce y Omnicanalidad');
+      await tester.ensureVisible(ecomHeader);
+      await tester.tap(ecomHeader);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+
       // Find switch for Mercado Libre
       final meliSwitch = find.byKey(const ValueKey('switch_meli_active'));
       await tester.ensureVisible(meliSwitch);
@@ -587,6 +632,18 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
 
       await tester.tap(find.text('Integraciones'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+
+      // Expand E-Commerce card
+      final ecomHeader = find.text('E-Commerce y Omnicanalidad');
+      await tester.ensureVisible(ecomHeader);
+      await tester.tap(ecomHeader);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+
+      // Expand Mercado Libre sub-accordion
+      await tester.tap(find.text('Mercado Libre').first);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 350));
 

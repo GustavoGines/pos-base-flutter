@@ -470,33 +470,33 @@ void main() {
 
         await navigateToTab(tester, 'Integraciones', isCompact: isCompact);
 
-        // Tap Mercado Pago ExpansionTile header to collapse
+        // Tap Mercado Pago ExpansionTile header to expand (starts collapsed)
         final mpHeaderFinder = find.text('Mercado Pago');
         await tester.ensureVisible(mpHeaderFinder);
         await tester.tap(mpHeaderFinder);
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 300));
-        assertZeroRenderFlexOverflow(tester, 'After collapsing MP tile at ${width.toInt()}x${height.toInt()}');
+        assertZeroRenderFlexOverflow(tester, 'After expanding MP tile at ${width.toInt()}x${height.toInt()}');
 
-        // Tap Mercado Pago ExpansionTile header to re-expand
+        // Tap Mercado Pago ExpansionTile header to re-collapse
         await tester.tap(mpHeaderFinder);
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 300));
-        assertZeroRenderFlexOverflow(tester, 'After expanding MP tile at ${width.toInt()}x${height.toInt()}');
+        assertZeroRenderFlexOverflow(tester, 'After collapsing MP tile at ${width.toInt()}x${height.toInt()}');
 
-        // Tap ARCA ExpansionTile header to collapse
+        // Tap ARCA ExpansionTile header to expand (starts collapsed)
         final afipHeaderFinder = find.text('ARCA / AFIP (Facturación Electrónica)');
         await tester.ensureVisible(afipHeaderFinder);
         await tester.tap(afipHeaderFinder);
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 300));
-        assertZeroRenderFlexOverflow(tester, 'After collapsing ARCA tile at ${width.toInt()}x${height.toInt()}');
+        assertZeroRenderFlexOverflow(tester, 'After expanding ARCA tile at ${width.toInt()}x${height.toInt()}');
 
-        // Tap ARCA ExpansionTile header to re-expand
+        // Tap ARCA ExpansionTile header to re-collapse
         await tester.tap(afipHeaderFinder);
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 300));
-        assertZeroRenderFlexOverflow(tester, 'After expanding ARCA tile at ${width.toInt()}x${height.toInt()}');
+        assertZeroRenderFlexOverflow(tester, 'After collapsing ARCA tile at ${width.toInt()}x${height.toInt()}');
       });
 
       testWidgets('Dynamic interaction: Toggling switches at ${width.toInt()}x${height.toInt()}', (tester) async {
@@ -539,6 +539,13 @@ void main() {
         await tester.pump(const Duration(milliseconds: 100));
 
         await navigateToTab(tester, 'Integraciones', isCompact: isCompact);
+
+        // Expand ARCA / AFIP tile
+        final afipHeaderFinder = find.text('ARCA / AFIP (Facturación Electrónica)');
+        await tester.ensureVisible(afipHeaderFinder);
+        await tester.tap(afipHeaderFinder);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
 
         // Pick cert file
         mockPicker.nextResult = FilePickerResult([
@@ -609,6 +616,13 @@ void main() {
 
         await navigateToTab(tester, 'Integraciones', isCompact: isCompact);
 
+        // Expand MP tile
+        final mpHeaderFinder = find.text('Mercado Pago');
+        await tester.ensureVisible(mpHeaderFinder);
+        await tester.tap(mpHeaderFinder);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+
         // Toggle MP Access Token visibility
         final tokenEye = find.byTooltip('Mostrar token');
         if (tokenEye.evaluate().isNotEmpty) {
@@ -626,6 +640,13 @@ void main() {
           await tester.pump();
           assertZeroRenderFlexOverflow(tester, 'After revealing MP secret at ${width.toInt()}x${height.toInt()}');
         }
+
+        // Expand ARCA / AFIP tile
+        final afipHeaderFinder = find.text('ARCA / AFIP (Facturación Electrónica)');
+        await tester.ensureVisible(afipHeaderFinder);
+        await tester.tap(afipHeaderFinder);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
 
         // Toggle AFIP Passphrase visibility
         final passEye = find.byTooltip('Mostrar contraseña');

@@ -365,7 +365,13 @@ class _CatalogScreenState extends State<CatalogScreen> {
                         children: [
                           searchWidget,
                           const SizedBox(height: 12),
-                          actionRow,
+                          if (constraints.maxWidth < 700)
+                            SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: actionRow,
+                            )
+                          else
+                            actionRow,
                         ],
                       );
                     }
@@ -808,7 +814,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                     color: Colors.deepPurple,
                     tooltip: 'Imprimir Etiquetas',
                     padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
+                    constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
                     onPressed: () => showDialog(context: context, builder: (_) => PrintLabelsDialog(products: [p])),
                   ),
                   IconButton(
@@ -816,7 +822,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                     color: Colors.teal,
                     tooltip: 'Ajuste de Stock',
                     padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
+                    constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
                     onPressed: () async {
                       final auth = await AdminPinDialog.verify(context, action: 'Ajustar Stock', permissionKey: 'adjust_stock');
                       if (auth && context.mounted) _showStockAdjustment(context, provider, p);
@@ -827,7 +833,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                     color: Colors.blue,
                     tooltip: 'Editar',
                     padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
+                    constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
                     onPressed: () async {
                       final auth = await AdminPinDialog.verify(context, action: 'Editar Producto', permissionKey: 'manage_catalog');
                       if (auth && context.mounted) _showProductForm(context, provider, product: p);
@@ -838,7 +844,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                     color: Colors.red,
                     tooltip: 'Eliminar',
                     padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
+                    constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
                     onPressed: () async {
                       final auth = await AdminPinDialog.verify(context, action: 'Eliminar Producto', permissionKey: 'manage_catalog');
                       if (auth && context.mounted) _confirmDelete(context, provider, p);
@@ -3190,6 +3196,29 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
                     },
                   ),
                 ),
+                if (examples.any((ex) => (num.tryParse(ex['old_price'].toString()) ?? 0) == 0)) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.shade50,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: Colors.amber.shade400),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.info_outline, size: 16, color: Colors.amber.shade900),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'Atención: Los productos con precio \$0 se mantendrán en \$0 al calcular porcentaje. Asigna su precio individualmente o desde el importador masivo.',
+                            style: TextStyle(fontSize: 11, color: Colors.amber.shade900, fontWeight: FontWeight.w500),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -3207,6 +3236,10 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
 
     if (confirmed != true) return;
 
+    if (mounted) {
+      Navigator.of(context).pop();
+    }
+
     // 3. Ejecutar actualización real
     final message = await widget.provider.bulkPriceUpdate(
       percentage: pct,
@@ -3217,8 +3250,7 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
       brandId: _selectedBrandId,
     );
 
-    if (mounted) {
-      Navigator.of(context).pop();
+    if (context.mounted) {
       if (message != null) {
         SnackBarService.success(context, '¡Precios actualizados! $message');
       } else {

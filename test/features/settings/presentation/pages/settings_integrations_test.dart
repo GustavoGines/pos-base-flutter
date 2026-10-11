@@ -411,8 +411,16 @@ void main() {
 
       // Headers
       expect(find.text('Integraciones'), findsWidgets);
-      expect(find.text('Mercado Pago'), findsOneWidget);
-      expect(find.text('ARCA / AFIP (Facturación Electrónica)'), findsOneWidget);
+      final mpHeader = find.text('Mercado Pago');
+      expect(mpHeader, findsOneWidget);
+      final afipHeader = find.text('ARCA / AFIP (Facturación Electrónica)');
+      expect(afipHeader, findsOneWidget);
+
+      // Expand Mercado Pago tile
+      await tester.ensureVisible(mpHeader);
+      await tester.tap(mpHeader);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
 
       // Mercado Pago fields
       // expect(find.text('Habilitar cobro con QR'), findsOneWidget);
@@ -446,6 +454,12 @@ void main() {
       );
       expect(revealedTextField.obscureText, isFalse);
 
+      // Expand ARCA / AFIP tile
+      await tester.ensureVisible(afipHeader);
+      await tester.tap(afipHeader);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
       // ARCA / AFIP fields
       // expect(find.text('Habilitar Facturación ARCA'), findsOneWidget);
       expect(find.byKey(const ValueKey('field_afip_cuit')), findsOneWidget);
@@ -474,6 +488,13 @@ void main() {
       await tester.tap(find.text('Integraciones'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
+
+      // Expand Mercado Pago tile
+      final mpHeader = find.text('Mercado Pago');
+      await tester.ensureVisible(mpHeader);
+      await tester.tap(mpHeader);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
 
       // Scroll to and click Probar conexión
       final btnFinder = find.byKey(const ValueKey('btn_test_mp_connection'));
@@ -579,6 +600,13 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
 
+      // Expand ARCA / AFIP tile
+      final afipHeader = find.text('ARCA / AFIP (Facturación Electrónica)');
+      await tester.ensureVisible(afipHeader);
+      await tester.tap(afipHeader);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
       // Clear Punto de Venta field
       final ptoVtaFinder = find.byKey(const ValueKey('field_afip_pto_vta'));
       await tester.ensureVisible(ptoVtaFinder);
@@ -613,6 +641,13 @@ void main() {
       await tester.tap(find.text('Integraciones'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
+
+      // Expand Mercado Pago tile
+      final mpHeader = find.text('Mercado Pago');
+      await tester.ensureVisible(mpHeader);
+      await tester.tap(mpHeader);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
 
       // Click copy button on webhook url field
       final copyBtnFinder = find.byTooltip('Copiar URL al portapapeles');
@@ -694,6 +729,13 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
 
+      // Expand ARCA / AFIP tile
+      final afipHeader = find.text('ARCA / AFIP (Facturación Electrónica)');
+      await tester.ensureVisible(afipHeader);
+      await tester.tap(afipHeader);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
       // Enter 0 in Punto de Venta
       final ptoVtaFinder = find.byKey(const ValueKey('field_afip_pto_vta'));
       await tester.ensureVisible(ptoVtaFinder);
@@ -729,6 +771,13 @@ void main() {
       await tester.tap(find.text('Integraciones'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
+
+      // Expand Mercado Pago tile
+      final mpHeader = find.text('Mercado Pago');
+      await tester.ensureVisible(mpHeader);
+      await tester.tap(mpHeader);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
 
       // Clear Access Token field
       final tokenFinder = find.byKey(const ValueKey('field_mp_access_token'));

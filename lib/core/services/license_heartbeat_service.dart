@@ -162,8 +162,10 @@ class LicenseHeartbeatService extends ChangeNotifier with WidgetsBindingObserver
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed && _initialized) {
-      debugPrint('=== App Resumed: Forcing License Sync ===');
-      _triggerSync();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        debugPrint('=== App Resumed: Forcing License Sync ===');
+        _triggerSync();
+      });
     }
   }
 

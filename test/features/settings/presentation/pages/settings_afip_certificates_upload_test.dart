@@ -480,6 +480,13 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
 
+      // Expand AFIP tile
+      final afipHeader1 = find.text('ARCA / AFIP (Facturación Electrónica)');
+      await tester.ensureVisible(afipHeader1);
+      await tester.tap(afipHeader1);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
       // Verify certificate upload UI elements exist
       expect(find.byKey(const ValueKey('btn_pick_afip_cert')), findsOneWidget);
       expect(find.byKey(const ValueKey('btn_pick_afip_key')), findsOneWidget);
@@ -517,6 +524,13 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
 
+      // Expand AFIP tile
+      final afipHeader2 = find.text('ARCA / AFIP (Facturación Electrónica)');
+      await tester.ensureVisible(afipHeader2);
+      await tester.tap(afipHeader2);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
       // Clear CUIT field
       await tester.enterText(find.byKey(const ValueKey('field_afip_cuit')), '');
       await tester.pump();
@@ -549,6 +563,13 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
 
+      // Expand AFIP tile
+      final afipHeader3 = find.text('ARCA / AFIP (Facturación Electrónica)');
+      await tester.ensureVisible(afipHeader3);
+      await tester.tap(afipHeader3);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
       // Tap Upload button without picking files
       final uploadBtnFinder = find.byKey(const ValueKey('btn_upload_afip_certs'));
       await tester.ensureVisible(uploadBtnFinder);
@@ -578,6 +599,13 @@ void main() {
       await tester.tap(find.text('Integraciones'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
+
+      // Expand AFIP tile
+      final afipHeader4 = find.text('ARCA / AFIP (Facturación Electrónica)');
+      await tester.ensureVisible(afipHeader4);
+      await tester.tap(afipHeader4);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
 
       // Pick cert file
       mockPicker.nextResult = FilePickerResult([
@@ -636,6 +664,13 @@ void main() {
       await tester.tap(find.text('Integraciones'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
+
+      // Expand AFIP tile
+      final afipHeader5 = find.text('ARCA / AFIP (Facturación Electrónica)');
+      await tester.ensureVisible(afipHeader5);
+      await tester.tap(afipHeader5);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
 
       // Initially, chips show Not Installed
       expect(find.text('Certificado (.crt) No Instalado'), findsOneWidget);
@@ -724,6 +759,13 @@ void main() {
       await tester.tap(find.text('Integraciones'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
+
+      // Expand AFIP tile
+      final afipHeader6 = find.text('ARCA / AFIP (Facturación Electrónica)');
+      await tester.ensureVisible(afipHeader6);
+      await tester.tap(afipHeader6);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
 
       // Pick cert file
       mockPicker.nextResult = FilePickerResult([
