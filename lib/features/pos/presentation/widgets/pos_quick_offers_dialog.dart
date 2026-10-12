@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/pos_provider.dart';
 import 'package:frontend_desktop/features/offers/presentation/providers/offer_provider.dart';
+import 'package:frontend_desktop/features/offers/data/models/offer_model.dart';
 import 'package:frontend_desktop/features/catalog/presentation/providers/catalog_provider.dart';
 import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
@@ -23,6 +24,7 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
   String _periodType = 'daily'; // 'daily', 'weekly', 'monthly'
   final List<Product> _selectedProducts = [];
   bool _isSaving = false;
+  OfferModel? _editingOffer;
 
   @override
   void initState() {
@@ -53,7 +55,52 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
     super.dispose();
   }
 
-  Future<void> _handleCreateOffer() async {
+  void _startEditOffer(OfferModel offer) {
+    setState(() {
+      _editingOffer = offer;
+      _offerNameCtrl.text = offer.name;
+      _discountCtrl.text = offer.discountPercentage?.toInt().toString() ?? (offer.discountPercentage?.toString() ?? '10');
+      _periodType = offer.periodType;
+      _selectedProducts.clear();
+      for (final pMap in offer.products) {
+        final id = (pMap['id'] as num?)?.toInt() ?? 0;
+        final name = pMap['name']?.toString() ?? 'Producto';
+        final sellingPrice = double.tryParse(pMap['selling_price']?.toString() ?? '0') ?? 0.0;
+        final internalCode = pMap['internal_code']?.toString() ?? '';
+        final barcode = pMap['barcode']?.toString();
+        _selectedProducts.add(Product(
+          id: id,
+          name: name,
+          sellingPrice: sellingPrice,
+          internalCode: internalCode,
+          barcode: barcode,
+          costPrice: 0,
+          stock: 0,
+          active: true,
+          isSoldByWeight: false,
+        ));
+      }
+    });
+    _tabController.animateTo(1);
+  }
+
+  void _cancelEdit() {
+    setState(() {
+      _editingOffer = null;
+      _offerNameCtrl.clear();
+      _discountCtrl.text = '10';
+      _periodType = 'daily';
+      _selectedProducts.clear();
+      final pos = Provider.of<PosProvider>(context, listen: false);
+      for (final item in pos.cart) {
+        if (!_selectedProducts.any((p) => p.id == item.product.id)) {
+          _selectedProducts.add(item.product);
+        }
+      }
+    });
+  }
+
+  Future<void> _handleSaveOffer() async {
     final name = _offerNameCtrl.text.trim();
     if (name.isEmpty) {
       SnackBarService.warning(context, 'Por favor indicá un nombre para la oferta.');
@@ -75,20 +122,37 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
     final offerProv = Provider.of<OfferProvider>(context, listen: false);
     final pos = Provider.of<PosProvider>(context, listen: false);
 
-    final success = await offerProv.createQuickOffer(
-      name: name,
-      type: 'percentage',
-      discountPercentage: discount,
-      periodType: _periodType,
-      productIds: _selectedProducts.map((p) => p.id).toList(),
-    );
+    bool success = false;
+    if (_editingOffer != null) {
+      success = await offerProv.updateOffer(
+        id: _editingOffer!.id,
+        name: name,
+        type: 'percentage',
+        discountPercentage: discount,
+        periodType: _periodType,
+        productIds: _selectedProducts.map((p) => p.id).toList(),
+      );
+    } else {
+      success = await offerProv.createQuickOffer(
+        name: name,
+        type: 'percentage',
+        discountPercentage: discount,
+        periodType: _periodType,
+        productIds: _selectedProducts.map((p) => p.id).toList(),
+      );
+    }
 
     if (success && mounted) {
       pos.syncActiveOffers(offerProv.activeOffers);
-      SnackBarService.success(context, '🏷️ Oferta "$name" ($discount% OFF) activada con éxito.');
+      final wasEdit = _editingOffer != null;
+      _cancelEdit();
+      SnackBarService.success(
+        context,
+        wasEdit ? '🏷️ Oferta "$name" actualizada con éxito.' : '🏷️ Oferta "$name" ($discount% OFF) activada con éxito.',
+      );
       _tabController.animateTo(0);
     } else if (mounted) {
-      SnackBarService.error(context, offerProv.errorMessage ?? 'Error al crear la oferta.');
+      SnackBarService.error(context, offerProv.errorMessage ?? 'Error al guardar la oferta.');
     }
 
     if (mounted) {
@@ -160,9 +224,9 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
                 labelColor: const Color(0xFF7B1FA2),
                 unselectedLabelColor: Colors.grey.shade600,
                 labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                tabs: const [
-                  Tab(text: '🏷️ Ofertas Activas Hoy'),
-                  Tab(text: '✨ Armar Nueva Oferta'),
+                tabs: [
+                  const Tab(text: '🏷️ Ofertas Activas Hoy'),
+                  Tab(text: _editingOffer != null ? '✏️ Editar Oferta' : '✨ Armar Nueva Oferta'),
                 ],
               ),
             ),
@@ -274,6 +338,11 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
                             ),
                           ),
                           IconButton(
+                            icon: const Icon(Icons.edit_outlined, size: 20, color: Color(0xFF1976D2)),
+                            tooltip: 'Editar oferta',
+                            onPressed: () => _startEditOffer(offer),
+                          ),
+                          IconButton(
                             icon: const Icon(Icons.delete_outline, size: 20, color: Colors.red),
                             tooltip: 'Eliminar oferta',
                             onPressed: () async {
@@ -339,6 +408,33 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (_editingOffer != null)
+            Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.blue.shade200),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.edit_note_rounded, color: Colors.blue.shade800, size: 22),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Modificando oferta: ${_editingOffer!.name}',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.blue.shade900),
+                    ),
+                  ),
+                  TextButton.icon(
+                    onPressed: _cancelEdit,
+                    icon: const Icon(Icons.close, size: 16),
+                    label: const Text('Cancelar edición'),
+                  ),
+                ],
+              ),
+            ),
           TextField(
             controller: _offerNameCtrl,
             decoration: InputDecoration(
@@ -483,12 +579,16 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
               ),
-              onPressed: _isSaving ? null : _handleCreateOffer,
+              onPressed: _isSaving ? null : _handleSaveOffer,
               icon: _isSaving
                   ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                  : const Icon(Icons.bolt_rounded, size: 22),
-              label: Text(_isSaving ? 'Guardando...' : '🚀 Activar Oferta Inmediatamente',
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                  : Icon(_editingOffer != null ? Icons.save_rounded : Icons.bolt_rounded, size: 22),
+              label: Text(
+                _isSaving
+                    ? 'Guardando...'
+                    : (_editingOffer != null ? '💾 Guardar Cambios de la Oferta' : '🚀 Activar Oferta Inmediatamente'),
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+              ),
             ),
           ),
         ],

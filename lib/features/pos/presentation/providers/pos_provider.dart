@@ -409,19 +409,19 @@ class PosProvider with ChangeNotifier {
     submitWeighedProductWithPromo(product, weightInKg);
   }
 
-  bool requestAddToCartWithPromo(Product product, {double? promotionalPrice, String? promotionalLabel}) {
+  bool requestAddToCartWithPromo(Product product, {double? promotionalPrice, String? promotionalLabel, String? promotionalPeriodType}) {
     if (product.isSoldByWeight) {
       return false;
     }
-    _addToCartDirectly(product, 1.0, promotionalPrice: promotionalPrice, promotionalLabel: promotionalLabel);
+    _addToCartDirectly(product, 1.0, promotionalPrice: promotionalPrice, promotionalLabel: promotionalLabel, promotionalPeriodType: promotionalPeriodType);
     return true;
   }
 
-  void submitWeighedProductWithPromo(Product product, double weightInKg, {double? promotionalPrice, String? promotionalLabel}) {
-    _addToCartDirectly(product, weightInKg, promotionalPrice: promotionalPrice, promotionalLabel: promotionalLabel);
+  void submitWeighedProductWithPromo(Product product, double weightInKg, {double? promotionalPrice, String? promotionalLabel, String? promotionalPeriodType}) {
+    _addToCartDirectly(product, weightInKg, promotionalPrice: promotionalPrice, promotionalLabel: promotionalLabel, promotionalPeriodType: promotionalPeriodType);
   }
 
-  void _addToCartDirectly(Product product, double quantity, {double? promotionalPrice, String? promotionalLabel}) {
+  void _addToCartDirectly(Product product, double quantity, {double? promotionalPrice, String? promotionalLabel, String? promotionalPeriodType}) {
     if (product.isSoldByWeight) {
       _cart.add(CartItem(
         product: product,
@@ -431,6 +431,7 @@ class PosProvider with ChangeNotifier {
         cardFactor: _currentCardFactor,
         promotionalPrice: promotionalPrice,
         promotionalLabel: promotionalLabel,
+        promotionalPeriodType: promotionalPeriodType,
       ));
     } else {
       final index = _cart.indexWhere(
@@ -442,6 +443,7 @@ class PosProvider with ChangeNotifier {
         if (promotionalPrice != null) {
           _cart[index].promotionalPrice = promotionalPrice;
           _cart[index].promotionalLabel = promotionalLabel;
+          _cart[index].promotionalPeriodType = promotionalPeriodType;
         }
       } else {
         _cart.add(CartItem(
@@ -454,6 +456,7 @@ class PosProvider with ChangeNotifier {
           customTierLabel: _customTierLabel,
           promotionalPrice: promotionalPrice,
           promotionalLabel: promotionalLabel,
+          promotionalPeriodType: promotionalPeriodType,
         ));
       }
     }
@@ -474,14 +477,19 @@ class PosProvider with ChangeNotifier {
       }
       if (matchedOffer != null) {
         final discounted = matchedOffer.calculateDiscountedPrice(item.product.sellingPrice, productId: item.product.id) as double;
-        if (item.promotionalPrice != discounted) {
+        final periodType = matchedOffer.periodType as String?;
+        if (item.promotionalPrice != discounted ||
+            item.promotionalLabel != matchedOffer.name ||
+            item.promotionalPeriodType != periodType) {
           item.promotionalPrice = discounted;
           item.promotionalLabel = matchedOffer.name;
+          item.promotionalPeriodType = periodType;
           hasChanges = true;
         }
       } else if (item.promotionalPrice != null) {
         item.promotionalPrice = null;
         item.promotionalLabel = null;
+        item.promotionalPeriodType = null;
         hasChanges = true;
       }
     }
@@ -604,14 +612,17 @@ class PosProvider with ChangeNotifier {
   
     for (var item in quote.items) {
       if (item.product != null) {
+        final prod = item.product!;
+        final hasPromo = item.unitPrice < prod.sellingPrice && item.unitPrice > 0;
         _cart.add(CartItem(
-          product: item.product!,
+          product: prod,
           quantity: item.quantity,
           activeTier: _activeTier,
           wholesaleFactor: _currentWholesaleFactor,
           cardFactor: _currentCardFactor,
           customFactor: _currentCustomFactor,
           customTierLabel: _customTierLabel,
+          promotionalPrice: hasPromo ? item.unitPrice : null,
         ));
       }
     }
@@ -641,14 +652,18 @@ class PosProvider with ChangeNotifier {
 
     final List<CartItem> recalledItems = rawItems.map<CartItem>((itemMap) {
       final prod = itemMap['product'] as Map<String, dynamic>? ?? {};
+      final unitPriceCharged = double.tryParse(itemMap['unit_price'].toString()) ?? 0.0;
+      final originalSellingPrice = double.tryParse(prod['selling_price']?.toString() ?? '') ?? unitPriceCharged;
       final product = Product(
         id: (prod['id'] as num?)?.toInt() ?? 0,
         name: itemMap['product_name']?.toString() ??
             prod['name']?.toString() ??
             'Producto',
         internalCode: prod['internal_code']?.toString() ?? '',
-        costPrice: 0,
-        sellingPrice: double.tryParse(itemMap['unit_price'].toString()) ?? 0.0,
+        costPrice: double.tryParse(prod['cost_price']?.toString() ?? '0') ?? 0,
+        sellingPrice: originalSellingPrice,
+        priceWholesale: double.tryParse(prod['price_wholesale']?.toString() ?? ''),
+        priceCard: double.tryParse(prod['price_card']?.toString() ?? ''),
         stock: double.tryParse(prod['stock']?.toString() ?? '0') ?? 0.0,
         active: true,
         isSoldByWeight:
@@ -657,6 +672,9 @@ class PosProvider with ChangeNotifier {
       return CartItem(
         product: product,
         quantity: double.tryParse(itemMap['quantity'].toString()) ?? 1.0,
+        promotionalPrice: (unitPriceCharged < originalSellingPrice && unitPriceCharged > 0)
+            ? unitPriceCharged
+            : null,
       );
     }).toList();
 

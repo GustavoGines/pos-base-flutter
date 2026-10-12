@@ -12,6 +12,7 @@ class CartItem {
   String? customTierLabel; // Nombre de la lista personalizada para mostrar en UI
   double? promotionalPrice; // Ofertas / Promociones temporales
   String? promotionalLabel;
+  String? promotionalPeriodType; // 'daily', 'weekly', 'monthly', 'custom'
   
   CartItem({
     required this.product,
@@ -23,6 +24,7 @@ class CartItem {
     this.customTierLabel,
     this.promotionalPrice,
     this.promotionalLabel,
+    this.promotionalPeriodType,
   });
 
   /// Motor de precio híbrido: prioriza precio de oferta → overrides fijos → multiplicadores globales/custom → precio base volumétrico
@@ -69,5 +71,33 @@ class CartItem {
 
   /// Indica si este ítem tiene algún descuento aplicado respecto al precio de lista
   bool get hasDiscount => subtotal < regularSubtotal - 0.001;
+
+  /// Indica si este ítem tiene una oferta promocional activa aplicada
+  bool get hasActiveOffer =>
+      promotionalPrice != null &&
+      promotionalPrice! > 0 &&
+      (unitPrice - promotionalPrice!).abs() < 0.01;
+
+  /// Retorna el texto para el badge de oferta según su periodicidad o etiqueta
+  String get offerBadgeLabel {
+    switch (promotionalPeriodType) {
+      case 'daily':
+        return 'Oferta Diaria';
+      case 'weekly':
+        return 'Oferta Semanal';
+      case 'monthly':
+        return 'Oferta Mensual';
+      default:
+        if (promotionalLabel != null && promotionalLabel!.trim().isNotEmpty) {
+          final clean = promotionalLabel!.trim();
+          final lower = clean.toLowerCase();
+          if (lower.startsWith('oferta') || lower.startsWith('promo')) {
+            return clean;
+          }
+          return 'Oferta: $clean';
+        }
+        return 'Oferta';
+    }
+  }
 }
 
