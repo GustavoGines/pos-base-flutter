@@ -397,7 +397,17 @@ class _PosScreenState extends State<PosScreen> {
         calcWeight = 1.0; // Fallback de seguridad
       }
 
-      posProvider.submitWeighedProduct(product, calcWeight);
+      final offerProvider = Provider.of<OfferProvider>(context, listen: false);
+      final promoPrice = offerProvider.getDiscountedPrice(product);
+      final promoOffer = offerProvider.getActiveOfferForProduct(product.id);
+
+      posProvider.submitWeighedProductWithPromo(
+        product,
+        calcWeight,
+        promotionalPrice: promoPrice,
+        promotionalLabel: promoOffer?.name,
+        promotionalPeriodType: promoOffer?.periodType,
+      );
     } else if (results.length == 1) {
       _handleProductSelection(results.first);
     } else {
@@ -489,14 +499,22 @@ class _PosScreenState extends State<PosScreen> {
       product,
       promotionalPrice: promoPrice,
       promotionalLabel: promoOffer?.name,
+      promotionalPeriodType: promoOffer?.periodType,
     );
     if (!success) {
       // Es producto por peso, pedir peso por Modal
-      _showWeightModal(product, posProvider, promotionalPrice: promoPrice, promotionalLabel: promoOffer?.name);
+      _showWeightModal(
+        product,
+        posProvider,
+        promotionalPrice: promoPrice,
+        promotionalLabel: promoOffer?.name,
+        promotionalPeriodType: promoOffer?.periodType,
+      );
     }
   }
 
-  void _showWeightModal(Product product, PosProvider provider, {double? promotionalPrice, String? promotionalLabel}) {
+  void _showWeightModal(Product product, PosProvider provider,
+      {double? promotionalPrice, String? promotionalLabel, String? promotionalPeriodType}) {
     final weightController = TextEditingController();
 
     showDialog(
@@ -534,7 +552,8 @@ class _PosScreenState extends State<PosScreen> {
                         if (isValid) {
                           _processWeight(val, product, provider, context,
                               promotionalPrice: promotionalPrice,
-                              promotionalLabel: promotionalLabel);
+                              promotionalLabel: promotionalLabel,
+                              promotionalPeriodType: promotionalPeriodType);
                         }
                       },
                     ),
@@ -574,7 +593,8 @@ class _PosScreenState extends State<PosScreen> {
                               _processWeight(weightController.text, product,
                                   provider, context,
                                   promotionalPrice: promotionalPrice,
-                                  promotionalLabel: promotionalLabel);
+                                  promotionalLabel: promotionalLabel,
+                                  promotionalPeriodType: promotionalPeriodType);
                             }
                           : null,
                       style: FilledButton.styleFrom(
@@ -680,7 +700,8 @@ class _PosScreenState extends State<PosScreen> {
   }
 
   void _processWeight(String value, Product product, PosProvider provider,
-      BuildContext dialogContext, {double? promotionalPrice, String? promotionalLabel}) {
+      BuildContext dialogContext,
+      {double? promotionalPrice, String? promotionalLabel, String? promotionalPeriodType}) {
     // Reemplaza comas por puntos en caso de que teclados latinos obligen coma
     String sanitizedValue = value.replaceAll(',', '.');
     final weight = double.tryParse(sanitizedValue);
@@ -689,7 +710,8 @@ class _PosScreenState extends State<PosScreen> {
     if (weight != null && weight > 0 && weight < 1000) {
       provider.submitWeighedProductWithPromo(product, weight,
           promotionalPrice: promotionalPrice,
-          promotionalLabel: promotionalLabel);
+          promotionalLabel: promotionalLabel,
+          promotionalPeriodType: promotionalPeriodType);
       Navigator.pop(dialogContext);
     } else {
       SnackBarService.error(
@@ -2116,7 +2138,25 @@ class _PosScreenState extends State<PosScreen> {
                                 ),
                               ],
                             ),
-                            if (item.activeTier == PriceTier.wholesale)
+                            if (item.hasActiveOffer)
+                              Container(
+                                margin: const EdgeInsets.only(top: 4),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                    color: const Color(0xFF7B1FA2).withValues(alpha: 0.10),
+                                    border: Border.all(
+                                        color: const Color(0xFF7B1FA2).withValues(alpha: 0.35)),
+                                    borderRadius: BorderRadius.circular(4)),
+                                child: Text('🏷️ ${item.offerBadgeLabel}',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                        fontSize: 10,
+                                        color: Color(0xFF7B1FA2),
+                                        fontWeight: FontWeight.bold)),
+                              )
+                            else if (item.activeTier == PriceTier.wholesale)
                               Container(
                                 margin: const EdgeInsets.only(top: 4),
                                 padding: const EdgeInsets.symmetric(
@@ -2207,6 +2247,7 @@ class _PosScreenState extends State<PosScreen> {
                                     color: Colors.grey),
                                 padding: EdgeInsets.zero,
                                 constraints: const BoxConstraints(),
+                                tooltip: 'Disminuir',
                                 onPressed: () {
                                   if (item.quantity > 1) {
                                     pos.updateQuantity(item, item.quantity - 1);
@@ -2221,6 +2262,7 @@ class _PosScreenState extends State<PosScreen> {
                                     color: Colors.blue),
                                 padding: EdgeInsets.zero,
                                 constraints: const BoxConstraints(),
+                                tooltip: 'Aumentar',
                                 onPressed: () {
                                   pos.updateQuantity(item, item.quantity + 1);
                                 },
@@ -2888,8 +2930,8 @@ class _PosScreenState extends State<PosScreen> {
   }
 
   Widget _buildPriceWidget(Product product, bool isByWeight, double fontSize) {
-    return Consumer<PosProvider>(
-      builder: (context, pos, _) {
+    return Consumer2<PosProvider, OfferProvider>(
+      builder: (context, pos, offerProv, _) {
         double displayPrice = product.sellingPrice;
         if (pos.activeTier == PriceTier.wholesale) {
           displayPrice = (product.priceWholesale != null && product.priceWholesale! > 0) 
@@ -2903,10 +2945,18 @@ class _PosScreenState extends State<PosScreen> {
           displayPrice = product.sellingPrice * pos.currentCustomFactor;
         }
 
+        final promoPrice = offerProv.getDiscountedPrice(product);
+        final hasPromo = promoPrice != null && promoPrice > 0 && promoPrice < displayPrice;
+        if (hasPromo) {
+          displayPrice = promoPrice;
+        }
+
         return Text(
           isByWeight ? '\$${displayPrice.toCurrency()}/Kg' : '\$${displayPrice.toCurrency()}',
           style: TextStyle(
-            color: isByWeight ? Colors.orange.shade800 : Colors.green.shade700,
+            color: hasPromo
+                ? const Color(0xFF7B1FA2)
+                : (isByWeight ? Colors.orange.shade800 : Colors.green.shade700),
             fontWeight: FontWeight.bold,
             fontSize: fontSize,
           ),

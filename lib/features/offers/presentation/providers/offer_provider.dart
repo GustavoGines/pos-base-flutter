@@ -108,6 +108,57 @@ class OfferProvider with ChangeNotifier {
     }
   }
 
+  Future<bool> updateOffer({
+    required int id,
+    required String name,
+    String? description,
+    required String type,
+    double? discountPercentage,
+    double? discountAmount,
+    required String periodType,
+    List<String>? daysOfWeek,
+    required List<int> productIds,
+  }) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      final productsPayload = productIds.map((id) => {'product_id': id}).toList();
+      final updated = await repository.updateOffer(
+        id: id,
+        name: name,
+        description: description,
+        type: type,
+        discountPercentage: discountPercentage,
+        discountAmount: discountAmount,
+        periodType: periodType,
+        daysOfWeek: daysOfWeek,
+        products: productsPayload,
+      );
+
+      final activeIdx = _activeOffers.indexWhere((o) => o.id == id);
+      if (activeIdx >= 0) {
+        _activeOffers[activeIdx] = updated;
+      } else {
+        _activeOffers.insert(0, updated);
+      }
+
+      final allIdx = _allOffers.indexWhere((o) => o.id == id);
+      if (allIdx >= 0) {
+        _allOffers[allIdx] = updated;
+      }
+
+      return true;
+    } catch (e) {
+      _errorMessage = e.toString().replaceAll('Exception: ', '');
+      return false;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
   Future<bool> deleteOffer(int id) async {
     try {
       await repository.deleteOffer(id);

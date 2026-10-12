@@ -9,6 +9,7 @@ import 'package:frontend_desktop/features/pos/domain/usecases/search_products_us
 import 'package:frontend_desktop/features/pos/domain/repositories/pos_repository.dart';
 import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
 import 'package:frontend_desktop/core/utils/receipt_printer_service.dart';
+import 'package:frontend_desktop/features/pos/domain/entities/cart_item.dart';
 
 @GenerateMocks([
   ProcessSaleUseCase,
@@ -92,6 +93,109 @@ void main() {
       double change = tenderedAmount - provider.cartSubtotal;
       
       expect(change, 500.0);
+    });
+
+    test('CartItem promotional offer badges and period types', () {
+      final itemDaily = CartItem(
+        product: product1,
+        promotionalPrice: 800.0,
+        promotionalPeriodType: 'daily',
+        promotionalLabel: 'Oferta Relámpago',
+      );
+      expect(itemDaily.hasActiveOffer, isTrue);
+      expect(itemDaily.offerBadgeLabel, 'Oferta Diaria');
+      expect(itemDaily.unitPrice, 800.0);
+
+      final itemWeekly = CartItem(
+        product: product1,
+        promotionalPrice: 850.0,
+        promotionalPeriodType: 'weekly',
+      );
+      expect(itemWeekly.hasActiveOffer, isTrue);
+      expect(itemWeekly.offerBadgeLabel, 'Oferta Semanal');
+
+      final itemMonthly = CartItem(
+        product: product1,
+        promotionalPrice: 900.0,
+        promotionalPeriodType: 'monthly',
+      );
+      expect(itemMonthly.hasActiveOffer, isTrue);
+      expect(itemMonthly.offerBadgeLabel, 'Oferta Mensual');
+
+      final itemNamed = CartItem(
+        product: product1,
+        promotionalPrice: 950.0,
+        promotionalLabel: 'Liquidación Verano',
+      );
+      expect(itemNamed.hasActiveOffer, isTrue);
+      expect(itemNamed.offerBadgeLabel, 'Oferta: Liquidación Verano');
+
+      final itemAlreadyPrefixed = CartItem(
+        product: product1,
+        promotionalPrice: 950.0,
+        promotionalLabel: 'Oferta Especial Fin de Año',
+      );
+      expect(itemAlreadyPrefixed.offerBadgeLabel, 'Oferta Especial Fin de Año');
+
+      final itemPromoPrefixed = CartItem(
+        product: product1,
+        promotionalPrice: 950.0,
+        promotionalLabel: 'Promo 2x1',
+      );
+      expect(itemPromoPrefixed.offerBadgeLabel, 'Promo 2x1');
+
+      final itemRegular = CartItem(product: product1);
+      expect(itemRegular.hasActiveOffer, isFalse);
+    });
+
+    test('PosProvider requestAddToCartWithPromo preserves promotionalPeriodType', () {
+      provider.requestAddToCartWithPromo(
+        product1,
+        promotionalPrice: 800.0,
+        promotionalLabel: 'Promo Lunes',
+        promotionalPeriodType: 'daily',
+      );
+
+      expect(provider.cart.length, 1);
+      final item = provider.cart.first;
+      expect(item.promotionalPrice, 800.0);
+      expect(item.promotionalPeriodType, 'daily');
+      expect(item.hasActiveOffer, isTrue);
+      expect(item.offerBadgeLabel, 'Oferta Diaria');
+    });
+
+    test('PosProvider recallOrderToCart preserves original selling price and promotional price', () {
+      final pendingSaleData = {
+        'id': 99,
+        'shipping_cost': '0',
+        'items': [
+          {
+            'product_id': 1,
+            'product_name': 'Producto Test',
+            'quantity': '2.0',
+            'unit_price': '800.0', // precio con descuento
+            'product': {
+              'id': 1,
+              'name': 'Producto Test',
+              'internal_code': 'PTEST',
+              'cost_price': '500.0',
+              'selling_price': '1000.0', // precio original de lista
+              'stock': '10',
+              'is_sold_by_weight': false,
+            }
+          }
+        ]
+      };
+
+      provider.recallOrderToCart(pendingSaleData);
+
+      expect(provider.cart.length, 1);
+      final item = provider.cart.first;
+      expect(item.product.sellingPrice, 1000.0);
+      expect(item.promotionalPrice, 800.0);
+      expect(item.unitPrice, 800.0);
+      expect(item.hasActiveOffer, isTrue);
+      expect(item.discountSavings, 400.0); // (1000 - 800) * 2
     });
   });
 }

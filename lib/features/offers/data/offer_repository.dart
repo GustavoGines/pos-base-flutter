@@ -81,6 +81,50 @@ class OfferRepository {
     }
   }
 
+  Future<OfferModel> updateOffer({
+    required int id,
+    required String name,
+    String? description,
+    required String type, // 'percentage' | 'fixed_price'
+    double? discountPercentage,
+    double? discountAmount,
+    required String periodType, // 'daily' | 'weekly' | 'monthly' | 'custom'
+    List<String>? daysOfWeek,
+    DateTime? startDate,
+    DateTime? endDate,
+    required List<Map<String, dynamic>> products,
+  }) async {
+    final payload = {
+      'name': name,
+      if (description != null && description.isNotEmpty) 'description': description,
+      'type': type,
+      if (discountPercentage != null) 'discount_percentage': discountPercentage,
+      if (discountAmount != null) 'discount_amount': discountAmount,
+      'period_type': periodType,
+      if (daysOfWeek != null && daysOfWeek.isNotEmpty) 'days_of_week': daysOfWeek,
+      if (startDate != null) 'start_date': startDate.toIso8601String(),
+      if (endDate != null) 'end_date': endDate.toIso8601String(),
+      'products': products,
+    };
+
+    final response = await client.put(
+      Uri.parse('$baseUrl/offers/$id'),
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode(payload),
+    );
+
+    if (response.statusCode == 200) {
+      final jsonResponse = jsonDecode(response.body);
+      return OfferModel.fromJson(jsonResponse['data'] as Map<String, dynamic>);
+    } else {
+      final err = jsonDecode(response.body);
+      throw Exception(err['message'] ?? 'Error al actualizar la oferta');
+    }
+  }
+
   Future<void> deleteOffer(int id) async {
     final response = await client.delete(
       Uri.parse('$baseUrl/offers/$id'),
