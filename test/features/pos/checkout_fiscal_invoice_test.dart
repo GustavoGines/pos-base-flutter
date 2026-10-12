@@ -66,8 +66,17 @@ class FakeFiscalPosProvider extends ChangeNotifier implements PosProvider {
   @override
   String get currentFulfillmentStatus => 'pending';
 
+  Customer? _selectedCustomer;
   @override
-  Customer? get lastSelectedCustomer => null;
+  Customer? get selectedCustomer => _selectedCustomer;
+
+  @override
+  void selectCustomer(Customer? customer, {bool? isPerceptionAgent}) {
+    _selectedCustomer = customer;
+  }
+
+  @override
+  Customer? get lastSelectedCustomer => _selectedCustomer;
 
   @override
   PriceTier get activeTier => PriceTier.base;

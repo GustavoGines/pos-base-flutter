@@ -9,6 +9,7 @@ import 'package:frontend_desktop/core/providers/local_terminal_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:frontend_desktop/features/updater/data/services/update_service.dart';
 import 'package:frontend_desktop/features/updater/presentation/widgets/update_dialog.dart';
+import 'package:frontend_desktop/core/presentation/widgets/live_clock_widget.dart';
 
 
 class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
@@ -348,6 +349,10 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                         );
                       },
                     ),
+                    if (screenWidth >= 880) ...[
+                      LiveClockWidget(compact: screenWidth < 1050),
+                      const SizedBox(width: 8),
+                    ],
                     if (extraAction != null) ...[
                       extraAction!,
                       const SizedBox(width: 8),

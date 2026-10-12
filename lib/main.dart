@@ -53,6 +53,8 @@ import 'features/reports/presentation/pages/reports_screen.dart';
 import 'features/quotes/presentation/pages/quotes_list_screen.dart';
 import 'features/quotes/presentation/providers/quote_provider.dart';
 import 'features/quotes/data/quote_repository.dart';
+import 'features/offers/presentation/providers/offer_provider.dart';
+import 'features/offers/data/offer_repository.dart';
 import 'features/checks/presentation/providers/check_provider.dart';
 import 'features/checks/data/repositories/check_repository_impl.dart';
 import 'features/checks/data/datasources/check_remote_datasource.dart';
@@ -231,7 +233,7 @@ void main() async {
   // SOLO en dispositivos móviles: el desktop tiene su propio mecanismo OTA y no necesita
   // disparar migraciones al actualizarse.
   if (AppConfig.isMobile) {
-    const currentAppVersion = '2.0.1';
+    const currentAppVersion = '2.0.2';
     // Token secreto que debe coincidir con RESCUE_MIGRATE_SECRET en el .env del backend.
     // Protege el endpoint /system/rescue-migrate contra llamadas no autorizadas.
     const rescueSecret = 'pos-rescue-2026-GGLabs';
@@ -400,6 +402,13 @@ void main() async {
             repository: QuoteRepository(baseUrl: apiUrl, client: httpClient),
           ),
           lazy: true,
+        ),
+        // [offers] Ofertas y Promociones
+        ChangeNotifierProvider(
+          create: (_) => OfferProvider(
+            repository: OfferRepository(baseUrl: apiUrl, client: httpClient),
+          ),
+          lazy: false,
         ),
         // [logistics] Dashboard
         ChangeNotifierProvider(

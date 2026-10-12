@@ -48,8 +48,17 @@ class FakePosProvider extends ChangeNotifier implements PosProvider {
   @override
   String? get errorMessage => null;
 
+  Customer? _selectedCustomer;
   @override
-  Customer? get lastSelectedCustomer => null;
+  Customer? get selectedCustomer => _selectedCustomer;
+
+  @override
+  void selectCustomer(Customer? customer, {bool? isPerceptionAgent}) {
+    _selectedCustomer = customer;
+  }
+
+  @override
+  Customer? get lastSelectedCustomer => _selectedCustomer;
 
   @override
   bool get currentRequiresDispatch => false;
