@@ -179,7 +179,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _loadVersion();
     _loadChannel();
 
-    // Listener para auto-completar la ruta del backend si el tí©cnico cambia la URL
+    // Listener para auto-completar la ruta del backend si el técnico cambia la URL
     _serverUrlCtrl.addListener(_handleUrlChange);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -223,7 +223,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             _serverUrlCtrl.text =
                 prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
 
-            // Si la ruta estí¡ vací­a al iniciar, intentamos auto-detectar una sugerencia
+            // Si la ruta está vacía al iniciar, intentamos auto-detectar una sugerencia
             if (_backendPathCtrl.text.isEmpty) {
               _autoDetectBackendPath();
             }
@@ -241,7 +241,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _handleUrlChange() {
-    // Si el tí©cnico estí¡ escribiendo la URL y la ruta estí¡ vací­a, intentamos ayudar
+    // Si el técnico está escribiendo la URL y la ruta está vacía, intentamos ayudar
     if (_backendPathCtrl.text.isEmpty) {
       _autoDetectBackendPath();
     }
@@ -249,7 +249,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   void _autoDetectBackendPath() {
     // Estrategia 1: Carpeta hermana (Estructura de producción ideal)
-    // exe en: <raí­z>/pos-frontend/app.exe  -> busca <raí­z>/pos-backend
+    // exe en: <raíz>/pos-frontend/app.exe  -> busca <raíz>/pos-backend
     try {
       final installDir = File(Platform.resolvedExecutable).parent;
       final siblingBackend = p.join(installDir.parent.path, 'pos-backend');
@@ -1655,7 +1655,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         final fileSize = file.size > 0 ? file.size : (file.bytes?.length ?? 0);
         if (fileSize > 2 * 1024 * 1024) {
           if (mounted) {
-            SnackBarService.error(context, 'El logotipo no puede superar los 2MB permitidos (mí¡x 2048 KB).');
+            SnackBarService.error(context, 'El logotipo no puede superar los 2MB permitidos (máx 2048 KB).');
           }
           return;
         }
@@ -1808,7 +1808,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         );
       } else if (backendUpdate != null) {
         // ESCENARIO 3: Solo Backend
-        // El backend ya se actualiza automí¡ticamente, solo informamos
+        // El backend ya se actualiza automáticamente, solo informamos
         showDialog(
           context: context,
           barrierDismissible: true,
@@ -1816,7 +1816,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         );
       } else {
         SnackBarService.success(
-            context, 'Tu sistema estí¡ actualizado (v$_appVersion)');
+            context, 'Tu sistema está actualizado (v$_appVersion)');
       }
     } catch (e) {
       if (!mounted) return;
@@ -3487,7 +3487,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ),
                 Text(
-                  'Verifica que el Access Token sea ví¡lido contra la API oficial',
+                  'Verifica que el Access Token sea válido contra la API oficial',
                   style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                 ),
               ],
@@ -3883,7 +3883,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ),
                 Text(
-                  'Valida criptogrí¡ficamente el par y lo almacena de forma segura en el servidor.',
+                  'Valida criptográficamente el par y lo almacena de forma segura en el servidor.',
                   style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                 ),
               ],
@@ -4043,7 +4043,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         Row(
           children: [
             Expanded(
-                child: _buildTextField('Telí©fono', _phoneCtrl,
+                child: _buildTextField('Teléfono', _phoneCtrl,
                     icon: Icons.phone_outlined)),
             const SizedBox(width: 24),
             Expanded(
@@ -4382,7 +4382,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildSectionHeader('Precios y Factores',
-            'Configurá los porcentajes matemí¡ticos para las listas de precios globales.'),
+            'Configurá los porcentajes matemáticos para las listas de precios globales.'),
         const SizedBox(height: 32),
 
         // ━━━━━━━━ Feature Toggle Multi-Tenant ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -4467,7 +4467,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ? 'Multi-Listas de Precios (Plan Avanzado)'
                         : _advancedPriceTiersEnabled
                             ? 'Modo Avanzado (Multi-Listas Activo)'
-                            : 'Modo Bí¡sico (Retail / Minorista)',
+                            : 'Modo Básico (Retail / Minorista)',
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 15,
@@ -4482,10 +4482,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     padding: const EdgeInsets.only(top: 4),
                     child: Text(
                       isLocked
-                          ? 'Activí¡ el Plan Avanzado para habilitar el selector de Listas de Precios (Mayorista / Tarjeta) en el POS.'
+                          ? 'Activá el Plan Avanzado para habilitar el selector de Listas de Precios (Mayorista / Tarjeta) en el POS.'
                           : _advancedPriceTiersEnabled
-                              ? 'El POS muestra el selector de Listas (Mayorista / Tarjeta / Custom). Los recargos del mí©todo de pago se desactivan automí¡ticamente para evitar doble cobro.'
-                              : 'El POS opera con precio íºnico. Los recargos configurados en cada Mí©todo de Pago se aplican normalmente al momento del cobro.',
+                              ? 'El POS muestra el selector de Listas (Mayorista / Tarjeta / Custom). Los recargos del método de pago se desactivan automáticamente para evitar doble cobro.'
+                              : 'El POS opera con precio único. Los recargos configurados en cada Método de Pago se aplican normalmente al momento del cobro.',
                       style: TextStyle(
                           fontSize: 12,
                           color: Colors.grey.shade600,
@@ -4556,7 +4556,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _buildSectionHeader('Listas de Precios Especiales',
-                'Creí¡ modificadores diní¡micos para clientes (Ej: "Gremio" con -10%).'),
+                'Creá modificadores dinámicos para clientes (Ej: "Gremio" con -10%).'),
             const SizedBox(height: 24),
             Row(
               crossAxisAlignment: CrossAxisAlignment.end,
@@ -4588,7 +4588,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         });
                       } else {
                         SnackBarService.warning(context,
-                            'Ingresá un nombre y un porcentaje ví¡lido numí©rico.');
+                            'Ingresá un nombre y un porcentaje válido numérico.');
                       }
                     },
                     icon: const Icon(Icons.add),
@@ -4913,7 +4913,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           title: const Text('Asignación de Terminal',
               style: TextStyle(fontWeight: FontWeight.bold)),
           subtitle: Text(
-              'Esta PC estí¡ configurada como: Caja ID ${provider.assignedRegisterId}'),
+              'Esta PC está configurada como: Caja ID ${provider.assignedRegisterId}'),
           trailing: const Icon(Icons.chevron_right),
           onTap: () => _showTerminalAssignmentDialog(context, provider),
         ),
@@ -4931,7 +4931,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           title: const Text('Administración de Cajas',
               style: TextStyle(fontWeight: FontWeight.bold)),
           subtitle: const Text(
-              'Configurá los nombres y permisos de cada terminal fí­sica.'),
+              'Configurá los nombres y permisos de cada terminal física.'),
           trailing: const Icon(Icons.chevron_right),
           onTap: () {
             if (provider.features.multiCaja) {
@@ -4942,7 +4942,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 title: 'Plan Premium Requerido',
                 featureName: 'Gestión Multi-Caja',
                 description:
-                    'La administración de míºltiples terminales fí­sicas es '
+                    'La administración de múltiples terminales físicas es '
                     'una función exclusiva del plan PREMIUM.',
                 onNavigateToSettings: () => setState(
                     () => _activeSection = SettingsSection.subscription),
@@ -5013,7 +5013,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  // Los modales se mantienen funcionalmente igual pero podrí­an estilizarse mí¡s.
+  // Los modales se mantienen funcionalmente igual pero podrían estilizarse más.
   // Re-implementando los esenciales para que el archivo compile.
 
   Future<void> _showTerminalAssignmentDialog(
@@ -5044,18 +5044,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
               if (ctx.mounted) Navigator.pop(ctx);
 
               // Forzar recarga del turno con la nueva caja asignada.
-              // Esto actualizarí¡ globalmente el CashRegisterProvider y el Consumer en /home
-              // echarí¡ al usuario a la pantalla de "Abrir Caja" si la nueva terminal estí¡ cerrada.
+              // Esto actualizará globalmente el CashRegisterProvider y el Consumer en /home
+              // echará al usuario a la pantalla de "Abrir Caja" si la nueva terminal está cerrada.
               await cashProvider.checkCurrentShift(registerId: id);
 
-              // Limpiar carrito para que no quede huí©rfano de la terminal anterior
+              // Limpiar carrito para que no quede huérfano de la terminal anterior
               if (AppConfig.navigatorKey.currentContext != null) {
                 AppConfig.navigatorKey.currentContext!
                     .read<PosProvider>()
                     .clearCart();
               }
 
-              // Redirigir a /home para que reevalíºe el estado y muestre la apertura de caja si es necesario
+              // Redirigir a /home para que reevalúe el estado y muestre la apertura de caja si es necesario
               AppConfig.navigatorKey.currentState
                   ?.pushNamedAndRemoveUntil('/home', (route) => false);
             }
@@ -5116,7 +5116,7 @@ class _AnimatedSubscriptionCardState extends State<AnimatedSubscriptionCard>
 
   @override
   Widget build(BuildContext context) {
-    final title = widget.isPremium ? 'PLAN PREMIUM' : 'PLAN BíSICO';
+    final title = widget.isPremium ? 'PLAN PREMIUM' : 'PLAN BÁSICO';
 
     final gradientColors = widget.isPremium
         ? [
@@ -5227,7 +5227,7 @@ class _AnimatedSubscriptionCardState extends State<AnimatedSubscriptionCard>
                   const SizedBox(height: 10),
                   Text(
                     widget.isLifetime
-                        ? 'Disfrutí¡s de todas las funciones Premium sin lí­mites de tiempo.'
+                        ? 'Disfrutás de todas las funciones Premium sin límites de tiempo.'
                         : (widget.expiresAt != null
                             ? 'Expira el: ${DateFormat('dd MMMM, yyyy').format(widget.expiresAt!)}'
                             : (widget.lastSync != null

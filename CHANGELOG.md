@@ -2,6 +2,11 @@
 Todos los cambios notables de la aplicación de caja (Flutter/Windows) están documentados aquí.
 
 
+## [2.0.1] - 2026-10-12
+### Correcciones
+- Corrección de codificación UTF-8 en pantalla de configuraciones (eliminación de caracteres mojibake en títulos, listas de precios, asignación de terminal y planes).
+- Actualización de compatibilidad de Java 21 para Gradle 9 y Android SDK 36 en pipeline móvil.
+
 ## [2.0.0] - 2026-10-12
 ### E-commerce y Plataformas Web
 - Módulo de integraciones omnicanal para Mercado Libre, WooCommerce, Tiendanube y plataforma web propia.
