@@ -54,6 +54,11 @@ class CatalogProvider with ChangeNotifier {
 
   // ── Search ───────────────────────────────────────────────
   String _searchQuery = '';
+  String get searchQuery => _searchQuery;
+
+  void clearSearch() {
+    _searchQuery = '';
+  }
 
   // ── Sort ─────────────────────────────────────────────────
   String _sortBy = 'name';
@@ -745,7 +750,7 @@ class CatalogProvider with ChangeNotifier {
     try {
       final result = await repository.importProducts(fileBytes, filename);
       // Reload products after a successful import
-      await loadProducts(page: 1);
+      await loadProducts(page: 1, search: '');
       return result;
     } catch (e) {
       _errorMessage = e.toString();

@@ -2571,7 +2571,7 @@ class _PosScreenState extends State<PosScreen> {
                     return IconButton(
                       icon: const Icon(Icons.refresh, color: Colors.grey),
                       tooltip: 'Actualizar catálogo',
-                      onPressed: () => context.read<CatalogProvider>().loadProducts(),
+                      onPressed: () => context.read<CatalogProvider>().loadProducts(page: 1, search: ''),
                     );
                   }
                 ),

@@ -52,9 +52,10 @@ class _CatalogScreenState extends State<CatalogScreen> {
   @override
   void initState() {
     super.initState();
-    // Cargar productos al inicio
+    // Cargar productos al inicio asegurando catálogo completo sin filtros residuales
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<CatalogProvider>().loadProducts();
+      _searchController.text = '';
+      context.read<CatalogProvider>().loadProducts(page: 1, search: '');
       
       // Manejar navegación inteligente desde Alertas
       final args = ModalRoute.of(context)?.settings.arguments;
@@ -148,7 +149,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
       builder: (_) => const CategoriesManagerDialog(),
     );
     if (mounted) {
-      context.read<CatalogProvider>().loadProducts(page: 1);
+      context.read<CatalogProvider>().loadProducts(page: 1, search: _searchController.text.trim());
     }
   }
 
@@ -158,7 +159,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
       builder: (_) => const BrandsManagerDialog(),
     );
     if (mounted) {
-      context.read<CatalogProvider>().loadProducts(page: 1);
+      context.read<CatalogProvider>().loadProducts(page: 1, search: _searchController.text.trim());
     }
   }
 
@@ -178,7 +179,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
     );
     if (mounted) {
       context.read<CatalogProvider>().loadMetadata();
-      context.read<CatalogProvider>().loadProducts(page: 1);
+      context.read<CatalogProvider>().loadProducts(page: 1, search: _searchController.text.trim());
     }
   }
 
@@ -227,7 +228,10 @@ class _CatalogScreenState extends State<CatalogScreen> {
                           icon: const Icon(Icons.refresh, color: Colors.blue),
                           tooltip: 'Recargar Catálogo',
                           onPressed: () {
-                            provider.loadProducts();
+                            provider.loadProducts(
+                              page: 1,
+                              search: _searchController.text.trim(),
+                            );
                           },
                         ),
                         const SizedBox(width: 8),
