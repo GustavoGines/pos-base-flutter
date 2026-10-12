@@ -5,10 +5,16 @@ subprojects {
                 compileSdkVersion 36
                 if (project.android.hasProperty('compileOptions')) {
                     compileOptions {
-                        sourceCompatibility JavaVersion.VERSION_21
-                        targetCompatibility JavaVersion.VERSION_21
+                        sourceCompatibility JavaVersion.VERSION_17
+                        targetCompatibility JavaVersion.VERSION_17
                     }
                 }
+            }
+        }
+        project.tasks.matching { it.name.startsWith("compile") && it.name.endsWith("Kotlin") }.configureEach { task ->
+            try {
+                task.kotlinOptions.jvmTarget = "17"
+            } catch (Throwable ignored) {
             }
         }
     }
