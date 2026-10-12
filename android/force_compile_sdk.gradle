@@ -3,6 +3,12 @@ subprojects {
         if (project.hasProperty('android')) {
             project.android {
                 compileSdkVersion 36
+                if (project.android.hasProperty('compileOptions')) {
+                    compileOptions {
+                        sourceCompatibility JavaVersion.VERSION_21
+                        targetCompatibility JavaVersion.VERSION_21
+                    }
+                }
             }
         }
     }
