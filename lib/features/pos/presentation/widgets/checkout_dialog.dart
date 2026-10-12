@@ -123,8 +123,14 @@ class PaymentLine {
 class CheckoutDialog extends StatefulWidget {
   final double total;
   final int? saleId;
+  final Customer? initialCustomer;
 
-  const CheckoutDialog({super.key, required this.total, this.saleId});
+  const CheckoutDialog({
+    super.key,
+    required this.total,
+    this.saleId,
+    this.initialCustomer,
+  });
 
   @override
   State<CheckoutDialog> createState() => _CheckoutDialogState();
@@ -282,8 +288,10 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     super.initState();
     final posProvider = context.read<PosProvider>();
 
-    // Auto-seleccionar el último cliente usado en Cta Cte si existe
-    _selectedCustomer = posProvider.lastSelectedCustomer;
+    // Auto-seleccionar el cliente asignado al ticket actual o el último usado en Cta Cte
+    _selectedCustomer = widget.initialCustomer ??
+        posProvider.selectedCustomer ??
+        posProvider.lastSelectedCustomer;
     if (_selectedCustomer != null) {
       _deliveryAddressCtrl.text = _selectedCustomer!.deliveryAddress ?? '';
       _syncCustomerWithFiscal(_selectedCustomer);
@@ -353,8 +361,24 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
           orElse: () => provider.paymentMethods.firstWhere(
               (m) => !m.code.contains('transfer'),
               orElse: () => provider.paymentMethods.first));
+
+      PaymentMethod defaultMethod = defaultCash;
+      if (_selectedCustomer != null) {
+        final ccMethod = provider.paymentMethods
+            .where((p) => p.code == 'cuenta_corriente')
+            .firstOrNull;
+        if (ccMethod != null) {
+          final settingsProv = context.read<SettingsProvider>();
+          final isLocked = settingsProv.settings != null &&
+              !settingsProv.features.currentAccounts;
+          if (!isLocked) {
+            defaultMethod = ccMethod;
+          }
+        }
+      }
+
       final line = PaymentLine(
-        method: defaultCash,
+        method: defaultMethod,
         initialAmount:
             _baseTotal + (_requiresDispatch ? _shippingCostToApply : 0.0),
         defaultCardSurcharge: settings?.globalCardPercentage,
@@ -364,7 +388,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       line.percentageController.addListener(_onAmountChanged);
       setState(() {
         _lines.add(line);
-        _previousValidMethods.add(defaultCash);
+        _previousValidMethods.add(defaultMethod);
       });
       // Sincronizar el campo tendered con el efectivo requerido (sin auto-focus en init)
       _syncCashField();
@@ -623,6 +647,24 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
             _syncPaymentsWithGrandTotal();
           });
           context.read<PosProvider>().selectCustomer(c);
+          final provider = context.read<PosProvider>();
+          final ccMethod = provider.paymentMethods
+              .where((p) => p.code == 'cuenta_corriente')
+              .firstOrNull;
+          if (ccMethod != null &&
+              !_hasCuentaCorriente &&
+              _lines.isNotEmpty &&
+              _lines.first.method?.isCash == true) {
+            final settingsProv = context.read<SettingsProvider>();
+            final isLocked = settingsProv.settings != null &&
+                !settingsProv.features.currentAccounts;
+            if (!isLocked) {
+              setState(() {
+                _lines.first.updateMethod(ccMethod);
+                _previousValidMethods[0] = ccMethod;
+              });
+            }
+          }
           final localTerminal = context.read<LocalTerminalProvider>();
           if (localTerminal.lockedPriceTier == 'none' &&
               c.defaultPriceTier != null &&
@@ -2990,70 +3032,113 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              // Cliente Selector si usa Cta Corriente
-                              if (_hasCuentaCorriente) ...[
-                                Material(
-                                  color: Colors.transparent,
-                                  child: InkWell(
-                                    onTap: _openCustomerPicker,
+                              // Cliente Selector / Asignado al ticket o para Cta Corriente
+                              if (_hasCuentaCorriente || _selectedCustomer != null) ...[
+                                Container(
+                                  decoration: BoxDecoration(
+                                    color: _selectedCustomer != null
+                                        ? Colors.purple.shade50
+                                        : Colors.orange.shade50,
                                     borderRadius: BorderRadius.circular(8),
-                                    child: Ink(
-                                      padding: const EdgeInsets.all(12),
-                                      decoration: BoxDecoration(
+                                    border: Border.all(
                                         color: _selectedCustomer != null
-                                            ? Colors.purple.shade50
-                                            : Colors.orange.shade50,
-                                        borderRadius: BorderRadius.circular(8),
-                                        border: Border.all(
-                                            color: _selectedCustomer != null
-                                                ? Colors.purple.shade300
-                                                : Colors.orange.shade400),
-                                      ),
-                                      child: Row(
-                                        children: [
-                                          Icon(Icons.person,
-                                              color: _selectedCustomer != null
-                                                  ? Colors.purple
-                                                  : Colors.orange),
-                                          const SizedBox(width: 12),
-                                          Expanded(
-                                            child: _selectedCustomer == null
-                                                ? Text(
-                                                    'Seleccionar Cliente (Cta. Cte.)',
-                                                    style: TextStyle(
-                                                        color: Colors
-                                                            .orange.shade700,
-                                                        fontWeight:
-                                                            FontWeight.bold))
-                                                : Column(
-                                                    crossAxisAlignment:
-                                                        CrossAxisAlignment
-                                                            .start,
-                                                    children: [
-                                                      Text(
-                                                          _selectedCustomer!
-                                                              .name,
-                                                          style:
-                                                              TextStyle(
-                                                                  color: Colors
-                                                                      .purple
-                                                                      .shade700,
-                                                                  fontWeight:
-                                                                      FontWeight
-                                                                          .bold)),
-                                                      Text(
-                                                          _selectedCustomer!
-                                                                  .isInternalAccount
-                                                              ? 'Crédito disp: Ilimitado (Cuenta Interna)'
-                                                              : 'Crédito disp: \$${_availableCredit.toCurrency()}',
-                                                          style:
-                                                              const TextStyle(
-                                                                  fontSize:
-                                                                      12)),
-                                                    ],
+                                            ? Colors.purple.shade300
+                                            : Colors.orange.shade400),
+                                  ),
+                                  child: Material(
+                                    color: Colors.transparent,
+                                    child: InkWell(
+                                      onTap: _openCustomerPicker,
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(12),
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                                          children: [
+                                            Row(
+                                              children: [
+                                                Icon(Icons.person,
+                                                    color: _selectedCustomer != null
+                                                        ? Colors.purple
+                                                        : Colors.orange),
+                                                const SizedBox(width: 12),
+                                                Expanded(
+                                                  child: _selectedCustomer == null
+                                                      ? Text(
+                                                          'Seleccionar Cliente (Cta. Cte.)',
+                                                          style: TextStyle(
+                                                              color: Colors.orange.shade700,
+                                                              fontWeight: FontWeight.bold),
+                                                        )
+                                                      : Column(
+                                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                                          children: [
+                                                            Text(
+                                                              _selectedCustomer!.name,
+                                                              style: TextStyle(
+                                                                  color: Colors.purple.shade700,
+                                                                  fontWeight: FontWeight.bold,
+                                                                  fontSize: 14),
+                                                            ),
+                                                            const SizedBox(height: 2),
+                                                            Text(
+                                                              '${_selectedCustomer!.documentType == 80 ? "CUIT" : "DNI"}: ${_selectedCustomer!.documentNumber} • ${_selectedCustomer!.isInternalAccount ? "Crédito disp: Ilimitado" : "Crédito disp: \$${_availableCredit.toCurrency()}"}',
+                                                              style: TextStyle(
+                                                                  fontSize: 12,
+                                                                  color: Colors.purple.shade900),
+                                                            ),
+                                                          ],
+                                                        ),
+                                                ),
+                                                if (_selectedCustomer != null) ...[
+                                                  IconButton(
+                                                    icon: const Icon(Icons.close, size: 18, color: Colors.grey),
+                                                    tooltip: 'Quitar cliente asignado',
+                                                    padding: EdgeInsets.zero,
+                                                    constraints: const BoxConstraints(),
+                                                    onPressed: () {
+                                                      setState(() {
+                                                        _selectedCustomer = null;
+                                                        _fiscalDocType = 99;
+                                                        _fiscalDocNumberCtrl.clear();
+                                                        _fiscalReceiverNameCtrl.clear();
+                                                        _fiscalTaxCondition = 'consumidor_final';
+                                                        _fiscalReceiverAddressCtrl.clear();
+                                                        _syncPaymentsWithGrandTotal();
+                                                      });
+                                                      context.read<PosProvider>().selectCustomer(null);
+                                                    },
                                                   ),
-                                          ),
-                                        ],
+                                                ],
+                                              ],
+                                            ),
+                                            if (_selectedCustomer != null && !_hasCuentaCorriente) ...[
+                                              const SizedBox(height: 8),
+                                              OutlinedButton.icon(
+                                                style: OutlinedButton.styleFrom(
+                                                  foregroundColor: Colors.purple.shade700,
+                                                  side: BorderSide(color: Colors.purple.shade300),
+                                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                                  visualDensity: VisualDensity.compact,
+                                                ),
+                                                icon: const Icon(Icons.account_balance_wallet_outlined, size: 15),
+                                                label: const Text('Asignar pago a Cuenta Corriente', style: TextStyle(fontSize: 12)),
+                                                onPressed: () {
+                                                  final prov = context.read<PosProvider>();
+                                                  final ccMethod = prov.paymentMethods
+                                                      .where((p) => p.code == 'cuenta_corriente')
+                                                      .firstOrNull;
+                                                  if (ccMethod != null && _lines.isNotEmpty) {
+                                                    setState(() {
+                                                      _lines.first.updateMethod(ccMethod);
+                                                      _previousValidMethods[0] = ccMethod;
+                                                    });
+                                                  }
+                                                },
+                                              ),
+                                            ],
+                                          ],
+                                        ),
                                       ),
                                     ),
                                   ),

@@ -16,6 +16,9 @@ import 'package:frontend_desktop/features/cash_register/presentation/providers/c
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
 import '../widgets/checkout_dialog.dart';
 import '../widgets/pos_quick_access_view.dart';
+import '../widgets/pos_financial_summary.dart';
+import '../widgets/pos_quick_action_buttons.dart';
+import 'package:frontend_desktop/features/offers/presentation/providers/offer_provider.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
@@ -105,6 +108,14 @@ class _PosScreenState extends State<PosScreen> {
 
       // Cargar el contador de órdenes pendientes al abrir el POS
       posProvider.loadPendingSales();
+
+      // Cargar ofertas activas para aplicar descuentos automáticos
+      Provider.of<OfferProvider>(context, listen: false).loadActiveOffers().then((_) {
+        if (mounted) {
+          final offers = Provider.of<OfferProvider>(context, listen: false).activeOffers;
+          posProvider.syncActiveOffers(offers);
+        }
+      });
 
       // Polling veloz (5 seg) para recepción casi-inmediata de órdenes en red local/multicaja.
       // Justificado: servidor local con máx. 3 terminales (carga mínima).
@@ -470,15 +481,22 @@ class _PosScreenState extends State<PosScreen> {
 
   void _handleProductSelection(Product product) {
     final posProvider = Provider.of<PosProvider>(context, listen: false);
+    final offerProvider = Provider.of<OfferProvider>(context, listen: false);
+    final promoPrice = offerProvider.getDiscountedPrice(product);
+    final promoOffer = offerProvider.getActiveOfferForProduct(product.id);
 
-    final success = posProvider.requestAddToCart(product);
+    final success = posProvider.requestAddToCartWithPromo(
+      product,
+      promotionalPrice: promoPrice,
+      promotionalLabel: promoOffer?.name,
+    );
     if (!success) {
       // Es producto por peso, pedir peso por Modal
-      _showWeightModal(product, posProvider);
+      _showWeightModal(product, posProvider, promotionalPrice: promoPrice, promotionalLabel: promoOffer?.name);
     }
   }
 
-  void _showWeightModal(Product product, PosProvider provider) {
+  void _showWeightModal(Product product, PosProvider provider, {double? promotionalPrice, String? promotionalLabel}) {
     final weightController = TextEditingController();
 
     showDialog(
@@ -514,7 +532,9 @@ class _PosScreenState extends State<PosScreen> {
                       ),
                       onSubmitted: (val) {
                         if (isValid) {
-                          _processWeight(val, product, provider, context);
+                          _processWeight(val, product, provider, context,
+                              promotionalPrice: promotionalPrice,
+                              promotionalLabel: promotionalLabel);
                         }
                       },
                     ),
@@ -552,7 +572,9 @@ class _PosScreenState extends State<PosScreen> {
                       onPressed: isValid
                           ? () {
                               _processWeight(weightController.text, product,
-                                  provider, context);
+                                  provider, context,
+                                  promotionalPrice: promotionalPrice,
+                                  promotionalLabel: promotionalLabel);
                             }
                           : null,
                       style: FilledButton.styleFrom(
@@ -658,14 +680,16 @@ class _PosScreenState extends State<PosScreen> {
   }
 
   void _processWeight(String value, Product product, PosProvider provider,
-      BuildContext dialogContext) {
+      BuildContext dialogContext, {double? promotionalPrice, String? promotionalLabel}) {
     // Reemplaza comas por puntos en caso de que teclados latinos obligen coma
     String sanitizedValue = value.replaceAll(',', '.');
     final weight = double.tryParse(sanitizedValue);
 
     // Validación básica: El peso debe ser positivo y menor a una exageración (Ej: >1000Kg es raro en POS base)
     if (weight != null && weight > 0 && weight < 1000) {
-      provider.submitWeighedProduct(product, weight);
+      provider.submitWeighedProductWithPromo(product, weight,
+          promotionalPrice: promotionalPrice,
+          promotionalLabel: promotionalLabel);
       Navigator.pop(dialogContext);
     } else {
       SnackBarService.error(
@@ -887,7 +911,10 @@ class _PosScreenState extends State<PosScreen> {
     final success = await showDialog<bool>(
       context: context,
       barrierDismissible: true,
-      builder: (_) => CheckoutDialog(total: posProvider.cartSubtotal),
+      builder: (_) => CheckoutDialog(
+        total: posProvider.cartSubtotal,
+        initialCustomer: posProvider.selectedCustomer,
+      ),
     );
 
     if (success == true) {
@@ -1973,14 +2000,20 @@ class _PosScreenState extends State<PosScreen> {
 
           // Header del carrito
           Container(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             color: Colors.blue.shade50,
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text('Ticket Actual',
-                    style:
-                        TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.shopping_cart_outlined, size: 20, color: Colors.blueAccent),
+                    SizedBox(width: 8),
+                    Text('Ticket Actual',
+                        style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+                  ],
+                ),
                 Row(
                   children: [
                     if (pos.cart.isNotEmpty)
@@ -2388,53 +2421,14 @@ class _PosScreenState extends State<PosScreen> {
                     );
                   }),
 
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  crossAxisAlignment: CrossAxisAlignment.baseline,
-                  textBaseline: TextBaseline.alphabetic,
-                  children: [
-                    const Text('TOTAL:',
-                        style: TextStyle(
-                            fontSize: 20, fontWeight: FontWeight.bold)),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: Text(
-                        '\$${pos.cartSubtotal.toCurrency()}',
-                        style: const TextStyle(
-                            fontSize: 28,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.green),
-                        textAlign: TextAlign.right,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
-                ),
+                // ── Resumen Financiero: Subtotal, Ahorro/Descuentos y Total ──────────────
+                const PosFinancialSummary(),
                 const SizedBox(height: 10),
 
-                // ── Botón: Dejar en Espera ────────────────────────────
-                SizedBox(
-                  width: double.infinity,
-                  height: 44,
-                  child: OutlinedButton.icon(
-                    onPressed: pos.cart.isEmpty || pos.isLoading || isRecall
-                        ? null
-                        : _handleHoldOrder,
-                    icon: const Icon(Icons.pending_actions_rounded, size: 18),
-                    label: const Text('Dejar en Espera',
-                        style: TextStyle(
-                            fontSize: 15, fontWeight: FontWeight.w600)),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.blueGrey.shade700,
-                      side: BorderSide(
-                          color: pos.cart.isEmpty
-                              ? Colors.grey.shade300
-                              : Colors.blueGrey.shade400),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10)),
-                    ),
-                  ),
+                // ── Atajos Rápidos Modernos (Espera, Presupuestos, Clientes, Ofertas) ──
+                PosQuickActionButtons(
+                  onHoldOrder: _handleHoldOrder,
+                  onOpenPendingList: () => _pendingOrdersPortalController.toggle(),
                 ),
                 const SizedBox(height: 8),
 

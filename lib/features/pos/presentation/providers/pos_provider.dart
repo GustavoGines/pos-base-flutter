@@ -317,6 +317,25 @@ class PosProvider with ChangeNotifier {
     return _cart.fold(0.0, (total, item) => total + item.subtotal);
   }
 
+  /// Subtotal bruto a precio de lista regular sin descuentos aplicados
+  double get cartGrossSubtotal {
+    return _cart.fold(0.0, (total, item) => total + item.regularSubtotal);
+  }
+
+  /// Total de ahorro / descuentos aplicados al carrito (por ofertas, listas o tramos)
+  double get cartTotalSavings {
+    final diff = cartGrossSubtotal - cartSubtotal;
+    return diff > 0.01 ? (diff * 100).roundToDouble() / 100.0 : 0.0;
+  }
+
+  /// Indica si el carrito actual goza de descuentos respecto a su precio de lista
+  bool get hasCartDiscounts => cartTotalSavings > 0.01;
+
+  /// Cantidad total de unidades de productos sumadas en el carrito
+  double get cartTotalUnits {
+    return _cart.fold(0.0, (total, item) => total + item.quantity);
+  }
+
   /// Base imponible neta gravada estimada (Subtotal con IVA / 1.21)
   double get netSubtotal {
     double totalNet = 0.0;
@@ -383,18 +402,26 @@ class PosProvider with ChangeNotifier {
       printerService ?? ReceiptPrinterService.instance;
 
   bool requestAddToCart(Product product) {
-    if (product.isSoldByWeight) {
-      return false;
-    }
-    _addToCartDirectly(product, 1.0);
-    return true;
+    return requestAddToCartWithPromo(product);
   }
 
   void submitWeighedProduct(Product product, double weightInKg) {
-    _addToCartDirectly(product, weightInKg);
+    submitWeighedProductWithPromo(product, weightInKg);
   }
 
-  void _addToCartDirectly(Product product, double quantity) {
+  bool requestAddToCartWithPromo(Product product, {double? promotionalPrice, String? promotionalLabel}) {
+    if (product.isSoldByWeight) {
+      return false;
+    }
+    _addToCartDirectly(product, 1.0, promotionalPrice: promotionalPrice, promotionalLabel: promotionalLabel);
+    return true;
+  }
+
+  void submitWeighedProductWithPromo(Product product, double weightInKg, {double? promotionalPrice, String? promotionalLabel}) {
+    _addToCartDirectly(product, weightInKg, promotionalPrice: promotionalPrice, promotionalLabel: promotionalLabel);
+  }
+
+  void _addToCartDirectly(Product product, double quantity, {double? promotionalPrice, String? promotionalLabel}) {
     if (product.isSoldByWeight) {
       _cart.add(CartItem(
         product: product,
@@ -402,6 +429,8 @@ class PosProvider with ChangeNotifier {
         activeTier: _activeTier,
         wholesaleFactor: _currentWholesaleFactor,
         cardFactor: _currentCardFactor,
+        promotionalPrice: promotionalPrice,
+        promotionalLabel: promotionalLabel,
       ));
     } else {
       final index = _cart.indexWhere(
@@ -410,6 +439,10 @@ class PosProvider with ChangeNotifier {
       if (index >= 0) {
         _cart[index].product = product; // Actualizar con el stock más reciente
         _cart[index].quantity += quantity;
+        if (promotionalPrice != null) {
+          _cart[index].promotionalPrice = promotionalPrice;
+          _cart[index].promotionalLabel = promotionalLabel;
+        }
       } else {
         _cart.add(CartItem(
           product: product,
@@ -419,11 +452,74 @@ class PosProvider with ChangeNotifier {
           cardFactor: _currentCardFactor,
           customFactor: _currentCustomFactor,
           customTierLabel: _customTierLabel,
+          promotionalPrice: promotionalPrice,
+          promotionalLabel: promotionalLabel,
         ));
       }
     }
     notifyListeners();
   }
+
+  /// Sincroniza ofertas activas con los productos actualmente en el carrito
+  void syncActiveOffers(List<dynamic> activeOffers) {
+    bool hasChanges = false;
+    for (final item in _cart) {
+      dynamic matchedOffer;
+      for (final offer in activeOffers) {
+        final products = offer.products as List? ?? [];
+        if (products.any((p) => p['id'] == item.product.id)) {
+          matchedOffer = offer;
+          break;
+        }
+      }
+      if (matchedOffer != null) {
+        final discounted = matchedOffer.calculateDiscountedPrice(item.product.sellingPrice, productId: item.product.id) as double;
+        if (item.promotionalPrice != discounted) {
+          item.promotionalPrice = discounted;
+          item.promotionalLabel = matchedOffer.name;
+          hasChanges = true;
+        }
+      } else if (item.promotionalPrice != null) {
+        item.promotionalPrice = null;
+        item.promotionalLabel = null;
+        hasChanges = true;
+      }
+    }
+    if (hasChanges) {
+      notifyListeners();
+    }
+  }
+
+  /// Guarda rápidamente el carrito actual como un presupuesto sin descontar stock
+  Future<Quote?> saveCurrentCartAsQuote({
+    required QuoteRepository quoteRepository,
+    String? customerName,
+    String? customerPhone,
+    String? notes,
+    int? userId,
+  }) async {
+    if (_cart.isEmpty) return null;
+    final items = _cart.map((c) => QuoteItem(
+      productId: c.product.id,
+      productName: c.product.name,
+      unitPrice: c.unitPrice,
+      quantity: c.quantity,
+      subtotal: c.subtotal,
+      product: c.product,
+      imageUrl: c.product.imageUrl,
+    )).toList();
+
+    final quote = await quoteRepository.createQuote(
+      items: items,
+      customerName: customerName ?? _selectedCustomer?.name,
+      customerPhone: customerPhone ?? _selectedCustomer?.phone,
+      notes: notes,
+      userId: userId,
+      priceList: _activeTier.name,
+    );
+    return quote;
+  }
+
 
   void updateQuantity(CartItem cartItem, double newQuantity) {
     final index = _cart.indexOf(cartItem);
