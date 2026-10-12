@@ -27,6 +27,8 @@ abstract class SettingsRemoteDataSource {
   Future<bool> deleteEcommerceIntegration(int id);
   Future<Map<String, dynamic>> testEcommerceConnection(int id);
   Future<EcommerceIntegrationModel> toggleEcommerceActive(int id);
+  Future<Map<String, dynamic>> importEcommerceCatalog(int id);
+  Future<Map<String, dynamic>> exportEcommerceCatalog(int id);
 }
 
 class SettingsRemoteDataSourceImpl implements SettingsRemoteDataSource {
@@ -623,6 +625,86 @@ class SettingsRemoteDataSourceImpl implements SettingsRemoteDataSource {
         throw Exception('Error de conexión: No se encontró el servidor. Verifica la URL configurada.');
       }
       rethrow;
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> importEcommerceCatalog(int id) async {
+    try {
+      final response = await client.post(
+        Uri.parse('$baseUrl/ecommerce/integrations/$id/import-catalog'),
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+      );
+
+      final Map<String, dynamic> decoded;
+      try {
+        decoded = json.decode(response.body) as Map<String, dynamic>;
+      } catch (_) {
+        throw const FormatException('La respuesta del servidor no es un JSON válido.');
+      }
+
+      if (response.statusCode == 200) {
+        return {
+          'success': true,
+          ...decoded,
+        };
+      } else {
+        return {
+          'success': false,
+          'message': decoded['message']?.toString() ?? 'Error al importar catálogo desde la web',
+          ...decoded,
+        };
+      }
+    } on FormatException catch (e) {
+      return {'success': false, 'message': e.message};
+    } catch (e) {
+      return {
+        'success': false,
+        'message': 'Error de conexión al importar catálogo: $e',
+      };
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> exportEcommerceCatalog(int id) async {
+    try {
+      final response = await client.post(
+        Uri.parse('$baseUrl/ecommerce/integrations/$id/export-catalog'),
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+      );
+
+      final Map<String, dynamic> decoded;
+      try {
+        decoded = json.decode(response.body) as Map<String, dynamic>;
+      } catch (_) {
+        throw const FormatException('La respuesta del servidor no es un JSON válido.');
+      }
+
+      if (response.statusCode == 200) {
+        return {
+          'success': true,
+          ...decoded,
+        };
+      } else {
+        return {
+          'success': false,
+          'message': decoded['message']?.toString() ?? 'Error al sembrar catálogo en la web',
+          ...decoded,
+        };
+      }
+    } on FormatException catch (e) {
+      return {'success': false, 'message': e.message};
+    } catch (e) {
+      return {
+        'success': false,
+        'message': 'Error de conexión al sembrar catálogo: $e',
+      };
     }
   }
 }

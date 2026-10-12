@@ -102,6 +102,8 @@ class _EcommerceSyncLogsDialogState extends State<EcommerceSyncLogsDialog> {
         return const Color(0xFF7F54B3);
       case 'tiendanube':
         return const Color(0xFF00897B);
+      case 'ecommerce_platform':
+        return const Color(0xFF0D9488);
       default:
         return Colors.blueGrey;
     }
@@ -115,6 +117,8 @@ class _EcommerceSyncLogsDialogState extends State<EcommerceSyncLogsDialog> {
         return 'WooCommerce';
       case 'tiendanube':
         return 'Tienda Nube';
+      case 'ecommerce_platform':
+        return 'Plataforma Web (Propia)';
       default:
         return platform ?? 'E-Commerce';
     }

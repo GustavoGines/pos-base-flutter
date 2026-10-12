@@ -22,6 +22,8 @@ abstract class SettingsRepository {
   Future<bool> deleteEcommerceIntegration(int id);
   Future<Map<String, dynamic>> testEcommerceConnection(int id);
   Future<EcommerceIntegration> toggleEcommerceActive(int id);
+  Future<Map<String, dynamic>> importEcommerceCatalog(int id);
+  Future<Map<String, dynamic>> exportEcommerceCatalog(int id);
   void updateBaseUrl(String newUrl);
 }
 

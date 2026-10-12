@@ -23,6 +23,7 @@ import '../../../auth/presentation/providers/auth_provider.dart';
 import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
 import '../../../../core/constants/app_permissions.dart';
 import '../../domain/entities/ecommerce_integration.dart';
+import '../../../catalog/presentation/providers/catalog_provider.dart';
 
 enum SettingsSection { general, prices, subscription, network, integrations, mobileApp }
 
@@ -110,6 +111,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final ExpansibleController _meliExpCtrl = ExpansibleController();
   final ExpansibleController _wooExpCtrl = ExpansibleController();
   final ExpansibleController _tnExpCtrl = ExpansibleController();
+  final ExpansibleController _internalExpCtrl = ExpansibleController();
   bool _ecommerceEnabled = false;
   final _tiendanubeStoreIdCtrl = TextEditingController();
   final _tiendanubeAccessTokenCtrl = TextEditingController();
@@ -118,13 +120,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _wooCommerceConsumerSecretCtrl = TextEditingController();
   final _meliClientIdCtrl = TextEditingController();
   final _meliClientSecretCtrl = TextEditingController();
+  final _internalBaseUrlCtrl = TextEditingController();
+  final _internalStoreIdCtrl = TextEditingController();
+  final _internalAccessTokenCtrl = TextEditingController();
+  final _internalWebhookSecretCtrl = TextEditingController();
 
   bool _obscureTiendanubeToken = true;
   bool _obscureWooSecret = true;
   bool _obscureMeliSecret = true;
+  bool _obscureInternalToken = true;
+  bool _obscureInternalSecret = true;
 
   int? _meliIntegrationId;
-  bool _meliActive = true;
+  bool _meliActive = false;
   bool _meliSyncStock = true;
   bool _meliAutoPause = true;
   String _meliHealthStatus = 'unknown';
@@ -132,7 +140,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String? _originalMeliSecret;
 
   int? _wooIntegrationId;
-  bool _wooActive = true;
+  bool _wooActive = false;
   bool _wooSyncStock = true;
   bool _wooAutoPause = true;
   String _wooHealthStatus = 'unknown';
@@ -140,12 +148,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String? _originalWooSecret;
 
   int? _tiendanubeIntegrationId;
-  bool _tiendanubeActive = true;
+  bool _tiendanubeActive = false;
   bool _tiendanubeSyncStock = true;
   bool _tiendanubeAutoPause = true;
   String _tiendanubeHealthStatus = 'unknown';
   bool _isTestingTiendanube = false;
   String? _originalTiendanubeToken;
+
+  int? _internalIntegrationId;
+  bool _internalActive = false;
+  bool _internalSyncStock = true;
+  bool _internalAutoPause = true;
+  String _internalHealthStatus = 'unknown';
+  bool _isTestingInternal = false;
+  bool _isImportingInternalCatalog = false;
+  bool _isExportingInternalCatalog = false;
+  String? _originalInternalSecret;
+  String? _originalInternalToken;
 
   bool _integrationsLoaded = false;
   bool _isLoadingIntegrations = false;
@@ -314,6 +333,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _meliClientIdCtrl.text = data['meli_client_id']?.toString() ?? '';
           _meliClientSecretCtrl.text = data['meli_client_secret']?.toString() ?? '';
 
+          _meliIntegrationId = null;
+          _meliActive = false;
+          _meliHealthStatus = 'unknown';
+
+          _wooIntegrationId = null;
+          _wooActive = false;
+          _wooHealthStatus = 'unknown';
+
+          _tiendanubeIntegrationId = null;
+          _tiendanubeActive = false;
+          _tiendanubeHealthStatus = 'unknown';
+
+          _internalIntegrationId = null;
+          _internalActive = false;
+          _internalHealthStatus = 'unknown';
+
           for (final item in ecomList) {
             if (item.platform == 'mercadolibre') {
               _meliIntegrationId = item.id;
@@ -343,11 +378,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _tiendanubeSyncStock = item.syncStockEnabled;
               _tiendanubeAutoPause = item.autoPauseOnZeroStock;
               _tiendanubeHealthStatus = item.lastHealthStatus;
+            } else if (item.platform == 'ecommerce_platform') {
+              _internalIntegrationId = item.id;
+              _internalBaseUrlCtrl.text = item.baseUrl ?? '';
+              _internalStoreIdCtrl.text = item.storeId ?? '';
+              _internalAccessTokenCtrl.text = item.accessToken ?? '';
+              _internalWebhookSecretCtrl.text = item.webhookSecret ?? item.clientSecret ?? '';
+              _originalInternalToken = item.accessToken;
+              _originalInternalSecret = item.webhookSecret ?? item.clientSecret;
+              _internalActive = item.isActive;
+              _internalSyncStock = item.syncStockEnabled;
+              _internalAutoPause = item.autoPauseOnZeroStock;
+              _internalHealthStatus = item.lastHealthStatus;
             }
           }
-          if (ecomList.any((e) => e.isActive)) {
-            _ecommerceEnabled = true;
-          }
+          _ecommerceEnabled = ecomList.any((e) => e.isActive);
           
           _integrationsLoaded = true;
         });
@@ -370,6 +415,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     } catch (_) {}
     try {
       if (_ecommerceExpCtrl.isExpanded) _ecommerceExpCtrl.collapse();
+    } catch (_) {}
+    try {
+      if (_internalExpCtrl.isExpanded) _internalExpCtrl.collapse();
     } catch (_) {}
     try {
       if (_meliExpCtrl.isExpanded) _meliExpCtrl.collapse();
@@ -664,6 +712,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (_tiendanubeStoreIdCtrl.text.isNotEmpty || _tiendanubeAccessTokenCtrl.text.isNotEmpty || _tiendanubeIntegrationId != null) {
         await _saveTiendanubeIntegration(showFeedback: false);
       }
+      if (_internalBaseUrlCtrl.text.isNotEmpty || _internalIntegrationId != null) {
+        await _saveInternalIntegration(showFeedback: false);
+      }
 
       if (success) {
         if (showFeedback) {
@@ -704,6 +755,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     try {
       final provider = context.read<SettingsProvider>();
+      int? effectiveId = _meliIntegrationId;
+      if (effectiveId == null) {
+        final match = provider.ecommerceIntegrations
+            .cast<EcommerceIntegration?>()
+            .firstWhere((e) => e != null && e.platform == 'mercadolibre', orElse: () => null);
+        if (match != null) {
+          effectiveId = match.id;
+          _meliIntegrationId = match.id;
+        }
+      }
+
       final data = <String, dynamic>{
         'platform': 'mercadolibre',
         'name': 'Mercado Libre',
@@ -717,7 +779,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         data['client_secret'] = clientSecret;
       }
 
-      final saved = await provider.saveEcommerceIntegration(data, id: _meliIntegrationId);
+      final saved = await provider.saveEcommerceIntegration(data, id: effectiveId);
       if (saved != null) {
         if (mounted) {
           setState(() {
@@ -756,6 +818,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     try {
       final provider = context.read<SettingsProvider>();
+      int? effectiveId = _wooIntegrationId;
+      if (effectiveId == null) {
+        final match = provider.ecommerceIntegrations
+            .cast<EcommerceIntegration?>()
+            .firstWhere((e) => e != null && e.platform == 'woocommerce', orElse: () => null);
+        if (match != null) {
+          effectiveId = match.id;
+          _wooIntegrationId = match.id;
+        }
+      }
+
       final data = <String, dynamic>{
         'platform': 'woocommerce',
         'name': 'WooCommerce',
@@ -770,7 +843,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         data['client_secret'] = clientSecret;
       }
 
-      final saved = await provider.saveEcommerceIntegration(data, id: _wooIntegrationId);
+      final saved = await provider.saveEcommerceIntegration(data, id: effectiveId);
       if (saved != null) {
         if (mounted) {
           setState(() {
@@ -808,6 +881,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     try {
       final provider = context.read<SettingsProvider>();
+      int? effectiveId = _tiendanubeIntegrationId;
+      if (effectiveId == null) {
+        final match = provider.ecommerceIntegrations
+            .cast<EcommerceIntegration?>()
+            .firstWhere((e) => e != null && e.platform == 'tiendanube', orElse: () => null);
+        if (match != null) {
+          effectiveId = match.id;
+          _tiendanubeIntegrationId = match.id;
+        }
+      }
+
       final data = <String, dynamic>{
         'platform': 'tiendanube',
         'name': 'Tienda Nube',
@@ -821,7 +905,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         data['access_token'] = accessToken;
       }
 
-      final saved = await provider.saveEcommerceIntegration(data, id: _tiendanubeIntegrationId);
+      final saved = await provider.saveEcommerceIntegration(data, id: effectiveId);
       if (saved != null) {
         if (mounted) {
           setState(() {
@@ -841,6 +925,78 @@ class _SettingsScreenState extends State<SettingsScreen> {
     } catch (e) {
       if (showFeedback && mounted) {
         SnackBarService.error(context, 'Error al guardar Tienda Nube: $e');
+      }
+      return false;
+    }
+  }
+
+  Future<bool> _saveInternalIntegration({bool showFeedback = true}) async {
+    final baseUrl = _internalBaseUrlCtrl.text.trim();
+    final storeId = _internalStoreIdCtrl.text.trim();
+    final accessToken = _internalAccessTokenCtrl.text.trim();
+    final webhookSecret = _internalWebhookSecretCtrl.text.trim();
+
+    if (baseUrl.isEmpty) {
+      if (showFeedback && mounted) {
+        SnackBarService.warning(context, 'Debe ingresar URL de la plataforma web.');
+      }
+      return false;
+    }
+
+    try {
+      final provider = context.read<SettingsProvider>();
+      int? effectiveId = _internalIntegrationId;
+      if (effectiveId == null) {
+        final match = provider.ecommerceIntegrations
+            .cast<EcommerceIntegration?>()
+            .firstWhere((e) => e != null && e.platform == 'ecommerce_platform', orElse: () => null);
+        if (match != null) {
+          effectiveId = match.id;
+          _internalIntegrationId = match.id;
+        }
+      }
+
+      final data = <String, dynamic>{
+        'platform': 'ecommerce_platform',
+        'name': 'Plataforma Web Propia',
+        'base_url': baseUrl,
+        'store_id': storeId.isNotEmpty ? storeId : null,
+        'is_active': _internalActive,
+        'sync_stock_enabled': _internalSyncStock,
+        'auto_pause_on_zero_stock': _internalAutoPause,
+      };
+
+      if (accessToken.isNotEmpty) {
+        data['access_token'] = accessToken;
+      }
+      if (webhookSecret.isNotEmpty) {
+        data['webhook_secret'] = webhookSecret;
+      }
+
+      final saved = await provider.saveEcommerceIntegration(data, id: effectiveId);
+      if (saved != null) {
+        if (mounted) {
+          setState(() {
+            _internalIntegrationId = saved.id;
+            _originalInternalToken = saved.accessToken;
+            _originalInternalSecret = saved.webhookSecret;
+            if (saved.accessToken != null && saved.accessToken!.isNotEmpty) {
+              _internalAccessTokenCtrl.text = saved.accessToken!;
+            }
+            if (saved.webhookSecret != null && saved.webhookSecret!.isNotEmpty) {
+              _internalWebhookSecretCtrl.text = saved.webhookSecret!;
+            }
+          });
+          if (showFeedback) {
+            SnackBarService.success(context, 'Configuración de Plataforma Web guardada correctamente.');
+          }
+        }
+        return true;
+      }
+      return false;
+    } catch (e) {
+      if (showFeedback && mounted) {
+        SnackBarService.error(context, 'Error al guardar Plataforma Web: $e');
       }
       return false;
     }
@@ -1007,37 +1163,362 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _toggleMeliActive(bool val) async {
-    setState(() => _meliActive = val);
     if (_meliIntegrationId != null) {
+      setState(() => _meliActive = val);
       try {
         final provider = context.read<SettingsProvider>();
-        await provider.toggleEcommerceActive(_meliIntegrationId!);
+        final res = await provider.toggleEcommerceActive(_meliIntegrationId!);
+        if (res != null && mounted) {
+          setState(() => _meliActive = res.isActive);
+        }
       } catch (e) {
         debugPrint('[SettingsScreen] Error toggling meli active: $e');
+      }
+    } else {
+      if (val) {
+        setState(() => _meliActive = false);
+        _meliExpCtrl.expand();
+        if (mounted) {
+          SnackBarService.warning(context, 'Debe configurar y guardar las credenciales antes de activar Mercado Libre.');
+        }
+      } else {
+        setState(() => _meliActive = false);
       }
     }
   }
 
   Future<void> _toggleWooActive(bool val) async {
-    setState(() => _wooActive = val);
     if (_wooIntegrationId != null) {
+      setState(() => _wooActive = val);
       try {
         final provider = context.read<SettingsProvider>();
-        await provider.toggleEcommerceActive(_wooIntegrationId!);
+        final res = await provider.toggleEcommerceActive(_wooIntegrationId!);
+        if (res != null && mounted) {
+          setState(() => _wooActive = res.isActive);
+        }
       } catch (e) {
         debugPrint('[SettingsScreen] Error toggling woo active: $e');
+      }
+    } else {
+      if (val) {
+        setState(() => _wooActive = false);
+        _wooExpCtrl.expand();
+        if (mounted) {
+          SnackBarService.warning(context, 'Debe configurar y guardar las credenciales antes de activar WooCommerce.');
+        }
+      } else {
+        setState(() => _wooActive = false);
       }
     }
   }
 
   Future<void> _toggleTiendanubeActive(bool val) async {
-    setState(() => _tiendanubeActive = val);
     if (_tiendanubeIntegrationId != null) {
+      setState(() => _tiendanubeActive = val);
       try {
         final provider = context.read<SettingsProvider>();
-        await provider.toggleEcommerceActive(_tiendanubeIntegrationId!);
+        final res = await provider.toggleEcommerceActive(_tiendanubeIntegrationId!);
+        if (res != null && mounted) {
+          setState(() => _tiendanubeActive = res.isActive);
+        }
       } catch (e) {
         debugPrint('[SettingsScreen] Error toggling tiendanube active: $e');
+      }
+    } else {
+      if (val) {
+        setState(() => _tiendanubeActive = false);
+        _tnExpCtrl.expand();
+        if (mounted) {
+          SnackBarService.warning(context, 'Debe configurar y guardar las credenciales antes de activar Tienda Nube.');
+        }
+      } else {
+        setState(() => _tiendanubeActive = false);
+      }
+    }
+  }
+
+  Future<void> _testInternalConnection() async {
+    if (_isTestingInternal) return;
+    final auth = context.read<AuthProvider?>();
+    final canManageSettings =
+        auth != null && (auth.isAdmin || auth.hasPermission(AppPermissions.manageSettings));
+    if (!canManageSettings) {
+      if (mounted) SnackBarService.error(context, 'No tienes permisos para probar la conexión.');
+      return;
+    }
+
+    final baseUrl = _internalBaseUrlCtrl.text.trim();
+    final token = _internalAccessTokenCtrl.text.trim();
+    final secret = _internalWebhookSecretCtrl.text.trim();
+    if (baseUrl.isEmpty) {
+      if (mounted) SnackBarService.warning(context, 'Debe ingresar la URL de la plataforma web para probar la conexión.');
+      return;
+    }
+    if (token.isEmpty && (_originalInternalToken == null || _originalInternalToken!.isEmpty)) {
+      if (mounted) SnackBarService.warning(context, 'Debe ingresar API Access Token para probar la conexión con la plataforma web.');
+      return;
+    }
+    if (secret.isEmpty && (_originalInternalSecret == null || _originalInternalSecret!.isEmpty)) {
+      if (mounted) SnackBarService.warning(context, 'Debe ingresar Webhook Secret para vincular con la plataforma web.');
+      return;
+    }
+
+    setState(() => _isTestingInternal = true);
+    try {
+      final provider = context.read<SettingsProvider>();
+      final saved = await _saveInternalIntegration(showFeedback: false);
+      if (!saved) {
+        if (mounted) SnackBarService.error(context, 'No se pudo guardar la configuración antes de probar la conexión.');
+        return;
+      }
+
+      if (_internalIntegrationId != null) {
+        final result = await provider.testEcommerceConnection(_internalIntegrationId!);
+        if (!mounted) return;
+        if (result['success'] == true) {
+          setState(() => _internalHealthStatus = 'connected');
+          SnackBarService.success(context, 'Conexión con Plataforma Web exitosa. ${result['message'] ?? ''}'.trim());
+        } else {
+          setState(() => _internalHealthStatus = 'error');
+          SnackBarService.error(context, result['message']?.toString() ?? 'Error al conectar con la plataforma web.');
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _internalHealthStatus = 'error');
+        SnackBarService.error(context, 'Error al probar conexión con Plataforma Web: $e');
+      }
+    } finally {
+      if (mounted) setState(() => _isTestingInternal = false);
+    }
+  }
+
+  Future<void> _importInternalCatalog() async {
+    if (_isImportingInternalCatalog) return;
+    final auth = context.read<AuthProvider?>();
+    final canManageSettings =
+        auth != null && (auth.isAdmin || auth.hasPermission(AppPermissions.manageSettings));
+    if (!canManageSettings) {
+      if (mounted) SnackBarService.error(context, 'No tienes permisos para importar catálogo.');
+      return;
+    }
+
+    if (_internalIntegrationId == null) {
+      final saved = await _saveInternalIntegration(showFeedback: false);
+      if (!saved || _internalIntegrationId == null) {
+        if (mounted) SnackBarService.warning(context, 'Debe guardar la configuración de la tienda web antes de importar.');
+        return;
+      }
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.cloud_download_outlined, color: Color(0xFF6A1B9A)),
+            SizedBox(width: 8),
+            Text('Importar Catálogo Web al POS'),
+          ],
+        ),
+        content: const Text(
+          'Esta acción descargará todos los productos desde la tienda web hacia el inventario local de este POS. '
+          'Los productos existentes actualizarán precios y stock, y los nuevos se registrarán con mapeo omnicanal automático.\n\n'
+          '¿Desea continuar?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton.icon(
+            style: FilledButton.styleFrom(backgroundColor: const Color(0xFF6A1B9A)),
+            onPressed: () => Navigator.pop(ctx, true),
+            icon: const Icon(Icons.cloud_download_outlined, size: 18),
+            label: const Text('Comenzar Importación'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    setState(() => _isImportingInternalCatalog = true);
+    try {
+      final provider = context.read<SettingsProvider>();
+      final result = await provider.importEcommerceCatalog(_internalIntegrationId!);
+      if (!mounted) return;
+
+      if (result['success'] == true) {
+        final total = result['total_remote'] ?? 0;
+        final imported = result['imported'] ?? 0;
+        final updated = result['updated'] ?? 0;
+        final mapped = result['mapped'] ?? 0;
+
+        await showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: const Row(
+              children: [
+                Icon(Icons.check_circle_outline, color: Colors.green),
+                SizedBox(width: 8),
+                Text('Catálogo Importado con Éxito'),
+              ],
+            ),
+            content: Text(
+              'Sincronización finalizada:\n\n'
+              '• Total en la web: $total productos\n'
+              '• Nuevos creados en POS: $imported\n'
+              '• Actualizados en POS: $updated\n'
+              '• Mapeos omnicanal generados: $mapped',
+            ),
+            actions: [
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Aceptar'),
+              ),
+            ],
+          ),
+        );
+
+        if (mounted) {
+          context.read<CatalogProvider>().loadProducts(page: 1, search: '');
+        }
+      } else {
+        SnackBarService.error(
+          context,
+          result['message']?.toString() ?? 'Error al importar catálogo desde la plataforma web.',
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        SnackBarService.error(context, 'Error durante la importación de catálogo: $e');
+      }
+    } finally {
+      if (mounted) setState(() => _isImportingInternalCatalog = false);
+    }
+  }
+
+  Future<void> _exportInternalCatalog() async {
+    if (_isExportingInternalCatalog) return;
+    final auth = context.read<AuthProvider?>();
+    final canManageSettings =
+        auth != null && (auth.isAdmin || auth.hasPermission(AppPermissions.manageSettings));
+    if (!canManageSettings) {
+      if (mounted) SnackBarService.error(context, 'No tienes permisos para sembrar catálogo.');
+      return;
+    }
+
+    if (_internalIntegrationId == null) {
+      final saved = await _saveInternalIntegration(showFeedback: false);
+      if (!saved || _internalIntegrationId == null) {
+        if (mounted) SnackBarService.warning(context, 'Debe guardar la configuración de la tienda web antes de sembrar.');
+        return;
+      }
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.cloud_upload_outlined, color: Color(0xFF6A1B9A)),
+            SizedBox(width: 8),
+            Text('Sembrar Catálogo POS en la Web'),
+          ],
+        ),
+        content: const Text(
+          'Esta acción enviará todos los productos activos de este POS hacia tu tienda online (ideal para inaugurar una tienda web nueva con tu catálogo físico en 1 clic).\n\n'
+          '¿Desea continuar?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton.icon(
+            style: FilledButton.styleFrom(backgroundColor: const Color(0xFF6A1B9A)),
+            onPressed: () => Navigator.pop(ctx, true),
+            icon: const Icon(Icons.cloud_upload_outlined, size: 18),
+            label: const Text('Sembrar en la Web'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    setState(() => _isExportingInternalCatalog = true);
+    try {
+      final provider = context.read<SettingsProvider>();
+      final result = await provider.exportEcommerceCatalog(_internalIntegrationId!);
+      if (!mounted) return;
+
+      if (result['success'] == true) {
+        final exported = result['exported_count'] ?? 0;
+        await showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: const Row(
+              children: [
+                Icon(Icons.check_circle_outline, color: Colors.green),
+                SizedBox(width: 8),
+                Text('Catálogo Sembrado con Éxito'),
+              ],
+            ),
+            content: Text(
+              'Siembra finalizada:\n\n'
+              '• Se cargaron $exported productos activos en tu tienda online.\n'
+              '• Los mapeos de sincronización omnicanal quedaron listos para recibir pedidos.',
+            ),
+            actions: [
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Aceptar'),
+              ),
+            ],
+          ),
+        );
+      } else {
+        SnackBarService.error(
+          context,
+          result['message']?.toString() ?? 'Error al sembrar catálogo en la tienda web.',
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        SnackBarService.error(context, 'Error durante la siembra de catálogo: $e');
+      }
+    } finally {
+      if (mounted) setState(() => _isExportingInternalCatalog = false);
+    }
+  }
+
+  Future<void> _toggleInternalActive(bool val) async {
+    if (_internalIntegrationId != null) {
+      setState(() => _internalActive = val);
+      try {
+        final provider = context.read<SettingsProvider>();
+        final res = await provider.toggleEcommerceActive(_internalIntegrationId!);
+        if (res != null && mounted) {
+          setState(() => _internalActive = res.isActive);
+        }
+      } catch (e) {
+        debugPrint('[SettingsScreen] Error toggling internal active: $e');
+      }
+    } else {
+      if (val) {
+        setState(() => _internalActive = false);
+        _internalExpCtrl.expand();
+        if (mounted) {
+          SnackBarService.warning(context, 'Debe configurar y guardar la URL y credenciales de la Plataforma Web antes de activarla.');
+        }
+      } else {
+        setState(() => _internalActive = false);
       }
     }
   }
@@ -1072,6 +1553,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _wooCommerceConsumerSecretCtrl.dispose();
     _meliClientIdCtrl.dispose();
     _meliClientSecretCtrl.dispose();
+    _internalBaseUrlCtrl.dispose();
+    _internalStoreIdCtrl.dispose();
+    _internalAccessTokenCtrl.dispose();
+    _internalWebhookSecretCtrl.dispose();
     super.dispose();
   }
 
@@ -1993,6 +2478,210 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  Widget _buildInternalEcommerceSection(bool isNarrow) {
+    const brandColor = Color(0xFF0D9488);
+    return Card(
+      elevation: 0,
+      margin: const EdgeInsets.only(bottom: 16),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: Colors.grey.shade200),
+      ),
+      color: Colors.grey.shade50,
+      clipBehavior: Clip.antiAlias,
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          controller: _internalExpCtrl,
+          initiallyExpanded: false,
+          tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          childrenPadding: const EdgeInsets.only(left: 16, right: 16, bottom: 16),
+          leading: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: brandColor.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Icon(Icons.public, color: brandColor, size: 22),
+          ),
+          title: Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              const Text(
+                'Plataforma Web Propia (Ecommerce-Platform)',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              _buildChannelActiveBadge(_internalActive),
+              _buildChannelHealthBadge(_internalHealthStatus),
+            ],
+          ),
+          trailing: Switch(
+            key: const ValueKey('switch_internal_active'),
+            value: _internalActive,
+            activeThumbColor: brandColor,
+            onChanged: _toggleInternalActive,
+          ),
+          children: [
+            const Divider(height: 1),
+            const SizedBox(height: 16),
+            TextFormField(
+              key: const ValueKey('field_internal_url'),
+              controller: _internalBaseUrlCtrl,
+              decoration: InputDecoration(
+                labelText: 'URL de la Tienda Web (Base URL)',
+                hintText: 'http://g3.localhost o https://mitienda.com',
+                prefixIcon: const Icon(Icons.language),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                helperText: 'Dirección base de la plataforma web ecommerce conectada con este POS',
+              ),
+            ),
+            const SizedBox(height: 14),
+            TextFormField(
+              key: const ValueKey('field_internal_store_id'),
+              controller: _internalStoreIdCtrl,
+              decoration: InputDecoration(
+                labelText: 'Tenant ID / Código de Tienda',
+                hintText: 'g3 (opcional, para entornos multi-tienda)',
+                prefixIcon: const Icon(Icons.store_outlined),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                helperText: 'Identificador del tenant en Ecommerce-Platform (ej. g3, jcg)',
+              ),
+            ),
+            const SizedBox(height: 14),
+            TextFormField(
+              key: const ValueKey('field_internal_token'),
+              controller: _internalAccessTokenCtrl,
+              obscureText: _obscureInternalToken,
+              decoration: InputDecoration(
+                labelText: 'API Access Token (POS ➔ Web)',
+                prefixIcon: const Icon(Icons.vpn_key_outlined),
+                suffixIcon: IconButton(
+                  icon: Icon(_obscureInternalToken ? Icons.visibility : Icons.visibility_off),
+                  tooltip: _obscureInternalToken ? 'Mostrar token' : 'Ocultar token',
+                  onPressed: () => _toggleSecretVisibility(
+                    action: 'Revelar API Access Token de la Tienda Web',
+                    isCurrentlyObscured: _obscureInternalToken,
+                    onToggle: (v) => _obscureInternalToken = v,
+                  ),
+                ),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                helperText: 'Token Bearer configurado en la web para que el POS actualice stock y catálogo',
+              ),
+            ),
+            const SizedBox(height: 14),
+            TextFormField(
+              key: const ValueKey('field_internal_secret'),
+              controller: _internalWebhookSecretCtrl,
+              obscureText: _obscureInternalSecret,
+              decoration: InputDecoration(
+                labelText: 'Webhook Secret (Web ➔ POS)',
+                prefixIcon: const Icon(Icons.security_outlined),
+                suffixIcon: IconButton(
+                  icon: Icon(_obscureInternalSecret ? Icons.visibility : Icons.visibility_off),
+                  tooltip: _obscureInternalSecret ? 'Mostrar secreto' : 'Ocultar secreto',
+                  onPressed: () => _toggleSecretVisibility(
+                    action: 'Revelar Webhook Secret de la Tienda Web',
+                    isCurrentlyObscured: _obscureInternalSecret,
+                    onToggle: (v) => _obscureInternalSecret = v,
+                  ),
+                ),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                helperText: 'Clave criptográfica HMAC-SHA256 para validar pedidos entrantes desde la web',
+              ),
+            ),
+            const SizedBox(height: 14),
+            _buildSwitchRow(
+              key: const ValueKey('switch_internal_sync_stock'),
+              title: 'Sincronizar Stock',
+              subtitle: 'Replicar automáticamente el stock de ventas físicas hacia la plataforma web',
+              value: _internalSyncStock,
+              activeColor: brandColor,
+              onChanged: (val) => setState(() => _internalSyncStock = val),
+            ),
+            _buildSwitchRow(
+              key: const ValueKey('switch_internal_auto_pause'),
+              title: 'Pausar compras al agotar stock',
+              subtitle: 'Prevenir sobreventa en la web pausando compras cuando el stock llegue a cero',
+              value: _internalAutoPause,
+              activeColor: brandColor,
+              onChanged: (val) => setState(() => _internalAutoPause = val),
+            ),
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 12,
+              runSpacing: 8,
+              children: [
+                FilledButton.icon(
+                  key: const ValueKey('btn_test_internal_connection'),
+                  onPressed: _isTestingInternal ? null : _testInternalConnection,
+                  icon: _isTestingInternal
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        )
+                      : const Icon(Icons.wifi_tethering, size: 18),
+                  label: const Text('Probar Conexión'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: brandColor,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+                OutlinedButton.icon(
+                  key: const ValueKey('btn_save_internal'),
+                  onPressed: () => _saveInternalIntegration(showFeedback: true),
+                  icon: const Icon(Icons.save_outlined, size: 18),
+                  label: const Text('Guardar Tienda Web'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: brandColor,
+                    side: const BorderSide(color: brandColor),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+                OutlinedButton.icon(
+                  key: const ValueKey('btn_import_internal_catalog'),
+                  onPressed: _isImportingInternalCatalog ? null : _importInternalCatalog,
+                  icon: _isImportingInternalCatalog
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: brandColor),
+                        )
+                      : const Icon(Icons.cloud_download_outlined, size: 18),
+                  label: const Text('Importar Catálogo Web al POS'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: brandColor,
+                    side: const BorderSide(color: brandColor),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+                OutlinedButton.icon(
+                  key: const ValueKey('btn_export_internal_catalog'),
+                  onPressed: _isExportingInternalCatalog ? null : _exportInternalCatalog,
+                  icon: _isExportingInternalCatalog
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: brandColor),
+                        )
+                      : const Icon(Icons.cloud_upload_outlined, size: 18),
+                  label: const Text('Sembrar Catálogo POS en Web'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: brandColor,
+                    side: const BorderSide(color: brandColor),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildMercadoLibreSection(bool isNarrow) {
     const brandColor = Color(0xFFF57F17);
     return Card(
@@ -2483,7 +3172,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ],
                     const SizedBox(height: 4),
                     Text(
-                      'Sincronizá tu stock local con Mercado Libre, WooCommerce y Tienda Nube.',
+                      'Sincronizá tu stock local con tu Plataforma Web, Mercado Libre, WooCommerce y Tienda Nube.',
                       style: TextStyle(
                           fontSize: 13, color: Colors.grey.shade600),
                     ),
@@ -2517,6 +3206,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             _buildMercadoLibreSection(isNarrow),
             _buildWooCommerceSection(isNarrow),
             _buildTiendaNubeSection(isNarrow),
+            _buildInternalEcommerceSection(isNarrow),
           ],
         ),
       ),

@@ -59,7 +59,8 @@ class SettingsRepositoryImpl implements SettingsRepository {
 
   @override
   Future<List<EcommerceIntegration>> getEcommerceIntegrations() async {
-    return await remoteDataSource.fetchEcommerceIntegrations();
+    final list = await remoteDataSource.fetchEcommerceIntegrations();
+    return List<EcommerceIntegration>.from(list);
   }
 
   @override
@@ -85,6 +86,16 @@ class SettingsRepositoryImpl implements SettingsRepository {
   @override
   Future<EcommerceIntegration> toggleEcommerceActive(int id) async {
     return await remoteDataSource.toggleEcommerceActive(id);
+  }
+
+  @override
+  Future<Map<String, dynamic>> importEcommerceCatalog(int id) async {
+    return await remoteDataSource.importEcommerceCatalog(id);
+  }
+
+  @override
+  Future<Map<String, dynamic>> exportEcommerceCatalog(int id) async {
+    return await remoteDataSource.exportEcommerceCatalog(id);
   }
 
   @override

@@ -110,6 +110,19 @@ class FakeEcommerceSettingsProvider extends ChangeNotifier implements SettingsPr
             autoPauseOnZeroStock: true,
             lastHealthStatus: 'warning',
           ),
+          EcommerceIntegration(
+            id: 104,
+            platform: 'ecommerce_platform',
+            name: 'Plataforma Web Propia',
+            baseUrl: 'http://g3.localhost',
+            storeId: 'g3',
+            accessToken: '****internal_token',
+            webhookSecret: '****internal_secret',
+            isActive: true,
+            syncStockEnabled: true,
+            autoPauseOnZeroStock: true,
+            lastHealthStatus: 'healthy',
+          ),
         ],
         _generalIntegrations = generalIntegrations ?? {
           'ecommerce_enabled': true,
@@ -223,6 +236,30 @@ class FakeEcommerceSettingsProvider extends ChangeNotifier implements SettingsPr
       return updated;
     }
     return null;
+  }
+
+  bool importCatalogCalled = false;
+  bool exportCatalogCalled = false;
+
+  @override
+  Future<Map<String, dynamic>> importEcommerceCatalog(int id) async {
+    importCatalogCalled = true;
+    return {
+      'success': true,
+      'total_remote': 5,
+      'imported': 4,
+      'updated': 1,
+      'mapped': 5,
+    };
+  }
+
+  @override
+  Future<Map<String, dynamic>> exportEcommerceCatalog(int id) async {
+    exportCatalogCalled = true;
+    return {
+      'success': true,
+      'exported_count': 10,
+    };
   }
 
   @override
@@ -468,6 +505,54 @@ void main() {
       expect(result.id, equals(9));
       expect(result.isActive, isTrue);
     });
+
+    test('importEcommerceCatalog sends POST /ecommerce/integrations/{id}/import-catalog', () async {
+      final mockClient = MockClient((request) async {
+        expect(request.method, equals('POST'));
+        expect(request.url.path, endsWith('/ecommerce/integrations/7/import-catalog'));
+        return http.Response(
+          jsonEncode({
+            'success': true,
+            'total_remote': 5,
+            'imported': 3,
+            'updated': 2,
+            'mapped': 5,
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      });
+
+      final ds = SettingsRemoteDataSourceImpl(baseUrl: 'http://localhost/api', client: mockClient);
+      final repo = SettingsRepositoryImpl(remoteDataSource: ds);
+
+      final result = await repo.importEcommerceCatalog(7);
+      expect(result['success'], isTrue);
+      expect(result['imported'], equals(3));
+      expect(result['mapped'], equals(5));
+    });
+
+    test('exportEcommerceCatalog sends POST /ecommerce/integrations/{id}/export-catalog', () async {
+      final mockClient = MockClient((request) async {
+        expect(request.method, equals('POST'));
+        expect(request.url.path, endsWith('/ecommerce/integrations/7/export-catalog'));
+        return http.Response(
+          jsonEncode({
+            'success': true,
+            'exported_count': 12,
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      });
+
+      final ds = SettingsRemoteDataSourceImpl(baseUrl: 'http://localhost/api', client: mockClient);
+      final repo = SettingsRepositoryImpl(remoteDataSource: ds);
+
+      final result = await repo.exportEcommerceCatalog(7);
+      expect(result['success'], isTrue);
+      expect(result['exported_count'], equals(12));
+    });
   });
 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -538,6 +623,12 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 350));
 
+      final internalHeader = find.text('Plataforma Web Propia (Ecommerce-Platform)').first;
+      await tester.ensureVisible(internalHeader);
+      await tester.tap(internalHeader);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+
       // Verify fields
       expect(find.byKey(const ValueKey('field_meli_id')), findsOneWidget);
       expect(find.byKey(const ValueKey('field_meli_secret')), findsOneWidget);
@@ -546,6 +637,10 @@ void main() {
       expect(find.byKey(const ValueKey('field_woo_secret')), findsOneWidget);
       expect(find.byKey(const ValueKey('field_tiendanube_store_id')), findsOneWidget);
       expect(find.byKey(const ValueKey('field_tiendanube_token')), findsOneWidget);
+      expect(find.byKey(const ValueKey('field_internal_url')), findsOneWidget);
+      expect(find.byKey(const ValueKey('field_internal_store_id')), findsOneWidget);
+      expect(find.byKey(const ValueKey('field_internal_token')), findsOneWidget);
+      expect(find.byKey(const ValueKey('field_internal_secret')), findsOneWidget);
     });
 
     testWidgets('Connection testing button triggers testEcommerceConnection and displays SnackBar feedback', (tester) async {
@@ -660,6 +755,46 @@ void main() {
       expect(provider.lastSavedPayload?['client_secret'], equals('****secret_meli'));
     });
 
+    testWidgets('Plataforma Web Propia testing button triggers testEcommerceConnection', (tester) async {
+      tester.view.physicalSize = const Size(1280, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() => tester.view.resetPhysicalSize());
+
+      final provider = FakeEcommerceSettingsProvider();
+
+      await tester.pumpWidget(buildApp(provider: provider));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      await tester.tap(find.text('Integraciones'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+
+      // Expand E-Commerce card
+      final ecomHeader = find.text('E-Commerce y Omnicanalidad');
+      await tester.ensureVisible(ecomHeader);
+      await tester.tap(ecomHeader);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+
+      // Expand Plataforma Web Propia sub-accordion
+      final webHeader = find.text('Plataforma Web Propia (Ecommerce-Platform)').first;
+      await tester.ensureVisible(webHeader);
+      await tester.tap(webHeader);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+
+      // Tap "Probar Conexión"
+      final testWebBtn = find.byKey(const ValueKey('btn_test_internal_connection'));
+      await tester.ensureVisible(testWebBtn);
+      await tester.tap(testWebBtn);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(provider.testConnectionCalled, isTrue);
+      expect(provider.lastTestedId, equals(104));
+    });
+
     testWidgets('Zero RenderFlex overflow on narrow mobile screen (320x480)', (tester) async {
       tester.view.physicalSize = const Size(320, 480);
       tester.view.devicePixelRatio = 1.0;
@@ -682,6 +817,74 @@ void main() {
       // Assert zero exceptions / overflows
       expect(tester.takeException(), isNull);
       expect(find.text('E-Commerce y Omnicanalidad'), findsOneWidget);
+    });
+
+    testWidgets('Plataforma Web Propia renders catalog import and export buttons', (tester) async {
+      final provider = FakeEcommerceSettingsProvider();
+
+      await tester.pumpWidget(buildApp(provider: provider));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      await tester.tap(find.text('Integraciones'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+
+      // Expand E-Commerce card
+      final ecomHeader = find.text('E-Commerce y Omnicanalidad');
+      await tester.ensureVisible(ecomHeader);
+      await tester.tap(ecomHeader);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+
+      // Expand Plataforma Web Propia sub-accordion
+      final webHeader = find.text('Plataforma Web Propia (Ecommerce-Platform)').first;
+      await tester.ensureVisible(webHeader);
+      await tester.tap(webHeader);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+
+      expect(find.byKey(const ValueKey('btn_import_internal_catalog')), findsOneWidget);
+      expect(find.byKey(const ValueKey('btn_export_internal_catalog')), findsOneWidget);
+    });
+
+    testWidgets('Unconfigured ecommerce channels are displayed as Inactive by default', (tester) async {
+      final provider = FakeEcommerceSettingsProvider(integrations: []);
+
+      await tester.pumpWidget(buildApp(provider: provider));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      await tester.tap(find.text('Integraciones'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+
+      // Expand E-Commerce card
+      final ecomHeader = find.text('E-Commerce y Omnicanalidad');
+      await tester.ensureVisible(ecomHeader);
+      await tester.tap(ecomHeader);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+
+      // Mercado Libre switch must be false
+      final meliSwitch = tester.widget<Switch>(find.byKey(const ValueKey('switch_meli_active')));
+      expect(meliSwitch.value, isFalse);
+
+      // WooCommerce switch must be false
+      final wooSwitch = tester.widget<Switch>(find.byKey(const ValueKey('switch_woo_active')));
+      expect(wooSwitch.value, isFalse);
+
+      // Tienda Nube switch must be false
+      final tnSwitch = tester.widget<Switch>(find.byKey(const ValueKey('switch_tiendanube_active')));
+      expect(tnSwitch.value, isFalse);
+
+      // Tapping unconfigured switch keeps it false
+      await tester.tap(find.byKey(const ValueKey('switch_meli_active')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      final meliSwitchAfter = tester.widget<Switch>(find.byKey(const ValueKey('switch_meli_active')));
+      expect(meliSwitchAfter.value, isFalse);
     });
   });
 }

@@ -339,7 +339,7 @@ class SettingsProvider with ChangeNotifier {
     try {
       final repo = updateSettingsUseCase.repository;
       final list = await repo.getEcommerceIntegrations();
-      _ecommerceIntegrations = list;
+      _ecommerceIntegrations = List<EcommerceIntegration>.from(list);
       return list;
     } catch (e) {
       debugPrint('[SettingsProvider] Error al cargar integraciones e-commerce: $e');
@@ -363,21 +363,55 @@ class SettingsProvider with ChangeNotifier {
     try {
       final repo = updateSettingsUseCase.repository;
       final EcommerceIntegration saved;
-      if (id != null) {
-        saved = await repo.updateEcommerceIntegration(id, data);
-        final index = _ecommerceIntegrations.indexWhere((i) => i.id == id);
+      int? effectiveId = id;
+      if (effectiveId == null) {
+        final existing = _ecommerceIntegrations.cast<EcommerceIntegration?>().firstWhere(
+          (i) => i != null && i.platform == data['platform'],
+          orElse: () => null,
+        );
+        if (existing != null) {
+          effectiveId = existing.id;
+        }
+      }
+
+      if (effectiveId != null) {
+        saved = await repo.updateEcommerceIntegration(effectiveId, data);
+        final index = _ecommerceIntegrations.indexWhere((i) => i.id == effectiveId);
         if (index != -1) {
           _ecommerceIntegrations[index] = saved;
         } else {
           _ecommerceIntegrations.add(saved);
         }
       } else {
-        saved = await repo.createEcommerceIntegration(data);
-        final index = _ecommerceIntegrations.indexWhere((i) => i.platform == saved.platform);
-        if (index != -1) {
-          _ecommerceIntegrations[index] = saved;
-        } else {
-          _ecommerceIntegrations.add(saved);
+        try {
+          saved = await repo.createEcommerceIntegration(data);
+          final index = _ecommerceIntegrations.indexWhere((i) => i.platform == saved.platform);
+          if (index != -1) {
+            _ecommerceIntegrations[index] = saved;
+          } else {
+            _ecommerceIntegrations.add(saved);
+          }
+        } catch (e) {
+          if (e.toString().contains('unique') || e.toString().contains('422')) {
+            final freshList = await repo.getEcommerceIntegrations();
+            _ecommerceIntegrations = List<EcommerceIntegration>.from(freshList);
+            final match = freshList.cast<EcommerceIntegration?>().firstWhere(
+              (i) => i != null && i.platform == data['platform'],
+              orElse: () => null,
+            );
+            if (match != null && match.id != null) {
+              final updated = await repo.updateEcommerceIntegration(match.id!, data);
+              final idx = _ecommerceIntegrations.indexWhere((i) => i.id == match.id);
+              if (idx != -1) {
+                _ecommerceIntegrations[idx] = updated;
+              } else {
+                _ecommerceIntegrations.add(updated);
+              }
+              notifyListeners();
+              return updated;
+            }
+          }
+          rethrow;
         }
       }
       notifyListeners();
@@ -448,6 +482,34 @@ class SettingsProvider with ChangeNotifier {
       debugPrint('[SettingsProvider] Error al eliminar integración e-commerce: $e');
       _errorMessage = e.toString().replaceAll('Exception: ', '');
       return false;
+    }
+  }
+
+  Future<Map<String, dynamic>> importEcommerceCatalog(int id) async {
+    try {
+      final repo = updateSettingsUseCase.repository;
+      final result = await repo.importEcommerceCatalog(id);
+      return result;
+    } catch (e) {
+      debugPrint('[SettingsProvider] Error al importar catálogo e-commerce: $e');
+      return {
+        'success': false,
+        'message': e.toString().replaceAll('Exception: ', ''),
+      };
+    }
+  }
+
+  Future<Map<String, dynamic>> exportEcommerceCatalog(int id) async {
+    try {
+      final repo = updateSettingsUseCase.repository;
+      final result = await repo.exportEcommerceCatalog(id);
+      return result;
+    } catch (e) {
+      debugPrint('[SettingsProvider] Error al exportar catálogo e-commerce: $e');
+      return {
+        'success': false,
+        'message': e.toString().replaceAll('Exception: ', ''),
+      };
     }
   }
 
