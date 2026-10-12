@@ -10,6 +10,7 @@ import 'package:frontend_desktop/core/services/license_heartbeat_service.dart';
 import 'package:frontend_desktop/features/auth/presentation/providers/auth_provider.dart';
 import 'package:frontend_desktop/features/reports/presentation/providers/inventory_alerts_provider.dart';
 import 'package:frontend_desktop/features/settings/domain/entities/business_settings.dart';
+import 'package:frontend_desktop/features/settings/domain/entities/ecommerce_integration.dart';
 import 'package:frontend_desktop/features/settings/data/models/business_settings_model.dart';
 import 'package:frontend_desktop/features/settings/presentation/pages/settings_screen.dart';
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
@@ -61,10 +62,13 @@ class FakeAuthProvider extends ChangeNotifier implements AuthProvider {
 
 class FakeIibbSettingsProvider extends ChangeNotifier implements SettingsProvider {
   BusinessSettings? _settings;
+  final FeatureFlags _features;
   bool saveSettingsCalled = false;
   Map<String, dynamic>? lastSavedData;
 
-  FakeIibbSettingsProvider({BusinessSettings? settings}) : _settings = settings;
+  FakeIibbSettingsProvider({BusinessSettings? settings, FeatureFlags? features})
+      : _settings = settings,
+        _features = features ?? const FeatureFlags(arcaAfip: true);
 
   @override
   BusinessSettings? get settings => _settings;
@@ -88,7 +92,7 @@ class FakeIibbSettingsProvider extends ChangeNotifier implements SettingsProvide
   bool get isHardwareStore => false;
 
   @override
-  FeatureFlags get features => _settings?.features ?? const FeatureFlags();
+  FeatureFlags get features => _features;
 
   @override
   bool hasFeature(String featureName) => false;
@@ -131,6 +135,9 @@ class FakeIibbSettingsProvider extends ChangeNotifier implements SettingsProvide
 
   @override
   Future<Map<String, dynamic>?> loadIntegrations({bool isSilent = false}) async => null;
+
+  @override
+  Future<List<EcommerceIntegration>> loadEcommerceIntegrations({bool isSilent = false}) async => [];
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -258,7 +265,7 @@ void main() {
       );
     }
 
-    testWidgets('Renders IIBB switch and toggles default rate input in Precios tab', (tester) async {
+    testWidgets('Renders IIBB switch and toggles default rate input in General tab', (tester) async {
       tester.view.physicalSize = const Size(1280, 800);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(() => tester.view.resetPhysicalSize());
@@ -275,12 +282,14 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
 
-      // Navigate to Precios section
-      await tester.tap(find.text('Precios Globales'));
+      // Navigate to General section
+      await tester.tap(find.text('General'));
       await tester.pumpAndSettle();
 
-      // Find switch
+      // Find switch in General tab
       final switchFinder = find.byKey(const ValueKey('switch_iibb_perception_agent'));
+      await tester.ensureVisible(switchFinder);
+      await tester.pumpAndSettle();
       expect(switchFinder, findsOneWidget);
 
       // Verify that rate field is not visible initially
@@ -292,6 +301,8 @@ void main() {
       await tester.pumpAndSettle();
 
       // Rate field should now appear
+      await tester.ensureVisible(rateFieldFinder);
+      await tester.pumpAndSettle();
       expect(rateFieldFinder, findsOneWidget);
 
       // Enter default rate
@@ -326,19 +337,59 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
 
-      // Navigate to Precios section
-      await tester.tap(find.text('Precios Globales'));
+      // Navigate to General section
+      await tester.tap(find.text('General'));
       await tester.pumpAndSettle();
 
-      // Switch should be on and rate field should exist with value
+      // Switch should be on in General tab and rate field should exist with value
       final switchFinder = find.byKey(const ValueKey('switch_iibb_perception_agent'));
+      await tester.ensureVisible(switchFinder);
+      await tester.pumpAndSettle();
       expect(switchFinder, findsOneWidget);
 
       final rateFieldFinder = find.byKey(const ValueKey('field_default_iibb_rate'));
+      await tester.ensureVisible(rateFieldFinder);
+      await tester.pumpAndSettle();
       expect(rateFieldFinder, findsOneWidget);
 
       final textField = tester.widget<TextFormField>(rateFieldFinder);
       expect(textField.controller?.text, equals('3.5'));
+    });
+
+    testWidgets('Shows locked AFIP badge and upgrade dialog when arcaAfip is false', (tester) async {
+      tester.view.physicalSize = const Size(1280, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() => tester.view.resetPhysicalSize());
+
+      final settingsProv = FakeIibbSettingsProvider(
+        settings: const BusinessSettings(
+          companyName: 'Negocio Sin AFIP S.A.',
+          isIibbPerceptionAgent: false,
+        ),
+        features: const FeatureFlags(arcaAfip: false),
+      );
+
+      await tester.pumpWidget(buildSettingsScreenApp(settingsProv: settingsProv));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      // Navigate to General section
+      await tester.tap(find.text('General'));
+      await tester.pumpAndSettle();
+
+      // Find switch
+      final switchFinder = find.byKey(const ValueKey('switch_iibb_perception_agent'));
+      await tester.ensureVisible(switchFinder);
+      await tester.pumpAndSettle();
+
+      // Should show AFIP Requerido badge
+      expect(find.text('AFIP Requerido'), findsOneWidget);
+
+      // Tapping switch should open PlanUpgradeDialog instead of toggling
+      await tester.tap(switchFinder);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Módulo ARCA/AFIP Requerido'), findsOneWidget);
     });
   });
 }

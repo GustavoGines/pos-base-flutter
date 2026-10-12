@@ -1,12 +1,28 @@
 # Changelog - Sistema POS (Frontend)
-Todos los cambios notables de la aplicacion de caja (Flutter/Windows) estan documentados aqui.
+Todos los cambios notables de la aplicaci贸n de caja (Flutter/Windows) est谩n documentados aqu铆.
 
+
+## [2.0.0] - 2026-10-12
+### E-commerce y Plataformas Web
+- M贸dulo de integraciones omnicanal para Mercado Libre, WooCommerce, Tiendanube y plataforma web propia.
+- Acciones directas de importaci贸n y exportaci贸n de cat谩logo y sincronizaci贸n en tiempo real.
+- Bloqueo y protecci贸n de funciones de sincronizaci贸n seg煤n plan contratado con di谩logo interactivo de actualizaci贸n.
+### Importaci贸n Excel
+- Carga de planillas Excel mediante arrastrar y soltar (Drag and Drop) con soporte extendido y barra de progreso en tiempo real.
+### Seguridad y Operaciones
+- Acceso protegido por PIN de seguridad para operaciones administrativas sensibles.
+- Soporte para adjuntos y comprobantes en arqueos y movimientos de caja.
+- Visualizaci贸n de bit谩cora t茅cnica de sincronizaci贸n en vivo.
+### Facturaci贸n e Interfaz de Usuario
+- Redise帽o de la cabecera de comprobantes y facturas con logo din谩mico, datos de contacto y CAE.
+- Prevenci贸n de desbordamientos visuales (overflow) en pantallas de bajas resoluciones y ventanas reducidas.
+- Soporte transparente para canales de actualizaci贸n estable y beta.
 
 ## [1.8.5] - 2026-09-06
 ### Agregado
-- Bot髇 de refresco manual en el cat醠ogo.
-- Soporte para escanear c骴igos de barras desde el m髒il hacia el formulario de producto de PC en tiempo real.
-- Formulario m髒il nivelado con todos los campos de la PC.
+- Bot贸n de refresco manual en el cat谩logo.
+- Soporte para escanear c贸digos de barras desde el m贸vil hacia el formulario de producto de PC en tiempo real.
+- Formulario m贸vil nivelado con todos los campos de la PC.
 
 ## [1.8.4] - 2026-09-03
 ### Gran Actualizacion (Mejoras desde v1.4.4)

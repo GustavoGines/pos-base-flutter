@@ -17,6 +17,9 @@ class FeatureFlags extends Equatable {
   final bool suppliers;
   final bool expenses;
   final bool multiRubro;
+  final bool mercadopagoQr;
+  final bool arcaAfip;
+  final bool ecommerceSync;
 
   const FeatureFlags({
     this.fastPos = false,
@@ -34,6 +37,9 @@ class FeatureFlags extends Equatable {
     this.suppliers = false,
     this.expenses = false,
     this.multiRubro = false,
+    this.mercadopagoQr = false,
+    this.arcaAfip = false,
+    this.ecommerceSync = false,
   });
 
   @override
@@ -53,6 +59,9 @@ class FeatureFlags extends Equatable {
         suppliers,
         expenses,
         multiRubro,
+        mercadopagoQr,
+        arcaAfip,
+        ecommerceSync,
       ];
 }
 
@@ -112,11 +121,14 @@ class BusinessSettings extends Equatable {
     if (features.suppliers) list.add('suppliers');
     if (features.expenses) list.add('expenses');
     if (features.multiRubro) list.add('multi_rubro');
+    if (features.mercadopagoQr) list.add('mercadopago_qr');
+    if (features.arcaAfip) list.add('arca_afip');
+    if (features.ecommerceSync) list.add('ecommerce_sync');
     return list;
   }
 
   /// Alias legado — mantenido para retrocompatibilidad durante la transición.
-  bool get isHardwareStore => businessType == 'hardware_store' || features.quotes;
+  bool get isHardwareStore => businessType == 'hardware_store';
 
   final String? logoPath;
   final String? logoUrl;

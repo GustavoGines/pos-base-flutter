@@ -90,6 +90,12 @@ class BusinessSettingsModel extends BusinessSettings {
           featuresMap['multi_rubro'] == 1 ||
           featuresMap['multi_rubros'] == true ||
           featuresMap['multi_rubros'] == 1,
+      mercadopagoQr: featuresMap['mercadopago_qr'] == true ||
+          featuresMap['mercadopago_qr'] == 1,
+      arcaAfip: featuresMap['arca_afip'] == true ||
+          featuresMap['arca_afip'] == 1,
+      ecommerceSync: featuresMap['ecommerce_sync'] == true ||
+          featuresMap['ecommerce_sync'] == 1,
     );
 
     return BusinessSettingsModel(

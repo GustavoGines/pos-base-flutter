@@ -1595,7 +1595,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           -15.0,
       'custom_price_tiers': _customTiers,
       'enable_advanced_price_tiers': _advancedPriceTiersEnabled ? '1' : '0',
-      'is_iibb_perception_agent': _isIibbPerceptionAgent ? '1' : '0',
+      'is_iibb_perception_agent':
+          (_isIibbPerceptionAgent && provider.features.arcaAfip) ? '1' : '0',
       'default_iibb_perception_rate': double.tryParse(
               _defaultIibbRateCtrl.text.trim().replaceAll(',', '.')) ??
           0.0,
@@ -1689,9 +1690,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
       'suppliers': '📦 Gestión de Proveedores (B2B)',
       'expenses': '💸 Gestión de Gastos y Movimientos',
       'multi_rubro': '🏬 Gestión Multi-Rubro',
+      'mercadopago_qr': '📲 Cobro con Mercado Pago QR',
+      'mercadopago_point': '💳 Posnet Mercado Pago Point',
+      'arca_afip': '🧾 Facturación Electrónica ARCA (AFIP)',
       'ecommerce_sync': '🌐 Sincronización E-Commerce',
     };
-    return dictionary[featureCode] ?? featureCode.toUpperCase();
+    final key = featureCode.toLowerCase().trim();
+    return dictionary[key] ?? featureCode.toUpperCase();
   }
 
   Future<void> _activateLicense() async {
@@ -3103,6 +3108,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _buildEcommerceCard(bool isNarrow) {
+    final provider = context.watch<SettingsProvider>();
+    final isLocked = !provider.features.ecommerceSync;
+
     return Card(
       elevation: 0,
       clipBehavior: Clip.antiAlias,
@@ -3117,18 +3125,72 @@ class _SettingsScreenState extends State<SettingsScreen> {
           initiallyExpanded: false,
           tilePadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
           childrenPadding: const EdgeInsets.only(left: 24, right: 24, bottom: 24),
-          trailing: Switch(
-            value: _ecommerceEnabled,
-            activeThumbColor: const Color(0xFF673AB7),
-            onChanged: (val) {
-              setState(() => _ecommerceEnabled = val);
-              if (val) {
-                _ecommerceExpCtrl.expand();
-              } else {
-                _ecommerceExpCtrl.collapse();
-              }
-            },
-          ),
+          onExpansionChanged: (expanded) {
+            if (isLocked && expanded) {
+              _ecommerceExpCtrl.collapse();
+              PlanUpgradeDialog.show(
+                context,
+                title: 'Plan Premium Requerido',
+                featureName: 'Sincronización E-Commerce',
+                description:
+                    'La integración y sincronización de catálogo y stock con Mercado Libre, WooCommerce, Tiendanube y Tienda Propia es exclusiva del plan PREMIUM.\n\n'
+                    'Actualizá tu plan para conectar tus canales de venta online.',
+                onNavigateToSettings: () => setState(() =>
+                    _activeSection = SettingsSection.subscription),
+              );
+            }
+          },
+          trailing: isLocked
+              ? InkWell(
+                  onTap: () {
+                    PlanUpgradeDialog.show(
+                      context,
+                      title: 'Plan Premium Requerido',
+                      featureName: 'Sincronización E-Commerce',
+                      description:
+                          'La integración y sincronización de catálogo y stock con Mercado Libre, WooCommerce, Tiendanube y Tienda Propia es exclusiva del plan PREMIUM.\n\n'
+                          'Actualizá tu plan para conectar tus canales de venta online.',
+                      onNavigateToSettings: () => setState(() =>
+                          _activeSection = SettingsSection.subscription),
+                    );
+                  },
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.shade50,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.amber.shade300),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.lock_outline, size: 13, color: Colors.amber.shade800),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Premium',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.amber.shade900,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              : Switch(
+                  value: _ecommerceEnabled,
+                  activeThumbColor: const Color(0xFF673AB7),
+                  onChanged: (val) {
+                    setState(() => _ecommerceEnabled = val);
+                    if (val) {
+                      _ecommerceExpCtrl.expand();
+                    } else {
+                      _ecommerceExpCtrl.collapse();
+                    }
+                  },
+                ),
           title: Row(
             children: [
               Container(
@@ -4035,51 +4097,110 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _buildTextField('Mensaje Pie de Ticket', _footerCtrl,
             icon: Icons.message_outlined, maxLines: 3),
         const SizedBox(height: 32),
-        Container(
-          decoration: BoxDecoration(
-            color: _isIibbPerceptionAgent
-                ? const Color(0xFF2E7D32).withValues(alpha: 0.05)
-                : Colors.grey.shade50,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: _isIibbPerceptionAgent
-                  ? const Color(0xFF2E7D32).withValues(alpha: 0.4)
-                  : Colors.grey.shade200,
-              width: 1.5,
+        Builder(builder: (context) {
+          final isAfipLocked = !provider.features.arcaAfip;
+          final isIibbActive = _isIibbPerceptionAgent && !isAfipLocked;
+
+          return Container(
+            decoration: BoxDecoration(
+              color: isIibbActive
+                  ? const Color(0xFF2E7D32).withValues(alpha: 0.05)
+                  : Colors.grey.shade50,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: isIibbActive
+                    ? const Color(0xFF2E7D32).withValues(alpha: 0.4)
+                    : Colors.grey.shade200,
+                width: 1.5,
+              ),
             ),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Material(
-                  color: Colors.transparent,
-                  child: SwitchListTile(
-                    key: const ValueKey('switch_iibb_perception_agent'),
-                    contentPadding: EdgeInsets.zero,
-                    secondary: Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF2E7D32).withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(10),
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Material(
+                    color: Colors.transparent,
+                    child: SwitchListTile(
+                      key: const ValueKey('switch_iibb_perception_agent'),
+                      contentPadding: EdgeInsets.zero,
+                      secondary: Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: isAfipLocked
+                              ? Colors.grey.shade200
+                              : const Color(0xFF2E7D32).withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(
+                          isAfipLocked ? Icons.lock_outline : Icons.account_balance,
+                          color: isAfipLocked ? Colors.grey.shade600 : const Color(0xFF2E7D32),
+                        ),
                       ),
-                      child: const Icon(Icons.account_balance, color: Color(0xFF2E7D32)),
+                      title: Row(
+                        children: [
+                          const Flexible(
+                            child: Text(
+                              'Agente de Percepción Ingresos Brutos (IIBB)',
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (isAfipLocked) ...[
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.amber.shade50,
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(color: Colors.amber.shade300),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.lock, size: 12, color: Colors.amber.shade800),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    'AFIP Requerido',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.amber.shade900,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                      subtitle: Text(
+                        isAfipLocked
+                            ? 'Requiere el módulo de Facturación Electrónica ARCA/AFIP habilitado en su licencia.'
+                            : 'Habilita el cálculo automático de percepciones de Ingresos Brutos en las facturas A y B.',
+                        style: TextStyle(fontSize: 12, color: isAfipLocked ? Colors.grey.shade600 : null),
+                      ),
+                      value: isIibbActive,
+                      activeThumbColor: isAfipLocked ? Colors.grey.shade400 : const Color(0xFF2E7D32),
+                      onChanged: (val) {
+                        if (isAfipLocked) {
+                          PlanUpgradeDialog.show(
+                            context,
+                            title: 'Módulo ARCA/AFIP Requerido',
+                            featureName: 'Percepciones de Ingresos Brutos (IIBB)',
+                            description:
+                                'El cálculo de percepciones de Ingresos Brutos opera exclusivamente sobre comprobantes fiscales electrónicos (Facturas A y B de ARCA/AFIP).\n\n'
+                                'Para utilizar este módulo, la licencia debe tener habilitada la facturación electrónica.',
+                            onNavigateToSettings: () => setState(() =>
+                                _activeSection = SettingsSection.subscription),
+                          );
+                          return;
+                        }
+                        setState(() => _isIibbPerceptionAgent = val);
+                      },
                     ),
-                    title: const Text(
-                      'Agente de Percepción Ingresos Brutos (IIBB)',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                    ),
-                    subtitle: const Text(
-                      'Habilita el cálculo automático de percepciones de Ingresos Brutos en las facturas A y B.',
-                      style: TextStyle(fontSize: 12),
-                    ),
-                    value: _isIibbPerceptionAgent,
-                    activeThumbColor: const Color(0xFF2E7D32),
-                    onChanged: (val) => setState(() => _isIibbPerceptionAgent = val),
                   ),
-                ),
-                if (_isIibbPerceptionAgent) ...[
+                  if (isIibbActive) ...[
                   const SizedBox(height: 16),
                   TextFormField(
                     key: const ValueKey('field_default_iibb_rate'),
@@ -4089,7 +4210,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       FilteringTextInputFormatter.allow(RegExp(r'^\d*[\.,]?\d{0,2}')),
                     ],
                     decoration: InputDecoration(
-                      labelText: 'Alcuota por defecto IIBB (%)',
+                      labelText: 'Alícuota por defecto IIBB (%)',
                       hintText: 'Ej: 3.0',
                       prefixIcon: const Icon(Icons.percent, size: 20),
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
@@ -4108,9 +4229,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ],
               ],
+              ),
             ),
-          ),
-        ),
+          );
+        }),
         const SizedBox(height: 32),
       ],
     );
@@ -4417,84 +4539,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           );
         }),
-        // ── Percepciones IIBB (Módulo Mayorista) ───────────────────────
-        Container(
-          margin: const EdgeInsets.only(top: 24),
-          decoration: BoxDecoration(
-            color: _isIibbPerceptionAgent
-                ? const Color(0xFF2E7D32).withValues(alpha: 0.05)
-                : Colors.grey.shade50,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: _isIibbPerceptionAgent
-                  ? const Color(0xFF2E7D32).withValues(alpha: 0.4)
-                  : Colors.grey.shade200,
-              width: 1.5,
-            ),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Material(
-                  color: Colors.transparent,
-                  child: SwitchListTile(
-                    key: const ValueKey('switch_iibb_perception_agent'),
-                    contentPadding: EdgeInsets.zero,
-                    secondary: Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF2E7D32).withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: const Icon(Icons.account_balance, color: Color(0xFF2E7D32)),
-                    ),
-                    title: const Text(
-                      'Agente de Percepción IIBB (Módulo Mayorista)',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                    ),
-                    subtitle: const Text(
-                      'Habilita la aplicación de percepciones de Ingresos Brutos a clientes alcanzados en ventas.',
-                      style: TextStyle(fontSize: 12),
-                    ),
-                    value: _isIibbPerceptionAgent,
-                    activeThumbColor: const Color(0xFF2E7D32),
-                    onChanged: (val) => setState(() => _isIibbPerceptionAgent = val),
-                  ),
-                ),
-                if (_isIibbPerceptionAgent) ...[
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    key: const ValueKey('field_default_iibb_rate'),
-                    controller: _defaultIibbRateCtrl,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    inputFormatters: [
-                      FilteringTextInputFormatter.allow(RegExp(r'^\d*[\.,]?\d{0,2}')),
-                    ],
-                    decoration: InputDecoration(
-                      labelText: 'Alícuota por defecto IIBB (%)',
-                      hintText: 'Ej: 3.0',
-                      prefixIcon: const Icon(Icons.percent, size: 20),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                      filled: true,
-                      fillColor: Colors.white,
-                    ),
-                    validator: (val) {
-                      if (!_isIibbPerceptionAgent) return null;
-                      if (val == null || val.trim().isEmpty) return null;
-                      final parsed = double.tryParse(val.trim().replaceAll(',', '.'));
-                      if (parsed == null || parsed < 0 || parsed > 100) {
-                        return 'Ingrese una alícuota válida (0 - 100%)';
-                      }
-                      return null;
-                    },
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ),
         if (provider.settings?.features.multiplePrices == true) ...[
           const SizedBox(height: 48),
           _buildCustomTiersSection(enabled: _advancedPriceTiersEnabled),

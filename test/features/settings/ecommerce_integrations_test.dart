@@ -153,7 +153,7 @@ class FakeEcommerceSettingsProvider extends ChangeNotifier implements SettingsPr
   @override
   List<String> get allowedAddons => [];
   @override
-  FeatureFlags get features => const FeatureFlags(fastPos: true);
+  FeatureFlags get features => const FeatureFlags(fastPos: true, ecommerceSync: true);
   @override
   bool hasFeature(String featureName) => true;
 
