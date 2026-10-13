@@ -24,6 +24,7 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
   String _periodType = 'daily'; // 'daily', 'weekly', 'monthly'
   final List<Product> _selectedProducts = [];
   bool _isSaving = false;
+  int _searchSeq = 0; // Token de debounce del buscador de productos
   OfferModel? _editingOffer;
 
   @override
@@ -53,6 +54,20 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
     _discountCtrl.dispose();
     _productSearchCtrl.dispose();
     super.dispose();
+  }
+
+  /// Busca en el servidor (todo el catálogo) con debounce. Descarta resultados obsoletos si el
+  /// usuario siguió escribiendo.
+  Future<Iterable<Product>> _searchCatalogProducts(String text) async {
+    final query = text.trim();
+    if (query.isEmpty) return const Iterable<Product>.empty();
+    final seq = ++_searchSeq;
+    await Future.delayed(const Duration(milliseconds: 300));
+    if (!mounted || seq != _searchSeq) return const Iterable<Product>.empty();
+    final catalog = Provider.of<CatalogProvider>(context, listen: false);
+    final results = await catalog.searchProductsRemote(query);
+    if (!mounted || seq != _searchSeq) return const Iterable<Product>.empty();
+    return results;
   }
 
   void _startEditOffer(OfferModel offer) {
@@ -505,35 +520,26 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
           // Búsqueda de productos adicionales
           const Text('Productos en la Oferta:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
           const SizedBox(height: 6),
-          Consumer<CatalogProvider>(
-            builder: (context, catalog, _) {
-              return Autocomplete<Product>(
-                displayStringForOption: (Product p) => '${p.name} (\$${p.sellingPrice.toCurrency()})',
-                optionsBuilder: (TextEditingValue textValue) {
-                  if (textValue.text.isEmpty) return const Iterable<Product>.empty();
-                  return catalog.products.where((p) =>
-                      p.name.toLowerCase().contains(textValue.text.toLowerCase()) ||
-                      (p.barcode?.toLowerCase().contains(textValue.text.toLowerCase()) ?? false));
-                },
-                onSelected: (Product p) {
-                  setState(() {
-                    if (!_selectedProducts.any((sp) => sp.id == p.id)) {
-                      _selectedProducts.add(p);
-                    }
-                  });
-                },
-                fieldViewBuilder: (ctx, ctrl, focusNode, onFieldSubmitted) {
-                  return TextField(
-                    controller: ctrl,
-                    focusNode: focusNode,
-                    decoration: InputDecoration(
-                      hintText: 'Buscar y agregar productos del catálogo...',
-                      prefixIcon: const Icon(Icons.search, size: 20),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    ),
-                  );
-                },
+          Autocomplete<Product>(
+            displayStringForOption: (Product p) => '${p.name} (\$${p.sellingPrice.toCurrency()})',
+            optionsBuilder: (TextEditingValue textValue) => _searchCatalogProducts(textValue.text),
+            onSelected: (Product p) {
+              setState(() {
+                if (!_selectedProducts.any((sp) => sp.id == p.id)) {
+                  _selectedProducts.add(p);
+                }
+              });
+            },
+            fieldViewBuilder: (ctx, ctrl, focusNode, onFieldSubmitted) {
+              return TextField(
+                controller: ctrl,
+                focusNode: focusNode,
+                decoration: InputDecoration(
+                  hintText: 'Buscar y agregar productos del catálogo...',
+                  prefixIcon: const Icon(Icons.search, size: 20),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                ),
               );
             },
           ),

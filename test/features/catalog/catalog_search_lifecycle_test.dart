@@ -158,4 +158,35 @@ void main() {
       expect(provider.products.length, 2);
     });
   });
+
+  group('CatalogProvider.searchProductsRemote (picker de Ofertas)', () {
+    test('Consulta al servidor aunque el producto NO esté cargado en memoria', () async {
+      // Memoria local: solo Samsung (simula la página cargada del POS)
+      await provider.loadProducts(page: 1, search: 'Samsung');
+      expect(provider.products.length, 1);
+
+      final results = await provider.searchProductsRemote('Xiaomi');
+
+      expect(mockRepo.lastSearchReceived, 'Xiaomi');
+      expect(results.length, 1);
+      expect(results.first.name, 'Celular Xiaomi 17T Pro');
+    });
+
+    test('NO altera products, searchQuery ni la paginación del catálogo', () async {
+      await provider.loadProducts(page: 1, search: 'Samsung');
+
+      await provider.searchProductsRemote('Xiaomi');
+
+      expect(provider.searchQuery, 'Samsung');
+      expect(provider.products.length, 1);
+      expect(provider.products.first.name, 'Smart TV Samsung 55');
+    });
+
+    test('Query vacía o en blanco devuelve lista vacía sin llamar al servidor', () async {
+      final results = await provider.searchProductsRemote('   ');
+
+      expect(results, isEmpty);
+      expect(mockRepo.lastSearchReceived, isNull);
+    });
+  });
 }

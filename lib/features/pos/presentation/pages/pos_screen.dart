@@ -1193,18 +1193,22 @@ class _PosScreenState extends State<PosScreen> {
         final catalogProvider =
             Provider.of<CatalogProvider>(context, listen: false);
         final Map<int, int> soldItems = {};
-        final Map<int, Product> soldProductModels = {};
         for (var item in posProvider.lastSaleCart) {
-          final qty = item.quantity.ceil();
-          final increment = qty > 0 ? qty : 1;
+          // Misma regla que el backend (StockService::popularityPoints): cada línea suma
+          // max(1, ceil(cantidad)), así 0.250 kg de un pesable cuenta como 1 punto.
+          final points = item.quantity > 0 ? item.quantity.ceil() : 0;
+          if (points == 0) continue;
           soldItems[item.product.id] =
-              (soldItems[item.product.id] ?? 0) + increment;
-          soldProductModels[item.product.id] = item.product;
+              (soldItems[item.product.id] ?? 0) + points;
         }
-        catalogProvider.updateProductSalesCountLocally(
-          soldItems,
-          soldProductModels: soldProductModels,
-        );
+        final anySoldMissing =
+            catalogProvider.updateProductSalesCountLocally(soldItems);
+        if (anySoldMissing) {
+          // Se vendió algo que no estaba cargado en la grilla (ej. vía buscador): traemos el
+          // dato real del servidor en segundo plano (sin spinner) en lugar de insertar el
+          // producto del carrito, que puede venir incompleto (sin imagen/código de barras).
+          catalogProvider.refreshQuickAccessSilently();
+        }
 
         // 3. REFRESCO SELECTIVO (FIRE-AND-FORGET):
         // Solo actualizamos el stock de los productos vendidos — sin recargar el catálogo completo.
@@ -2928,6 +2932,8 @@ class _PosScreenState extends State<PosScreen> {
     return PosQuickAccessCatalogView(
       products: displayItems,
       viewMode: viewMode,
+      // El ranking Top solo aplica al Acceso Rápido; en búsquedas sería relativo a los resultados.
+      showTopRanks: _searchQuery.isEmpty,
       onSelectProduct: _handleProductSelection,
       priceBuilder: (product, isByWeight, fontSize) => _buildPriceWidget(product, isByWeight, fontSize),
     );

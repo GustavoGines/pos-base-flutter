@@ -17,20 +17,122 @@ class PosQuickAccessCatalogView extends StatelessWidget {
   final ValueChanged<Product>? onSelectProduct;
   final Widget Function(Product product, bool isByWeight, double fontSize)? priceBuilder;
 
+  /// Si es true, destaca el Top 3 de más vendidos del listado (🔥 #1..#3).
+  /// Solo tiene sentido en el Acceso Rápido: en resultados de búsqueda el ranking
+  /// sería relativo a los resultados y no al catálogo, por eso es opt-in.
+  final bool showTopRanks;
+
+  /// Ventas mínimas para que un producto pueda ser considerado "Top" (evita rotular
+  /// como Top a productos con 1 o 2 ventas en un POS recién estrenado).
+  static const int topMinSales = 5;
+
   const PosQuickAccessCatalogView({
     super.key,
     required this.products,
     required this.viewMode,
     this.onSelectProduct,
     this.priceBuilder,
+    this.showTopRanks = false,
   });
+
+  /// Calcula el ranking Top 3 (1, 2, 3) entre los productos con al menos [topMinSales] ventas.
+  Map<int, int> _computeTopRanks() {
+    if (!showTopRanks) return const {};
+
+    final eligible = products.where((p) => p.salesCount >= topMinSales).toList()
+      ..sort((a, b) {
+        final cmp = b.salesCount.compareTo(a.salesCount);
+        if (cmp != 0) return cmp;
+        return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+      });
+
+    final ranks = <int, int>{};
+    for (var i = 0; i < eligible.length && i < 3; i++) {
+      ranks[eligible[i].id] = i + 1;
+    }
+    return ranks;
+  }
+
+  String _formatSalesCount(int count) {
+    if (count >= 1000) {
+      final k = count / 1000.0;
+      return '${k.toStringAsFixed(k >= 10 ? 0 : 1)}k';
+    }
+    return count.toString();
+  }
+
+  Widget _buildSalesBadge(
+    Product product, {
+    int? topRank,
+    bool compact = false,
+  }) {
+    final isTop = topRank != null;
+    final formatted = _formatSalesCount(product.salesCount);
+    final label = compact
+        ? (isTop ? '#$topRank · $formatted' : '$formatted vend.')
+        : (isTop ? '#$topRank · $formatted vend.' : '$formatted vend.');
+
+    final bgColor = isTop
+        ? const Color(0xFFFFF3CD)
+        : Colors.white.withValues(alpha: 0.92);
+    final borderColor = isTop
+        ? const Color(0xFFFFB300)
+        : Colors.blue.shade200;
+    final fgColor = isTop
+        ? const Color(0xFFB45309)
+        : Colors.blue.shade700;
+
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 4.5 : 6.0,
+        vertical: compact ? 1.5 : 2.0,
+      ),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: borderColor, width: 0.9),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 3,
+            offset: const Offset(0, 1),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            isTop ? Icons.local_fire_department_rounded : Icons.flash_on_rounded,
+            size: compact ? 9.5 : 11.0,
+            color: isTop ? const Color(0xFFE65100) : Colors.blueAccent,
+          ),
+          const SizedBox(width: 2),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: compact ? 8.0 : 9.0,
+              color: fgColor,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.2,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
+    final topRanks = _computeTopRanks();
+
     if (viewMode == 'list') {
       return ListView.builder(
         itemCount: products.length,
-        itemBuilder: (context, index) => _buildListItem(context, products[index]),
+        itemBuilder: (context, index) {
+          final p = products[index];
+          return _buildListItem(context, p, topRank: topRanks[p.id]);
+        },
       );
     } else if (viewMode == 'compact') {
       return GridView.builder(
@@ -41,7 +143,10 @@ class PosQuickAccessCatalogView extends StatelessWidget {
           mainAxisSpacing: 8,
         ),
         itemCount: products.length,
-        itemBuilder: (context, index) => _buildCompactItem(context, products[index]),
+        itemBuilder: (context, index) {
+          final p = products[index];
+          return _buildCompactItem(context, p, topRank: topRanks[p.id]);
+        },
       );
     } else if (viewMode == 'grid_medium') {
       return GridView.builder(
@@ -52,7 +157,15 @@ class PosQuickAccessCatalogView extends StatelessWidget {
           mainAxisSpacing: 8,
         ),
         itemCount: products.length,
-        itemBuilder: (context, index) => _buildGridItem(context, products[index], isMedium: true),
+        itemBuilder: (context, index) {
+          final p = products[index];
+          return _buildGridItem(
+            context,
+            p,
+            isMedium: true,
+            topRank: topRanks[p.id],
+          );
+        },
       );
     } else {
       // Default: grid_large
@@ -64,17 +177,26 @@ class PosQuickAccessCatalogView extends StatelessWidget {
           mainAxisSpacing: 12,
         ),
         itemCount: products.length,
-        itemBuilder: (context, index) => _buildGridItem(context, products[index], isMedium: false),
+        itemBuilder: (context, index) {
+          final p = products[index];
+          return _buildGridItem(
+            context,
+            p,
+            isMedium: false,
+            topRank: topRanks[p.id],
+          );
+        },
       );
     }
   }
 
-  Widget _buildListItem(BuildContext context, Product product) {
+  Widget _buildListItem(BuildContext context, Product product, {int? topRank}) {
     final isByWeight = product.isSoldByWeight;
     final uri = product.imageUrl != null && product.imageUrl!.isNotEmpty
         ? Uri.tryParse(product.imageUrl!)
         : null;
     final hasImage = uri != null && uri.hasScheme && uri.hasAuthority && uri.host.isNotEmpty;
+    final hasBarcode = product.barcode != null && product.barcode!.isNotEmpty;
 
     return Card(
       elevation: 1,
@@ -118,15 +240,44 @@ class PosQuickAccessCatalogView extends StatelessWidget {
           ),
         ),
         title: Text(product.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-        subtitle: product.barcode != null && product.barcode!.isNotEmpty
-            ? Text(product.barcode!, style: const TextStyle(fontSize: 12))
+        subtitle: (hasBarcode || isByWeight || product.salesCount > 0)
+            ? Padding(
+                padding: const EdgeInsets.only(top: 3),
+                child: Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    if (hasBarcode)
+                      Text(product.barcode!, style: const TextStyle(fontSize: 12)),
+                    if (isByWeight)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.shade100,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          '⚖️ Por Kg',
+                          style: TextStyle(
+                            fontSize: 9.5,
+                            color: Colors.orange.shade900,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    if (product.salesCount > 0)
+                      _buildSalesBadge(product, topRank: topRank, compact: false),
+                  ],
+                ),
+              )
             : null,
         trailing: _renderPrice(context, product, isByWeight, 16),
       ),
     );
   }
 
-  Widget _buildCompactItem(BuildContext context, Product product) {
+  Widget _buildCompactItem(BuildContext context, Product product, {int? topRank}) {
     final isByWeight = product.isSoldByWeight;
     final uri = product.imageUrl != null && product.imageUrl!.isNotEmpty
         ? Uri.tryParse(product.imageUrl!)
@@ -194,7 +345,17 @@ class PosQuickAccessCatalogView extends StatelessWidget {
               child: FittedBox(
                 fit: BoxFit.scaleDown,
                 alignment: Alignment.centerRight,
-                child: _renderPrice(context, product, isByWeight, 13),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    _renderPrice(context, product, isByWeight, 13),
+                    if (product.salesCount > 0) ...[
+                      const SizedBox(height: 1),
+                      _buildSalesBadge(product, topRank: topRank, compact: true),
+                    ],
+                  ],
+                ),
               ),
             ),
           ],
@@ -203,7 +364,12 @@ class PosQuickAccessCatalogView extends StatelessWidget {
     );
   }
 
-  Widget _buildGridItem(BuildContext context, Product product, {required bool isMedium}) {
+  Widget _buildGridItem(
+    BuildContext context,
+    Product product, {
+    required bool isMedium,
+    int? topRank,
+  }) {
     final isByWeight = product.isSoldByWeight;
     final uri = product.imageUrl != null && product.imageUrl!.isNotEmpty
         ? Uri.tryParse(product.imageUrl!)
@@ -229,113 +395,131 @@ class PosQuickAccessCatalogView extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // ─── HEADER: Prominent Product Image (or fallback) ───
+              // ─── HEADER: Prominent Product Image + Floating Badges ───
               Expanded(
-                flex: isMedium ? 4 : 5,
-                child: Container(
-                  color: isByWeight ? Colors.orange.shade50 : Colors.blue.shade50,
-                  child: hasImage
-                      ? CachedNetworkImage(
-                          imageUrl: product.imageUrl!,
-                          width: double.infinity,
-                          height: double.infinity,
-                          fit: BoxFit.contain,
-                          placeholder: (context, url) => const Center(
-                            child: SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
+                flex: 5,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Container(
+                      color: isByWeight ? Colors.orange.shade50 : Colors.blue.shade50,
+                      child: hasImage
+                          ? CachedNetworkImage(
+                              imageUrl: product.imageUrl!,
+                              width: double.infinity,
+                              height: double.infinity,
+                              fit: BoxFit.contain,
+                              placeholder: (context, url) => const Center(
+                                child: SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                ),
+                              ),
+                              errorWidget: (context, url, error) => Center(
+                                child: Icon(
+                                  isByWeight ? Icons.scale_rounded : Icons.inventory_2_outlined,
+                                  color: isByWeight ? Colors.orange.shade600 : Colors.blue.shade600,
+                                  size: isMedium ? 30 : 42,
+                                ),
+                              ),
+                            )
+                          : Center(
+                              child: Icon(
+                                isByWeight ? Icons.scale_rounded : Icons.inventory_2_outlined,
+                                color: isByWeight ? Colors.orange.shade600 : Colors.blue.shade600,
+                                size: isMedium ? 30 : 42,
+                              ),
                             ),
-                          ),
-                          errorWidget: (context, url, error) => Center(
-                            child: Icon(
-                              isByWeight ? Icons.scale_rounded : Icons.inventory_2_outlined,
-                              color: isByWeight ? Colors.orange.shade600 : Colors.blue.shade600,
-                              size: isMedium ? 30 : 42,
-                            ),
-                          ),
-                        )
-                      : Center(
-                          child: Icon(
-                            isByWeight ? Icons.scale_rounded : Icons.inventory_2_outlined,
-                            color: isByWeight ? Colors.orange.shade600 : Colors.blue.shade600,
-                            size: isMedium ? 30 : 42,
-                          ),
+                    ),
+                    // Badges flotantes del encabezado en UNA sola fila para que nunca se superpongan
+                    // (el grid reparte anchos de tarjeta variables): el de ventas se achica si falta lugar.
+                    if (isByWeight || product.salesCount > 0)
+                      Positioned(
+                        top: 4,
+                        left: 4,
+                        right: 4,
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (isByWeight)
+                              Container(
+                                padding: EdgeInsets.symmetric(
+                                  horizontal: isMedium ? 4.0 : 5.5,
+                                  vertical: 1.5,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.orange.shade100.withValues(alpha: 0.95),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: Colors.orange.shade300, width: 0.8),
+                                ),
+                                child: Text(
+                                  isMedium ? '⚖️ Kg' : '⚖️ Por Kg',
+                                  maxLines: 1,
+                                  style: TextStyle(
+                                    fontSize: isMedium ? 7.5 : 8.5,
+                                    color: Colors.orange.shade900,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                            const SizedBox(width: 4),
+                            if (product.salesCount > 0)
+                              Expanded(
+                                child: Align(
+                                  alignment: Alignment.topRight,
+                                  child: FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    alignment: Alignment.topRight,
+                                    child: _buildSalesBadge(
+                                      product,
+                                      topRank: topRank,
+                                      compact: isMedium,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
+                      ),
+                  ],
                 ),
               ),
 
-              // ─── BODY: Product Details, Price & Badges ───
+              // ─── BODY: Clean Product Name & Price ───
               Expanded(
-                flex: isMedium ? 6 : 5,
+                flex: 5,
                 child: Padding(
-                  padding: EdgeInsets.symmetric(horizontal: isMedium ? 4.0 : 8.0, vertical: isMedium ? 1.5 : 3.0),
+                  padding: EdgeInsets.symmetric(
+                    horizontal: isMedium ? 5.0 : 8.0,
+                    vertical: isMedium ? 4.0 : 6.0,
+                  ),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      Text(
-                        product.name,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: isMedium ? 11 : 12),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                            decoration: BoxDecoration(
-                              color: isByWeight ? Colors.orange.shade100 : Colors.green.shade50,
-                              borderRadius: BorderRadius.circular(6),
+                      Expanded(
+                        child: Center(
+                          child: Text(
+                            product.name,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: isMedium ? 11 : 12,
+                              height: 1.15,
                             ),
-                            child: _renderPrice(context, product, isByWeight, isMedium ? 11 : 12),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                           ),
-                          if (isByWeight) ...[
-                            const SizedBox(height: 2),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0.5),
-                              decoration: BoxDecoration(
-                                color: Colors.orange.shade200,
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: FittedBox(
-                                fit: BoxFit.scaleDown,
-                                child: Text(
-                                  product.salesCount > 0
-                                      ? '⚖️ Por Kg · ⚡${product.salesCount} vend.'
-                                      : '⚖️ Por Kg',
-                                  style: TextStyle(fontSize: 8.5, color: Colors.orange.shade900, fontWeight: FontWeight.w600),
-                                ),
-                              ),
-                            ),
-                          ] else if (product.salesCount > 0) ...[
-                            const SizedBox(height: 2),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0.5),
-                              decoration: BoxDecoration(
-                                color: Colors.blue.withAlpha(25),
-                                borderRadius: BorderRadius.circular(4),
-                                border: Border.all(color: Colors.blue.withAlpha(50)),
-                              ),
-                              child: FittedBox(
-                                fit: BoxFit.scaleDown,
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    const Icon(Icons.flash_on_rounded, size: 8, color: Colors.blueAccent),
-                                    const SizedBox(width: 2),
-                                    Text(
-                                      "${product.salesCount} vend.",
-                                      style: const TextStyle(fontSize: 8, color: Colors.blueAccent, fontWeight: FontWeight.bold),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ],
-                        ],
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: isByWeight ? Colors.orange.shade100 : Colors.green.shade50,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: _renderPrice(context, product, isByWeight, isMedium ? 11 : 12),
                       ),
                     ],
                   ),

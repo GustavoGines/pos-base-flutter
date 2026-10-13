@@ -61,7 +61,7 @@ class CatalogProvider with ChangeNotifier {
   }
 
   // ── Sort ─────────────────────────────────────────────────
-  String _sortBy = '';
+  String _sortBy = 'name';
   String _sortDirection = 'asc';
   String get sortBy => _sortBy;
   String get sortDirection => _sortDirection;
@@ -80,6 +80,8 @@ class CatalogProvider with ChangeNotifier {
     }
   }
 
+  /// [sortBy] = '' pide el orden por defecto del servidor (peso → más vendidos → nombre),
+  /// que es el que usa el Acceso Rápido del POS.
   Future<void> loadProducts({int page = 1, String? search, String? sortBy, String? sortDirection}) async {
     _isLoading = true;
     _errorMessage = null;
@@ -113,6 +115,23 @@ class CatalogProvider with ChangeNotifier {
     } finally {
       _isLoading = false;
       notifyListeners();
+    }
+  }
+
+  /// Recarga en segundo plano la página 1 del Acceso Rápido (orden del servidor: peso → más
+  /// vendidos → nombre) SIN activar `isLoading`, para no provocar parpadeo de la grilla.
+  /// Si falla, conserva silenciosamente los datos actuales.
+  Future<void> refreshQuickAccessSilently() async {
+    try {
+      final result = await getProductsUseCase(page: 1);
+      _searchQuery = '';
+      _sortBy = '';
+      _products = List<Product>.from(result['data'] as List);
+      _currentPage = result['current_page'] as int;
+      _lastPage = result['last_page'] as int;
+      notifyListeners();
+    } catch (e) {
+      debugPrint('refreshQuickAccessSilently: fallo silencioso ($e)');
     }
   }
 
@@ -152,14 +171,37 @@ class CatalogProvider with ChangeNotifier {
     }
   }
 
+  /// Búsqueda remota para pickers (p. ej. Ofertas Rápidas): consulta TODO el catálogo en el
+  /// servidor (nombre, código de barras o código interno) en lugar de filtrar solo la página
+  /// cargada en memoria. NO modifica `products` ni el estado de paginación/orden.
+  Future<List<Product>> searchProductsRemote(String query, {int perPage = 30}) async {
+    final q = query.trim();
+    if (q.isEmpty) return [];
+    try {
+      final result = await getProductsUseCase(
+        page: 1,
+        search: q,
+        sortBy: 'name',
+        sortDirection: 'asc',
+        perPage: perPage,
+      );
+      return List<Product>.from(result['data'] as List);
+    } catch (e) {
+      debugPrint('Error en searchProductsRemote: $e');
+      return [];
+    }
+  }
+
   /// Refuerzo Senior: Actualiza los contadores de ventas en memoria para que la UI 
   /// se reordene al instante sin necesidad de una petición de red.
-  /// Si un producto vendido desde el buscador no estaba en [_products], lo incorpora.
-  void updateProductSalesCountLocally(
-    Map<int, int> productSales, {
-    Map<int, Product>? soldProductModels,
-  }) {
+  ///
+  /// Devuelve `true` si algún producto vendido NO estaba cargado en memoria (p. ej. se vendió
+  /// desde el buscador y no está en la página 1). No se inserta desde el carrito porque esos
+  /// objetos pueden estar incompletos (órdenes recuperadas sin imagen/código): quien llama
+  /// debe hacer un `loadProducts(silent: true)` para traer el dato real del servidor.
+  bool updateProductSalesCountLocally(Map<int, int> productSales) {
     bool changed = false;
+    bool anyMissing = false;
     for (var entry in productSales.entries) {
       final index = _products.indexWhere((p) => p.id == entry.key);
       if (index != -1) {
@@ -168,17 +210,12 @@ class CatalogProvider with ChangeNotifier {
           salesCount: (current.salesCount) + entry.value,
         );
         changed = true;
-      } else if (soldProductModels != null &&
-          soldProductModels.containsKey(entry.key)) {
-        final soldProd = soldProductModels[entry.key]!;
-        _products.insert(
-          0,
-          soldProd.copyWith(salesCount: soldProd.salesCount + entry.value),
-        );
-        changed = true;
+      } else {
+        anyMissing = true;
       }
     }
     if (changed) notifyListeners();
+    return anyMissing;
   }
 
   /// Actualiza SILENCIOSAMENTE solo el stock de los productos vendidos.

@@ -55,7 +55,15 @@ class _CatalogScreenState extends State<CatalogScreen> {
     // Cargar productos al inicio asegurando catálogo completo sin filtros residuales
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _searchController.text = '';
-      context.read<CatalogProvider>().loadProducts(page: 1, search: '');
+      final catalogProv = context.read<CatalogProvider>();
+      // El POS deja sortBy vacío (orden por popularidad del servidor); el Catálogo siempre
+      // debe entrar con un orden explícito (el último elegido o alfabético).
+      catalogProv.loadProducts(
+        page: 1,
+        search: '',
+        sortBy: catalogProv.sortBy.isEmpty ? 'name' : catalogProv.sortBy,
+        sortDirection: catalogProv.sortBy.isEmpty ? 'asc' : catalogProv.sortDirection,
+      );
       
       // Manejar navegación inteligente desde Alertas
       final args = ModalRoute.of(context)?.settings.arguments;
