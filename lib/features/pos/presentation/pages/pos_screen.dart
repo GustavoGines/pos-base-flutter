@@ -68,9 +68,9 @@ class _PosScreenState extends State<PosScreen> {
       _initReverb();
       _searchFocusNode.requestFocus();
       // Siempre cargar la lista COMPLETA al entrar a POS, ignorando cualquier
-      // búsqueda que el módulo de Catálogo haya dejado activa en el provider.
+      // búsqueda u ordenamiento que el módulo de Catálogo haya dejado activo.
       Provider.of<CatalogProvider>(context, listen: false)
-          .loadProducts(page: 1, search: '');
+          .loadProducts(page: 1, search: '', sortBy: '');
       // Sincronizar y aplicar lista de precios fijada por la terminal
       final localTerminal = Provider.of<LocalTerminalProvider>(context, listen: false);
       final posProvider = Provider.of<PosProvider>(context, listen: false);
@@ -1193,11 +1193,18 @@ class _PosScreenState extends State<PosScreen> {
         final catalogProvider =
             Provider.of<CatalogProvider>(context, listen: false);
         final Map<int, int> soldItems = {};
+        final Map<int, Product> soldProductModels = {};
         for (var item in posProvider.lastSaleCart) {
+          final qty = item.quantity.ceil();
+          final increment = qty > 0 ? qty : 1;
           soldItems[item.product.id] =
-              (soldItems[item.product.id] ?? 0) + item.quantity.round();
+              (soldItems[item.product.id] ?? 0) + increment;
+          soldProductModels[item.product.id] = item.product;
         }
-        catalogProvider.updateProductSalesCountLocally(soldItems);
+        catalogProvider.updateProductSalesCountLocally(
+          soldItems,
+          soldProductModels: soldProductModels,
+        );
 
         // 3. REFRESCO SELECTIVO (FIRE-AND-FORGET):
         // Solo actualizamos el stock de los productos vendidos — sin recargar el catálogo completo.
@@ -2587,7 +2594,7 @@ class _PosScreenState extends State<PosScreen> {
                           style: TextStyle(
                               fontSize: 18, fontWeight: FontWeight.bold)),
                       Text(
-                          'Productos por peso · Sin código de barras · Más vendidos',
+                          'Productos por peso · Más vendidos · Orden alfabético',
                           style: TextStyle(fontSize: 12, color: Colors.grey)),
                     ],
                   ),
@@ -2607,7 +2614,7 @@ class _PosScreenState extends State<PosScreen> {
                     return IconButton(
                       icon: const Icon(Icons.refresh, color: Colors.grey),
                       tooltip: 'Actualizar catálogo',
-                      onPressed: () => context.read<CatalogProvider>().loadProducts(page: 1, search: ''),
+                      onPressed: () => context.read<CatalogProvider>().loadProducts(page: 1, search: '', sortBy: ''),
                     );
                   }
                 ),
@@ -2649,25 +2656,22 @@ class _PosScreenState extends State<PosScreen> {
                     final List<Product> displayItems;
                     if (_searchQuery.isEmpty) {
                       // Acceso Rápido Inteligente:
-                      // Nivel 1: Por peso o sin código de barras (siempre arriba)
-                      // Nivel 2: Más vendidos primero
-                      final level1 = catalog.products
-                          .where((p) =>
-                              p.isSoldByWeight ||
-                              (p.barcode == null || p.barcode!.isEmpty))
-                          .toList();
+                      // 1° Productos por peso siempre primero (ordenados entre sí por ventas desc)
+                      // 2° Todos los demás productos ordenados por ventas descendente (salesCount)
+                      // 3° Desempate alfabético por nombre
+                      displayItems = List<Product>.from(catalog.products)
+                        ..sort((a, b) {
+                          if (a.isSoldByWeight != b.isSoldByWeight) {
+                            return a.isSoldByWeight ? -1 : 1;
+                          }
 
-                      final others = catalog.products
-                          .where((p) =>
-                              !p.isSoldByWeight &&
-                              (p.barcode != null && p.barcode!.isNotEmpty))
-                          .toList();
+                          final salesCmp = b.salesCount.compareTo(a.salesCount);
+                          if (salesCmp != 0) return salesCmp;
 
-                      // Ordenar ambos grupos por ventas descendente
-                      level1.sort((a, b) => b.salesCount.compareTo(a.salesCount));
-                      others.sort((a, b) => b.salesCount.compareTo(a.salesCount));
-
-                      displayItems = [...level1, ...others];
+                          return a.name
+                              .toLowerCase()
+                              .compareTo(b.name.toLowerCase());
+                        });
                     } else {
                       // Resultados del servidor — búsqueda real sobre toda la BD
                       displayItems = _searchResults;

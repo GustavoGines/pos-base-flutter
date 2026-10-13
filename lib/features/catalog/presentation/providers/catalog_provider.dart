@@ -61,7 +61,7 @@ class CatalogProvider with ChangeNotifier {
   }
 
   // ── Sort ─────────────────────────────────────────────────
-  String _sortBy = 'name';
+  String _sortBy = '';
   String _sortDirection = 'asc';
   String get sortBy => _sortBy;
   String get sortDirection => _sortDirection;
@@ -91,8 +91,8 @@ class CatalogProvider with ChangeNotifier {
       final result = await getProductsUseCase(
         page: page,
         search: _searchQuery.isNotEmpty ? _searchQuery : null,
-        sortBy: _sortBy,
-        sortDirection: _sortDirection,
+        sortBy: _sortBy.isNotEmpty ? _sortBy : null,
+        sortDirection: _sortBy.isNotEmpty ? _sortDirection : null,
       );
       _products = List<Product>.from(result['data'] as List);
       _currentPage = result['current_page'] as int;
@@ -154,7 +154,11 @@ class CatalogProvider with ChangeNotifier {
 
   /// Refuerzo Senior: Actualiza los contadores de ventas en memoria para que la UI 
   /// se reordene al instante sin necesidad de una petición de red.
-  void updateProductSalesCountLocally(Map<int, int> productSales) {
+  /// Si un producto vendido desde el buscador no estaba en [_products], lo incorpora.
+  void updateProductSalesCountLocally(
+    Map<int, int> productSales, {
+    Map<int, Product>? soldProductModels,
+  }) {
     bool changed = false;
     for (var entry in productSales.entries) {
       final index = _products.indexWhere((p) => p.id == entry.key);
@@ -162,6 +166,14 @@ class CatalogProvider with ChangeNotifier {
         final current = _products[index];
         _products[index] = current.copyWith(
           salesCount: (current.salesCount) + entry.value,
+        );
+        changed = true;
+      } else if (soldProductModels != null &&
+          soldProductModels.containsKey(entry.key)) {
+        final soldProd = soldProductModels[entry.key]!;
+        _products.insert(
+          0,
+          soldProd.copyWith(salesCount: soldProd.salesCount + entry.value),
         );
         changed = true;
       }

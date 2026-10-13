@@ -110,8 +110,12 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
     try {
       final queryParams = <String, String>{'page': page.toString()};
       if (search != null && search.isNotEmpty) queryParams['search'] = search;
-      if (sortBy != null) queryParams['sort_by'] = sortBy;
-      if (sortDirection != null) queryParams['sort_direction'] = sortDirection;
+      if (sortBy != null && sortBy.isNotEmpty) {
+        queryParams['sort_by'] = sortBy;
+        if (sortDirection != null && sortDirection.isNotEmpty) {
+          queryParams['sort_direction'] = sortDirection;
+        }
+      }
       if (perPage != null) queryParams['per_page'] = perPage.toString();
 
       final uri = Uri.parse('$baseUrl/catalog/products').replace(queryParameters: queryParams);

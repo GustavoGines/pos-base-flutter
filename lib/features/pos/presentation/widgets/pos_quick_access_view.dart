@@ -300,7 +300,15 @@ class PosQuickAccessCatalogView extends StatelessWidget {
                                 color: Colors.orange.shade200,
                                 borderRadius: BorderRadius.circular(4),
                               ),
-                              child: Text('⚖️ Por Kg', style: TextStyle(fontSize: 8.5, color: Colors.orange.shade900, fontWeight: FontWeight.w600)),
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Text(
+                                  product.salesCount > 0
+                                      ? '⚖️ Por Kg · ⚡${product.salesCount} vend.'
+                                      : '⚖️ Por Kg',
+                                  style: TextStyle(fontSize: 8.5, color: Colors.orange.shade900, fontWeight: FontWeight.w600),
+                                ),
+                              ),
                             ),
                           ] else if (product.salesCount > 0) ...[
                             const SizedBox(height: 2),
