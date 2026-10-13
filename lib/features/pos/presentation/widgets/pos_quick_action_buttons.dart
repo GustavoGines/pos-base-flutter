@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/pos_provider.dart';
 import 'package:frontend_desktop/features/offers/presentation/providers/offer_provider.dart';
+import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
+import 'package:frontend_desktop/core/presentation/widgets/plan_upgrade_dialog.dart';
 import 'pos_quick_quotes_dialog.dart';
 import 'pos_quick_customer_dialog.dart';
 import 'pos_quick_offers_dialog.dart';
@@ -18,12 +20,13 @@ class PosQuickActionButtons extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer2<PosProvider, OfferProvider>(
-      builder: (context, pos, offerProv, _) {
+    return Consumer3<PosProvider, OfferProvider, SettingsProvider>(
+      builder: (context, pos, offerProv, settingsProv, _) {
         final pendingCount = pos.pendingCount;
         final hasCustomer = pos.selectedCustomer != null;
         final activeOffersCount = offerProv.activeOffers.length;
         final hasActiveQuote = pos.activeQuoteId != null;
+        final hasQuotes = settingsProv.settings?.features.quotes ?? false;
 
         return Row(
           children: [
@@ -52,13 +55,24 @@ class PosQuickActionButtons extends StatelessWidget {
             // 2. Presupuestos
             Expanded(
               child: _QuickTile(
-                icon: Icons.request_quote_rounded,
+                icon: hasQuotes ? Icons.request_quote_rounded : Icons.lock_outline_rounded,
                 label: 'Presupuestos',
-                color: const Color(0xFF3F51B5), // Índigo
-                badgeText: hasActiveQuote ? 'Activo' : null,
-                badgeColor: Colors.indigo.shade700,
-                tooltip: 'Generar presupuesto del carrito o recuperar anteriores',
+                color: hasQuotes ? const Color(0xFF3F51B5) : Colors.indigo.shade400,
+                badgeText: !hasQuotes ? 'PRO' : (hasActiveQuote ? 'Activo' : null),
+                badgeColor: !hasQuotes ? Colors.amber.shade800 : Colors.indigo.shade700,
+                tooltip: !hasQuotes
+                    ? 'Función PRO: Presupuestos (Requiere Plan Superior)'
+                    : 'Generar presupuesto del carrito o recuperar anteriores',
                 onTap: () {
+                  if (!hasQuotes) {
+                    PlanUpgradeDialog.show(
+                      context,
+                      featureName: 'Presupuestos Rápidos',
+                      description:
+                          'La generación y gestión de presupuestos está disponible en el Plan Ferretería/Corralón o como módulo adicional.',
+                    );
+                    return;
+                  }
                   showDialog(
                     context: context,
                     builder: (ctx) => const PosQuickQuotesDialog(),

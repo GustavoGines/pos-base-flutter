@@ -159,7 +159,19 @@ class QuoteRepository {
     if (response.statusCode == 201) {
       return Quote.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
     }
-    throw Exception('Error al guardar presupuesto: ${response.body}');
+
+    try {
+      final errorJson = jsonDecode(response.body);
+      if (errorJson is Map && errorJson['message'] != null) {
+        throw Exception(errorJson['message']);
+      }
+    } catch (e) {
+      if (e is! FormatException && !e.toString().contains('jsonDecode')) {
+        rethrow;
+      }
+    }
+
+    throw Exception('Error al guardar presupuesto (HTTP ${response.statusCode})');
   }
 
   Future<List<Quote>> listQuotes({String? search, String? status}) async {

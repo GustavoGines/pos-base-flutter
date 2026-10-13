@@ -7,6 +7,7 @@ import 'package:frontend_desktop/features/settings/presentation/providers/settin
 import 'package:frontend_desktop/features/auth/presentation/providers/auth_provider.dart';
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
+import 'package:frontend_desktop/core/presentation/widgets/plan_upgrade_dialog.dart';
 
 class PosQuickQuotesDialog extends StatefulWidget {
   const PosQuickQuotesDialog({super.key});
@@ -94,7 +95,20 @@ class _PosQuickQuotesDialogState extends State<PosQuickQuotesDialog> with Single
       }
     } catch (e) {
       if (mounted) {
-        SnackBarService.error(context, 'Error al guardar presupuesto: $e');
+        final cleanMsg = e.toString().replaceAll('Exception: ', '').trim();
+        if (cleanMsg.contains('FEATURE_NOT_LICENSED') ||
+            cleanMsg.contains('módulo requerido') ||
+            cleanMsg.contains('quotes')) {
+          Navigator.of(context).pop();
+          PlanUpgradeDialog.show(
+            context,
+            featureName: 'Presupuestos Rápidos',
+            description:
+                'La creación de presupuestos no está incluida en tu plan actual. Actualizá tu plan para emitir y guardar cotizaciones.',
+          );
+        } else {
+          SnackBarService.error(context, cleanMsg);
+        }
       }
     } finally {
       if (mounted) {
