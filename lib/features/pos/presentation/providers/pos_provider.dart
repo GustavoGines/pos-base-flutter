@@ -559,6 +559,7 @@ class PosProvider with ChangeNotifier {
     _recalledUserName = null;
     _errorMessage = null;
     _isShiftClosed = false;
+    _pendingFiscalInvoiceData = null;
     // No reseteamos estas variables aquí porque la UI las necesita
     // inmediatamente después de la venta para mostrar el PDF Split.
     // _wasLastSaleDispatched = false;
@@ -835,6 +836,7 @@ class PosProvider with ChangeNotifier {
       // Emisión de Factura Fiscal Electrónica ARCA/AFIP si fue requerida
       _lastElectronicInvoice = null;
       final fiscalData = _pendingFiscalInvoiceData;
+      _pendingFiscalInvoiceData = null; // Se consume una sola vez
       if (fiscalData != null) {
         final sId = int.tryParse(extractedSaleId);
         if (sId != null) {
@@ -1316,6 +1318,7 @@ class PosProvider with ChangeNotifier {
 
       // Emisión fiscal para venta pendiente si fue requerida
       final fiscalData = _pendingFiscalInvoiceData;
+      _pendingFiscalInvoiceData = null; // Se consume una sola vez
       if (fiscalData != null) {
         try {
           final invRes = await issueFiscalInvoice(saleId, fiscalData);

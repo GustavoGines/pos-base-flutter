@@ -16,9 +16,6 @@ import '../../../../core/utils/snack_bar_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:frontend_desktop/core/presentation/widgets/ticket_preview_dialog.dart';
 import 'package:frontend_desktop/core/providers/local_terminal_provider.dart';
-import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
-import '../../../../core/constants/app_permissions.dart';
-import '../../../../core/network/api_client.dart';
 import 'mercadopago_qr_dialog.dart';
 import 'posnet_waiting_dialog.dart';
 
@@ -288,6 +285,9 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   void initState() {
     super.initState();
     final posProvider = context.read<PosProvider>();
+
+    // Limpiar datos fiscales residuales de ventas anteriores para evitar contaminación
+    posProvider.setPendingFiscalInvoiceData(null);
 
     // Auto-seleccionar el cliente asignado al ticket actual o el último usado en Cta Cte
     _selectedCustomer = widget.initialCustomer ??
@@ -996,11 +996,9 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         };
       }
 
-      if (_isFiscalMode && fiscalPayload != null) {
-        try {
-          posProvider.setPendingFiscalInvoiceData(fiscalPayload);
-        } catch (_) {}
-      }
+      posProvider.setPendingFiscalInvoiceData(
+        (_isFiscalMode && fiscalPayload != null) ? fiscalPayload : null,
+      );
 
       if (isPending) {
         success = await posProvider.payPendingSale(
@@ -1080,21 +1078,6 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
           if (errMsg.contains('SESSION_EXPIRED') ||
               errMsg.contains('otro dispositivo')) {
             Navigator.of(context).pop(false);
-            return;
-          }
-
-          if (errMsg.contains('UNAUTHORIZED_PRICE_DISCOUNT')) {
-            final pin = await AdminPinDialog.verifyAndGetPin(
-              context,
-              action: 'Autorizar Rebajas y Precios Especiales',
-              permissionKey: AppPermissions.applyDiscounts,
-            );
-            if (pin != null && pin.isNotEmpty && mounted) {
-              final client = context.read<ApiClient>();
-              await client.withAdminPin(pin, () async {
-                await _processCheckout();
-              });
-            }
             return;
           }
 
