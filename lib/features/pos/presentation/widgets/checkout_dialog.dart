@@ -1,5 +1,6 @@
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:frontend_desktop/features/catalog/presentation/providers/catalog_provider.dart';
 import '../providers/pos_provider.dart';
@@ -1873,11 +1874,21 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       width: 76,
       child: Focus(
         focusNode: line.percentageFocus,
+        canRequestFocus: !_isCartAlreadySurcharged,
+        descendantsAreFocusable: !_isCartAlreadySurcharged,
         onFocusChange: (hasFocus) {
+          if (_isCartAlreadySurcharged) return;
           if (!hasFocus && line.method != null) {
-            final newPct = double.tryParse(
-                    line.percentageController.text.replaceAll(',', '.')) ??
-                0.0;
+            final text = line.percentageController.text.trim().replaceAll(',', '.');
+            if (text.isEmpty) {
+              line.percentageController.text = line.method!.surchargeValue.toStringAsFixed(1);
+              return;
+            }
+            final newPct = double.tryParse(text) ?? 0.0;
+            if (newPct < 0) {
+              line.percentageController.text = '0.0';
+              return;
+            }
             if (newPct != line.method!.surchargeValue) {
               provider.updatePaymentMethodSurcharge(line.method!.id, newPct);
             }
@@ -1886,7 +1897,11 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         child: TextFormField(
           controller: line.percentageController,
           readOnly: _isCartAlreadySurcharged,
+          canRequestFocus: !_isCartAlreadySurcharged,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          inputFormatters: [
+            FilteringTextInputFormatter.allow(RegExp(r'^\d*[\.,]?\d*')),
+          ],
           decoration: InputDecoration(
             labelText: '% Int.',
             labelStyle: TextStyle(fontSize: 12, color: Colors.orange.shade700),
