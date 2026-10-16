@@ -27,6 +27,7 @@ class PosQuickActionButtons extends StatelessWidget {
         final activeOffersCount = offerProv.activeOffers.length;
         final hasActiveQuote = pos.activeQuoteId != null;
         final hasQuotes = settingsProv.settings?.features.quotes ?? false;
+        final hasCurrentAccounts = settingsProv.settings?.features.currentAccounts ?? false;
 
         return Row(
           children: [
@@ -61,7 +62,7 @@ class PosQuickActionButtons extends StatelessWidget {
                 badgeText: !hasQuotes ? 'PRO' : (hasActiveQuote ? 'Activo' : null),
                 badgeColor: !hasQuotes ? Colors.amber.shade800 : Colors.indigo.shade700,
                 tooltip: !hasQuotes
-                    ? 'Función PRO: Presupuestos (Requiere Plan Superior)'
+                    ? '🔒 Presupuestos • Requiere Plan Premium'
                     : 'Generar presupuesto del carrito o recuperar anteriores',
                 onTap: () {
                   if (!hasQuotes) {
@@ -85,19 +86,38 @@ class PosQuickActionButtons extends StatelessWidget {
             // 3. Clientes
             Expanded(
               child: _QuickTile(
-                icon: Icons.person_pin_circle_rounded,
+                icon: hasCurrentAccounts
+                    ? Icons.person_pin_circle_rounded
+                    : Icons.lock_outline_rounded,
                 label: hasCustomer
                     ? (pos.selectedCustomer!.name.length > 9
                         ? '${pos.selectedCustomer!.name.substring(0, 8)}…'
                         : pos.selectedCustomer!.name)
                     : 'Clientes',
-                color: const Color(0xFF1976D2), // Azul cielo
-                badgeText: hasCustomer ? '✓' : null,
-                badgeColor: Colors.teal.shade700,
-                tooltip: hasCustomer
-                    ? 'Cliente: ${pos.selectedCustomer!.name} (Toca para gestionar)'
-                    : 'Gestionar o asignar clientes al ticket',
+                color: hasCurrentAccounts
+                    ? const Color(0xFF1976D2)
+                    : Colors.blue.shade400,
+                badgeText: !hasCurrentAccounts
+                    ? 'PRO'
+                    : (hasCustomer ? '✓' : null),
+                badgeColor: !hasCurrentAccounts
+                    ? Colors.amber.shade800
+                    : Colors.teal.shade700,
+                tooltip: !hasCurrentAccounts
+                    ? '🔒 Clientes y Cta. Cte. • Requiere Plan Premium'
+                    : (hasCustomer
+                        ? 'Cliente: ${pos.selectedCustomer!.name} (Toca para gestionar)'
+                        : 'Gestionar o asignar clientes al ticket'),
                 onTap: () {
+                  if (!hasCurrentAccounts) {
+                    PlanUpgradeDialog.show(
+                      context,
+                      featureName: 'Gestión de Clientes y Cuentas Corrientes',
+                      description:
+                          'El registro de clientes, asignación al ticket y control de Cuentas Corrientes (Fiado) está disponible en el Plan Premium o como módulo adicional.',
+                    );
+                    return;
+                  }
                   showDialog(
                     context: context,
                     builder: (ctx) => const PosQuickCustomerDialog(),

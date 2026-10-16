@@ -167,6 +167,7 @@ class FakeFiscalPosProvider extends ChangeNotifier implements PosProvider {
     String? userName,
     BusinessSettings? settings,
     int? userId,
+    int? customerId,
     List<CartItem>? items,
     bool showPreview = true,
     double shippingCost = 0.0,

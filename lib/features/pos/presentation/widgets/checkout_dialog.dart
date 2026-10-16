@@ -626,6 +626,11 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   }
 
   Future<void> _openCustomerPicker() async {
+    final settingsProv = context.read<SettingsProvider>();
+    if (!(settingsProv.settings?.features.currentAccounts ?? false)) {
+      _showProUpsellDialog('Cuenta Corriente');
+      return;
+    }
     final customerProvider = context.read<CustomerProvider>();
     if (customerProvider.customers.isEmpty && !customerProvider.isLoading) {
       try {
@@ -3125,6 +3130,11 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                                                     style: TextStyle(
                                                         fontSize: 12)),
                                                 onPressed: () {
+                                                  final settingsProv = context.read<SettingsProvider>();
+                                                  if ((settingsProv.settings?.features.currentAccounts ?? false) == false) {
+                                                    _showProUpsellDialog('Cuenta Corriente');
+                                                    return;
+                                                  }
                                                   final prov = context
                                                       .read<PosProvider>();
                                                   final ccMethod = prov
