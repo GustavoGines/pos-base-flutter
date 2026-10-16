@@ -140,6 +140,9 @@ class FakePosProvider extends ChangeNotifier implements PosProvider {
   double get iibbPerceptionRate => 0.0;
 
   @override
+  void setPendingFiscalInvoiceData(Map<String, dynamic>? data) {}
+
+  @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
@@ -688,6 +691,44 @@ void main() {
       await tester.tap(find.text('Cancelar Operación'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
+    });
+
+    testWidgets('When mpPaid is true, payment line dropdown is disabled and fields are read-only',
+        (WidgetTester tester) async {
+      await configureTestScreen(tester);
+      final posProvider = FakePosProvider(paymentMethods: testPaymentMethods);
+
+      await tester.pumpWidget(
+        buildTestCheckoutDialog(posProvider: posProvider, total: 5000.0),
+      );
+      await tester.pumpAndSettle();
+
+      // Cambiar a Mercado Pago QR
+      await tester.tap(find.byType(DropdownButtonFormField<PaymentMethod>));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Mercado Pago QR').last);
+      await tester.pumpAndSettle();
+
+      // Confirmar pago MP
+      final dynamic state = tester.state(find.byType(CheckoutDialog));
+      final line = state.paymentLines.first as PaymentLine;
+      state.confirmMpPaymentForTesting(line);
+      await tester.pumpAndSettle();
+
+      // Verificar que el dropdown de método de pago quedó deshabilitado (onChanged == null)
+      final dropdown = tester.widget<DropdownButtonFormField<PaymentMethod>>(
+        find.byType(DropdownButtonFormField<PaymentMethod>),
+      );
+      expect(dropdown.onChanged, isNull);
+
+      // Verificar que los TextField de la línea (Monto a Cubrir y % Int.) están en readOnly
+      final amountField = tester.widget<TextField>(
+        find.ancestor(
+          of: find.text('Monto a Cubrir'),
+          matching: find.byType(TextField),
+        ),
+      );
+      expect(amountField.readOnly, isTrue);
     });
   });
 }
