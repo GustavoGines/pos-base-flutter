@@ -450,8 +450,9 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   /// monto automáticamente para que el Saldo Pendiente quede en $0.
   void _syncPaymentsWithGrandTotal() {
     if (_lines.length != 1) return; // Solo auto-sync con pago único
-    final newTotal = _baseTotal + _shippingCostToApply;
     final line = _lines[0];
+    if (line.mpPaid) return; // No sobrescribir monto de un pago electrónico ya acreditado
+    final newTotal = _baseTotal + _shippingCostToApply;
     // Actualizar el amount de la línea
     final newText = newTotal.toInputFormat();
     if (line.controller.text != newText) {
@@ -498,6 +499,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   void _removeLine(int index) {
     if (_lines.length > 1) {
       final line = _lines[index];
+      if (line.mpPaid) return; // No permitir quitar un pago ya acreditado
       line.controller.removeListener(_onAmountChanged);
       line.percentageController.removeListener(_onAmountChanged);
       line.dispose();
@@ -1806,51 +1808,53 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
           ),
         );
       }).toList(),
-      onChanged: (val) {
-        if (val == null) return;
+      onChanged: line.mpPaid
+          ? null
+          : (val) {
+              if (val == null) return;
 
-        final bool isCuentaCorrienteSel = val.code == 'cuenta_corriente';
-        final bool isChequeSel = val.code == 'cheque';
-        final bool isLockedSel = (isCuentaCorrienteSel &&
-                settings?.features.currentAccounts != true) ||
-            (isChequeSel && settings?.features.checks != true);
+              final bool isCuentaCorrienteSel = val.code == 'cuenta_corriente';
+              final bool isChequeSel = val.code == 'cheque';
+              final bool isLockedSel = (isCuentaCorrienteSel &&
+                      settings?.features.currentAccounts != true) ||
+                  (isChequeSel && settings?.features.checks != true);
 
-        if (isLockedSel) {
-          _showProUpsellDialog(val.name);
+              if (isLockedSel) {
+                _showProUpsellDialog(val.name);
 
-          final prev = (idx < _previousValidMethods.length)
-              ? _previousValidMethods[idx]
-              : line.method;
+                final prev = (idx < _previousValidMethods.length)
+                    ? _previousValidMethods[idx]
+                    : line.method;
 
-          setState(() => line.updateMethod(
-                val,
-                defaultCardSurcharge: settings?.globalCardPercentage,
-                disableSurcharge: _isCartAlreadySurcharged,
-              ));
+                setState(() => line.updateMethod(
+                      val,
+                      defaultCardSurcharge: settings?.globalCardPercentage,
+                      disableSurcharge: _isCartAlreadySurcharged,
+                    ));
 
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) {
-              setState(() => line.updateMethod(
-                    prev,
-                    defaultCardSurcharge: settings?.globalCardPercentage,
-                    disableSurcharge: _isCartAlreadySurcharged,
-                  ));
-            }
-          });
-          return;
-        }
-        setState(() {
-          if (idx < _previousValidMethods.length) {
-            _previousValidMethods[idx] = val;
-          }
-          line.updateMethod(
-            val,
-            defaultCardSurcharge: settings?.globalCardPercentage,
-            disableSurcharge: _isCartAlreadySurcharged,
-          );
-        });
-        _syncCashField(autoFocus: val.isCash);
-      },
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted) {
+                    setState(() => line.updateMethod(
+                          prev,
+                          defaultCardSurcharge: settings?.globalCardPercentage,
+                          disableSurcharge: _isCartAlreadySurcharged,
+                        ));
+                  }
+                });
+                return;
+              }
+              setState(() {
+                if (idx < _previousValidMethods.length) {
+                  _previousValidMethods[idx] = val;
+                }
+                line.updateMethod(
+                  val,
+                  defaultCardSurcharge: settings?.globalCardPercentage,
+                  disableSurcharge: _isCartAlreadySurcharged,
+                );
+              });
+              _syncCashField(autoFocus: val.isCash);
+            },
     );
   }
 
@@ -1858,12 +1862,16 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     return TextFormField(
       controller: line.controller,
       keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      readOnly: line.mpPaid,
+      canRequestFocus: !line.mpPaid,
       inputFormatters: [
         FilteringTextInputFormatter.allow(RegExp(r'^\d*[\.,]?\d*')),
       ],
       decoration: InputDecoration(
         labelText: 'Monto a Cubrir',
         prefixText: '\$ ',
+        filled: line.mpPaid,
+        fillColor: line.mpPaid ? Colors.grey.shade100 : null,
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
@@ -1872,14 +1880,15 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   }
 
   Widget _buildPercentageFormField(PaymentLine line, PosProvider provider) {
+    final bool isLocked = _isCartAlreadySurcharged || line.mpPaid;
     return SizedBox(
       width: 76,
       child: Focus(
         focusNode: line.percentageFocus,
-        canRequestFocus: !_isCartAlreadySurcharged,
-        descendantsAreFocusable: !_isCartAlreadySurcharged,
+        canRequestFocus: !isLocked,
+        descendantsAreFocusable: !isLocked,
         onFocusChange: (hasFocus) {
-          if (_isCartAlreadySurcharged) return;
+          if (isLocked) return;
           if (!hasFocus && line.method != null) {
             final text = line.percentageController.text.trim().replaceAll(',', '.');
             if (text.isEmpty) {
@@ -1898,8 +1907,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         },
         child: TextFormField(
           controller: line.percentageController,
-          readOnly: _isCartAlreadySurcharged,
-          canRequestFocus: !_isCartAlreadySurcharged,
+          readOnly: isLocked,
+          canRequestFocus: !isLocked,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           inputFormatters: [
             FilteringTextInputFormatter.allow(RegExp(r'^\d*[\.,]?\d*')),
@@ -1907,6 +1916,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
           decoration: InputDecoration(
             labelText: '% Int.',
             labelStyle: TextStyle(fontSize: 12, color: Colors.orange.shade700),
+            filled: isLocked,
+            fillColor: isLocked ? Colors.grey.shade100 : null,
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
             contentPadding:
                 const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
@@ -1949,10 +1960,13 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   }
 
   Widget _buildRemoveButton(int idx) {
+    final line = _lines[idx];
     return IconButton(
-      tooltip: 'Quitar método de pago',
+      tooltip: line.mpPaid
+          ? 'No se puede quitar un pago ya acreditado'
+          : 'Quitar método de pago',
       icon: const Icon(Icons.remove_circle_outline, color: Colors.red),
-      onPressed: () => _removeLine(idx),
+      onPressed: line.mpPaid ? null : () => _removeLine(idx),
     );
   }
 
