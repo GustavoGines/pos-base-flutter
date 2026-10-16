@@ -4,6 +4,7 @@ import '../providers/pos_provider.dart';
 import 'package:frontend_desktop/features/quotes/presentation/providers/quote_provider.dart';
 import 'package:frontend_desktop/features/quotes/presentation/widgets/quote_success_dialog.dart';
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
+import 'package:frontend_desktop/features/customers/providers/customer_provider.dart';
 import 'package:frontend_desktop/features/auth/presentation/providers/auth_provider.dart';
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
@@ -399,7 +400,9 @@ class _PosQuickQuotesDialogState extends State<PosQuickQuotesDialog> with Single
                                 ),
                                 onPressed: () {
                                   final pos = Provider.of<PosProvider>(context, listen: false);
-                                  pos.loadQuoteToCart(q);
+                                  final customerProvider = Provider.of<CustomerProvider>(context, listen: false);
+                                  final settingsProvider = Provider.of<SettingsProvider>(context, listen: false);
+                                  pos.loadQuoteToCart(q, settings: settingsProvider.settings, availableCustomers: customerProvider.customers);
                                   Navigator.of(context).pop();
                                   SnackBarService.success(context, '📥 Presupuesto #${q.quoteNumber} cargado al carrito.');
                                 },

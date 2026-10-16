@@ -583,7 +583,7 @@ class PosProvider with ChangeNotifier {
   /// Carga un presupuesto en el carrito. Asume que Items ya vienen hidratados.
   /// Propaga el nivel de precio activo al momento de la carga para que los
   /// factores mayorista/tarjeta/custom se apliquen correctamente.
-  void loadQuoteToCart(Quote quote, {BusinessSettings? settings}) {
+  void loadQuoteToCart(Quote quote, {BusinessSettings? settings, List<Customer>? availableCustomers}) {
     clearCart();
     _activeQuoteId = quote.id;
     
@@ -627,6 +627,18 @@ class PosProvider with ChangeNotifier {
         ));
       }
     }
+    
+    // Intentar vincular cliente si el nombre del presupuesto coincide con un cliente registrado
+    if (quote.customerName != null && quote.customerName!.isNotEmpty && availableCustomers != null) {
+      final matchingCustomers = availableCustomers.where(
+        (c) => c.name.trim().toLowerCase() == quote.customerName!.trim().toLowerCase()
+      ).toList();
+      if (matchingCustomers.length == 1) {
+        _selectedCustomer = matchingCustomers.first;
+        _lastSelectedCustomer = _selectedCustomer;
+      }
+    }
+    
     notifyListeners();
   }
 
@@ -683,6 +695,12 @@ class PosProvider with ChangeNotifier {
     _activePendingSaleId = saleId;
     _shippingCost = double.tryParse(sale['shipping_cost']?.toString() ?? '0') ?? 0.0;
     _recalledUserName = sale['user']?['name']?.toString();
+    
+    // Restaurar cliente si estaba asignado a la orden en espera
+    if (sale['customer'] != null && sale['customer'] is Map<String, dynamic>) {
+      _selectedCustomer = Customer.fromJson(sale['customer'] as Map<String, dynamic>);
+      _lastSelectedCustomer = _selectedCustomer;
+    }
     
     // Al recuperar, mantenemos el despacho desactivado por defecto para que el cajero
     // lo active manualmente si corresponde, evitando cobros automáticos inesperados.
@@ -796,6 +814,7 @@ class PosProvider with ChangeNotifier {
           userName: userName,
           settings: settings,
           userId: userId,
+          customerId: customerId ?? _selectedCustomer?.id,
           items: cartSnapshot,
           shippingCost: shippingCostSnapshot,
           checkDetails: checkDetails,
@@ -1206,6 +1225,7 @@ class PosProvider with ChangeNotifier {
         shiftId: shiftId,
         items: cartSnapshot,
         userId: userId,
+        customerId: _selectedCustomer?.id,
         status: 'pending',
         shippingCost: (_currentRequiresDispatch && _currentFulfillmentStatus == 'pending') ? _shippingCost : 0.0,
       );
@@ -1287,6 +1307,7 @@ class PosProvider with ChangeNotifier {
     String? userName,
     BusinessSettings? settings,
     int? userId,
+    int? customerId,
     List<CartItem>? items,
     bool showPreview = true,
     double shippingCost = 0.0,
@@ -1311,6 +1332,7 @@ class PosProvider with ChangeNotifier {
         changeAmount: changeAmount,
         shiftId: shiftId,
         userId: userId,
+        customerId: customerId,
         items: items,
         shippingCost: shippingCost,
         checkDetails: checkDetails,

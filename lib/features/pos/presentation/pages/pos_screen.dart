@@ -14,6 +14,7 @@ import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
 import 'package:frontend_desktop/features/catalog/presentation/providers/catalog_provider.dart';
 import 'package:frontend_desktop/features/cash_register/presentation/providers/cash_register_provider.dart';
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
+import 'package:frontend_desktop/features/customers/providers/customer_provider.dart';
 import '../widgets/checkout_dialog.dart';
 import '../widgets/pos_quick_access_view.dart';
 import '../widgets/pos_financial_summary.dart';
@@ -306,7 +307,8 @@ class _PosScreenState extends State<PosScreen> {
 
             if (confirm == true) {
               final settings = context.read<SettingsProvider>().settings;
-              posProvider.loadQuoteToCart(quote, settings: settings);
+              final customerProvider = context.read<CustomerProvider>();
+              posProvider.loadQuoteToCart(quote, settings: settings, availableCustomers: customerProvider.customers);
               SnackBarService.success(
                   context, 'Presupuesto cargado listo para facturar.');
             }
@@ -932,7 +934,7 @@ class _PosScreenState extends State<PosScreen> {
 
     final success = await showDialog<bool>(
       context: context,
-      barrierDismissible: true,
+      barrierDismissible: false,
       builder: (_) => CheckoutDialog(
         total: posProvider.cartSubtotal,
         initialCustomer: posProvider.selectedCustomer,

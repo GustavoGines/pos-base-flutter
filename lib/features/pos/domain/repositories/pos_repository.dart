@@ -39,6 +39,7 @@ abstract class PosRepository {
     required double changeAmount,
     required int shiftId,
     int? userId,
+    int? customerId,
     List<CartItem>? items,
     double shippingCost = 0.0,
     dynamic checkDetails,

@@ -547,8 +547,10 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   }
 
   double get _actualTendered {
-    if (_cashRequired == 0) return 0;
-    return double.tryParse(_cashTenderedCtrl.text.replaceAll(',', '.')) ?? 0.0;
+    if (_cashRequired == 0) return 0.0;
+    final text = _cashTenderedCtrl.text.trim().replaceAll(',', '.');
+    if (text.isEmpty) return _cashRequired; // Campo vacío = pago exacto
+    return double.tryParse(text) ?? 0.0;
   }
 
   double get _change {
@@ -1014,12 +1016,13 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
               : null,
           payments: paymentsPayload,
           tenderedAmount: _actualTendered,
-          changeAmount: _change,
+          changeAmount: _change > 0 ? _change : 0.0,
           shiftId: shiftId,
           localTerminal: localTerminal,
           userName: userName,
           settings: _printReceipt ? settings : null,
           userId: userId,
+          customerId: _selectedCustomer?.id,
           showPreview: _showPreview,
           checkDetails: checkDetailsPayload,
         );
@@ -1034,7 +1037,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
               : null,
           payments: paymentsPayload,
           tenderedAmount: _actualTendered,
-          changeAmount: _change,
+          changeAmount: _change > 0 ? _change : 0.0,
           printerFormat: localTerminal.printerFormat,
           localTerminal: localTerminal,
           userId: userId,
@@ -1992,15 +1995,17 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       );
     }
 
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      backgroundColor: Colors.white,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 960, maxHeight: 800),
-        child: Container(
-          padding: const EdgeInsets.all(24),
-          child: Column(
+    return PopScope(
+      canPop: !_isSubmitting && !provider.isLoading && !_lines.any((l) => l.mpPaid),
+      child: Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        backgroundColor: Colors.white,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 960, maxHeight: 800),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
 // ──── Header
@@ -3233,7 +3238,9 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                     child: OutlinedButton(
                       style: OutlinedButton.styleFrom(
                           padding: const EdgeInsets.symmetric(vertical: 16)),
-                      onPressed: () => Navigator.pop(context),
+                      onPressed: (_isSubmitting || provider.isLoading || _lines.any((l) => l.mpPaid))
+                          ? null
+                          : () => Navigator.pop(context),
                       child: const Text('Cancelar',
                           style: TextStyle(fontSize: 16)),
                     ),
@@ -3271,6 +3278,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
             ],
           ),
         ),
+      ),
       ),
     );
   }
@@ -3368,7 +3376,10 @@ class _CustomerPickerDialogState extends State<_CustomerPickerDialog> {
                       return ListTile(
                         leading: CircleAvatar(
                           backgroundColor: Colors.blue.shade100,
-                          child: Text(c.name[0].toUpperCase(),
+                          child: Text(
+                              c.name.trim().isNotEmpty
+                                  ? c.name.trim()[0].toUpperCase()
+                                  : '?',
                               style: const TextStyle(color: Colors.blue)),
                         ),
                         title: Text(c.name,

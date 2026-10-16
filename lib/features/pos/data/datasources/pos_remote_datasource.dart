@@ -50,6 +50,7 @@ abstract class PosRemoteDataSource {
     required double changeAmount,
     required int shiftId,
     int? userId,
+    int? customerId,
     List<CartItem>? items,
     double shippingCost = 0.0,
     dynamic checkDetails,
@@ -276,6 +277,7 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
     required double changeAmount,
     required int shiftId,
     int? userId,
+    int? customerId,
     List<CartItem>? items,
     double shippingCost = 0.0,
     dynamic checkDetails,
@@ -290,6 +292,7 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
         if (iibbPerceptionAmount != null) 'iibb_perception_amount': iibbPerceptionAmount,
         if (iibbPerceptionRate != null) 'iibb_perception_rate': iibbPerceptionRate,
         if (userId != null) 'user_id': userId,
+        if (customerId != null) 'customer_id': customerId,
         if (checkDetails != null) 'check_details': checkDetails,
         'cash_shift_id': shiftId,
       };

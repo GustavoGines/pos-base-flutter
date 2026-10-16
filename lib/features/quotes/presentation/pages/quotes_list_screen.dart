@@ -5,6 +5,7 @@ import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
+import 'package:frontend_desktop/features/customers/providers/customer_provider.dart';
 import 'package:frontend_desktop/features/auth/presentation/providers/auth_provider.dart';
 import 'package:frontend_desktop/features/pos/presentation/providers/pos_provider.dart';
 import '../providers/quote_provider.dart';
@@ -723,7 +724,8 @@ class _QuoteActionSheetState extends State<_QuoteActionSheet> {
       }
 
       final settings = context.read<SettingsProvider>().settings;
-      context.read<PosProvider>().loadQuoteToCart(fullQuote, settings: settings);
+      final customerProvider = context.read<CustomerProvider>();
+      context.read<PosProvider>().loadQuoteToCart(fullQuote, settings: settings, availableCustomers: customerProvider.customers);
       Navigator.pop(context);       // cierra el sheet
       Navigator.pushNamed(context, '/home'); // va al POS sin destruir el historial
     } catch (e) {
