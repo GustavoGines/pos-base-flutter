@@ -197,5 +197,45 @@ void main() {
       expect(item.hasActiveOffer, isTrue);
       expect(item.discountSavings, 400.0); // (1000 - 800) * 2
     });
+
+    test('PosProvider recallOrderToCart with custom price_list preserves price without false offer badge and recalculates on setPriceTier', () {
+      final pendingSaleData = {
+        'id': 100,
+        'shipping_cost': '0',
+        'price_list': 'Jubilados',
+        'items': [
+          {
+            'product_id': 1,
+            'product_name': 'Producto Test',
+            'quantity': '1.0',
+            'unit_price': '900.0', // 10% descuento por lista Jubilados
+            'product': {
+              'id': 1,
+              'name': 'Producto Test',
+              'internal_code': 'PTEST',
+              'cost_price': '500.0',
+              'selling_price': '1000.0',
+              'stock': '10',
+              'is_sold_by_weight': false,
+            }
+          }
+        ]
+      };
+
+      provider.recallOrderToCart(pendingSaleData);
+
+      expect(provider.cart.length, 1);
+      final item = provider.cart.first;
+      expect(item.activeTier, PriceTier.custom);
+      expect(item.customTierLabel, 'Jubilados');
+      expect(item.unitPrice, 900.0);
+      // No debe marcarse como Oferta porque pertenece a la lista custom Jubilados
+      expect(item.hasActiveOffer, isFalse);
+
+      // Si el cajero cambia manualmente la lista a Minorista (base), debe recalcular a 1000.0
+      provider.setPriceTier(PriceTier.base);
+      expect(item.activeTier, PriceTier.base);
+      expect(item.unitPrice, 1000.0);
+    });
   });
 }

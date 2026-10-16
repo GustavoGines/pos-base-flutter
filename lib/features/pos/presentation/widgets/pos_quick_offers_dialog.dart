@@ -7,6 +7,7 @@ import 'package:frontend_desktop/features/catalog/presentation/providers/catalog
 import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
+import 'package:frontend_desktop/features/auth/presentation/widgets/admin_pin_dialog.dart';
 
 class PosQuickOffersDialog extends StatefulWidget {
   const PosQuickOffersDialog({super.key});
@@ -19,13 +20,13 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
   late TabController _tabController;
   final TextEditingController _offerNameCtrl = TextEditingController();
   final TextEditingController _discountCtrl = TextEditingController(text: '10');
-  final TextEditingController _productSearchCtrl = TextEditingController();
 
   String _periodType = 'daily'; // 'daily', 'weekly', 'monthly'
   final List<Product> _selectedProducts = [];
   bool _isSaving = false;
   int _searchSeq = 0; // Token de debounce del buscador de productos
   OfferModel? _editingOffer;
+  TextEditingController? _autoCompleteCtrl;
 
   @override
   void initState() {
@@ -52,7 +53,6 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
     _tabController.dispose();
     _offerNameCtrl.dispose();
     _discountCtrl.dispose();
-    _productSearchCtrl.dispose();
     super.dispose();
   }
 
@@ -74,7 +74,7 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
     setState(() {
       _editingOffer = offer;
       _offerNameCtrl.text = offer.name;
-      _discountCtrl.text = offer.discountPercentage?.toInt().toString() ?? (offer.discountPercentage?.toString() ?? '10');
+      _discountCtrl.text = offer.discountPercentage?.toString() ?? (offer.discountPercentage?.toString() ?? '10');
       _periodType = offer.periodType;
       _selectedProducts.clear();
       for (final pMap in offer.products) {
@@ -132,6 +132,14 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
       SnackBarService.warning(context, 'Seleccioná al menos un producto para aplicar la oferta.');
       return;
     }
+
+    final actionType = _editingOffer != null ? 'editar oferta' : 'crear oferta';
+    final authorized = await AdminPinDialog.verify(
+      context,
+      action: '$actionType "$name"',
+      permissionKey: 'apply_discounts',
+    );
+    if (!authorized) return;
 
     setState(() => _isSaving = true);
     final offerProv = Provider.of<OfferProvider>(context, listen: false);
@@ -347,7 +355,7 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
                             ),
                             child: Text(
                               offer.type == 'percentage'
-                                  ? '-${offer.discountPercentage?.toInt() ?? 0}%'
+                                  ? '-${offer.discountPercentage?.toStringAsFixed(1) ?? "0"}%'
                                   : '-\$${offer.discountAmount?.toCurrency() ?? "0"}',
                               style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
                             ),
@@ -377,10 +385,19 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
                                 ),
                               );
                               if (confirm == true) {
-                                await offerProv.deleteOffer(offer.id);
-                                if (mounted) {
+                                final authorized = await AdminPinDialog.verify(
+                                  context,
+                                  action: 'eliminar oferta "${offer.name}"',
+                                  permissionKey: 'apply_discounts',
+                                );
+                                if (!authorized) return;
+
+                                final success = await offerProv.deleteOffer(offer.id);
+                                if (success && mounted) {
                                   Provider.of<PosProvider>(context, listen: false).syncActiveOffers(offerProv.activeOffers);
                                   SnackBarService.success(context, 'Oferta eliminada.');
+                                } else if (mounted) {
+                                  SnackBarService.error(context, offerProv.errorMessage ?? 'Error al eliminar la oferta.');
                                 }
                               }
                             },
@@ -529,11 +546,18 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
                   _selectedProducts.add(p);
                 }
               });
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                _autoCompleteCtrl?.clear();
+              });
             },
             fieldViewBuilder: (ctx, ctrl, focusNode, onFieldSubmitted) {
+              _autoCompleteCtrl = ctrl;
               return TextField(
                 controller: ctrl,
                 focusNode: focusNode,
+                onSubmitted: (value) {
+                  ctrl.clear();
+                },
                 decoration: InputDecoration(
                   hintText: 'Buscar y agregar productos del catálogo...',
                   prefixIcon: const Icon(Icons.search, size: 20),

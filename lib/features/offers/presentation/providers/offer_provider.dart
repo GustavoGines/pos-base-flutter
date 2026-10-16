@@ -52,17 +52,41 @@ class OfferProvider with ChangeNotifier {
   }
 
   /// Busca si un producto tiene una oferta activa hoy.
-  OfferModel? getActiveOfferForProduct(int productId) {
+  /// Si hay múltiples ofertas para el mismo producto, retorna la que otorgue el menor precio (mayor descuento).
+  /// [basePrice] es el precio base de venta del producto (sellingPrice) para calcular el descuento real.
+  OfferModel? getActiveOfferForProduct(int productId, {double? basePrice}) {
+    OfferModel? bestOffer;
+    double? bestPrice;
+
     for (final offer in _activeOffers) {
       final hasProduct = offer.products.any((p) => p['id'] == productId);
-      if (hasProduct) return offer;
+      if (hasProduct) {
+        // Obtener el precio base del producto si no se proporcionó
+        double? currentBasePrice = basePrice;
+        if (currentBasePrice == null) {
+          final productData = offer.products.firstWhere(
+            (p) => p['id'] == productId,
+            orElse: () => {},
+          );
+          // Laravel devuelve selling_price como String debido al cast decimal:2
+          currentBasePrice = double.tryParse(productData['selling_price']?.toString() ?? '');
+        }
+
+        if (currentBasePrice != null && currentBasePrice > 0) {
+          final discountedPrice = offer.calculateDiscountedPrice(currentBasePrice, productId: productId);
+          if (bestPrice == null || discountedPrice < bestPrice) {
+            bestPrice = discountedPrice;
+            bestOffer = offer;
+          }
+        }
+      }
     }
-    return null;
+    return bestOffer;
   }
 
   /// Retorna el precio unitario con oferta si aplica hoy, o null si no hay oferta.
   double? getDiscountedPrice(Product product) {
-    final offer = getActiveOfferForProduct(product.id);
+    final offer = getActiveOfferForProduct(product.id, basePrice: product.sellingPrice);
     if (offer != null) {
       return offer.calculateDiscountedPrice(product.sellingPrice, productId: product.id);
     }

@@ -72,10 +72,14 @@ class CartItem {
   /// Indica si este ítem tiene algún descuento aplicado respecto al precio de lista
   bool get hasDiscount => subtotal < regularSubtotal - 0.001;
 
-  /// Indica si este ítem tiene una oferta promocional activa aplicada
+  /// Indica si este ítem tiene una oferta promocional activa aplicada.
+  /// En lista base (Minorista), cualquier promotionalPrice válido es oferta.
+  /// En listas especiales (mayorista/card/custom), requiere promotionalLabel o promotionalPeriodType
+  /// para distinguir una oferta real de un precio congelado de lista.
   bool get hasActiveOffer =>
       promotionalPrice != null &&
       promotionalPrice! > 0 &&
+      (activeTier == PriceTier.base || promotionalLabel != null || promotionalPeriodType != null) &&
       (unitPrice - promotionalPrice!).abs() < 0.01;
 
   /// Retorna el texto para el badge de oferta según su periodicidad o etiqueta
@@ -95,6 +99,20 @@ class CartItem {
             return clean;
           }
           return 'Oferta: $clean';
+        }
+        // Si no hay promotionalLabel ni promotionalPeriodType pero hay promotionalPrice,
+        // es un precio de lista especial (mayorista/card/custom) o una oferta recuperada en base
+        if (promotionalPrice != null && promotionalPrice! > 0) {
+          switch (activeTier) {
+            case PriceTier.wholesale:
+              return 'Lista Mayorista';
+            case PriceTier.card:
+              return 'Lista Tarjeta';
+            case PriceTier.custom:
+              return customTierLabel != null ? 'Lista: $customTierLabel' : 'Lista Personalizada';
+            default:
+              return 'Oferta';
+          }
         }
         return 'Oferta';
     }

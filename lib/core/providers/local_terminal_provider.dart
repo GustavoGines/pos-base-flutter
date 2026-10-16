@@ -12,23 +12,26 @@ class LocalTerminalProvider extends ChangeNotifier {
   static const String _lockedPriceTierLabelKey = 'local_locked_price_tier_label';
   static const String _catalogViewModeKey = 'local_catalog_view_mode';
   static const String _posSplitRatioKey = 'local_pos_split_ratio';
+  static const String _pinnedProductsKey = 'local_pinned_product_ids';
 
   // Opciones válidas: 'thermal_80', 'thermal_58', 'a4'
   String _printerFormat = 'thermal_80';
-  
+
   // Opciones válidas: 'usb', 'network', 'none'
   String _printerConnection = 'none';
-  
+
   String _printerNameOrIp = '';
   String _scaleComPort = '';
   String _pdfPaperSize = 'a4'; // Opciones válidas: 'a4', 'letter'
-  
+
   String _lockedPriceTier = 'none';
   String? _lockedPriceTierLabel;
-  
+
   String _terminalId = 'caja-1'; // Default for scanner
   String _catalogViewMode = 'grid_large';
   double _posSplitRatio = 0.35;
+
+  Set<int> _pinnedProductIds = {};
 
   bool _isInitialized = false;
 
@@ -42,6 +45,7 @@ class LocalTerminalProvider extends ChangeNotifier {
   String get terminalId => _terminalId;
   String get catalogViewMode => _catalogViewMode;
   double get posSplitRatio => _posSplitRatio;
+  Set<int> get pinnedProductIds => _pinnedProductIds;
   bool get isInitialized => _isInitialized;
 
   LocalTerminalProvider() {
@@ -64,6 +68,15 @@ class LocalTerminalProvider extends ChangeNotifier {
     _catalogViewMode = prefs.getString(_catalogViewModeKey) ?? 'grid_large';
     _posSplitRatio = prefs.getDouble(_posSplitRatioKey) ?? 0.35;
     _terminalId = prefs.getString('local_terminal_id') ?? 'caja-1';
+
+    final pinnedIdsList = prefs.getStringList(_pinnedProductsKey);
+    if (pinnedIdsList != null) {
+      _pinnedProductIds = pinnedIdsList
+          .map((idStr) => int.tryParse(idStr))
+          .whereType<int>()
+          .toSet();
+    }
+
     _isInitialized = true;
 
     // áááá CRÍTICO: sincronizar el singleton de impresión con la config guardada.
@@ -153,5 +166,21 @@ class LocalTerminalProvider extends ChangeNotifier {
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('local_terminal_id', id);
+  }
+
+  Future<void> togglePinnedProduct(int productId) async {
+    if (_pinnedProductIds.contains(productId)) {
+      _pinnedProductIds.remove(productId);
+    } else {
+      _pinnedProductIds.add(productId);
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(
+      _pinnedProductsKey,
+      _pinnedProductIds.map((id) => id.toString()).toList(),
+    );
+
+    notifyListeners();
   }
 }

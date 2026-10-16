@@ -60,6 +60,9 @@ class _PosScreenState extends State<PosScreen> {
   final _pendingOrdersLayerLink = LayerLink();
   bool _isPendingPinned = false; // Modo Híbrido
 
+  // Filtro rápido en memoria para el Acceso Rápido
+  String _quickAccessFilter = 'all'; // 'all', 'pinned', 'offers', 'weight', o 'cat_<id>'
+
   PusherChannelsClient? _pusher;
 
   @override
@@ -401,7 +404,7 @@ class _PosScreenState extends State<PosScreen> {
 
       final offerProvider = Provider.of<OfferProvider>(context, listen: false);
       final promoPrice = offerProvider.getDiscountedPrice(product);
-      final promoOffer = offerProvider.getActiveOfferForProduct(product.id);
+      final promoOffer = offerProvider.getActiveOfferForProduct(product.id, basePrice: product.sellingPrice);
 
       posProvider.submitWeighedProductWithPromo(
         product,
@@ -495,7 +498,7 @@ class _PosScreenState extends State<PosScreen> {
     final posProvider = Provider.of<PosProvider>(context, listen: false);
     final offerProvider = Provider.of<OfferProvider>(context, listen: false);
     final promoPrice = offerProvider.getDiscountedPrice(product);
-    final promoOffer = offerProvider.getActiveOfferForProduct(product.id);
+    final promoOffer = offerProvider.getActiveOfferForProduct(product.id, basePrice: product.sellingPrice);
 
     final success = posProvider.requestAddToCartWithPromo(
       product,
@@ -513,6 +516,115 @@ class _PosScreenState extends State<PosScreen> {
         promotionalPeriodType: promoOffer?.periodType,
       );
     }
+  }
+
+  void _handleDecrementProduct(Product product) {
+    final posProvider = Provider.of<PosProvider>(context, listen: false);
+
+    CartItem? cartItem;
+    try {
+      cartItem = posProvider.cart.firstWhere(
+        (item) => item.product.id == product.id,
+      );
+    } catch (_) {
+      return;
+    }
+
+    if (product.isSoldByWeight || cartItem.quantity <= 1) {
+      posProvider.removeFromCart(cartItem);
+    } else {
+      posProvider.updateQuantity(cartItem, cartItem.quantity - 1);
+    }
+  }
+
+  void _showProductQuickLookDialog(Product product) {
+    final localTerminal = Provider.of<LocalTerminalProvider>(context, listen: false);
+    final isPinned = localTerminal.pinnedProductIds.contains(product.id);
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(product.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (product.internalCode.isNotEmpty)
+                _buildInfoRow('Código Interno', product.internalCode),
+              if (product.barcode != null)
+                _buildInfoRow('Código de Barras', product.barcode!),
+              const Divider(height: 24),
+              _buildInfoRow('Stock Actual', '${product.stock}'),
+              if (product.minStock != null)
+                _buildInfoRow('Stock Mínimo', '${product.minStock}'),
+              const Divider(height: 24),
+              _buildInfoRow('Precio Base', '\$${product.sellingPrice.toCurrency()}'),
+              if (product.priceWholesale != null && product.priceWholesale! > 0)
+                _buildInfoRow('Precio Mayorista', '\$${product.priceWholesale!.toCurrency()}'),
+              if (product.priceCard != null && product.priceCard! > 0)
+                _buildInfoRow('Precio Tarjeta', '\$${product.priceCard!.toCurrency()}'),
+              if (product.priceTiers != null && product.priceTiers!.isNotEmpty) ...[
+                const Divider(height: 24),
+                const Text('Tramos por cantidad:', style: TextStyle(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 8),
+                ...product.priceTiers!.map((tier) {
+                  final minQ = double.tryParse(tier['min_quantity']?.toString() ?? '1') ?? 1.0;
+                  final uPrice = double.tryParse(tier['unit_price']?.toString() ?? '0') ?? 0.0;
+                  final qtyText = minQ == minQ.toInt() ? minQ.toInt().toString() : minQ.toStringAsFixed(2);
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Text('$qtyText+ unidades: \$${uPrice.toCurrency()}'),
+                  );
+                }),
+              ],
+            ],
+          ),
+        ),
+        actions: [
+          TextButton.icon(
+            icon: Icon(isPinned ? Icons.push_pin : Icons.push_pin_outlined),
+            label: Text(isPinned ? 'Desfijar' : 'Fijar'),
+            onPressed: () {
+              localTerminal.togglePinnedProduct(product.id);
+              Navigator.pop(ctx);
+              // Si estamos en filtro 'pinned' y ya no hay productos fijados, cambiar a 'all'
+              if (_quickAccessFilter == 'pinned' && localTerminal.pinnedProductIds.isEmpty) {
+                setState(() {
+                  _quickAccessFilter = 'all';
+                });
+              }
+            },
+          ),
+          const Spacer(),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cerrar'),
+          ),
+          ElevatedButton.icon(
+            icon: const Icon(Icons.add_shopping_cart),
+            label: const Text('Agregar al Carrito'),
+            onPressed: () {
+              Navigator.pop(ctx);
+              _handleProductSelection(product);
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInfoRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: const TextStyle(color: Colors.grey)),
+          Text(value, style: const TextStyle(fontWeight: FontWeight.w600)),
+        ],
+      ),
+    );
   }
 
   void _showWeightModal(Product product, PosProvider provider,
@@ -2611,8 +2723,8 @@ class _PosScreenState extends State<PosScreen> {
                       return const Padding(
                         padding: EdgeInsets.symmetric(horizontal: 16.0),
                         child: SizedBox(
-                          width: 20, 
-                          height: 20, 
+                          width: 20,
+                          height: 20,
                           child: CircularProgressIndicator(strokeWidth: 2)
                         ),
                       );
@@ -2628,6 +2740,8 @@ class _PosScreenState extends State<PosScreen> {
                 _buildViewModeSelector(context),
               ],
             ),
+            const SizedBox(height: 8),
+            _buildQuickAccessFilterBar(context),
           ] else ...[
             Row(
               children: [
@@ -2652,8 +2766,8 @@ class _PosScreenState extends State<PosScreen> {
                   fit: BoxFit.scaleDown,
                   child: PosWatermarkLogo(size: 360),
                 ),
-                Consumer<CatalogProvider>(
-                  builder: (context, catalog, child) {
+                Consumer3<CatalogProvider, OfferProvider, LocalTerminalProvider>(
+                  builder: (context, catalog, offerProv, localTerminal, child) {
                     if (catalog.isLoading) {
                       return const Center(child: CircularProgressIndicator());
                     }
@@ -2661,12 +2775,30 @@ class _PosScreenState extends State<PosScreen> {
                     // Determinar qué mostrar: resultados de API o Acceso Rápido
                     final List<Product> displayItems;
                     if (_searchQuery.isEmpty) {
-                      // Acceso Rápido Inteligente:
-                      // 1° Productos por peso siempre primero (ordenados entre sí por ventas desc)
-                      // 2° Todos los demás productos ordenados por ventas descendente (salesCount)
-                      // 3° Desempate alfabético por nombre
-                      displayItems = List<Product>.from(catalog.products)
+                      // Aplicar filtro rápido en memoria
+                      List<Product> filtered = List<Product>.from(catalog.products);
+
+                      if (_quickAccessFilter == 'pinned') {
+                        filtered = filtered.where((p) => localTerminal.pinnedProductIds.contains(p.id)).toList();
+                      } else if (_quickAccessFilter == 'offers') {
+                        filtered = filtered.where((p) => offerProv.getActiveOfferForProduct(p.id, basePrice: p.sellingPrice) != null).toList();
+                      } else if (_quickAccessFilter == 'weight') {
+                        filtered = filtered.where((p) => p.isSoldByWeight).toList();
+                      } else if (_quickAccessFilter.startsWith('cat_')) {
+                        final categoryName = _quickAccessFilter.substring(4);
+                        filtered = filtered.where((p) => p.category?.name == categoryName).toList();
+                      }
+
+                      // Ordenamiento inteligente con prioridad a fijados
+                      displayItems = filtered
                         ..sort((a, b) {
+                          final aPinned = localTerminal.pinnedProductIds.contains(a.id);
+                          final bPinned = localTerminal.pinnedProductIds.contains(b.id);
+
+                          if (aPinned != bPinned) {
+                            return aPinned ? -1 : 1;
+                          }
+
                           if (a.isSoldByWeight != b.isSoldByWeight) {
                             return a.isSoldByWeight ? -1 : 1;
                           }
@@ -2684,6 +2816,46 @@ class _PosScreenState extends State<PosScreen> {
                     }
 
                     if (displayItems.isEmpty) {
+                      if (_searchQuery.isEmpty && _quickAccessFilter != 'all' && catalog.products.isNotEmpty) {
+                        // Filtro activo devuelve 0 ítems pero el catálogo tiene productos
+                        String filterName = 'este filtro';
+                        if (_quickAccessFilter == 'pinned') {
+                          filterName = 'productos fijados';
+                        } else if (_quickAccessFilter == 'offers') {
+                          filterName = 'ofertas activas';
+                        } else if (_quickAccessFilter == 'weight') {
+                          filterName = 'productos por peso';
+                        } else if (_quickAccessFilter.startsWith('cat_')) {
+                          filterName = 'esta categoría';
+                        }
+
+                        return Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.filter_list_off,
+                                  size: 56, color: Colors.grey),
+                              const SizedBox(height: 12),
+                              Text(
+                                'No hay productos para $filterName',
+                                style: const TextStyle(color: Colors.grey, fontSize: 15),
+                                textAlign: TextAlign.center,
+                              ),
+                              const SizedBox(height: 8),
+                              TextButton.icon(
+                                icon: const Icon(Icons.clear_all),
+                                label: const Text('Ver todos los productos'),
+                                onPressed: () {
+                                  setState(() {
+                                    _quickAccessFilter = 'all';
+                                  });
+                                },
+                              ),
+                            ],
+                          ),
+                        );
+                      }
+
                       return Center(
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
@@ -2930,13 +3102,79 @@ class _PosScreenState extends State<PosScreen> {
     );
   }
 
+  Widget _buildQuickAccessFilterBar(BuildContext context) {
+    final localTerminal = context.watch<LocalTerminalProvider>();
+    final catalog = context.watch<CatalogProvider>();
+    final offerProv = context.watch<OfferProvider>();
+
+    final hasPinned = localTerminal.pinnedProductIds.isNotEmpty;
+    final hasOffers = catalog.products.any((p) => offerProv.getActiveOfferForProduct(p.id, basePrice: p.sellingPrice) != null);
+    final categories = <String, int>{};
+    for (final p in catalog.products) {
+      if (p.category?.name != null) {
+        categories[p.category!.name] = (categories[p.category!.name] ?? 0) + 1;
+      }
+    }
+    final topCategories = categories.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    final top6Categories = topCategories.take(6).map((e) => e.key).toList();
+
+    return SizedBox(
+      height: 36,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        children: [
+          _buildFilterChip('Todos', 'all', _quickAccessFilter),
+          if (hasPinned)
+            _buildFilterChip('📌 Fijados', 'pinned', _quickAccessFilter),
+          if (hasOffers)
+            _buildFilterChip('🔥 Ofertas', 'offers', _quickAccessFilter),
+          _buildFilterChip('⚖️ Por Peso', 'weight', _quickAccessFilter),
+          for (final cat in top6Categories)
+            _buildFilterChip(cat, 'cat_$cat', _quickAccessFilter),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFilterChip(String label, String value, String currentFilter) {
+    final isSelected = value == currentFilter;
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: FilterChip(
+        label: Text(label, style: TextStyle(fontSize: 12)),
+        selected: isSelected,
+        onSelected: (selected) {
+          setState(() {
+            _quickAccessFilter = selected ? value : 'all';
+          });
+        },
+        selectedColor: Colors.blue.withAlpha(25),
+        checkmarkColor: Colors.blueAccent,
+        labelStyle: TextStyle(
+          color: isSelected ? Colors.blueAccent : Colors.grey.shade700,
+          fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+        ),
+        shape: StadiumBorder(
+          side: BorderSide(
+            color: isSelected ? Colors.blueAccent : Colors.grey.shade300,
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildDynamicCatalogView(List<Product> displayItems, String viewMode) {
+    final localTerminal = Provider.of<LocalTerminalProvider>(context, listen: false);
     return PosQuickAccessCatalogView(
       products: displayItems,
       viewMode: viewMode,
       // El ranking Top solo aplica al Acceso Rápido; en búsquedas sería relativo a los resultados.
       showTopRanks: _searchQuery.isEmpty,
       onSelectProduct: _handleProductSelection,
+      onDecrementProduct: _handleDecrementProduct,
+      onQuickLook: _showProductQuickLookDialog,
+      pinnedProductIds: localTerminal.pinnedProductIds,
       priceBuilder: (product, isByWeight, fontSize) => _buildPriceWidget(product, isByWeight, fontSize),
     );
   }
@@ -2946,12 +3184,12 @@ class _PosScreenState extends State<PosScreen> {
       builder: (context, pos, offerProv, _) {
         double displayPrice = product.sellingPrice;
         if (pos.activeTier == PriceTier.wholesale) {
-          displayPrice = (product.priceWholesale != null && product.priceWholesale! > 0) 
-            ? product.priceWholesale! 
+          displayPrice = (product.priceWholesale != null && product.priceWholesale! > 0)
+            ? product.priceWholesale!
             : product.sellingPrice * pos.wholesaleFactor;
         } else if (pos.activeTier == PriceTier.card) {
-          displayPrice = (product.priceCard != null && product.priceCard! > 0) 
-            ? product.priceCard! 
+          displayPrice = (product.priceCard != null && product.priceCard! > 0)
+            ? product.priceCard!
             : product.sellingPrice * pos.cardFactor;
         } else if (pos.activeTier == PriceTier.custom) {
           displayPrice = product.sellingPrice * pos.currentCustomFactor;
@@ -2959,16 +3197,45 @@ class _PosScreenState extends State<PosScreen> {
 
         final promoPrice = offerProv.getDiscountedPrice(product);
         final hasPromo = promoPrice != null && promoPrice > 0 && promoPrice < displayPrice;
+        final originalPrice = displayPrice;
         if (hasPromo) {
           displayPrice = promoPrice;
+        }
+
+        if (hasPromo) {
+          return FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Text(
+                  isByWeight ? '\$${originalPrice.toCurrency()}/Kg' : '\$${originalPrice.toCurrency()}',
+                  style: TextStyle(
+                    color: Colors.grey.shade500,
+                    fontSize: fontSize - 2,
+                    decoration: TextDecoration.lineThrough,
+                    fontWeight: FontWeight.normal,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  isByWeight ? '\$${displayPrice.toCurrency()}/Kg' : '\$${displayPrice.toCurrency()}',
+                  style: TextStyle(
+                    color: const Color(0xFF7B1FA2),
+                    fontWeight: FontWeight.bold,
+                    fontSize: fontSize,
+                  ),
+                ),
+              ],
+            ),
+          );
         }
 
         return Text(
           isByWeight ? '\$${displayPrice.toCurrency()}/Kg' : '\$${displayPrice.toCurrency()}',
           style: TextStyle(
-            color: hasPromo
-                ? const Color(0xFF7B1FA2)
-                : (isByWeight ? Colors.orange.shade800 : Colors.green.shade700),
+            color: isByWeight ? Colors.orange.shade800 : Colors.green.shade700,
             fontWeight: FontWeight.bold,
             fontSize: fontSize,
           ),

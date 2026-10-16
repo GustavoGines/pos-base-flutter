@@ -144,6 +144,11 @@ class PosProvider with ChangeNotifier {
       item.cardFactor = _currentCardFactor;
       item.customFactor = _currentCustomFactor;
       item.customTierLabel = _customTierLabel;
+      // Si promotionalPrice provenía de un precio congelado de lista (sin label ni periodType),
+      // limpiarlo al cambiar manualmente de lista para que recalcule al nuevo tier
+      if (item.promotionalLabel == null && item.promotionalPeriodType == null) {
+        item.promotionalPrice = null;
+      }
     }
     notifyListeners();
   }
@@ -429,6 +434,8 @@ class PosProvider with ChangeNotifier {
         activeTier: _activeTier,
         wholesaleFactor: _currentWholesaleFactor,
         cardFactor: _currentCardFactor,
+        customFactor: _currentCustomFactor,
+        customTierLabel: _customTierLabel,
         promotionalPrice: promotionalPrice,
         promotionalLabel: promotionalLabel,
         promotionalPeriodType: promotionalPeriodType,
@@ -444,6 +451,11 @@ class PosProvider with ChangeNotifier {
           _cart[index].promotionalPrice = promotionalPrice;
           _cart[index].promotionalLabel = promotionalLabel;
           _cart[index].promotionalPeriodType = promotionalPeriodType;
+        } else {
+          // Si promotionalPrice es null, limpiar la oferta obsoleta del ítem existente
+          _cart[index].promotionalPrice = null;
+          _cart[index].promotionalLabel = null;
+          _cart[index].promotionalPeriodType = null;
         }
       } else {
         _cart.add(CartItem(
@@ -467,26 +479,40 @@ class PosProvider with ChangeNotifier {
   void syncActiveOffers(List<dynamic> activeOffers) {
     bool hasChanges = false;
     for (final item in _cart) {
-      dynamic matchedOffer;
+      // Buscar todas las ofertas aplicables a este producto
+      final applicableOffers = <dynamic>[];
       for (final offer in activeOffers) {
         final products = offer.products as List? ?? [];
         if (products.any((p) => p['id'] == item.product.id)) {
-          matchedOffer = offer;
-          break;
+          applicableOffers.add(offer);
         }
       }
-      if (matchedOffer != null) {
-        final discounted = matchedOffer.calculateDiscountedPrice(item.product.sellingPrice, productId: item.product.id) as double;
-        final periodType = matchedOffer.periodType as String?;
+
+      // Seleccionar la oferta que otorgue el menor precio (mayor descuento)
+      dynamic bestOffer;
+      double? bestPrice;
+      for (final offer in applicableOffers) {
+        final discounted = offer.calculateDiscountedPrice(item.product.sellingPrice, productId: item.product.id) as double;
+        if (bestPrice == null || discounted < bestPrice) {
+          bestPrice = discounted;
+          bestOffer = offer;
+        }
+      }
+
+      if (bestOffer != null) {
+        final discounted = bestOffer.calculateDiscountedPrice(item.product.sellingPrice, productId: item.product.id) as double;
+        final periodType = bestOffer.periodType as String?;
         if (item.promotionalPrice != discounted ||
-            item.promotionalLabel != matchedOffer.name ||
+            item.promotionalLabel != bestOffer.name ||
             item.promotionalPeriodType != periodType) {
           item.promotionalPrice = discounted;
-          item.promotionalLabel = matchedOffer.name;
+          item.promotionalLabel = bestOffer.name;
           item.promotionalPeriodType = periodType;
           hasChanges = true;
         }
-      } else if (item.promotionalPrice != null) {
+      } else if (item.promotionalPrice != null && item.promotionalLabel != null && item.promotionalPeriodType != null) {
+        // Solo limpiar promotionalPrice si es una oferta real (con label y periodType)
+        // No limpiar si es un precio de lista mayorista/custom (que no tiene label/periodType)
         item.promotionalPrice = null;
         item.promotionalLabel = null;
         item.promotionalPeriodType = null;
@@ -523,7 +549,7 @@ class PosProvider with ChangeNotifier {
       customerPhone: customerPhone ?? _selectedCustomer?.phone,
       notes: notes,
       userId: userId,
-      priceList: _activeTier.name,
+      priceList: _activeTier == PriceTier.custom ? (_customTierLabel ?? 'base') : _activeTier.name,
     );
     return quote;
   }
@@ -586,7 +612,7 @@ class PosProvider with ChangeNotifier {
   void loadQuoteToCart(Quote quote, {BusinessSettings? settings, List<Customer>? availableCustomers}) {
     clearCart();
     _activeQuoteId = quote.id;
-    
+
     // Intentar matchear el tier del presupuesto con el POS
     if (quote.priceList == 'wholesale') {
       setPriceTier(PriceTier.wholesale);
@@ -610,11 +636,13 @@ class PosProvider with ChangeNotifier {
         );
       }
     }
-  
+
     for (var item in quote.items) {
       if (item.product != null) {
         final prod = item.product!;
-        final hasPromo = item.unitPrice < prod.sellingPrice && item.unitPrice > 0;
+        // Si el precio pactado en el presupuesto es menor al precio de lista actual,
+        // congelamos ese precio usando promotionalPrice (sin label/periodType para no mostrarlo como "Oferta")
+        final hasDiscountedPrice = item.unitPrice < prod.sellingPrice && item.unitPrice > 0;
         _cart.add(CartItem(
           product: prod,
           quantity: item.quantity,
@@ -623,11 +651,13 @@ class PosProvider with ChangeNotifier {
           cardFactor: _currentCardFactor,
           customFactor: _currentCustomFactor,
           customTierLabel: _customTierLabel,
-          promotionalPrice: hasPromo ? item.unitPrice : null,
+          promotionalPrice: hasDiscountedPrice ? item.unitPrice : null,
+          promotionalLabel: null, // Sin label para no mostrar como "Oferta"
+          promotionalPeriodType: null, // Sin periodType para no mostrar como "Oferta"
         ));
       }
     }
-    
+
     // Intentar vincular cliente si el nombre del presupuesto coincide con un cliente registrado
     if (quote.customerName != null && quote.customerName!.isNotEmpty && availableCustomers != null) {
       final matchingCustomers = availableCustomers.where(
@@ -638,7 +668,7 @@ class PosProvider with ChangeNotifier {
         _lastSelectedCustomer = _selectedCustomer;
       }
     }
-    
+
     notifyListeners();
   }
 
@@ -662,6 +692,19 @@ class PosProvider with ChangeNotifier {
 
     final saleId = (sale['id'] as num).toInt();
     final rawItems = (sale['items'] as List?) ?? [];
+    final priceList = sale['price_list']?.toString() ?? 'base';
+
+    // Restaurar el tier/price_list de la orden en espera
+    if (priceList == 'wholesale') {
+      setPriceTier(PriceTier.wholesale);
+    } else if (priceList == 'card') {
+      setPriceTier(PriceTier.card);
+    } else if (priceList == 'base' || priceList == 'Minorista') {
+      setPriceTier(PriceTier.base);
+    } else {
+      // Lista custom - usamos el nombre de la lista como label
+      setPriceTier(PriceTier.custom, customFactor: 1.0, customLabel: priceList);
+    }
 
     final List<CartItem> recalledItems = rawItems.map<CartItem>((itemMap) {
       final prod = itemMap['product'] as Map<String, dynamic>? ?? {};
@@ -682,12 +725,28 @@ class PosProvider with ChangeNotifier {
         isSoldByWeight:
             prod['is_sold_by_weight'] == true || prod['is_sold_by_weight'] == 1,
       );
+
+      // Calcular el factor real si el precio pactado difiere del de lista (descuento o recargo)
+      double calculatedCustomFactor = _currentCustomFactor;
+      if (unitPriceCharged > 0 && originalSellingPrice > 0 && (unitPriceCharged - originalSellingPrice).abs() > 0.001) {
+        calculatedCustomFactor = unitPriceCharged / originalSellingPrice;
+      }
+
+      // Si el precio pactado es menor al de lista, congelarlo con promotionalPrice
+      // (sin label/periodType para no mostrar como "Oferta")
+      final hasDiscountedPrice = unitPriceCharged < originalSellingPrice && unitPriceCharged > 0;
+
       return CartItem(
         product: product,
         quantity: double.tryParse(itemMap['quantity'].toString()) ?? 1.0,
-        promotionalPrice: (unitPriceCharged < originalSellingPrice && unitPriceCharged > 0)
-            ? unitPriceCharged
-            : null,
+        activeTier: _activeTier,
+        wholesaleFactor: _currentWholesaleFactor,
+        cardFactor: _currentCardFactor,
+        customFactor: calculatedCustomFactor,
+        customTierLabel: _customTierLabel,
+        promotionalPrice: hasDiscountedPrice ? unitPriceCharged : null,
+        promotionalLabel: null, // Sin label para no mostrar como "Oferta"
+        promotionalPeriodType: null, // Sin periodType para no mostrar como "Oferta"
       );
     }).toList();
 
@@ -695,13 +754,13 @@ class PosProvider with ChangeNotifier {
     _activePendingSaleId = saleId;
     _shippingCost = double.tryParse(sale['shipping_cost']?.toString() ?? '0') ?? 0.0;
     _recalledUserName = sale['user']?['name']?.toString();
-    
+
     // Restaurar cliente si estaba asignado a la orden en espera
     if (sale['customer'] != null && sale['customer'] is Map<String, dynamic>) {
       _selectedCustomer = Customer.fromJson(sale['customer'] as Map<String, dynamic>);
       _lastSelectedCustomer = _selectedCustomer;
     }
-    
+
     // Al recuperar, mantenemos el despacho desactivado por defecto para que el cajero
     // lo active manualmente si corresponde, evitando cobros automáticos inesperados.
     _currentRequiresDispatch = false;
@@ -1228,6 +1287,7 @@ class PosProvider with ChangeNotifier {
         customerId: _selectedCustomer?.id,
         status: 'pending',
         shippingCost: (_currentRequiresDispatch && _currentFulfillmentStatus == 'pending') ? _shippingCost : 0.0,
+        priceList: _activeTier == PriceTier.base ? 'Minorista' : (_customTierLabel ?? _activeTier.toString().split('.').last),
       );
 
       clearCart();

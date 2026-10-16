@@ -26,6 +26,18 @@ class PosQuickAccessCatalogView extends StatelessWidget {
   /// como Top a productos con 1 o 2 ventas en un POS recién estrenado).
   static const int topMinSales = 5;
 
+  /// Callback para restar un producto del carrito (botón rápido - en tarjetas activas).
+  final ValueChanged<Product>? onDecrementProduct;
+
+  /// Callback para fijar/desfijar un producto en el Acceso Rápido.
+  final ValueChanged<Product>? onTogglePin;
+
+  /// Callback para vista rápida (clic derecho / long press).
+  final ValueChanged<Product>? onQuickLook;
+
+  /// IDs de productos fijados por terminal (para mostrar indicador 📌).
+  final Set<int> pinnedProductIds;
+
   const PosQuickAccessCatalogView({
     super.key,
     required this.products,
@@ -33,7 +45,58 @@ class PosQuickAccessCatalogView extends StatelessWidget {
     this.onSelectProduct,
     this.priceBuilder,
     this.showTopRanks = false,
+    this.onDecrementProduct,
+    this.onTogglePin,
+    this.onQuickLook,
+    this.pinnedProductIds = const {},
   });
+
+  /// Paleta de 6 tonos sobrios para categorías (hash determinístico).
+  static const List<Color> _categoryPalette = [
+    Color(0xFF3F51B5), // Indigo
+    Color(0xFF009688), // Teal
+    Color(0xFF2196F3), // Blue
+    Color(0xFF673AB7), // DeepPurple
+    Color(0xFF00BCD4), // Cyan
+    Color(0xFF607D8B), // BlueGrey
+  ];
+
+  /// Devuelve un color de acento determinístico para tarjetas sin foto.
+  /// - Productos pesables → Naranja
+  /// - Categorías → Hash sobre paleta curada de 6 tonos
+  /// - Fallback → AzulGrisáceo
+  Color _resolveSemanticAccent(Product product) {
+    if (product.isSoldByWeight) {
+      return Colors.orange.shade700;
+    }
+
+    if (product.category?.name != null && product.category!.name.isNotEmpty) {
+      final categoryName = product.category!.name.toLowerCase();
+      final hash = categoryName.codeUnits.fold<int>(0, (sum, unit) => sum + unit);
+      final index = hash % _categoryPalette.length;
+      return _categoryPalette[index];
+    }
+
+    return Colors.blueGrey.shade600;
+  }
+
+  /// Lectura segura de cantidad en carrito (60 FPS).
+  /// Devuelve 0.0 si PosProvider no está disponible (para tests aislados).
+  double _getCartQuantity(BuildContext context, int productId) {
+    try {
+      final pos = Provider.of<PosProvider?>(context, listen: true);
+      if (pos == null) return 0.0;
+      double total = 0.0;
+      for (final item in pos.cart) {
+        if (item.product.id == productId) {
+          total += item.quantity;
+        }
+      }
+      return total;
+    } catch (_) {
+      return 0.0;
+    }
+  }
 
   /// Calcula el ranking Top 3 (1, 2, 3) entre los productos con al menos [topMinSales] ventas.
   Map<int, int> _computeTopRanks() {
@@ -376,155 +439,315 @@ class PosQuickAccessCatalogView extends StatelessWidget {
         : null;
     final hasImage = uri != null && uri.hasScheme && uri.hasAuthority && uri.host.isNotEmpty;
 
+    final cartQty = _getCartQuantity(context, product.id);
+    final isPinned = pinnedProductIds.contains(product.id);
+    final accentColor = _resolveSemanticAccent(product);
+
     return InkWell(
       borderRadius: BorderRadius.circular(10),
       onTap: () => onSelectProduct?.call(product),
+      onSecondaryTap: () => onQuickLook?.call(product),
+      onLongPress: () => onQuickLook?.call(product),
       child: Card(
         elevation: 2,
         clipBehavior: Clip.antiAlias,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        child: Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(10),
-            gradient: LinearGradient(
-              colors: isByWeight ? [Colors.orange.shade50, Colors.white] : [Colors.blue.shade50, Colors.white],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+          side: BorderSide(
+            color: cartQty > 0
+                ? const Color(0xFF1E88E5)
+                : Colors.grey.shade200,
+            width: cartQty > 0 ? 2.0 : 1.0,
           ),
+        ),
+        child: Container(
+          color: Colors.white,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // ─── HEADER: Prominent Product Image + Floating Badges ───
-              Expanded(
-                flex: 5,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    Container(
-                      color: isByWeight ? Colors.orange.shade50 : Colors.blue.shade50,
-                      child: hasImage
-                          ? CachedNetworkImage(
-                              imageUrl: product.imageUrl!,
-                              width: double.infinity,
-                              height: double.infinity,
-                              fit: BoxFit.contain,
-                              placeholder: (context, url) => const Center(
-                                child: SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
-                                ),
-                              ),
-                              errorWidget: (context, url, error) => Center(
-                                child: Icon(
-                                  isByWeight ? Icons.scale_rounded : Icons.inventory_2_outlined,
-                                  color: isByWeight ? Colors.orange.shade600 : Colors.blue.shade600,
-                                  size: isMedium ? 30 : 42,
-                                ),
-                              ),
-                            )
-                          : Center(
-                              child: Icon(
-                                isByWeight ? Icons.scale_rounded : Icons.inventory_2_outlined,
-                                color: isByWeight ? Colors.orange.shade600 : Colors.blue.shade600,
-                                size: isMedium ? 30 : 42,
-                              ),
+              if (hasImage) ...[
+                // ─── VARIANTE A: TARJETA CON FOTO ───
+                Expanded(
+                  flex: 5,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      Container(
+                        color: Colors.white,
+                        child: CachedNetworkImage(
+                          imageUrl: product.imageUrl!,
+                          width: double.infinity,
+                          height: double.infinity,
+                          fit: BoxFit.contain,
+                          placeholder: (context, url) => const Center(
+                            child: SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
                             ),
-                    ),
-                    // Badges flotantes del encabezado en UNA sola fila para que nunca se superpongan
-                    // (el grid reparte anchos de tarjeta variables): el de ventas se achica si falta lugar.
-                    if (isByWeight || product.salesCount > 0)
-                      Positioned(
-                        top: 4,
-                        left: 4,
-                        right: 4,
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            if (isByWeight)
-                              Container(
-                                padding: EdgeInsets.symmetric(
-                                  horizontal: isMedium ? 4.0 : 5.5,
-                                  vertical: 1.5,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: Colors.orange.shade100.withValues(alpha: 0.95),
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: Colors.orange.shade300, width: 0.8),
-                                ),
-                                child: Text(
-                                  isMedium ? '⚖️ Kg' : '⚖️ Por Kg',
-                                  maxLines: 1,
-                                  style: TextStyle(
-                                    fontSize: isMedium ? 7.5 : 8.5,
-                                    color: Colors.orange.shade900,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                              ),
-                            const SizedBox(width: 4),
-                            if (product.salesCount > 0)
-                              Expanded(
-                                child: Align(
-                                  alignment: Alignment.topRight,
-                                  child: FittedBox(
-                                    fit: BoxFit.scaleDown,
-                                    alignment: Alignment.topRight,
-                                    child: _buildSalesBadge(
-                                      product,
-                                      topRank: topRank,
-                                      compact: isMedium,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                          ],
+                          ),
+                          errorWidget: (context, url, error) => Center(
+                            child: Icon(
+                              isByWeight ? Icons.scale_rounded : Icons.inventory_2_outlined,
+                              color: isByWeight ? Colors.orange.shade600 : Colors.blue.shade600,
+                              size: isMedium ? 30 : 42,
+                            ),
+                          ),
                         ),
                       ),
-                  ],
-                ),
-              ),
-
-              // ─── BODY: Clean Product Name & Price ───
-              Expanded(
-                flex: 5,
-                child: Padding(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: isMedium ? 5.0 : 8.0,
-                    vertical: isMedium ? 4.0 : 6.0,
+                      if (isByWeight || isPinned)
+                        Positioned(
+                          top: 4,
+                          left: 4,
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: Alignment.topLeft,
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                if (isByWeight)
+                                  Container(
+                                    padding: EdgeInsets.symmetric(
+                                      horizontal: isMedium ? 4.0 : 5.5,
+                                      vertical: 1.5,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.orange.shade100.withValues(alpha: 0.95),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(color: Colors.orange.shade300, width: 0.8),
+                                    ),
+                                    child: Text(
+                                      isMedium ? '⚖️ Kg' : '⚖️ Por Kg',
+                                      maxLines: 1,
+                                      style: TextStyle(
+                                        fontSize: isMedium ? 7.5 : 8.5,
+                                        color: Colors.orange.shade900,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                  ),
+                                const SizedBox(width: 4),
+                                if (isPinned)
+                                  const Icon(Icons.push_pin, size: 14, color: Colors.blueGrey),
+                              ],
+                            ),
+                          ),
+                        ),
+                      if (product.salesCount > 0)
+                        Positioned(
+                          top: 4,
+                          right: 4,
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: Alignment.topRight,
+                            child: _buildSalesBadge(
+                              product,
+                              topRank: topRank,
+                              compact: isMedium,
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Expanded(
-                        child: Center(
+                ),
+                Expanded(
+                  flex: 5,
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: isMedium ? 5.0 : 8.0,
+                      vertical: isMedium ? 4.0 : 6.0,
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
                           child: Text(
                             product.name,
-                            textAlign: TextAlign.center,
+                            textAlign: TextAlign.start,
                             style: TextStyle(
-                              fontWeight: FontWeight.bold,
+                              fontWeight: FontWeight.w700,
                               fontSize: isMedium ? 11 : 12,
                               height: 1.15,
+                              color: const Color(0xFF1E293B),
                             ),
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: isByWeight ? Colors.orange.shade100 : Colors.green.shade50,
-                          borderRadius: BorderRadius.circular(6),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Flexible(
+                              child: _renderPrice(context, product, isByWeight, isMedium ? 11 : 12),
+                            ),
+                            if (cartQty > 0) ...[
+                              const SizedBox(width: 4),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF1E88E5).withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  isByWeight ? cartQty.toStringAsFixed(2) : cartQty.toInt().toString(),
+                                  style: const TextStyle(
+                                    fontSize: 9,
+                                    color: Color(0xFF1E88E5),
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 2),
+                              InkWell(
+                                onTap: () => onDecrementProduct?.call(product),
+                                borderRadius: BorderRadius.circular(4),
+                                child: const Padding(
+                                  padding: EdgeInsets.all(2),
+                                  child: Icon(Icons.remove_circle_outline, size: 18, color: Color(0xFF1E88E5)),
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
-                        child: _renderPrice(context, product, isByWeight, isMedium ? 11 : 12),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
-              ),
+              ] else ...[
+                // ─── VARIANTE B: TARJETA SIN FOTO (TIPOGRÁFICA) ───
+                Container(height: 4, color: accentColor),
+                Expanded(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: isMedium ? 5.0 : 8.0,
+                      vertical: isMedium ? 4.0 : 6.0,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Header semántico compacto
+                        FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                decoration: BoxDecoration(
+                                  color: accentColor.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      isByWeight ? Icons.scale_rounded : Icons.inventory_2_outlined,
+                                      size: 13,
+                                      color: accentColor,
+                                    ),
+                                    const SizedBox(width: 3),
+                                    Text(
+                                      product.category?.name ?? (isByWeight ? 'Por Peso' : (product.internalCode.isNotEmpty ? product.internalCode : 'N/A')),
+                                      style: TextStyle(
+                                        fontSize: 9,
+                                        color: accentColor,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              if (isPinned)
+                                const Icon(Icons.push_pin, size: 12, color: Colors.blueGrey),
+                              const SizedBox(width: 4),
+                              if (product.salesCount > 0)
+                                _buildSalesBadge(product, topRank: topRank, compact: true),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        // Nombre expandido (3 líneas)
+                        Expanded(
+                          child: Text(
+                            product.name,
+                            textAlign: TextAlign.start,
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: isMedium ? 10 : 11,
+                              height: 1.2,
+                              color: const Color(0xFF1E293B),
+                            ),
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        // Código interno sutil
+                        if (product.internalCode.isNotEmpty)
+                          Text(
+                            product.internalCode,
+                            style: TextStyle(
+                              fontSize: 9,
+                              color: Colors.grey.shade500,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        const SizedBox(height: 4),
+                        // Footer: Precio + Stock + Acción
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Flexible(
+                              child: _renderPrice(context, product, isByWeight, isMedium ? 10 : 11),
+                            ),
+                            if (!product.isCombo &&
+                                product.minStock != null &&
+                                product.stock <= product.minStock!)
+                              Container(
+                                width: 6,
+                                height: 6,
+                                decoration: BoxDecoration(
+                                  color: Colors.orange.shade700,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                            if (cartQty > 0) ...[
+                              const SizedBox(width: 4),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF1E88E5).withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  isByWeight ? cartQty.toStringAsFixed(2) : cartQty.toInt().toString(),
+                                  style: const TextStyle(
+                                    fontSize: 9,
+                                    color: Color(0xFF1E88E5),
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 2),
+                              IconButton(
+                                icon: const Icon(Icons.remove_circle_outline, size: 18),
+                                color: const Color(0xFF1E88E5),
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(),
+                                onPressed: () => onDecrementProduct?.call(product),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
         ),
