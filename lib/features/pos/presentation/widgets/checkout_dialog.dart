@@ -563,23 +563,22 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   }
 
   bool get _canSubmit {
-    if (_pendingBalance > 0.01) return false; // Saldo pendiente sin cubrir
+    // Bloquear si falta saldo O si hay sobrepago en las líneas
+    if (_pendingBalance.abs() > 0.01) return false;
+    // Bloquear si alguna línea tiene monto <= 0 o inválido
+    if (_lines.any((l) => l.amount <= 0.001)) return false;
     if (_isFiscalMode && !_isFiscalValid) return false;
-    // Solo bloquear si el cajero ingresó un monto recibido MENOR al efectivo de la línea
-    // y el campo fue modificado manualmente (no está vacío ni igual al monto de la línea)
+    // Validar efectivo recibido
     if (_cashRequired > 0) {
       final tendered = _actualTendered;
       final cashText = _cashTenderedCtrl.text.trim();
-      // Si el campo tiene algo escrito y es menor al requerido → bloquear
-      if (cashText.isNotEmpty &&
-          tendered > 0 &&
-          tendered < (_cashRequired - 0.01)) {
+      // Bloquea si ingresó un monto menor al requerido (incluyendo 0 o negativos)
+      if (cashText.isNotEmpty && tendered < (_cashRequired - 0.01)) {
         return false;
       }
     }
     if (_hasCuentaCorriente && _selectedCustomer == null) return false;
 
-    // Bloquear si hay pagos de Mercado Pago sin confirmar
     final hasUnconfirmedMp = _lines.any((l) =>
         (l.method?.code == 'mercadopago_qr' ||
             l.method?.code == 'mercadopago_point') &&
@@ -1859,6 +1858,9 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     return TextFormField(
       controller: line.controller,
       keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      inputFormatters: [
+        FilteringTextInputFormatter.allow(RegExp(r'^\d*[\.,]?\d*')),
+      ],
       decoration: InputDecoration(
         labelText: 'Monto a Cubrir',
         prefixText: '\$ ',
@@ -2557,16 +2559,20 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                                 spacing: 8,
                                 runSpacing: 4,
                                 children: [
-                                  const Text('Saldo Pendiente a Cubrir:',
-                                      style: TextStyle(fontSize: 16)),
                                   Text(
-                                    _pendingBalance > 0
-                                        ? '\$${_pendingBalance.toCurrency()}'
+                                    _pendingBalance < -0.01
+                                        ? 'Monto Excedido:'
+                                        : 'Saldo Pendiente a Cubrir:',
+                                    style: const TextStyle(fontSize: 16),
+                                  ),
+                                  Text(
+                                    _pendingBalance.abs() > 0.01
+                                        ? '\$${_pendingBalance.abs().toCurrency()}'
                                         : '\$0.00',
                                     style: TextStyle(
                                         fontSize: 20,
                                         fontWeight: FontWeight.bold,
-                                        color: _pendingBalance > 0.01
+                                        color: _pendingBalance.abs() > 0.01
                                             ? Colors.red.shade700
                                             : Colors.green.shade700),
                                   ),
@@ -2585,6 +2591,9 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                                         focusNode: _cashTenderedFocus,
                                         keyboardType: const TextInputType
                                             .numberWithOptions(decimal: true),
+                                        inputFormatters: [
+                                          FilteringTextInputFormatter.allow(RegExp(r'^\d*[\.,]?\d*')),
+                                        ],
                                         textInputAction: TextInputAction.done,
                                         onTap: () {
                                           // Selecciona todo el texto pre-cargado para sobreescribirlo rápido
