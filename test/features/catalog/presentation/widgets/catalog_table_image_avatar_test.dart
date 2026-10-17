@@ -343,13 +343,15 @@ void main() {
       // Test on 1024x768
       tester.view.physicalSize = const Size(1024, 768);
       tester.view.devicePixelRatio = 1.0;
-      await tester.pumpWidget(buildTestCatalog(products: sampleProducts));
+      await tester.pumpWidget(buildTestCatalog(
+          products: sampleProducts, viewport: const Size(1024, 768)));
       await tester.pump();
       expect(tester.takeException(), isNull);
 
       // Test on compact 800x600 (horizontal scroll graceful behavior)
       tester.view.physicalSize = const Size(800, 600);
-      await tester.pumpWidget(buildTestCatalog(products: sampleProducts));
+      await tester.pumpWidget(buildTestCatalog(
+          products: sampleProducts, viewport: const Size(800, 600)));
       await tester.pump();
       expect(tester.takeException(), isNull);
 

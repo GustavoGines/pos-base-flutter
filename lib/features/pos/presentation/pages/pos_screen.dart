@@ -552,96 +552,561 @@ class _PosScreenState extends State<PosScreen> {
     _searchFocusNode.requestFocus();
   }
 
+
+  /// Color de acento semántico por categoría (misma paleta que las tarjetas del catálogo).
+  static const List<Color> _categoryPalette = [
+    Color(0xFF3F51B5),
+    Color(0xFF009688),
+    Color(0xFF2196F3),
+    Color(0xFF673AB7),
+    Color(0xFF00BCD4),
+    Color(0xFF607D8B),
+  ];
+
+  Color _quickLookAccent(Product product) {
+    if (product.isSoldByWeight) return Colors.orange.shade700;
+    if (product.category?.name != null && product.category!.name.isNotEmpty) {
+      final name = product.category!.name.toLowerCase();
+      final hash = name.codeUnits.fold<int>(0, (sum, unit) => sum + unit);
+      return _categoryPalette[hash % _categoryPalette.length];
+    }
+    return Colors.blueGrey.shade600;
+  }
+
+  String _formatQuickLookStock(double qty, bool isByWeight) =>
+      isByWeight ? '${qty.toStringAsFixed(3)} Kg' : '${qty.toInt()} u.';
+
   void _showProductQuickLookDialog(Product product) {
-    final localTerminal = Provider.of<LocalTerminalProvider>(context, listen: false);
+    final localTerminal =
+        Provider.of<LocalTerminalProvider>(context, listen: false);
+    final posProvider = Provider.of<PosProvider>(context, listen: false);
+    final offerProv = Provider.of<OfferProvider>(context, listen: false);
     final isPinned = localTerminal.pinnedProductIds.contains(product.id);
+    final isByWeight = product.isSoldByWeight;
+    final accent = _quickLookAccent(product);
+
+    double cartQty = 0;
+    for (final item in posProvider.cart) {
+      if (item.product.id == product.id) {
+        cartQty += item.quantity;
+      }
+    }
+
+    final promoPrice = offerProv.getDiscountedPrice(product);
+    final hasPromo = promoPrice != null &&
+        promoPrice > 0 &&
+        promoPrice < product.sellingPrice;
+    final lowStock = !product.isCombo &&
+        product.minStock != null &&
+        product.stock <= product.minStock!;
+
+    final uri = product.imageUrl != null && product.imageUrl!.isNotEmpty
+        ? Uri.tryParse(product.imageUrl!)
+        : null;
+    final hasImage =
+        uri != null && uri.hasScheme && uri.hasAuthority && uri.host.isNotEmpty;
 
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(product.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-        content: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (product.internalCode.isNotEmpty)
-                _buildInfoRow('Código Interno', product.internalCode),
-              if (product.barcode != null)
-                _buildInfoRow('Código de Barras', product.barcode!),
-              const Divider(height: 24),
-              _buildInfoRow('Stock Actual', '${product.stock}'),
-              if (product.minStock != null)
-                _buildInfoRow('Stock Mínimo', '${product.minStock}'),
-              const Divider(height: 24),
-              _buildInfoRow('Precio Base', '\$${product.sellingPrice.toCurrency()}'),
-              if (product.priceWholesale != null && product.priceWholesale! > 0)
-                _buildInfoRow('Precio Mayorista', '\$${product.priceWholesale!.toCurrency()}'),
-              if (product.priceCard != null && product.priceCard! > 0)
-                _buildInfoRow('Precio Tarjeta', '\$${product.priceCard!.toCurrency()}'),
-              if (product.priceTiers != null && product.priceTiers!.isNotEmpty) ...[
-                const Divider(height: 24),
-                const Text('Tramos por cantidad:', style: TextStyle(fontWeight: FontWeight.bold)),
-                const SizedBox(height: 8),
-                ...product.priceTiers!.map((tier) {
-                  final minQ = double.tryParse(tier['min_quantity']?.toString() ?? '1') ?? 1.0;
-                  final uPrice = double.tryParse(tier['unit_price']?.toString() ?? '0') ?? 0.0;
-                  final qtyText = minQ == minQ.toInt() ? minQ.toInt().toString() : minQ.toStringAsFixed(2);
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 2),
-                    child: Text('$qtyText+ unidades: \$${uPrice.toCurrency()}'),
-                  );
-                }),
+      builder: (ctx) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 460),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 18, 20, 14),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // ── Header: foto + identidad ──
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 64,
+                      height: 64,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.grey.shade300),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(9),
+                        child: hasImage
+                            ? CachedNetworkImage(
+                                imageUrl: product.imageUrl!,
+                                fit: BoxFit.contain,
+                                errorWidget: (context, url, error) => Icon(
+                                  isByWeight
+                                      ? Icons.scale_rounded
+                                      : Icons.inventory_2_outlined,
+                                  color: accent,
+                                  size: 30,
+                                ),
+                              )
+                            : Icon(
+                                isByWeight
+                                    ? Icons.scale_rounded
+                                    : Icons.inventory_2_outlined,
+                                color: accent,
+                                size: 30,
+                              ),
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (product.category?.name != null)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 7, vertical: 2),
+                              margin: const EdgeInsets.only(bottom: 4),
+                              decoration: BoxDecoration(
+                                color: accent.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(
+                                    color: accent.withValues(alpha: 0.35)),
+                              ),
+                              child: Text(
+                                product.category!.name,
+                                style: TextStyle(
+                                    fontSize: 10.5,
+                                    color: accent,
+                                    fontWeight: FontWeight.w700),
+                              ),
+                            ),
+                          Text(
+                            product.name,
+                            style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 15,
+                                height: 1.2),
+                          ),
+                          const SizedBox(height: 6),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 4,
+                            children: [
+                              if (product.internalCode.isNotEmpty)
+                                _quickLookCodeChip('Int', product.internalCode),
+                              if (product.barcode != null &&
+                                  product.barcode!.isNotEmpty)
+                                _quickLookCodeChip('EAN', product.barcode!),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+
+                // ── KPIs: Stock + Ventas/Ticket ──
+                Row(
+                  children: [
+                    Expanded(
+                      child: _quickLookKpiCard(
+                        icon: Icons.inventory_2_outlined,
+                        iconColor: lowStock
+                            ? Colors.orange.shade700
+                            : Colors.green.shade600,
+                        label: 'Stock Actual',
+                        value: _formatQuickLookStock(product.stock, isByWeight),
+                        valueColor: lowStock ? Colors.orange.shade800 : null,
+                        footer: product.minStock != null
+                            ? 'Mín: ${_formatQuickLookStock(product.minStock!, isByWeight)}'
+                            : null,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _quickLookKpiCard(
+                        icon: Icons.local_fire_department_rounded,
+                        iconColor: const Color(0xFFE65100),
+                        label: 'Ventas',
+                        value: product.salesCount > 0
+                            ? '${product.salesCount} vend.'
+                            : 'Sin ventas',
+                        footer: cartQty > 0
+                            ? 'En ticket: ${_formatQuickLookStock(cartQty, isByWeight)}'
+                            : null,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+
+                // ── Cuadro de precios ──
+                Container(
+                  width: double.infinity,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade50,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey.shade200),
+                  ),
+                  child: Column(
+                    children: [
+                      _buildInfoRow('Precio Base',
+                          '\$${product.sellingPrice.toCurrency()}'),
+                      if (hasPromo)
+                        _buildInfoRow(
+                          '🔥 Oferta Activa',
+                          '\$${promoPrice.toCurrency()}',
+                          valueColor: const Color(0xFF7B1FA2),
+                        ),
+                      if (product.priceWholesale != null &&
+                          product.priceWholesale! > 0)
+                        _buildInfoRow('Precio Mayorista',
+                            '\$${product.priceWholesale!.toCurrency()}'),
+                      if (product.priceCard != null && product.priceCard! > 0)
+                        _buildInfoRow('Precio Tarjeta',
+                            '\$${product.priceCard!.toCurrency()}'),
+                      if (product.priceTiers != null &&
+                          product.priceTiers!.isNotEmpty) ...[
+                        const Divider(height: 16),
+                        const Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text('Tramos por cantidad:',
+                              style: TextStyle(
+                                  fontWeight: FontWeight.bold, fontSize: 12.5)),
+                        ),
+                        const SizedBox(height: 4),
+                        ...product.priceTiers!.map((tier) {
+                          final minQ = double.tryParse(
+                                  tier['min_quantity']?.toString() ?? '1') ??
+                              1.0;
+                          final uPrice = double.tryParse(
+                                  tier['unit_price']?.toString() ?? '0') ??
+                              0.0;
+                          final qtyText = minQ == minQ.toInt()
+                              ? minQ.toInt().toString()
+                              : minQ.toStringAsFixed(2);
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 2),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text('$qtyText+ unidades',
+                                    style: const TextStyle(
+                                        fontSize: 12.5, color: Colors.black54)),
+                                Text('\$${uPrice.toCurrency()}',
+                                    style: const TextStyle(
+                                        fontSize: 12.5,
+                                        fontWeight: FontWeight.w600)),
+                              ],
+                            ),
+                          );
+                        }),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+
+                // ── Footer de acciones (ancho controlado, sin estirar el diálogo) ──
+                Row(
+                  children: [
+                    TextButton.icon(
+                      icon: Icon(
+                          isPinned ? Icons.push_pin : Icons.push_pin_outlined,
+                          size: 18),
+                      label: Text(isPinned ? 'Desfijar' : '📌 Fijar'),
+                      onPressed: () {
+                        localTerminal.togglePinnedProduct(product.id);
+                        Navigator.pop(ctx);
+                        // Si estamos en filtro 'pinned' y ya no hay productos fijados, cambiar a 'all'
+                        if (_quickAccessFilter == 'pinned' &&
+                            localTerminal.pinnedProductIds.isEmpty) {
+                          setState(() {
+                            _quickAccessFilter = 'all';
+                          });
+                        }
+                      },
+                    ),
+                    const Spacer(),
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      child: const Text('Cerrar'),
+                    ),
+                    const SizedBox(width: 8),
+                    ElevatedButton.icon(
+                      icon: const Icon(Icons.add_shopping_cart, size: 18),
+                      label: const Text('Agregar'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF1E88E5),
+                        foregroundColor: Colors.white,
+                      ),
+                      onPressed: () {
+                        Navigator.pop(ctx);
+                        _handleProductSelection(product);
+                      },
+                    ),
+                  ],
+                ),
               ],
-            ],
+            ),
           ),
         ),
-        actions: [
-          TextButton.icon(
-            icon: Icon(isPinned ? Icons.push_pin : Icons.push_pin_outlined),
-            label: Text(isPinned ? 'Desfijar' : 'Fijar'),
-            onPressed: () {
-              localTerminal.togglePinnedProduct(product.id);
-              Navigator.pop(ctx);
-              // Si estamos en filtro 'pinned' y ya no hay productos fijados, cambiar a 'all'
-              if (_quickAccessFilter == 'pinned' && localTerminal.pinnedProductIds.isEmpty) {
-                setState(() {
-                  _quickAccessFilter = 'all';
-                });
-              }
-            },
+      ),
+    );
+  }
+
+  Widget _quickLookCodeChip(String tag, String value) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            '$tag: ',
+            style: TextStyle(
+                fontSize: 10,
+                color: Colors.grey.shade600,
+                fontWeight: FontWeight.w600),
           ),
-          const Spacer(),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cerrar'),
-          ),
-          ElevatedButton.icon(
-            icon: const Icon(Icons.add_shopping_cart),
-            label: const Text('Agregar al Carrito'),
-            onPressed: () {
-              Navigator.pop(ctx);
-              _handleProductSelection(product);
-            },
-          ),
+          Text(value,
+              style:
+                  const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600)),
         ],
       ),
     );
   }
 
-  Widget _buildInfoRow(String label, String value) {
+  Widget _quickLookKpiCard({
+    required IconData icon,
+    required Color iconColor,
+    required String label,
+    required String value,
+    Color? valueColor,
+    String? footer,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 15, color: iconColor),
+              const SizedBox(width: 5),
+              Text(label,
+                  style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+                color: valueColor ?? const Color(0xFF1E293B)),
+          ),
+          if (footer != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text(footer,
+                  style:
+                      TextStyle(fontSize: 10.5, color: Colors.grey.shade500)),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInfoRow(String label, String value, {Color? valueColor}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: const TextStyle(color: Colors.grey)),
-          Text(value, style: const TextStyle(fontWeight: FontWeight.w600)),
+          Text(label, style: const TextStyle(color: Colors.grey, fontSize: 13)),
+          Text(value,
+              style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                  color: valueColor)),
         ],
       ),
     );
   }
 
+  /// Guía visual de atajos de teclado del POS, con teclas estilo "keycap".
+  /// Se abre con F1 o con el botón ⌨️ de la barra de Acceso Rápido.
+  void _showKeyboardShortcutsHelpDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520, maxHeight: 560),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(22, 18, 22, 18),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.keyboard_rounded,
+                        color: Colors.blueGrey.shade700, size: 22),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        'Guía Rápida de Teclado POS',
+                        style: TextStyle(
+                            fontSize: 17, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close, size: 20),
+                      tooltip: 'Cerrar (Esc)',
+                      onPressed: () => Navigator.pop(ctx),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                _shortcutSection(
+                  '⚡ Flujo "Doble Enter" (Cobro en 1 segundo)',
+                  [
+                    _shortcutRow(['Enter'],
+                        'con buscador vacío → Abre ventana de Cobro'),
+                    _shortcutRow([
+                      'Enter'
+                    ], 'en ventana de Cobro → Confirma pago exacto en Efectivo'),
+                    _shortcutRow(
+                        ['F9', 'F12'], 'Cobrar directo en cualquier momento'),
+                  ],
+                ),
+                _shortcutSection(
+                  '🛒 Carrito y Acceso Rápido',
+                  [
+                    _shortcutRow(['Alt', '1..9'],
+                        'Agrega el producto 1 al 9 de la grilla'),
+                    _shortcutRow([
+                      '+',
+                      '-'
+                    ], 'con buscador vacío → Suma o resta 1 u. al último ítem'),
+                    _shortcutRow([
+                      'Supr'
+                    ], 'con buscador vacío → Elimina el último ítem del carrito'),
+                    _shortcutRow(['Clic Der.'],
+                        'sobre producto → Vista Rápida (stock, precios, 📌)'),
+                  ],
+                ),
+                _shortcutSection(
+                  '🗂️ Orden en Espera y Filtros',
+                  [
+                    _shortcutRow(['F4'], 'Poner el carrito actual en Espera'),
+                    _shortcutRow([
+                      'Esc'
+                    ], 'Limpia el buscador, cierra popovers o vuelve a "Todos"'),
+                    _shortcutRow(['F1'], 'Abre esta guía de ayuda'),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _shortcutSection(String title, List<Widget> rows) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title,
+              style:
+                  const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 8),
+          ...rows,
+        ],
+      ),
+    );
+  }
+
+  Widget _shortcutRow(List<String> keys, String description) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          SizedBox(
+            width: 150,
+            child: Wrap(
+              spacing: 4,
+              runSpacing: 4,
+              children: [
+                for (var i = 0; i < keys.length; i++) ...[
+                  _keycap(keys[i]),
+                  if (i < keys.length - 1)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text('+',
+                          style: TextStyle(
+                              fontSize: 11, color: Colors.grey.shade500)),
+                    ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(description,
+                style: const TextStyle(fontSize: 12.5, height: 1.3)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _keycap(String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: Colors.grey.shade400, width: 1),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.12),
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          fontSize: 11.5,
+          fontWeight: FontWeight.w700,
+          color: Color(0xFF334155),
+        ),
+      ),
+    );
+  }
   void _showWeightModal(Product product, PosProvider provider,
       {double? promotionalPrice, String? promotionalLabel, String? promotionalPeriodType}) {
     final weightController = TextEditingController();
@@ -2722,6 +3187,13 @@ class _PosScreenState extends State<PosScreen> {
     if (!mounted || ModalRoute.of(context)?.isCurrent != true) return false;
     if (event is! KeyDownEvent) return false;
 
+    // F1 → Guía rápida de teclado (es ayuda contextual, no una operación de caja:
+    // debe funcionar incluso sin turno abierto)
+    if (event.logicalKey == LogicalKeyboardKey.f1) {
+      _showKeyboardShortcutsHelpDialog();
+      return true;
+    }
+
     final cashProv = Provider.of<CashRegisterProvider>(context, listen: false);
     if (cashProv.currentShift == null || !cashProv.currentShift!.isOpen) {
       return false;
@@ -2801,9 +3273,9 @@ class _PosScreenState extends State<PosScreen> {
 
         if (index != null && index < displayItems.length) {
           _handleProductSelection(displayItems[index]);
-          return true;
         }
-        return false;
+        // Consumir cualquier Alt+1..9 (haya producto o no) para que no se propague al buscador
+        return index != null;
       }
 
       // Enter / NumpadEnter → Cobrar (si el foco NO está en el TextField)
@@ -2862,7 +3334,7 @@ class _PosScreenState extends State<PosScreen> {
             controller: _searchController,
             focusNode: _searchFocusNode,
             decoration: InputDecoration(
-              hintText: 'Escribir nombre o escanear código...',
+              hintText: 'Escribir nombre o escanear código... (Enter: Cobrar · F1: Atajos)',
               prefixIcon: _isSearching
                   ? const Padding(
                       padding: EdgeInsets.all(12),
@@ -2912,6 +3384,37 @@ class _PosScreenState extends State<PosScreen> {
                     ],
                   ),
                 ),
+                Tooltip(
+                  message: 'Guía rápida de atajos de teclado',
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(20),
+                    onTap: _showKeyboardShortcutsHelpDialog,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.blueGrey.shade50,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: Colors.blueGrey.shade200),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.keyboard_rounded, size: 15, color: Colors.blueGrey.shade700),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Atajos (F1)',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.blueGrey.shade700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4),
                 Consumer<CatalogProvider>(
                   builder: (context, catalog, child) {
                     if (catalog.isLoading) {

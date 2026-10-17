@@ -1,10 +1,13 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/settings_provider.dart';
+import '../../../../core/network/api_client.dart';
 import '../../../../core/utils/snack_bar_service.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
 import 'package:frontend_desktop/core/presentation/widgets/plan_upgrade_dialog.dart';
@@ -73,6 +76,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _licenseKeyCtrl = TextEditingController();
   bool _isActivatingLicense = false;
   bool _isSyncingLicense = false;
+
+  // Copias de Seguridad (Pendrive / Disco Externo)
+  bool _backupIncludeDb = true;
+  bool _backupIncludeImages = false;
+  bool _backupIncludeAfip = false;
+  bool _isCreatingBackup = false;
   bool _isCheckingUpdate = false;
   String _appVersion = '';
 
@@ -4233,9 +4242,198 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           );
         }),
+        const SizedBox(height: 48),
+        const Divider(),
+        const SizedBox(height: 24),
+        _buildBackupSection(provider),
         const SizedBox(height: 32),
       ],
     );
+  }
+
+  /// Tarjeta "Copias de Seguridad": respaldo modular (BD / imágenes / AFIP) o
+  /// rápido, descargado como .zip a un pendrive o carpeta elegida por el usuario.
+  Widget _buildBackupSection(SettingsProvider provider) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionTitle('Copias de Seguridad'),
+        const SizedBox(height: 16),
+        Material(
+          color: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(color: Colors.grey.shade200),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const CircleAvatar(
+                    backgroundColor: Color(0xFFE3F2FD),
+                    child: Icon(Icons.usb_rounded, color: Color(0xFF1565C0)),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          '💾 Copias de Seguridad (Pendrive / Disco Externo)',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Generá un archivo .zip con tu información y guardalo en un pendrive o carpeta externa.',
+                          style: TextStyle(fontSize: 12.5, color: Colors.grey.shade600),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              CheckboxListTile(
+                value: _backupIncludeDb,
+                onChanged: _isCreatingBackup ? null : (v) => setState(() => _backupIncludeDb = v ?? false),
+                title: const Text('Base de Datos Completa', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+                subtitle: const Text(
+                  'Productos, precios, clientes, cuentas corrientes, ventas y caja. Recomendado diario.',
+                  style: TextStyle(fontSize: 11.5),
+                ),
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+              ),
+              CheckboxListTile(
+                value: _backupIncludeImages,
+                onChanged: _isCreatingBackup ? null : (v) => setState(() => _backupIncludeImages = v ?? false),
+                title: const Text('Fotos de Productos y Logotipo', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+                subtitle: const Text('Puede demorar si hay muchas imágenes.', style: TextStyle(fontSize: 11.5)),
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+              ),
+              CheckboxListTile(
+                value: _backupIncludeAfip,
+                onChanged: _isCreatingBackup ? null : (v) => setState(() => _backupIncludeAfip = v ?? false),
+                title: const Text('Certificados Digitales ARCA / AFIP', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+              ),
+              const SizedBox(height: 14),
+              Wrap(
+                spacing: 12,
+                runSpacing: 8,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: _isCreatingBackup ? null : () => _downloadSystemBackup(quick: true),
+                    icon: const Icon(Icons.bolt_rounded, size: 18),
+                    label: const Text('Respaldo Rápido (Solo BD)'),
+                  ),
+                  ElevatedButton.icon(
+                    onPressed: _isCreatingBackup ? null : () => _downloadSystemBackup(quick: false),
+                    icon: _isCreatingBackup
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          )
+                        : const Icon(Icons.save_alt_rounded, size: 18),
+                    label: Text(_isCreatingBackup ? 'Generando copia...' : 'Crear Copia en Pendrive / Carpeta...'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF1565C0),
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Descarga el .zip de respaldo vía streaming HTTP y lo escribe en la ruta
+  /// elegida por el usuario (pendrive o carpeta externa). Recuerda el último
+  /// directorio usado para futuros respaldos.
+  Future<void> _downloadSystemBackup({required bool quick}) async {
+    if (_isCreatingBackup) return;
+
+    final includeDb = quick ? true : _backupIncludeDb;
+    final includeImages = !quick && _backupIncludeImages;
+    final includeAfip = !quick && _backupIncludeAfip;
+
+    if (!includeDb && !includeImages && !includeAfip) {
+      SnackBarService.warning(context, 'Seleccioná al menos un módulo para respaldar.');
+      return;
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    final lastDir = prefs.getString('backup_last_dir');
+    final suggestedName = 'Backup_POS_${DateFormat('yyyy-MM-dd_HHmm').format(DateTime.now())}.zip';
+
+    // Diálogo nativo de Windows para elegir el pendrive/carpeta de destino
+    final savePath = await FilePicker.platform.saveFile(
+      dialogTitle: 'Guardar copia de seguridad en Pendrive / Carpeta',
+      fileName: suggestedName,
+      initialDirectory: lastDir,
+      type: FileType.custom,
+      allowedExtensions: const ['zip'],
+    );
+    if (savePath == null || !mounted) return;
+
+    final targetPath = savePath.toLowerCase().endsWith('.zip') ? savePath : '$savePath.zip';
+    await prefs.setString('backup_last_dir', p.dirname(targetPath));
+
+    setState(() => _isCreatingBackup = true);
+    try {
+      final baseUrl = context.read<SettingsProvider>().currentApiUrl;
+      final client = context.read<ApiClient>();
+      final uri = Uri.parse('$baseUrl/system/backup').replace(queryParameters: {
+        'include_db': includeDb ? '1' : '0',
+        'include_images': includeImages ? '1' : '0',
+        'include_afip': includeAfip ? '1' : '0',
+      });
+
+      final response = await client.send(http.Request('GET', uri));
+
+      if (response.statusCode != 200) {
+        final body = await response.stream.bytesToString();
+        var message = 'Error del servidor (${response.statusCode}) al generar la copia.';
+        try {
+          final decoded = jsonDecode(body);
+          if (decoded is Map && decoded['message'] is String) {
+            message = decoded['message'] as String;
+          }
+        } catch (_) {}
+        if (mounted) SnackBarService.error(context, message);
+        return;
+      }
+
+      // Streaming directo a disco: no carga el .zip completo en memoria.
+      final file = File(targetPath);
+      final sink = file.openWrite();
+      await response.stream.pipe(sink);
+      await sink.close();
+
+      if (mounted) {
+        SnackBarService.success(context, 'Copia de seguridad guardada en: $targetPath');
+      }
+    } catch (e) {
+      if (mounted) {
+        SnackBarService.error(context, 'No se pudo crear la copia de seguridad: $e');
+      }
+    } finally {
+      if (mounted) setState(() => _isCreatingBackup = false);
+    }
   }
 
   Widget _buildLogoPicker(SettingsProvider provider) {

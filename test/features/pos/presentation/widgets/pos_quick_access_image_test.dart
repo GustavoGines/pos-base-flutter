@@ -91,7 +91,7 @@ void main() {
       expect(find.byIcon(Icons.scale_rounded), findsOneWidget);
     });
 
-    testWidgets('Mode "compact": Renders 24x24 CachedNetworkImage for product with image, and fallback icon for item without image', (tester) async {
+    testWidgets('Mode "compact": Renders 36x36 CachedNetworkImage for product with image, and fallback icon for item without image', (tester) async {
       await tester.pumpWidget(buildTestApp(
         products: [productWithImage, unitProductNoImage],
         viewMode: 'compact',
@@ -101,8 +101,8 @@ void main() {
       final imageFinder = find.byType(CachedNetworkImage);
       expect(imageFinder, findsOneWidget);
       final image = tester.widget<CachedNetworkImage>(imageFinder);
-      expect(image.width, 24.0);
-      expect(image.height, 24.0);
+      expect(image.width, 36.0);
+      expect(image.height, 36.0);
 
       expect(find.byIcon(Icons.inventory_2_outlined), findsOneWidget);
     });

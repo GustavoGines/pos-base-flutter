@@ -291,12 +291,13 @@ void main() {
 
       // Fill Name
       await tester.enterText(find.widgetWithText(TextFormField, 'Nombre / Razón Social *'), 'Distribuidora Central S.R.L.');
-      // Fill DNI/CUIT (default document type is 96 DNI, enter valid 8 digit DNI: 12345678)
-      await tester.enterText(find.widgetWithText(TextFormField, 'DNI (7 u 8 dígitos) *'), '12345678');
 
-      // Enable Perception switch
+      // Enable Perception switch first: it auto-selects document type CUIT (80)
       await tester.tap(find.byKey(const ValueKey('switch_applies_iibb_perception')));
       await tester.pumpAndSettle();
+
+      // Fill a valid 11-digit CUIT (mod-11 check digit 6) for type 80
+      await tester.enterText(find.widgetWithText(TextFormField, 'CUIT (11 dígitos sin guiones) *'), '20123456786');
 
       // Rate is automatically 3.5, customize to 4.0
       final rateFieldFinder = find.byKey(const ValueKey('field_iibb_perception_rate'));

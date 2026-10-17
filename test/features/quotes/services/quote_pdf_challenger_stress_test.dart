@@ -515,9 +515,9 @@ void main() {
       // 80 items must span at least 3 pages
       expect(pageCount, greaterThanOrEqualTo(3));
 
-      // Verify PDF contains ExtGState transparency for 0.05 opacity
+      // Verify PDF contains ExtGState transparency for the 10% watermark opacity
       final pdfString = latin1.decode(pdfBytes);
-      expect(pdfString.contains('/ca 0.05') || pdfString.contains('/CA 0.05'), isTrue);
+      expect(pdfString.contains('/ca 0.1') || pdfString.contains('/CA 0.1'), isTrue);
     });
 
     test('Multi-page quote without logo generates clean pages without watermark error', () async {
