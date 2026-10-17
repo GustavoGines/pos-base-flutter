@@ -1020,7 +1020,7 @@ class _PosScreenState extends State<PosScreen> {
                     _shortcutRow(['F4'], 'Poner el carrito actual en Espera'),
                     _shortcutRow([
                       'Esc'
-                    ], 'Limpia el buscador, cierra popovers o vuelve a "Todos"'),
+                    ], 'Cierra ventana de Cobro, limpia buscador o vuelve a "Todos"'),
                     _shortcutRow(['F1'], 'Abre esta guía de ayuda'),
                   ],
                 ),

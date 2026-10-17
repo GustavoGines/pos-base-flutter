@@ -2004,6 +2004,11 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       canPop: !_isSubmitting && !provider.isLoading && !_lines.any((l) => l.mpPaid),
       child: CallbackShortcuts(
         bindings: <ShortcutActivator, VoidCallback>{
+          const SingleActivator(LogicalKeyboardKey.escape): () {
+            if (!_isSubmitting && !provider.isLoading && !_lines.any((l) => l.mpPaid)) {
+              Navigator.of(context).pop();
+            }
+          },
           const SingleActivator(LogicalKeyboardKey.enter): () {
             if (_canSubmit && !_isSubmitting && !provider.isLoading) {
               _processCheckout();
@@ -2015,13 +2020,15 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
             }
           },
         },
-        child: Dialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          backgroundColor: Colors.white,
-          insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 960, maxHeight: 800),
-            child: Container(
+        child: Focus(
+          autofocus: true,
+          child: Dialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            backgroundColor: Colors.white,
+            insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 960, maxHeight: 800),
+              child: Container(
               padding: const EdgeInsets.all(24),
               child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -3307,6 +3314,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
           ),
         ),
       ),
+          ),
         ),
       ),
     );
