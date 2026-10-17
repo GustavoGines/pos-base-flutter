@@ -298,13 +298,17 @@ class PosQuickAccessCatalogView extends StatelessWidget {
             color: isTop ? const Color(0xFFE65100) : Colors.blueAccent,
           ),
           const SizedBox(width: 2),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: compact ? 8.0 : 9.0,
-              color: fgColor,
-              fontWeight: FontWeight.w800,
-              letterSpacing: -0.2,
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: compact ? 8.0 : 9.0,
+                color: fgColor,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.2,
+              ),
             ),
           ),
         ],
@@ -537,16 +541,23 @@ class PosQuickAccessCatalogView extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 10),
-              Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  _renderPrice(context, product, isByWeight, 14),
-                  if (cartQty > 0) ...[
-                    const SizedBox(height: 3),
-                    _buildCartControls(product, cartQty, isByWeight),
-                  ],
-                ],
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 150),
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerRight,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      _renderPrice(context, product, isByWeight, 14),
+                      if (cartQty > 0) ...[
+                        const SizedBox(height: 3),
+                        _buildCartControls(product, cartQty, isByWeight),
+                      ],
+                    ],
+                  ),
+                ),
               ),
             ],
           ),
@@ -591,20 +602,27 @@ class PosQuickAccessCatalogView extends StatelessWidget {
           ],
         ),
         clipBehavior: Clip.antiAlias,
-        child: Row(
-          children: [
+        child: LayoutBuilder(
+          builder: (context, bc) {
+            // A <190px (viewport ~320px en 2 columnas) se oculta la miniatura
+            // y se compactan los espacios para que el precio siga visible.
+            final tight = bc.maxWidth < 190;
+            return Row(
+              children: [
             // Barra lateral semántica de categoría
             Container(width: 4, color: accent),
-            const SizedBox(width: 6),
-            _buildThumb(
-              product,
-              size: 36,
-              isByWeight: isByWeight,
-              accent: accent,
-              hasImage: hasImage,
-              borderRadius: 6,
-            ),
-            const SizedBox(width: 8),
+            SizedBox(width: tight ? 3 : 6),
+            if (!tight) ...[
+              _buildThumb(
+                product,
+                size: 36,
+                isByWeight: isByWeight,
+                accent: accent,
+                hasImage: hasImage,
+                borderRadius: 6,
+              ),
+              const SizedBox(width: 8),
+            ],
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -621,18 +639,25 @@ class PosQuickAccessCatalogView extends StatelessWidget {
                   ),
                   if (product.salesCount > 0) ...[
                     const SizedBox(height: 2),
-                    _buildSalesBadge(product, topRank: topRank, compact: true),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: _buildSalesBadge(product,
+                          topRank: topRank, compact: true),
+                    ),
                   ],
                 ],
               ),
             ),
-            const SizedBox(width: 6),
+            SizedBox(width: tight ? 3 : 6),
             Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                alignment: Alignment.centerRight,
-                child: Column(
+              padding: EdgeInsets.only(right: tight ? 5 : 8),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: tight ? 88 : 104),
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerRight,
+                  child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
@@ -657,10 +682,13 @@ class PosQuickAccessCatalogView extends StatelessWidget {
                       _buildCartControls(product, cartQty, isByWeight),
                     ],
                   ],
+                  ),
                 ),
               ),
             ),
-          ],
+              ],
+            );
+          },
         ),
       ),
     );

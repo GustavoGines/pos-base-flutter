@@ -4259,14 +4259,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
       children: [
         _buildSectionTitle('Copias de Seguridad'),
         const SizedBox(height: 16),
-        Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: Colors.white,
+        Material(
+          color: Colors.white,
+          shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.grey.shade200),
+            side: BorderSide(color: Colors.grey.shade200),
           ),
-          child: Column(
+          clipBehavior: Clip.antiAlias,
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
@@ -4352,6 +4354,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ],
               ),
             ],
+            ),
           ),
         ),
       ],
