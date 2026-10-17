@@ -139,6 +139,130 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   bool _isSubmitting = false;
   final List<PaymentLine> _lines = [];
 
+  // Devuelve el orden de prioridad comercial (1 al 7) para cada método de pago:
+  // 1: Efectivo, 2: MP Point, 3: MP QR, 4: Débito, 5: Crédito, 6: Cta. Cte., 7: Cheque
+  int _getMethodOrderNumber(String code) {
+    final normalized = code.toLowerCase().trim();
+    if (normalized == 'cash' || normalized == 'efectivo' || normalized.contains('efectivo')) {
+      return 1;
+    }
+    if (normalized == 'mercadopago_point') {
+      return 2;
+    }
+    if (normalized == 'mercadopago_qr') {
+      return 3;
+    }
+    if (normalized == 'debit_card' || normalized == 'tarjeta_debito' || normalized.contains('debito')) {
+      return 4;
+    }
+    if (normalized == 'credit_card' || normalized == 'tarjeta_credito' || normalized.contains('credito')) {
+      return 5;
+    }
+    if (normalized == 'cuenta_corriente') {
+      return 6;
+    }
+    if (normalized == 'cheque') {
+      return 7;
+    }
+    return 99;
+  }
+
+  // Obtener badge de atajo para un método de pago
+  String? _getShortcutBadge(PaymentMethod method) {
+    final order = _getMethodOrderNumber(method.code);
+    if (order >= 1 && order <= 7) {
+      return 'Ctrl+$order';
+    }
+    return null;
+  }
+
+  // Seleccionar método de pago por orden comercial (Ctrl+1..7)
+  void _selectPaymentMethodByOrderIndex(int orderNumber) {
+    if (orderNumber < 1 || orderNumber > 7) return;
+    if (_lines.isEmpty || _isSubmitting) return;
+
+    final lineIndex = _lines.length - 1;
+    final line = _lines[lineIndex];
+    if (line.mpPaid) return;
+
+    final provider = context.read<PosProvider>();
+    final settings = context.read<SettingsProvider>().settings;
+
+    final availableMethods = provider.paymentMethods
+        .where((m) => !m.code.contains('transfer'))
+        .toList();
+
+    PaymentMethod? targetMethod;
+    for (final m in availableMethods) {
+      if (_getMethodOrderNumber(m.code) == orderNumber) {
+        targetMethod = m;
+        break;
+      }
+    }
+    if (targetMethod == null) return;
+
+    // Verificar si está bloqueado por licencia / plan
+    final isCuentaCorriente = targetMethod.code == 'cuenta_corriente';
+    final isCheque = targetMethod.code == 'cheque';
+    final isLocked =
+        (isCuentaCorriente && settings?.features.currentAccounts != true) ||
+            (isCheque && settings?.features.checks != true);
+
+    if (isLocked) {
+      _showProUpsellDialog(targetMethod.name);
+      return;
+    }
+
+    setState(() {
+      if (lineIndex < _previousValidMethods.length) {
+        _previousValidMethods[lineIndex] = targetMethod!;
+      }
+      line.updateMethod(
+        targetMethod,
+        defaultCardSurcharge: settings?.globalCardPercentage,
+        disableSurcharge: _isCartAlreadySurcharged,
+      );
+      _syncPaymentsWithGrandTotal();
+    });
+
+    _syncCashField(autoFocus: targetMethod.isCash);
+  }
+
+  // Chip compacto de atajo (a prueba de overflow en resoluciones pequeñas)
+  Widget _shortcutChip(String key, String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: Colors.grey.shade300, width: 0.5),
+      ),
+      child: Text.rich(
+        TextSpan(
+          children: [
+            TextSpan(
+              text: '$key ',
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+                color: Colors.blue.shade800,
+              ),
+            ),
+            TextSpan(
+              text: label,
+              style: TextStyle(
+                fontSize: 10,
+                color: Colors.grey.shade700,
+              ),
+            ),
+          ],
+        ),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+    );
+  }
+
   @visibleForTesting
   List<PaymentLine> get paymentLines => _lines;
 
@@ -1743,6 +1867,17 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     PosProvider provider,
     BusinessSettings? settings,
   ) {
+    // Ordenar métodos de pago según prioridad comercial (1..7)
+    final sortedMethods = List<PaymentMethod>.from(
+      provider.paymentMethods.where((m) => !m.code.contains('transfer')),
+    );
+    sortedMethods.sort((a, b) {
+      final aOrder = _getMethodOrderNumber(a.code);
+      final bOrder = _getMethodOrderNumber(b.code);
+      if (aOrder != bOrder) return aOrder.compareTo(bOrder);
+      return a.name.compareTo(b.name);
+    });
+
     return DropdownButtonFormField<PaymentMethod>(
       key: ValueKey('dd_${idx}_${line.method?.id}'),
       isExpanded: true,
@@ -1767,18 +1902,14 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
       ),
-      initialValue: provider.paymentMethods.contains(line.method) &&
-              !(line.method?.code.contains('transfer') ?? false)
-          ? line.method
-          : null,
-      items: provider.paymentMethods
-          .where((m) => !m.code.contains('transfer'))
-          .map((m) {
+      initialValue: sortedMethods.contains(line.method) ? line.method : null,
+      items: sortedMethods.map((m) {
         final bool isCuentaCorriente = m.code == 'cuenta_corriente';
         final bool isCheque = m.code == 'cheque';
         final bool isLocked =
             (isCuentaCorriente && settings?.features.currentAccounts != true) ||
                 (isCheque && settings?.features.checks != true);
+        final badge = _getShortcutBadge(m);
 
         return DropdownMenuItem<PaymentMethod>(
           value: m,
@@ -1801,6 +1932,25 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
+              if (badge != null) ...[
+                const SizedBox(width: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade100,
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(color: Colors.blue.shade300, width: 0.5),
+                  ),
+                  child: Text(
+                    badge,
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: Colors.blue.shade900,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
               if (isLocked) ...[
                 const SizedBox(width: 6),
                 Tooltip(
@@ -2019,6 +2169,86 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
               _processCheckout();
             }
           },
+          // F10: Confirmar venta (sinónimo de Enter)
+          const SingleActivator(LogicalKeyboardKey.f10): () {
+            if (_canSubmit && !_isSubmitting && !provider.isLoading) {
+              _processCheckout();
+            }
+          },
+          // F2: Agregar otro medio de pago (Pago Mixto)
+          const SingleActivator(LogicalKeyboardKey.f2): () {
+            if (!_isSubmitting && !provider.isLoading && _pendingBalance > 0.01) {
+              _addLine();
+            }
+          },
+          // F4: Asociar / Buscar Cliente
+          const SingleActivator(LogicalKeyboardKey.f4): () {
+            if (!_isSubmitting && !provider.isLoading) {
+              _openCustomerPicker();
+            }
+          },
+          // F6: Alternar Ticket Común / Factura Fiscal ARCA
+          const SingleActivator(LogicalKeyboardKey.f6): () {
+            if (!_isSubmitting && !provider.isLoading && settings?.afipEnabled == true) {
+              setState(() {
+                _isFiscalMode = !_isFiscalMode;
+                if (_isFiscalMode && _selectedCustomer != null) {
+                  _syncCustomerWithFiscal(_selectedCustomer);
+                }
+              });
+            }
+          },
+          // F7: Marcar / Desmarcar Imprimir Comprobante
+          const SingleActivator(LogicalKeyboardKey.f7): () async {
+            if (!_isSubmitting && !provider.isLoading) {
+              setState(() => _printReceipt = !_printReceipt);
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.setBool('auto_print_receipt', _printReceipt);
+            }
+          },
+          // F8: Marcar / Desmarcar Vista Previa
+          const SingleActivator(LogicalKeyboardKey.f8): () async {
+            if (!_isSubmitting && !provider.isLoading && _printReceipt) {
+              setState(() => _showPreview = !_showPreview);
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.setBool('show_preview_receipt', _showPreview);
+            }
+          },
+          // F9: Alternar Logística (Sin Remito -> A Preparar -> Se lo lleva AHORA)
+          const SingleActivator(LogicalKeyboardKey.f9): () {
+            if (!_isSubmitting && !provider.isLoading && settings?.features.logistics == true && widget.saleId == null) {
+              setState(() {
+                if (!_requiresDispatch) {
+                  _requiresDispatch = true;
+                  _fulfillmentStatus = 'pending';
+                } else if (_fulfillmentStatus == 'pending') {
+                  _requiresDispatch = true;
+                  _fulfillmentStatus = 'delivered';
+                } else {
+                  _requiresDispatch = false;
+                  _fulfillmentStatus = 'pending';
+                }
+              });
+              context.read<PosProvider>().setCurrentLogistics(_requiresDispatch, _fulfillmentStatus);
+              _syncPaymentsWithGrandTotal();
+            }
+          },
+          // Ctrl+1..7: Métodos de pago (fila superior)
+          const SingleActivator(LogicalKeyboardKey.digit1, control: true): () => _selectPaymentMethodByOrderIndex(1),
+          const SingleActivator(LogicalKeyboardKey.digit2, control: true): () => _selectPaymentMethodByOrderIndex(2),
+          const SingleActivator(LogicalKeyboardKey.digit3, control: true): () => _selectPaymentMethodByOrderIndex(3),
+          const SingleActivator(LogicalKeyboardKey.digit4, control: true): () => _selectPaymentMethodByOrderIndex(4),
+          const SingleActivator(LogicalKeyboardKey.digit5, control: true): () => _selectPaymentMethodByOrderIndex(5),
+          const SingleActivator(LogicalKeyboardKey.digit6, control: true): () => _selectPaymentMethodByOrderIndex(6),
+          const SingleActivator(LogicalKeyboardKey.digit7, control: true): () => _selectPaymentMethodByOrderIndex(7),
+          // Ctrl+1..7: Métodos de pago (numpad)
+          const SingleActivator(LogicalKeyboardKey.numpad1, control: true): () => _selectPaymentMethodByOrderIndex(1),
+          const SingleActivator(LogicalKeyboardKey.numpad2, control: true): () => _selectPaymentMethodByOrderIndex(2),
+          const SingleActivator(LogicalKeyboardKey.numpad3, control: true): () => _selectPaymentMethodByOrderIndex(3),
+          const SingleActivator(LogicalKeyboardKey.numpad4, control: true): () => _selectPaymentMethodByOrderIndex(4),
+          const SingleActivator(LogicalKeyboardKey.numpad5, control: true): () => _selectPaymentMethodByOrderIndex(5),
+          const SingleActivator(LogicalKeyboardKey.numpad6, control: true): () => _selectPaymentMethodByOrderIndex(6),
+          const SingleActivator(LogicalKeyboardKey.numpad7, control: true): () => _selectPaymentMethodByOrderIndex(7),
         },
         child: Focus(
           autofocus: true,
@@ -3018,6 +3248,60 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
+                              // Selector compacto de cliente en modo no-fiscal
+                              if (!_isFiscalMode && !_hasCuentaCorriente) ...[
+                                InkWell(
+                                  onTap: _openCustomerPicker,
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                    decoration: BoxDecoration(
+                                      color: Colors.grey.shade50,
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(color: Colors.grey.shade200),
+                                    ),
+                                    child: Wrap(
+                                      alignment: WrapAlignment.spaceBetween,
+                                      crossAxisAlignment: WrapCrossAlignment.center,
+                                      spacing: 8,
+                                      runSpacing: 4,
+                                      children: [
+                                        Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(Icons.person_outline, size: 16, color: Colors.grey.shade600),
+                                            const SizedBox(width: 6),
+                                            Flexible(
+                                              child: Text(
+                                                _selectedCustomer != null
+                                                    ? 'Cliente: ${_selectedCustomer!.name}'
+                                                    : 'Cliente: Consumidor Final',
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  color: Colors.grey.shade800,
+                                                  fontWeight: FontWeight.w500,
+                                                ),
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        Text(
+                                          '[Buscar (F4)]',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: Colors.blue.shade700,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                              ],
+
                               // Cliente Selector / Asignado al ticket o para Cta Corriente
                               if (_hasCuentaCorriente ||
                                   _selectedCustomer != null) ...[
@@ -3256,6 +3540,59 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                                       ),
                                     ),
                                 ],
+                              ),
+
+                              const SizedBox(height: 16),
+
+                              // Tarjeta compacta de ayuda de atajos
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.grey.shade50,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: Colors.grey.shade200),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Icon(Icons.keyboard_rounded, size: 16, color: Colors.grey.shade700),
+                                        const SizedBox(width: 6),
+                                        Flexible(
+                                          child: Text(
+                                            'Atajos de Cobro',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.bold,
+                                              color: Colors.grey.shade800,
+                                            ),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Wrap(
+                                      spacing: 8,
+                                      runSpacing: 4,
+                                      children: [
+                                        _shortcutChip('Ctrl+1..7', 'Medios de pago'),
+                                        _shortcutChip('F2', 'Pago mixto'),
+                                        _shortcutChip('F4', 'Cliente'),
+                                        if (settings?.afipEnabled == true)
+                                          _shortcutChip('F6', 'ARCA'),
+                                        _shortcutChip('F7', 'Imprimir'),
+                                        if (_printReceipt)
+                                          _shortcutChip('F8', 'Previa'),
+                                        if (settings?.features.logistics == true && widget.saleId == null)
+                                          _shortcutChip('F9', 'Logística'),
+                                        _shortcutChip('F10', 'Cobrar'),
+                                        _shortcutChip('Esc', 'Salir'),
+                                      ],
+                                    ),
+                                  ],
+                                ),
                               ),
                             ],
                           ),

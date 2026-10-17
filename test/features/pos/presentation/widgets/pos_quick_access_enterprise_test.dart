@@ -115,7 +115,7 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('Enterprise: Alt+1..9 micro-badges render correctly', (tester) async {
+    testWidgets('Enterprise: Ctrl+1..9 micro-badges render correctly', (tester) async {
       final products = List.generate(10, (i) => Product(
         id: i + 1,
         name: 'Producto ${i + 1}',
@@ -146,19 +146,19 @@ void main() {
         ),
       );
 
-      // Verificar que se muestran Alt+1 hasta Alt+9
-      expect(find.text('Alt+1'), findsOneWidget);
-      expect(find.text('Alt+2'), findsOneWidget);
-      expect(find.text('Alt+3'), findsOneWidget);
-      expect(find.text('Alt+4'), findsOneWidget);
-      expect(find.text('Alt+5'), findsOneWidget);
-      expect(find.text('Alt+6'), findsOneWidget);
-      expect(find.text('Alt+7'), findsOneWidget);
-      expect(find.text('Alt+8'), findsOneWidget);
-      expect(find.text('Alt+9'), findsOneWidget);
+      // Verificar que se muestran Ctrl+1 hasta Ctrl+9
+      expect(find.text('Ctrl+1'), findsOneWidget);
+      expect(find.text('Ctrl+2'), findsOneWidget);
+      expect(find.text('Ctrl+3'), findsOneWidget);
+      expect(find.text('Ctrl+4'), findsOneWidget);
+      expect(find.text('Ctrl+5'), findsOneWidget);
+      expect(find.text('Ctrl+6'), findsOneWidget);
+      expect(find.text('Ctrl+7'), findsOneWidget);
+      expect(find.text('Ctrl+8'), findsOneWidget);
+      expect(find.text('Ctrl+9'), findsOneWidget);
 
-      // Verificar que la tarjeta #10 NO muestra Alt+10
-      expect(find.text('Alt+10'), findsNothing);
+      // Verificar que la tarjeta #10 NO muestra Ctrl+10
+      expect(find.text('Ctrl+10'), findsNothing);
 
       expect(tester.takeException(), isNull);
     });

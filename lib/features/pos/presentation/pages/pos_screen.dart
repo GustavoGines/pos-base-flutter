@@ -1001,7 +1001,7 @@ class _PosScreenState extends State<PosScreen> {
                 _shortcutSection(
                   '🛒 Carrito y Acceso Rápido',
                   [
-                    _shortcutRow(['Alt', '1..9'],
+                    _shortcutRow(['Ctrl', '1..9'],
                         'Agrega el producto 1 al 9 de la grilla'),
                     _shortcutRow([
                       '+',
@@ -1012,6 +1012,20 @@ class _PosScreenState extends State<PosScreen> {
                     ], 'con buscador vacío → Elimina el último ítem del carrito'),
                     _shortcutRow(['Clic Der.'],
                         'sobre producto → Vista Rápida (stock, precios, 📌)'),
+                  ],
+                ),
+                _shortcutSection(
+                  '💳 Ventana de Cobro (Desglose de Pago)',
+                  [
+                    _shortcutRow(['Ctrl', '1..7'], 'Métodos de pago (Efectivo, Point, QR, Tarjetas, Cta. Cte., Cheque)'),
+                    _shortcutRow(['F2'], 'Agregar otro medio de pago (Pago Mixto)'),
+                    _shortcutRow(['F4'], 'Asociar / Buscar Cliente'),
+                    _shortcutRow(['F6'], 'Alternar Ticket Común / Factura Fiscal ARCA'),
+                    _shortcutRow(['F7'], 'Marcar / Desmarcar Imprimir Comprobante'),
+                    _shortcutRow(['F8'], 'Marcar / Desmarcar Vista Previa'),
+                    _shortcutRow(['F9'], 'Alternar Logística (Retira / Envío / Acopio)'),
+                    _shortcutRow(['F10', 'Enter'], 'Confirmar Venta'),
+                    _shortcutRow(['Esc'], 'Cerrar ventana de Cobro'),
                   ],
                 ),
                 _shortcutSection(
@@ -3243,11 +3257,11 @@ class _PosScreenState extends State<PosScreen> {
 
     // Atajos que solo funcionan cuando el buscador está vacío
     if (isSearchEmpty) {
-      // Alt + 1..9 para seleccionar productos
-      final isAltPressed = HardwareKeyboard.instance.logicalKeysPressed.contains(LogicalKeyboardKey.altLeft) ||
-                           HardwareKeyboard.instance.logicalKeysPressed.contains(LogicalKeyboardKey.altRight);
+      // Ctrl + 1..9 para seleccionar productos (anti-AltCodes de Windows)
+      final isControlPressed = HardwareKeyboard.instance.logicalKeysPressed.contains(LogicalKeyboardKey.controlLeft) ||
+                               HardwareKeyboard.instance.logicalKeysPressed.contains(LogicalKeyboardKey.controlRight);
 
-      if (isAltPressed) {
+      if (isControlPressed) {
         final key = event.logicalKey;
         int? index;
 
@@ -3274,7 +3288,7 @@ class _PosScreenState extends State<PosScreen> {
         if (index != null && index < displayItems.length) {
           _handleProductSelection(displayItems[index]);
         }
-        // Consumir cualquier Alt+1..9 (haya producto o no) para que no se propague al buscador
+        // Consumir cualquier Ctrl+1..9 (haya producto o no) para que no se propague al buscador
         return index != null;
       }
 
@@ -3333,6 +3347,11 @@ class _PosScreenState extends State<PosScreen> {
           TextField(
             controller: _searchController,
             focusNode: _searchFocusNode,
+            inputFormatters: [
+              FilteringTextInputFormatter.deny(
+                RegExp(r'[\x00-\x1F\u263A\u263B\u2665\u2666\u2663\u2660\u2022\u25D8\u25CB]'),
+              ),
+            ],
             decoration: InputDecoration(
               hintText: 'Escribir nombre o escanear código... (Enter: Cobrar · F1: Atajos)',
               prefixIcon: _isSearching

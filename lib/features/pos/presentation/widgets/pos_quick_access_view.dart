@@ -83,27 +83,25 @@ class PosQuickAccessCatalogView extends StatelessWidget {
 
     return Colors.blueGrey.shade600;
   }
-  /// Envuelve cualquier ítem del catálogo con un tooltip que muestra el nombre
-  /// completo del producto (y categoría/código) al apoyar el mouse.
+  /// Envuelve cualquier ítem del catálogo con un tooltip limpio que muestra únicamente
+  /// el nombre completo del producto por encima de la tarjeta (sin tapar el botón -).
   Widget _wrapWithProductTooltip(Widget child, Product product) {
-    final parts = <String>[product.name];
-    if (product.category?.name != null && product.category!.name.isNotEmpty) {
-      parts.add('Cat: ${product.category!.name}');
-    }
-    final code = product.internalCode.isNotEmpty
-        ? product.internalCode
-        : product.barcode;
-    if (code != null && code.isNotEmpty) {
-      parts.add('Cód: $code');
-    }
     return Tooltip(
-      message: parts.join('\n'),
+      message: product.name,
+      preferBelow: false,
+      verticalOffset: 14,
       waitDuration: const Duration(milliseconds: 450),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      textStyle: const TextStyle(
+        color: Colors.white,
+        fontSize: 12,
+        fontWeight: FontWeight.w500,
+      ),
       child: child,
     );
   }
 
-  /// Badge compacto de atajo [Alt+N].
+  /// Badge compacto de atajo [Ctrl+N].
   Widget _buildAltBadge(int number, {double fontSize = 8.5}) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1.5),
@@ -113,7 +111,7 @@ class PosQuickAccessCatalogView extends StatelessWidget {
         border: Border.all(color: Colors.blue.shade300, width: 0.8),
       ),
       child: Text(
-        'Alt+$number',
+        'Ctrl+$number',
         maxLines: 1,
         style: TextStyle(
           fontSize: fontSize,
@@ -779,7 +777,7 @@ class PosQuickAccessCatalogView extends StatelessWidget {
                                       border: Border.all(color: Colors.blue.shade300, width: 0.8),
                                     ),
                                     child: Text(
-                                      'Alt+$shortcutNumber',
+                                      'Ctrl+$shortcutNumber',
                                       maxLines: 1,
                                       style: TextStyle(
                                         fontSize: isMedium ? 6.5 : 7.5,
@@ -927,7 +925,7 @@ class PosQuickAccessCatalogView extends StatelessWidget {
                                     border: Border.all(color: Colors.blue.shade300, width: 0.8),
                                   ),
                                   child: Text(
-                                    'Alt+$shortcutNumber',
+                                    'Ctrl+$shortcutNumber',
                                     maxLines: 1,
                                     style: TextStyle(
                                       fontSize: 7,
