@@ -83,6 +83,129 @@ class PosQuickAccessCatalogView extends StatelessWidget {
 
     return Colors.blueGrey.shade600;
   }
+  /// Envuelve cualquier ítem del catálogo con un tooltip que muestra el nombre
+  /// completo del producto (y categoría/código) al apoyar el mouse.
+  Widget _wrapWithProductTooltip(Widget child, Product product) {
+    final parts = <String>[product.name];
+    if (product.category?.name != null && product.category!.name.isNotEmpty) {
+      parts.add('Cat: ${product.category!.name}');
+    }
+    final code = product.internalCode.isNotEmpty
+        ? product.internalCode
+        : product.barcode;
+    if (code != null && code.isNotEmpty) {
+      parts.add('Cód: $code');
+    }
+    return Tooltip(
+      message: parts.join('\n'),
+      waitDuration: const Duration(milliseconds: 450),
+      child: child,
+    );
+  }
+
+  /// Badge compacto de atajo [Alt+N].
+  Widget _buildAltBadge(int number, {double fontSize = 8.5}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1.5),
+      decoration: BoxDecoration(
+        color: Colors.blue.shade100.withValues(alpha: 0.95),
+        borderRadius: BorderRadius.circular(5),
+        border: Border.all(color: Colors.blue.shade300, width: 0.8),
+      ),
+      child: Text(
+        'Alt+$number',
+        maxLines: 1,
+        style: TextStyle(
+          fontSize: fontSize,
+          color: Colors.blue.shade900,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+
+  /// Controles de carrito (cantidad + botón -) compartidos por las vistas.
+  Widget _buildCartControls(Product product, double cartQty, bool isByWeight) {
+    if (cartQty <= 0) return const SizedBox.shrink();
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1E88E5).withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Text(
+            isByWeight
+                ? cartQty.toStringAsFixed(2)
+                : cartQty.toInt().toString(),
+            style: const TextStyle(
+              fontSize: 9,
+              color: Color(0xFF1E88E5),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        const SizedBox(width: 2),
+        InkWell(
+          onTap: () => onDecrementProduct?.call(product),
+          borderRadius: BorderRadius.circular(4),
+          child: const Padding(
+            padding: EdgeInsets.all(2),
+            child: Icon(Icons.remove_circle_outline,
+                size: 18, color: Color(0xFF1E88E5)),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Miniatura cuadrada: foto BoxFit.contain en fondo blanco, o ícono semántico.
+  Widget _buildThumb(
+    Product product, {
+    required double size,
+    required bool isByWeight,
+    required Color accent,
+    required bool hasImage,
+    double borderRadius = 8,
+    double iconRatio = 0.55,
+  }) {
+    final icon = Icon(
+      isByWeight ? Icons.scale_rounded : Icons.inventory_2_outlined,
+      color: accent,
+      size: size * iconRatio,
+    );
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: hasImage ? Colors.white : accent.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(borderRadius),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(borderRadius - 1),
+        child: hasImage
+            ? CachedNetworkImage(
+                imageUrl: product.imageUrl!,
+                width: size,
+                height: size,
+                fit: BoxFit.contain,
+                placeholder: (context, url) => Center(
+                  child: SizedBox(
+                    width: size * 0.35,
+                    height: size * 0.35,
+                    child: const CircularProgressIndicator(strokeWidth: 1.5),
+                  ),
+                ),
+                errorWidget: (context, url, error) => icon,
+              )
+            : Center(child: icon),
+      ),
+    );
+  }
+
 
   /// Lectura segura de cantidad en carrito (60 FPS).
   /// Devuelve 0.0 si PosProvider no está disponible (para tests aislados).
@@ -198,7 +321,11 @@ class PosQuickAccessCatalogView extends StatelessWidget {
         itemCount: products.length,
         itemBuilder: (context, index) {
           final p = products[index];
-          return _buildListItem(context, p, topRank: topRanks[p.id]);
+          final shortcutNumber = (showKeyboardShortcuts && index < 9) ? index + 1 : null;
+          return _wrapWithProductTooltip(
+            _buildListItem(context, p, topRank: topRanks[p.id], shortcutNumber: shortcutNumber),
+            p,
+          );
         },
       );
     } else if (viewMode == 'compact') {
@@ -212,7 +339,11 @@ class PosQuickAccessCatalogView extends StatelessWidget {
         itemCount: products.length,
         itemBuilder: (context, index) {
           final p = products[index];
-          return _buildCompactItem(context, p, topRank: topRanks[p.id]);
+          final shortcutNumber = (showKeyboardShortcuts && index < 9) ? index + 1 : null;
+          return _wrapWithProductTooltip(
+            _buildCompactItem(context, p, topRank: topRanks[p.id], shortcutNumber: shortcutNumber),
+            p,
+          );
         },
       );
     } else if (viewMode == 'grid_medium') {
@@ -227,12 +358,15 @@ class PosQuickAccessCatalogView extends StatelessWidget {
         itemBuilder: (context, index) {
           final p = products[index];
           final shortcutNumber = (showKeyboardShortcuts && index < 9) ? index + 1 : null;
-          return _buildGridItem(
-            context,
+          return _wrapWithProductTooltip(
+            _buildGridItem(
+              context,
+              p,
+              isMedium: true,
+              topRank: topRanks[p.id],
+              shortcutNumber: shortcutNumber,
+            ),
             p,
-            isMedium: true,
-            topRank: topRanks[p.id],
-            shortcutNumber: shortcutNumber,
           );
         },
       );
@@ -249,170 +383,252 @@ class PosQuickAccessCatalogView extends StatelessWidget {
         itemBuilder: (context, index) {
           final p = products[index];
           final shortcutNumber = (showKeyboardShortcuts && index < 9) ? index + 1 : null;
-          return _buildGridItem(
-            context,
+          return _wrapWithProductTooltip(
+            _buildGridItem(
+              context,
+              p,
+              isMedium: false,
+              topRank: topRanks[p.id],
+              shortcutNumber: shortcutNumber,
+            ),
             p,
-            isMedium: false,
-            topRank: topRanks[p.id],
-            shortcutNumber: shortcutNumber,
           );
         },
       );
     }
   }
 
-  Widget _buildListItem(BuildContext context, Product product, {int? topRank}) {
+  /// Modo Lista: tarjeta blanca enterprise con miniatura contain, pill de
+  /// categoría, badge [Alt+N], ventas, stock crítico y reactividad de carrito.
+  Widget _buildListItem(BuildContext context, Product product,
+      {int? topRank, int? shortcutNumber}) {
     final isByWeight = product.isSoldByWeight;
     final uri = product.imageUrl != null && product.imageUrl!.isNotEmpty
         ? Uri.tryParse(product.imageUrl!)
         : null;
-    final hasImage = uri != null && uri.hasScheme && uri.hasAuthority && uri.host.isNotEmpty;
+    final hasImage =
+        uri != null && uri.hasScheme && uri.hasAuthority && uri.host.isNotEmpty;
     final hasBarcode = product.barcode != null && product.barcode!.isNotEmpty;
+    final cartQty = _getCartQuantity(context, product.id);
+    final isPinned = pinnedProductIds.contains(product.id);
+    final accent = _resolveSemanticAccent(product);
+    final lowStock = !product.isCombo &&
+        product.minStock != null &&
+        product.stock <= product.minStock!;
 
     return Card(
-      elevation: 1,
+      elevation: cartQty > 0 ? 2 : 1,
       margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
-      child: ListTile(
-        onTap: () => onSelectProduct?.call(product),
-        leading: Container(
-          width: 44,
-          height: 44,
-          decoration: BoxDecoration(
-            color: isByWeight ? Colors.orange.shade50 : Colors.blue.shade50,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.grey.shade300, width: 1),
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(7),
-            child: hasImage
-                ? CachedNetworkImage(
-                    imageUrl: product.imageUrl!,
-                    width: 44,
-                    height: 44,
-                    fit: BoxFit.cover,
-                    placeholder: (context, url) => const Center(
-                      child: SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                    ),
-                    errorWidget: (context, url, error) => Icon(
-                      isByWeight ? Icons.scale_rounded : Icons.inventory_2_outlined,
-                      color: isByWeight ? Colors.orange.shade600 : Colors.blue.shade600,
-                      size: 22,
-                    ),
-                  )
-                : Icon(
-                    isByWeight ? Icons.scale_rounded : Icons.inventory_2_outlined,
-                    color: isByWeight ? Colors.orange.shade600 : Colors.blue.shade600,
-                    size: 22,
-                  ),
-          ),
+      color: Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: BorderSide(
+          color: cartQty > 0 ? const Color(0xFF1E88E5) : Colors.grey.shade200,
+          width: cartQty > 0 ? 2.0 : 1.0,
         ),
-        title: Text(product.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-        subtitle: (hasBarcode || isByWeight || product.salesCount > 0)
-            ? Padding(
-                padding: const EdgeInsets.only(top: 3),
-                child: Wrap(
-                  spacing: 6,
-                  runSpacing: 4,
-                  crossAxisAlignment: WrapCrossAlignment.center,
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: () => onSelectProduct?.call(product),
+        onSecondaryTap: () => onQuickLook?.call(product),
+        onLongPress: () => onQuickLook?.call(product),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            children: [
+              _buildThumb(
+                product,
+                size: 44,
+                isByWeight: isByWeight,
+                accent: accent,
+                hasImage: hasImage,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    if (hasBarcode)
-                      Text(product.barcode!, style: const TextStyle(fontSize: 12)),
-                    if (isByWeight)
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                        decoration: BoxDecoration(
-                          color: Colors.orange.shade100,
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          '⚖️ Por Kg',
-                          style: TextStyle(
-                            fontSize: 9.5,
-                            color: Colors.orange.shade900,
-                            fontWeight: FontWeight.w700,
+                    Text(
+                      product.name,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.bold, fontSize: 13.5),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        if (shortcutNumber != null)
+                          _buildAltBadge(shortcutNumber),
+                        if (product.category?.name != null)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 1.5),
+                            decoration: BoxDecoration(
+                              color: accent.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              product.category!.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 9.5,
+                                color: accent,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
                           ),
-                        ),
-                      ),
-                    if (product.salesCount > 0)
-                      _buildSalesBadge(product, topRank: topRank, compact: false),
+                        if (hasBarcode)
+                          Text(
+                            product.barcode!,
+                            style: TextStyle(
+                                fontSize: 11, color: Colors.grey.shade600),
+                          ),
+                        if (isByWeight)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 5, vertical: 1),
+                            decoration: BoxDecoration(
+                              color: Colors.orange.shade100,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              '⚖️ Por Kg',
+                              style: TextStyle(
+                                fontSize: 9.5,
+                                color: Colors.orange.shade900,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        if (product.salesCount > 0)
+                          _buildSalesBadge(product,
+                              topRank: topRank, compact: true),
+                        if (lowStock)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 5, vertical: 1.5),
+                            decoration: BoxDecoration(
+                              color: Colors.orange.shade50,
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(
+                                  color: Colors.orange.shade300, width: 0.8),
+                            ),
+                            child: Text(
+                              'Stock bajo',
+                              style: TextStyle(
+                                fontSize: 9,
+                                color: Colors.orange.shade800,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        if (isPinned)
+                          const Icon(Icons.push_pin,
+                              size: 13, color: Colors.blueGrey),
+                      ],
+                    ),
                   ],
                 ),
-              )
-            : null,
-        trailing: _renderPrice(context, product, isByWeight, 16),
+              ),
+              const SizedBox(width: 10),
+              Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  _renderPrice(context, product, isByWeight, 14),
+                  if (cartQty > 0) ...[
+                    const SizedBox(height: 3),
+                    _buildCartControls(product, cartQty, isByWeight),
+                  ],
+                ],
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
 
-  Widget _buildCompactItem(BuildContext context, Product product, {int? topRank}) {
+  /// Modo Compacto: tarjetita rectangular blanca con barra semántica lateral,
+  /// miniatura 36x36 contain, nombre ancho de 2 líneas, badge [Alt+N], 📌 y carrito.
+  Widget _buildCompactItem(BuildContext context, Product product,
+      {int? topRank, int? shortcutNumber}) {
     final isByWeight = product.isSoldByWeight;
     final uri = product.imageUrl != null && product.imageUrl!.isNotEmpty
         ? Uri.tryParse(product.imageUrl!)
         : null;
-    final hasImage = uri != null && uri.hasScheme && uri.hasAuthority && uri.host.isNotEmpty;
+    final hasImage =
+        uri != null && uri.hasScheme && uri.hasAuthority && uri.host.isNotEmpty;
+    final cartQty = _getCartQuantity(context, product.id);
+    final isPinned = pinnedProductIds.contains(product.id);
+    final accent = _resolveSemanticAccent(product);
 
     return InkWell(
-      borderRadius: BorderRadius.circular(6),
+      borderRadius: BorderRadius.circular(8),
       onTap: () => onSelectProduct?.call(product),
+      onSecondaryTap: () => onQuickLook?.call(product),
+      onLongPress: () => onQuickLook?.call(product),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
-          color: isByWeight ? Colors.orange.shade50 : Colors.blue.shade50,
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: isByWeight ? Colors.orange.shade200 : Colors.blue.shade200),
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: cartQty > 0 ? const Color(0xFF1E88E5) : Colors.grey.shade200,
+            width: cartQty > 0 ? 2.0 : 1.0,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 4,
+              offset: const Offset(0, 1),
+            ),
+          ],
         ),
+        clipBehavior: Clip.antiAlias,
         child: Row(
           children: [
-            Container(
-              width: 24,
-              height: 24,
-              decoration: BoxDecoration(
-                color: isByWeight ? Colors.orange.shade50 : Colors.blue.shade50,
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: hasImage
-                    ? CachedNetworkImage(
-                        imageUrl: product.imageUrl!,
-                        width: 24,
-                        height: 24,
-                        fit: BoxFit.cover,
-                        placeholder: (context, url) => const Center(
-                          child: SizedBox(
-                            width: 10,
-                            height: 10,
-                            child: CircularProgressIndicator(strokeWidth: 1.5),
-                          ),
-                        ),
-                        errorWidget: (context, url, error) => Icon(
-                          isByWeight ? Icons.scale_rounded : Icons.inventory_2_outlined,
-                          color: isByWeight ? Colors.orange.shade600 : Colors.blue.shade600,
-                          size: 16,
-                        ),
-                      )
-                    : Icon(
-                        isByWeight ? Icons.scale_rounded : Icons.inventory_2_outlined,
-                        color: isByWeight ? Colors.orange.shade600 : Colors.blue.shade600,
-                        size: 16,
-                      ),
-              ),
+            // Barra lateral semántica de categoría
+            Container(width: 4, color: accent),
+            const SizedBox(width: 6),
+            _buildThumb(
+              product,
+              size: 36,
+              isByWeight: isByWeight,
+              accent: accent,
+              hasImage: hasImage,
+              borderRadius: 6,
             ),
             const SizedBox(width: 8),
             Expanded(
-              child: Text(
-                product.name,
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    product.name,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 11.5,
+                        height: 1.15),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (product.salesCount > 0) ...[
+                    const SizedBox(height: 2),
+                    _buildSalesBadge(product, topRank: topRank, compact: true),
+                  ],
+                ],
               ),
             ),
-            const SizedBox(width: 4),
-            Flexible(
+            const SizedBox(width: 6),
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
               child: FittedBox(
                 fit: BoxFit.scaleDown,
                 alignment: Alignment.centerRight,
@@ -420,10 +636,25 @@ class PosQuickAccessCatalogView extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    _renderPrice(context, product, isByWeight, 13),
-                    if (product.salesCount > 0) ...[
-                      const SizedBox(height: 1),
-                      _buildSalesBadge(product, topRank: topRank, compact: true),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (shortcutNumber != null) ...[
+                          _buildAltBadge(shortcutNumber, fontSize: 7.5),
+                          const SizedBox(width: 3),
+                        ],
+                        if (isPinned)
+                          const Padding(
+                            padding: EdgeInsets.only(right: 3),
+                            child: Icon(Icons.push_pin,
+                                size: 12, color: Colors.blueGrey),
+                          ),
+                        _renderPrice(context, product, isByWeight, 12),
+                      ],
+                    ),
+                    if (cartQty > 0) ...[
+                      const SizedBox(height: 2),
+                      _buildCartControls(product, cartQty, isByWeight),
                     ],
                   ],
                 ),
@@ -434,7 +665,6 @@ class PosQuickAccessCatalogView extends StatelessWidget {
       ),
     );
   }
-
   Widget _buildGridItem(
     BuildContext context,
     Product product, {
@@ -599,10 +829,12 @@ class PosQuickAccessCatalogView extends StatelessWidget {
                             style: TextStyle(
                               fontWeight: FontWeight.w700,
                               fontSize: isMedium ? 11 : 12,
-                              height: 1.15,
+                              height: 1.12,
                               color: const Color(0xFF1E293B),
                             ),
-                            maxLines: 2,
+                            // 3 líneas: aprovecha el espacio blanco bajo el título
+                            // para mostrar color/modelo completo.
+                            maxLines: 3,
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
