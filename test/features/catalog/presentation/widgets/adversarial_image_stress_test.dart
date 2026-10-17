@@ -270,7 +270,10 @@ void main() {
         ),
       ];
 
-      await tester.pumpWidget(buildCatalogHarness(products: cornerCaseProducts));
+      // El viewport de prueba por defecto es 800x600: alinear MediaQuery para
+      // que la UI evalúe su layout responsivo con el tamaño real de ventana.
+      await tester.pumpWidget(buildCatalogHarness(
+          products: cornerCaseProducts, viewport: const Size(800, 600)));
       await tester.pump();
 
       // Product 1 has a valid scheme + host URL, so exactly 1 CachedNetworkImage should be instantiated in view
