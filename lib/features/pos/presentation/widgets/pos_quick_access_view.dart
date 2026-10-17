@@ -637,15 +637,6 @@ class PosQuickAccessCatalogView extends StatelessWidget {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  if (product.salesCount > 0) ...[
-                    const SizedBox(height: 2),
-                    FittedBox(
-                      fit: BoxFit.scaleDown,
-                      alignment: Alignment.centerLeft,
-                      child: _buildSalesBadge(product,
-                          topRank: topRank, compact: true),
-                    ),
-                  ],
                 ],
               ),
             ),
@@ -680,6 +671,10 @@ class PosQuickAccessCatalogView extends StatelessWidget {
                     if (cartQty > 0) ...[
                       const SizedBox(height: 2),
                       _buildCartControls(product, cartQty, isByWeight),
+                    ] else if (product.salesCount > 0) ...[
+                      const SizedBox(height: 2),
+                      _buildSalesBadge(product,
+                          topRank: topRank, compact: true),
                     ],
                   ],
                   ),
