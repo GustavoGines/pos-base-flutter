@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:frontend_desktop/core/config/app_config.dart';
@@ -63,11 +64,15 @@ class _PosScreenState extends State<PosScreen> {
   // Filtro rápido en memoria para el Acceso Rápido
   String _quickAccessFilter = 'all'; // 'all', 'pinned', 'offers', 'weight', o 'cat_<id>'
 
+  // Candado anti-doble-modal para preventir abrir CheckoutDialog dos veces
+  bool _isCheckingOut = false;
+
   PusherChannelsClient? _pusher;
 
   @override
   void initState() {
     super.initState();
+    HardwareKeyboard.instance.addHandler(_handlePosHardwareKey);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initReverb();
       _searchFocusNode.requestFocus();
@@ -232,6 +237,7 @@ class _PosScreenState extends State<PosScreen> {
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_handlePosHardwareKey);
     _pusher?.disconnect();
     _pendingOrdersTimer?.cancel();
     _debounceSearchTimer?.cancel();
@@ -270,7 +276,13 @@ class _PosScreenState extends State<PosScreen> {
   }
 
   void _onProductScannedOrSearched(String query) async {
-    if (query.trim().isEmpty) return;
+    if (query.trim().isEmpty) {
+      final posProvider = Provider.of<PosProvider>(context, listen: false);
+      if (posProvider.cart.isNotEmpty && !posProvider.isLoading && !_isCheckingOut) {
+        _handleCheckout();
+      }
+      return;
+    }
     String cleanQuery = query.trim().toUpperCase();
 
     final posProvider = Provider.of<PosProvider>(context, listen: false);
@@ -506,7 +518,9 @@ class _PosScreenState extends State<PosScreen> {
       promotionalLabel: promoOffer?.name,
       promotionalPeriodType: promoOffer?.periodType,
     );
-    if (!success) {
+    if (success) {
+      _searchFocusNode.requestFocus();
+    } else {
       // Es producto por peso, pedir peso por Modal
       _showWeightModal(
         product,
@@ -535,6 +549,7 @@ class _PosScreenState extends State<PosScreen> {
     } else {
       posProvider.updateQuantity(cartItem, cartItem.quantity - 1);
     }
+    _searchFocusNode.requestFocus();
   }
 
   void _showProductQuickLookDialog(Product product) {
@@ -960,73 +975,77 @@ class _PosScreenState extends State<PosScreen> {
       value == null ? 0.0 : double.tryParse(value.toString()) ?? 0.0;
 
   void _handleCheckout() async {
-    final posProvider = Provider.of<PosProvider>(context, listen: false);
-    final cashRegisterProvider =
-        Provider.of<CashRegisterProvider>(context, listen: false);
+    if (_isCheckingOut) return;
+    _isCheckingOut = true;
 
-    // ── VALIDACIÓN PROACTIVA: Verificar el turno en el servidor ANTES de abrir
-    // la pantalla de cobro. Esto intercepta el caso donde el turno fue cerrado
-    // desde otra terminal mientras este cliente estaba ocioso con el carrito lleno.
-    final settingsProvider = Provider.of<SettingsProvider>(context, listen: false);
-    await cashRegisterProvider.checkCurrentShift(registerId: settingsProvider.assignedRegisterId > 0 ? settingsProvider.assignedRegisterId : null);
+    try {
+      final posProvider = Provider.of<PosProvider>(context, listen: false);
+      final cashRegisterProvider =
+          Provider.of<CashRegisterProvider>(context, listen: false);
 
-    final currentShift = cashRegisterProvider.currentShift;
-    if (!mounted) return;
+      // ── VALIDACIÓN PROACTIVA: Verificar el turno en el servidor ANTES de abrir
+      // la pantalla de cobro. Esto intercepta el caso donde el turno fue cerrado
+      // desde otra terminal mientras este cliente estaba ocioso con el carrito lleno.
+      final settingsProvider = Provider.of<SettingsProvider>(context, listen: false);
+      await cashRegisterProvider.checkCurrentShift(registerId: settingsProvider.assignedRegisterId > 0 ? settingsProvider.assignedRegisterId : null);
 
-    if (currentShift == null || !currentShift.isOpen) {
-      // El turno ya no existe en el servidor → mostrar cartel de seguridad de inmediato
-      await showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (ctx) => AlertDialog(
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          backgroundColor: Colors.red.shade50,
-          title: Row(
-            children: [
-              Icon(Icons.lock_clock, color: Colors.red.shade700, size: 28),
-              const SizedBox(width: 12),
-              const Expanded(
-                child: Text(
-                  'Turno Cerrado',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+      final currentShift = cashRegisterProvider.currentShift;
+      if (!mounted) return;
+
+      if (currentShift == null || !currentShift.isOpen) {
+        // El turno ya no existe en el servidor → mostrar cartel de seguridad de inmediato
+        await showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (ctx) => AlertDialog(
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            backgroundColor: Colors.red.shade50,
+            title: Row(
+              children: [
+                Icon(Icons.lock_clock, color: Colors.red.shade700, size: 28),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    'Turno Cerrado',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                  ),
                 ),
-              ),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'El turno de caja fue cerrado desde otra terminal.',
-                style: TextStyle(fontSize: 15),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'La sesión actual ya no es válida. Será redirigido al inicio para actualizar el estado de la caja.',
-                style: TextStyle(fontSize: 13, color: Colors.red.shade700),
-              ),
-            ],
-          ),
-          actions: [
-            FilledButton.icon(
-              style:
-                  FilledButton.styleFrom(backgroundColor: Colors.red.shade600),
-              onPressed: () => Navigator.pop(ctx),
-              icon: const Icon(Icons.refresh),
-              label: const Text('Recargar sesión'),
+              ],
             ),
-          ],
-        ),
-      );
-      if (mounted) {
-        posProvider.clearCart();
-        Navigator.of(context)
-            .pushNamedAndRemoveUntil('/home', (route) => false);
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'El turno de caja fue cerrado desde otra terminal.',
+                  style: TextStyle(fontSize: 15),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'La sesión actual ya no es válida. Será redirigido al inicio para actualizar el estado de la caja.',
+                  style: TextStyle(fontSize: 13, color: Colors.red.shade700),
+                ),
+              ],
+            ),
+            actions: [
+              FilledButton.icon(
+                style:
+                    FilledButton.styleFrom(backgroundColor: Colors.red.shade600),
+                onPressed: () => Navigator.pop(ctx),
+                icon: const Icon(Icons.refresh),
+                label: const Text('Recargar sesión'),
+              ),
+            ],
+          ),
+        );
+        if (mounted) {
+          posProvider.clearCart();
+          Navigator.of(context)
+              .pushNamedAndRemoveUntil('/home', (route) => false);
+        }
+        return;
       }
-      return;
-    }
 
     // Turno confirmado activo en el servidor → abrir pantalla de cobro
     // Garantizar que los métodos de pago estén cargados ANTES de abrir el diálogo.
@@ -1411,6 +1430,9 @@ class _PosScreenState extends State<PosScreen> {
     }
 
     _searchFocusNode.requestFocus();
+    } finally {
+      _isCheckingOut = false;
+    }
   }
 
   // ────────────────────────────────────────────────────────────────
@@ -2656,6 +2678,179 @@ class _PosScreenState extends State<PosScreen> {
     });
   }
 
+  List<Product> _getFilteredProducts(CatalogProvider catalog, OfferProvider offerProv, LocalTerminalProvider localTerminal) {
+    if (_searchQuery.isNotEmpty) {
+      return _searchResults;
+    }
+
+    List<Product> filtered = List<Product>.from(catalog.products);
+
+    if (_quickAccessFilter == 'pinned') {
+      filtered = filtered.where((p) => localTerminal.pinnedProductIds.contains(p.id)).toList();
+    } else if (_quickAccessFilter == 'offers') {
+      filtered = filtered.where((p) => offerProv.getActiveOfferForProduct(p.id, basePrice: p.sellingPrice) != null).toList();
+    } else if (_quickAccessFilter == 'weight') {
+      filtered = filtered.where((p) => p.isSoldByWeight).toList();
+    } else if (_quickAccessFilter.startsWith('cat_')) {
+      final categoryName = _quickAccessFilter.substring(4);
+      filtered = filtered.where((p) => p.category?.name == categoryName).toList();
+    }
+
+    // Ordenamiento inteligente con prioridad a fijados
+    filtered.sort((a, b) {
+      final aPinned = localTerminal.pinnedProductIds.contains(a.id);
+      final bPinned = localTerminal.pinnedProductIds.contains(b.id);
+
+      if (aPinned != bPinned) {
+        return aPinned ? -1 : 1;
+      }
+
+      if (a.isSoldByWeight != b.isSoldByWeight) {
+        return a.isSoldByWeight ? -1 : 1;
+      }
+
+      final salesCmp = b.salesCount.compareTo(a.salesCount);
+      if (salesCmp != 0) return salesCmp;
+
+      return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+    });
+
+    return filtered;
+  }
+
+  bool _handlePosHardwareKey(KeyEvent event) {
+    if (!mounted || ModalRoute.of(context)?.isCurrent != true) return false;
+    if (event is! KeyDownEvent) return false;
+
+    final cashProv = Provider.of<CashRegisterProvider>(context, listen: false);
+    if (cashProv.currentShift == null || !cashProv.currentShift!.isOpen) {
+      return false;
+    }
+
+    final posProvider = Provider.of<PosProvider>(context, listen: false);
+    final catalog = Provider.of<CatalogProvider>(context, listen: false);
+    final offerProv = Provider.of<OfferProvider>(context, listen: false);
+    final localTerminal = Provider.of<LocalTerminalProvider>(context, listen: false);
+    final displayItems = _getFilteredProducts(catalog, offerProv, localTerminal);
+    final isSearchEmpty = _searchController.text.trim().isEmpty;
+
+    // F9 / F12 → Cobrar directo (funciona siempre que haya ítems en el carrito)
+    if (event.logicalKey == LogicalKeyboardKey.f9 || event.logicalKey == LogicalKeyboardKey.f12) {
+      if (posProvider.cart.isNotEmpty && !posProvider.isLoading && !_isCheckingOut) {
+        _handleCheckout();
+      }
+      return true;
+    }
+
+    // F4 → Poner en Espera directo
+    if (event.logicalKey == LogicalKeyboardKey.f4) {
+      if (posProvider.cart.isNotEmpty && !posProvider.isLoading) {
+        _handleHoldOrder();
+      }
+      return true;
+    }
+
+    // Escape → Cerrar overlay de órdenes pendientes o limpiar buscador/resetear filtro
+    if (event.logicalKey == LogicalKeyboardKey.escape) {
+      if (_pendingOrdersPortalController.isShowing) {
+        _pendingOrdersPortalController.hide();
+        return true;
+      }
+      if (_searchController.text.isNotEmpty) {
+        _searchController.clear();
+        _onPosSearchChanged('');
+        _searchFocusNode.requestFocus();
+      } else if (_quickAccessFilter != 'all') {
+        setState(() {
+          _quickAccessFilter = 'all';
+        });
+        _searchFocusNode.requestFocus();
+      }
+      return true;
+    }
+
+    // Atajos que solo funcionan cuando el buscador está vacío
+    if (isSearchEmpty) {
+      // Alt + 1..9 para seleccionar productos
+      final isAltPressed = HardwareKeyboard.instance.logicalKeysPressed.contains(LogicalKeyboardKey.altLeft) ||
+                           HardwareKeyboard.instance.logicalKeysPressed.contains(LogicalKeyboardKey.altRight);
+
+      if (isAltPressed) {
+        final key = event.logicalKey;
+        int? index;
+
+        if (key == LogicalKeyboardKey.digit1 || key == LogicalKeyboardKey.numpad1) {
+          index = 0;
+        } else if (key == LogicalKeyboardKey.digit2 || key == LogicalKeyboardKey.numpad2) {
+          index = 1;
+        } else if (key == LogicalKeyboardKey.digit3 || key == LogicalKeyboardKey.numpad3) {
+          index = 2;
+        } else if (key == LogicalKeyboardKey.digit4 || key == LogicalKeyboardKey.numpad4) {
+          index = 3;
+        } else if (key == LogicalKeyboardKey.digit5 || key == LogicalKeyboardKey.numpad5) {
+          index = 4;
+        } else if (key == LogicalKeyboardKey.digit6 || key == LogicalKeyboardKey.numpad6) {
+          index = 5;
+        } else if (key == LogicalKeyboardKey.digit7 || key == LogicalKeyboardKey.numpad7) {
+          index = 6;
+        } else if (key == LogicalKeyboardKey.digit8 || key == LogicalKeyboardKey.numpad8) {
+          index = 7;
+        } else if (key == LogicalKeyboardKey.digit9 || key == LogicalKeyboardKey.numpad9) {
+          index = 8;
+        }
+
+        if (index != null && index < displayItems.length) {
+          _handleProductSelection(displayItems[index]);
+          return true;
+        }
+        return false;
+      }
+
+      // Enter / NumpadEnter → Cobrar (si el foco NO está en el TextField)
+      if ((event.logicalKey == LogicalKeyboardKey.enter || event.logicalKey == LogicalKeyboardKey.numpadEnter) &&
+          !_searchFocusNode.hasFocus) {
+        if (posProvider.cart.isNotEmpty && !posProvider.isLoading && !_isCheckingOut) {
+          _handleCheckout();
+        }
+        return true;
+      }
+
+      // + → Incrementar último ítem
+      if (event.logicalKey == LogicalKeyboardKey.numpadAdd || event.logicalKey == LogicalKeyboardKey.add) {
+        if (posProvider.cart.isNotEmpty) {
+          final lastItem = posProvider.cart.last;
+          if (!lastItem.product.isSoldByWeight) {
+            posProvider.updateQuantity(lastItem, lastItem.quantity + 1);
+          }
+        }
+        return true;
+      }
+
+      // - → Decrementar último ítem
+      if (event.logicalKey == LogicalKeyboardKey.numpadSubtract || event.logicalKey == LogicalKeyboardKey.minus) {
+        if (posProvider.cart.isNotEmpty) {
+          final lastItem = posProvider.cart.last;
+          if (lastItem.quantity > 1) {
+            posProvider.updateQuantity(lastItem, lastItem.quantity - 1);
+          } else {
+            posProvider.removeFromCart(lastItem);
+          }
+        }
+        return true;
+      }
+
+      // Delete → Eliminar último ítem
+      if (event.logicalKey == LogicalKeyboardKey.delete) {
+        if (posProvider.cart.isNotEmpty) {
+          posProvider.removeFromCart(posProvider.cart.last);
+        }
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   Widget _buildRightPanel() {
     return Padding(
       padding: const EdgeInsets.all(16.0),
@@ -2766,54 +2961,15 @@ class _PosScreenState extends State<PosScreen> {
                   fit: BoxFit.scaleDown,
                   child: PosWatermarkLogo(size: 360),
                 ),
-                Consumer3<CatalogProvider, OfferProvider, LocalTerminalProvider>(
-                  builder: (context, catalog, offerProv, localTerminal, child) {
+                Consumer<CatalogProvider>(
+                  builder: (context, catalog, _) {
                     if (catalog.isLoading) {
                       return const Center(child: CircularProgressIndicator());
                     }
 
-                    // Determinar qué mostrar: resultados de API o Acceso Rápido
-                    final List<Product> displayItems;
-                    if (_searchQuery.isEmpty) {
-                      // Aplicar filtro rápido en memoria
-                      List<Product> filtered = List<Product>.from(catalog.products);
-
-                      if (_quickAccessFilter == 'pinned') {
-                        filtered = filtered.where((p) => localTerminal.pinnedProductIds.contains(p.id)).toList();
-                      } else if (_quickAccessFilter == 'offers') {
-                        filtered = filtered.where((p) => offerProv.getActiveOfferForProduct(p.id, basePrice: p.sellingPrice) != null).toList();
-                      } else if (_quickAccessFilter == 'weight') {
-                        filtered = filtered.where((p) => p.isSoldByWeight).toList();
-                      } else if (_quickAccessFilter.startsWith('cat_')) {
-                        final categoryName = _quickAccessFilter.substring(4);
-                        filtered = filtered.where((p) => p.category?.name == categoryName).toList();
-                      }
-
-                      // Ordenamiento inteligente con prioridad a fijados
-                      displayItems = filtered
-                        ..sort((a, b) {
-                          final aPinned = localTerminal.pinnedProductIds.contains(a.id);
-                          final bPinned = localTerminal.pinnedProductIds.contains(b.id);
-
-                          if (aPinned != bPinned) {
-                            return aPinned ? -1 : 1;
-                          }
-
-                          if (a.isSoldByWeight != b.isSoldByWeight) {
-                            return a.isSoldByWeight ? -1 : 1;
-                          }
-
-                          final salesCmp = b.salesCount.compareTo(a.salesCount);
-                          if (salesCmp != 0) return salesCmp;
-
-                          return a.name
-                              .toLowerCase()
-                              .compareTo(b.name.toLowerCase());
-                        });
-                    } else {
-                      // Resultados del servidor — búsqueda real sobre toda la BD
-                      displayItems = _searchResults;
-                    }
+                    final offerProv = context.watch<OfferProvider>();
+                    final localTerminal = context.watch<LocalTerminalProvider>();
+                    final displayItems = _getFilteredProducts(catalog, offerProv, localTerminal);
 
                     if (displayItems.isEmpty) {
                       if (_searchQuery.isEmpty && _quickAccessFilter != 'all' && catalog.products.isNotEmpty) {
@@ -3171,6 +3327,7 @@ class _PosScreenState extends State<PosScreen> {
       viewMode: viewMode,
       // El ranking Top solo aplica al Acceso Rápido; en búsquedas sería relativo a los resultados.
       showTopRanks: _searchQuery.isEmpty,
+      showKeyboardShortcuts: true,
       onSelectProduct: _handleProductSelection,
       onDecrementProduct: _handleDecrementProduct,
       onQuickLook: _showProductQuickLookDialog,

@@ -38,6 +38,9 @@ class PosQuickAccessCatalogView extends StatelessWidget {
   /// IDs de productos fijados por terminal (para mostrar indicador 📌).
   final Set<int> pinnedProductIds;
 
+  /// Si es true, muestra micro-indicador de atajo numérico [Alt+1..9] en las primeras 9 tarjetas.
+  final bool showKeyboardShortcuts;
+
   const PosQuickAccessCatalogView({
     super.key,
     required this.products,
@@ -49,6 +52,7 @@ class PosQuickAccessCatalogView extends StatelessWidget {
     this.onTogglePin,
     this.onQuickLook,
     this.pinnedProductIds = const {},
+    this.showKeyboardShortcuts = false,
   });
 
   /// Paleta de 6 tonos sobrios para categorías (hash determinístico).
@@ -222,11 +226,13 @@ class PosQuickAccessCatalogView extends StatelessWidget {
         itemCount: products.length,
         itemBuilder: (context, index) {
           final p = products[index];
+          final shortcutNumber = (showKeyboardShortcuts && index < 9) ? index + 1 : null;
           return _buildGridItem(
             context,
             p,
             isMedium: true,
             topRank: topRanks[p.id],
+            shortcutNumber: shortcutNumber,
           );
         },
       );
@@ -242,11 +248,13 @@ class PosQuickAccessCatalogView extends StatelessWidget {
         itemCount: products.length,
         itemBuilder: (context, index) {
           final p = products[index];
+          final shortcutNumber = (showKeyboardShortcuts && index < 9) ? index + 1 : null;
           return _buildGridItem(
             context,
             p,
             isMedium: false,
             topRank: topRanks[p.id],
+            shortcutNumber: shortcutNumber,
           );
         },
       );
@@ -432,6 +440,7 @@ class PosQuickAccessCatalogView extends StatelessWidget {
     Product product, {
     required bool isMedium,
     int? topRank,
+    int? shortcutNumber,
   }) {
     final isByWeight = product.isSoldByWeight;
     final uri = product.imageUrl != null && product.imageUrl!.isNotEmpty
@@ -495,7 +504,7 @@ class PosQuickAccessCatalogView extends StatelessWidget {
                           ),
                         ),
                       ),
-                      if (isByWeight || isPinned)
+                      if (isByWeight || isPinned || shortcutNumber != null)
                         Positioned(
                           top: 4,
                           left: 4,
@@ -505,6 +514,28 @@ class PosQuickAccessCatalogView extends StatelessWidget {
                             child: Row(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
+                                if (shortcutNumber != null)
+                                  Container(
+                                    padding: EdgeInsets.symmetric(
+                                      horizontal: isMedium ? 3.0 : 4.0,
+                                      vertical: 1.0,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.blue.shade100.withValues(alpha: 0.95),
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(color: Colors.blue.shade300, width: 0.8),
+                                    ),
+                                    child: Text(
+                                      'Alt+$shortcutNumber',
+                                      maxLines: 1,
+                                      style: TextStyle(
+                                        fontSize: isMedium ? 6.5 : 7.5,
+                                        color: Colors.blue.shade900,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ),
+                                if (shortcutNumber != null) const SizedBox(width: 3),
                                 if (isByWeight)
                                   Container(
                                     padding: EdgeInsets.symmetric(
@@ -526,7 +557,7 @@ class PosQuickAccessCatalogView extends StatelessWidget {
                                       ),
                                     ),
                                   ),
-                                const SizedBox(width: 4),
+                                if (isByWeight) const SizedBox(width: 4),
                                 if (isPinned)
                                   const Icon(Icons.push_pin, size: 14, color: Colors.blueGrey),
                               ],
@@ -632,6 +663,25 @@ class PosQuickAccessCatalogView extends StatelessWidget {
                           alignment: Alignment.centerLeft,
                           child: Row(
                             children: [
+                              if (shortcutNumber != null)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
+                                  decoration: BoxDecoration(
+                                    color: Colors.blue.shade100.withValues(alpha: 0.95),
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(color: Colors.blue.shade300, width: 0.8),
+                                  ),
+                                  child: Text(
+                                    'Alt+$shortcutNumber',
+                                    maxLines: 1,
+                                    style: TextStyle(
+                                      fontSize: 7,
+                                      color: Colors.blue.shade900,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                              if (shortcutNumber != null) const SizedBox(width: 3),
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
                                 decoration: BoxDecoration(
@@ -733,12 +783,13 @@ class PosQuickAccessCatalogView extends StatelessWidget {
                                 ),
                               ),
                               const SizedBox(width: 2),
-                              IconButton(
-                                icon: const Icon(Icons.remove_circle_outline, size: 18),
-                                color: const Color(0xFF1E88E5),
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints(),
-                                onPressed: () => onDecrementProduct?.call(product),
+                              InkWell(
+                                onTap: () => onDecrementProduct?.call(product),
+                                borderRadius: BorderRadius.circular(4),
+                                child: const Padding(
+                                  padding: EdgeInsets.all(2),
+                                  child: Icon(Icons.remove_circle_outline, size: 18, color: Color(0xFF1E88E5)),
+                                ),
                               ),
                             ],
                           ],

@@ -392,8 +392,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         _lines.add(line);
         _previousValidMethods.add(defaultMethod);
       });
-      // Sincronizar el campo tendered con el efectivo requerido (sin auto-focus en init)
-      _syncCashField();
+      // Sincronizar el campo tendered con el efectivo requerido (con auto-focus en init)
+      _syncCashField(autoFocus: defaultMethod.isCash);
     }
   }
 
@@ -434,7 +434,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     }
 
     if (autoFocus && req > 0) {
-      Future.delayed(const Duration(milliseconds: 120), () {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           _cashTenderedFocus.requestFocus();
           _cashTenderedCtrl.selection = TextSelection(
@@ -2002,17 +2002,30 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
 
     return PopScope(
       canPop: !_isSubmitting && !provider.isLoading && !_lines.any((l) => l.mpPaid),
-      child: Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        backgroundColor: Colors.white,
-        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 960, maxHeight: 800),
-          child: Container(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
+      child: CallbackShortcuts(
+        bindings: <ShortcutActivator, VoidCallback>{
+          const SingleActivator(LogicalKeyboardKey.enter): () {
+            if (_canSubmit && !_isSubmitting && !provider.isLoading) {
+              _processCheckout();
+            }
+          },
+          const SingleActivator(LogicalKeyboardKey.numpadEnter): () {
+            if (_canSubmit && !_isSubmitting && !provider.isLoading) {
+              _processCheckout();
+            }
+          },
+        },
+        child: Dialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          backgroundColor: Colors.white,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 960, maxHeight: 800),
+            child: Container(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
 // ──── Header
               if (isPending) ...[
                 Row(
@@ -2627,6 +2640,11 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                                             extentOffset:
                                                 _cashTenderedCtrl.text.length,
                                           );
+                                        },
+                                        onSubmitted: (_) {
+                                          if (_canSubmit && !_isSubmitting && !provider.isLoading) {
+                                            _processCheckout();
+                                          }
                                         },
                                         decoration: InputDecoration(
                                           labelText: 'Efectivo Recibido',
@@ -3289,6 +3307,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
           ),
         ),
       ),
+        ),
       ),
     );
   }
