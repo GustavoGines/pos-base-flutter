@@ -23,8 +23,10 @@ import 'posnet_waiting_dialog.dart';
 class PaymentLine {
   PaymentMethod? method;
   TextEditingController controller;
+  FocusNode amountFocus;
   TextEditingController percentageController;
   FocusNode percentageFocus;
+  bool isAutoCalculated;
 
   // Integración Mercado Pago (QR y Point)
   bool mpPaid = false;
@@ -43,9 +45,11 @@ class PaymentLine {
       {this.method,
       double initialAmount = 0.0,
       double? defaultCardSurcharge,
-      bool disableSurcharge = false})
+      bool disableSurcharge = false,
+      this.isAutoCalculated = false})
       : controller = TextEditingController(
             text: initialAmount > 0 ? initialAmount.toInputFormat() : ''),
+        amountFocus = FocusNode(),
         percentageController = TextEditingController(),
         percentageFocus = FocusNode(),
         checkBankController = TextEditingController(),
@@ -98,7 +102,9 @@ class PaymentLine {
         val == 0.0 &&
         defaultCardSurcharge != null &&
         defaultCardSurcharge > 0) {
-      if (m.code.contains('credito') || m.code.contains('tarjeta')) {
+      if (m.code.contains('credito') ||
+          m.code.contains('credit') ||
+          m.code.contains('tarjeta')) {
         val = defaultCardSurcharge;
       }
     }
@@ -108,6 +114,7 @@ class PaymentLine {
 
   void dispose() {
     controller.dispose();
+    amountFocus.dispose();
     percentageController.dispose();
     percentageFocus.dispose();
     checkBankController.dispose();
@@ -143,7 +150,9 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   // 1: Efectivo, 2: MP Point, 3: MP QR, 4: Débito, 5: Crédito, 6: Cta. Cte., 7: Cheque
   int _getMethodOrderNumber(String code) {
     final normalized = code.toLowerCase().trim();
-    if (normalized == 'cash' || normalized == 'efectivo' || normalized.contains('efectivo')) {
+    if (normalized == 'cash' ||
+        normalized == 'efectivo' ||
+        normalized.contains('efectivo')) {
       return 1;
     }
     if (normalized == 'mercadopago_point') {
@@ -152,10 +161,18 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     if (normalized == 'mercadopago_qr') {
       return 3;
     }
-    if (normalized == 'debit_card' || normalized == 'tarjeta_debito' || normalized.contains('debito')) {
+    if (normalized == 'card_debit' ||
+        normalized == 'debit_card' ||
+        normalized == 'tarjeta_debito' ||
+        normalized.contains('debit') ||
+        normalized.contains('debito')) {
       return 4;
     }
-    if (normalized == 'credit_card' || normalized == 'tarjeta_credito' || normalized.contains('credito')) {
+    if (normalized == 'card_credit' ||
+        normalized == 'credit_card' ||
+        normalized == 'tarjeta_credito' ||
+        normalized.contains('credit') ||
+        normalized.contains('credito')) {
       return 5;
     }
     if (normalized == 'cuenta_corriente') {
@@ -181,7 +198,11 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     if (orderNumber < 1 || orderNumber > 7) return;
     if (_lines.isEmpty || _isSubmitting) return;
 
-    final lineIndex = _lines.length - 1;
+    // Si el cajero tiene el cursor en una línea específica, cambia el método de esa línea;
+    // de lo contrario, cambia el método de la última línea agregada.
+    final focusedIdx = _lines.indexWhere(
+        (l) => l.amountFocus.hasFocus || l.percentageFocus.hasFocus);
+    final lineIndex = focusedIdx != -1 ? focusedIdx : _lines.length - 1;
     final line = _lines[lineIndex];
     if (line.mpPaid) return;
 
@@ -225,7 +246,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       _syncPaymentsWithGrandTotal();
     });
 
-    _syncCashField(autoFocus: targetMethod.isCash);
+    _syncCashField(autoFocus: targetMethod.isCash && _lines.length == 1);
   }
 
   // Chip compacto de atajo (a prueba de overflow en resoluciones pequeñas)
@@ -441,10 +462,164 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       _syncPaymentsWithGrandTotal();
     });
     _loadPreferences();
+    HardwareKeyboard.instance.addHandler(_handleHardwareKey);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initFirstLine();
     });
     _cashTenderedCtrl.addListener(() => setState(() {}));
+  }
+
+  bool _handleHardwareKey(KeyEvent event) {
+    if (event is! KeyDownEvent) return false;
+    if (!mounted) return false;
+    if (ModalRoute.of(context)?.isCurrent != true) return false;
+
+    final provider = context.read<PosProvider>();
+    final settings = context.read<SettingsProvider>().settings;
+    final key = event.logicalKey;
+
+    final isCtrl = HardwareKeyboard.instance.isControlPressed &&
+        !HardwareKeyboard.instance.isAltPressed &&
+        !HardwareKeyboard.instance.isShiftPressed &&
+        !HardwareKeyboard.instance.isMetaPressed;
+
+    if (isCtrl) {
+      int? orderNum;
+      if (key == LogicalKeyboardKey.digit1 ||
+          key == LogicalKeyboardKey.numpad1) {
+        orderNum = 1;
+      } else if (key == LogicalKeyboardKey.digit2 ||
+          key == LogicalKeyboardKey.numpad2) {
+        orderNum = 2;
+      } else if (key == LogicalKeyboardKey.digit3 ||
+          key == LogicalKeyboardKey.numpad3) {
+        orderNum = 3;
+      } else if (key == LogicalKeyboardKey.digit4 ||
+          key == LogicalKeyboardKey.numpad4) {
+        orderNum = 4;
+      } else if (key == LogicalKeyboardKey.digit5 ||
+          key == LogicalKeyboardKey.numpad5) {
+        orderNum = 5;
+      } else if (key == LogicalKeyboardKey.digit6 ||
+          key == LogicalKeyboardKey.numpad6) {
+        orderNum = 6;
+      } else if (key == LogicalKeyboardKey.digit7 ||
+          key == LogicalKeyboardKey.numpad7) {
+        orderNum = 7;
+      }
+
+      if (orderNum != null) {
+        _selectPaymentMethodByOrderIndex(orderNum);
+        return true;
+      }
+      return false;
+    }
+
+    // Sin modificadores para teclas de función y Escape
+    if (HardwareKeyboard.instance.isControlPressed ||
+        HardwareKeyboard.instance.isAltPressed ||
+        HardwareKeyboard.instance.isMetaPressed) {
+      return false;
+    }
+
+    if (key == LogicalKeyboardKey.escape) {
+      if (!_isSubmitting &&
+          !provider.isLoading &&
+          !_lines.any((l) => l.mpPaid)) {
+        Navigator.of(context).pop();
+        return true;
+      }
+      return false;
+    }
+
+    if (key == LogicalKeyboardKey.f10) {
+      if (_canSubmit && !_isSubmitting && !provider.isLoading) {
+        _processCheckout();
+        return true;
+      }
+      return false;
+    }
+
+    if (key == LogicalKeyboardKey.f2) {
+      if (!_isSubmitting &&
+          !provider.isLoading &&
+          (_pendingBalance > 0.01 || _lines.length == 1)) {
+        _addLine();
+        return true;
+      }
+      return false;
+    }
+
+    if (key == LogicalKeyboardKey.f4) {
+      if (!_isSubmitting && !provider.isLoading) {
+        _openCustomerPicker();
+        return true;
+      }
+      return false;
+    }
+
+    if (key == LogicalKeyboardKey.f6) {
+      if (!_isSubmitting &&
+          !provider.isLoading &&
+          settings?.afipEnabled == true) {
+        setState(() {
+          _isFiscalMode = !_isFiscalMode;
+          if (_isFiscalMode && _selectedCustomer != null) {
+            _syncCustomerWithFiscal(_selectedCustomer);
+          }
+        });
+        return true;
+      }
+      return false;
+    }
+
+    if (key == LogicalKeyboardKey.f7) {
+      if (!_isSubmitting && !provider.isLoading) {
+        setState(() => _printReceipt = !_printReceipt);
+        SharedPreferences.getInstance().then((prefs) {
+          prefs.setBool('auto_print_receipt', _printReceipt);
+        });
+        return true;
+      }
+      return false;
+    }
+
+    if (key == LogicalKeyboardKey.f8) {
+      if (!_isSubmitting && !provider.isLoading && _printReceipt) {
+        setState(() => _showPreview = !_showPreview);
+        SharedPreferences.getInstance().then((prefs) {
+          prefs.setBool('show_preview_receipt', _showPreview);
+        });
+        return true;
+      }
+      return false;
+    }
+
+    if (key == LogicalKeyboardKey.f9) {
+      if (!_isSubmitting &&
+          !provider.isLoading &&
+          settings?.features.logistics == true &&
+          widget.saleId == null) {
+        setState(() {
+          if (!_requiresDispatch) {
+            _requiresDispatch = true;
+            _fulfillmentStatus = 'pending';
+          } else if (_fulfillmentStatus == 'pending') {
+            _requiresDispatch = true;
+            _fulfillmentStatus = 'delivered';
+          } else {
+            _requiresDispatch = false;
+            _fulfillmentStatus = 'pending';
+          }
+        });
+        provider.setCurrentLogistics(_requiresDispatch, _fulfillmentStatus);
+        _syncPaymentsWithGrandTotal();
+        return true;
+      }
+      return false;
+    }
+
+    return false;
   }
 
   Future<void> _loadPreferences() async {
@@ -523,6 +698,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_handleHardwareKey);
     for (var line in _lines) {
       line.dispose();
     }
@@ -536,7 +712,33 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     super.dispose();
   }
 
-  void _onAmountChanged() => setState(() {});
+  void _onAmountChanged() {
+    if (_lines.length >= 2) {
+      final lastLine = _lines.last;
+      if (lastLine.amountFocus.hasFocus) {
+        // Si el cajero edita manualmente el último medio de pago, desactivar auto-ajuste
+        lastLine.isAutoCalculated = false;
+      } else if (lastLine.isAutoCalculated && !lastLine.mpPaid) {
+        final otherLinesSum = _lines
+            .take(_lines.length - 1)
+            .fold(0.0, (double s, l) => s + l.amount);
+        final targetTotal = _baseTotal + _shippingCostToApply;
+        final remaining =
+            (targetTotal - otherLinesSum).clamp(0.0, double.infinity);
+        final newText = remaining > 0.009 ? remaining.toInputFormat() : '0';
+        if (lastLine.controller.text != newText) {
+          lastLine.controller.removeListener(_onAmountChanged);
+          lastLine.controller.text = newText;
+          lastLine.controller.selection = TextSelection.fromPosition(
+            TextPosition(offset: lastLine.controller.text.length),
+          );
+          lastLine.controller.addListener(_onAmountChanged);
+        }
+      }
+    }
+    _syncCashField();
+    setState(() {});
+  }
 
   /// Sincroniza el campo "Efectivo Recibido" con la porción en efectivo actual.
   /// Se llama en cada cambio estructural: agregar/quitar línea o cambiar método.
@@ -594,6 +796,9 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     final settings = context.read<SettingsProvider>().settings;
     if (provider.paymentMethods.isEmpty) return;
 
+    final bool isSplitFromSingleFullLine =
+        _pendingBalance <= 0.01 && _lines.length == 1;
+
     // Auto-fill available balance
     double left = _pendingBalance > 0 ? _pendingBalance : 0.0;
 
@@ -609,6 +814,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       initialAmount: left,
       defaultCardSurcharge: settings?.globalCardPercentage,
       disableSurcharge: _isCartAlreadySurcharged,
+      isAutoCalculated: true,
     );
     line.controller.addListener(_onAmountChanged);
     line.percentageController.addListener(_onAmountChanged);
@@ -616,8 +822,25 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       _lines.add(line);
       _previousValidMethods.add(defaultMethod);
     });
-    // Sincronizar el efectivo y auto-enfocar: el cajero tiene que tipear cuánto le dan
-    _syncCashField(autoFocus: defaultMethod.isCash);
+
+    if (isSplitFromSingleFullLine && _lines.isNotEmpty) {
+      // Si el cajero presionó F2 directo con el 100% en la Línea 1, enfocar y seleccionar
+      // el Monto a Cubrir de la Línea 1 para que al tipear la entrega parcial, la Línea 2
+      // calcule el saldo restante automáticamente en vivo.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _lines.isNotEmpty && !_lines[0].mpPaid) {
+          _lines[0].amountFocus.requestFocus();
+          _lines[0].controller.selection = TextSelection(
+            baseOffset: 0,
+            extentOffset: _lines[0].controller.text.length,
+          );
+        }
+      });
+      _syncCashField(autoFocus: false);
+    } else {
+      // Sincronizar el efectivo y auto-enfocar: el cajero tiene que tipear cuánto le dan
+      _syncCashField(autoFocus: defaultMethod.isCash);
+    }
   }
 
   void _removeLine(int index) {
@@ -633,8 +856,12 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
           _previousValidMethods.removeAt(index);
         }
       });
-      // Re-sincronizar al quitar una línea (puede cambiar el efectivo requerido)
-      _syncCashField();
+      if (_lines.length == 1) {
+        _syncPaymentsWithGrandTotal();
+      } else {
+        // Re-sincronizar al quitar una línea (puede cambiar el efectivo requerido)
+        _syncCashField();
+      }
     }
   }
 
@@ -854,6 +1081,31 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         },
       ),
     );
+  }
+
+  Future<void> _editCustomer(Customer customer) async {
+    await showDialog(
+      context: context,
+      builder: (ctx) => CustomerFormDialog(customer: customer),
+    );
+    if (!mounted) return;
+    final updated = context
+        .read<CustomerProvider>()
+        .customers
+        .where((c) => c.id == customer.id)
+        .firstOrNull;
+    if (updated != null) {
+      setState(() {
+        _selectedCustomer = updated;
+        if (_deliveryAddressCtrl.text.trim().isEmpty &&
+            updated.deliveryAddress != null &&
+            updated.deliveryAddress!.isNotEmpty) {
+          _deliveryAddressCtrl.text = updated.deliveryAddress!;
+        }
+        _syncCustomerWithFiscal(updated);
+      });
+      context.read<PosProvider>().selectCustomer(updated);
+    }
   }
 
   Future<void> _processCheckout() async {
@@ -1308,10 +1560,18 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   IconData _getIconForMethod(String code) {
     if (code == 'mercadopago_qr') return Icons.qr_code_scanner;
     if (code == 'mercadopago_point') return Icons.point_of_sale;
-    if (code.contains('efectivo')) return Icons.payments_outlined;
-    if (code.contains('debito')) return Icons.credit_card;
-    if (code.contains('credito')) return Icons.credit_score;
-    if (code.contains('transferencia')) return Icons.account_balance_outlined;
+    if (code == 'cash' || code.contains('efectivo')) {
+      return Icons.payments_outlined;
+    }
+    if (code.contains('debit') || code.contains('debito')) {
+      return Icons.credit_card;
+    }
+    if (code.contains('credit') || code.contains('credito')) {
+      return Icons.credit_score;
+    }
+    if (code.contains('transfer') || code.contains('transferencia')) {
+      return Icons.account_balance_outlined;
+    }
     if (code.contains('cuenta')) return Icons.book_outlined;
     return Icons.money;
   }
@@ -1485,7 +1745,19 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                       ),
                       onPressed: _openCustomerPicker,
                     ),
-                    if (_selectedCustomer != null)
+                    if (_selectedCustomer != null) ...[
+                      TextButton.icon(
+                        icon: Icon(Icons.edit_outlined,
+                            size: 16, color: Colors.indigo.shade700),
+                        label: Text('Editar',
+                            style: TextStyle(color: Colors.indigo.shade700)),
+                        style: TextButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 4),
+                        ),
+                        onPressed: () => _editCustomer(_selectedCustomer!),
+                      ),
                       TextButton.icon(
                         icon: const Icon(Icons.person_remove,
                             size: 16, color: Colors.red),
@@ -1509,6 +1781,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                           context.read<PosProvider>().selectCustomer(null);
                         },
                       ),
+                    ],
                   ],
                 ),
               ],
@@ -2019,9 +2292,18 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   Widget _buildAmountFormField(PaymentLine line) {
     return TextFormField(
       controller: line.controller,
+      focusNode: line.amountFocus,
       keyboardType: const TextInputType.numberWithOptions(decimal: true),
       readOnly: line.mpPaid,
       canRequestFocus: !line.mpPaid,
+      onTap: () {
+        if (!line.mpPaid && line.controller.text.isNotEmpty) {
+          line.controller.selection = TextSelection(
+            baseOffset: 0,
+            extentOffset: line.controller.text.length,
+          );
+        }
+      },
       inputFormatters: [
         FilteringTextInputFormatter.allow(RegExp(r'^\d*[\.,]?\d*')),
       ],
@@ -2154,11 +2436,6 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       canPop: !_isSubmitting && !provider.isLoading && !_lines.any((l) => l.mpPaid),
       child: CallbackShortcuts(
         bindings: <ShortcutActivator, VoidCallback>{
-          const SingleActivator(LogicalKeyboardKey.escape): () {
-            if (!_isSubmitting && !provider.isLoading && !_lines.any((l) => l.mpPaid)) {
-              Navigator.of(context).pop();
-            }
-          },
           const SingleActivator(LogicalKeyboardKey.enter): () {
             if (_canSubmit && !_isSubmitting && !provider.isLoading) {
               _processCheckout();
@@ -2169,86 +2446,6 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
               _processCheckout();
             }
           },
-          // F10: Confirmar venta (sinónimo de Enter)
-          const SingleActivator(LogicalKeyboardKey.f10): () {
-            if (_canSubmit && !_isSubmitting && !provider.isLoading) {
-              _processCheckout();
-            }
-          },
-          // F2: Agregar otro medio de pago (Pago Mixto)
-          const SingleActivator(LogicalKeyboardKey.f2): () {
-            if (!_isSubmitting && !provider.isLoading && _pendingBalance > 0.01) {
-              _addLine();
-            }
-          },
-          // F4: Asociar / Buscar Cliente
-          const SingleActivator(LogicalKeyboardKey.f4): () {
-            if (!_isSubmitting && !provider.isLoading) {
-              _openCustomerPicker();
-            }
-          },
-          // F6: Alternar Ticket Común / Factura Fiscal ARCA
-          const SingleActivator(LogicalKeyboardKey.f6): () {
-            if (!_isSubmitting && !provider.isLoading && settings?.afipEnabled == true) {
-              setState(() {
-                _isFiscalMode = !_isFiscalMode;
-                if (_isFiscalMode && _selectedCustomer != null) {
-                  _syncCustomerWithFiscal(_selectedCustomer);
-                }
-              });
-            }
-          },
-          // F7: Marcar / Desmarcar Imprimir Comprobante
-          const SingleActivator(LogicalKeyboardKey.f7): () async {
-            if (!_isSubmitting && !provider.isLoading) {
-              setState(() => _printReceipt = !_printReceipt);
-              final prefs = await SharedPreferences.getInstance();
-              await prefs.setBool('auto_print_receipt', _printReceipt);
-            }
-          },
-          // F8: Marcar / Desmarcar Vista Previa
-          const SingleActivator(LogicalKeyboardKey.f8): () async {
-            if (!_isSubmitting && !provider.isLoading && _printReceipt) {
-              setState(() => _showPreview = !_showPreview);
-              final prefs = await SharedPreferences.getInstance();
-              await prefs.setBool('show_preview_receipt', _showPreview);
-            }
-          },
-          // F9: Alternar Logística (Sin Remito -> A Preparar -> Se lo lleva AHORA)
-          const SingleActivator(LogicalKeyboardKey.f9): () {
-            if (!_isSubmitting && !provider.isLoading && settings?.features.logistics == true && widget.saleId == null) {
-              setState(() {
-                if (!_requiresDispatch) {
-                  _requiresDispatch = true;
-                  _fulfillmentStatus = 'pending';
-                } else if (_fulfillmentStatus == 'pending') {
-                  _requiresDispatch = true;
-                  _fulfillmentStatus = 'delivered';
-                } else {
-                  _requiresDispatch = false;
-                  _fulfillmentStatus = 'pending';
-                }
-              });
-              context.read<PosProvider>().setCurrentLogistics(_requiresDispatch, _fulfillmentStatus);
-              _syncPaymentsWithGrandTotal();
-            }
-          },
-          // Ctrl+1..7: Métodos de pago (fila superior)
-          const SingleActivator(LogicalKeyboardKey.digit1, control: true): () => _selectPaymentMethodByOrderIndex(1),
-          const SingleActivator(LogicalKeyboardKey.digit2, control: true): () => _selectPaymentMethodByOrderIndex(2),
-          const SingleActivator(LogicalKeyboardKey.digit3, control: true): () => _selectPaymentMethodByOrderIndex(3),
-          const SingleActivator(LogicalKeyboardKey.digit4, control: true): () => _selectPaymentMethodByOrderIndex(4),
-          const SingleActivator(LogicalKeyboardKey.digit5, control: true): () => _selectPaymentMethodByOrderIndex(5),
-          const SingleActivator(LogicalKeyboardKey.digit6, control: true): () => _selectPaymentMethodByOrderIndex(6),
-          const SingleActivator(LogicalKeyboardKey.digit7, control: true): () => _selectPaymentMethodByOrderIndex(7),
-          // Ctrl+1..7: Métodos de pago (numpad)
-          const SingleActivator(LogicalKeyboardKey.numpad1, control: true): () => _selectPaymentMethodByOrderIndex(1),
-          const SingleActivator(LogicalKeyboardKey.numpad2, control: true): () => _selectPaymentMethodByOrderIndex(2),
-          const SingleActivator(LogicalKeyboardKey.numpad3, control: true): () => _selectPaymentMethodByOrderIndex(3),
-          const SingleActivator(LogicalKeyboardKey.numpad4, control: true): () => _selectPaymentMethodByOrderIndex(4),
-          const SingleActivator(LogicalKeyboardKey.numpad5, control: true): () => _selectPaymentMethodByOrderIndex(5),
-          const SingleActivator(LogicalKeyboardKey.numpad6, control: true): () => _selectPaymentMethodByOrderIndex(6),
-          const SingleActivator(LogicalKeyboardKey.numpad7, control: true): () => _selectPaymentMethodByOrderIndex(7),
         },
         child: Focus(
           autofocus: true,
@@ -2818,10 +3015,12 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                                 alignment: Alignment.centerLeft,
                                 child: TextButton.icon(
                                   icon: const Icon(Icons.add),
-                                  label:
-                                      const Text('Completar con otro método'),
-                                  onPressed:
-                                      _pendingBalance > 0.01 ? _addLine : null,
+                                  label: const Text(
+                                      'Completar con otro método (F2)'),
+                                  onPressed: (_pendingBalance > 0.01 ||
+                                          _lines.length == 1)
+                                      ? _addLine
+                                      : null,
                                 ),
                               ),
 
@@ -3381,6 +3580,23 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                                                 if (_selectedCustomer !=
                                                     null) ...[
                                                   IconButton(
+                                                    icon: Icon(
+                                                        Icons.edit_outlined,
+                                                        size: 18,
+                                                        color: Colors
+                                                            .purple.shade700),
+                                                    tooltip: 'Editar cliente',
+                                                    padding: const EdgeInsets
+                                                        .symmetric(
+                                                        horizontal: 4),
+                                                    constraints:
+                                                        const BoxConstraints(),
+                                                    onPressed: () =>
+                                                        _editCustomer(
+                                                            _selectedCustomer!),
+                                                  ),
+                                                  const SizedBox(width: 4),
+                                                  IconButton(
                                                     icon: const Icon(
                                                         Icons.close,
                                                         size: 18,
@@ -3747,6 +3963,9 @@ class _CustomerPickerDialogState extends State<_CustomerPickerDialog> {
                     separatorBuilder: (_, __) => const Divider(),
                     itemBuilder: (ctx, i) {
                       final c = list[i];
+                      final creditInfo = c.isInternalAccount
+                          ? 'Ilimitado'
+                          : '\$${(c.creditLimit - c.balance).toCurrency()}';
                       return ListTile(
                         leading: CircleAvatar(
                           backgroundColor: Colors.blue.shade100,
@@ -3760,7 +3979,19 @@ class _CustomerPickerDialogState extends State<_CustomerPickerDialog> {
                             style:
                                 const TextStyle(fontWeight: FontWeight.bold)),
                         subtitle: Text(
-                            'ID: ${c.documentNumber} - Tel: ${c.phone ?? '-'}'),
+                            'ID: ${c.documentNumber} • Tel: ${c.phone ?? '-'} • Disp: $creditInfo'),
+                        trailing: IconButton(
+                          icon: Icon(Icons.edit_outlined,
+                              size: 20, color: Colors.blueGrey.shade600),
+                          tooltip: 'Editar cliente',
+                          onPressed: () {
+                            showDialog(
+                              context: context,
+                              builder: (dialogCtx) =>
+                                  CustomerFormDialog(customer: c),
+                            );
+                          },
+                        ),
                         onTap: () => widget.onSelected(c),
                       );
                     },
