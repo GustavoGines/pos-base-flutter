@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:archive/archive_io.dart';
 import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:http/http.dart' as http;
@@ -82,6 +83,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _backupIncludeImages = false;
   bool _backupIncludeAfip = false;
   bool _isCreatingBackup = false;
+  bool _isRestoringBackup = false;
   bool _isCheckingUpdate = false;
   String _appVersion = '';
 
@@ -4351,6 +4353,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       foregroundColor: Colors.white,
                     ),
                   ),
+                  OutlinedButton.icon(
+                    onPressed: _isRestoringBackup ? null : _restoreBackup,
+                    icon: _isRestoringBackup
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.settings_backup_restore_rounded, size: 18),
+                    label: Text(_isRestoringBackup ? 'Restaurando...' : 'Restaurar Copia (.zip)'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.orange.shade700,
+                      side: BorderSide(color: Colors.orange.shade300),
+                    ),
+                  ),
                 ],
               ),
             ],
@@ -4421,8 +4438,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
       // Streaming directo a disco: no carga el .zip completo en memoria.
       final file = File(targetPath);
       final sink = file.openWrite();
-      await response.stream.pipe(sink);
-      await sink.close();
+      try {
+        await response.stream.pipe(sink);
+      } catch (e) {
+        try {
+          await sink.close();
+        } catch (_) {}
+        if (file.existsSync()) {
+          await file.delete();
+        }
+        rethrow;
+      }
 
       if (mounted) {
         SnackBarService.success(context, 'Copia de seguridad guardada en: $targetPath');
@@ -4434,6 +4460,314 @@ class _SettingsScreenState extends State<SettingsScreen> {
     } finally {
       if (mounted) setState(() => _isCreatingBackup = false);
     }
+  }
+
+  Future<void> _restoreBackup() async {
+    if (_isRestoringBackup) return;
+
+    // Seleccionar archivo .zip de backup
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['zip'],
+      dialogTitle: 'Seleccionar copia de seguridad (.zip)',
+    );
+
+    if (result == null || result.files.isEmpty || result.files.single.path == null || !mounted) return;
+
+    final file = File(result.files.single.path!);
+    final fileName = result.files.single.name;
+
+    // Inspeccionar qué contiene realmente el archivo .zip antes de mostrar el cartel
+    bool hasDb = false;
+    bool hasImages = false;
+    bool hasAfip = false;
+    int imageFileCount = 0;
+    int afipFileCount = 0;
+    String? backupCreatedAt;
+    String? backupCompanyName;
+
+    try {
+      final inputStream = InputFileStream(file.path);
+      try {
+        final archive = ZipDecoder().decodeBuffer(inputStream);
+        ArchiveFile? infoEntry;
+
+        for (final entry in archive.files) {
+          if (!entry.isFile) continue;
+          final name = entry.name.replaceAll('\\', '/');
+          if (name == 'backup_info.json' || name == 'manifest.json') {
+            infoEntry = entry;
+          } else if (name == 'database_backup.sql' || name == 'database.sql') {
+            hasDb = true;
+          } else if (name.startsWith('storage/public/')) {
+            hasImages = true;
+            imageFileCount++;
+          } else if (name.startsWith('afip/') || name.startsWith('storage/afip/')) {
+            hasAfip = true;
+            afipFileCount++;
+          }
+        }
+
+        if (infoEntry != null) {
+          final rawJson = utf8.decode(infoEntry.content as List<int>, allowMalformed: true);
+          final decoded = jsonDecode(rawJson);
+          if (decoded is Map<String, dynamic>) {
+            backupCreatedAt = decoded['created_at']?.toString();
+            backupCompanyName = decoded['company_name']?.toString();
+            final modules = decoded['modules'];
+            if (modules is List) {
+              if (modules.contains('database')) hasDb = true;
+              if (modules.contains('images')) hasImages = true;
+              if (modules.contains('afip_certificates')) hasAfip = true;
+            }
+          }
+        }
+
+        if (infoEntry == null && !hasDb && !hasImages && !hasAfip) {
+          if (mounted) {
+            SnackBarService.error(
+              context,
+              'El archivo "$fileName" no es una copia de seguridad válida del Sistema POS.',
+            );
+          }
+          return;
+        }
+      } finally {
+        await inputStream.close();
+      }
+    } catch (e) {
+      if (mounted) {
+        SnackBarService.error(
+          context,
+          'No se pudo leer el archivo .zip seleccionado: $e',
+        );
+      }
+      return;
+    }
+
+    if (!mounted) return;
+
+    String? formattedDate;
+    if (backupCreatedAt != null && backupCreatedAt.isNotEmpty) {
+      try {
+        formattedDate = DateFormat('dd/MM/yyyy HH:mm').format(DateTime.parse(backupCreatedAt).toLocal());
+      } catch (_) {
+        formattedDate = backupCreatedAt;
+      }
+    }
+
+    final includedItems = <Widget>[];
+    final untouchedItems = <String>[];
+
+    if (hasDb) {
+      includedItems.add(_buildRestoreModuleRow(
+        icon: Icons.storage_rounded,
+        color: Colors.red.shade700,
+        title: 'Base de datos completa',
+        subtitle: 'Reemplazará productos, precios, clientes, cuentas corrientes, ventas y caja.',
+      ));
+    } else {
+      untouchedItems.add('Base de datos actual');
+    }
+
+    if (hasImages) {
+      includedItems.add(_buildRestoreModuleRow(
+        icon: Icons.photo_library_rounded,
+        color: Colors.blue.shade700,
+        title: 'Fotos de productos y logotipo',
+        subtitle: imageFileCount > 0
+            ? 'Se restaurarán $imageFileCount archivo(s) de imagen.'
+            : 'Incluido en la copia (sin archivos nuevos para extraer).',
+      ));
+    } else {
+      untouchedItems.add('Fotos de productos y logotipo');
+    }
+
+    if (hasAfip) {
+      includedItems.add(_buildRestoreModuleRow(
+        icon: Icons.verified_user_rounded,
+        color: Colors.teal.shade700,
+        title: 'Certificados Digitales ARCA / AFIP',
+        subtitle: afipFileCount > 0
+            ? 'Se restaurarán $afipFileCount archivo(s) de certificados.'
+            : 'Incluido en la copia (sin certificados nuevos para extraer).',
+      ));
+    } else {
+      untouchedItems.add('Certificados ARCA / AFIP');
+    }
+
+    // Confirmar restauración mostrando únicamente lo que realmente trae el .zip
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 28),
+            SizedBox(width: 10),
+            Flexible(child: Text('Confirmar Restauración')),
+          ],
+        ),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 480),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Archivo seleccionado: "$fileName"',
+                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5),
+              ),
+              if (formattedDate != null || (backupCompanyName != null && backupCompanyName.isNotEmpty)) ...[
+                const SizedBox(height: 4),
+                Text(
+                  [
+                    if (formattedDate != null) 'Fecha: $formattedDate',
+                    if (backupCompanyName != null && backupCompanyName.isNotEmpty) 'Comercio: $backupCompanyName',
+                  ].join('  •  '),
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                ),
+              ],
+              const SizedBox(height: 14),
+              const Text(
+                'Este backup incluye y restaurará:',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+              ),
+              const SizedBox(height: 8),
+              ...includedItems,
+              if (untouchedItems.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.grey.shade300),
+                  ),
+                  child: Text(
+                    'ℹ️ No incluido en este archivo (se mantiene intacto lo actual):\n• ${untouchedItems.join('\n• ')}',
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade800),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 12),
+              const Text(
+                '¿Deseas continuar con la restauración?',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Restaurar', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _isRestoringBackup = true);
+    try {
+      final settingsProv = context.read<SettingsProvider>();
+      final catalogProv = context.read<CatalogProvider>();
+      final cashProv = context.read<CashRegisterProvider>();
+      final posProv = context.read<PosProvider>();
+      final baseUrl = settingsProv.currentApiUrl;
+      final client = context.read<ApiClient>();
+      final uri = Uri.parse('$baseUrl/system/restore');
+
+      final request = http.MultipartRequest('POST', uri);
+      request.files.add(await http.MultipartFile.fromPath('backup_file', file.path));
+
+      final streamedResponse = await client.send(request);
+      final response = await http.Response.fromStream(streamedResponse);
+
+      if (response.statusCode != 200) {
+        final body = response.body;
+        var message = 'Error del servidor (${response.statusCode}) al restaurar.';
+        try {
+          final decoded = jsonDecode(body);
+          if (decoded is Map && decoded['message'] is String) {
+            message = decoded['message'] as String;
+          }
+        } catch (_) {}
+        if (mounted) SnackBarService.error(context, message);
+        return;
+      }
+
+      final responseData = jsonDecode(response.body);
+
+      // Recargar proveedores para actualizar datos en memoria
+      await settingsProv.loadSettings();
+      await catalogProv.loadProducts();
+      await cashProv.loadRegisters();
+      await posProv.loadPaymentMethods();
+
+      if (mounted) {
+        final tablesRestored = (responseData['tables_restored'] as num?)?.toInt() ?? 0;
+        final imagesRestored = (responseData['images_restored'] as num?)?.toInt() ?? 0;
+        final afipRestored = (responseData['afip_restored'] as num?)?.toInt() ?? 0;
+
+        final details = <String>[
+          if (tablesRestored > 0) 'Base de datos ($tablesRestored tablas)',
+          if (imagesRestored > 0) '$imagesRestored imagen(es)',
+          if (afipRestored > 0) '$afipRestored certificado(s) AFIP',
+        ];
+
+        final summary = details.isNotEmpty ? ' Se restauró: ${details.join(', ')}.' : '';
+        SnackBarService.success(
+          context,
+          'Copia de seguridad restaurada exitosamente.$summary',
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        SnackBarService.error(context, 'No se pudo restaurar la copia de seguridad: $e');
+      }
+    } finally {
+      if (mounted) setState(() => _isRestoringBackup = false);
+    }
+  }
+
+  Widget _buildRestoreModuleRow({
+    required IconData icon,
+    required Color color,
+    required String title,
+    required String subtitle,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 18, color: color),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: color),
+                ),
+                Text(
+                  subtitle,
+                  style: TextStyle(fontSize: 11.5, color: Colors.grey.shade700),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildLogoPicker(SettingsProvider provider) {
