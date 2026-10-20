@@ -28,6 +28,8 @@ import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
 import '../../../../core/constants/app_permissions.dart';
 import '../../domain/entities/ecommerce_integration.dart';
 import '../../../catalog/presentation/providers/catalog_provider.dart';
+import '../../../customers/providers/customer_provider.dart';
+import '../../../offers/presentation/providers/offer_provider.dart';
 
 enum SettingsSection { general, prices, subscription, network, integrations, mobileApp }
 
@@ -4680,6 +4682,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       final catalogProv = context.read<CatalogProvider>();
       final cashProv = context.read<CashRegisterProvider>();
       final posProv = context.read<PosProvider>();
+      final customerProv = context.read<CustomerProvider>();
+      final offerProv = context.read<OfferProvider>();
       final baseUrl = settingsProv.currentApiUrl;
       final client = context.read<ApiClient>();
       final uri = Uri.parse('$baseUrl/system/restore');
@@ -4710,6 +4714,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
       await catalogProv.loadProducts();
       await cashProv.loadRegisters();
       await posProv.loadPaymentMethods();
+      await offerProv.loadActiveOffers();
+      posProv.syncActiveOffers(offerProv.activeOffers);
+      try {
+        await customerProv.fetchCustomers();
+      } catch (_) {}
 
       if (mounted) {
         final tablesRestored = (responseData['tables_restored'] as num?)?.toInt() ?? 0;

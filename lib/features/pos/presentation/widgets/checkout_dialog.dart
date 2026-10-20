@@ -2064,11 +2064,14 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                         onPressed: () {
                           setState(() {
                             _selectedCustomer = null;
-                            _fiscalDocType = 99; // Consumidor Final
+                            _fiscalDocType = _voucherType == 1 ? 80 : 99;
                             _fiscalDocNumberCtrl.clear();
                             _fiscalReceiverNameCtrl.clear();
-                            _fiscalTaxCondition = 'consumidor_final';
+                            _fiscalTaxCondition = _voucherType == 1
+                                ? 'responsable_inscripto'
+                                : 'consumidor_final';
                             _fiscalReceiverAddressCtrl.clear();
+                            _deliveryAddressCtrl.clear();
                             _syncPaymentsWithGrandTotal();
                           });
                           context.read<PosProvider>().selectCustomer(null);
@@ -3793,7 +3796,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                                           ],
                                         ),
                                         Text(
-                                          '[Buscar (F4)]',
+                                          '[Buscar (F6)]',
                                           style: TextStyle(
                                             fontSize: 11,
                                             color: Colors.blue.shade700,
@@ -3917,14 +3920,21 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                                                       setState(() {
                                                         _selectedCustomer =
                                                             null;
-                                                        _fiscalDocType = 99;
+                                                        _fiscalDocType =
+                                                            _voucherType == 1
+                                                                ? 80
+                                                                : 99;
                                                         _fiscalDocNumberCtrl
                                                             .clear();
                                                         _fiscalReceiverNameCtrl
                                                             .clear();
                                                         _fiscalTaxCondition =
-                                                            'consumidor_final';
+                                                            _voucherType == 1
+                                                                ? 'responsable_inscripto'
+                                                                : 'consumidor_final';
                                                         _fiscalReceiverAddressCtrl
+                                                            .clear();
+                                                        _deliveryAddressCtrl
                                                             .clear();
                                                         _syncPaymentsWithGrandTotal();
                                                       });

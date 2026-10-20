@@ -22,6 +22,7 @@ class Product {
   final double? minStock;
   final int salesCount;
   final String unitType;
+  final double ivaRate;
   final String? imageUrl;
   final Category? category;
   final List<Category>? categories;
@@ -47,6 +48,7 @@ class Product {
     this.salesCount = 0,
     this.vencimientoDias,
     this.unitType = 'un',
+    this.ivaRate = 21.0,
     this.imageUrl,
     this.category,
     this.categories,
@@ -72,6 +74,7 @@ class Product {
     int? salesCount,
     int? vencimientoDias,
     String? unitType,
+    double? ivaRate,
     String? imageUrl,
     bool clearImageUrl = false,
     Category? category,
@@ -101,6 +104,7 @@ class Product {
       salesCount: salesCount ?? this.salesCount,
       vencimientoDias: vencimientoDias ?? this.vencimientoDias,
       unitType: unitType ?? this.unitType,
+      ivaRate: ivaRate ?? this.ivaRate,
       imageUrl: clearImageUrl ? null : (imageUrl ?? this.imageUrl),
       category: clearCategory ? null : (category ?? this.category),
       categories: categories ?? this.categories,

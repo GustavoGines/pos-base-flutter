@@ -474,11 +474,11 @@ class PosProvider with ChangeNotifier {
     return _cart.fold(0.0, (total, item) => total + item.quantity);
   }
 
-  /// Base imponible neta gravada estimada (Subtotal con IVA / 1.21)
+  /// Base imponible neta gravada calculada según la alícuota de IVA de cada producto
   double get netSubtotal {
     double totalNet = 0.0;
     for (final item in _cart) {
-      final rate = 21.0; // Frontend no mapea iva_rate del producto actualmente
+      final rate = item.product.ivaRate;
       totalNet += item.subtotal / (1 + (rate / 100.0));
     }
     return (totalNet * 100).roundToDouble() / 100.0;
@@ -1063,7 +1063,7 @@ class PosProvider with ChangeNotifier {
         extractedSaleId = _activePendingSaleId!.toString();
       } else {
         final result = await processSaleUseCase(
-          total: totalSnapshot,
+          total: ((totalSnapshot - shippingCostSnapshot) * 100).roundToDouble() / 100.0,
           totalSurcharge: totalSurcharge,
           iibbPerceptionAmount: effectivePerceptionAmount,
           iibbPerceptionRate: effectivePerceptionRate,
@@ -1076,7 +1076,7 @@ class PosProvider with ChangeNotifier {
           customerId: customerId,
           quoteId: _activeQuoteId,
           status: 'completed',
-          shippingCost: (requiresDispatch && fulfillmentStatus == 'pending') ? _shippingCost : 0.0,
+          shippingCost: shippingCostSnapshot,
           requiresDispatch: requiresDispatch,
           fulfillmentStatus: fulfillmentStatus,
           checkDetails: checkDetails,
@@ -1453,10 +1453,11 @@ class PosProvider with ChangeNotifier {
     // Snapshot inmutable del carrito ANTES del await
     final cartSnapshot = List<CartItem>.from(_cart);
     final totalSnapshot = cartTotal;
+    final shippingCostSnapshot = (_currentRequiresDispatch && _currentFulfillmentStatus == 'pending') ? _shippingCost : 0.0;
 
     try {
       await processSaleUseCase(
-        total: totalSnapshot,
+        total: ((totalSnapshot - shippingCostSnapshot) * 100).roundToDouble() / 100.0,
         totalSurcharge: 0,
         payments: [], // Dummy para ordenes pending, se ingora en el form request de laravel por el exclude_if
         shiftId: shiftId,
@@ -1464,7 +1465,7 @@ class PosProvider with ChangeNotifier {
         userId: userId,
         customerId: _selectedCustomer?.id,
         status: 'pending',
-        shippingCost: (_currentRequiresDispatch && _currentFulfillmentStatus == 'pending') ? _shippingCost : 0.0,
+        shippingCost: shippingCostSnapshot,
         priceList: _activeTier == PriceTier.base ? 'Minorista' : (_customTierLabel ?? _activeTier.toString().split('.').last),
       );
 

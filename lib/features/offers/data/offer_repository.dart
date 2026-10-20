@@ -30,10 +30,19 @@ class OfferRepository {
     }
   }
 
-  Future<List<OfferModel>> getAllOffers() async {
+  Future<List<OfferModel>> getAllOffers({String? status, String? search}) async {
     final url = await _getActiveUrl();
+    final queryParams = <String, String>{};
+    if (status != null && status.isNotEmpty && status != 'all') {
+      queryParams['status'] = status;
+    }
+    if (search != null && search.trim().isNotEmpty) {
+      queryParams['q'] = search.trim();
+    }
+
+    final uri = Uri.parse('$url/offers').replace(queryParameters: queryParams.isNotEmpty ? queryParams : null);
     final response = await client.get(
-      Uri.parse('$url/offers'),
+      uri,
       headers: {'Accept': 'application/json'},
     );
 
@@ -132,6 +141,60 @@ class OfferRepository {
     } else {
       final err = jsonDecode(response.body);
       throw Exception(err['message'] ?? 'Error al actualizar la oferta');
+    }
+  }
+
+  Future<Map<String, dynamic>> relaunchOffer({
+    required int id,
+    required String periodType,
+    DateTime? startDate,
+    DateTime? endDate,
+    bool duplicate = false,
+  }) async {
+    final payload = {
+      'period_type': periodType,
+      if (startDate != null) 'start_date': startDate.toIso8601String(),
+      if (endDate != null) 'end_date': endDate.toIso8601String(),
+      'duplicate': duplicate,
+    };
+
+    final url = await _getActiveUrl();
+    final response = await client.post(
+      Uri.parse('$url/offers/$id/relaunch'),
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode(payload),
+    );
+
+    if (response.statusCode == 200) {
+      final jsonResponse = jsonDecode(response.body);
+      final offer = OfferModel.fromJson(jsonResponse['data'] as Map<String, dynamic>);
+      final warnings = jsonResponse['margin_warnings'] as List? ?? [];
+      return {
+        'offer': offer,
+        'margin_warnings': warnings,
+      };
+    } else {
+      final err = jsonDecode(response.body);
+      throw Exception(err['message'] ?? 'Error al relanzar oferta');
+    }
+  }
+
+  Future<OfferModel> toggleOfferStatus(int id) async {
+    final url = await _getActiveUrl();
+    final response = await client.patch(
+      Uri.parse('$url/offers/$id/toggle-status'),
+      headers: {'Accept': 'application/json'},
+    );
+
+    if (response.statusCode == 200) {
+      final jsonResponse = jsonDecode(response.body);
+      return OfferModel.fromJson(jsonResponse['data'] as Map<String, dynamic>);
+    } else {
+      final err = jsonDecode(response.body);
+      throw Exception(err['message'] ?? 'Error al alternar estado de oferta');
     }
   }
 

@@ -20,18 +20,21 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
   late TabController _tabController;
   final TextEditingController _offerNameCtrl = TextEditingController();
   final TextEditingController _discountCtrl = TextEditingController(text: '10');
+  final TextEditingController _historySearchCtrl = TextEditingController();
 
   String _periodType = 'daily'; // 'daily', 'weekly', 'monthly'
+  String _historyFilter = 'all'; // 'all', 'expired', 'paused', 'active'
   final List<Product> _selectedProducts = [];
   bool _isSaving = false;
-  int _searchSeq = 0; // Token de debounce del buscador de productos
+  int _searchSeq = 0; // Token de debounce del buscador de productos en formulario
+  int _historySearchSeq = 0; // Token de debounce del buscador en historial
   OfferModel? _editingOffer;
   TextEditingController? _autoCompleteCtrl;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
 
     final pos = Provider.of<PosProvider>(context, listen: false);
     // Pre-cargar con los productos actualmente en el carrito
@@ -44,7 +47,9 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
     }
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      Provider.of<OfferProvider>(context, listen: false).loadActiveOffers();
+      final offerProv = Provider.of<OfferProvider>(context, listen: false);
+      offerProv.loadActiveOffers();
+      offerProv.loadAllOffers(status: _historyFilter);
     });
   }
 
@@ -53,11 +58,17 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
     _tabController.dispose();
     _offerNameCtrl.dispose();
     _discountCtrl.dispose();
+    _historySearchCtrl.dispose();
     super.dispose();
   }
 
-  /// Busca en el servidor (todo el catálogo) con debounce. Descarta resultados obsoletos si el
-  /// usuario siguió escribiendo.
+  String _formatDate(DateTime? dt) {
+    if (dt == null) return '-';
+    final d = dt.toLocal();
+    return '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
+  }
+
+  /// Busca en el servidor (todo el catálogo) con debounce.
   Future<Iterable<Product>> _searchCatalogProducts(String text) async {
     final query = text.trim();
     if (query.isEmpty) return const Iterable<Product>.empty();
@@ -70,11 +81,30 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
     return results;
   }
 
+  void _onHistorySearchChanged(String text) {
+    final seq = ++_historySearchSeq;
+    Future.delayed(const Duration(milliseconds: 350), () {
+      if (!mounted || seq != _historySearchSeq) return;
+      Provider.of<OfferProvider>(context, listen: false).loadAllOffers(
+        status: _historyFilter,
+        search: text,
+      );
+    });
+  }
+
+  void _setHistoryFilter(String filter) {
+    setState(() => _historyFilter = filter);
+    Provider.of<OfferProvider>(context, listen: false).loadAllOffers(
+      status: filter,
+      search: _historySearchCtrl.text,
+    );
+  }
+
   void _startEditOffer(OfferModel offer) {
     setState(() {
       _editingOffer = offer;
       _offerNameCtrl.text = offer.name;
-      _discountCtrl.text = offer.discountPercentage?.toString() ?? (offer.discountPercentage?.toString() ?? '10');
+      _discountCtrl.text = offer.discountPercentage?.toString() ?? '10';
       _periodType = offer.periodType;
       _selectedProducts.clear();
       for (final pMap in offer.products) {
@@ -83,20 +113,52 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
         final sellingPrice = double.tryParse(pMap['selling_price']?.toString() ?? '0') ?? 0.0;
         final internalCode = pMap['internal_code']?.toString() ?? '';
         final barcode = pMap['barcode']?.toString();
+        final costPrice = double.tryParse(pMap['cost_price']?.toString() ?? '0') ?? 0.0;
         _selectedProducts.add(Product(
           id: id,
           name: name,
           sellingPrice: sellingPrice,
           internalCode: internalCode,
           barcode: barcode,
-          costPrice: 0,
+          costPrice: costPrice,
           stock: 0,
           active: true,
           isSoldByWeight: false,
         ));
       }
     });
-    _tabController.animateTo(1);
+    _tabController.animateTo(2);
+  }
+
+  void _useOfferAsTemplate(OfferModel offer) {
+    setState(() {
+      _editingOffer = null; // No editamos el id existente, creamos una nueva
+      _offerNameCtrl.text = '${offer.name} (Copia)';
+      _discountCtrl.text = offer.discountPercentage?.toString() ?? '10';
+      _periodType = offer.periodType;
+      _selectedProducts.clear();
+      for (final pMap in offer.products) {
+        final id = (pMap['id'] as num?)?.toInt() ?? 0;
+        final name = pMap['name']?.toString() ?? 'Producto';
+        final sellingPrice = double.tryParse(pMap['selling_price']?.toString() ?? '0') ?? 0.0;
+        final internalCode = pMap['internal_code']?.toString() ?? '';
+        final barcode = pMap['barcode']?.toString();
+        final costPrice = double.tryParse(pMap['cost_price']?.toString() ?? '0') ?? 0.0;
+        _selectedProducts.add(Product(
+          id: id,
+          name: name,
+          sellingPrice: sellingPrice,
+          internalCode: internalCode,
+          barcode: barcode,
+          costPrice: costPrice,
+          stock: 0,
+          active: true,
+          isSoldByWeight: false,
+        ));
+      }
+    });
+    _tabController.animateTo(2);
+    SnackBarService.info(context, '📋 Plantilla cargada. Ajustá productos o porcentajes antes de activar.');
   }
 
   void _cancelEdit() {
@@ -183,13 +245,239 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
     }
   }
 
+  Future<void> _handleToggleStatus(OfferModel offer) async {
+    final isPausing = offer.isCurrentlyActive;
+    final authorized = await AdminPinDialog.verify(
+      context,
+      action: '${isPausing ? "pausar" : "reanudar"} oferta "${offer.name}"',
+      permissionKey: 'apply_discounts',
+    );
+    if (!authorized) return;
+
+    final offerProv = Provider.of<OfferProvider>(context, listen: false);
+    final pos = Provider.of<PosProvider>(context, listen: false);
+    final ok = await offerProv.toggleOfferStatus(offer.id);
+
+    if (ok && mounted) {
+      pos.syncActiveOffers(offerProv.activeOffers);
+      SnackBarService.success(
+        context,
+        isPausing ? '⏸️ Oferta "${offer.name}" pausada.' : '▶️ Oferta "${offer.name}" reanudada.',
+      );
+    } else if (mounted) {
+      SnackBarService.error(context, offerProv.errorMessage ?? 'Error al cambiar estado.');
+    }
+  }
+
+  Future<void> _showRelaunchModal(OfferModel offer) async {
+    String selectedPeriod = offer.periodType;
+    bool duplicate = true;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (dialogCtx, setDialogState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              title: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(Icons.rocket_launch_rounded, color: Colors.green.shade700, size: 22),
+                  ),
+                  const SizedBox(width: 10),
+                  const Text('Relanzar Oferta', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                ],
+              ),
+              content: SizedBox(
+                width: 480,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Vas a volver a activar la oferta "${offer.name}" (${offer.discountPercentage?.toStringAsFixed(1) ?? "0"}% OFF en ${offer.products.length} productos).',
+                      style: const TextStyle(fontSize: 13, color: Colors.black87),
+                    ),
+                    const SizedBox(height: 14),
+
+                    // Selector de vigencia
+                    const Text('Elegí la nueva vigencia:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      children: [
+                        ChoiceChip(
+                          label: const Text('☀️ Diaria (Hoy)', style: TextStyle(fontSize: 12)),
+                          selected: selectedPeriod == 'daily',
+                          selectedColor: Colors.purple.shade100,
+                          onSelected: (val) {
+                            if (val) setDialogState(() => selectedPeriod = 'daily');
+                          },
+                        ),
+                        ChoiceChip(
+                          label: const Text('📅 Semanal (7 días)', style: TextStyle(fontSize: 12)),
+                          selected: selectedPeriod == 'weekly',
+                          selectedColor: Colors.purple.shade100,
+                          onSelected: (val) {
+                            if (val) setDialogState(() => selectedPeriod = 'weekly');
+                          },
+                        ),
+                        ChoiceChip(
+                          label: const Text('📆 Mensual (30 días)', style: TextStyle(fontSize: 12)),
+                          selected: selectedPeriod == 'monthly',
+                          selectedColor: Colors.purple.shade100,
+                          onSelected: (val) {
+                            if (val) setDialogState(() => selectedPeriod = 'monthly');
+                          },
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+
+                    // Checkbox de clonar/reactivar
+                    InkWell(
+                      onTap: () {
+                        setDialogState(() => duplicate = !duplicate);
+                      },
+                      child: Row(
+                        children: [
+                          Checkbox(
+                            value: duplicate,
+                            onChanged: (v) {
+                              setDialogState(() => duplicate = v ?? true);
+                            },
+                          ),
+                          const Expanded(
+                            child: Text(
+                              'Crear como nuevo registro histórico (recomendado para conservar auditoría)',
+                              style: TextStyle(fontSize: 12),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    if (offer.hasMarginWarning) ...[
+                      const SizedBox(height: 10),
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.amber.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.amber.shade300),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.warning_amber_rounded, color: Colors.amber.shade900, size: 20),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Atención: ${offer.marginWarnings.length} producto(s) tienen un precio con descuento menor al costo actual.',
+                                style: TextStyle(fontSize: 11, color: Colors.amber.shade900, fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('Cancelar'),
+                ),
+                FilledButton.icon(
+                  style: FilledButton.styleFrom(backgroundColor: const Color(0xFF7B1FA2)),
+                  onPressed: () => Navigator.pop(ctx, true),
+                  icon: const Icon(Icons.bolt_rounded, size: 18),
+                  label: const Text('Relanzar Ahora'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (confirmed != true) return;
+
+    final authorized = await AdminPinDialog.verify(
+      context,
+      action: 'relanzar oferta "${offer.name}"',
+      permissionKey: 'apply_discounts',
+    );
+    if (!authorized) return;
+
+    final offerProv = Provider.of<OfferProvider>(context, listen: false);
+    final pos = Provider.of<PosProvider>(context, listen: false);
+
+    final res = await offerProv.relaunchOffer(
+      id: offer.id,
+      periodType: selectedPeriod,
+      duplicate: duplicate,
+    );
+
+    if (res != null && mounted) {
+      pos.syncActiveOffers(offerProv.activeOffers);
+      SnackBarService.success(context, '🚀 Oferta "${offer.name}" relanzada con éxito.');
+      _tabController.animateTo(0);
+    } else if (mounted) {
+      SnackBarService.error(context, offerProv.errorMessage ?? 'Error al relanzar la oferta.');
+    }
+  }
+
+  Future<void> _handleDeleteOffer(OfferModel offer) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('Eliminar Oferta'),
+        content: Text('¿Deseas dar de baja definitivamente la oferta "${offer.name}"?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancelar')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(c, true),
+            child: const Text('Eliminar'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+
+    final authorized = await AdminPinDialog.verify(
+      context,
+      action: 'eliminar oferta "${offer.name}"',
+      permissionKey: 'apply_discounts',
+    );
+    if (!authorized) return;
+
+    final offerProv = Provider.of<OfferProvider>(context, listen: false);
+    final pos = Provider.of<PosProvider>(context, listen: false);
+    final success = await offerProv.deleteOffer(offer.id);
+
+    if (success && mounted) {
+      pos.syncActiveOffers(offerProv.activeOffers);
+      SnackBarService.success(context, 'Oferta eliminada.');
+    } else if (mounted) {
+      SnackBarService.error(context, offerProv.errorMessage ?? 'Error al eliminar la oferta.');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       child: Container(
-        width: 650,
-        height: 560,
+        width: 780,
+        height: 600,
         padding: const EdgeInsets.all(20),
         child: Column(
           children: [
@@ -214,7 +502,7 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
                         style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                       ),
                       Text(
-                        'Crear ofertas diarias, semanales o mensuales para la terminal',
+                        'Gestión integral, historial, plantillas y relanzamiento ágil de ofertas',
                         style: TextStyle(fontSize: 12, color: Colors.grey),
                       ),
                     ],
@@ -228,7 +516,7 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
             ),
             const SizedBox(height: 14),
 
-            // TabBar
+            // TabBar con 3 pestañas
             Container(
               height: 40,
               decoration: BoxDecoration(
@@ -249,6 +537,7 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
                 labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                 tabs: [
                   const Tab(text: '🏷️ Ofertas Activas Hoy'),
+                  const Tab(text: '📜 Historial y Catálogo'),
                   Tab(text: _editingOffer != null ? '✏️ Editar Oferta' : '✨ Armar Nueva Oferta'),
                 ],
               ),
@@ -261,6 +550,7 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
                 controller: _tabController,
                 children: [
                   _buildActiveOffersTab(),
+                  _buildHistoryOffersTab(),
                   _buildCreateOfferTab(),
                 ],
               ),
@@ -293,14 +583,26 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
                 ),
                 const SizedBox(height: 6),
                 const Text(
-                  'Podés armar una oferta rápida en la pestaña "Armar Nueva Oferta".',
+                  'Podés armar una nueva oferta o relanzar una anterior desde la pestaña "Historial".',
                   style: TextStyle(fontSize: 13, color: Colors.grey),
                 ),
                 const SizedBox(height: 14),
-                FilledButton.tonalIcon(
-                  onPressed: () => _tabController.animateTo(1),
-                  icon: const Icon(Icons.add_rounded, size: 18),
-                  label: const Text('Crear Oferta Ahora'),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    FilledButton.tonalIcon(
+                      onPressed: () => _tabController.animateTo(1),
+                      icon: const Icon(Icons.history_rounded, size: 18),
+                      label: const Text('Ver Historial'),
+                    ),
+                    const SizedBox(width: 10),
+                    FilledButton.icon(
+                      style: FilledButton.styleFrom(backgroundColor: const Color(0xFF7B1FA2)),
+                      onPressed: () => _tabController.animateTo(2),
+                      icon: const Icon(Icons.add_rounded, size: 18),
+                      label: const Text('Crear Oferta'),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -361,6 +663,11 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
                             ),
                           ),
                           IconButton(
+                            icon: const Icon(Icons.pause_circle_outline, size: 20, color: Colors.orange),
+                            tooltip: 'Pausar oferta',
+                            onPressed: () => _handleToggleStatus(offer),
+                          ),
+                          IconButton(
                             icon: const Icon(Icons.edit_outlined, size: 20, color: Color(0xFF1976D2)),
                             tooltip: 'Editar oferta',
                             onPressed: () => _startEditOffer(offer),
@@ -368,39 +675,7 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
                           IconButton(
                             icon: const Icon(Icons.delete_outline, size: 20, color: Colors.red),
                             tooltip: 'Eliminar oferta',
-                            onPressed: () async {
-                              final confirm = await showDialog<bool>(
-                                context: context,
-                                builder: (c) => AlertDialog(
-                                  title: const Text('Eliminar Oferta'),
-                                  content: Text('¿Deseas dar de baja la oferta "${offer.name}"?'),
-                                  actions: [
-                                    TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancelar')),
-                                    FilledButton(
-                                      style: FilledButton.styleFrom(backgroundColor: Colors.red),
-                                      onPressed: () => Navigator.pop(c, true),
-                                      child: const Text('Eliminar'),
-                                    ),
-                                  ],
-                                ),
-                              );
-                              if (confirm == true) {
-                                final authorized = await AdminPinDialog.verify(
-                                  context,
-                                  action: 'eliminar oferta "${offer.name}"',
-                                  permissionKey: 'apply_discounts',
-                                );
-                                if (!authorized) return;
-
-                                final success = await offerProv.deleteOffer(offer.id);
-                                if (success && mounted) {
-                                  Provider.of<PosProvider>(context, listen: false).syncActiveOffers(offerProv.activeOffers);
-                                  SnackBarService.success(context, 'Oferta eliminada.');
-                                } else if (mounted) {
-                                  SnackBarService.error(context, offerProv.errorMessage ?? 'Error al eliminar la oferta.');
-                                }
-                              }
-                            },
+                            onPressed: () => _handleDeleteOffer(offer),
                           ),
                         ],
                       ),
@@ -432,6 +707,313 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
           },
         );
       },
+    );
+  }
+
+  Widget _buildHistoryOffersTab() {
+    return Consumer<OfferProvider>(
+      builder: (context, offerProv, _) {
+        final list = offerProv.allOffers;
+
+        return Column(
+          children: [
+            // Barra de filtros y buscador
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _historySearchCtrl,
+                    onChanged: _onHistorySearchChanged,
+                    decoration: InputDecoration(
+                      hintText: 'Buscar oferta o producto...',
+                      prefixIcon: const Icon(Icons.search, size: 20),
+                      suffixIcon: _historySearchCtrl.text.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.clear, size: 16),
+                              onPressed: () {
+                                _historySearchCtrl.clear();
+                                _onHistorySearchChanged('');
+                              },
+                            )
+                          : null,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      isDense: true,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Wrap(
+                  spacing: 6,
+                  children: [
+                    _buildHistoryFilterChip('all', 'Todas'),
+                    _buildHistoryFilterChip('expired', '🔴 Vencidas'),
+                    _buildHistoryFilterChip('paused', '⏸️ Pausadas'),
+                    _buildHistoryFilterChip('active', '🟢 Activas'),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+
+            // Lista de ofertas del historial
+            Expanded(
+              child: offerProv.isLoading && list.isEmpty
+                  ? const Center(child: CircularProgressIndicator())
+                  : list.isEmpty
+                      ? Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.history_toggle_off_rounded, size: 48, color: Colors.grey.shade400),
+                              const SizedBox(height: 10),
+                              const Text('No se encontraron ofertas en el historial',
+                                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.blueGrey)),
+                              const SizedBox(height: 4),
+                              const Text('Probá cambiando el filtro o la búsqueda.',
+                                  style: TextStyle(fontSize: 12, color: Colors.grey)),
+                            ],
+                          ),
+                        )
+                      : ListView.separated(
+                          itemCount: list.length,
+                          separatorBuilder: (_, __) => const SizedBox(height: 10),
+                          itemBuilder: (ctx, index) {
+                            final offer = list[index];
+                            return _buildHistoryOfferCard(offer);
+                          },
+                        ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildHistoryFilterChip(String value, String label) {
+    final isSelected = _historyFilter == value;
+    return ChoiceChip(
+      label: Text(label, style: TextStyle(fontSize: 11, fontWeight: isSelected ? FontWeight.bold : FontWeight.normal)),
+      selected: isSelected,
+      selectedColor: Colors.purple.shade100,
+      visualDensity: VisualDensity.compact,
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      onSelected: (selected) {
+        if (selected) {
+          _setHistoryFilter(value);
+        }
+      },
+    );
+  }
+
+  Widget _buildHistoryOfferCard(OfferModel offer) {
+    final isCurrentlyActive = offer.isCurrentlyActive;
+    final isPaused = offer.isPaused;
+    final isExpired = offer.isExpired;
+
+    Color badgeBg = Colors.grey.shade200;
+    Color badgeText = Colors.grey.shade800;
+
+    if (isCurrentlyActive) {
+      badgeBg = Colors.green.shade50;
+      badgeText = Colors.green.shade800;
+    } else if (isPaused) {
+      badgeBg = Colors.orange.shade50;
+      badgeText = Colors.orange.shade900;
+    } else if (isExpired) {
+      badgeBg = Colors.red.shade50;
+      badgeText = Colors.red.shade800;
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.grey.shade200),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.02),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Fila Superior
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Text(
+                    offer.name,
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: badgeBg,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      offer.statusLabel,
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: badgeText),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.purple.shade50,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      offer.periodLabel,
+                      style: TextStyle(fontSize: 11, color: Colors.purple.shade900),
+                    ),
+                  ),
+                ],
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: Colors.green.shade600,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  offer.type == 'percentage'
+                      ? '-${offer.discountPercentage?.toStringAsFixed(1) ?? "0"}%'
+                      : '-\$${offer.discountAmount?.toCurrency() ?? "0"}',
+                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+
+          // Fechas de vigencia
+          Text(
+            'Vigencia: ${_formatDate(offer.startDate)} al ${_formatDate(offer.endDate)}',
+            style: TextStyle(fontSize: 11, color: Colors.grey.shade700),
+          ),
+
+          if (offer.hasMarginWarning) ...[
+            const SizedBox(height: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.amber.shade50,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: Colors.amber.shade200),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.warning_amber_rounded, size: 14, color: Colors.amber.shade900),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Alerta de margen: ${offer.marginWarnings.length} producto(s) quedan por debajo de su costo actual.',
+                      style: TextStyle(fontSize: 11, color: Colors.amber.shade900, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
+          const SizedBox(height: 8),
+
+          // Productos y Acciones
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: Wrap(
+                  spacing: 4,
+                  runSpacing: 4,
+                  children: offer.products.take(4).map((p) {
+                    final name = p['name']?.toString() ?? 'Producto';
+                    return Chip(
+                      label: Text(name, style: const TextStyle(fontSize: 10)),
+                      backgroundColor: Colors.grey.shade100,
+                      padding: EdgeInsets.zero,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      visualDensity: VisualDensity.compact,
+                    );
+                  }).toList()
+                    ..addAll(
+                      offer.products.length > 4
+                          ? [
+                              Chip(
+                                label: Text('+${offer.products.length - 4}',
+                                    style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                                backgroundColor: Colors.purple.shade50,
+                                padding: EdgeInsets.zero,
+                                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                visualDensity: VisualDensity.compact,
+                              ),
+                            ]
+                          : [],
+                    ),
+                ),
+              ),
+              const SizedBox(width: 8),
+
+              // Botones de acción del historial
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Botón Relanzar
+                  FilledButton.tonalIcon(
+                    style: FilledButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    onPressed: () => _showRelaunchModal(offer),
+                    icon: const Icon(Icons.rocket_launch_rounded, size: 16),
+                    label: const Text('Relanzar', style: TextStyle(fontSize: 12)),
+                  ),
+                  const SizedBox(width: 6),
+
+                  // Botón Plantilla
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    onPressed: () => _useOfferAsTemplate(offer),
+                    icon: const Icon(Icons.copy_rounded, size: 15),
+                    label: const Text('Plantilla', style: TextStyle(fontSize: 12)),
+                  ),
+                  const SizedBox(width: 4),
+
+                  // Pausar / Reanudar
+                  IconButton(
+                    icon: Icon(
+                      isCurrentlyActive ? Icons.pause_circle_outline : Icons.play_circle_outline,
+                      size: 20,
+                      color: isCurrentlyActive ? Colors.orange : Colors.green.shade700,
+                    ),
+                    tooltip: isCurrentlyActive ? 'Pausar oferta' : 'Reanudar oferta',
+                    onPressed: () => _handleToggleStatus(offer),
+                  ),
+
+                  // Eliminar
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline, size: 20, color: Colors.red),
+                    tooltip: 'Eliminar oferta',
+                    onPressed: () => _handleDeleteOffer(offer),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 

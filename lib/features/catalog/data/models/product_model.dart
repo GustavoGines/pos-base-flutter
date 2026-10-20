@@ -24,6 +24,7 @@ class ProductModel extends Product {
     super.salesCount,
     super.vencimientoDias,
     super.unitType,
+    super.ivaRate,
     super.imageUrl,
     CategoryModel? super.category,
     List<CategoryModel>? super.categories,
@@ -51,6 +52,7 @@ class ProductModel extends Product {
     int? salesCount,
     int? vencimientoDias,
     String? unitType,
+    double? ivaRate,
     String? imageUrl,
     bool clearImageUrl = false,
     covariant CategoryModel? category,
@@ -80,6 +82,7 @@ class ProductModel extends Product {
       salesCount: salesCount ?? this.salesCount,
       vencimientoDias: vencimientoDias ?? this.vencimientoDias,
       unitType: unitType ?? this.unitType,
+      ivaRate: ivaRate ?? this.ivaRate,
       imageUrl: clearImageUrl ? null : (imageUrl ?? this.imageUrl),
       category: clearCategory ? null : (category ?? this.category as CategoryModel?),
       categories: categories ?? (this.categories as List<CategoryModel>?),
@@ -150,6 +153,9 @@ class ProductModel extends Product {
           ? int.tryParse(json['vencimiento_dias'].toString())
           : null,
       unitType: json['unit_type']?.toString() ?? 'un',
+      ivaRate: json['iva_rate'] != null
+          ? (double.tryParse(json['iva_rate'].toString()) ?? 21.0)
+          : 21.0,
       imageUrl: resolveImageUrl(json['image_url']?.toString()) ??
           resolveImageUrl(json['image_path']?.toString()),
       category: json['category'] != null && json['category'] is Map<String, dynamic>

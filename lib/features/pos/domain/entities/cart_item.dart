@@ -56,12 +56,12 @@ class CartItem {
 
     // Si hay una oferta promocional y es menor al precio calculado, aplicarla
     if (promotionalPrice != null && promotionalPrice! > 0 && promotionalPrice! < calculated) {
-      return promotionalPrice!;
+      return (promotionalPrice! * 100).roundToDouble() / 100.0;
     }
-    return calculated;
+    return (calculated * 100).roundToDouble() / 100.0;
   }
 
-  double get subtotal => unitPrice * quantity;
+  double get subtotal => ((unitPrice * quantity) * 100).roundToDouble() / 100.0;
 
   /// Subtotal de lista regular (sin descuentos ni listas especiales)
   double get regularSubtotal => product.sellingPrice * quantity;

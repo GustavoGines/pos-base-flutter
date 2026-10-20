@@ -43,13 +43,13 @@ class OfferProvider with ChangeNotifier {
     }
   }
 
-  Future<void> loadAllOffers() async {
+  Future<void> loadAllOffers({String? status, String? search}) async {
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
 
     try {
-      _allOffers = await repository.getAllOffers();
+      _allOffers = await repository.getAllOffers(status: status, search: search);
     } catch (e) {
       _errorMessage = e.toString().replaceAll('Exception: ', '');
     } finally {
@@ -138,6 +138,7 @@ class OfferProvider with ChangeNotifier {
 
       // Agregar a activas de inmediato
       _activeOffers.insert(0, newOffer);
+      _allOffers.insert(0, newOffer);
       return true;
     } catch (e) {
       _errorMessage = e.toString().replaceAll('Exception: ', '');
@@ -182,6 +183,92 @@ class OfferProvider with ChangeNotifier {
         _activeOffers[activeIdx] = updated;
       } else {
         _activeOffers.insert(0, updated);
+      }
+
+      final allIdx = _allOffers.indexWhere((o) => o.id == id);
+      if (allIdx >= 0) {
+        _allOffers[allIdx] = updated;
+      }
+
+      return true;
+    } catch (e) {
+      _errorMessage = e.toString().replaceAll('Exception: ', '');
+      return false;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<Map<String, dynamic>?> relaunchOffer({
+    required int id,
+    required String periodType,
+    DateTime? startDate,
+    DateTime? endDate,
+    bool duplicate = false,
+  }) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      final result = await repository.relaunchOffer(
+        id: id,
+        periodType: periodType,
+        startDate: startDate,
+        endDate: endDate,
+        duplicate: duplicate,
+      );
+
+      final OfferModel launched = result['offer'] as OfferModel;
+
+      // Actualizar activas si corresponde
+      if (launched.isCurrentlyActive) {
+        final activeIdx = _activeOffers.indexWhere((o) => o.id == launched.id);
+        if (activeIdx >= 0) {
+          _activeOffers[activeIdx] = launched;
+        } else {
+          _activeOffers.insert(0, launched);
+        }
+      }
+
+      // Actualizar lista histórica
+      final histIdx = _allOffers.indexWhere((o) => o.id == launched.id);
+      if (histIdx >= 0) {
+        _allOffers[histIdx] = launched;
+      } else {
+        _allOffers.insert(0, launched);
+      }
+
+      return result;
+    } catch (e) {
+      _errorMessage = e.toString().replaceAll('Exception: ', '');
+      return null;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> toggleOfferStatus(int id) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      final updated = await repository.toggleOfferStatus(id);
+
+      final activeIdx = _activeOffers.indexWhere((o) => o.id == id);
+      if (updated.isCurrentlyActive) {
+        if (activeIdx >= 0) {
+          _activeOffers[activeIdx] = updated;
+        } else {
+          _activeOffers.insert(0, updated);
+        }
+      } else {
+        if (activeIdx >= 0) {
+          _activeOffers.removeAt(activeIdx);
+        }
       }
 
       final allIdx = _allOffers.indexWhere((o) => o.id == id);

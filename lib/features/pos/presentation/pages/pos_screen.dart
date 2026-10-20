@@ -3195,8 +3195,8 @@ class _PosScreenState extends State<PosScreen> {
     } else if (_quickAccessFilter == 'weight') {
       filtered = filtered.where((p) => p.isSoldByWeight).toList();
     } else if (_quickAccessFilter.startsWith('cat_')) {
-      final categoryName = _quickAccessFilter.substring(4);
-      filtered = filtered.where((p) => p.category?.name == categoryName).toList();
+      final categoryName = _quickAccessFilter.substring(4).trim();
+      filtered = filtered.where((p) => p.category?.name.trim() == categoryName).toList();
     }
 
     // Ordenamiento inteligente con prioridad a fijados
@@ -3867,8 +3867,9 @@ class _PosScreenState extends State<PosScreen> {
     final hasOffers = catalog.products.any((p) => offerProv.getActiveOfferForProduct(p.id, basePrice: p.sellingPrice) != null);
     final categories = <String, int>{};
     for (final p in catalog.products) {
-      if (p.category?.name != null) {
-        categories[p.category!.name] = (categories[p.category!.name] ?? 0) + 1;
+      final catName = p.category?.name.trim();
+      if (catName != null && catName.isNotEmpty) {
+        categories[catName] = (categories[catName] ?? 0) + 1;
       }
     }
     final topCategories = categories.entries.toList()
