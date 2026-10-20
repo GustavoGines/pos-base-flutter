@@ -20,6 +20,8 @@ import '../widgets/checkout_dialog.dart';
 import '../widgets/pos_quick_access_view.dart';
 import '../widgets/pos_financial_summary.dart';
 import '../widgets/pos_quick_action_buttons.dart';
+import '../widgets/pos_quick_customer_dialog.dart';
+import 'package:frontend_desktop/core/presentation/widgets/plan_upgrade_dialog.dart';
 import 'package:frontend_desktop/features/offers/presentation/providers/offer_provider.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
@@ -79,7 +81,7 @@ class _PosScreenState extends State<PosScreen> {
       // Siempre cargar la lista COMPLETA al entrar a POS, ignorando cualquier
       // búsqueda u ordenamiento que el módulo de Catálogo haya dejado activo.
       Provider.of<CatalogProvider>(context, listen: false)
-          .loadProducts(page: 1, search: '', sortBy: '');
+          .loadProducts(page: 1, search: '', sortBy: '', perPage: 500);
       // Sincronizar y aplicar lista de precios fijada por la terminal
       final localTerminal = Provider.of<LocalTerminalProvider>(context, listen: false);
       final posProvider = Provider.of<PosProvider>(context, listen: false);
@@ -118,11 +120,15 @@ class _PosScreenState extends State<PosScreen> {
       // Cargar el contador de órdenes pendientes al abrir el POS
       posProvider.loadPendingSales();
 
-      // Cargar ofertas activas para aplicar descuentos automáticos
-      Provider.of<OfferProvider>(context, listen: false).loadActiveOffers().then((_) {
+      // Sincronizar de inmediato las ofertas en memoria (si ya estaban cargadas)
+      // y refrescar desde el servidor en segundo plano
+      final offerProvider = Provider.of<OfferProvider>(context, listen: false);
+      if (offerProvider.activeOffers.isNotEmpty) {
+        posProvider.syncActiveOffers(offerProvider.activeOffers);
+      }
+      offerProvider.loadActiveOffers().then((_) {
         if (mounted) {
-          final offers = Provider.of<OfferProvider>(context, listen: false).activeOffers;
-          posProvider.syncActiveOffers(offers);
+          posProvider.syncActiveOffers(offerProvider.activeOffers);
         }
       });
 
@@ -852,7 +858,9 @@ class _PosScreenState extends State<PosScreen> {
           ),
         ),
       ),
-    );
+    ).then((_) {
+      if (mounted) _searchFocusNode.requestFocus();
+    });
   }
 
   Widget _quickLookCodeChip(String tag, String value) {
@@ -1018,20 +1026,22 @@ class _PosScreenState extends State<PosScreen> {
                   '💳 Ventana de Cobro (Desglose de Pago)',
                   [
                     _shortcutRow(['Ctrl', '1..7'], 'Métodos de pago (Efectivo, Point, QR, Tarjetas, Cta. Cte., Cheque)'),
-                    _shortcutRow(['F2'], 'Agregar otro medio de pago (Pago Mixto)'),
-                    _shortcutRow(['F4'], 'Asociar / Buscar Cliente'),
-                    _shortcutRow(['F6'], 'Alternar Ticket Común / Factura Fiscal ARCA'),
+                    _shortcutRow(['F2'], 'Pago exacto auto-ajustable en efectivo'),
+                    _shortcutRow(['F4'], 'Agregar otro medio de pago (Pago Mixto)'),
+                    _shortcutRow(['F6'], 'Asociar / Buscar Cliente'),
                     _shortcutRow(['F7'], 'Marcar / Desmarcar Imprimir Comprobante'),
                     _shortcutRow(['F8'], 'Marcar / Desmarcar Vista Previa'),
-                    _shortcutRow(['F9'], 'Alternar Logística (Retira / Envío / Acopio)'),
-                    _shortcutRow(['F10', 'Enter'], 'Confirmar Venta'),
-                    _shortcutRow(['Esc'], 'Cerrar ventana de Cobro'),
+                    _shortcutRow(['F9'], 'Alternar Ticket Común / Factura Fiscal ARCA'),
+                    _shortcutRow(['F10'], 'Alternar Logística (Retira / Envío / Acopio)'),
+                    _shortcutRow(['Enter'], 'Confirmar Venta'),
+                    _shortcutRow(['Esc'], 'Cerrar ventana de Cobro (conserva borrador)'),
                   ],
                 ),
                 _shortcutSection(
-                  '🗂️ Orden en Espera y Filtros',
+                  '🗂️ Orden en Espera, Clientes y Filtros',
                   [
                     _shortcutRow(['F4'], 'Poner el carrito actual en Espera'),
+                    _shortcutRow(['F6'], 'Asociar / Buscar Cliente al carrito'),
                     _shortcutRow([
                       'Esc'
                     ], 'Cierra ventana de Cobro, limpia buscador o vuelve a "Todos"'),
@@ -1043,7 +1053,9 @@ class _PosScreenState extends State<PosScreen> {
           ),
         ),
       ),
-    );
+    ).then((_) {
+      if (mounted) _searchFocusNode.requestFocus();
+    });
   }
 
   Widget _shortcutSection(String title, List<Widget> rows) {
@@ -2880,6 +2892,7 @@ class _PosScreenState extends State<PosScreen> {
                                   } else {
                                     pos.removeFromCart(item);
                                   }
+                                  _searchFocusNode.requestFocus();
                                 },
                               ),
                               const SizedBox(width: 8),
@@ -2891,6 +2904,7 @@ class _PosScreenState extends State<PosScreen> {
                                 tooltip: 'Aumentar',
                                 onPressed: () {
                                   pos.updateQuantity(item, item.quantity + 1);
+                                  _searchFocusNode.requestFocus();
                                 },
                               ),
                               const SizedBox(width: 16),
@@ -2898,7 +2912,10 @@ class _PosScreenState extends State<PosScreen> {
                                   style: const TextStyle(fontSize: 16)),
                               IconButton(
                                 icon: const Icon(Icons.delete, color: Colors.red),
-                                onPressed: () => pos.removeFromCart(item),
+                                onPressed: () {
+                                  pos.removeFromCart(item);
+                                  _searchFocusNode.requestFocus();
+                                },
                               )
                             ],
                           ),
@@ -3049,6 +3066,9 @@ class _PosScreenState extends State<PosScreen> {
                                         customLabel: label,
                                       );
                                     }
+                                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                                      if (mounted) _searchFocusNode.requestFocus();
+                                    });
                                   },
                                 ),
                               ),
@@ -3078,6 +3098,7 @@ class _PosScreenState extends State<PosScreen> {
                                         pos.setDefaultTier(currentValue, customLabel);
                                         SnackBarService.success(context, 'Lista fijada. El carrito usará esta lista automáticamente.');
                                       }
+                                      _searchFocusNode.requestFocus();
                                     },
                                   );
                                 },
@@ -3097,6 +3118,9 @@ class _PosScreenState extends State<PosScreen> {
                 PosQuickActionButtons(
                   onHoldOrder: _handleHoldOrder,
                   onOpenPendingList: () => _pendingOrdersPortalController.toggle(),
+                  onAfterDialogClosed: () {
+                    if (mounted) _searchFocusNode.requestFocus();
+                  },
                 ),
                 const SizedBox(height: 8),
 
@@ -3236,10 +3260,35 @@ class _PosScreenState extends State<PosScreen> {
       return true;
     }
 
+    // F6 → Abrir selector rápido de clientes
+    if (event.logicalKey == LogicalKeyboardKey.f6) {
+      final settingsProv = Provider.of<SettingsProvider>(context, listen: false);
+      final hasCurrentAccounts = settingsProv.settings?.features.currentAccounts ?? false;
+      if (!hasCurrentAccounts) {
+        PlanUpgradeDialog.show(
+          context,
+          featureName: 'Gestión de Clientes y Cuentas Corrientes',
+          description:
+              'La gestión de clientes con cuenta corriente y saldo a favor está disponible en el Plan Ferretería/Corralón o como módulo adicional.',
+        ).then((_) {
+          if (mounted) _searchFocusNode.requestFocus();
+        });
+      } else {
+        showDialog(
+          context: context,
+          builder: (ctx) => const PosQuickCustomerDialog(),
+        ).then((_) {
+          if (mounted) _searchFocusNode.requestFocus();
+        });
+      }
+      return true;
+    }
+
     // Escape → Cerrar overlay de órdenes pendientes o limpiar buscador/resetear filtro
     if (event.logicalKey == LogicalKeyboardKey.escape) {
       if (_pendingOrdersPortalController.isShowing) {
         _pendingOrdersPortalController.hide();
+        _searchFocusNode.requestFocus();
         return true;
       }
       if (_searchController.text.isNotEmpty) {
@@ -3292,9 +3341,9 @@ class _PosScreenState extends State<PosScreen> {
         return index != null;
       }
 
-      // Enter / NumpadEnter → Cobrar (si el foco NO está en el TextField)
-      if ((event.logicalKey == LogicalKeyboardKey.enter || event.logicalKey == LogicalKeyboardKey.numpadEnter) &&
-          !_searchFocusNode.hasFocus) {
+      // Enter / NumpadEnter → Cobrar siempre que el buscador esté vacío
+      if (event.logicalKey == LogicalKeyboardKey.enter ||
+          event.logicalKey == LogicalKeyboardKey.numpadEnter) {
         if (posProvider.cart.isNotEmpty && !posProvider.isLoading && !_isCheckingOut) {
           _handleCheckout();
         }
@@ -3302,27 +3351,33 @@ class _PosScreenState extends State<PosScreen> {
       }
 
       // + → Incrementar último ítem
-      if (event.logicalKey == LogicalKeyboardKey.numpadAdd || event.logicalKey == LogicalKeyboardKey.add) {
+      if (event.logicalKey == LogicalKeyboardKey.numpadAdd ||
+          event.logicalKey == LogicalKeyboardKey.add ||
+          event.character == '+') {
         if (posProvider.cart.isNotEmpty) {
           final lastItem = posProvider.cart.last;
           if (!lastItem.product.isSoldByWeight) {
             posProvider.updateQuantity(lastItem, lastItem.quantity + 1);
           }
+          return true;
         }
-        return true;
       }
 
       // - → Decrementar último ítem
-      if (event.logicalKey == LogicalKeyboardKey.numpadSubtract || event.logicalKey == LogicalKeyboardKey.minus) {
+      if (event.logicalKey == LogicalKeyboardKey.numpadSubtract ||
+          event.logicalKey == LogicalKeyboardKey.minus ||
+          event.character == '-') {
         if (posProvider.cart.isNotEmpty) {
           final lastItem = posProvider.cart.last;
-          if (lastItem.quantity > 1) {
-            posProvider.updateQuantity(lastItem, lastItem.quantity - 1);
-          } else {
-            posProvider.removeFromCart(lastItem);
+          if (!lastItem.product.isSoldByWeight) {
+            if (lastItem.quantity > 1) {
+              posProvider.updateQuantity(lastItem, lastItem.quantity - 1);
+            } else {
+              posProvider.removeFromCart(lastItem);
+            }
           }
+          return true;
         }
-        return true;
       }
 
       // Delete → Eliminar último ítem
@@ -3351,6 +3406,17 @@ class _PosScreenState extends State<PosScreen> {
               FilteringTextInputFormatter.deny(
                 RegExp(r'[\x00-\x1F\u263A\u263B\u2665\u2666\u2663\u2660\u2022\u25D8\u25CB]'),
               ),
+              TextInputFormatter.withFunction((oldValue, newValue) {
+                if (oldValue.text.isEmpty &&
+                    (newValue.text == '+' || newValue.text == '-')) {
+                  final hasCart =
+                      Provider.of<PosProvider>(context, listen: false)
+                          .cart
+                          .isNotEmpty;
+                  if (hasCart) return oldValue;
+                }
+                return newValue;
+              }),
             ],
             decoration: InputDecoration(
               hintText: 'Escribir nombre o escanear código... (Enter: Cobrar · F1: Atajos)',
@@ -3448,8 +3514,17 @@ class _PosScreenState extends State<PosScreen> {
                     }
                     return IconButton(
                       icon: const Icon(Icons.refresh, color: Colors.grey),
-                      tooltip: 'Actualizar catálogo',
-                      onPressed: () => context.read<CatalogProvider>().loadProducts(page: 1, search: '', sortBy: ''),
+                      tooltip: 'Actualizar catálogo y ofertas',
+                      onPressed: () {
+                        context.read<CatalogProvider>().loadProducts(page: 1, search: '', sortBy: '', perPage: 500);
+                        final offerProv = context.read<OfferProvider>();
+                        final posProv = context.read<PosProvider>();
+                        offerProv.loadActiveOffers().then((_) {
+                          if (mounted) {
+                            posProv.syncActiveOffers(offerProv.activeOffers);
+                          }
+                        });
+                      },
                     );
                   }
                 ),
@@ -3758,7 +3833,10 @@ class _PosScreenState extends State<PosScreen> {
     return Tooltip(
       message: tooltip,
       child: InkWell(
-        onTap: () => context.read<LocalTerminalProvider>().setCatalogViewMode(mode),
+        onTap: () {
+          context.read<LocalTerminalProvider>().setCatalogViewMode(mode);
+          _searchFocusNode.requestFocus();
+        },
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           decoration: BoxDecoration(
@@ -3826,6 +3904,7 @@ class _PosScreenState extends State<PosScreen> {
           setState(() {
             _quickAccessFilter = selected ? value : 'all';
           });
+          _searchFocusNode.requestFocus();
         },
         selectedColor: Colors.blue.withAlpha(25),
         checkmarkColor: Colors.blueAccent,

@@ -61,6 +61,7 @@ class FakeAdversarialCatalogProvider extends ChangeNotifier implements CatalogPr
     String? sortDirection,
     bool? activeOnly,
     int? rubroId,
+    int? perPage,
   }) async {}
 
   @override

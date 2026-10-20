@@ -11,11 +11,13 @@ import 'pos_quick_offers_dialog.dart';
 class PosQuickActionButtons extends StatelessWidget {
   final VoidCallback onHoldOrder;
   final VoidCallback onOpenPendingList;
+  final VoidCallback? onAfterDialogClosed;
 
   const PosQuickActionButtons({
     super.key,
     required this.onHoldOrder,
     required this.onOpenPendingList,
+    this.onAfterDialogClosed,
   });
 
   @override
@@ -64,20 +66,22 @@ class PosQuickActionButtons extends StatelessWidget {
                 tooltip: !hasQuotes
                     ? '🔒 Presupuestos • Requiere Plan Premium'
                     : 'Generar presupuesto del carrito o recuperar anteriores',
-                onTap: () {
+                onTap: () async {
                   if (!hasQuotes) {
-                    PlanUpgradeDialog.show(
+                    await PlanUpgradeDialog.show(
                       context,
                       featureName: 'Presupuestos Rápidos',
                       description:
                           'La generación y gestión de presupuestos está disponible en el Plan Ferretería/Corralón o como módulo adicional.',
                     );
+                    onAfterDialogClosed?.call();
                     return;
                   }
-                  showDialog(
+                  await showDialog(
                     context: context,
                     builder: (ctx) => const PosQuickQuotesDialog(),
                   );
+                  onAfterDialogClosed?.call();
                 },
               ),
             ),
@@ -108,20 +112,22 @@ class PosQuickActionButtons extends StatelessWidget {
                     : (hasCustomer
                         ? 'Cliente: ${pos.selectedCustomer!.name} (Toca para gestionar)'
                         : 'Gestionar o asignar clientes al ticket'),
-                onTap: () {
+                onTap: () async {
                   if (!hasCurrentAccounts) {
-                    PlanUpgradeDialog.show(
+                    await PlanUpgradeDialog.show(
                       context,
                       featureName: 'Gestión de Clientes y Cuentas Corrientes',
                       description:
                           'El registro de clientes, asignación al ticket y control de Cuentas Corrientes (Fiado) está disponible en el Plan Premium o como módulo adicional.',
                     );
+                    onAfterDialogClosed?.call();
                     return;
                   }
-                  showDialog(
+                  await showDialog(
                     context: context,
                     builder: (ctx) => const PosQuickCustomerDialog(),
                   );
+                  onAfterDialogClosed?.call();
                 },
               ),
             ),
@@ -138,11 +144,12 @@ class PosQuickActionButtons extends StatelessWidget {
                 tooltip: activeOffersCount > 0
                     ? '$activeOffersCount oferta(s) activas hoy. Toca para ver o crear.'
                     : 'Armar ofertas diarias, semanales o mensuales',
-                onTap: () {
-                  showDialog(
+                onTap: () async {
+                  await showDialog(
                     context: context,
                     builder: (ctx) => const PosQuickOffersDialog(),
                   );
+                  onAfterDialogClosed?.call();
                 },
               ),
             ),

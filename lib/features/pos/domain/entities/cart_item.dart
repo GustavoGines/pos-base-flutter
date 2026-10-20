@@ -69,8 +69,14 @@ class CartItem {
   /// Monto de descuento ahorrado en este ítem
   double get discountSavings => (regularSubtotal - subtotal).clamp(0.0, double.infinity);
 
+  /// Monto de recargo aplicado a este ítem (por lista de precios tarjeta/custom con incremento)
+  double get surchargeAmount => (subtotal - regularSubtotal).clamp(0.0, double.infinity);
+
   /// Indica si este ítem tiene algún descuento aplicado respecto al precio de lista
   bool get hasDiscount => subtotal < regularSubtotal - 0.001;
+
+  /// Indica si este ítem tiene un recargo aplicado respecto al precio de lista
+  bool get hasSurcharge => subtotal > regularSubtotal + 0.001;
 
   /// Indica si este ítem tiene una oferta promocional activa aplicada.
   /// En lista base (Minorista), cualquier promotionalPrice válido es oferta.

@@ -13,6 +13,8 @@ class PosFinancialSummary extends StatelessWidget {
         final grossSubtotal = pos.cartGrossSubtotal;
         final savings = pos.cartTotalSavings;
         final hasSavings = pos.hasCartDiscounts;
+        final surcharge = pos.cartTotalSurcharge;
+        final hasSurcharge = pos.hasCartSurcharges;
         final totalUnits = pos.cartTotalUnits;
         final itemCount = pos.cart.length;
 
@@ -120,9 +122,21 @@ class PosFinancialSummary extends StatelessWidget {
               if (hasSavings) ...[
                 const SizedBox(height: 3),
                 _buildRow(
-                  label: '🏷️ Ahorro / Descuentos:',
+                  label: pos.activeTierDiscountLabel,
                   value: '-\$${savings.toCurrency()}',
                   color: Colors.green.shade700,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                ),
+              ],
+
+              // Recargo por Lista de Precios (ej: Lista Tarjeta o Custom con incremento)
+              if (hasSurcharge) ...[
+                const SizedBox(height: 3),
+                _buildRow(
+                  label: pos.activeTierSurchargeLabel,
+                  value: '+\$${surcharge.toCurrency()}',
+                  color: Colors.orange.shade800,
                   fontWeight: FontWeight.w700,
                   fontSize: 13,
                 ),

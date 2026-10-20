@@ -57,6 +57,7 @@ class MockCatalogProvider extends ChangeNotifier implements CatalogProvider {
     String? sortDirection,
     bool? activeOnly,
     int? rubroId,
+    int? perPage,
   }) async {}
 
   @override

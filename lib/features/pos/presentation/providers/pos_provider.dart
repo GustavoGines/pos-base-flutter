@@ -24,6 +24,78 @@ import 'package:frontend_desktop/features/customers/models/customer_model.dart';
 import 'package:frontend_desktop/features/auth/presentation/widgets/admin_pin_dialog.dart';
 import 'package:frontend_desktop/core/constants/app_permissions.dart';
 
+class CheckoutDraftLine {
+  final int? methodId;
+  final String? methodCode;
+  final double amount;
+  final String percentageText;
+  final bool isAutoCalculated;
+  final bool mpPaid;
+  final String? mpPaymentId;
+  final String? mpOrderId;
+  final String? mpExternalReference;
+  final String checkBank;
+  final String checkNumber;
+  final String checkIssuerCuit;
+  final String checkIssuerName;
+  final String checkIssueDate;
+  final String checkPaymentDate;
+
+  const CheckoutDraftLine({
+    this.methodId,
+    this.methodCode,
+    required this.amount,
+    required this.percentageText,
+    this.isAutoCalculated = false,
+    this.mpPaid = false,
+    this.mpPaymentId,
+    this.mpOrderId,
+    this.mpExternalReference,
+    this.checkBank = '',
+    this.checkNumber = '',
+    this.checkIssuerCuit = '',
+    this.checkIssuerName = '',
+    this.checkIssueDate = '',
+    this.checkPaymentDate = '',
+  });
+}
+
+class CheckoutDraftState {
+  final List<CheckoutDraftLine> lines;
+  final String cashTenderedText;
+  final double lastTargetTotal;
+  final bool isFiscalMode;
+  final int voucherType;
+  final int fiscalDocType;
+  final String fiscalDocNumber;
+  final String fiscalReceiverName;
+  final String fiscalReceiverAddress;
+  final String fiscalTaxCondition;
+  final bool requiresDispatch;
+  final String fulfillmentStatus;
+  final String shippingCostText;
+  final String deliveryAddress;
+  final Customer? selectedCustomer;
+
+  const CheckoutDraftState({
+    required this.lines,
+    required this.cashTenderedText,
+    required this.lastTargetTotal,
+    required this.isFiscalMode,
+    required this.voucherType,
+    required this.fiscalDocType,
+    required this.fiscalDocNumber,
+    required this.fiscalReceiverName,
+    required this.fiscalReceiverAddress,
+    required this.fiscalTaxCondition,
+    required this.requiresDispatch,
+    required this.fulfillmentStatus,
+    required this.shippingCostText,
+    required this.deliveryAddress,
+    this.selectedCustomer,
+  });
+}
+
 class PosProvider with ChangeNotifier {
   final ProcessSaleUseCase processSaleUseCase;
   final SearchProductsUseCase searchProductsUseCase;
@@ -44,6 +116,23 @@ class PosProvider with ChangeNotifier {
 
   final List<CartItem> _cart = [];
   List<CartItem> get cart => _cart;
+
+  // Caché de ofertas activas en PosProvider para garantizar aplicación consistente
+  // al agregar ítems o cambiar listas de precios sin depender de tiempos de red.
+  List<dynamic> _cachedActiveOffers = [];
+  List<dynamic> get cachedActiveOffers => _cachedActiveOffers;
+
+  // Borrador del modal de Desglose de Pago durante la misma venta
+  CheckoutDraftState? _checkoutDraft;
+  CheckoutDraftState? get checkoutDraft => _checkoutDraft;
+
+  void saveCheckoutDraft(CheckoutDraftState draft) {
+    _checkoutDraft = draft;
+  }
+
+  void clearCheckoutDraft() {
+    _checkoutDraft = null;
+  }
 
   bool _isLoading = false;
   bool get isLoading => _isLoading;
@@ -149,6 +238,9 @@ class PosProvider with ChangeNotifier {
       if (item.promotionalLabel == null && item.promotionalPeriodType == null) {
         item.promotionalPrice = null;
       }
+    }
+    if (_cachedActiveOffers.isNotEmpty) {
+      syncActiveOffers(_cachedActiveOffers);
     }
     notifyListeners();
   }
@@ -328,13 +420,54 @@ class PosProvider with ChangeNotifier {
   }
 
   /// Total de ahorro / descuentos aplicados al carrito (por ofertas, listas o tramos)
+  /// Calculado por ítem individual para evitar compensación opaca con recargos
   double get cartTotalSavings {
-    final diff = cartGrossSubtotal - cartSubtotal;
-    return diff > 0.01 ? (diff * 100).roundToDouble() / 100.0 : 0.0;
+    return _cart.fold(0.0, (total, item) => total + item.discountSavings);
   }
 
   /// Indica si el carrito actual goza de descuentos respecto a su precio de lista
   bool get hasCartDiscounts => cartTotalSavings > 0.01;
+
+  /// Total de recargo aplicado al carrito (por Lista de Precios Tarjeta / Custom con incremento)
+  /// Calculado por ítem individual para evitar compensación opaca con descuentos
+  double get cartTotalSurcharge {
+    return _cart.fold(0.0, (total, item) => total + item.surchargeAmount);
+  }
+
+  /// Indica si el carrito actual tiene un recargo activo respecto al precio de lista regular
+  bool get hasCartSurcharges => cartTotalSurcharge > 0.01;
+
+  /// Etiqueta descriptiva del recargo de lista de precios activo para el Resumen del Ticket
+  String get activeTierSurchargeLabel {
+    switch (_activeTier) {
+      case PriceTier.card:
+        return '💳 Recargo Lista Tarjeta:';
+      case PriceTier.wholesale:
+        return '🏭 Recargo Lista Mayorista:';
+      case PriceTier.custom:
+        return '🏷️ Recargo Lista (${_customTierLabel ?? "Especial"}):';
+      case PriceTier.base:
+        return '📈 Recargo Lista de Precios:';
+    }
+  }
+
+  /// Etiqueta descriptiva del descuento / ahorro activo para el Resumen del Ticket
+  String get activeTierDiscountLabel {
+    final hasOfferItems = _cart.any((item) => item.hasActiveOffer);
+    if (_activeTier != PriceTier.base && !hasOfferItems) {
+      switch (_activeTier) {
+        case PriceTier.wholesale:
+          return '🏭 Descuento Lista Mayorista:';
+        case PriceTier.card:
+          return '💳 Descuento Lista Tarjeta:';
+        case PriceTier.custom:
+          return '🏷️ Descuento Lista (${_customTierLabel ?? "Especial"}):';
+        case PriceTier.base:
+          break;
+      }
+    }
+    return '🏷️ Ahorro / Descuentos:';
+  }
 
   /// Cantidad total de unidades de productos sumadas en el carrito
   double get cartTotalUnits {
@@ -426,7 +559,47 @@ class PosProvider with ChangeNotifier {
     _addToCartDirectly(product, weightInKg, promotionalPrice: promotionalPrice, promotionalLabel: promotionalLabel, promotionalPeriodType: promotionalPeriodType);
   }
 
+  static int? _extractOfferProductId(dynamic p) {
+    if (p is! Map) return null;
+    final raw = p['id'] ?? p['product_id'];
+    if (raw is int) return raw;
+    if (raw is num) return raw.toInt();
+    if (raw != null) return int.tryParse(raw.toString());
+    return null;
+  }
+
+  dynamic _findBestCachedOfferForProduct(Product product) {
+    if (_cachedActiveOffers.isEmpty) return null;
+    dynamic bestOffer;
+    double? bestPrice;
+    for (final offer in _cachedActiveOffers) {
+      final products = offer.products as List? ?? [];
+      if (products.any((p) => _extractOfferProductId(p) == product.id)) {
+        final discounted = offer.calculateDiscountedPrice(product.sellingPrice, productId: product.id) as double;
+        if (bestPrice == null || discounted < bestPrice) {
+          bestPrice = discounted;
+          bestOffer = offer;
+        }
+      }
+    }
+    return bestOffer;
+  }
+
   void _addToCartDirectly(Product product, double quantity, {double? promotionalPrice, String? promotionalLabel, String? promotionalPeriodType}) {
+    double? resolvedPromoPrice = promotionalPrice;
+    String? resolvedPromoLabel = promotionalLabel;
+    String? resolvedPromoPeriodType = promotionalPeriodType;
+
+    // Respaldo automático: si el llamador no pasó oferta explícita pero existe una oferta activa en caché
+    if (resolvedPromoPrice == null && _cachedActiveOffers.isNotEmpty) {
+      final bestOffer = _findBestCachedOfferForProduct(product);
+      if (bestOffer != null) {
+        resolvedPromoPrice = bestOffer.calculateDiscountedPrice(product.sellingPrice, productId: product.id) as double;
+        resolvedPromoLabel = bestOffer.name as String?;
+        resolvedPromoPeriodType = bestOffer.periodType as String?;
+      }
+    }
+
     if (product.isSoldByWeight) {
       _cart.add(CartItem(
         product: product,
@@ -436,9 +609,9 @@ class PosProvider with ChangeNotifier {
         cardFactor: _currentCardFactor,
         customFactor: _currentCustomFactor,
         customTierLabel: _customTierLabel,
-        promotionalPrice: promotionalPrice,
-        promotionalLabel: promotionalLabel,
-        promotionalPeriodType: promotionalPeriodType,
+        promotionalPrice: resolvedPromoPrice,
+        promotionalLabel: resolvedPromoLabel,
+        promotionalPeriodType: resolvedPromoPeriodType,
       ));
     } else {
       final index = _cart.indexWhere(
@@ -447,12 +620,12 @@ class PosProvider with ChangeNotifier {
       if (index >= 0) {
         _cart[index].product = product; // Actualizar con el stock más reciente
         _cart[index].quantity += quantity;
-        if (promotionalPrice != null) {
-          _cart[index].promotionalPrice = promotionalPrice;
-          _cart[index].promotionalLabel = promotionalLabel;
-          _cart[index].promotionalPeriodType = promotionalPeriodType;
+        if (resolvedPromoPrice != null) {
+          _cart[index].promotionalPrice = resolvedPromoPrice;
+          _cart[index].promotionalLabel = resolvedPromoLabel;
+          _cart[index].promotionalPeriodType = resolvedPromoPeriodType;
         } else {
-          // Si promotionalPrice es null, limpiar la oferta obsoleta del ítem existente
+          // Si resolvedPromoPrice es null, limpiar la oferta obsoleta del ítem existente
           _cart[index].promotionalPrice = null;
           _cart[index].promotionalLabel = null;
           _cart[index].promotionalPeriodType = null;
@@ -466,24 +639,25 @@ class PosProvider with ChangeNotifier {
           cardFactor: _currentCardFactor,
           customFactor: _currentCustomFactor,
           customTierLabel: _customTierLabel,
-          promotionalPrice: promotionalPrice,
-          promotionalLabel: promotionalLabel,
-          promotionalPeriodType: promotionalPeriodType,
+          promotionalPrice: resolvedPromoPrice,
+          promotionalLabel: resolvedPromoLabel,
+          promotionalPeriodType: resolvedPromoPeriodType,
         ));
       }
     }
     notifyListeners();
   }
 
-  /// Sincroniza ofertas activas con los productos actualmente en el carrito
+  /// Sincroniza ofertas activas con los productos actualmente en el carrito y guarda caché local
   void syncActiveOffers(List<dynamic> activeOffers) {
+    _cachedActiveOffers = List<dynamic>.from(activeOffers);
     bool hasChanges = false;
     for (final item in _cart) {
       // Buscar todas las ofertas aplicables a este producto
       final applicableOffers = <dynamic>[];
       for (final offer in activeOffers) {
         final products = offer.products as List? ?? [];
-        if (products.any((p) => p['id'] == item.product.id)) {
+        if (products.any((p) => _extractOfferProductId(p) == item.product.id)) {
           applicableOffers.add(offer);
         }
       }
@@ -565,6 +739,9 @@ class PosProvider with ChangeNotifier {
 
   void removeFromCart(CartItem cartItem) {
     _cart.remove(cartItem);
+    if (_cart.isEmpty) {
+      _checkoutDraft = null;
+    }
     notifyListeners();
   }
 
@@ -578,6 +755,7 @@ class PosProvider with ChangeNotifier {
 
   void clearCart() {
     _cart.clear();
+    _checkoutDraft = null;
     _selectedCustomer = null;
     _lastSelectedCustomer = null;
     _activePendingSaleId = null;

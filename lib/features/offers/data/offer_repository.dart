@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:frontend_desktop/core/network/api_client.dart';
 import 'models/offer_model.dart';
 
@@ -8,9 +9,15 @@ class OfferRepository {
 
   OfferRepository({required this.baseUrl, required this.client});
 
+  Future<String> _getActiveUrl() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('pos_api') ?? baseUrl;
+  }
+
   Future<List<OfferModel>> getActiveOffers() async {
+    final url = await _getActiveUrl();
     final response = await client.get(
-      Uri.parse('$baseUrl/offers/active'),
+      Uri.parse('$url/offers/active'),
       headers: {'Accept': 'application/json'},
     );
 
@@ -24,8 +31,9 @@ class OfferRepository {
   }
 
   Future<List<OfferModel>> getAllOffers() async {
+    final url = await _getActiveUrl();
     final response = await client.get(
-      Uri.parse('$baseUrl/offers'),
+      Uri.parse('$url/offers'),
       headers: {'Accept': 'application/json'},
     );
 
@@ -63,8 +71,9 @@ class OfferRepository {
       'products': products,
     };
 
+    final url = await _getActiveUrl();
     final response = await client.post(
-      Uri.parse('$baseUrl/offers'),
+      Uri.parse('$url/offers'),
       headers: {
         'Accept': 'application/json',
         'Content-Type': 'application/json',
@@ -107,8 +116,9 @@ class OfferRepository {
       'products': products,
     };
 
+    final url = await _getActiveUrl();
     final response = await client.put(
-      Uri.parse('$baseUrl/offers/$id'),
+      Uri.parse('$url/offers/$id'),
       headers: {
         'Accept': 'application/json',
         'Content-Type': 'application/json',
@@ -126,8 +136,9 @@ class OfferRepository {
   }
 
   Future<void> deleteOffer(int id) async {
+    final url = await _getActiveUrl();
     final response = await client.delete(
-      Uri.parse('$baseUrl/offers/$id'),
+      Uri.parse('$url/offers/$id'),
       headers: {'Accept': 'application/json'},
     );
 

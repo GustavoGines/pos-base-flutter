@@ -28,8 +28,15 @@ class OfferProvider with ChangeNotifier {
     try {
       _activeOffers = await repository.getActiveOffers();
     } catch (e) {
-      _errorMessage = e.toString().replaceAll('Exception: ', '');
-      _activeOffers = [];
+      // Reintento único ante micro-cortes o congestión de sockets al volver al POS
+      try {
+        await Future.delayed(const Duration(milliseconds: 600));
+        _activeOffers = await repository.getActiveOffers();
+      } catch (retryError) {
+        _errorMessage = retryError.toString().replaceAll('Exception: ', '');
+        // IMPORTANTE: No vaciar _activeOffers en caso de error de red transitorio
+        // para no borrar el contador de ofertas ni desaplicar promociones del carrito.
+      }
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -51,6 +58,15 @@ class OfferProvider with ChangeNotifier {
     }
   }
 
+  static int? _extractProductId(dynamic p) {
+    if (p is! Map) return null;
+    final raw = p['id'] ?? p['product_id'];
+    if (raw is int) return raw;
+    if (raw is num) return raw.toInt();
+    if (raw != null) return int.tryParse(raw.toString());
+    return null;
+  }
+
   /// Busca si un producto tiene una oferta activa hoy.
   /// Si hay múltiples ofertas para el mismo producto, retorna la que otorgue el menor precio (mayor descuento).
   /// [basePrice] es el precio base de venta del producto (sellingPrice) para calcular el descuento real.
@@ -59,13 +75,13 @@ class OfferProvider with ChangeNotifier {
     double? bestPrice;
 
     for (final offer in _activeOffers) {
-      final hasProduct = offer.products.any((p) => p['id'] == productId);
+      final hasProduct = offer.products.any((p) => _extractProductId(p) == productId);
       if (hasProduct) {
         // Obtener el precio base del producto si no se proporcionó
         double? currentBasePrice = basePrice;
         if (currentBasePrice == null) {
           final productData = offer.products.firstWhere(
-            (p) => p['id'] == productId,
+            (p) => _extractProductId(p) == productId,
             orElse: () => {},
           );
           // Laravel devuelve selling_price como String debido al cast decimal:2

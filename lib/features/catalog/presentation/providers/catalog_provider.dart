@@ -82,7 +82,7 @@ class CatalogProvider with ChangeNotifier {
 
   /// [sortBy] = '' pide el orden por defecto del servidor (peso → más vendidos → nombre),
   /// que es el que usa el Acceso Rápido del POS.
-  Future<void> loadProducts({int page = 1, String? search, String? sortBy, String? sortDirection}) async {
+  Future<void> loadProducts({int page = 1, String? search, String? sortBy, String? sortDirection, int? perPage}) async {
     _isLoading = true;
     _errorMessage = null;
     if (search != null) _searchQuery = search;
@@ -95,6 +95,7 @@ class CatalogProvider with ChangeNotifier {
         search: _searchQuery.isNotEmpty ? _searchQuery : null,
         sortBy: _sortBy.isNotEmpty ? _sortBy : null,
         sortDirection: _sortBy.isNotEmpty ? _sortDirection : null,
+        perPage: perPage,
       );
       _products = List<Product>.from(result['data'] as List);
       _currentPage = result['current_page'] as int;
@@ -123,7 +124,7 @@ class CatalogProvider with ChangeNotifier {
   /// Si falla, conserva silenciosamente los datos actuales.
   Future<void> refreshQuickAccessSilently() async {
     try {
-      final result = await getProductsUseCase(page: 1);
+      final result = await getProductsUseCase(page: 1, perPage: 500);
       _searchQuery = '';
       _sortBy = '';
       _products = List<Product>.from(result['data'] as List);

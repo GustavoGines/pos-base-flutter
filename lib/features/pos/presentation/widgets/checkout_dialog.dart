@@ -314,6 +314,11 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   final _cashTenderedCtrl = TextEditingController();
   // FocusNode dedicado para poder enfocar el campo por código
   final _cashTenderedFocus = FocusNode();
+  // FocusNode raíz del diálogo para recuperar foco tras cerrar sub-modales (ej: Selector de Cliente)
+  final _dialogFocusNode = FocusNode();
+
+  bool _saleCompleted = false;
+  PosProvider? _posProviderRef;
 
   late TextEditingController _shippingCostCtrl;
   final _deliveryAddressCtrl = TextEditingController();
@@ -427,34 +432,157 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         (pos.activeTier == PriceTier.custom && pos.currentCustomFactor > 1.0);
   }
 
+  CheckoutDraftState? _getCheckoutDraft(PosProvider? posProvider) {
+    if (widget.saleId != null || posProvider == null) return null;
+    try {
+      return posProvider.checkoutDraft;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  void _clearCheckoutDraftSafe(PosProvider posProvider) {
+    try {
+      posProvider.clearCheckoutDraft();
+    } catch (_) {}
+  }
+
+  void _saveDraftToProvider() {
+    final posProvider = _posProviderRef;
+    if (_saleCompleted ||
+        widget.saleId != null ||
+        posProvider == null ||
+        posProvider.cart.isEmpty ||
+        _lines.isEmpty) {
+      return;
+    }
+
+    final draftLines = _lines
+        .map((l) => CheckoutDraftLine(
+              methodId: l.method?.id,
+              methodCode: l.method?.code,
+              amount: l.amount,
+              percentageText: l.percentageController.text,
+              isAutoCalculated: l.isAutoCalculated,
+              mpPaid: l.mpPaid,
+              mpPaymentId: l.mpPaymentId,
+              mpOrderId: l.mpOrderId,
+              mpExternalReference: l.mpExternalReference,
+              checkBank: l.checkBankController.text,
+              checkNumber: l.checkNumberController.text,
+              checkIssuerCuit: l.checkIssuerCuitController.text,
+              checkIssuerName: l.checkIssuerNameController.text,
+              checkIssueDate: l.checkIssueDateController.text,
+              checkPaymentDate: l.checkPaymentDateController.text,
+            ))
+        .toList();
+
+    final currentIibb = posProvider.calculateIibbPerceptionAmount(
+      customer: _selectedCustomer,
+    );
+    final currentShipping = (_requiresDispatch && _fulfillmentStatus == 'pending')
+        ? (double.tryParse(_shippingCostCtrl.text.replaceAll(',', '.')) ?? 0.0)
+        : 0.0;
+
+    try {
+      posProvider.saveCheckoutDraft(CheckoutDraftState(
+        lines: draftLines,
+        cashTenderedText: _cashTenderedCtrl.text,
+        lastTargetTotal: _effectiveCartTotal + currentIibb + currentShipping,
+        isFiscalMode: _isFiscalMode,
+        voucherType: _voucherType,
+        fiscalDocType: _fiscalDocType,
+        fiscalDocNumber: _fiscalDocNumberCtrl.text,
+        fiscalReceiverName: _fiscalReceiverNameCtrl.text,
+        fiscalReceiverAddress: _fiscalReceiverAddressCtrl.text,
+        fiscalTaxCondition: _fiscalTaxCondition,
+        requiresDispatch: _requiresDispatch,
+        fulfillmentStatus: _fulfillmentStatus,
+        shippingCostText: _shippingCostCtrl.text,
+        deliveryAddress: _deliveryAddressCtrl.text,
+        selectedCustomer: _selectedCustomer,
+      ));
+    } catch (_) {}
+  }
+
   @override
   void initState() {
     super.initState();
     final posProvider = context.read<PosProvider>();
+    _posProviderRef = posProvider;
 
     // Limpiar datos fiscales residuales de ventas anteriores para evitar contaminación
     posProvider.setPendingFiscalInvoiceData(null);
 
-    // Auto-seleccionar el cliente asignado al ticket actual o el último usado en Cta Cte
-    _selectedCustomer = widget.initialCustomer ??
-        posProvider.selectedCustomer ??
-        posProvider.lastSelectedCustomer;
-    if (_selectedCustomer != null) {
-      _deliveryAddressCtrl.text = _selectedCustomer!.deliveryAddress ?? '';
-      _syncCustomerWithFiscal(_selectedCustomer);
+    final draft = _getCheckoutDraft(posProvider);
+
+    if (draft != null) {
+      final currentCustomer =
+          posProvider.selectedCustomer ?? widget.initialCustomer;
+      final draftCustomer = draft.selectedCustomer;
+      final customerChanged = currentCustomer?.id != draftCustomer?.id;
+      final customerDataUpdated = !customerChanged &&
+          currentCustomer != null &&
+          draftCustomer != null &&
+          (currentCustomer.name != draftCustomer.name ||
+              currentCustomer.documentNumber != draftCustomer.documentNumber ||
+              currentCustomer.documentType != draftCustomer.documentType ||
+              currentCustomer.taxCondition != draftCustomer.taxCondition ||
+              currentCustomer.fiscalAddress != draftCustomer.fiscalAddress ||
+              currentCustomer.deliveryAddress != draftCustomer.deliveryAddress);
+
+      _selectedCustomer = currentCustomer;
+      _isFiscalMode = draft.isFiscalMode;
+      _voucherType = draft.voucherType;
+      _requiresDispatch = draft.requiresDispatch;
+      _fulfillmentStatus = draft.fulfillmentStatus;
+      _shippingCostCtrl = TextEditingController(text: draft.shippingCostText);
+
+      if (customerChanged || customerDataUpdated) {
+        if (currentCustomer != null) {
+          _deliveryAddressCtrl.text = currentCustomer.deliveryAddress ?? '';
+          _syncCustomerWithFiscal(currentCustomer);
+        } else {
+          _deliveryAddressCtrl.clear();
+          _fiscalDocType = _voucherType == 1 ? 80 : 99;
+          _fiscalTaxCondition = _voucherType == 1
+              ? 'responsable_inscripto'
+              : 'consumidor_final';
+          _fiscalDocNumberCtrl.clear();
+          _fiscalReceiverNameCtrl.clear();
+          _fiscalReceiverAddressCtrl.clear();
+        }
+      } else {
+        _deliveryAddressCtrl.text = draft.deliveryAddress;
+        _fiscalDocType = draft.fiscalDocType;
+        _fiscalDocNumberCtrl.text = draft.fiscalDocNumber;
+        _fiscalReceiverNameCtrl.text = draft.fiscalReceiverName;
+        _fiscalReceiverAddressCtrl.text = draft.fiscalReceiverAddress;
+        _fiscalTaxCondition = draft.fiscalTaxCondition;
+      }
+    } else {
+      // Auto-seleccionar el cliente asignado al ticket actual o el último usado en Cta Cte
+      _selectedCustomer = widget.initialCustomer ??
+          posProvider.selectedCustomer ??
+          posProvider.lastSelectedCustomer;
+      if (_selectedCustomer != null) {
+        _deliveryAddressCtrl.text = _selectedCustomer!.deliveryAddress ?? '';
+        _syncCustomerWithFiscal(_selectedCustomer);
+      }
+
+      // Recuperar estado persistente si existe, o usar la memoria del último flete
+      _requiresDispatch = posProvider.currentRequiresDispatch;
+      _fulfillmentStatus = posProvider.currentFulfillmentStatus;
+
+      // Si la venta actual tiene 0 (porque acabamos de empezar o limpiar), sugerimos el último usado
+      final initialShipping = posProvider.shippingCost > 0
+          ? posProvider.shippingCost
+          : posProvider.lastUsedShippingCost;
+
+      _shippingCostCtrl = TextEditingController(
+          text: initialShipping > 0 ? initialShipping.toInputFormat() : '');
     }
 
-    // Recuperar estado persistente si existe, o usar la memoria del último flete
-    _requiresDispatch = posProvider.currentRequiresDispatch;
-    _fulfillmentStatus = posProvider.currentFulfillmentStatus;
-
-    // Si la venta actual tiene 0 (porque acabamos de empezar o limpiar), sugerimos el último usado
-    final initialShipping = posProvider.shippingCost > 0
-        ? posProvider.shippingCost
-        : posProvider.lastUsedShippingCost;
-
-    _shippingCostCtrl = TextEditingController(
-        text: initialShipping > 0 ? initialShipping.toInputFormat() : '');
     // Sincronizar la memoria local del diálogo con el último flete usado
     // (No llamamos a setShippingCost del provider para no alterar el total del fondo prematuramente)
     _shippingCostCtrl.addListener(() {
@@ -469,21 +597,28 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     _cashTenderedCtrl.addListener(() => setState(() {}));
   }
 
+  KeyEvent? _lastHandledKeyEvent;
+
   bool _handleHardwareKey(KeyEvent event) {
     if (event is! KeyDownEvent) return false;
     if (!mounted) return false;
     if (ModalRoute.of(context)?.isCurrent != true) return false;
+    if (identical(event, _lastHandledKeyEvent)) return true;
 
     final provider = context.read<PosProvider>();
     final settings = context.read<SettingsProvider>().settings;
     final key = event.logicalKey;
 
-    final isCtrl = HardwareKeyboard.instance.isControlPressed &&
-        !HardwareKeyboard.instance.isAltPressed &&
-        !HardwareKeyboard.instance.isShiftPressed &&
-        !HardwareKeyboard.instance.isMetaPressed;
+    final isCtrl = HardwareKeyboard.instance.logicalKeysPressed
+            .contains(LogicalKeyboardKey.controlLeft) ||
+        HardwareKeyboard.instance.logicalKeysPressed
+            .contains(LogicalKeyboardKey.controlRight);
+    final isShift = HardwareKeyboard.instance.logicalKeysPressed
+            .contains(LogicalKeyboardKey.shiftLeft) ||
+        HardwareKeyboard.instance.logicalKeysPressed
+            .contains(LogicalKeyboardKey.shiftRight);
 
-    if (isCtrl) {
+    if (isCtrl && !isShift) {
       int? orderNum;
       if (key == LogicalKeyboardKey.digit1 ||
           key == LogicalKeyboardKey.numpad1) {
@@ -509,16 +644,14 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       }
 
       if (orderNum != null) {
+        _lastHandledKeyEvent = event;
         _selectPaymentMethodByOrderIndex(orderNum);
         return true;
       }
       return false;
     }
 
-    // Sin modificadores para teclas de función y Escape
-    if (HardwareKeyboard.instance.isControlPressed ||
-        HardwareKeyboard.instance.isAltPressed ||
-        HardwareKeyboard.instance.isMetaPressed) {
+    if (isCtrl) {
       return false;
     }
 
@@ -526,14 +659,18 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       if (!_isSubmitting &&
           !provider.isLoading &&
           !_lines.any((l) => l.mpPaid)) {
+        _lastHandledKeyEvent = event;
+        _saveDraftToProvider();
         Navigator.of(context).pop();
         return true;
       }
       return false;
     }
 
-    if (key == LogicalKeyboardKey.f10) {
+    if (key == LogicalKeyboardKey.enter ||
+        key == LogicalKeyboardKey.numpadEnter) {
       if (_canSubmit && !_isSubmitting && !provider.isLoading) {
+        _lastHandledKeyEvent = event;
         _processCheckout();
         return true;
       }
@@ -543,31 +680,29 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     if (key == LogicalKeyboardKey.f2) {
       if (!_isSubmitting &&
           !provider.isLoading &&
-          (_pendingBalance > 0.01 || _lines.length == 1)) {
-        _addLine();
+          _lines.any((l) => l.method?.isCash == true)) {
+        _lastHandledKeyEvent = event;
+        _syncCashField(autoFocus: true, forceExact: true);
         return true;
       }
       return false;
     }
 
     if (key == LogicalKeyboardKey.f4) {
-      if (!_isSubmitting && !provider.isLoading) {
-        _openCustomerPicker();
+      if (!_isSubmitting &&
+          !provider.isLoading &&
+          (_pendingBalance > 0.01 || _lines.length == 1)) {
+        _lastHandledKeyEvent = event;
+        _addLine();
         return true;
       }
       return false;
     }
 
     if (key == LogicalKeyboardKey.f6) {
-      if (!_isSubmitting &&
-          !provider.isLoading &&
-          settings?.afipEnabled == true) {
-        setState(() {
-          _isFiscalMode = !_isFiscalMode;
-          if (_isFiscalMode && _selectedCustomer != null) {
-            _syncCustomerWithFiscal(_selectedCustomer);
-          }
-        });
+      if (!_isSubmitting && !provider.isLoading) {
+        _lastHandledKeyEvent = event;
+        _openCustomerPicker();
         return true;
       }
       return false;
@@ -575,6 +710,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
 
     if (key == LogicalKeyboardKey.f7) {
       if (!_isSubmitting && !provider.isLoading) {
+        _lastHandledKeyEvent = event;
         setState(() => _printReceipt = !_printReceipt);
         SharedPreferences.getInstance().then((prefs) {
           prefs.setBool('auto_print_receipt', _printReceipt);
@@ -586,6 +722,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
 
     if (key == LogicalKeyboardKey.f8) {
       if (!_isSubmitting && !provider.isLoading && _printReceipt) {
+        _lastHandledKeyEvent = event;
         setState(() => _showPreview = !_showPreview);
         SharedPreferences.getInstance().then((prefs) {
           prefs.setBool('show_preview_receipt', _showPreview);
@@ -598,8 +735,25 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     if (key == LogicalKeyboardKey.f9) {
       if (!_isSubmitting &&
           !provider.isLoading &&
+          settings?.afipEnabled == true) {
+        _lastHandledKeyEvent = event;
+        setState(() {
+          _isFiscalMode = !_isFiscalMode;
+          if (_isFiscalMode && _selectedCustomer != null) {
+            _syncCustomerWithFiscal(_selectedCustomer);
+          }
+        });
+        return true;
+      }
+      return false;
+    }
+
+    if (key == LogicalKeyboardKey.f10) {
+      if (!_isSubmitting &&
+          !provider.isLoading &&
           settings?.features.logistics == true &&
           widget.saleId == null) {
+        _lastHandledKeyEvent = event;
         setState(() {
           if (!_requiresDispatch) {
             _requiresDispatch = true;
@@ -625,28 +779,31 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   Future<void> _loadPreferences() async {
     final prefs = await SharedPreferences.getInstance();
     if (mounted) {
+      final hasDraft = widget.saleId == null && _getCheckoutDraft(_posProviderRef) != null;
       setState(() {
         _printReceipt = prefs.getBool('auto_print_receipt') ?? true;
         _showPreview = prefs.getBool('show_preview_receipt') ?? false;
 
-        // Memoria del último comprobante usado (A=1, B=6, C=11)
-        final lastVoucher = prefs.getInt('last_voucher_type');
-        if (lastVoucher != null && [1, 6, 11].contains(lastVoucher)) {
-          _voucherType = lastVoucher;
-          if (_selectedCustomer == null) {
-            if (lastVoucher == 1) {
-              _fiscalDocType = 80;
-              _fiscalTaxCondition = 'responsable_inscripto';
+        if (!hasDraft) {
+          // Memoria del último comprobante usado (A=1, B=6, C=11)
+          final lastVoucher = prefs.getInt('last_voucher_type');
+          if (lastVoucher != null && [1, 6, 11].contains(lastVoucher)) {
+            _voucherType = lastVoucher;
+            if (_selectedCustomer == null) {
+              if (lastVoucher == 1) {
+                _fiscalDocType = 80;
+                _fiscalTaxCondition = 'responsable_inscripto';
+              } else {
+                _fiscalDocType = 99;
+                _fiscalTaxCondition = 'consumidor_final';
+              }
             } else {
-              _fiscalDocType = 99;
-              _fiscalTaxCondition = 'consumidor_final';
-            }
-          } else {
-            // Si hay un cliente seleccionado, asegurar consistencia para Factura A
-            if (lastVoucher == 1 && _fiscalDocType != 80) _fiscalDocType = 80;
-            if (lastVoucher == 1 &&
-                _fiscalTaxCondition != 'responsable_inscripto') {
-              _fiscalTaxCondition = 'responsable_inscripto';
+              // Si hay un cliente seleccionado, asegurar consistencia para Factura A
+              if (lastVoucher == 1 && _fiscalDocType != 80) _fiscalDocType = 80;
+              if (lastVoucher == 1 &&
+                  _fiscalTaxCondition != 'responsable_inscripto') {
+                _fiscalTaxCondition = 'responsable_inscripto';
+              }
             }
           }
         }
@@ -657,47 +814,148 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   void _initFirstLine() {
     final provider = context.read<PosProvider>();
     final settings = context.read<SettingsProvider>().settings;
-    if (provider.paymentMethods.isNotEmpty) {
-      final defaultCash = provider.paymentMethods.firstWhere((p) => p.isCash,
-          orElse: () => provider.paymentMethods.firstWhere(
-              (m) => !m.code.contains('transfer'),
-              orElse: () => provider.paymentMethods.first));
+    if (provider.paymentMethods.isEmpty) return;
 
-      PaymentMethod defaultMethod = defaultCash;
-      if (_selectedCustomer != null) {
-        final ccMethod = provider.paymentMethods
-            .where((p) => p.code == 'cuenta_corriente')
-            .firstOrNull;
-        if (ccMethod != null) {
-          final settingsProv = context.read<SettingsProvider>();
-          final isLocked = settingsProv.settings != null &&
-              !settingsProv.features.currentAccounts;
-          if (!isLocked) {
-            defaultMethod = ccMethod;
-          }
+    final defaultCash = provider.paymentMethods.firstWhere((p) => p.isCash,
+        orElse: () => provider.paymentMethods.firstWhere(
+            (m) => !m.code.contains('transfer'),
+            orElse: () => provider.paymentMethods.first));
+
+    final draft = widget.saleId == null ? _getCheckoutDraft(provider) : null;
+
+    if (draft != null && draft.lines.isNotEmpty) {
+      final restoredLines = <PaymentLine>[];
+      final restoredMethods = <PaymentMethod?>[];
+
+      for (final dLine in draft.lines) {
+        final matchedMethod = provider.paymentMethods.firstWhere(
+          (m) =>
+              (dLine.methodId != null && m.id == dLine.methodId) ||
+              (dLine.methodCode != null && m.code == dLine.methodCode),
+          orElse: () => defaultCash,
+        );
+
+        final line = PaymentLine(
+          method: matchedMethod,
+          initialAmount: dLine.amount,
+          defaultCardSurcharge: settings?.globalCardPercentage,
+          disableSurcharge: _isCartAlreadySurcharged,
+          isAutoCalculated: dLine.isAutoCalculated,
+        );
+        if (!_isCartAlreadySurcharged && dLine.percentageText.isNotEmpty) {
+          line.percentageController.text = dLine.percentageText;
         }
+        line.mpPaid = dLine.mpPaid;
+        line.mpPaymentId = dLine.mpPaymentId;
+        line.mpOrderId = dLine.mpOrderId;
+        line.mpExternalReference = dLine.mpExternalReference;
+        line.checkBankController.text = dLine.checkBank;
+        line.checkNumberController.text = dLine.checkNumber;
+        line.checkIssuerCuitController.text = dLine.checkIssuerCuit;
+        line.checkIssuerNameController.text = dLine.checkIssuerName;
+        if (dLine.checkIssueDate.isNotEmpty) {
+          line.checkIssueDateController.text = dLine.checkIssueDate;
+        }
+        if (dLine.checkPaymentDate.isNotEmpty) {
+          line.checkPaymentDateController.text = dLine.checkPaymentDate;
+        }
+        line.controller.addListener(_onAmountChanged);
+        line.percentageController.addListener(_onAmountChanged);
+        restoredLines.add(line);
+        restoredMethods.add(matchedMethod);
       }
 
-      final line = PaymentLine(
-        method: defaultMethod,
-        initialAmount:
-            _baseTotal + (_requiresDispatch ? _shippingCostToApply : 0.0),
-        defaultCardSurcharge: settings?.globalCardPercentage,
-        disableSurcharge: _isCartAlreadySurcharged,
-      );
-      line.controller.addListener(_onAmountChanged);
-      line.percentageController.addListener(_onAmountChanged);
       setState(() {
-        _lines.add(line);
-        _previousValidMethods.add(defaultMethod);
+        _lines.addAll(restoredLines);
+        _previousValidMethods.addAll(restoredMethods);
       });
-      // Sincronizar el campo tendered con el efectivo requerido (con auto-focus en init)
-      _syncCashField(autoFocus: defaultMethod.isCash);
+
+      final currentTargetTotal = _baseTotal + _shippingCostToApply;
+      final totalChanged =
+          (currentTargetTotal - draft.lastTargetTotal).abs() > 0.01;
+
+      if (draft.cashTenderedText.isNotEmpty) {
+        _cashTenderedCtrl.text = draft.cashTenderedText;
+      }
+
+      if (_lines.length == 1 && !_lines[0].mpPaid) {
+        // Si es pago único y cambió el carrito al salir y volver a entrar,
+        // actualizar automáticamente el monto manteniendo el método elegido.
+        if (totalChanged) {
+          _syncPaymentsWithGrandTotal();
+        }
+        _syncCashField(autoFocus: _lines[0].method?.isCash == true);
+        if (_lines[0].method?.isCash == true) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              _cashTenderedFocus.requestFocus();
+              _cashTenderedCtrl.selection = TextSelection(
+                baseOffset: 0,
+                extentOffset: _cashTenderedCtrl.text.length,
+              );
+            }
+          });
+        } else {
+          _dialogFocusNode.requestFocus();
+        }
+      } else if (_lines.length >= 2) {
+        // En Pago Mixto: si cambió el total del carrito, ajustar la última línea no acreditada
+        if (totalChanged && !_lines.last.mpPaid) {
+          final otherSum = _lines
+              .take(_lines.length - 1)
+              .fold(0.0, (double s, l) => s + l.amount);
+          final rem =
+              (currentTargetTotal - otherSum).clamp(0.0, double.infinity);
+          _lines.last.controller.removeListener(_onAmountChanged);
+          _lines.last.controller.text =
+              rem > 0.009 ? rem.toInputFormat() : '0';
+          _lines.last.controller.addListener(_onAmountChanged);
+        }
+        _syncCashField(autoFocus: false);
+        _dialogFocusNode.requestFocus();
+      }
+      setState(() {});
+      return;
+    }
+
+    PaymentMethod defaultMethod = defaultCash;
+    if (_selectedCustomer != null) {
+      final ccMethod = provider.paymentMethods
+          .where((p) => p.code == 'cuenta_corriente')
+          .firstOrNull;
+      if (ccMethod != null) {
+        final settingsProv = context.read<SettingsProvider>();
+        final isLocked = settingsProv.settings != null &&
+            !settingsProv.features.currentAccounts;
+        if (!isLocked) {
+          defaultMethod = ccMethod;
+        }
+      }
+    }
+
+    final line = PaymentLine(
+      method: defaultMethod,
+      initialAmount:
+          _baseTotal + (_requiresDispatch ? _shippingCostToApply : 0.0),
+      defaultCardSurcharge: settings?.globalCardPercentage,
+      disableSurcharge: _isCartAlreadySurcharged,
+    );
+    line.controller.addListener(_onAmountChanged);
+    line.percentageController.addListener(_onAmountChanged);
+    setState(() {
+      _lines.add(line);
+      _previousValidMethods.add(defaultMethod);
+    });
+    // Sincronizar el campo tendered con el efectivo requerido (con auto-focus en init)
+    _syncCashField(autoFocus: defaultMethod.isCash);
+    if (!defaultMethod.isCash) {
+      _dialogFocusNode.requestFocus();
     }
   }
 
   @override
   void dispose() {
+    _saveDraftToProvider();
     HardwareKeyboard.instance.removeHandler(_handleHardwareKey);
     for (var line in _lines) {
       line.dispose();
@@ -705,6 +963,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     _cashTenderedCtrl.dispose();
     _shippingCostCtrl.dispose();
     _cashTenderedFocus.dispose();
+    _dialogFocusNode.dispose();
     _deliveryAddressCtrl.dispose();
     _fiscalDocNumberCtrl.dispose();
     _fiscalReceiverNameCtrl.dispose();
@@ -743,20 +1002,27 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   /// Sincroniza el campo "Efectivo Recibido" con la porción en efectivo actual.
   /// Se llama en cada cambio estructural: agregar/quitar línea o cambiar método.
   /// [autoFocus] pone el cursor en el campo para que el cajero tipee el monto recibido.
-  void _syncCashField({bool autoFocus = false}) {
+  /// [forceExact] fuerza la nivelación al monto exacto requerido (ej. al presionar F2).
+  void _syncCashField({bool autoFocus = false, bool forceExact = false}) {
     final req = _lines
         .where((l) => l.method?.isCash == true)
         .fold(0.0, (double sum, l) => sum + l.amount);
 
     // Actualizar el texto solo si el valor difiere (evita recursión del listener)
-    final currentText = _cashTenderedCtrl.text;
+    // SOLO sobreescribir si forceExact es true, si no hay efectivo requerido (req <= 0),
+    // si el campo está vacío o si el monto entregado es inferior al requerido
+    final currentText = _cashTenderedCtrl.text.trim();
+    final currentAmount = double.tryParse(currentText.replaceAll(',', '.')) ?? 0.0;
     final newText = req > 0 ? req.toInputFormat() : '';
-    if (currentText != newText) {
-      _cashTenderedCtrl.text = newText;
-      // Mover cursor al final del texto
-      _cashTenderedCtrl.selection = TextSelection.fromPosition(
-        TextPosition(offset: _cashTenderedCtrl.text.length),
-      );
+
+    if (forceExact || req <= 0 || currentText.isEmpty || currentAmount < req) {
+      if (currentText != newText) {
+        _cashTenderedCtrl.text = newText;
+        // Mover cursor al final del texto
+        _cashTenderedCtrl.selection = TextSelection.fromPosition(
+          TextPosition(offset: _cashTenderedCtrl.text.length),
+        );
+      }
     }
 
     if (autoFocus && req > 0) {
@@ -767,6 +1033,15 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
             baseOffset: 0,
             extentOffset: _cashTenderedCtrl.text.length,
           );
+        }
+      });
+    } else if (req <= 0) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final anyLineFocused = _lines
+            .any((l) => l.amountFocus.hasFocus || l.percentageFocus.hasFocus);
+        if (!anyLineFocused) {
+          _dialogFocusNode.requestFocus();
         }
       });
     }
@@ -824,7 +1099,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     });
 
     if (isSplitFromSingleFullLine && _lines.isNotEmpty) {
-      // Si el cajero presionó F2 directo con el 100% en la Línea 1, enfocar y seleccionar
+      // Si el cajero presionó F4 directo con el 100% en la Línea 1, enfocar y seleccionar
       // el Monto a Cubrir de la Línea 1 para que al tipear la entrega parcial, la Línea 2
       // calcule el saldo restante automáticamente en vivo.
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -885,7 +1160,13 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         settings: settings, customer: _selectedCustomer);
   }
 
-  double get _baseTotal => widget.total + _currentIibbAmount;
+  double get _effectiveCartTotal {
+    if (widget.saleId != null) return widget.total;
+    final posProvider = context.read<PosProvider>();
+    return posProvider.cart.isNotEmpty ? posProvider.cartSubtotal : widget.total;
+  }
+
+  double get _baseTotal => _effectiveCartTotal + _currentIibbAmount;
 
   double get _grandTotal => _baseTotal + _totalSurcharge + _shippingCostToApply;
   double get _pendingBalance =>
@@ -1001,31 +1282,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       context: context,
       builder: (ctx) => _CustomerPickerDialog(
         onSelected: (c) {
-          setState(() {
-            _selectedCustomer = c;
-            _deliveryAddressCtrl.text = c.deliveryAddress ?? '';
-            _syncCustomerWithFiscal(c);
-            _syncPaymentsWithGrandTotal();
-          });
           context.read<PosProvider>().selectCustomer(c);
-          final provider = context.read<PosProvider>();
-          final ccMethod = provider.paymentMethods
-              .where((p) => p.code == 'cuenta_corriente')
-              .firstOrNull;
-          if (ccMethod != null &&
-              !_hasCuentaCorriente &&
-              _lines.isNotEmpty &&
-              _lines.first.method?.isCash == true) {
-            final settingsProv = context.read<SettingsProvider>();
-            final isLocked = settingsProv.settings != null &&
-                !settingsProv.features.currentAccounts;
-            if (!isLocked) {
-              setState(() {
-                _lines.first.updateMethod(ccMethod);
-                _previousValidMethods[0] = ccMethod;
-              });
-            }
-          }
           final localTerminal = context.read<LocalTerminalProvider>();
           if (localTerminal.lockedPriceTier == 'none' &&
               c.defaultPriceTier != null &&
@@ -1072,15 +1329,45 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                           : null,
                     );
               }
-              // Como CheckoutDialog tiene copia estática del 'total', si el tier bajó los precios el total debe recalcularse.
-              // Para no complicar la caja con saldos saltando de golpe, le avisamos al Provider que ya recalculó en background.
-              // El cajero verá el nuevo total en la barra superior del diálogo si lo cerramos.
             }
           }
+
+          final provider = context.read<PosProvider>();
+          final ccMethod = provider.paymentMethods
+              .where((p) => p.code == 'cuenta_corriente')
+              .firstOrNull;
+          setState(() {
+            _selectedCustomer = c;
+            _deliveryAddressCtrl.text = c.deliveryAddress ?? '';
+            _syncCustomerWithFiscal(c);
+            if (ccMethod != null &&
+                !_hasCuentaCorriente &&
+                _lines.isNotEmpty &&
+                _lines.first.method?.isCash == true) {
+              final sProv = context.read<SettingsProvider>();
+              final isLocked = sProv.settings != null &&
+                  !sProv.features.currentAccounts;
+              if (!isLocked) {
+                _lines.first.updateMethod(
+                  ccMethod,
+                  defaultCardSurcharge: sProv.settings?.globalCardPercentage,
+                  disableSurcharge: _isCartAlreadySurcharged,
+                );
+                _previousValidMethods[0] = ccMethod;
+              }
+            }
+            _syncPaymentsWithGrandTotal();
+          });
+          _syncCashField(autoFocus: false);
           Navigator.pop(ctx);
         },
       ),
     );
+    if (mounted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _dialogFocusNode.requestFocus();
+      });
+    }
   }
 
   Future<void> _editCustomer(Customer customer) async {
@@ -1106,6 +1393,9 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       });
       context.read<PosProvider>().selectCustomer(updated);
     }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _dialogFocusNode.requestFocus();
+    });
   }
 
   Future<void> _processCheckout() async {
@@ -1437,6 +1727,9 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
 
       if (mounted) {
         if (success) {
+          _saleCompleted = true;
+          _clearCheckoutDraftSafe(posProvider);
+
           if (posProvider.printerWarning != null) {
             SnackBarService.warning(context, posProvider.printerWarning!);
           }
@@ -2294,6 +2587,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       controller: line.controller,
       focusNode: line.amountFocus,
       keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      textInputAction: TextInputAction.done,
       readOnly: line.mpPaid,
       canRequestFocus: !line.mpPaid,
       onTap: () {
@@ -2302,6 +2596,12 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
             baseOffset: 0,
             extentOffset: line.controller.text.length,
           );
+        }
+      },
+      onFieldSubmitted: (_) {
+        final provider = context.read<PosProvider>();
+        if (_canSubmit && !_isSubmitting && !provider.isLoading) {
+          _processCheckout();
         }
       },
       inputFormatters: [
@@ -2350,6 +2650,12 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
           readOnly: isLocked,
           canRequestFocus: !isLocked,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          textInputAction: TextInputAction.done,
+          onFieldSubmitted: (_) {
+            if (_canSubmit && !_isSubmitting && !provider.isLoading) {
+              _processCheckout();
+            }
+          },
           inputFormatters: [
             FilteringTextInputFormatter.allow(RegExp(r'^\d*[\.,]?\d*')),
           ],
@@ -2434,26 +2740,27 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
 
     return PopScope(
       canPop: !_isSubmitting && !provider.isLoading && !_lines.any((l) => l.mpPaid),
-      child: CallbackShortcuts(
-        bindings: <ShortcutActivator, VoidCallback>{
-          const SingleActivator(LogicalKeyboardKey.enter): () {
-            if (_canSubmit && !_isSubmitting && !provider.isLoading) {
-              _processCheckout();
-            }
-          },
-          const SingleActivator(LogicalKeyboardKey.numpadEnter): () {
-            if (_canSubmit && !_isSubmitting && !provider.isLoading) {
-              _processCheckout();
-            }
-          },
-        },
-        child: Focus(
-          autofocus: true,
-          child: Dialog(
+      child: Focus(
+        focusNode: _dialogFocusNode,
+        autofocus: true,
+        onKeyEvent: (node, event) => _handleHardwareKey(event)
+            ? KeyEventResult.handled
+            : KeyEventResult.ignored,
+        child: Dialog(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
             backgroundColor: Colors.white,
             insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-            child: ConstrainedBox(
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTap: () {
+                final primary = FocusManager.instance.primaryFocus;
+                if (primary == null ||
+                    primary.context?.findAncestorWidgetOfExactType<EditableText>() ==
+                        null) {
+                  _dialogFocusNode.requestFocus();
+                }
+              },
+              child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 960, maxHeight: 800),
               child: Container(
               padding: const EdgeInsets.all(24),
@@ -2523,7 +2830,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                                                         fontSize: 14,
                                                         color: Colors.black54)),
                                                 Text(
-                                                    '\$${widget.total.toCurrency()}',
+                                                    '\$${_effectiveCartTotal.toCurrency()}',
                                                     style: const TextStyle(
                                                         fontSize: 24,
                                                         fontWeight:
@@ -3016,7 +3323,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                                 child: TextButton.icon(
                                   icon: const Icon(Icons.add),
                                   label: const Text(
-                                      'Completar con otro método (F2)'),
+                                      'Completar con otro método (F4)'),
                                   onPressed: (_pendingBalance > 0.01 ||
                                           _lines.length == 1)
                                       ? _addLine
@@ -3672,10 +3979,15 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                                                       _lines.isNotEmpty) {
                                                     setState(() {
                                                       _lines.first.updateMethod(
-                                                          ccMethod);
+                                                        ccMethod,
+                                                        defaultCardSurcharge: settingsProv.settings?.globalCardPercentage,
+                                                        disableSurcharge: _isCartAlreadySurcharged,
+                                                      );
                                                       _previousValidMethods[0] =
                                                           ccMethod;
+                                                      _syncPaymentsWithGrandTotal();
                                                     });
+                                                    _syncCashField(autoFocus: false);
                                                   }
                                                 },
                                               ),
@@ -3794,16 +4106,17 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                                       runSpacing: 4,
                                       children: [
                                         _shortcutChip('Ctrl+1..7', 'Medios de pago'),
-                                        _shortcutChip('F2', 'Pago mixto'),
-                                        _shortcutChip('F4', 'Cliente'),
-                                        if (settings?.afipEnabled == true)
-                                          _shortcutChip('F6', 'ARCA'),
+                                        _shortcutChip('F2', 'Pago exacto'),
+                                        _shortcutChip('F4', 'Pago mixto'),
+                                        _shortcutChip('F6', 'Cliente'),
                                         _shortcutChip('F7', 'Imprimir'),
                                         if (_printReceipt)
                                           _shortcutChip('F8', 'Previa'),
+                                        if (settings?.afipEnabled == true)
+                                          _shortcutChip('F9', 'ARCA'),
                                         if (settings?.features.logistics == true && widget.saleId == null)
-                                          _shortcutChip('F9', 'Logística'),
-                                        _shortcutChip('F10', 'Cobrar'),
+                                          _shortcutChip('F10', 'Logística'),
+                                        _shortcutChip('Enter', 'Cobrar'),
                                         _shortcutChip('Esc', 'Salir'),
                                       ],
                                     ),
@@ -3828,7 +4141,10 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                           padding: const EdgeInsets.symmetric(vertical: 16)),
                       onPressed: (_isSubmitting || provider.isLoading || _lines.any((l) => l.mpPaid))
                           ? null
-                          : () => Navigator.pop(context),
+                          : () {
+                              _saveDraftToProvider();
+                              Navigator.pop(context);
+                            },
                       child: const Text('Cancelar',
                           style: TextStyle(fontSize: 16)),
                     ),
@@ -3867,9 +4183,9 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
           ),
         ),
       ),
+      ),
           ),
         ),
-      ),
     );
   }
 }
