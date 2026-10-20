@@ -196,77 +196,81 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
     }
 
     final actionType = _editingOffer != null ? 'editar oferta' : 'crear oferta';
-    final authorized = await AdminPinDialog.verify(
+    await AdminPinDialog.protectAction(
       context,
       action: '$actionType "$name"',
       permissionKey: 'apply_discounts',
+      onAuthorized: () async {
+        if (!mounted) return;
+        setState(() => _isSaving = true);
+        final offerProv = Provider.of<OfferProvider>(context, listen: false);
+        final pos = Provider.of<PosProvider>(context, listen: false);
+
+        bool success = false;
+        if (_editingOffer != null) {
+          success = await offerProv.updateOffer(
+            id: _editingOffer!.id,
+            name: name,
+            description: _editingOffer!.description,
+            type: 'percentage',
+            discountPercentage: discount,
+            periodType: _periodType,
+            daysOfWeek: _editingOffer!.daysOfWeek,
+            productIds: _selectedProducts.map((p) => p.id).toList(),
+          );
+        } else {
+          success = await offerProv.createQuickOffer(
+            name: name,
+            type: 'percentage',
+            discountPercentage: discount,
+            periodType: _periodType,
+            productIds: _selectedProducts.map((p) => p.id).toList(),
+          );
+        }
+
+        if (success && mounted) {
+          pos.syncActiveOffers(offerProv.activeOffers);
+          final wasEdit = _editingOffer != null;
+          _cancelEdit();
+          SnackBarService.success(
+            context,
+            wasEdit ? '🏷️ Oferta "$name" actualizada con éxito.' : '🏷️ Oferta "$name" ($discount% OFF) activada con éxito.',
+          );
+          _tabController.animateTo(0);
+        } else if (mounted) {
+          SnackBarService.error(context, offerProv.errorMessage ?? 'Error al guardar la oferta.');
+        }
+
+        if (mounted) {
+          setState(() => _isSaving = false);
+        }
+      },
     );
-    if (!authorized) return;
-
-    setState(() => _isSaving = true);
-    final offerProv = Provider.of<OfferProvider>(context, listen: false);
-    final pos = Provider.of<PosProvider>(context, listen: false);
-
-    bool success = false;
-    if (_editingOffer != null) {
-      success = await offerProv.updateOffer(
-        id: _editingOffer!.id,
-        name: name,
-        type: 'percentage',
-        discountPercentage: discount,
-        periodType: _periodType,
-        productIds: _selectedProducts.map((p) => p.id).toList(),
-      );
-    } else {
-      success = await offerProv.createQuickOffer(
-        name: name,
-        type: 'percentage',
-        discountPercentage: discount,
-        periodType: _periodType,
-        productIds: _selectedProducts.map((p) => p.id).toList(),
-      );
-    }
-
-    if (success && mounted) {
-      pos.syncActiveOffers(offerProv.activeOffers);
-      final wasEdit = _editingOffer != null;
-      _cancelEdit();
-      SnackBarService.success(
-        context,
-        wasEdit ? '🏷️ Oferta "$name" actualizada con éxito.' : '🏷️ Oferta "$name" ($discount% OFF) activada con éxito.',
-      );
-      _tabController.animateTo(0);
-    } else if (mounted) {
-      SnackBarService.error(context, offerProv.errorMessage ?? 'Error al guardar la oferta.');
-    }
-
-    if (mounted) {
-      setState(() => _isSaving = false);
-    }
   }
 
   Future<void> _handleToggleStatus(OfferModel offer) async {
     final isPausing = offer.isCurrentlyActive;
-    final authorized = await AdminPinDialog.verify(
+    await AdminPinDialog.protectAction(
       context,
       action: '${isPausing ? "pausar" : "reanudar"} oferta "${offer.name}"',
       permissionKey: 'apply_discounts',
+      onAuthorized: () async {
+        if (!mounted) return;
+        final offerProv = Provider.of<OfferProvider>(context, listen: false);
+        final pos = Provider.of<PosProvider>(context, listen: false);
+        final ok = await offerProv.toggleOfferStatus(offer.id);
+
+        if (ok && mounted) {
+          pos.syncActiveOffers(offerProv.activeOffers);
+          SnackBarService.success(
+            context,
+            isPausing ? '⏸️ Oferta "${offer.name}" pausada.' : '▶️ Oferta "${offer.name}" reanudada.',
+          );
+        } else if (mounted) {
+          SnackBarService.error(context, offerProv.errorMessage ?? 'Error al cambiar estado.');
+        }
+      },
     );
-    if (!authorized) return;
-
-    final offerProv = Provider.of<OfferProvider>(context, listen: false);
-    final pos = Provider.of<PosProvider>(context, listen: false);
-    final ok = await offerProv.toggleOfferStatus(offer.id);
-
-    if (ok && mounted) {
-      pos.syncActiveOffers(offerProv.activeOffers);
-      SnackBarService.success(
-        context,
-        isPausing ? '⏸️ Oferta "${offer.name}" pausada.' : '▶️ Oferta "${offer.name}" reanudada.',
-      );
-    } else if (mounted) {
-      SnackBarService.error(context, offerProv.errorMessage ?? 'Error al cambiar estado.');
-    }
   }
 
   Future<void> _showRelaunchModal(OfferModel offer) async {
@@ -407,31 +411,32 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
       },
     );
 
-    if (confirmed != true) return;
+    if (confirmed != true || !mounted) return;
 
-    final authorized = await AdminPinDialog.verify(
+    await AdminPinDialog.protectAction(
       context,
       action: 'relanzar oferta "${offer.name}"',
       permissionKey: 'apply_discounts',
+      onAuthorized: () async {
+        if (!mounted) return;
+        final offerProv = Provider.of<OfferProvider>(context, listen: false);
+        final pos = Provider.of<PosProvider>(context, listen: false);
+
+        final res = await offerProv.relaunchOffer(
+          id: offer.id,
+          periodType: selectedPeriod,
+          duplicate: duplicate,
+        );
+
+        if (res != null && mounted) {
+          pos.syncActiveOffers(offerProv.activeOffers);
+          SnackBarService.success(context, '🚀 Oferta "${offer.name}" relanzada con éxito.');
+          _tabController.animateTo(0);
+        } else if (mounted) {
+          SnackBarService.error(context, offerProv.errorMessage ?? 'Error al relanzar la oferta.');
+        }
+      },
     );
-    if (!authorized) return;
-
-    final offerProv = Provider.of<OfferProvider>(context, listen: false);
-    final pos = Provider.of<PosProvider>(context, listen: false);
-
-    final res = await offerProv.relaunchOffer(
-      id: offer.id,
-      periodType: selectedPeriod,
-      duplicate: duplicate,
-    );
-
-    if (res != null && mounted) {
-      pos.syncActiveOffers(offerProv.activeOffers);
-      SnackBarService.success(context, '🚀 Oferta "${offer.name}" relanzada con éxito.');
-      _tabController.animateTo(0);
-    } else if (mounted) {
-      SnackBarService.error(context, offerProv.errorMessage ?? 'Error al relanzar la oferta.');
-    }
   }
 
   Future<void> _handleDeleteOffer(OfferModel offer) async {
@@ -450,25 +455,26 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
         ],
       ),
     );
-    if (confirm != true) return;
+    if (confirm != true || !mounted) return;
 
-    final authorized = await AdminPinDialog.verify(
+    await AdminPinDialog.protectAction(
       context,
       action: 'eliminar oferta "${offer.name}"',
       permissionKey: 'apply_discounts',
+      onAuthorized: () async {
+        if (!mounted) return;
+        final offerProv = Provider.of<OfferProvider>(context, listen: false);
+        final pos = Provider.of<PosProvider>(context, listen: false);
+        final success = await offerProv.deleteOffer(offer.id);
+
+        if (success && mounted) {
+          pos.syncActiveOffers(offerProv.activeOffers);
+          SnackBarService.success(context, 'Oferta eliminada.');
+        } else if (mounted) {
+          SnackBarService.error(context, offerProv.errorMessage ?? 'Error al eliminar la oferta.');
+        }
+      },
     );
-    if (!authorized) return;
-
-    final offerProv = Provider.of<OfferProvider>(context, listen: false);
-    final pos = Provider.of<PosProvider>(context, listen: false);
-    final success = await offerProv.deleteOffer(offer.id);
-
-    if (success && mounted) {
-      pos.syncActiveOffers(offerProv.activeOffers);
-      SnackBarService.success(context, 'Oferta eliminada.');
-    } else if (mounted) {
-      SnackBarService.error(context, offerProv.errorMessage ?? 'Error al eliminar la oferta.');
-    }
   }
 
   @override
@@ -681,6 +687,34 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
                       ),
                     ],
                   ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Vigencia: ${_formatDate(offer.startDate)} al ${_formatDate(offer.endDate)}',
+                    style: TextStyle(fontSize: 11, color: Colors.purple.shade800),
+                  ),
+                  if (offer.hasMarginWarning) ...[
+                    const SizedBox(height: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.amber.shade50,
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: Colors.amber.shade300),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.warning_amber_rounded, size: 15, color: Colors.amber.shade900),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              'Alerta de margen: ${offer.marginWarnings.length} producto(s) quedan por debajo de su costo actual.',
+                              style: TextStyle(fontSize: 11, color: Colors.amber.shade900, fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 6),
                   Text(
                     'Productos incluidos (${offer.products.length}):',
@@ -692,8 +726,16 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
                     runSpacing: 4,
                     children: offer.products.map((p) {
                       final name = p['name']?.toString() ?? 'Producto';
+                      final basePrice = double.tryParse(p['selling_price']?.toString() ?? '0') ?? 0.0;
+                      final pId = (p['id'] as num?)?.toInt();
+                      final discounted = basePrice > 0
+                          ? offer.calculateDiscountedPrice(basePrice, productId: pId)
+                          : 0.0;
+                      final labelText = basePrice > 0
+                          ? '$name (\$${basePrice.toCurrency()} → \$${discounted.toCurrency()})'
+                          : name;
                       return Chip(
-                        label: Text(name, style: const TextStyle(fontSize: 11)),
+                        label: Text(labelText, style: const TextStyle(fontSize: 11)),
                         backgroundColor: Colors.white,
                         padding: EdgeInsets.zero,
                         materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -991,16 +1033,17 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
                   ),
                   const SizedBox(width: 4),
 
-                  // Pausar / Reanudar
-                  IconButton(
-                    icon: Icon(
-                      isCurrentlyActive ? Icons.pause_circle_outline : Icons.play_circle_outline,
-                      size: 20,
-                      color: isCurrentlyActive ? Colors.orange : Colors.green.shade700,
+                  // Pausar / Reanudar (solo para ofertas vigentes o pausadas dentro de fecha)
+                  if (!isExpired)
+                    IconButton(
+                      icon: Icon(
+                        isCurrentlyActive ? Icons.pause_circle_outline : Icons.play_circle_outline,
+                        size: 20,
+                        color: isCurrentlyActive ? Colors.orange : Colors.green.shade700,
+                      ),
+                      tooltip: isCurrentlyActive ? 'Pausar oferta' : 'Reanudar oferta',
+                      onPressed: () => _handleToggleStatus(offer),
                     ),
-                    tooltip: isCurrentlyActive ? 'Pausar oferta' : 'Reanudar oferta',
-                    onPressed: () => _handleToggleStatus(offer),
-                  ),
 
                   // Eliminar
                   IconButton(
@@ -1018,6 +1061,15 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
   }
 
   Widget _buildCreateOfferTab() {
+    final currentPct = double.tryParse(_discountCtrl.text.replaceAll(',', '.')) ?? 0.0;
+    final riskyProducts = _selectedProducts.where((p) {
+      if (p.costPrice <= 0 || p.sellingPrice <= 0 || currentPct <= 0 || currentPct > 100) {
+        return false;
+      }
+      final discounted = (p.sellingPrice * (1.0 - (currentPct / 100.0)) * 100).roundToDouble() / 100.0;
+      return discounted < p.costPrice;
+    }).toList();
+
     return SingleChildScrollView(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1080,6 +1132,7 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
               Expanded(
                 child: TextField(
                   controller: _discountCtrl,
+                  onChanged: (_) => setState(() {}),
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
                   decoration: InputDecoration(
                     labelText: 'Porcentaje de Descuento (%)',
@@ -1169,8 +1222,14 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
               spacing: 6,
               runSpacing: 6,
               children: _selectedProducts.map((p) {
+                final discounted = (currentPct > 0 && currentPct <= 100)
+                    ? (p.sellingPrice * (1.0 - (currentPct / 100.0)) * 100).roundToDouble() / 100.0
+                    : p.sellingPrice;
+                final priceLabel = (currentPct > 0 && currentPct <= 100)
+                    ? '\$${p.sellingPrice.toCurrency()} → \$${discounted.toCurrency()}'
+                    : '\$${p.sellingPrice.toCurrency()}';
                 return Chip(
-                  label: Text('${p.name} (\$${p.sellingPrice.toCurrency()})', style: const TextStyle(fontSize: 11)),
+                  label: Text('${p.name} ($priceLabel)', style: const TextStyle(fontSize: 11)),
                   deleteIcon: const Icon(Icons.close, size: 16),
                   onDeleted: () {
                     setState(() {
@@ -1180,6 +1239,30 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
                 );
               }).toList(),
             ),
+
+          if (riskyProducts.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.amber.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.amber.shade300),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.warning_amber_rounded, color: Colors.amber.shade900, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Alerta de margen: Con ${currentPct.toStringAsFixed(1)}% de descuento, ${riskyProducts.length} producto(s) quedan por debajo de su costo (${riskyProducts.map((e) => e.name).take(2).join(", ")}${riskyProducts.length > 2 ? "..." : ""}).',
+                      style: TextStyle(fontSize: 11, color: Colors.amber.shade900, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
 
           const SizedBox(height: 18),
           SizedBox(

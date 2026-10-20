@@ -76,14 +76,31 @@ class OfferModel {
   }
 
   OfferStatus get status {
-    if (!isActive) return OfferStatus.paused;
     final now = DateTime.now();
-    if (startDate != null && startDate!.isAfter(now)) return OfferStatus.scheduled;
     if (endDate != null && endDate!.isBefore(now)) return OfferStatus.expired;
+    if (!isActive) return OfferStatus.paused;
+    if (startDate != null && startDate!.isAfter(now)) return OfferStatus.scheduled;
     return OfferStatus.active;
   }
 
-  bool get isCurrentlyActive => status == OfferStatus.active;
+  /// Verifica si la oferta aplica para el día de hoy según días de la semana configurados,
+  /// en espejo exacto con Offer::isCurrentDayValid() del backend.
+  bool get isCurrentDayValid {
+    if (daysOfWeek == null || daysOfWeek!.isEmpty) return true;
+    const dayNames = <int, String>{
+      DateTime.monday: 'monday',
+      DateTime.tuesday: 'tuesday',
+      DateTime.wednesday: 'wednesday',
+      DateTime.thursday: 'thursday',
+      DateTime.friday: 'friday',
+      DateTime.saturday: 'saturday',
+      DateTime.sunday: 'sunday',
+    };
+    final currentDayName = dayNames[DateTime.now().weekday] ?? '';
+    return daysOfWeek!.any((d) => d.trim().toLowerCase() == currentDayName);
+  }
+
+  bool get isCurrentlyActive => status == OfferStatus.active && isCurrentDayValid;
   bool get isExpired => status == OfferStatus.expired;
   bool get isPaused => status == OfferStatus.paused;
   bool get isScheduled => status == OfferStatus.scheduled;

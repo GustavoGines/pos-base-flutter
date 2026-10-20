@@ -92,6 +92,37 @@ void main() {
       expect(scheduledOffer.status, equals(OfferStatus.scheduled));
       expect(scheduledOffer.isScheduled, isTrue);
       expect(scheduledOffer.statusLabel, contains('Programada'));
+
+      // Precedencia: Una oferta vencida con isActive: false debe reportar expired y no paused
+      final expiredAndPausedOffer = OfferModel(
+        id: 5,
+        name: 'Promo Vencida y Pausada',
+        type: 'percentage',
+        discountPercentage: 15,
+        periodType: 'daily',
+        startDate: now.subtract(const Duration(days: 5)),
+        endDate: now.subtract(const Duration(days: 2)),
+        isActive: false,
+      );
+      expect(expiredAndPausedOffer.status, equals(OfferStatus.expired));
+      expect(expiredAndPausedOffer.isExpired, isTrue);
+      expect(expiredAndPausedOffer.isPaused, isFalse);
+
+      // Validación de daysOfWeek en isCurrentlyActive
+      final otherWeekdayOffer = OfferModel(
+        id: 6,
+        name: 'Promo Otro Día',
+        type: 'percentage',
+        discountPercentage: 10,
+        periodType: 'weekly',
+        daysOfWeek: ['non_existent_day'],
+        startDate: now.subtract(const Duration(hours: 1)),
+        endDate: now.add(const Duration(days: 3)),
+        isActive: true,
+      );
+      expect(otherWeekdayOffer.status, equals(OfferStatus.active));
+      expect(otherWeekdayOffer.isCurrentDayValid, isFalse);
+      expect(otherWeekdayOffer.isCurrentlyActive, isFalse);
     });
 
     test('Detects margin warnings when discount price drops below cost price', () {

@@ -18,7 +18,62 @@ class OfferProvider with ChangeNotifier {
   List<OfferModel> _allOffers = [];
   List<OfferModel> get allOffers => _allOffers;
 
+  String _lastStatusFilter = 'all';
+  String _lastSearchQuery = '';
+
   OfferProvider({required this.repository});
+
+  bool _matchesCurrentHistoryFilter(OfferModel offer) {
+    if (_lastStatusFilter != 'all' && _lastStatusFilter.isNotEmpty) {
+      switch (_lastStatusFilter) {
+        case 'active':
+          if (offer.status != OfferStatus.active) return false;
+          break;
+        case 'expired':
+          if (offer.status != OfferStatus.expired) return false;
+          break;
+        case 'paused':
+          if (offer.status != OfferStatus.paused) return false;
+          break;
+        case 'scheduled':
+          if (offer.status != OfferStatus.scheduled) return false;
+          break;
+      }
+    }
+
+    if (_lastSearchQuery.isNotEmpty) {
+      final q = _lastSearchQuery.toLowerCase();
+      final matchesName = offer.name.toLowerCase().contains(q);
+      final matchesDesc = (offer.description ?? '').toLowerCase().contains(q);
+      final matchesProduct = offer.products.any((p) {
+        final pName = (p['name'] ?? '').toString().toLowerCase();
+        final pBarcode = (p['barcode'] ?? '').toString().toLowerCase();
+        final pCode = (p['internal_code'] ?? '').toString().toLowerCase();
+        return pName.contains(q) || pBarcode.contains(q) || pCode.contains(q);
+      });
+      if (!matchesName && !matchesDesc && !matchesProduct) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  void _syncOfferInHistoryList(OfferModel offer) {
+    final idx = _allOffers.indexWhere((o) => o.id == offer.id);
+    final matches = _matchesCurrentHistoryFilter(offer);
+    if (matches) {
+      if (idx >= 0) {
+        _allOffers[idx] = offer;
+      } else {
+        _allOffers.insert(0, offer);
+      }
+    } else {
+      if (idx >= 0) {
+        _allOffers.removeAt(idx);
+      }
+    }
+  }
 
   Future<void> loadActiveOffers() async {
     _isLoading = true;
@@ -44,12 +99,22 @@ class OfferProvider with ChangeNotifier {
   }
 
   Future<void> loadAllOffers({String? status, String? search}) async {
+    if (status != null) {
+      _lastStatusFilter = status;
+    }
+    if (search != null) {
+      _lastSearchQuery = search.trim();
+    }
+
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
 
     try {
-      _allOffers = await repository.getAllOffers(status: status, search: search);
+      _allOffers = await repository.getAllOffers(
+        status: _lastStatusFilter,
+        search: _lastSearchQuery,
+      );
     } catch (e) {
       _errorMessage = e.toString().replaceAll('Exception: ', '');
     } finally {
@@ -136,9 +201,11 @@ class OfferProvider with ChangeNotifier {
         products: productsPayload,
       );
 
-      // Agregar a activas de inmediato
-      _activeOffers.insert(0, newOffer);
-      _allOffers.insert(0, newOffer);
+      // Agregar a activas de inmediato si aplica para hoy
+      if (newOffer.isCurrentlyActive) {
+        _activeOffers.insert(0, newOffer);
+      }
+      _syncOfferInHistoryList(newOffer);
       return true;
     } catch (e) {
       _errorMessage = e.toString().replaceAll('Exception: ', '');
@@ -179,16 +246,19 @@ class OfferProvider with ChangeNotifier {
       );
 
       final activeIdx = _activeOffers.indexWhere((o) => o.id == id);
-      if (activeIdx >= 0) {
-        _activeOffers[activeIdx] = updated;
+      if (updated.isCurrentlyActive) {
+        if (activeIdx >= 0) {
+          _activeOffers[activeIdx] = updated;
+        } else {
+          _activeOffers.insert(0, updated);
+        }
       } else {
-        _activeOffers.insert(0, updated);
+        if (activeIdx >= 0) {
+          _activeOffers.removeAt(activeIdx);
+        }
       }
 
-      final allIdx = _allOffers.indexWhere((o) => o.id == id);
-      if (allIdx >= 0) {
-        _allOffers[allIdx] = updated;
-      }
+      _syncOfferInHistoryList(updated);
 
       return true;
     } catch (e) {
@@ -223,22 +293,19 @@ class OfferProvider with ChangeNotifier {
       final OfferModel launched = result['offer'] as OfferModel;
 
       // Actualizar activas si corresponde
+      final activeIdx = _activeOffers.indexWhere((o) => o.id == launched.id);
       if (launched.isCurrentlyActive) {
-        final activeIdx = _activeOffers.indexWhere((o) => o.id == launched.id);
         if (activeIdx >= 0) {
           _activeOffers[activeIdx] = launched;
         } else {
           _activeOffers.insert(0, launched);
         }
+      } else if (activeIdx >= 0) {
+        _activeOffers.removeAt(activeIdx);
       }
 
-      // Actualizar lista histórica
-      final histIdx = _allOffers.indexWhere((o) => o.id == launched.id);
-      if (histIdx >= 0) {
-        _allOffers[histIdx] = launched;
-      } else {
-        _allOffers.insert(0, launched);
-      }
+      // Actualizar lista histórica respetando el filtro activo
+      _syncOfferInHistoryList(launched);
 
       return result;
     } catch (e) {
@@ -271,10 +338,7 @@ class OfferProvider with ChangeNotifier {
         }
       }
 
-      final allIdx = _allOffers.indexWhere((o) => o.id == id);
-      if (allIdx >= 0) {
-        _allOffers[allIdx] = updated;
-      }
+      _syncOfferInHistoryList(updated);
 
       return true;
     } catch (e) {
