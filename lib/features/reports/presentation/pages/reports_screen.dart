@@ -1631,12 +1631,12 @@ class _PosQuickAccessRankingSectionState
             children: [
               Icon(Icons.cleaning_services_rounded, color: Color(0xFFE65100)),
               SizedBox(width: 10),
-              Expanded(child: Text('¿Poner contadores del POS en cero?')),
+              Expanded(child: Text('¿Reiniciar Ranking del POS a Cero?')),
             ],
           ),
           content: const Text(
-            'Todos los contadores de "Más Vendidos" del Acceso Rápido volverán a 0 a partir de este momento.\n\n'
-            'Es ideal al iniciar una nueva temporada comercial o al finalizar pruebas iniciales. '
+            'Todos los contadores de "Más Vendidos" del Acceso Rápido volverán a 0 y el cambio quedará guardado de inmediato en el POS.\n\n'
+            'A partir de este momento, el ranking solo sumará las ventas nuevas que se realicen hacia adelante. '
             'Los reportes contables e históricos de ventas NO se ven afectados.',
           ),
           actions: [
@@ -1650,7 +1650,43 @@ class _PosQuickAccessRankingSectionState
                 backgroundColor: const Color(0xFFE65100),
               ),
               icon: const Icon(Icons.check, size: 16),
-              label: const Text('Sí, poner en cero'),
+              label: const Text('Sí, reiniciar a cero'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+    } else if (action == 'restore_history') {
+      final periodLabel = _selectedDays == 0
+          ? 'todo el historial registrado'
+          : 'los últimos $_selectedDays días';
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.history_rounded, color: Color(0xFFE65100)),
+              SizedBox(width: 10),
+              Expanded(child: Text('¿Restaurar y recalcular desde el historial?')),
+            ],
+          ),
+          content: Text(
+            'Se volverán a calcular los puntos de "Más Vendidos" leyendo todas las ventas de $periodLabel '
+            '(dejando sin efecto cualquier reinicio a cero anterior).\n\n'
+            'Usá esta opción si pusiste el ranking en cero por error o si querés recuperar las estadísticas históricas en el mostrador.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton.icon(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFFE65100),
+              ),
+              icon: const Icon(Icons.sync_rounded, size: 16),
+              label: const Text('Sí, restaurar historial'),
             ),
           ],
         ),
@@ -1669,6 +1705,24 @@ class _PosQuickAccessRankingSectionState
       await catalogProv.refreshQuickAccessSilently(preserveVisualOrder: false);
 
       if (!mounted) return;
+      final serverSettings = res['settings'] as Map<String, dynamic>?;
+      if (serverSettings != null) {
+        setState(() {
+          final sDays = int.tryParse(serverSettings['pos_popularity_days']?.toString() ?? '');
+          if (sDays != null && const [0, 7, 15, 30, 90].contains(sDays)) {
+            _selectedDays = sDays;
+          }
+          if (serverSettings['pos_popularity_metric'] != null) {
+            _selectedMetric = serverSettings['pos_popularity_metric'] == 'units'
+                ? 'units'
+                : 'tickets';
+          }
+          if (serverSettings['pos_demote_out_of_stock'] != null) {
+            _demoteOutOfStock = serverSettings['pos_demote_out_of_stock'] == true ||
+                serverSettings['pos_demote_out_of_stock'] == 1;
+          }
+        });
+      }
       final msg = res['message']?.toString() ??
           'Configuración de Acceso Rápido aplicada.';
       SnackBarService.success(context, msg);
@@ -1771,13 +1825,40 @@ class _PosQuickAccessRankingSectionState
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
+                        if (isBusy)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 4),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Color(0xFFE65100),
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  'Guardando...',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.deepOrange.shade700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                         OutlinedButton.icon(
                           onPressed: isBusy
                               ? null
                               : () => _handleRecalibrate(action: 'reset'),
                           icon: const Icon(Icons.cleaning_services_outlined, size: 16),
-                          label: const Text('Poner en Cero'),
+                          label: const Text('Reiniciar Ranking a Cero'),
                           style: OutlinedButton.styleFrom(
                             foregroundColor: Colors.deepOrange.shade700,
                             side: BorderSide(color: Colors.deepOrange.shade200),
@@ -1785,23 +1866,18 @@ class _PosQuickAccessRankingSectionState
                                 horizontal: 14, vertical: 12),
                           ),
                         ),
-                        FilledButton.icon(
+                        OutlinedButton.icon(
                           onPressed: isBusy
                               ? null
-                              : () => _handleRecalibrate(action: 'recalibrate'),
-                          icon: isBusy
-                              ? const SizedBox(
-                                  width: 15,
-                                  height: 15,
-                                  child: CircularProgressIndicator(
-                                      strokeWidth: 2, color: Colors.white),
-                                )
-                              : const Icon(Icons.sync_rounded, size: 17),
-                          label: const Text('Guardar y Recalibrar POS Ahora'),
-                          style: FilledButton.styleFrom(
-                            backgroundColor: const Color(0xFFE65100),
+                              : () => _handleRecalibrate(action: 'restore_history'),
+                          icon: const Icon(Icons.history_rounded, size: 17),
+                          label: const Text('Restaurar / Recalcular Historial'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.blueGrey.shade800,
+                            side: BorderSide(color: Colors.blueGrey.shade300),
+                            backgroundColor: Colors.blueGrey.shade50,
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 16, vertical: 12),
+                                horizontal: 14, vertical: 12),
                           ),
                         ),
                       ],
@@ -1870,11 +1946,14 @@ class _PosQuickAccessRankingSectionState
                                       style: TextStyle(fontSize: 13)),
                                 ),
                               ],
-                              onChanged: (v) {
-                                if (v != null) {
-                                  setState(() => _selectedDays = v);
-                                }
-                              },
+                              onChanged: isBusy
+                                  ? null
+                                  : (v) {
+                                      if (v != null && v != _selectedDays) {
+                                        setState(() => _selectedDays = v);
+                                        _handleRecalibrate(action: 'save_settings');
+                                      }
+                                    },
                             ),
                           ),
                         ),
@@ -1923,11 +2002,14 @@ class _PosQuickAccessRankingSectionState
                                   ),
                                 ),
                               ],
-                              onChanged: (v) {
-                                if (v != null) {
-                                  setState(() => _selectedMetric = v);
-                                }
-                              },
+                              onChanged: isBusy
+                                  ? null
+                                  : (v) {
+                                      if (v != null && v != _selectedMetric) {
+                                        setState(() => _selectedMetric = v);
+                                        _handleRecalibrate(action: 'save_settings');
+                                      }
+                                    },
                             ),
                           ),
                         ),
@@ -1948,8 +2030,12 @@ class _PosQuickAccessRankingSectionState
                           Switch(
                             value: _demoteOutOfStock,
                             activeThumbColor: const Color(0xFFE65100),
-                            onChanged: (val) =>
-                                setState(() => _demoteOutOfStock = val),
+                            onChanged: isBusy
+                                ? null
+                                : (val) {
+                                    setState(() => _demoteOutOfStock = val);
+                                    _handleRecalibrate(action: 'save_settings');
+                                  },
                           ),
                           const SizedBox(width: 6),
                           Column(
@@ -1980,12 +2066,12 @@ class _PosQuickAccessRankingSectionState
                 const SizedBox(height: 12),
                 Row(
                   children: [
-                    Icon(Icons.info_outline,
-                        size: 14, color: Colors.blueGrey.shade500),
+                    Icon(Icons.check_circle_outline_rounded,
+                        size: 14, color: Colors.teal.shade700),
                     const SizedBox(width: 6),
                     Expanded(
                       child: Text(
-                        'El ranking se recalcula automáticamente en cada Cierre de Caja. Durante el turno, el orden de los botones permanece congelado para proteger la memoria muscular del cajero y los atajos Ctrl+1..9.',
+                        'Guardado automático: cualquier cambio en las opciones o reinicio a cero se guarda al instante. El ranking se actualiza automáticamente en cada Cierre de Caja manteniendo fijo el orden durante el turno (Ctrl+1..9).',
                         style: TextStyle(
                           fontSize: 11.5,
                           color: Colors.blueGrey.shade600,

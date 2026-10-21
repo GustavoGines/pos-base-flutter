@@ -22,9 +22,9 @@ class PosQuickAccessCatalogView extends StatelessWidget {
   /// sería relativo a los resultados y no al catálogo, por eso es opt-in.
   final bool showTopRanks;
 
-  /// Ventas mínimas para que un producto pueda ser considerado "Top" (evita rotular
-  /// como Top a productos con 1 o 2 ventas en un POS recién estrenado).
-  static const int topMinSales = 5;
+  /// Ventas mínimas para que un producto pueda ser considerado "Top" (con la métrica
+  /// 1 Ticket = 1 Punto, basta 1 venta registrada para destacar el podio #1..#3).
+  static const int topMinSales = 1;
 
   /// Callback para restar un producto del carrito (botón rápido - en tarjetas activas).
   final ValueChanged<Product>? onDecrementProduct;
@@ -118,6 +118,64 @@ class PosQuickAccessCatalogView extends StatelessWidget {
           color: Colors.blue.shade900,
           fontWeight: FontWeight.w700,
         ),
+      ),
+    );
+  }
+
+  /// Badge de atajo [Ctrl+N] unificado para tarjetas de grilla (con y sin foto).
+  Widget _buildGridShortcutBadge(int number, {required bool isMedium}) {
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: isMedium ? 3.5 : 4.5,
+        vertical: isMedium ? 1.0 : 1.5,
+      ),
+      decoration: BoxDecoration(
+        color: Colors.blue.shade100.withValues(alpha: 0.96),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: Colors.blue.shade300, width: 0.8),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 2,
+            offset: const Offset(0, 1),
+          ),
+        ],
+      ),
+      child: Text(
+        'Ctrl+$number',
+        maxLines: 1,
+        style: TextStyle(
+          fontSize: isMedium ? 7.0 : 8.0,
+          color: Colors.blue.shade900,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
+
+  /// Badge compacto de producto fijado [📌] con alto contraste sobre foto o fondo blanco.
+  Widget _buildPinBadge({bool compact = false}) {
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 3.0 : 4.0,
+        vertical: compact ? 1.0 : 1.5,
+      ),
+      decoration: BoxDecoration(
+        color: Colors.indigo.shade50.withValues(alpha: 0.96),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: Colors.indigo.shade300, width: 0.8),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 2,
+            offset: const Offset(0, 1),
+          ),
+        ],
+      ),
+      child: Icon(
+        Icons.push_pin,
+        size: compact ? 10.0 : 11.5,
+        color: Colors.indigo.shade800,
       ),
     );
   }
@@ -466,6 +524,8 @@ class PosQuickAccessCatalogView extends StatelessWidget {
                       children: [
                         if (shortcutNumber != null)
                           _buildAltBadge(shortcutNumber),
+                        if (isPinned)
+                          _buildPinBadge(compact: true),
                         if (product.category?.name != null)
                           Container(
                             padding: const EdgeInsets.symmetric(
@@ -530,9 +590,6 @@ class PosQuickAccessCatalogView extends StatelessWidget {
                               ),
                             ),
                           ),
-                        if (isPinned)
-                          const Icon(Icons.push_pin,
-                              size: 13, color: Colors.blueGrey),
                       ],
                     ),
                   ],
@@ -658,10 +715,9 @@ class PosQuickAccessCatalogView extends StatelessWidget {
                           const SizedBox(width: 3),
                         ],
                         if (isPinned)
-                          const Padding(
-                            padding: EdgeInsets.only(right: 3),
-                            child: Icon(Icons.push_pin,
-                                size: 12, color: Colors.blueGrey),
+                          Padding(
+                            padding: const EdgeInsets.only(right: 3),
+                            child: _buildPinBadge(compact: true),
                           ),
                         _renderPrice(context, product, isByWeight, 12),
                       ],
@@ -755,78 +811,78 @@ class PosQuickAccessCatalogView extends StatelessWidget {
                           ),
                         ),
                       ),
-                      if (isByWeight || isPinned || shortcutNumber != null)
+                      if (isByWeight || isPinned || shortcutNumber != null || product.salesCount > 0)
                         Positioned(
                           top: 4,
                           left: 4,
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            alignment: Alignment.topLeft,
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                if (shortcutNumber != null)
-                                  Container(
-                                    padding: EdgeInsets.symmetric(
-                                      horizontal: isMedium ? 3.0 : 4.0,
-                                      vertical: 1.0,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: Colors.blue.shade100.withValues(alpha: 0.95),
-                                      borderRadius: BorderRadius.circular(6),
-                                      border: Border.all(color: Colors.blue.shade300, width: 0.8),
-                                    ),
-                                    child: Text(
-                                      'Ctrl+$shortcutNumber',
-                                      maxLines: 1,
-                                      style: TextStyle(
-                                        fontSize: isMedium ? 6.5 : 7.5,
-                                        color: Colors.blue.shade900,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                  ),
-                                if (shortcutNumber != null) const SizedBox(width: 3),
-                                if (isByWeight)
-                                  Container(
-                                    padding: EdgeInsets.symmetric(
-                                      horizontal: isMedium ? 4.0 : 5.5,
-                                      vertical: 1.5,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: Colors.orange.shade100.withValues(alpha: 0.95),
-                                      borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(color: Colors.orange.shade300, width: 0.8),
-                                    ),
-                                    child: Text(
-                                      isMedium ? '⚖️ Kg' : '⚖️ Por Kg',
-                                      maxLines: 1,
-                                      style: TextStyle(
-                                        fontSize: isMedium ? 7.5 : 8.5,
-                                        color: Colors.orange.shade900,
-                                        fontWeight: FontWeight.w800,
-                                      ),
-                                    ),
-                                  ),
-                                if (isByWeight) const SizedBox(width: 4),
-                                if (isPinned)
-                                  const Icon(Icons.push_pin, size: 14, color: Colors.blueGrey),
-                              ],
-                            ),
-                          ),
-                        ),
-                      if (product.salesCount > 0)
-                        Positioned(
-                          top: 4,
                           right: 4,
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            alignment: Alignment.topRight,
-                            child: _buildSalesBadge(
-                              product,
-                              topRank: topRank,
-                              compact: isMedium,
-                            ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (shortcutNumber != null || isPinned || isByWeight)
+                                Flexible(
+                                  child: FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    alignment: Alignment.topLeft,
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      crossAxisAlignment: CrossAxisAlignment.center,
+                                      children: [
+                                        if (shortcutNumber != null)
+                                          _buildGridShortcutBadge(
+                                            shortcutNumber,
+                                            isMedium: isMedium,
+                                          ),
+                                        if (shortcutNumber != null && (isPinned || isByWeight))
+                                          const SizedBox(width: 3),
+                                        if (isPinned)
+                                          _buildPinBadge(compact: isMedium),
+                                        if (isPinned && isByWeight)
+                                          const SizedBox(width: 3),
+                                        if (isByWeight)
+                                          Container(
+                                            padding: EdgeInsets.symmetric(
+                                              horizontal: isMedium ? 4.0 : 5.5,
+                                              vertical: 1.5,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: Colors.orange.shade100.withValues(alpha: 0.95),
+                                              borderRadius: BorderRadius.circular(8),
+                                              border: Border.all(color: Colors.orange.shade300, width: 0.8),
+                                            ),
+                                            child: Text(
+                                              isMedium ? '⚖️ Kg' : '⚖️ Por Kg',
+                                              maxLines: 1,
+                                              style: TextStyle(
+                                                fontSize: isMedium ? 7.5 : 8.5,
+                                                color: Colors.orange.shade900,
+                                                fontWeight: FontWeight.w800,
+                                              ),
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                )
+                              else
+                                const SizedBox.shrink(),
+                              if ((shortcutNumber != null || isPinned || isByWeight) &&
+                                  product.salesCount > 0)
+                                const SizedBox(width: 4),
+                              if (product.salesCount > 0)
+                                Flexible(
+                                  child: FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    alignment: Alignment.topRight,
+                                    child: _buildSalesBadge(
+                                      product,
+                                      topRank: topRank,
+                                      compact: isMedium,
+                                    ),
+                                  ),
+                                ),
+                            ],
                           ),
                         ),
                     ],
@@ -910,69 +966,88 @@ class PosQuickAccessCatalogView extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Header semántico compacto
-                        FittedBox(
-                          fit: BoxFit.scaleDown,
-                          alignment: Alignment.centerLeft,
-                          child: Row(
+                        // Fila superior unificada con Variante A: [Ctrl+N + 📌] a la izq y [Ventas] a la der
+                        if (shortcutNumber != null || isPinned || product.salesCount > 0) ...[
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            crossAxisAlignment: CrossAxisAlignment.center,
                             children: [
-                              if (shortcutNumber != null)
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
-                                  decoration: BoxDecoration(
-                                    color: Colors.blue.shade100.withValues(alpha: 0.95),
-                                    borderRadius: BorderRadius.circular(4),
-                                    border: Border.all(color: Colors.blue.shade300, width: 0.8),
-                                  ),
-                                  child: Text(
-                                    'Ctrl+$shortcutNumber',
-                                    maxLines: 1,
-                                    style: TextStyle(
-                                      fontSize: 7,
-                                      color: Colors.blue.shade900,
-                                      fontWeight: FontWeight.w700,
+                              if (shortcutNumber != null || isPinned)
+                                Flexible(
+                                  child: FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    alignment: Alignment.centerLeft,
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        if (shortcutNumber != null)
+                                          _buildGridShortcutBadge(
+                                            shortcutNumber,
+                                            isMedium: isMedium,
+                                          ),
+                                        if (shortcutNumber != null && isPinned)
+                                          const SizedBox(width: 3),
+                                        if (isPinned)
+                                          _buildPinBadge(compact: isMedium),
+                                      ],
                                     ),
                                   ),
-                                ),
-                              if (shortcutNumber != null) const SizedBox(width: 3),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                                decoration: BoxDecoration(
-                                  color: accentColor.withValues(alpha: 0.1),
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      isByWeight ? Icons.scale_rounded : Icons.inventory_2_outlined,
-                                      size: 13,
-                                      color: accentColor,
-                                    ),
-                                    const SizedBox(width: 3),
-                                    Text(
-                                      product.category?.name ?? (isByWeight ? 'Por Peso' : (product.internalCode.isNotEmpty ? product.internalCode : 'N/A')),
-                                      style: TextStyle(
-                                        fontSize: 9,
-                                        color: accentColor,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(width: 4),
-                              if (isPinned)
-                                const Icon(Icons.push_pin, size: 12, color: Colors.blueGrey),
-                              const SizedBox(width: 4),
+                                )
+                              else
+                                const SizedBox.shrink(),
+                              if ((shortcutNumber != null || isPinned) && product.salesCount > 0)
+                                const SizedBox(width: 4),
                               if (product.salesCount > 0)
-                                _buildSalesBadge(product, topRank: topRank, compact: true),
+                                Flexible(
+                                  child: FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    alignment: Alignment.centerRight,
+                                    child: _buildSalesBadge(
+                                      product,
+                                      topRank: topRank,
+                                      compact: isMedium,
+                                    ),
+                                  ),
+                                ),
                             ],
                           ),
+                          const SizedBox(height: 3),
+                        ],
+                        // Pill semántico de Categoría / Por Peso en su propia línea sin comprimir Ctrl+N
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                            decoration: BoxDecoration(
+                              color: accentColor.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  isByWeight ? Icons.scale_rounded : Icons.inventory_2_outlined,
+                                  size: isMedium ? 11 : 12,
+                                  color: accentColor,
+                                ),
+                                const SizedBox(width: 3),
+                                Flexible(
+                                  child: Text(
+                                    product.category?.name ?? (isByWeight ? 'Por Peso' : (product.internalCode.isNotEmpty ? product.internalCode : 'N/A')),
+                                    style: TextStyle(
+                                      fontSize: isMedium ? 8.5 : 9.0,
+                                      color: accentColor,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                         ),
-                        const SizedBox(height: 4),
+                        const SizedBox(height: 3),
                         // Nombre expandido (3 líneas)
                         Expanded(
                           child: Text(

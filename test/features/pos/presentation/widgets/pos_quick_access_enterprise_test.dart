@@ -162,5 +162,73 @@ void main() {
 
       expect(tester.takeException(), isNull);
     });
+
+    testWidgets('Enterprise: Top 3 podium badges render starting from 1 sale (topMinSales = 1) and coexist with Ctrl+N and Pin without overflow', (tester) async {
+      final podiumProducts = [
+        Product(
+          id: 101,
+          name: 'Producto Sin Foto Top 1',
+          internalCode: 'TOP-1',
+          costPrice: 100,
+          sellingPrice: 200,
+          stock: 10,
+          active: true,
+          isSoldByWeight: false,
+          salesCount: 3,
+          imageUrl: null,
+        ),
+        Product(
+          id: 102,
+          name: 'Producto Con Foto Top 2',
+          internalCode: 'TOP-2',
+          costPrice: 100,
+          sellingPrice: 200,
+          stock: 10,
+          active: true,
+          isSoldByWeight: true,
+          salesCount: 2,
+          imageUrl: 'http://pos-backend.test/storage/products/top2.jpg',
+        ),
+        Product(
+          id: 103,
+          name: 'Producto Sin Foto Top 3',
+          internalCode: 'TOP-3',
+          costPrice: 100,
+          sellingPrice: 200,
+          stock: 10,
+          active: true,
+          isSoldByWeight: false,
+          salesCount: 1,
+          imageUrl: null,
+        ),
+      ];
+
+      for (final mode in ['grid_large', 'grid_medium']) {
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: SizedBox(
+                width: 800,
+                height: 600,
+                child: PosQuickAccessCatalogView(
+                  products: podiumProducts,
+                  viewMode: mode,
+                  showTopRanks: true,
+                  showKeyboardShortcuts: true,
+                  pinnedProductIds: const {101, 102, 103},
+                ),
+              ),
+            ),
+          ),
+        );
+
+        expect(find.text('Ctrl+1'), findsOneWidget);
+        expect(find.text('Ctrl+2'), findsOneWidget);
+        expect(find.text('Ctrl+3'), findsOneWidget);
+        expect(find.byIcon(Icons.push_pin), findsNWidgets(3));
+        expect(find.byIcon(Icons.local_fire_department_rounded), findsNWidgets(3));
+        expect(tester.takeException(), isNull, reason: 'Failed on mode $mode');
+      }
+    });
   });
 }

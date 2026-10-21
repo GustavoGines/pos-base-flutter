@@ -210,10 +210,14 @@ class ReportsProvider extends ChangeNotifier {
     fetchInternalConsumption();
   }
 
-  Future<void> fetchProfitByCategory() async {
-    _isLoading = true;
+  Future<void> fetchProfitByCategory({bool silent = false}) async {
+    if (!silent) {
+      _isLoading = true;
+    }
     _error = null;
-    notifyListeners();
+    if (!silent) {
+      notifyListeners();
+    }
 
     try {
       final df = DateFormat('yyyy-MM-dd');
@@ -746,7 +750,7 @@ class ReportsProvider extends ChangeNotifier {
         metric: metric,
         demoteOutOfStock: demoteOutOfStock,
       );
-      await fetchProfitByCategory();
+      await fetchProfitByCategory(silent: true);
       return result;
     } finally {
       _isRecalibratingPos = false;

@@ -3516,7 +3516,7 @@ class _PosScreenState extends State<PosScreen> {
                           style: TextStyle(
                               fontSize: 18, fontWeight: FontWeight.bold)),
                       Text(
-                          'Productos por peso · Más vendidos · Orden alfabético',
+                          'Fijados · Más vendidos · Productos por peso · Orden alfabético',
                           style: TextStyle(fontSize: 12, color: Colors.grey)),
                     ],
                   ),
