@@ -64,7 +64,12 @@ class _PosScreenState extends State<PosScreen> {
   bool _isPendingPinned = false; // Modo Híbrido
 
   // Filtro rápido en memoria para el Acceso Rápido
-  String _quickAccessFilter = 'all'; // 'all', 'pinned', 'offers', 'weight', o 'cat_<id>'
+  String _quickAccessFilter = 'all'; // 'all', 'pinned', 'top_sellers', 'offers', 'weight', o 'cat_<id>'
+
+  // Protección Anti-"Efecto Baile": congela el orden de IDs durante el turno activo
+  // para que al cobrar una venta suba el badge (⚡/🔥) pero las tarjetas y Ctrl+1..9 no cambien de lugar.
+  String? _frozenOrderSignature;
+  final Map<int, int> _frozenRankById = {};
 
   // Candado anti-doble-modal para preventir abrir CheckoutDialog dos veces
   bool _isCheckingOut = false;
@@ -1810,28 +1815,36 @@ class _PosScreenState extends State<PosScreen> {
         }
 
         // 2. ACTUALIZACIÓN LOCAL (IN-MEMORY):
-        // Reordenamos el "Acceso Rápido" al instante sin depender de la red.
+        // Actualizamos el contador de ventas en memoria para que los badges (⚡/🔥) se refresquen
+        // al instante, manteniendo congelada la posición de las tarjetas durante el turno.
         // Usamos lastSaleCart (snapshot guardado antes de clearCart) porque
         // posProvider.cart ya está vacío en este punto.
         if (!mounted) return;
         final catalogProvider =
             Provider.of<CatalogProvider>(context, listen: false);
+        final popularityMetric =
+            Provider.of<SettingsProvider?>(context, listen: false)
+                    ?.settings
+                    ?.posPopularityMetric ??
+                'tickets';
         final Map<int, int> soldItems = {};
         for (var item in posProvider.lastSaleCart) {
-          // Misma regla que el backend (StockService::popularityPoints): cada línea suma
-          // max(1, ceil(cantidad)), así 0.250 kg de un pesable cuenta como 1 punto.
-          final points = item.quantity > 0 ? item.quantity.ceil() : 0;
-          if (points == 0) continue;
-          soldItems[item.product.id] =
-              (soldItems[item.product.id] ?? 0) + points;
+          if (item.quantity <= 0) continue;
+          if (popularityMetric == 'units') {
+            final points = item.quantity.ceil();
+            soldItems[item.product.id] =
+                (soldItems[item.product.id] ?? 0) + points;
+          } else {
+            // Modo 'tickets' (default): 1 aparición en el ticket = +1 punto de frecuencia
+            soldItems[item.product.id] = 1;
+          }
         }
         final anySoldMissing =
             catalogProvider.updateProductSalesCountLocally(soldItems);
         if (anySoldMissing) {
           // Se vendió algo que no estaba cargado en la grilla (ej. vía buscador): traemos el
-          // dato real del servidor en segundo plano (sin spinner) en lugar de insertar el
-          // producto del carrito, que puede venir incompleto (sin imagen/código de barras).
-          catalogProvider.refreshQuickAccessSilently();
+          // dato real del servidor en segundo plano (sin spinner) preservando el orden visual actual.
+          catalogProvider.refreshQuickAccessSilently(preserveVisualOrder: true);
         }
 
         // 3. REFRESCO SELECTIVO (FIRE-AND-FORGET):
@@ -3186,10 +3199,15 @@ class _PosScreenState extends State<PosScreen> {
       return _searchResults;
     }
 
+    final settingsProv = Provider.of<SettingsProvider?>(context, listen: false);
+    final demoteOutOfStock = settingsProv?.settings?.posDemoteOutOfStock ?? false;
+
     List<Product> filtered = List<Product>.from(catalog.products);
 
     if (_quickAccessFilter == 'pinned') {
       filtered = filtered.where((p) => localTerminal.pinnedProductIds.contains(p.id)).toList();
+    } else if (_quickAccessFilter == 'top_sellers') {
+      filtered = filtered.where((p) => p.salesCount > 0).toList();
     } else if (_quickAccessFilter == 'offers') {
       filtered = filtered.where((p) => offerProv.getActiveOfferForProduct(p.id, basePrice: p.sellingPrice) != null).toList();
     } else if (_quickAccessFilter == 'weight') {
@@ -3199,24 +3217,58 @@ class _PosScreenState extends State<PosScreen> {
       filtered = filtered.where((p) => p.category?.name.trim() == categoryName).toList();
     }
 
-    // Ordenamiento inteligente con prioridad a fijados
-    filtered.sort((a, b) {
-      final aPinned = localTerminal.pinnedProductIds.contains(a.id);
-      final bPinned = localTerminal.pinnedProductIds.contains(b.id);
+    final pinnedSorted = localTerminal.pinnedProductIds.toList()..sort();
+    final signature = '$_quickAccessFilter|${pinnedSorted.join(",")}|$demoteOutOfStock|${catalog.catalogOrderVersion}';
 
-      if (aPinned != bPinned) {
-        return aPinned ? -1 : 1;
+    if (_frozenOrderSignature == signature && _frozenRankById.isNotEmpty) {
+      for (final p in filtered) {
+        if (!_frozenRankById.containsKey(p.id)) {
+          _frozenRankById[p.id] = _frozenRankById.length;
+        }
+      }
+      filtered.sort((a, b) {
+        final rankA = _frozenRankById[a.id] ?? 999999;
+        final rankB = _frozenRankById[b.id] ?? 999999;
+        return rankA.compareTo(rankB);
+      });
+      return filtered;
+    }
+
+    // Ordenamiento inteligente: 1° Fijados -> 2° Con Stock (opcional) -> 3° Más Vendidos -> 4° Pesables -> 5° Nombre
+    filtered.sort((a, b) {
+      if (_quickAccessFilter != 'top_sellers') {
+        final aPinned = localTerminal.pinnedProductIds.contains(a.id);
+        final bPinned = localTerminal.pinnedProductIds.contains(b.id);
+
+        if (aPinned != bPinned) {
+          return aPinned ? -1 : 1;
+        }
       }
 
-      if (a.isSoldByWeight != b.isSoldByWeight) {
-        return a.isSoldByWeight ? -1 : 1;
+      if (demoteOutOfStock) {
+        final aHasStock = a.stock > 0;
+        final bHasStock = b.stock > 0;
+        if (aHasStock != bHasStock) {
+          return aHasStock ? -1 : 1;
+        }
       }
 
       final salesCmp = b.salesCount.compareTo(a.salesCount);
       if (salesCmp != 0) return salesCmp;
 
+      if (a.isSoldByWeight != b.isSoldByWeight) {
+        return a.isSoldByWeight ? -1 : 1;
+      }
+
       return a.name.toLowerCase().compareTo(b.name.toLowerCase());
     });
+
+    _frozenOrderSignature = signature;
+    _frozenRankById
+      ..clear()
+      ..addEntries(
+        List.generate(filtered.length, (i) => MapEntry(filtered[i].id, i)),
+      );
 
     return filtered;
   }
@@ -3574,6 +3626,8 @@ class _PosScreenState extends State<PosScreen> {
                         String filterName = 'este filtro';
                         if (_quickAccessFilter == 'pinned') {
                           filterName = 'productos fijados';
+                        } else if (_quickAccessFilter == 'top_sellers') {
+                          filterName = 'más vendidos';
                         } else if (_quickAccessFilter == 'offers') {
                           filterName = 'ofertas activas';
                         } else if (_quickAccessFilter == 'weight') {
@@ -3864,7 +3918,20 @@ class _PosScreenState extends State<PosScreen> {
     final offerProv = context.watch<OfferProvider>();
 
     final hasPinned = localTerminal.pinnedProductIds.isNotEmpty;
+    final hasTopSellers = catalog.products.any((p) => p.salesCount > 0);
     final hasOffers = catalog.products.any((p) => offerProv.getActiveOfferForProduct(p.id, basePrice: p.sellingPrice) != null);
+
+    // Si el filtro 'top_sellers' está activo pero no hay productos con ventas, volver a 'all'
+    if (_quickAccessFilter == 'top_sellers' && !hasTopSellers) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          setState(() {
+            _quickAccessFilter = 'all';
+          });
+        }
+      });
+    }
+
     final categories = <String, int>{};
     for (final p in catalog.products) {
       final catName = p.category?.name.trim();
@@ -3884,8 +3951,10 @@ class _PosScreenState extends State<PosScreen> {
           _buildFilterChip('Todos', 'all', _quickAccessFilter),
           if (hasPinned)
             _buildFilterChip('📌 Fijados', 'pinned', _quickAccessFilter),
+          if (hasTopSellers)
+            _buildFilterChip('🔥 Más Vendidos', 'top_sellers', _quickAccessFilter),
           if (hasOffers)
-            _buildFilterChip('🔥 Ofertas', 'offers', _quickAccessFilter),
+            _buildFilterChip('🏷️ Ofertas', 'offers', _quickAccessFilter),
           _buildFilterChip('⚖️ Por Peso', 'weight', _quickAccessFilter),
           for (final cat in top6Categories)
             _buildFilterChip(cat, 'cat_$cat', _quickAccessFilter),

@@ -33,6 +33,10 @@ class BusinessSettingsModel extends BusinessSettings {
     super.taxCondition,
     super.iibb,
     super.activityStartDate,
+    super.posPopularityDays,
+    super.posPopularityMetric,
+    super.posDemoteOutOfStock,
+    super.posPopularityResetAt,
   });
 
   factory BusinessSettingsModel.fromJson(Map<String, dynamic> json) {
@@ -142,6 +146,16 @@ class BusinessSettingsModel extends BusinessSettings {
       taxCondition: json['tax_condition']?.toString(),
       iibb: json['iibb']?.toString(),
       activityStartDate: json['activity_start_date']?.toString(),
+      posPopularityDays:
+          int.tryParse(json['pos_popularity_days']?.toString() ?? '30') ?? 30,
+      posPopularityMetric:
+          json['pos_popularity_metric']?.toString() == 'units'
+              ? 'units'
+              : 'tickets',
+      posDemoteOutOfStock: json['pos_demote_out_of_stock'] == '1' ||
+          json['pos_demote_out_of_stock'] == true ||
+          json['pos_demote_out_of_stock'] == 1,
+      posPopularityResetAt: json['pos_popularity_reset_at']?.toString(),
     );
   }
 

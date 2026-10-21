@@ -748,8 +748,10 @@ void main() {
 
       await tester.pumpAndSettle();
 
+      expect(find.text('Reportes Generales'), findsOneWidget);
       expect(find.text('Por Categoría'), findsOneWidget);
-      expect(find.text('Marcas'), findsOneWidget);
+      expect(find.text('Por Marcas'), findsOneWidget);
+      expect(find.text('Ranking y Acceso Rápido POS'), findsOneWidget);
       expect(find.text('Por Rubro'), findsNothing);
     });
 
@@ -790,8 +792,10 @@ void main() {
 
       await tester.pumpAndSettle();
 
+      expect(find.text('Reportes Generales'), findsOneWidget);
       expect(find.text('Por Categoría'), findsOneWidget);
-      expect(find.text('Marcas'), findsOneWidget);
+      expect(find.text('Por Marcas'), findsOneWidget);
+      expect(find.text('Ranking y Acceso Rápido POS'), findsOneWidget);
       expect(find.text('Por Rubro'), findsOneWidget);
     });
   });

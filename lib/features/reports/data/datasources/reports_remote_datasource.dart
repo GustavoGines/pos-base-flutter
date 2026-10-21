@@ -161,4 +161,32 @@ class ReportsRemoteDataSource {
       throw Exception('Error al descargar el balance PDF: ${response.statusCode}');
     }
   }
+
+  Future<Map<String, dynamic>> recalibratePosPopularity({
+    required String action,
+    required int days,
+    required String metric,
+    required bool demoteOutOfStock,
+  }) async {
+    final uri = Uri.parse('$baseUrl/reports/pos-popularity/recalibrate');
+    final response = await client.post(
+      uri,
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: json.encode({
+        'action': action,
+        'pos_popularity_days': days,
+        'pos_popularity_metric': metric,
+        'pos_demote_out_of_stock': demoteOutOfStock,
+      }),
+    );
+
+    if (response.statusCode == 200) {
+      return json.decode(response.body) as Map<String, dynamic>;
+    } else {
+      throw Exception('Error al recalibrar el Acceso Rápido POS (${response.statusCode})');
+    }
+  }
 }

@@ -603,4 +603,154 @@ class ReportsProvider extends ChangeNotifier {
       notifyListeners();
     }
   }
+
+  // ─── Reportes Generales: Selector de Vista y Ranking POS ────────────────────
+  String _generalViewMode = 'category'; // 'category' | 'brand' | 'ranking'
+  String get generalViewMode => _generalViewMode;
+
+  void setGeneralViewMode(String mode) {
+    if (_generalViewMode == mode) return;
+    _generalViewMode = mode;
+    notifyListeners();
+  }
+
+  String _rankingSortBy = 'tickets'; // 'tickets' | 'units' | 'revenue' | 'profit'
+  String get rankingSortBy => _rankingSortBy;
+
+  void setRankingSortBy(String sortBy) {
+    if (_rankingSortBy == sortBy) return;
+    _rankingSortBy = sortBy;
+    notifyListeners();
+  }
+
+  String _rankingSearchQuery = '';
+  String get rankingSearchQuery => _rankingSearchQuery;
+
+  void setRankingSearchQuery(String query) {
+    _rankingSearchQuery = query;
+    notifyListeners();
+  }
+
+  bool _isRecalibratingPos = false;
+  bool get isRecalibratingPos => _isRecalibratingPos;
+
+  /// Aplana y unifica todos los productos vendidos del período desde [_reportData] y [_brandReportData],
+  /// ordenados por la métrica seleccionada ([_rankingSortBy]).
+  List<Map<String, dynamic>> get flatProductsRanking {
+    final brandByProductId = <int, String>{};
+    for (final brandGroup in _brandReportData) {
+      final bName = brandGroup['group_name']?.toString() ??
+          brandGroup['category_name']?.toString() ??
+          'Sin Marca';
+      final prods = brandGroup['products'] as List<dynamic>? ?? const [];
+      for (final p in prods) {
+        final pid = int.tryParse(p['product_id']?.toString() ?? '');
+        if (pid != null) {
+          brandByProductId[pid] = bName;
+        }
+      }
+    }
+
+    final byProduct = <int, Map<String, dynamic>>{};
+    for (final catGroup in _reportData) {
+      final catName = catGroup['category_name']?.toString() ?? 'Sin Categoría';
+      final prods = catGroup['products'] as List<dynamic>? ?? const [];
+      for (final p in prods) {
+        final pid = int.tryParse(p['product_id']?.toString() ?? '');
+        if (pid == null) continue;
+
+        final pName = p['product_name']?.toString() ?? 'Producto #$pid';
+        final itemsSold = double.tryParse(p['items_sold']?.toString() ?? '0') ?? 0.0;
+        final ticketsCount = int.tryParse(p['tickets_count']?.toString() ?? '') ??
+            int.tryParse(p['total_items']?.toString() ?? '0') ??
+            0;
+        final posSalesCount = int.tryParse(p['pos_sales_count']?.toString() ?? '0') ?? 0;
+        final currentStock = double.tryParse(p['current_stock']?.toString() ?? '0') ?? 0.0;
+        final isByWeight = p['is_sold_by_weight'] == true || p['is_sold_by_weight'] == 1;
+        final revenue = double.tryParse(p['total_revenue']?.toString() ?? '0') ?? 0.0;
+        final profit = double.tryParse(p['total_profit']?.toString() ?? '0') ?? 0.0;
+        final revWithCost = double.tryParse(p['revenue_with_cost']?.toString() ?? '0') ?? 0.0;
+        final margin = revWithCost > 0 ? (profit / revWithCost) * 100.0 : 0.0;
+
+        byProduct[pid] = {
+          'product_id': pid,
+          'product_name': pName,
+          'category_name': catName,
+          'brand_name': brandByProductId[pid] ?? 'Sin Marca',
+          'items_sold': itemsSold,
+          'tickets_count': ticketsCount,
+          'pos_sales_count': posSalesCount,
+          'current_stock': currentStock,
+          'is_sold_by_weight': isByWeight,
+          'total_revenue': revenue,
+          'total_profit': profit,
+          'revenue_with_cost': revWithCost,
+          'margin_pct': margin,
+        };
+      }
+    }
+
+    var list = byProduct.values.toList();
+
+    final q = _rankingSearchQuery.trim().toLowerCase();
+    if (q.isNotEmpty) {
+      list = list.where((item) {
+        final name = (item['product_name'] as String).toLowerCase();
+        final cat = (item['category_name'] as String).toLowerCase();
+        final brand = (item['brand_name'] as String).toLowerCase();
+        return name.contains(q) || cat.contains(q) || brand.contains(q);
+      }).toList();
+    }
+
+    list.sort((a, b) {
+      int cmp;
+      switch (_rankingSortBy) {
+        case 'units':
+          cmp = (b['items_sold'] as double).compareTo(a['items_sold'] as double);
+          break;
+        case 'revenue':
+          cmp = (b['total_revenue'] as double).compareTo(a['total_revenue'] as double);
+          break;
+        case 'profit':
+          cmp = (b['total_profit'] as double).compareTo(a['total_profit'] as double);
+          break;
+        case 'tickets':
+        default:
+          cmp = (b['tickets_count'] as int).compareTo(a['tickets_count'] as int);
+          if (cmp == 0) {
+            cmp = (b['items_sold'] as double).compareTo(a['items_sold'] as double);
+          }
+          break;
+      }
+      if (cmp != 0) return cmp;
+      return (a['product_name'] as String)
+          .toLowerCase()
+          .compareTo((b['product_name'] as String).toLowerCase());
+    });
+
+    return list;
+  }
+
+  Future<Map<String, dynamic>> recalibratePosPopularity({
+    required String action,
+    required int days,
+    required String metric,
+    required bool demoteOutOfStock,
+  }) async {
+    _isRecalibratingPos = true;
+    notifyListeners();
+    try {
+      final result = await dataSource.recalibratePosPopularity(
+        action: action,
+        days: days,
+        metric: metric,
+        demoteOutOfStock: demoteOutOfStock,
+      );
+      await fetchProfitByCategory();
+      return result;
+    } finally {
+      _isRecalibratingPos = false;
+      notifyListeners();
+    }
+  }
 }
