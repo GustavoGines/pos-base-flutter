@@ -66,6 +66,17 @@ class CatalogProvider with ChangeNotifier {
   String get sortBy => _sortBy;
   String get sortDirection => _sortDirection;
 
+  /// Versión de ordenamiento del catálogo para proteger el Acceso Rápido POS del "Efecto Baile".
+  /// Solo aumenta al recargar productos desde el servidor (inicio de turno / refresco explícito),
+  /// pero NO al actualizar contadores o stock en caliente tras cobrar una venta.
+  int _catalogOrderVersion = 0;
+  int get catalogOrderVersion => _catalogOrderVersion;
+
+  void bumpCatalogOrderVersion() {
+    _catalogOrderVersion++;
+    notifyListeners();
+  }
+
   CatalogProvider({required this.getProductsUseCase, required this.repository});
 
   
@@ -100,6 +111,7 @@ class CatalogProvider with ChangeNotifier {
       _products = List<Product>.from(result['data'] as List);
       _currentPage = result['current_page'] as int;
       _lastPage = result['last_page'] as int;
+      _catalogOrderVersion++;
       if (page == 1) {
         if (_categories.isEmpty) {
           _categories = await repository.getCategories();
@@ -119,10 +131,10 @@ class CatalogProvider with ChangeNotifier {
     }
   }
 
-  /// Recarga en segundo plano la página 1 del Acceso Rápido (orden del servidor: peso → más
-  /// vendidos → nombre) SIN activar `isLoading`, para no provocar parpadeo de la grilla.
+  /// Recarga en segundo plano la página 1 del Acceso Rápido (orden del servidor: más
+  /// vendidos → peso → nombre) SIN activar `isLoading`, para no provocar parpadeo de la grilla.
   /// Si falla, conserva silenciosamente los datos actuales.
-  Future<void> refreshQuickAccessSilently() async {
+  Future<void> refreshQuickAccessSilently({bool preserveVisualOrder = false}) async {
     try {
       final result = await getProductsUseCase(page: 1, perPage: 500);
       _searchQuery = '';
@@ -130,6 +142,9 @@ class CatalogProvider with ChangeNotifier {
       _products = List<Product>.from(result['data'] as List);
       _currentPage = result['current_page'] as int;
       _lastPage = result['last_page'] as int;
+      if (!preserveVisualOrder) {
+        _catalogOrderVersion++;
+      }
       notifyListeners();
     } catch (e) {
       debugPrint('refreshQuickAccessSilently: fallo silencioso ($e)');

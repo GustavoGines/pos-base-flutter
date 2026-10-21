@@ -99,6 +99,10 @@ class BusinessSettings extends Equatable {
   final String? taxCondition;
   final String? iibb;
   final String? activityStartDate;
+  final int posPopularityDays;
+  final String posPopularityMetric;
+  final bool posDemoteOutOfStock;
+  final String? posPopularityResetAt;
 
   /// @deprecated Use [features] instead for better type safety.
   bool hasFeature(String featureName) => licenseFeatures.contains(featureName);
@@ -174,6 +178,10 @@ class BusinessSettings extends Equatable {
     String? taxCondition,
     String? iibb,
     String? activityStartDate,
+    int? posPopularityDays,
+    String? posPopularityMetric,
+    bool? posDemoteOutOfStock,
+    String? posPopularityResetAt,
   }) {
     return BusinessSettings(
       companyName: companyName ?? this.companyName,
@@ -204,6 +212,10 @@ class BusinessSettings extends Equatable {
       taxCondition: taxCondition ?? this.taxCondition,
       iibb: iibb ?? this.iibb,
       activityStartDate: activityStartDate ?? this.activityStartDate,
+      posPopularityDays: posPopularityDays ?? this.posPopularityDays,
+      posPopularityMetric: posPopularityMetric ?? this.posPopularityMetric,
+      posDemoteOutOfStock: posDemoteOutOfStock ?? this.posDemoteOutOfStock,
+      posPopularityResetAt: posPopularityResetAt ?? this.posPopularityResetAt,
     );
   }
 
@@ -236,6 +248,10 @@ class BusinessSettings extends Equatable {
     this.taxCondition,
     this.iibb,
     this.activityStartDate,
+    this.posPopularityDays = 30,
+    this.posPopularityMetric = 'tickets',
+    this.posDemoteOutOfStock = false,
+    this.posPopularityResetAt,
   });
 
   @override
@@ -268,5 +284,9 @@ class BusinessSettings extends Equatable {
         taxCondition,
         iibb,
         activityStartDate,
+        posPopularityDays,
+        posPopularityMetric,
+        posDemoteOutOfStock,
+        posPopularityResetAt,
       ];
 }

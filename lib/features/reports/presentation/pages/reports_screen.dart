@@ -6,6 +6,7 @@ import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
 import 'package:frontend_desktop/features/checks/presentation/providers/check_provider.dart';
+import 'package:frontend_desktop/features/catalog/presentation/providers/catalog_provider.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 
 import '../providers/reports_provider.dart';
@@ -22,32 +23,16 @@ class ReportsScreen extends StatefulWidget {
 
 class _ReportsScreenState extends State<ReportsScreen>
     with TickerProviderStateMixin {
-  int _currentTabCount = 2;
+  int _currentTabCount = 1;
   late TabController _tabController;
 
   @override
   void initState() {
     super.initState();
     final features = context.read<SettingsProvider>().features;
-    final hasAdvancedReports = features.advancedReports;
-    final hasCurrentAccounts = features.currentAccounts;
-    
-    // Calculamos el total de solapas: 
-    // 2 base (Categoría, Marcas) 
-    // + 1 si tiene Advanced Reports (Balance Mensual)
-    // + 1 si tiene Advanced Reports Y Current Accounts (Consumo Interno)
-    int tabCount = 2;
-    if (hasAdvancedReports) {
-      tabCount += 1; // Balance Mensual
-      if (features.expenses) {
-        tabCount += 1; // Análisis de Gastos
-      }
-      if (hasCurrentAccounts) {
-        tabCount += 1; // Consumo Interno
-      }
-    }
+    _currentTabCount = _calculateTabCount(features);
 
-    _tabController = TabController(length: tabCount, vsync: this);
+    _tabController = TabController(length: _currentTabCount, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<ReportsProvider>().fetchProfitByCategory();
       // Cargar cheques para el KPI de liquidez (solo si la feature está activa)
@@ -60,12 +45,13 @@ class _ReportsScreenState extends State<ReportsScreen>
 
 
   int _calculateTabCount(dynamic features) {
-    int count = 2;
+    // 1 base: Reportes Generales (unifica Categoría, Marcas y Ranking POS)
+    int count = 1;
     if (features.multiRubro) count += 1;
     if (features.advancedReports) {
-      count += 1;
-      if (features.expenses) count += 1;
-      if (features.currentAccounts) count += 1;
+      count += 1; // Balance Mensual
+      if (features.expenses) count += 1; // Análisis de Gastos
+      if (features.currentAccounts) count += 1; // Consumo Interno
     }
     return count;
   }
@@ -176,10 +162,9 @@ class _ReportsScreenState extends State<ReportsScreen>
                       indicatorWeight: 3,
                       labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                       tabs: [
-                          if (hasMultiRubro)
-                            const Tab(icon: Icon(Icons.account_tree_outlined, size: 18), text: 'Por Rubro'),
-                        const Tab(icon: Icon(Icons.bar_chart, size: 18), text: 'Por Categoría'),
-                        const Tab(icon: Icon(Icons.branding_watermark, size: 18), text: 'Marcas'),
+                        const Tab(icon: Icon(Icons.analytics_outlined, size: 18), text: 'Reportes Generales'),
+                        if (hasMultiRubro)
+                          const Tab(icon: Icon(Icons.account_tree_outlined, size: 18), text: 'Por Rubro'),
                         // 🔒 CANDADO 3: Balance Mensual y Consumo Interno solo para plan con advanced_reports
                         if (hasAdvancedReports) ...[
                           const Tab(icon: Icon(Icons.calendar_month, size: 18), text: 'Balance Mensual'),
@@ -190,16 +175,14 @@ class _ReportsScreenState extends State<ReportsScreen>
                         ]
                       ],
                     ),
-                    // Filtros solo en pestaña 0 y 1 (Por Categoría y Marcas)
+                    // Filtros y selector de sub-vista en la pestaña Reportes Generales (índice 0)
                     AnimatedBuilder(
                       animation: _tabController,
                       builder: (_, __) {
-                          final categoryIndex = hasMultiRubro ? 1 : 0;
-                          final brandIndex = hasMultiRubro ? 2 : 1;
-                          if (_tabController.index == categoryIndex || _tabController.index == brandIndex) {
+                        if (_tabController.index == 0) {
                           return _FiltersBar(
                             provider: provider,
-                            isBrand: _tabController.index == brandIndex,
+                            isBrand: provider.generalViewMode == 'brand',
                             onDateTap: () => _selectDateRange(context),
                             onRefresh: () => provider.fetchProfitByCategory(),
                           );
@@ -215,30 +198,23 @@ class _ReportsScreenState extends State<ReportsScreen>
                 child: TabBarView(
                   controller: _tabController,
                   children: [
-                    // Tab Por Rubro
-                      if (hasMultiRubro) const RubroProfitReportView(),
-                    // Tab 0: Por Categoría (siempre disponible)
+                    // Tab Reportes Generales (índice 0 - siempre visible)
                     provider.isLoading
                         ? const Center(child: CircularProgressIndicator())
                         : provider.error != null
                             ? _ErrorState(message: provider.error!)
-                            : provider.reportData.isEmpty
-                                ? const _EmptyState()
-                                : _DashboardContent(provider: provider),
-                    // Tab 1: Por Marcas (reutilizamos la misma vista, pero el provider dará los datos)
-                    provider.isLoading
-                        ? const Center(child: CircularProgressIndicator())
-                        : provider.error != null
-                            ? _ErrorState(message: provider.error!)
-                            : provider.brandReportData.isEmpty
-                                ? const _EmptyState()
-                                : _DashboardContent(provider: provider, isBrand: true),
-                      // Tab 2: Balance Mensual (solo con advanced_reports)
+                            : _DashboardContent(
+                                provider: provider,
+                                isBrand: provider.generalViewMode == 'brand',
+                              ),
+                    // Tab Por Rubro (índice 1 - solo con multi_rubro)
+                    if (hasMultiRubro) const RubroProfitReportView(),
+                    // Tab Balance Mensual (solo con advanced_reports)
                     if (hasAdvancedReports)
                       _MonthlyBalanceTab(provider: provider),
                     if (hasAdvancedReports && features.expenses)
                       const ExpenseAnalysisTab(),
-                    // Tab 3: Consumo Interno (solo con advanced_reports Y currentAccounts)
+                    // Tab Consumo Interno (solo con advanced_reports Y currentAccounts)
                     if (hasAdvancedReports && hasCurrentAccounts)
                       const InternalConsumptionReportView(),
                   ],
@@ -252,7 +228,7 @@ class _ReportsScreenState extends State<ReportsScreen>
   }
 }
 
-// ─── Barra de filtros ─────────────────────────────────────────────────────────
+// ─── Barra de filtros y selector de sub-vista ─────────────────────────────────
 
 class _FiltersBar extends StatelessWidget {
   final ReportsProvider provider;
@@ -267,11 +243,51 @@ class _FiltersBar extends StatelessWidget {
     required this.onRefresh,
   });
 
+  Widget _buildModeSegment({
+    required String mode,
+    required IconData icon,
+    required String label,
+    required Color activeColor,
+  }) {
+    final selected = provider.generalViewMode == mode;
+    return InkWell(
+      onTap: () => provider.setGeneralViewMode(mode),
+      borderRadius: BorderRadius.circular(8),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        decoration: BoxDecoration(
+          color: selected ? activeColor : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 15,
+              color: selected ? Colors.white : Colors.blueGrey.shade700,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: selected ? FontWeight.bold : FontWeight.w600,
+                color: selected ? Colors.white : Colors.blueGrey.shade700,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final df = DateFormat('dd/MM/yyyy');
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
       decoration: BoxDecoration(
         color: Colors.white,
         border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
@@ -281,90 +297,108 @@ class _FiltersBar extends StatelessWidget {
         child: Wrap(
           alignment: WrapAlignment.spaceBetween,
           crossAxisAlignment: WrapCrossAlignment.center,
-          runSpacing: 12,
+          runSpacing: 10,
           children: [
-            Wrap(
-              crossAxisAlignment: WrapCrossAlignment.center,
-        children: [
-          Icon(Icons.bar_chart, color: Colors.blueGrey.shade700, size: 20),
-          const SizedBox(width: 10),
-          Text(
-            'REPORTES GERENCIALES',
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.bold,
-              color: Colors.blueGrey.shade800,
-              letterSpacing: 1.5,
-            ),
-          ),
-              ],
+            // Selector segmentado de sub-vista
+            Container(
+              padding: const EdgeInsets.all(3),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.grey.shade300),
+              ),
+              child: Wrap(
+                spacing: 4,
+                children: [
+                  _buildModeSegment(
+                    mode: 'category',
+                    icon: Icons.bar_chart_rounded,
+                    label: 'Por Categoría',
+                    activeColor: Colors.indigo.shade700,
+                  ),
+                  _buildModeSegment(
+                    mode: 'brand',
+                    icon: Icons.branding_watermark_outlined,
+                    label: 'Por Marcas',
+                    activeColor: Colors.indigo.shade700,
+                  ),
+                  _buildModeSegment(
+                    mode: 'ranking',
+                    icon: Icons.local_fire_department_rounded,
+                    label: 'Ranking y Acceso Rápido POS',
+                    activeColor: const Color(0xFFE65100),
+                  ),
+                ],
+              ),
             ),
             Wrap(
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-          const Text(
-            'Período: ',
-            style: TextStyle(color: Colors.blueGrey, fontSize: 13, fontWeight: FontWeight.w500),
-          ),
-          OutlinedButton.icon(
-            onPressed: () {
-              final today = DateTime.now();
-              provider.setDateRange(today, today);
-              onRefresh();
-            },
-            icon: const Icon(Icons.today, size: 15),
-            label: const Text('Hoy', style: TextStyle(fontSize: 13)),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: Colors.indigo.shade600,
-              side: BorderSide(color: Colors.indigo.shade200),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            ),
-          ),
-          const SizedBox(width: 8),
-          OutlinedButton.icon(
-            onPressed: onDateTap,
-            icon: const Icon(Icons.calendar_today, size: 15),
-            label: Text(
-              '${df.format(provider.startDate)}  →  ${df.format(provider.endDate)}',
-              style: const TextStyle(fontSize: 13),
-            ),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: Colors.indigo.shade800,
-              side: BorderSide(color: Colors.indigo.shade200),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            ),
-          ),
-          const SizedBox(width: 8),
-          FilledButton.icon(
-            onPressed: provider.isExporting ? null : () => provider.exportToExcel(isBrand: isBrand),
-            icon: provider.isExporting
-                ? const SizedBox(width: 15, height: 15, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                : const Icon(Icons.file_download, size: 15),
-            label: const Text('Exportar Excel'),
-            style: FilledButton.styleFrom(
-              backgroundColor: Colors.green.shade600,
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            ),
-          ),
-          const SizedBox(width: 8),
-          FilledButton.icon(
-            onPressed: provider.isExportingPdf ? null : () => provider.exportToPdf(isBrand: isBrand),
-            icon: provider.isExportingPdf
-                ? const SizedBox(width: 15, height: 15, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                : const Icon(Icons.picture_as_pdf, size: 15),
-            label: const Text('Generar PDF'),
-            style: FilledButton.styleFrom(
-              backgroundColor: Colors.red.shade600,
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            ),
-          ),
-          const SizedBox(width: 8),
-          IconButton(
-            onPressed: onRefresh,
-            icon: const Icon(Icons.refresh),
-            tooltip: 'Actualizar',
-            color: Colors.blueGrey.shade600,
-          ),
+                const Text(
+                  'Período: ',
+                  style: TextStyle(color: Colors.blueGrey, fontSize: 13, fontWeight: FontWeight.w500),
+                ),
+                OutlinedButton.icon(
+                  onPressed: () {
+                    final today = DateTime.now();
+                    provider.setDateRange(today, today);
+                    onRefresh();
+                  },
+                  icon: const Icon(Icons.today, size: 15),
+                  label: const Text('Hoy', style: TextStyle(fontSize: 13)),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.indigo.shade600,
+                    side: BorderSide(color: Colors.indigo.shade200),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  onPressed: onDateTap,
+                  icon: const Icon(Icons.calendar_today, size: 15),
+                  label: Text(
+                    '${df.format(provider.startDate)}  →  ${df.format(provider.endDate)}',
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.indigo.shade800,
+                    side: BorderSide(color: Colors.indigo.shade200),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                if (provider.generalViewMode != 'ranking') ...[
+                  FilledButton.icon(
+                    onPressed: provider.isExporting ? null : () => provider.exportToExcel(isBrand: isBrand),
+                    icon: provider.isExporting
+                        ? const SizedBox(width: 15, height: 15, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        : const Icon(Icons.file_download, size: 15),
+                    label: const Text('Exportar Excel'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: Colors.green.shade600,
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton.icon(
+                    onPressed: provider.isExportingPdf ? null : () => provider.exportToPdf(isBrand: isBrand),
+                    icon: provider.isExportingPdf
+                        ? const SizedBox(width: 15, height: 15, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        : const Icon(Icons.picture_as_pdf, size: 15),
+                    label: const Text('Generar PDF'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: Colors.red.shade600,
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                IconButton(
+                  onPressed: onRefresh,
+                  icon: const Icon(Icons.refresh),
+                  tooltip: 'Actualizar',
+                  color: Colors.blueGrey.shade600,
+                ),
               ],
             ),
           ],
@@ -383,6 +417,13 @@ class _DashboardContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isRankingView = provider.generalViewMode == 'ranking';
+    final activeList = isBrand ? provider.brandReportData : provider.reportData;
+
+    if (!isRankingView && activeList.isEmpty) {
+      return const _EmptyState();
+    }
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -391,18 +432,22 @@ class _DashboardContent extends StatelessWidget {
           // Hero Cards
           _HeroCardsRow(provider: provider),
           const SizedBox(height: 24),
-          // Gráfico + Tabla
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(flex: 5, child: _ChartCard(provider: provider, isBrand: isBrand)),
-              const SizedBox(width: 16),
-              Expanded(flex: 5, child: _DetailTableCard(provider: provider, isBrand: isBrand)),
-            ],
-          ),
-          const SizedBox(height: 24),
-          // Gráfico Evolutivo
-          _TimeSeriesChartCard(provider: provider),
+          if (isRankingView) ...[
+            _PosQuickAccessRankingSection(provider: provider),
+          ] else ...[
+            // Gráfico + Tabla
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(flex: 5, child: _ChartCard(provider: provider, isBrand: isBrand)),
+                const SizedBox(width: 16),
+                Expanded(flex: 5, child: _DetailTableCard(provider: provider, isBrand: isBrand)),
+              ],
+            ),
+            const SizedBox(height: 24),
+            // Gráfico Evolutivo
+            _TimeSeriesChartCard(provider: provider),
+          ],
         ],
       ),
     );
@@ -1526,6 +1571,829 @@ class _BarLegend extends StatelessWidget {
         Container(width: 12, height: 12, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(2))),
         const SizedBox(width: 4),
         Text(label, style: TextStyle(fontSize: 11, color: Colors.blueGrey.shade600)),
+      ],
+    );
+  }
+}
+
+// ─── Sección de Ranking de Rotación y Configurador Acceso Rápido POS ─────────
+
+class _PosQuickAccessRankingSection extends StatefulWidget {
+  final ReportsProvider provider;
+  const _PosQuickAccessRankingSection({required this.provider});
+
+  @override
+  State<_PosQuickAccessRankingSection> createState() =>
+      _PosQuickAccessRankingSectionState();
+}
+
+class _PosQuickAccessRankingSectionState
+    extends State<_PosQuickAccessRankingSection> {
+  late int _selectedDays;
+  late String _selectedMetric;
+  late bool _demoteOutOfStock;
+  bool _initializedFromSettings = false;
+  final TextEditingController _searchCtrl = TextEditingController();
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_initializedFromSettings) {
+      final settings = context.read<SettingsProvider>().settings;
+      _selectedDays = settings?.posPopularityDays ?? 30;
+      if (!const [0, 7, 15, 30, 90].contains(_selectedDays)) {
+        _selectedDays = 30;
+      }
+      _selectedMetric = settings?.posPopularityMetric == 'units'
+          ? 'units'
+          : 'tickets';
+      _demoteOutOfStock = settings?.posDemoteOutOfStock ?? false;
+      _searchCtrl.text = widget.provider.rankingSearchQuery;
+      _initializedFromSettings = true;
+    }
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _handleRecalibrate({required String action}) async {
+    final settingsProv = context.read<SettingsProvider>();
+    final catalogProv = context.read<CatalogProvider>();
+
+    if (action == 'reset') {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.cleaning_services_rounded, color: Color(0xFFE65100)),
+              SizedBox(width: 10),
+              Expanded(child: Text('¿Poner contadores del POS en cero?')),
+            ],
+          ),
+          content: const Text(
+            'Todos los contadores de "Más Vendidos" del Acceso Rápido volverán a 0 a partir de este momento.\n\n'
+            'Es ideal al iniciar una nueva temporada comercial o al finalizar pruebas iniciales. '
+            'Los reportes contables e históricos de ventas NO se ven afectados.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton.icon(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFFE65100),
+              ),
+              icon: const Icon(Icons.check, size: 16),
+              label: const Text('Sí, poner en cero'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+    }
+
+    try {
+      final res = await widget.provider.recalibratePosPopularity(
+        action: action,
+        days: _selectedDays,
+        metric: _selectedMetric,
+        demoteOutOfStock: _demoteOutOfStock,
+      );
+      await settingsProv.loadSettings(isSilent: true);
+      await catalogProv.refreshQuickAccessSilently(preserveVisualOrder: false);
+
+      if (!mounted) return;
+      final msg = res['message']?.toString() ??
+          'Configuración de Acceso Rápido aplicada.';
+      SnackBarService.success(context, msg);
+    } catch (e) {
+      if (!mounted) return;
+      SnackBarService.error(context, e.toString().replaceAll('Exception: ', ''));
+    }
+  }
+
+  Widget _buildSortPill(String label, String value, IconData icon) {
+    final isSelected = widget.provider.rankingSortBy == value;
+    return ChoiceChip(
+      avatar: Icon(
+        icon,
+        size: 15,
+        color: isSelected ? Colors.white : Colors.blueGrey.shade700,
+      ),
+      label: Text(label),
+      selected: isSelected,
+      onSelected: (_) => widget.provider.setRankingSortBy(value),
+      selectedColor: Colors.indigo.shade700,
+      backgroundColor: Colors.grey.shade100,
+      showCheckmark: false,
+      labelStyle: TextStyle(
+        fontSize: 12,
+        fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+        color: isSelected ? Colors.white : Colors.blueGrey.shade800,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final provider = widget.provider;
+    final ranking = provider.flatProductsRanking;
+    final isBusy = provider.isRecalibratingPos;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // ── 1. Tarjeta de Configuración del Motor de Acceso Rápido POS ──
+        Card(
+          elevation: 0,
+          color: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: BorderSide(color: Colors.orange.shade200, width: 1.2),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Wrap(
+                  alignment: WrapAlignment.spaceBetween,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  runSpacing: 12,
+                  spacing: 12,
+                  children: [
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFF3CD),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: const Color(0xFFFFB300)),
+                          ),
+                          child: const Icon(
+                            Icons.local_fire_department_rounded,
+                            color: Color(0xFFE65100),
+                            size: 22,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Motor de Popularidad — Acceso Rápido (Terminal POS)',
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.blueGrey.shade900,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Define cómo se ordenan las tarjetas y el Top 3 (🔥) en el mostrador de ventas.',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.blueGrey.shade600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: isBusy
+                              ? null
+                              : () => _handleRecalibrate(action: 'reset'),
+                          icon: const Icon(Icons.cleaning_services_outlined, size: 16),
+                          label: const Text('Poner en Cero'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.deepOrange.shade700,
+                            side: BorderSide(color: Colors.deepOrange.shade200),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 14, vertical: 12),
+                          ),
+                        ),
+                        FilledButton.icon(
+                          onPressed: isBusy
+                              ? null
+                              : () => _handleRecalibrate(action: 'recalibrate'),
+                          icon: isBusy
+                              ? const SizedBox(
+                                  width: 15,
+                                  height: 15,
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2, color: Colors.white),
+                                )
+                              : const Icon(Icons.sync_rounded, size: 17),
+                          label: const Text('Guardar y Recalibrar POS Ahora'),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: const Color(0xFFE65100),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 12),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                const Divider(height: 1),
+                const SizedBox(height: 16),
+                Wrap(
+                  spacing: 24,
+                  runSpacing: 16,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    // Selector de Ventana Móvil
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Ventana Temporal del Ranking POS',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.blueGrey.shade800,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        DropdownButtonHideUnderline(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade50,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.grey.shade300),
+                            ),
+                            child: DropdownButton<int>(
+                              value: _selectedDays,
+                              isDense: true,
+                              items: const [
+                                DropdownMenuItem(
+                                  value: 7,
+                                  child: Text('Últimos 7 días (Semanal)',
+                                      style: TextStyle(fontSize: 13)),
+                                ),
+                                DropdownMenuItem(
+                                  value: 15,
+                                  child: Text('Últimos 15 días (Quincenal)',
+                                      style: TextStyle(fontSize: 13)),
+                                ),
+                                DropdownMenuItem(
+                                  value: 30,
+                                  child: Text('Últimos 30 días (Recomendado)',
+                                      style: TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w600)),
+                                ),
+                                DropdownMenuItem(
+                                  value: 90,
+                                  child: Text('Últimos 90 días (Trimestral)',
+                                      style: TextStyle(fontSize: 13)),
+                                ),
+                                DropdownMenuItem(
+                                  value: 0,
+                                  child: Text('Histórico completo (Sin caducidad)',
+                                      style: TextStyle(fontSize: 13)),
+                                ),
+                              ],
+                              onChanged: (v) {
+                                if (v != null) {
+                                  setState(() => _selectedDays = v);
+                                }
+                              },
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    // Selector de Criterio (Tickets vs Unidades)
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Criterio de Popularidad en Mostrador',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.blueGrey.shade800,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        DropdownButtonHideUnderline(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade50,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.grey.shade300),
+                            ),
+                            child: DropdownButton<String>(
+                              value: _selectedMetric,
+                              isDense: true,
+                              items: const [
+                                DropdownMenuItem(
+                                  value: 'tickets',
+                                  child: Text(
+                                    'Frecuencia por Tickets (1 ticket = 1 pto · Recomendado)',
+                                    style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600),
+                                  ),
+                                ),
+                                DropdownMenuItem(
+                                  value: 'units',
+                                  child: Text(
+                                    'Volumen de Unidades / Kg vendidos',
+                                    style: TextStyle(fontSize: 13),
+                                  ),
+                                ),
+                              ],
+                              onChanged: (v) {
+                                if (v != null) {
+                                  setState(() => _selectedMetric = v);
+                                }
+                              },
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    // Switch productos sin stock
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.grey.shade300),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Switch(
+                            value: _demoteOutOfStock,
+                            activeThumbColor: const Color(0xFFE65100),
+                            onChanged: (val) =>
+                                setState(() => _demoteOutOfStock = val),
+                          ),
+                          const SizedBox(width: 6),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Relegar agotados (stock ≤ 0) al final',
+                                style: TextStyle(
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.blueGrey.shade800,
+                                ),
+                              ),
+                              Text(
+                                'Opcional (desactivar si vende con stock en negativo)',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.blueGrey.shade500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Icon(Icons.info_outline,
+                        size: 14, color: Colors.blueGrey.shade500),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'El ranking se recalcula automáticamente en cada Cierre de Caja. Durante el turno, el orden de los botones permanece congelado para proteger la memoria muscular del cajero y los atajos Ctrl+1..9.',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          color: Colors.blueGrey.shade600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        const SizedBox(height: 20),
+
+        // ── 2. Tabla Global de Rotación de Productos del Período ──
+        Card(
+          elevation: 0,
+          color: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: BorderSide(color: Colors.grey.shade200),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Wrap(
+                  alignment: WrapAlignment.spaceBetween,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 16,
+                  runSpacing: 12,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Ranking de Rotación de Productos en el Período',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.blueGrey.shade900,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '${ranking.length} producto${ranking.length == 1 ? '' : 's'} con ventas registradas entre ${DateFormat('dd/MM/yyyy').format(provider.startDate)} y ${DateFormat('dd/MM/yyyy').format(provider.endDate)}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.blueGrey.shade500,
+                          ),
+                        ),
+                      ],
+                    ),
+                    SizedBox(
+                      width: 280,
+                      child: TextField(
+                        controller: _searchCtrl,
+                        onChanged: provider.setRankingSearchQuery,
+                        decoration: InputDecoration(
+                          hintText: 'Buscar producto, categoría o marca...',
+                          hintStyle: const TextStyle(fontSize: 12.5),
+                          prefixIcon: const Icon(Icons.search, size: 18),
+                          suffixIcon: _searchCtrl.text.isNotEmpty
+                              ? IconButton(
+                                  icon: const Icon(Icons.clear, size: 16),
+                                  onPressed: () {
+                                    _searchCtrl.clear();
+                                    provider.setRankingSearchQuery('');
+                                  },
+                                )
+                              : null,
+                          isDense: true,
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 10),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide(color: Colors.grey.shade300),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide(color: Colors.grey.shade300),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Text(
+                      'Ordenar por:',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.blueGrey.shade600,
+                      ),
+                    ),
+                    _buildSortPill(
+                        'Tickets (Frecuencia)', 'tickets', Icons.confirmation_number_outlined),
+                    _buildSortPill(
+                        'Unidades / Kg', 'units', Icons.inventory_2_outlined),
+                    _buildSortPill(
+                        'Facturación', 'revenue', Icons.payments_outlined),
+                    _buildSortPill(
+                        'Ganancia Neta', 'profit', Icons.trending_up_rounded),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                const Divider(height: 1),
+                if (ranking.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 40),
+                    child: Center(
+                      child: Text(
+                        'No se encontraron productos vendidos con los filtros actuales.',
+                        style: TextStyle(
+                            color: Colors.grey.shade500, fontSize: 14),
+                      ),
+                    ),
+                  )
+                else ...[
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                        vertical: 10, horizontal: 8),
+                    child: Row(
+                      children: [
+                        const SizedBox(
+                          width: 54,
+                          child: Text('#',
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.blueGrey)),
+                        ),
+                        const Expanded(
+                          flex: 4,
+                          child: Text('Producto / Categoría · Marca',
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.blueGrey)),
+                        ),
+                        const SizedBox(
+                          width: 95,
+                          child: Text('Tickets',
+                              textAlign: TextAlign.right,
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.blueGrey)),
+                        ),
+                        const SizedBox(
+                          width: 95,
+                          child: Text('Cant. Vend.',
+                              textAlign: TextAlign.right,
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.blueGrey)),
+                        ),
+                        const SizedBox(
+                          width: 110,
+                          child: Text('Badge POS Hoy',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.blueGrey)),
+                        ),
+                        const SizedBox(
+                          width: 120,
+                          child: Text('Facturación',
+                              textAlign: TextAlign.right,
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.blueGrey)),
+                        ),
+                        const SizedBox(
+                          width: 120,
+                          child: Text('Ganancia',
+                              textAlign: TextAlign.right,
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.blueGrey)),
+                        ),
+                        const SizedBox(
+                          width: 75,
+                          child: Text('Margen',
+                              textAlign: TextAlign.right,
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.blueGrey)),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  ...ranking.asMap().entries.map((entry) {
+                    final idx = entry.key;
+                    final rank = idx + 1;
+                    final item = entry.value;
+                    final isTop3 = rank <= 3;
+                    final pName = item['product_name'] as String;
+                    final catName = item['category_name'] as String;
+                    final brandName = item['brand_name'] as String;
+                    final tickets = item['tickets_count'] as int;
+                    final qty = item['items_sold'] as double;
+                    final posCount = item['pos_sales_count'] as int;
+                    final isByWeight = item['is_sold_by_weight'] as bool;
+                    final rev = item['total_revenue'] as double;
+                    final prof = item['total_profit'] as double;
+                    final margin = item['margin_pct'] as double;
+
+                    return Container(
+                      padding: const EdgeInsets.symmetric(
+                          vertical: 10, horizontal: 8),
+                      decoration: BoxDecoration(
+                        color: isTop3
+                            ? const Color(0xFFFFFBEB).withValues(alpha: 0.55)
+                            : Colors.transparent,
+                        border: Border(
+                          bottom: BorderSide(color: Colors.grey.shade100),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          SizedBox(
+                            width: 54,
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 7, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: isTop3
+                                      ? const Color(0xFFFFF3CD)
+                                      : Colors.grey.shade100,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: isTop3
+                                        ? const Color(0xFFFFB300)
+                                        : Colors.grey.shade300,
+                                  ),
+                                ),
+                                child: Text(
+                                  isTop3 ? '🔥 #$rank' : '#$rank',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w800,
+                                    color: isTop3
+                                        ? const Color(0xFFB45309)
+                                        : Colors.blueGrey.shade700,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          Expanded(
+                            flex: 4,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Flexible(
+                                      child: Text(
+                                        pName,
+                                        style: const TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    if (isByWeight) ...[
+                                      const SizedBox(width: 6),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 5, vertical: 1),
+                                        decoration: BoxDecoration(
+                                          color: Colors.orange.shade100,
+                                          borderRadius:
+                                              BorderRadius.circular(5),
+                                        ),
+                                        child: Text(
+                                          '⚖️ Kg',
+                                          style: TextStyle(
+                                            fontSize: 9.5,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.orange.shade900,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  '$catName · $brandName',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.blueGrey.shade500,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ),
+                          ),
+                          SizedBox(
+                            width: 95,
+                            child: Text(
+                              '$tickets ticket${tickets == 1 ? '' : 's'}',
+                              textAlign: TextAlign.right,
+                              style: TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.indigo.shade700,
+                              ),
+                            ),
+                          ),
+                          SizedBox(
+                            width: 95,
+                            child: Text(
+                              isByWeight ? '${qty.toQty()} kg' : qty.toQty(),
+                              textAlign: TextAlign.right,
+                              style: const TextStyle(fontSize: 12.5),
+                            ),
+                          ),
+                          SizedBox(
+                            width: 110,
+                            child: Center(
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: posCount > 0
+                                      ? Colors.blue.shade50
+                                      : Colors.grey.shade100,
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                    color: posCount > 0
+                                        ? Colors.blue.shade200
+                                        : Colors.grey.shade300,
+                                  ),
+                                ),
+                                child: Text(
+                                  posCount > 0
+                                      ? '⚡ $posCount vend.'
+                                      : '0 vend.',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    color: posCount > 0
+                                        ? Colors.blue.shade800
+                                        : Colors.grey.shade500,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          SizedBox(
+                            width: 120,
+                            child: Text(
+                              '\$${rev.toCurrency()}',
+                              textAlign: TextAlign.right,
+                              style: const TextStyle(fontSize: 12.5),
+                            ),
+                          ),
+                          SizedBox(
+                            width: 120,
+                            child: Text(
+                              '\$${prof.toCurrency()}',
+                              textAlign: TextAlign.right,
+                              style: TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.bold,
+                                color: prof >= 0
+                                    ? Colors.green.shade700
+                                    : Colors.red.shade600,
+                              ),
+                            ),
+                          ),
+                          SizedBox(
+                            width: 75,
+                            child: Text(
+                              '${margin.toStringAsFixed(1)}%',
+                              textAlign: TextAlign.right,
+                              style: const TextStyle(fontSize: 12.5),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+                ],
+              ],
+            ),
+          ),
+        ),
       ],
     );
   }
