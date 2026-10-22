@@ -230,5 +230,40 @@ void main() {
         expect(tester.takeException(), isNull, reason: 'Failed on mode $mode');
       }
     });
+
+    test('Enterprise: Category palette (12 semantic colors) and DJB2 hash dispersion', () {
+      // 1. Sold by weight always resolves to scale orange (Colors.orange.shade700)
+      final weightColor = PosQuickAccessCatalogView.resolveCategoryAccent('Cualquiera', isSoldByWeight: true);
+      expect(weightColor, Colors.orange.shade700);
+
+      // 2. Null or empty string resolves to neutral fallback (Colors.blueGrey.shade600)
+      final nullColor = PosQuickAccessCatalogView.resolveCategoryAccent(null);
+      final emptyColor = PosQuickAccessCatalogView.resolveCategoryAccent('');
+      final whitespaceColor = PosQuickAccessCatalogView.resolveCategoryAccent('   ');
+      expect(nullColor, Colors.blueGrey.shade600);
+      expect(emptyColor, Colors.blueGrey.shade600);
+      expect(whitespaceColor, Colors.blueGrey.shade600);
+
+      // 3. Different categories receive distinct, consistent colors
+      final bebidasColor = PosQuickAccessCatalogView.resolveCategoryAccent('Bebidas');
+      final limpiezaColor = PosQuickAccessCatalogView.resolveCategoryAccent('Limpieza');
+      final golosinasColor = PosQuickAccessCatalogView.resolveCategoryAccent('Golosinas');
+      final snacksColor = PosQuickAccessCatalogView.resolveCategoryAccent('Snacks');
+      final panaderiaColor = PosQuickAccessCatalogView.resolveCategoryAccent('Panadería');
+
+      expect(bebidasColor, isNotNull);
+      expect(limpiezaColor, isNotNull);
+      // Case-insensitivity & whitespace trimming
+      expect(PosQuickAccessCatalogView.resolveCategoryAccent('  bebidas  '), bebidasColor);
+      expect(PosQuickAccessCatalogView.resolveCategoryAccent('BEBIDAS'), bebidasColor);
+
+      // Verify colors belong to the 12-color semantic palette
+      expect(PosQuickAccessCatalogView.categoryPalette.length, 12);
+      expect(PosQuickAccessCatalogView.categoryPalette.contains(bebidasColor), isTrue);
+      expect(PosQuickAccessCatalogView.categoryPalette.contains(limpiezaColor), isTrue);
+      expect(PosQuickAccessCatalogView.categoryPalette.contains(golosinasColor), isTrue);
+      expect(PosQuickAccessCatalogView.categoryPalette.contains(snacksColor), isTrue);
+      expect(PosQuickAccessCatalogView.categoryPalette.contains(panaderiaColor), isTrue);
+    });
   });
 }

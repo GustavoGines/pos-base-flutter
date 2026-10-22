@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:ui';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -2538,37 +2539,58 @@ class _PosScreenState extends State<PosScreen> {
               double ratio = context.read<LocalTerminalProvider>().posSplitRatio;
               return StatefulBuilder(
                 builder: (context, setState) {
+                  final totalWidth = constraints.maxWidth;
+                  final availableWidth = (totalWidth - 16.0).clamp(0.0, double.infinity);
+                  final minCartWidth = 340.0.clamp(0.0, availableWidth * 0.5);
+                  final maxAllowedByCatalog = (totalWidth - 460.0).clamp(minCartWidth, totalWidth * 0.52 < minCartWidth ? minCartWidth : totalWidth * 0.52);
+                  final maxCartWidth = maxAllowedByCatalog < minCartWidth ? minCartWidth : maxAllowedByCatalog;
+
+                  final minCartRatio = totalWidth > 0 ? (minCartWidth / totalWidth) : 0.38;
+                  final computedMaxRatio = totalWidth > 0 ? (maxCartWidth / totalWidth) : 0.38;
+
                   return Row(
                     children: [
                       SizedBox(
-                        width: (constraints.maxWidth * ratio) < 340 ? 340 : (constraints.maxWidth * ratio),
+                        width: (totalWidth * ratio).clamp(minCartWidth, maxCartWidth),
                         child: _buildCartPanel(),
                       ),
-                      MouseRegion(
-                        cursor: SystemMouseCursors.resizeColumn,
-                        child: GestureDetector(
-                          behavior: HitTestBehavior.translucent,
-                          onPanUpdate: (details) {
-                            setState(() {
-                              ratio += details.delta.dx / constraints.maxWidth;
-                              double minRatio = 340 / constraints.maxWidth;
-                              if (ratio < minRatio) ratio = minRatio;
-                              if (ratio > 0.65) ratio = 0.65;
-                            });
-                          },
-                          onPanEnd: (details) {
-                            context.read<LocalTerminalProvider>().setPosSplitRatio(ratio);
-                          },
-                          child: Container(
-                            width: 16,
-                            color: Colors.transparent,
-                            child: Center(
-                              child: Container(
-                                width: 4,
-                                height: 40,
-                                decoration: BoxDecoration(
-                                  color: Colors.grey.shade400,
-                                  borderRadius: BorderRadius.circular(4),
+                      Tooltip(
+                        message: 'Arrastrar para ajustar ancho · Doble clic para restablecer',
+                        waitDuration: const Duration(milliseconds: 600),
+                        child: MouseRegion(
+                          cursor: SystemMouseCursors.resizeColumn,
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.translucent,
+                            onPanUpdate: (details) {
+                              if (totalWidth <= 0) return;
+                              setState(() {
+                                ratio += details.delta.dx / totalWidth;
+                                if (ratio < minCartRatio) ratio = minCartRatio;
+                                if (ratio > computedMaxRatio) ratio = computedMaxRatio;
+                              });
+                            },
+                            onPanEnd: (details) {
+                              context.read<LocalTerminalProvider>().setPosSplitRatio(ratio);
+                            },
+                            onDoubleTap: () {
+                              final resetRatio = 0.38.clamp(minCartRatio, computedMaxRatio);
+                              setState(() {
+                                ratio = resetRatio;
+                              });
+                              context.read<LocalTerminalProvider>().setPosSplitRatio(resetRatio);
+                              SnackBarService.info(context, 'Tamaño del mostrador restablecido al diseño ideal');
+                            },
+                            child: Container(
+                              width: 16,
+                              color: Colors.transparent,
+                              child: Center(
+                                child: Container(
+                                  width: 4,
+                                  height: 40,
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey.shade400,
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
                                 ),
                               ),
                             ),
@@ -2945,7 +2967,7 @@ class _PosScreenState extends State<PosScreen> {
 
           // Footer (Total + Doble Botón)
           Container(
-            padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
             decoration: BoxDecoration(
               color: Colors.white,
               boxShadow: [
@@ -2983,140 +3005,150 @@ class _PosScreenState extends State<PosScreen> {
                         : pos.activeTier.name;
 
                     return Padding(
-                      padding: const EdgeInsets.only(bottom: 8.0),
+                      padding: const EdgeInsets.only(bottom: 6.0),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           const Text('Lista de Precio:',
                               style: TextStyle(
                                   color: Colors.grey,
-                                  fontSize: 13,
+                                  fontSize: 12.5,
                                   fontWeight: FontWeight.bold)),
-                          Row(
-                            children: [
-                              SizedBox(
-                                height: 30,
-                                child: DropdownButton<String>(
-                                  value: currentValue,
-                                  isDense: true,
-                                  underline: const SizedBox(),
-                                  icon: const Icon(Icons.keyboard_arrow_down,
-                                      size: 16),
-                                  style: const TextStyle(
-                                      fontSize: 13,
-                                      color: Colors.black87,
-                                      fontWeight: FontWeight.bold),
-                                  items: [
-                                    const DropdownMenuItem(
-                                        value: 'base',
-                                        child: Text('🏪 Minorista (Base)')),
-                                    const DropdownMenuItem(
-                                        value: 'wholesale',
-                                        child: Text('🏭 Mayorista')),
-                                    const DropdownMenuItem(
-                                        value: 'card', child: Text('💳 Tarjeta')),
-                                    // Listas personalizadas dinámicas del backend
-                                    ...customTiers.map((t) {
-                                      final name =
-                                          t['name']?.toString() ?? 'Custom';
-                                      final mod =
-                                          (t['modifier'] as num?)?.toDouble() ??
-                                              0.0;
-                                      final sign = mod >= 0 ? '+' : '';
-                                      return DropdownMenuItem(
-                                        value: 'custom_$name',
-                                        child: Text(
-                                            '🏷️ $name ($sign${mod.toStringAsFixed(0)}%)'),
-                                      );
-                                    }),
-                                  ],
-                                  onChanged: (String? val) {
-                                    if (val == null) return;
-                                    if (val == 'base') {
-                                      pos.setPriceTier(PriceTier.base);
-                                    } else if (val == 'wholesale') {
-                                      pos.setPriceTier(
-                                        PriceTier.wholesale,
-                                        wholesaleFactor: settings != null
-                                            ? 1 +
-                                                (settings
-                                                        .globalWholesalePercentage /
-                                                    100)
-                                            : null,
-                                        cardFactor: settings != null
-                                            ? 1 +
-                                                (settings.globalCardPercentage /
-                                                    100)
-                                            : null,
-                                      );
-                                    } else if (val == 'card') {
-                                      pos.setPriceTier(
-                                        PriceTier.card,
-                                        wholesaleFactor: settings != null
-                                            ? 1 +
-                                                (settings
-                                                        .globalWholesalePercentage /
-                                                    100)
-                                            : null,
-                                        cardFactor: settings != null
-                                            ? 1 +
-                                                (settings.globalCardPercentage /
-                                                    100)
-                                            : null,
-                                      );
-                                    } else if (val.startsWith('custom_')) {
-                                      final label =
-                                          val.substring(7); // strip 'custom_'
-                                      final tier = customTiers.firstWhere(
-                                          (t) => t['name'] == label,
-                                          orElse: () => {});
-                                      final mod =
-                                          (tier['modifier'] as num?)?.toDouble() ??
-                                              0.0;
-                                      pos.setPriceTier(
-                                        PriceTier.custom,
-                                        customFactor: 1 + (mod / 100),
-                                        customLabel: label,
-                                      );
-                                    }
-                                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                                      if (mounted) _searchFocusNode.requestFocus();
-                                    });
+                          const SizedBox(width: 8),
+                          Flexible(
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Flexible(
+                                  child: FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    alignment: Alignment.centerRight,
+                                    child: SizedBox(
+                                      height: 28,
+                                      child: DropdownButton<String>(
+                                        value: currentValue,
+                                        isDense: true,
+                                        underline: const SizedBox(),
+                                        icon: const Icon(Icons.keyboard_arrow_down,
+                                            size: 16),
+                                        style: const TextStyle(
+                                            fontSize: 12.5,
+                                            color: Colors.black87,
+                                            fontWeight: FontWeight.bold),
+                                        items: [
+                                          const DropdownMenuItem(
+                                              value: 'base',
+                                              child: Text('🏪 Minorista (Base)')),
+                                          const DropdownMenuItem(
+                                              value: 'wholesale',
+                                              child: Text('🏭 Mayorista')),
+                                          const DropdownMenuItem(
+                                              value: 'card', child: Text('💳 Tarjeta')),
+                                          // Listas personalizadas dinámicas del backend
+                                          ...customTiers.map((t) {
+                                            final name =
+                                                t['name']?.toString() ?? 'Custom';
+                                            final mod =
+                                                (t['modifier'] as num?)?.toDouble() ??
+                                                    0.0;
+                                            final sign = mod >= 0 ? '+' : '';
+                                            return DropdownMenuItem(
+                                              value: 'custom_$name',
+                                              child: Text(
+                                                  '🏷️ $name ($sign${mod.toStringAsFixed(0)}%)'),
+                                            );
+                                          }),
+                                        ],
+                                        onChanged: (String? val) {
+                                          if (val == null) return;
+                                          if (val == 'base') {
+                                            pos.setPriceTier(PriceTier.base);
+                                          } else if (val == 'wholesale') {
+                                            pos.setPriceTier(
+                                              PriceTier.wholesale,
+                                              wholesaleFactor: settings != null
+                                                  ? 1 +
+                                                      (settings
+                                                              .globalWholesalePercentage /
+                                                          100)
+                                                  : null,
+                                              cardFactor: settings != null
+                                                  ? 1 +
+                                                      (settings.globalCardPercentage /
+                                                          100)
+                                                  : null,
+                                            );
+                                          } else if (val == 'card') {
+                                            pos.setPriceTier(
+                                              PriceTier.card,
+                                              wholesaleFactor: settings != null
+                                                  ? 1 +
+                                                      (settings
+                                                              .globalWholesalePercentage /
+                                                          100)
+                                                  : null,
+                                              cardFactor: settings != null
+                                                  ? 1 +
+                                                      (settings.globalCardPercentage /
+                                                          100)
+                                                  : null,
+                                            );
+                                          } else if (val.startsWith('custom_')) {
+                                            final label =
+                                                val.substring(7); // strip 'custom_'
+                                            final tier = customTiers.firstWhere(
+                                                (t) => t['name'] == label,
+                                                orElse: () => {});
+                                            final mod =
+                                                (tier['modifier'] as num?)?.toDouble() ??
+                                                    0.0;
+                                            pos.setPriceTier(
+                                              PriceTier.custom,
+                                              customFactor: 1 + (mod / 100),
+                                              customLabel: label,
+                                            );
+                                          }
+                                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                                            if (mounted) _searchFocusNode.requestFocus();
+                                          });
+                                        },
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Consumer<LocalTerminalProvider>(
+                                  builder: (context, terminal, _) {
+                                    // Se considera "fijado" si el nivel de la terminal 
+                                    // coincide con el que seleccionamos actualmente
+                                    final isPinned = terminal.lockedPriceTier == currentValue;
+                                    return IconButton(
+                                      icon: Icon(
+                                        isPinned ? Icons.push_pin : Icons.push_pin_outlined,
+                                        size: 18,
+                                        color: isPinned ? Colors.orange.shade700 : Colors.grey.shade400,
+                                      ),
+                                      padding: EdgeInsets.zero,
+                                      constraints: const BoxConstraints(),
+                                      tooltip: isPinned ? 'Lista fijada para esta terminal' : 'Fijar lista para esta terminal',
+                                      onPressed: () {
+                                        if (isPinned) {
+                                          terminal.setLockedPriceTier('none');
+                                          pos.setDefaultTier('base', null);
+                                          SnackBarService.success(context, 'Lista de precios desbloqueada. Volverá a Base al finalizar la venta.');
+                                        } else {
+                                          final customLabel = pos.activeTier == PriceTier.custom ? pos.customTierLabel : null;
+                                          terminal.setLockedPriceTier(currentValue, label: customLabel);
+                                          pos.setDefaultTier(currentValue, customLabel);
+                                          SnackBarService.success(context, 'Lista fijada. El carrito usará esta lista automáticamente.');
+                                        }
+                                        _searchFocusNode.requestFocus();
+                                      },
+                                    );
                                   },
                                 ),
-                              ),
-                              const SizedBox(width: 8),
-                              Consumer<LocalTerminalProvider>(
-                                builder: (context, terminal, _) {
-                                  // Se considera "fijado" si el nivel de la terminal 
-                                  // coincide con el que seleccionamos actualmente
-                                  final isPinned = terminal.lockedPriceTier == currentValue;
-                                  return IconButton(
-                                    icon: Icon(
-                                      isPinned ? Icons.push_pin : Icons.push_pin_outlined,
-                                      size: 18,
-                                      color: isPinned ? Colors.orange.shade700 : Colors.grey.shade400,
-                                    ),
-                                    padding: EdgeInsets.zero,
-                                    constraints: const BoxConstraints(),
-                                    tooltip: isPinned ? 'Lista fijada para esta terminal' : 'Fijar lista para esta terminal',
-                                    onPressed: () {
-                                      if (isPinned) {
-                                        terminal.setLockedPriceTier('none');
-                                        pos.setDefaultTier('base', null);
-                                        SnackBarService.success(context, 'Lista de precios desbloqueada. Volverá a Base al finalizar la venta.');
-                                      } else {
-                                        final customLabel = pos.activeTier == PriceTier.custom ? pos.customTierLabel : null;
-                                        terminal.setLockedPriceTier(currentValue, label: customLabel);
-                                        pos.setDefaultTier(currentValue, customLabel);
-                                        SnackBarService.success(context, 'Lista fijada. El carrito usará esta lista automáticamente.');
-                                      }
-                                      _searchFocusNode.requestFocus();
-                                    },
-                                  );
-                                },
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ],
                       ),
@@ -3125,7 +3157,7 @@ class _PosScreenState extends State<PosScreen> {
 
                 // ── Resumen Financiero: Subtotal, Ahorro/Descuentos y Total ──────────────
                 const PosFinancialSummary(),
-                const SizedBox(height: 10),
+                const SizedBox(height: 8),
 
                 // ── Atajos Rápidos Modernos (Espera, Presupuestos, Clientes, Ofertas) ──
                 PosQuickActionButtons(
@@ -3135,12 +3167,12 @@ class _PosScreenState extends State<PosScreen> {
                     if (mounted) _searchFocusNode.requestFocus();
                   },
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
 
                 // ── Botón Principal: Cobrar ───────────────────────────
                 SizedBox(
                   width: double.infinity,
-                  height: 54,
+                  height: 48,
                   child: ElevatedButton(
                     style: ElevatedButton.styleFrom(
                       backgroundColor: pos.cart.isEmpty
@@ -3151,7 +3183,7 @@ class _PosScreenState extends State<PosScreen> {
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10)),
-                      elevation: pos.isLoading ? 0 : 4,
+                      elevation: pos.isLoading ? 0 : 3,
                     ),
                     onPressed: pos.cart.isEmpty || pos.isLoading
                         ? null
@@ -3161,27 +3193,27 @@ class _PosScreenState extends State<PosScreen> {
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
                               SizedBox(
-                                  width: 22,
-                                  height: 22,
+                                  width: 20,
+                                  height: 20,
                                   child: CircularProgressIndicator(
-                                      color: Colors.white, strokeWidth: 2.5)),
+                                      color: Colors.white, strokeWidth: 2.2)),
                               SizedBox(width: 10),
                               Text('Procesando...',
                                   style: TextStyle(
-                                      fontSize: 18,
+                                      fontSize: 16,
                                       fontWeight: FontWeight.bold)),
                             ],
                           )
                         : const Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Icon(Icons.point_of_sale_rounded, size: 22),
+                              Icon(Icons.point_of_sale_rounded, size: 20),
                               SizedBox(width: 8),
                               Text('💵 COBRAR',
                                   style: TextStyle(
-                                      fontSize: 20,
+                                      fontSize: 18,
                                       fontWeight: FontWeight.bold,
-                                      letterSpacing: 1.2)),
+                                      letterSpacing: 1.1)),
                             ],
                           ),
                   ),
@@ -3445,160 +3477,175 @@ class _PosScreenState extends State<PosScreen> {
   }
 
   Widget _buildRightPanel() {
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Barra de búsqueda con búsqueda server-side vía API
-          TextField(
-            controller: _searchController,
-            focusNode: _searchFocusNode,
-            inputFormatters: [
-              FilteringTextInputFormatter.deny(
-                RegExp(r'[\x00-\x1F\u263A\u263B\u2665\u2666\u2663\u2660\u2022\u25D8\u25CB]'),
-              ),
-              TextInputFormatter.withFunction((oldValue, newValue) {
-                if (oldValue.text.isEmpty &&
-                    (newValue.text == '+' || newValue.text == '-')) {
-                  final hasCart =
-                      Provider.of<PosProvider>(context, listen: false)
-                          .cart
-                          .isNotEmpty;
-                  if (hasCart) return oldValue;
-                }
-                return newValue;
-              }),
-            ],
-            decoration: InputDecoration(
-              hintText: 'Escribir nombre o escanear código... (Enter: Cobrar · F1: Atajos)',
-              prefixIcon: _isSearching
-                  ? const Padding(
-                      padding: EdgeInsets.all(12),
-                      child: SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2)),
-                    )
-                  : const Icon(Icons.search),
-              suffixIcon: _searchQuery.isNotEmpty
-                  ? IconButton(
-                      icon: const Icon(Icons.clear),
-                      onPressed: () {
-                        _searchController.clear();
-                        _onPosSearchChanged('');
-                        _searchFocusNode.requestFocus();
-                      },
-                    )
-                  : null,
-              border:
-                  OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-              filled: true,
-              fillColor: Colors.grey.shade100,
-            ),
-            // Búsqueda en tiempo real con debounce → API completa
-            onChanged: _onPosSearchChanged,
-            // Enter: para códigos de barras (API call + agregar al carrito)
-            onSubmitted: _onProductScannedOrSearched,
-          ),
-
-          const SizedBox(height: 16),
-
-          // ── Header dinámico ────────────────────────────────────────────
-          if (_searchQuery.isEmpty) ...[
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Acceso Rápido',
-                          style: TextStyle(
-                              fontSize: 18, fontWeight: FontWeight.bold)),
-                      Text(
-                          'Fijados · Más vendidos · Productos por peso · Orden alfabético',
-                          style: TextStyle(fontSize: 12, color: Colors.grey)),
-                    ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isCompact = constraints.maxWidth < 580;
+        return Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Barra de búsqueda con búsqueda server-side vía API
+              TextField(
+                controller: _searchController,
+                focusNode: _searchFocusNode,
+                inputFormatters: [
+                  FilteringTextInputFormatter.deny(
+                    RegExp(r'[\x00-\x1F\u263A\u263B\u2665\u2666\u2663\u2660\u2022\u25D8\u25CB]'),
                   ),
+                  TextInputFormatter.withFunction((oldValue, newValue) {
+                    if (oldValue.text.isEmpty &&
+                        (newValue.text == '+' || newValue.text == '-')) {
+                      final hasCart =
+                          Provider.of<PosProvider>(context, listen: false)
+                              .cart
+                              .isNotEmpty;
+                      if (hasCart) return oldValue;
+                    }
+                    return newValue;
+                  }),
+                ],
+                decoration: InputDecoration(
+                  hintText: isCompact
+                      ? 'Buscar o escanear código... (Enter: Cobrar)'
+                      : 'Escribir nombre o escanear código... (Enter: Cobrar · F1: Atajos)',
+                  prefixIcon: _isSearching
+                      ? const Padding(
+                          padding: EdgeInsets.all(12),
+                          child: SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2)),
+                        )
+                      : const Icon(Icons.search),
+                  suffixIcon: _searchQuery.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.clear),
+                          onPressed: () {
+                            _searchController.clear();
+                            _onPosSearchChanged('');
+                            _searchFocusNode.requestFocus();
+                          },
+                        )
+                      : null,
+                  border:
+                      OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  filled: true,
+                  fillColor: Colors.grey.shade100,
                 ),
-                Tooltip(
-                  message: 'Guía rápida de atajos de teclado',
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(20),
-                    onTap: _showKeyboardShortcutsHelpDialog,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: Colors.blueGrey.shade50,
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: Colors.blueGrey.shade200),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
+                // Búsqueda en tiempo real con debounce → API completa
+                onChanged: _onPosSearchChanged,
+                // Enter: para códigos de barras (API call + agregar al carrito)
+                onSubmitted: _onProductScannedOrSearched,
+              ),
+
+              const SizedBox(height: 16),
+
+              // ── Header dinámico ────────────────────────────────────────────
+              if (_searchQuery.isEmpty) ...[
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Icon(Icons.keyboard_rounded, size: 15, color: Colors.blueGrey.shade700),
-                          const SizedBox(width: 4),
+                          Text('Acceso Rápido',
+                              style: TextStyle(
+                                  fontSize: 18, fontWeight: FontWeight.bold)),
                           Text(
-                            'Atajos (F1)',
-                            style: TextStyle(
-                              fontSize: 11.5,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.blueGrey.shade700,
-                            ),
+                            'Fijados · Más vendidos · Productos por peso · Orden alfabético',
+                            style: TextStyle(fontSize: 12, color: Colors.grey),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ],
                       ),
                     ),
-                  ),
-                ),
-                const SizedBox(width: 4),
-                Consumer<CatalogProvider>(
-                  builder: (context, catalog, child) {
-                    if (catalog.isLoading) {
-                      return const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 16.0),
-                        child: SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2)
+                    Tooltip(
+                      message: 'Guía rápida de atajos de teclado',
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(20),
+                        onTap: _showKeyboardShortcutsHelpDialog,
+                        child: Container(
+                          padding: EdgeInsets.symmetric(
+                              horizontal: isCompact ? 8 : 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: Colors.blueGrey.shade50,
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(color: Colors.blueGrey.shade200),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.keyboard_rounded,
+                                  size: 15, color: Colors.blueGrey.shade700),
+                              const SizedBox(width: 4),
+                              Text(
+                                isCompact ? 'F1' : 'Atajos (F1)',
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.blueGrey.shade700,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                      );
-                    }
-                    return IconButton(
-                      icon: const Icon(Icons.refresh, color: Colors.grey),
-                      tooltip: 'Actualizar catálogo y ofertas',
-                      onPressed: () {
-                        context.read<CatalogProvider>().loadProducts(page: 1, search: '', sortBy: '', perPage: 500);
-                        final offerProv = context.read<OfferProvider>();
-                        final posProv = context.read<PosProvider>();
-                        offerProv.loadActiveOffers().then((_) {
-                          if (mounted) {
-                            posProv.syncActiveOffers(offerProv.activeOffers);
-                          }
-                        });
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Consumer<CatalogProvider>(
+                      builder: (context, catalog, child) {
+                        if (catalog.isLoading) {
+                          return const Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 16.0),
+                            child: SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(strokeWidth: 2)),
+                          );
+                        }
+                        return IconButton(
+                          icon: const Icon(Icons.refresh, color: Colors.grey),
+                          tooltip: 'Actualizar catálogo y ofertas',
+                          onPressed: () {
+                            context.read<CatalogProvider>().loadProducts(page: 1, search: '', sortBy: '', perPage: 500);
+                            final offerProv = context.read<OfferProvider>();
+                            final posProv = context.read<PosProvider>();
+                            offerProv.loadActiveOffers().then((_) {
+                              if (mounted) {
+                                posProv.syncActiveOffers(offerProv.activeOffers);
+                              }
+                            });
+                          },
+                        );
                       },
-                    );
-                  }
+                    ),
+                    const SizedBox(width: 8),
+                    _buildViewModeSelector(context),
+                  ],
                 ),
-                const SizedBox(width: 8),
-                _buildViewModeSelector(context),
+                const SizedBox(height: 8),
+                _buildQuickAccessFilterBar(context, constraints.maxWidth),
+              ] else ...[
+                Row(
+                  children: [
+                    const Icon(Icons.filter_list_rounded, color: Colors.blueAccent),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'Resultados para "${_searchController.text}"',
+                        style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.blueAccent),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
               ],
-            ),
-            const SizedBox(height: 8),
-            _buildQuickAccessFilterBar(context),
-          ] else ...[
-            Row(
-              children: [
-                const Icon(Icons.filter_list_rounded, color: Colors.blueAccent),
-                const SizedBox(width: 6),
-                Text('Resultados para "${_searchController.text}"',
-                    style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.blueAccent)),
-              ],
-            ),
-          ],
           const SizedBox(height: 12),
 
           // ── Grilla dinámica ────────────────────────────────────────────
@@ -3699,6 +3746,8 @@ class _PosScreenState extends State<PosScreen> {
           ),
         ],
       ),
+    );
+      },
     );
   }
 
@@ -3912,7 +3961,7 @@ class _PosScreenState extends State<PosScreen> {
     );
   }
 
-  Widget _buildQuickAccessFilterBar(BuildContext context) {
+  Widget _buildQuickAccessFilterBar(BuildContext context, [double panelWidth = 800]) {
     final localTerminal = context.watch<LocalTerminalProvider>();
     final catalog = context.watch<CatalogProvider>();
     final offerProv = context.watch<OfferProvider>();
@@ -3921,8 +3970,10 @@ class _PosScreenState extends State<PosScreen> {
     final hasTopSellers = catalog.products.any((p) => p.salesCount > 0);
     final hasOffers = catalog.products.any((p) => offerProv.getActiveOfferForProduct(p.id, basePrice: p.sellingPrice) != null);
 
-    // Si el filtro 'top_sellers' está activo pero no hay productos con ventas, volver a 'all'
-    if (_quickAccessFilter == 'top_sellers' && !hasTopSellers) {
+    // Si un filtro dinámico queda sin productos asociados, regresar automáticamente a 'all'
+    if ((_quickAccessFilter == 'top_sellers' && !hasTopSellers) ||
+        (_quickAccessFilter == 'pinned' && !hasPinned) ||
+        (_quickAccessFilter == 'offers' && !hasOffers)) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           setState(() {
@@ -3939,25 +3990,95 @@ class _PosScreenState extends State<PosScreen> {
         categories[catName] = (categories[catName] ?? 0) + 1;
       }
     }
-    final topCategories = categories.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
-    final top6Categories = topCategories.take(6).map((e) => e.key).toList();
+    final allCategories = categories.entries.toList()
+      ..sort((a, b) {
+        final cmp = b.value.compareTo(a.value);
+        return cmp != 0 ? cmp : a.key.toLowerCase().compareTo(b.key.toLowerCase());
+      });
+
+    // Cálculo elástico del espacio horizontal real descontando chips fijos activos
+    final innerWidth = (panelWidth - 32.0).clamp(300.0, 4000.0);
+    final systemChipsWidth = 68.0 + // 'Todos'
+        (hasPinned ? 102.0 : 0.0) +
+        (hasTopSellers ? 130.0 : 0.0) +
+        (hasOffers ? 100.0 : 0.0) +
+        105.0; // '⚖️ Por Peso'
+
+    final maxWithoutMore = ((innerWidth - systemChipsWidth) / 125.0).floor().clamp(1, 8);
+    final int maxDirectCategories = allCategories.length <= maxWithoutMore
+        ? allCategories.length
+        : ((innerWidth - systemChipsWidth - 96.0) / 125.0).floor().clamp(1, 8);
+
+    final activeCategory = _quickAccessFilter.startsWith('cat_')
+        ? _quickAccessFilter.substring(4).trim()
+        : null;
+
+    MapEntry<String, int>? pinnedActiveEntry;
+    final List<MapEntry<String, int>> visibleCategories = [];
+    final List<MapEntry<String, int>> overflowCategories = [];
+
+    if (activeCategory != null) {
+      final activeIndex = allCategories.indexWhere((e) => e.key == activeCategory);
+      if (activeIndex != -1) {
+        // La categoría activa se ancla justo al lado de 'Todos' para jamás desaparecer al agrandar el carrito
+        pinnedActiveEntry = allCategories[activeIndex];
+        final others = allCategories.where((e) => e.key != activeCategory).toList();
+        final remainingSlots = (maxDirectCategories - 1).clamp(0, others.length);
+        visibleCategories.addAll(others.take(remainingSlots));
+        overflowCategories.addAll(others.skip(remainingSlots));
+      } else {
+        visibleCategories.addAll(allCategories.take(maxDirectCategories));
+        overflowCategories.addAll(allCategories.skip(maxDirectCategories));
+      }
+    } else {
+      visibleCategories.addAll(allCategories.take(maxDirectCategories));
+      overflowCategories.addAll(allCategories.skip(maxDirectCategories));
+    }
 
     return SizedBox(
       height: 36,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
+      child: Row(
         children: [
-          _buildFilterChip('Todos', 'all', _quickAccessFilter),
-          if (hasPinned)
-            _buildFilterChip('📌 Fijados', 'pinned', _quickAccessFilter),
-          if (hasTopSellers)
-            _buildFilterChip('🔥 Más Vendidos', 'top_sellers', _quickAccessFilter),
-          if (hasOffers)
-            _buildFilterChip('🏷️ Ofertas', 'offers', _quickAccessFilter),
-          _buildFilterChip('⚖️ Por Peso', 'weight', _quickAccessFilter),
-          for (final cat in top6Categories)
-            _buildFilterChip(cat, 'cat_$cat', _quickAccessFilter),
+          Expanded(
+            child: ScrollConfiguration(
+              behavior: ScrollConfiguration.of(context).copyWith(
+                dragDevices: {
+                  PointerDeviceKind.touch,
+                  PointerDeviceKind.mouse,
+                  PointerDeviceKind.trackpad,
+                },
+              ),
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                children: [
+                  _buildFilterChip('Todos', 'all', _quickAccessFilter),
+                  if (pinnedActiveEntry != null)
+                    _buildCategoryChip(
+                      pinnedActiveEntry.key,
+                      pinnedActiveEntry.value,
+                      isSelected: true,
+                    ),
+                  if (hasPinned)
+                    _buildFilterChip('📌 Fijados', 'pinned', _quickAccessFilter),
+                  if (hasTopSellers)
+                    _buildFilterChip('🔥 Más Vendidos', 'top_sellers', _quickAccessFilter),
+                  if (hasOffers)
+                    _buildFilterChip('🏷️ Ofertas', 'offers', _quickAccessFilter),
+                  _buildFilterChip('⚖️ Por Peso', 'weight', _quickAccessFilter),
+                  for (final catEntry in visibleCategories)
+                    _buildCategoryChip(
+                      catEntry.key,
+                      catEntry.value,
+                      isSelected: _quickAccessFilter == 'cat_${catEntry.key}',
+                    ),
+                ],
+              ),
+            ),
+          ),
+          if (overflowCategories.isNotEmpty) ...[
+            const SizedBox(width: 4),
+            _buildMoreCategoriesMenu(overflowCategories, activeCategory),
+          ],
         ],
       ),
     );
@@ -3968,7 +4089,7 @@ class _PosScreenState extends State<PosScreen> {
     return Padding(
       padding: const EdgeInsets.only(right: 8),
       child: FilterChip(
-        label: Text(label, style: TextStyle(fontSize: 12)),
+        label: Text(label, style: const TextStyle(fontSize: 12)),
         selected: isSelected,
         onSelected: (selected) {
           setState(() {
@@ -3987,6 +4108,153 @@ class _PosScreenState extends State<PosScreen> {
             color: isSelected ? Colors.blueAccent : Colors.grey.shade300,
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildCategoryChip(String catName, int count, {required bool isSelected}) {
+    final color = PosQuickAccessCatalogView.resolveCategoryAccent(catName);
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: FilterChip(
+        avatar: Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+          ),
+        ),
+        showCheckmark: false,
+        label: Text('$catName ($count)', style: const TextStyle(fontSize: 12)),
+        selected: isSelected,
+        deleteIcon: isSelected ? const Icon(Icons.close_rounded, size: 14) : null,
+        onDeleted: isSelected
+            ? () {
+                setState(() {
+                  _quickAccessFilter = 'all';
+                });
+                _searchFocusNode.requestFocus();
+              }
+            : null,
+        onSelected: (selected) {
+          setState(() {
+            _quickAccessFilter = selected ? 'cat_$catName' : 'all';
+          });
+          _searchFocusNode.requestFocus();
+        },
+        selectedColor: color.withAlpha(35),
+        checkmarkColor: color,
+        labelStyle: TextStyle(
+          color: isSelected ? color : Colors.grey.shade700,
+          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+        ),
+        shape: StadiumBorder(
+          side: BorderSide(
+            color: isSelected ? color : Colors.grey.shade300,
+            width: isSelected ? 1.4 : 1.0,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMoreCategoriesMenu(List<MapEntry<String, int>> overflowCategories, String? activeCategory) {
+    final isAnyOverflowSelected = overflowCategories.any((e) => e.key == activeCategory);
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: PopupMenuButton<String>(
+        tooltip: 'Ver todas las categorías',
+        onSelected: (cat) {
+          setState(() {
+            _quickAccessFilter = 'cat_$cat';
+          });
+          _searchFocusNode.requestFocus();
+        },
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: isAnyOverflowSelected ? Colors.blue.withAlpha(25) : Colors.grey.shade100,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: isAnyOverflowSelected ? Colors.blueAccent : Colors.grey.shade300,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.category_outlined,
+                size: 14,
+                color: isAnyOverflowSelected ? Colors.blueAccent : Colors.grey.shade700,
+              ),
+              const SizedBox(width: 5),
+              Text(
+                'Más (${overflowCategories.length})',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: isAnyOverflowSelected ? FontWeight.bold : FontWeight.normal,
+                  color: isAnyOverflowSelected ? Colors.blueAccent : Colors.grey.shade700,
+                ),
+              ),
+              const SizedBox(width: 2),
+              Icon(
+                Icons.arrow_drop_down,
+                size: 16,
+                color: isAnyOverflowSelected ? Colors.blueAccent : Colors.grey.shade700,
+              ),
+            ],
+          ),
+        ),
+        itemBuilder: (context) => overflowCategories.map((entry) {
+          final catColor = PosQuickAccessCatalogView.resolveCategoryAccent(entry.key);
+          final isCurrent = entry.key == activeCategory;
+          return PopupMenuItem<String>(
+            value: entry.key,
+            height: 38,
+            child: Row(
+              children: [
+                Container(
+                  width: 10,
+                  height: 10,
+                  decoration: BoxDecoration(
+                    color: catColor,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    entry.key,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
+                      color: isCurrent ? catColor : Colors.black87,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    '${entry.value}',
+                    style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                  ),
+                ),
+                if (isCurrent) ...[
+                  const SizedBox(width: 6),
+                  Icon(Icons.check, size: 16, color: catColor),
+                ],
+              ],
+            ),
+          );
+        }).toList(),
       ),
     );
   }

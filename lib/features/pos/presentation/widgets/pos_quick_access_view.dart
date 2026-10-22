@@ -55,33 +55,50 @@ class PosQuickAccessCatalogView extends StatelessWidget {
     this.showKeyboardShortcuts = false,
   });
 
-  /// Paleta de 6 tonos sobrios para categorías (hash determinístico).
-  static const List<Color> _categoryPalette = [
-    Color(0xFF3F51B5), // Indigo
-    Color(0xFF009688), // Teal
-    Color(0xFF2196F3), // Blue
-    Color(0xFF673AB7), // DeepPurple
-    Color(0xFF00BCD4), // Cyan
-    Color(0xFF607D8B), // BlueGrey
+  /// Paleta curada de 12 tonos sobrios de alto contraste para categorías (hash determinístico).
+  static const List<Color> categoryPalette = [
+    Color(0xFF3949AB), // Índigo Real
+    Color(0xFF00897B), // Teal / Esmeralda Azulado
+    Color(0xFF8E24AA), // Púrpura Imperial
+    Color(0xFFC62828), // Rubí / Bordó
+    Color(0xFF1565C0), // Azul Cobalto
+    Color(0xFF2E7D32), // Verde Bosque
+    Color(0xFFAD1457), // Ciruela / Magenta Oscuro
+    Color(0xFF6D4C41), // Cobre / Cacao
+    Color(0xFF00838F), // Cian Profundo
+    Color(0xFF4527A0), // Violeta Profundo
+    Color(0xFFBF360C), // Terracota
+    Color(0xFF455A64), // Pizarra Ejecutivo
   ];
 
-  /// Devuelve un color de acento determinístico para tarjetas sin foto.
-  /// - Productos pesables → Naranja
-  /// - Categorías → Hash sobre paleta curada de 6 tonos
-  /// - Fallback → AzulGrisáceo
-  Color _resolveSemanticAccent(Product product) {
-    if (product.isSoldByWeight) {
+  /// Devuelve un color de acento determinístico para una categoría o producto pesable.
+  /// - Productos pesables → Naranja Balanza (Colors.orange.shade700)
+  /// - Categorías → Hash multiplicativo DJB2 sobre paleta curada de 12 tonos
+  /// - Fallback → AzulGrisáceo (Colors.blueGrey.shade600)
+  static Color resolveCategoryAccent(String? categoryName, {bool isSoldByWeight = false}) {
+    if (isSoldByWeight) {
       return Colors.orange.shade700;
     }
 
-    if (product.category?.name != null && product.category!.name.isNotEmpty) {
-      final categoryName = product.category!.name.toLowerCase();
-      final hash = categoryName.codeUnits.fold<int>(0, (sum, unit) => sum + unit);
-      final index = hash % _categoryPalette.length;
-      return _categoryPalette[index];
+    if (categoryName != null && categoryName.trim().isNotEmpty) {
+      final normalized = categoryName.trim().toLowerCase();
+      // DJB2 ligero para excelente dispersión y evitar colisiones simples
+      var hash = 5381;
+      for (final unit in normalized.codeUnits) {
+        hash = (((hash << 5) + hash) + unit) & 0x7FFFFFFF;
+      }
+      final index = hash % categoryPalette.length;
+      return categoryPalette[index];
     }
 
     return Colors.blueGrey.shade600;
+  }
+
+  Color _resolveSemanticAccent(Product product) {
+    return resolveCategoryAccent(
+      product.category?.name,
+      isSoldByWeight: product.isSoldByWeight,
+    );
   }
   /// Envuelve cualquier ítem del catálogo con un tooltip limpio que muestra únicamente
   /// el nombre completo del producto por encima de la tarjeta (sin tapar el botón -).

@@ -200,8 +200,8 @@ class _QuickTileState extends State<_QuickTile> {
             borderRadius: BorderRadius.circular(8),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 150),
-              height: 56,
-              padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 3),
+              height: 48,
+              padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
               decoration: BoxDecoration(
                 color: _isHovered
                     ? widget.color.withValues(alpha: 0.16)
