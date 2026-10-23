@@ -50,7 +50,11 @@ class CartItem {
         calculated = baseVolumetric * customFactor;
         break;
       case PriceTier.base:
-        calculated = baseVolumetric;
+        if ((customFactor - 1.0).abs() > 0.0001) {
+          calculated = baseVolumetric * customFactor;
+        } else {
+          calculated = baseVolumetric;
+        }
         break;
     }
 
@@ -124,4 +128,3 @@ class CartItem {
     }
   }
 }
-

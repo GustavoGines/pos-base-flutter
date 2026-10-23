@@ -1,9 +1,12 @@
 import 'dart:convert';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
 import 'package:frontend_desktop/core/network/api_client.dart';
+import 'package:frontend_desktop/core/presentation/widgets/thermal_receipt_widget.dart';
+import 'package:frontend_desktop/features/customers/models/customer_model.dart';
 import 'package:frontend_desktop/features/sales_history/domain/entities/sale_record.dart';
 import 'package:frontend_desktop/features/quotes/data/quote_repository.dart';
 import 'package:frontend_desktop/features/cash_movements/models/cash_movement_model.dart';
@@ -294,6 +297,141 @@ void main() {
       );
       expect(okNonFiscal, isTrue);
       expect(posProvider.lastElectronicInvoice, isNull);
+    });
+
+    testWidgets('F2-01 y FN-F2-03: ThermalReceiptWidget usa CartItem.unitPrice y descuenta IIBB del SUBTOTAL', (tester) async {
+      final product = Product(
+        id: 10,
+        name: 'Pintura Latex 20L',
+        internalCode: '00200',
+        costPrice: 500.0,
+        sellingPrice: 1000.0,
+        priceWholesale: 800.0,
+        stock: 20,
+        active: true,
+        isSoldByWeight: false,
+      );
+
+      final cartItem = CartItem(
+        product: product,
+        quantity: 2,
+        activeTier: PriceTier.wholesale,
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: ThermalReceiptWidget(
+                items: [cartItem],
+                total: 1650.0, // 1600 items + 50 IIBB
+                iibbPerceptionAmount: 50.0,
+                iibbPerceptionRate: 3.1,
+                payments: const [
+                  {'name': 'EFECTIVO', 'amount': 1650.0}
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+
+      // Debe renderizar $800 (unitPrice mayorista), NO $1.000 (sellingPrice)
+      expect(find.textContaining('2 un x \$800'), findsOneWidget);
+      expect(find.textContaining('2 un x \$1.000'), findsNothing);
+      // El SUBTOTAL debe ser 1650 - 50 (IIBB) = $1.600
+      expect(find.text('\$1.600'), findsWidgets);
+    });
+
+    test('F2-05 y Compatibilidad v1.8.5: recallOrderToCart preserva recargos reales, limpia _currentCustomFactor al volver a base y vincula customer_id plano de v1.8.5', () {
+      SharedPreferences.setMockInitialValues({});
+      final mockClient = MockClient((_) async => http.Response('[]', 200));
+      final ds = PosRemoteDataSourceImpl(baseUrl: 'http://localhost/api', client: mockClient);
+      final repo = PosRepositoryImpl(remoteDataSource: ds);
+      final posProvider = PosProvider(
+        processSaleUseCase: ProcessSaleUseCase(repo),
+        searchProductsUseCase: SearchProductsUseCase(repo),
+        repository: repo,
+        remoteDataSource: ds,
+      );
+
+      // Simular que el cajero usó previamente una lista custom (+15%) y luego volvió a base
+      posProvider.setPriceTier(PriceTier.custom, customFactor: 1.15, customLabel: 'Especial');
+      posProvider.setPriceTier(PriceTier.base);
+      expect(posProvider.currentCustomFactor, 1.0);
+
+      // Caso A: Payload estilo v1.8.5 (sin selling_price en product, sin objeto customer anidado, solo customer_id)
+      final v185PendingSale = {
+        'id': 77,
+        'price_list': null,
+        'customer_id': 42,
+        'shipping_cost': '0',
+        'user': {'id': 2, 'name': 'Vendedor Mostrador'},
+        'items': [
+          {
+            'product_id': 5,
+            'product_name': 'Cemento 50kg',
+            'quantity': '2',
+            'unit_price': '1000.00',
+            'subtotal': '2000.00',
+            'product': {
+              'id': 5,
+              'name': 'Cemento 50kg',
+              'internal_code': '00005',
+              'stock': '50',
+              'is_sold_by_weight': false,
+              // En v1.8.5 selling_price no viene en GET /api/sales/pending
+            },
+          }
+        ],
+      };
+
+      final availableCustomers = <Customer>[
+        Customer.fromJson({
+          'id': 42,
+          'name': 'Constructora Sur SRL',
+          'document_number': '30712345678',
+          'balance': 0,
+        }),
+      ];
+
+      posProvider.recallOrderToCart(v185PendingSale, availableCustomers: availableCustomers);
+      expect(posProvider.cart.length, 1);
+      // En v1.8.5 NO debe multiplicar por 1.15 residual; debe mantener exactamente $1000.00
+      expect(posProvider.cart.first.unitPrice, 1000.0);
+      expect(posProvider.cart.first.subtotal, 2000.0);
+      // Debe haber vinculado el cliente #42 desde availableCustomers aunque sale['customer'] fuera null
+      expect(posProvider.selectedCustomer?.id, 42);
+      expect(posProvider.selectedCustomer?.name, 'Constructora Sur SRL');
+      expect(posProvider.recalledUserName, 'Vendedor Mostrador');
+
+      // Caso B: Payload v2.0.2 donde la orden en espera en lista Minorista tenía un precio pactado mayor ($1200 vs $1000 actual)
+      final v202PendingSaleWithSurcharge = {
+        'id': 78,
+        'price_list': 'Minorista',
+        'shipping_cost': '0',
+        'items': [
+          {
+            'product_id': 5,
+            'product_name': 'Cemento 50kg',
+            'quantity': '1',
+            'unit_price': '1200.00',
+            'subtotal': '1200.00',
+            'product': {
+              'id': 5,
+              'name': 'Cemento 50kg',
+              'internal_code': '00005',
+              'selling_price': '1000.00',
+              'stock': '50',
+              'is_sold_by_weight': false,
+            },
+          }
+        ],
+      };
+
+      posProvider.recallOrderToCart(v202PendingSaleWithSurcharge);
+      expect(posProvider.cart.first.unitPrice, 1200.0);
+      expect(posProvider.cart.first.subtotal, 1200.0);
     });
   });
 }

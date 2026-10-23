@@ -223,7 +223,10 @@ class PosProvider with ChangeNotifier {
     if (cardFactor != null) _currentCardFactor = cardFactor;
     if (customFactor != null) _currentCustomFactor = customFactor;
     if (customLabel != null) _customTierLabel = customLabel;
-    if (tier != PriceTier.custom) _customTierLabel = null;
+    if (tier != PriceTier.custom) {
+      _customTierLabel = null;
+      _currentCustomFactor = 1.0;
+    }
     _activeTier = tier;
 
     // Propagar a todos los ítems del carrito
@@ -818,6 +821,14 @@ class PosProvider with ChangeNotifier {
     for (var item in quote.items) {
       if (item.product != null) {
         final prod = item.product!;
+        double calculatedCustomFactor = _activeTier == PriceTier.custom ? _currentCustomFactor : 1.0;
+        if (item.unitPrice > 0 && prod.sellingPrice > 0 && (item.unitPrice - prod.sellingPrice).abs() > 0.001) {
+          if (_activeTier == PriceTier.base && item.unitPrice > prod.sellingPrice) {
+            calculatedCustomFactor = item.unitPrice / prod.sellingPrice;
+          } else if (_activeTier == PriceTier.custom) {
+            calculatedCustomFactor = item.unitPrice / prod.sellingPrice;
+          }
+        }
         // Si el precio pactado en el presupuesto es menor al precio de lista actual,
         // congelamos ese precio usando promotionalPrice (sin label/periodType para no mostrarlo como "Oferta")
         final hasDiscountedPrice = item.unitPrice < prod.sellingPrice && item.unitPrice > 0;
@@ -827,7 +838,7 @@ class PosProvider with ChangeNotifier {
           activeTier: _activeTier,
           wholesaleFactor: _currentWholesaleFactor,
           cardFactor: _currentCardFactor,
-          customFactor: _currentCustomFactor,
+          customFactor: calculatedCustomFactor,
           customTierLabel: _customTierLabel,
           promotionalPrice: hasDiscountedPrice ? item.unitPrice : null,
           promotionalLabel: null, // Sin label para no mostrar como "Oferta"
@@ -864,7 +875,7 @@ class PosProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  void recallOrderToCart(Map<String, dynamic> sale) {
+  void recallOrderToCart(Map<String, dynamic> sale, {List<Customer>? availableCustomers}) {
     clearCart();
     // Use un temporizador mínimo o asegure que se haya limpiado el carrito (ya es sincrónico).
 
@@ -905,7 +916,8 @@ class PosProvider with ChangeNotifier {
       );
 
       // Calcular el factor real si el precio pactado difiere del de lista (descuento o recargo)
-      double calculatedCustomFactor = _currentCustomFactor;
+      // En v1.8.5 prod['selling_price'] es null, por lo que originalSellingPrice == unitPriceCharged y el factor permanece 1.0.
+      double calculatedCustomFactor = _activeTier == PriceTier.custom ? _currentCustomFactor : 1.0;
       if (unitPriceCharged > 0 && originalSellingPrice > 0 && (unitPriceCharged - originalSellingPrice).abs() > 0.001) {
         calculatedCustomFactor = unitPriceCharged / originalSellingPrice;
       }
@@ -933,10 +945,19 @@ class PosProvider with ChangeNotifier {
     _shippingCost = double.tryParse(sale['shipping_cost']?.toString() ?? '0') ?? 0.0;
     _recalledUserName = sale['user']?['name']?.toString();
 
-    // Restaurar cliente si estaba asignado a la orden en espera
+    // Restaurar cliente si estaba asignado a la orden en espera (soporta objeto anidado v2.0+ y customer_id plano v1.8.5)
     if (sale['customer'] != null && sale['customer'] is Map<String, dynamic>) {
       _selectedCustomer = Customer.fromJson(sale['customer'] as Map<String, dynamic>);
       _lastSelectedCustomer = _selectedCustomer;
+    } else if (sale['customer_id'] != null && availableCustomers != null) {
+      final cid = (sale['customer_id'] as num?)?.toInt() ?? int.tryParse(sale['customer_id'].toString());
+      if (cid != null) {
+        final match = availableCustomers.where((c) => c.id == cid).toList();
+        if (match.isNotEmpty) {
+          _selectedCustomer = match.first;
+          _lastSelectedCustomer = _selectedCustomer;
+        }
+      }
     }
 
     // Al recuperar, mantenemos el despacho desactivado por defecto para que el cajero
@@ -1028,6 +1049,8 @@ class PosProvider with ChangeNotifier {
 
     final cartSnapshot = List<CartItem>.from(_cart);
     final totalSnapshot = cartTotal;
+    final recalledUserSnapshot = _recalledUserName;
+    final customerSnapshot = _selectedCustomer;
     // Solo aplicamos flete al comprobante si se requiere despacho y no es entrega inmediata
     final shippingCostSnapshot = (requiresDispatch && fulfillmentStatus == 'pending') ? _shippingCost : 0.0;
     final effectivePerceptionAmount = iibbPerceptionAmount ?? this.iibbPerceptionAmount;
@@ -1205,10 +1228,16 @@ class PosProvider with ChangeNotifier {
               'tendered_amount': tenderedAmount,
               'change_amount': changeAmount,
               'payments': resolvedPayments,
-              'customer': {'name': 'Consumidor Final'}, 
-              'customer_name': 'Consumidor Final',
+              'customer': {
+                'name': customerSnapshot?.name ?? 'Consumidor Final',
+                if (customerSnapshot?.documentNumber != null)
+                  'document_number': customerSnapshot!.documentNumber,
+                if (customerSnapshot?.taxCondition != null)
+                  'tax_condition': customerSnapshot!.taxCondition,
+              },
+              'customer_name': customerSnapshot?.name ?? 'Consumidor Final',
               'electronic_invoice': _lastElectronicInvoice,
-              'user': {'name': _recalledUserName ?? userName},
+              'user': {'name': recalledUserSnapshot ?? userName},
               'cashier': {'name': userName},
             };
 
@@ -1375,16 +1404,18 @@ class PosProvider with ChangeNotifier {
               paymentDetails: resolvedPayments,
               receiptNumber: extractedSaleId,
               deliveryNoteNumber: _lastDeliveryNote!['id']?.toString(),
-              userName: _recalledUserName ?? userName,
+              userName: recalledUserSnapshot ?? userName,
               cashierName: userName,
               surchargeAmount: totalSurcharge,
               tenderedAmount: tenderedAmount,
               changeAmount: changeAmount,
               customerName: _lastDeliveryNote!['sale']?['customer']?['name']
                       ?.toString() ??
-                  _lastDeliveryNote!['sale']?['customer_name']?.toString(),
+                  _lastDeliveryNote!['sale']?['customer_name']?.toString() ??
+                  customerSnapshot?.name,
               paperSizeOverride:
                   localTerminal.printerFormat == 'thermal_58' ? '58mm' : '80mm',
+              iibbPerceptionAmount: effectivePerceptionAmount,
             );
           } else {
             await _activePrinter.printSaleTicket(
@@ -1396,7 +1427,7 @@ class PosProvider with ChangeNotifier {
                   localTerminal.printerFormat == 'thermal_58' ? '58mm' : '80mm',
               paymentDetails: resolvedPayments,
               receiptNumber: extractedSaleId,
-              userName: _recalledUserName ?? userName,
+              userName: recalledUserSnapshot ?? userName,
               cashierName: userName,
               surchargeAmount: totalSurcharge,
               tenderedAmount: tenderedAmount,
@@ -1820,6 +1851,7 @@ class PosProvider with ChangeNotifier {
                 surchargeAmount: totalSurcharge,
                 tenderedAmount: tenderedAmount,
                 changeAmount: changeAmount,
+                shippingCost: shippingCost,
                 iibbPerceptionAmount: iibbPerceptionAmount ?? 0.0,
               );
             }

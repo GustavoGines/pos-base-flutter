@@ -1519,7 +1519,10 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
           // ──── Sección de pago (igual que el ticket real) ────
           if (isComplexPayment) ...[
             TicketLine('SUBTOTAL:',
-                rightText: '\$${_baseTotal.toCurrency()}', isBold: true),
+                rightText: '\$${(_baseTotal - _currentIibbAmount).toCurrency()}', isBold: true),
+            if (_currentIibbAmount > 0.01)
+              TicketLine('PERC. IIBB:',
+                  rightText: '\$${_currentIibbAmount.toCurrency()}'),
             const TicketLine.hr(),
             // Un renglón por cada método de pago
             ..._lines.map((l) => TicketLine(
@@ -1546,6 +1549,12 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                   rightText: '\$${_change.abs().toCurrency()}', isBold: true),
           ] else ...[
             // Venta simple: un pago, sin recargos
+            if (_shippingCostToApply > 0.01 || _currentIibbAmount > 0.01)
+              TicketLine('SUBTOTAL:',
+                  rightText: '\$${(_baseTotal - _currentIibbAmount).toCurrency()}'),
+            if (_currentIibbAmount > 0.01)
+              TicketLine('PERC. IIBB:',
+                  rightText: '\$${_currentIibbAmount.toCurrency()}'),
             if (_shippingCostToApply > 0.01)
               TicketLine('FLETE / ENVÍO:',
                   rightText: '\$${_shippingCostToApply.toCurrency()}'),
@@ -1695,6 +1704,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
           userId: userId,
           customerId: _selectedCustomer?.id,
           showPreview: _showPreview,
+          shippingCost: _shippingCostToApply,
           checkDetails: checkDetailsPayload,
         );
       } else {
@@ -2729,16 +2739,45 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       return Dialog(
         child: Container(
           padding: const EdgeInsets.all(32),
-          child: const Column(
+          child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              CircularProgressIndicator(),
-              SizedBox(height: 16),
-              Text("Cargando métodos de pago..."),
+              const CircularProgressIndicator(),
+              const SizedBox(height: 16),
+              const Text("Cargando métodos de pago..."),
+              const SizedBox(height: 20),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(false),
+                    child: const Text("Cerrar"),
+                  ),
+                  const SizedBox(width: 12),
+                  ElevatedButton.icon(
+                    onPressed: () async {
+                      await provider.loadPaymentMethods();
+                      if (mounted && provider.paymentMethods.isNotEmpty && _lines.isEmpty) {
+                        setState(() => _initFirstLine());
+                      }
+                    },
+                    icon: const Icon(Icons.refresh, size: 18),
+                    label: const Text("Reintentar"),
+                  ),
+                ],
+              ),
             ],
           ),
         ),
       );
+    }
+
+    if (_lines.isEmpty && provider.paymentMethods.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _lines.isEmpty && provider.paymentMethods.isNotEmpty) {
+          setState(() => _initFirstLine());
+        }
+      });
     }
 
     return PopScope(

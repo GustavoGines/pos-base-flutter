@@ -1141,104 +1141,108 @@ class _PosScreenState extends State<PosScreen> {
   }
   void _showWeightModal(Product product, PosProvider provider,
       {double? promotionalPrice, String? promotionalLabel, String? promotionalPeriodType}) {
-    final weightController = TextEditingController();
-
     showDialog(
         context: context,
         barrierDismissible: false,
         builder: (context) {
-          return ValueListenableBuilder<TextEditingValue>(
-              valueListenable: weightController,
-              builder: (context, value, child) {
-                final isValid = value.text.trim().isNotEmpty &&
-                    double.tryParse(value.text.replaceAll(',', '.')) != null &&
-                    double.parse(value.text.replaceAll(',', '.')) > 0;
-                return AlertDialog(
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(20)),
-                  title: Text('Ingresar Peso (Kg) - ${product.name}',
-                      style: const TextStyle(
-                          fontWeight: FontWeight.bold, fontSize: 18)),
-                  content: Padding(
-                    padding: const EdgeInsets.only(top: 8.0),
-                    child: TextField(
-                      controller: weightController,
-                      autofocus: true,
-                      keyboardType:
-                          const TextInputType.numberWithOptions(decimal: true),
-                      decoration: InputDecoration(
-                        labelText: 'Peso Exacto (Ej: 1.500)',
-                        hintText: '0.000',
-                        border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12)),
-                        suffixText: 'KG',
-                        helperText: 'Ejemplo: 0.5 = 500 gramos',
-                      ),
-                      onSubmitted: (val) {
-                        if (isValid) {
-                          _processWeight(val, product, provider, context,
-                              promotionalPrice: promotionalPrice,
-                              promotionalLabel: promotionalLabel,
-                              promotionalPeriodType: promotionalPeriodType);
-                        }
-                      },
-                    ),
-                  ),
-                  actionsPadding:
-                      const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                  actions: [
-                    Consumer<LocalTerminalProvider>(
-                      builder: (ctx, localTerminal, _) {
-                        final comPort = localTerminal.scaleComPort;
-                        if (comPort.isEmpty) {
-                          return const SizedBox.shrink(); // Sin balanza local
-                        }
-                        return OutlinedButton.icon(
-                          onPressed: () =>
-                              _readWeightFromScale(comPort, weightController),
-                          icon: const Icon(Icons.scale_rounded,
-                              color: Colors.blueGrey),
-                          label: const Text('Leer Balanza'),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.blueGrey,
-                            side: const BorderSide(color: Colors.blueGrey),
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8)),
+          return _ManagedControllerScope(
+            builder: (context, weightController, isDialogMounted) {
+              return ValueListenableBuilder<TextEditingValue>(
+                  valueListenable: weightController,
+                  builder: (context, value, child) {
+                    final isValid = value.text.trim().isNotEmpty &&
+                        double.tryParse(value.text.replaceAll(',', '.')) != null &&
+                        double.parse(value.text.replaceAll(',', '.')) > 0;
+                    return AlertDialog(
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20)),
+                      title: Text('Ingresar Peso (Kg) - ${product.name}',
+                          style: const TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 18)),
+                      content: Padding(
+                        padding: const EdgeInsets.only(top: 8.0),
+                        child: TextField(
+                          controller: weightController,
+                          autofocus: true,
+                          keyboardType:
+                              const TextInputType.numberWithOptions(decimal: true),
+                          decoration: InputDecoration(
+                            labelText: 'Peso Exacto (Ej: 1.500)',
+                            hintText: '0.000',
+                            border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12)),
+                            suffixText: 'KG',
+                            helperText: 'Ejemplo: 0.5 = 500 gramos',
                           ),
-                        );
-                      },
-                    ),
-                    TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text('Cancelar',
-                          style: TextStyle(color: Colors.grey)),
-                    ),
-                    FilledButton(
-                      onPressed: isValid
-                          ? () {
-                              _processWeight(weightController.text, product,
-                                  provider, context,
+                          onSubmitted: (val) {
+                            if (isValid) {
+                              _processWeight(val, product, provider, context,
                                   promotionalPrice: promotionalPrice,
                                   promotionalLabel: promotionalLabel,
                                   promotionalPeriodType: promotionalPeriodType);
                             }
-                          : null,
-                      style: FilledButton.styleFrom(
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8)),
+                          },
+                        ),
                       ),
-                      child: const Text('Agregar'),
-                    )
-                  ],
-                );
-              });
+                      actionsPadding:
+                          const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                      actions: [
+                        Consumer<LocalTerminalProvider>(
+                          builder: (ctx, localTerminal, _) {
+                            final comPort = localTerminal.scaleComPort;
+                            if (comPort.isEmpty) {
+                              return const SizedBox.shrink(); // Sin balanza local
+                            }
+                            return OutlinedButton.icon(
+                              onPressed: () => _readWeightFromScale(
+                                  comPort, weightController,
+                                  isDialogMounted: isDialogMounted),
+                              icon: const Icon(Icons.scale_rounded,
+                                  color: Colors.blueGrey),
+                              label: const Text('Leer Balanza'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.blueGrey,
+                                side: const BorderSide(color: Colors.blueGrey),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8)),
+                              ),
+                            );
+                          },
+                        ),
+                        TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text('Cancelar',
+                              style: TextStyle(color: Colors.grey)),
+                        ),
+                        FilledButton(
+                          onPressed: isValid
+                              ? () {
+                                  _processWeight(weightController.text, product,
+                                      provider, context,
+                                      promotionalPrice: promotionalPrice,
+                                      promotionalLabel: promotionalLabel,
+                                      promotionalPeriodType: promotionalPeriodType);
+                                }
+                              : null,
+                          style: FilledButton.styleFrom(
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8)),
+                          ),
+                          child: const Text('Agregar'),
+                        )
+                      ],
+                    );
+                  });
+            },
+          );
         }).then((_) {
       _searchFocusNode.requestFocus();
     });
   }
 
   void _readWeightFromScale(
-      String comPort, TextEditingController controller) async {
+      String comPort, TextEditingController controller,
+      {bool Function()? isDialogMounted}) async {
     if (comPort.isEmpty) return;
 
     if (mounted) {
@@ -1302,7 +1306,7 @@ class _PosScreenState extends State<PosScreen> {
           String weightStr = matches.last.group(0)!;
           weightStr = weightStr.replaceAll(',', '.');
 
-          if (mounted) {
+          if (mounted && (isDialogMounted?.call() ?? true)) {
             controller.text = weightStr;
             SnackBarService.success(context, 'Lectura exitosa: $weightStr Kg');
           }
@@ -1346,103 +1350,108 @@ class _PosScreenState extends State<PosScreen> {
   }
 
   void _showEditCartItemModal(dynamic cartItem, PosProvider provider) {
-    final qtyController = TextEditingController(
-        text: cartItem.product.isSoldByWeight
-            ? cartItem.quantity.toQty()
-            : cartItem.quantity.toInt().toString());
+    final initialText = cartItem.product.isSoldByWeight
+        ? cartItem.quantity.toQty()
+        : cartItem.quantity.toInt().toString();
 
     showDialog(
         context: context,
         barrierDismissible: false,
         builder: (context) {
-          return ValueListenableBuilder<TextEditingValue>(
-              valueListenable: qtyController,
-              builder: (context, value, child) {
-                final isValid = value.text.trim().isNotEmpty &&
-                    double.tryParse(value.text.replaceAll(',', '.')) != null &&
-                    double.parse(value.text.replaceAll(',', '.')) > 0;
-                return AlertDialog(
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(20)),
-                  title: Text('Editar Cantidad - ${cartItem.product.name}',
-                      style: const TextStyle(
-                          fontWeight: FontWeight.bold, fontSize: 18)),
-                  content: Padding(
-                    padding: const EdgeInsets.only(top: 8.0),
-                    child: TextField(
-                      controller: qtyController,
-                      autofocus: true,
-                      keyboardType: cartItem.product.isSoldByWeight
-                          ? const TextInputType.numberWithOptions(decimal: true)
-                          : TextInputType.number,
-                      decoration: InputDecoration(
-                        labelText: cartItem.product.isSoldByWeight
-                            ? 'Peso Exacto (Ej: 1.500)'
-                            : 'Cantidad (Unidades)',
-                        hintText:
-                            cartItem.product.isSoldByWeight ? '0.000' : '1',
-                        border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12)),
-                        suffixText:
-                            cartItem.product.isSoldByWeight ? 'KG' : 'UN',
-                        helperText: cartItem.product.isSoldByWeight
-                            ? 'Ejemplo: 0.5 = 500 gramos'
-                            : null,
-                      ),
-                      onSubmitted: (val) {
-                        if (isValid) {
-                          _processCartItemEdit(
-                              val, cartItem, provider, context);
-                        }
-                      },
-                    ),
-                  ),
-                  actionsPadding:
-                      const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                  actions: [
-                    if (cartItem.product.isSoldByWeight)
-                      Consumer<LocalTerminalProvider>(
-                        builder: (ctx, localTerminal, _) {
-                          final comPort = localTerminal.scaleComPort;
-                          if (comPort.isEmpty) {
-                            return const SizedBox.shrink(); // Sin balanza local
-                          }
-                          return OutlinedButton.icon(
-                            onPressed: () =>
-                                _readWeightFromScale(comPort, qtyController),
-                            icon: const Icon(Icons.scale_rounded,
-                                color: Colors.blueGrey),
-                            label: const Text('Leer Balanza'),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: Colors.blueGrey,
-                              side: const BorderSide(color: Colors.blueGrey),
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8)),
-                            ),
-                          );
-                        },
-                      ),
-                    TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text('Cancelar',
-                          style: TextStyle(color: Colors.grey)),
-                    ),
-                    FilledButton(
-                      onPressed: isValid
-                          ? () {
-                              _processCartItemEdit(qtyController.text, cartItem,
-                                  provider, context);
+          return _ManagedControllerScope(
+            initialText: initialText,
+            builder: (context, qtyController, isDialogMounted) {
+              return ValueListenableBuilder<TextEditingValue>(
+                  valueListenable: qtyController,
+                  builder: (context, value, child) {
+                    final isValid = value.text.trim().isNotEmpty &&
+                        double.tryParse(value.text.replaceAll(',', '.')) != null &&
+                        double.parse(value.text.replaceAll(',', '.')) > 0;
+                    return AlertDialog(
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20)),
+                      title: Text('Editar Cantidad - ${cartItem.product.name}',
+                          style: const TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 18)),
+                      content: Padding(
+                        padding: const EdgeInsets.only(top: 8.0),
+                        child: TextField(
+                          controller: qtyController,
+                          autofocus: true,
+                          keyboardType: cartItem.product.isSoldByWeight
+                              ? const TextInputType.numberWithOptions(decimal: true)
+                              : TextInputType.number,
+                          decoration: InputDecoration(
+                            labelText: cartItem.product.isSoldByWeight
+                                ? 'Peso Exacto (Ej: 1.500)'
+                                : 'Cantidad (Unidades)',
+                            hintText:
+                                cartItem.product.isSoldByWeight ? '0.000' : '1',
+                            border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12)),
+                            suffixText:
+                                cartItem.product.isSoldByWeight ? 'KG' : 'UN',
+                            helperText: cartItem.product.isSoldByWeight
+                                ? 'Ejemplo: 0.5 = 500 gramos'
+                                : null,
+                          ),
+                          onSubmitted: (val) {
+                            if (isValid) {
+                              _processCartItemEdit(
+                                  val, cartItem, provider, context);
                             }
-                          : null,
-                      style: FilledButton.styleFrom(
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8)),
+                          },
+                        ),
                       ),
-                      child: const Text('Actualizar'),
-                    )
-                  ],
-                );
-              });
+                      actionsPadding:
+                          const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                      actions: [
+                        if (cartItem.product.isSoldByWeight)
+                          Consumer<LocalTerminalProvider>(
+                            builder: (ctx, localTerminal, _) {
+                              final comPort = localTerminal.scaleComPort;
+                              if (comPort.isEmpty) {
+                                return const SizedBox.shrink(); // Sin balanza local
+                              }
+                              return OutlinedButton.icon(
+                                onPressed: () => _readWeightFromScale(
+                                    comPort, qtyController,
+                                    isDialogMounted: isDialogMounted),
+                                icon: const Icon(Icons.scale_rounded,
+                                    color: Colors.blueGrey),
+                                label: const Text('Leer Balanza'),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: Colors.blueGrey,
+                                  side: const BorderSide(color: Colors.blueGrey),
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8)),
+                                ),
+                              );
+                            },
+                          ),
+                        TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text('Cancelar',
+                              style: TextStyle(color: Colors.grey)),
+                        ),
+                        FilledButton(
+                          onPressed: isValid
+                              ? () {
+                                  _processCartItemEdit(qtyController.text, cartItem,
+                                      provider, context);
+                                }
+                              : null,
+                          style: FilledButton.styleFrom(
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8)),
+                          ),
+                          child: const Text('Actualizar'),
+                        )
+                      ],
+                    );
+                  });
+            },
+          );
         }).then((_) {
       _searchFocusNode.requestFocus();
     });
@@ -2360,7 +2369,8 @@ class _PosScreenState extends State<PosScreen> {
                       ),
                       onPressed: () {
                         _pendingOrdersPortalController.hide();
-                        posProvider.recallOrderToCart(sale);
+                        final customers = context.read<CustomerProvider>().customers;
+                        posProvider.recallOrderToCart(sale, availableCustomers: customers);
                         SnackBarService.success(
                             context, '📥 Orden #$saleId cargada al carrito.');
                         _searchFocusNode.requestFocus();
@@ -2915,33 +2925,46 @@ class _PosScreenState extends State<PosScreen> {
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              IconButton(
-                                icon: const Icon(Icons.remove_circle_outline,
-                                    color: Colors.grey),
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints(),
-                                tooltip: 'Disminuir',
-                                onPressed: () {
-                                  if (item.quantity > 1) {
-                                    pos.updateQuantity(item, item.quantity - 1);
-                                  } else {
-                                    pos.removeFromCart(item);
-                                  }
-                                  _searchFocusNode.requestFocus();
-                                },
-                              ),
-                              const SizedBox(width: 8),
-                              IconButton(
-                                icon: const Icon(Icons.add_circle_outline,
-                                    color: Colors.blue),
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints(),
-                                tooltip: 'Aumentar',
-                                onPressed: () {
-                                  pos.updateQuantity(item, item.quantity + 1);
-                                  _searchFocusNode.requestFocus();
-                                },
-                              ),
+                              if (item.product.isSoldByWeight)
+                                IconButton(
+                                  icon: const Icon(Icons.scale_outlined,
+                                      color: Colors.blue),
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(),
+                                  tooltip: 'Editar peso',
+                                  onPressed: () {
+                                    _showEditCartItemModal(item, pos);
+                                  },
+                                )
+                              else ...[
+                                IconButton(
+                                  icon: const Icon(Icons.remove_circle_outline,
+                                      color: Colors.grey),
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(),
+                                  tooltip: 'Disminuir',
+                                  onPressed: () {
+                                    if (item.quantity > 1) {
+                                      pos.updateQuantity(item, item.quantity - 1);
+                                    } else {
+                                      pos.removeFromCart(item);
+                                    }
+                                    _searchFocusNode.requestFocus();
+                                  },
+                                ),
+                                const SizedBox(width: 8),
+                                IconButton(
+                                  icon: const Icon(Icons.add_circle_outline,
+                                      color: Colors.blue),
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(),
+                                  tooltip: 'Aumentar',
+                                  onPressed: () {
+                                    pos.updateQuantity(item, item.quantity + 1);
+                                    _searchFocusNode.requestFocus();
+                                  },
+                                ),
+                              ],
                               const SizedBox(width: 16),
                               Text('\$${item.subtotal.toCurrency()}',
                                   style: const TextStyle(fontSize: 16)),
@@ -4453,6 +4476,53 @@ class PosWatermarkLogo extends StatelessWidget {
                 ),
         ),
       ),
+    );
+  }
+}
+
+/// Scope con ciclo de vida propio para gestionar y liberar TextEditingController
+/// automáticamente al desmontarse la ruta del diálogo y proteger callbacks asíncronos.
+class _ManagedControllerScope extends StatefulWidget {
+  final String initialText;
+  final Widget Function(
+    BuildContext context,
+    TextEditingController controller,
+    bool Function() isDialogMounted,
+  ) builder;
+
+  const _ManagedControllerScope({
+    this.initialText = '',
+    required this.builder,
+  });
+
+  @override
+  State<_ManagedControllerScope> createState() =>
+      _ManagedControllerScopeState();
+}
+
+class _ManagedControllerScopeState extends State<_ManagedControllerScope> {
+  late final TextEditingController _controller;
+  bool _isDisposed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialText);
+  }
+
+  @override
+  void dispose() {
+    _isDisposed = true;
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return widget.builder(
+      context,
+      _controller,
+      () => mounted && !_isDisposed,
     );
   }
 }

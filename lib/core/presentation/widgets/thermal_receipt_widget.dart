@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:frontend_desktop/features/settings/domain/entities/business_settings.dart';
@@ -371,7 +371,7 @@ class ThermalReceiptWidget extends StatelessWidget {
       if (rawItem is CartItem) {
         name = rawItem.product.name;
         quantity = rawItem.quantity;
-        unitPrice = rawItem.product.sellingPrice;
+        unitPrice = rawItem.unitPrice;
         subtotal = rawItem.subtotal;
         isSoldByWeight = rawItem.product.isSoldByWeight;
       } else if (rawItem is Map<String, dynamic>) {
@@ -485,7 +485,7 @@ class ThermalReceiptWidget extends StatelessWidget {
             hasPerception) ...[
           _buildKeyValueRow(
             'SUBTOTAL:',
-            '\$${_formatPrice(total - shippingCost)}',
+            '\$${_formatPrice(total - shippingCost - perceptionAmt)}',
             factor: factor,
           ),
           if (hasShipping)
