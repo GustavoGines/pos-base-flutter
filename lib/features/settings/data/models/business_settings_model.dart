@@ -205,6 +205,15 @@ class BusinessSettingsModel extends BusinessSettings {
       // Percepciones IIBB (Módulo Mayorista)
       'is_iibb_perception_agent': isIibbPerceptionAgent ? '1' : '0',
       'default_iibb_perception_rate': defaultIibbPerceptionRate.toStringAsFixed(2),
+      // Datos fiscales adicionales
+      if (taxCondition != null) 'tax_condition': taxCondition,
+      if (iibb != null) 'iibb': iibb,
+      if (activityStartDate != null) 'activity_start_date': activityStartDate,
+      // Algoritmo de popularidad y catálogo rápido
+      'pos_popularity_days': posPopularityDays.toString(),
+      'pos_popularity_metric': posPopularityMetric,
+      'pos_demote_out_of_stock': posDemoteOutOfStock ? '1' : '0',
+      if (posPopularityResetAt != null) 'pos_popularity_reset_at': posPopularityResetAt,
     };
   }
 }

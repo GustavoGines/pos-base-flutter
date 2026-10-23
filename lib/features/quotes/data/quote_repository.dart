@@ -82,7 +82,9 @@ class Quote {
       customerName: json['customer_name']?.toString(),
       customerPhone: json['customer_phone']?.toString(),
       notes: json['notes']?.toString(),
-      validUntil: (json['valid_until'] as String?)?.substring(0, 10),
+      validUntil: (json['valid_until'] is String && (json['valid_until'] as String).length >= 10)
+          ? (json['valid_until'] as String).substring(0, 10)
+          : json['valid_until']?.toString(),
       createdAt: parseLaravelDate(json['created_at']?.toString()),
       priceList: json['price_list']?.toString() ?? 'base',
       items: rawItems

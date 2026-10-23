@@ -361,77 +361,81 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!mounted) return;
     final ctrl = TextEditingController(text: currentUrl);
 
-    await showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        title: const Row(
-          children: [
-            Icon(Icons.dns_outlined, color: Colors.blueAccent),
-            SizedBox(width: 8),
-            Text('Red y Servidor', style: TextStyle(fontWeight: FontWeight.bold)),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Ingresa la URL o IP completa de la API:',
-              style: TextStyle(color: Colors.blueGrey, fontSize: 13),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: ctrl,
-              keyboardType: TextInputType.url,
-              decoration: InputDecoration(
-                labelText: 'URL del Servidor',
-                prefixIcon: const Icon(Icons.wifi),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+    try {
+      await showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.dns_outlined, color: Colors.blueAccent),
+              SizedBox(width: 8),
+              Text('Red y Servidor', style: TextStyle(fontWeight: FontWeight.bold)),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Ingresa la URL o IP completa de la API:',
+                style: TextStyle(color: Colors.blueGrey, fontSize: 13),
               ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: ctrl,
+                keyboardType: TextInputType.url,
+                decoration: InputDecoration(
+                  labelText: 'URL del Servidor',
+                  prefixIcon: const Icon(Icons.wifi),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton.icon(
+              onPressed: () async {
+                String newUrl = ctrl.text.trim();
+                if (newUrl.isNotEmpty) {
+                  // --- AUTO-FORMATO UX ---
+                  if (!newUrl.startsWith('http')) {
+                    if (!newUrl.contains('/')) {
+                      final isIp = RegExp(r'^([0-9]{1,3}\.){3}[0-9]{1,3}$').hasMatch(newUrl) || newUrl == 'localhost';
+                      if (isIp) {
+                        newUrl = 'http://$newUrl/Sistema_POS/pos-backend/public/api';
+                      } else {
+                        newUrl = 'https://$newUrl/Sistema_POS/pos-backend/public/api';
+                      }
+                    } else {
+                      newUrl = 'http://$newUrl';
+                    }
+                  }
+                  
+                  await prefs.setString('pos_api', newUrl);
+                  // Asegurar que actualizamos ambas para no romper el Auto-Fallback
+                  await prefs.setString('pos_api_local', newUrl);
+                  
+                  if (!ctx.mounted) return;
+                  Navigator.pop(ctx);
+                  SnackBarService.success(context,
+                      'Configuración guardada.\nReiniciá la app para aplicar.');
+                }
+              },
+              icon: const Icon(Icons.save),
+              label: const Text('Guardar'),
+              style: FilledButton.styleFrom(backgroundColor: Colors.blue.shade800),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancelar'),
-          ),
-          FilledButton.icon(
-            onPressed: () async {
-              String newUrl = ctrl.text.trim();
-              if (newUrl.isNotEmpty) {
-                // --- AUTO-FORMATO UX ---
-                if (!newUrl.startsWith('http')) {
-                  if (!newUrl.contains('/')) {
-                    final isIp = RegExp(r'^([0-9]{1,3}\.){3}[0-9]{1,3}$').hasMatch(newUrl) || newUrl == 'localhost';
-                    if (isIp) {
-                      newUrl = 'http://$newUrl/Sistema_POS/pos-backend/public/api';
-                    } else {
-                      newUrl = 'https://$newUrl/Sistema_POS/pos-backend/public/api';
-                    }
-                  } else {
-                    newUrl = 'http://$newUrl';
-                  }
-                }
-                
-                await prefs.setString('pos_api', newUrl);
-                // Asegurar que actualizamos ambas para no romper el Auto-Fallback
-                await prefs.setString('pos_api_local', newUrl);
-                
-                if (!ctx.mounted) return;
-                Navigator.pop(ctx);
-                SnackBarService.success(context,
-                    'Configuración guardada.\nReiniciá la app para aplicar.');
-              }
-            },
-            icon: const Icon(Icons.save),
-            label: const Text('Guardar'),
-            style: FilledButton.styleFrom(backgroundColor: Colors.blue.shade800),
-          ),
-        ],
-      ),
-    );
+      );
+    } finally {
+      ctrl.dispose();
+    }
 
     // Recapturar foco al cerrar el diálogo de configuración
     if (mounted) _keyboardFocus.requestFocus();

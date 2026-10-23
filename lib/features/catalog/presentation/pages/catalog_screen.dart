@@ -1603,25 +1603,32 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+    final parsedStock = double.tryParse(_stockCtrl.text.replaceAll(',', '.')) ?? 0.0;
+    final initialStock = widget.product != null
+        ? (double.tryParse(widget.product!.stock.toStringAsFixed(widget.product!.isSoldByWeight ? 3 : 0)) ?? widget.product!.stock)
+        : null;
+    final stockModified = !_isEditing || initialStock == null || (parsedStock - initialStock).abs() > 0.0001;
+
     final data = {
       'name': _nameCtrl.text.trim(),
       'barcode': _barcodeCtrl.text.trim(),
       if (_internalCodeCtrl.text.isNotEmpty) 'internal_code': _internalCodeCtrl.text.trim(),
       'cost_price': double.tryParse(_costCtrl.text.replaceAll(',', '.')) ?? 0.0,
       'selling_price': double.tryParse(_priceCtrl.text.replaceAll(',', '.')) ?? 0.0,
-      'stock': double.tryParse(_stockCtrl.text.replaceAll(',', '.')) ?? 0.0,
+      if (stockModified) 'stock': parsedStock,
       'min_stock': _minStockCtrl.text.trim().isNotEmpty ? double.tryParse(_minStockCtrl.text.replaceAll(',', '.')) : null,
       'is_sold_by_weight': _isSoldByWeight,
       'is_combo': _isCombo,
       if (_isCombo) 'combo_ingredients': _comboIngredients,
-      if (_priceTiers.isNotEmpty) 'price_tiers': _priceTiers,
+      if (_isEditing || _priceTiers.isNotEmpty) 'price_tiers': _priceTiers,
       'unit_type': _unitType,
       'active': _active,
       'category_id': _categoryId,
-      if (_brandId != null) 'brand_id': _brandId,
+      'brand_id': _brandId,
       'supplier_id': _supplierId,
-      if (_expiryCtrl.text.trim().isNotEmpty)
-        'vencimiento_dias': int.parse(_expiryCtrl.text.trim()),
+      'vencimiento_dias': _expiryCtrl.text.trim().isNotEmpty
+          ? int.tryParse(_expiryCtrl.text.trim())
+          : null,
     };
 
     bool ok = false;

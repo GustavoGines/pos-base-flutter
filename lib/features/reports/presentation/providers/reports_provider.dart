@@ -181,9 +181,10 @@ class ReportsProvider extends ChangeNotifier {
 
   double get balanceMaxRevenue {
     if (_balanceMonths.isEmpty) return 1;
-    return _balanceMonths
+    final max = _balanceMonths
         .map((m) => double.tryParse(m['total_revenue'].toString()) ?? 0)
         .reduce((a, b) => a > b ? a : b);
+    return max <= 0 ? 1.0 : max;
   }
 
   void setBalanceRange(DateTime start, DateTime end) {

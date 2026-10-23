@@ -79,7 +79,6 @@ class CatalogProvider with ChangeNotifier {
 
   CatalogProvider({required this.getProductsUseCase, required this.repository});
 
-  
   Future<void> loadMetadata() async {
     try {
       if (_categories.isEmpty) _categories = await repository.getCategories();
@@ -93,7 +92,12 @@ class CatalogProvider with ChangeNotifier {
 
   /// [sortBy] = '' pide el orden por defecto del servidor (peso → más vendidos → nombre),
   /// que es el que usa el Acceso Rápido del POS.
-  Future<void> loadProducts({int page = 1, String? search, String? sortBy, String? sortDirection, int? perPage}) async {
+  Future<void> loadProducts(
+      {int page = 1,
+      String? search,
+      String? sortBy,
+      String? sortDirection,
+      int? perPage}) async {
     _isLoading = true;
     _errorMessage = null;
     if (search != null) _searchQuery = search;
@@ -134,7 +138,8 @@ class CatalogProvider with ChangeNotifier {
   /// Recarga en segundo plano la página 1 del Acceso Rápido (orden del servidor: más
   /// vendidos → peso → nombre) SIN activar `isLoading`, para no provocar parpadeo de la grilla.
   /// Si falla, conserva silenciosamente los datos actuales.
-  Future<void> refreshQuickAccessSilently({bool preserveVisualOrder = false}) async {
+  Future<void> refreshQuickAccessSilently(
+      {bool preserveVisualOrder = false}) async {
     try {
       final result = await getProductsUseCase(page: 1, perPage: 500);
       _searchQuery = '';
@@ -187,10 +192,11 @@ class CatalogProvider with ChangeNotifier {
     }
   }
 
-  /// Búsqueda remota para pickers (p. ej. Ofertas Rápidas): consulta TODO el catálogo en el
+  /// Búsqueda remota para pickers (p. ej. Ofertas Rápidas): consulta todo el catálogo en el
   /// servidor (nombre, código de barras o código interno) en lugar de filtrar solo la página
   /// cargada en memoria. NO modifica `products` ni el estado de paginación/orden.
-  Future<List<Product>> searchProductsRemote(String query, {int perPage = 30}) async {
+  Future<List<Product>> searchProductsRemote(String query,
+      {int perPage = 30}) async {
     final q = query.trim();
     if (q.isEmpty) return [];
     try {
@@ -208,7 +214,7 @@ class CatalogProvider with ChangeNotifier {
     }
   }
 
-  /// Refuerzo Senior: Actualiza los contadores de ventas en memoria para que la UI 
+  /// Refuerzo Senior: Actualiza los contadores de ventas en memoria para que la UI
   /// se reordene al instante sin necesidad de una petición de red.
   ///
   /// Devuelve `true` si algún producto vendido NO estaba cargado en memoria (p. ej. se vendió
@@ -278,12 +284,14 @@ class CatalogProvider with ChangeNotifier {
     }
   }
 
-  Future<String?> uploadProductImage(int productId, String filePath, {List<int>? bytes, String? filename}) async {
+  Future<String?> uploadProductImage(int productId, String filePath,
+      {List<int>? bytes, String? filename}) async {
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
     try {
-      final imageUrl = await repository.uploadProductImage(productId, filePath, bytes: bytes, filename: filename);
+      final imageUrl = await repository.uploadProductImage(productId, filePath,
+          bytes: bytes, filename: filename);
       final idx = _products.indexWhere((p) => p.id == productId);
       if (idx != -1) {
         _products[idx] = _products[idx].copyWith(imageUrl: imageUrl);
@@ -312,13 +320,16 @@ class CatalogProvider with ChangeNotifier {
       await repository.deleteProductImage(productId);
       final idx = _products.indexWhere((p) => p.id == productId);
       if (idx != -1) {
-        _products[idx] = _products[idx].copyWith(imageUrl: null, clearImageUrl: true);
+        _products[idx] =
+            _products[idx].copyWith(imageUrl: null, clearImageUrl: true);
       }
       if (_lastCreatedProduct?.id == productId) {
-        _lastCreatedProduct = _lastCreatedProduct!.copyWith(imageUrl: null, clearImageUrl: true);
+        _lastCreatedProduct =
+            _lastCreatedProduct!.copyWith(imageUrl: null, clearImageUrl: true);
       }
       if (_lastUpdatedProduct?.id == productId) {
-        _lastUpdatedProduct = _lastUpdatedProduct!.copyWith(imageUrl: null, clearImageUrl: true);
+        _lastUpdatedProduct =
+            _lastUpdatedProduct!.copyWith(imageUrl: null, clearImageUrl: true);
       }
       return true;
     } catch (e) {
@@ -542,7 +553,8 @@ class CatalogProvider with ChangeNotifier {
       );
       // Actualizamos el producto completo en la lista si el backend lo devuelve (mejor consistencia)
       if (result.containsKey('product')) {
-        final updatedProduct = ProductModel.fromJson(result['product'] as Map<String, dynamic>);
+        final updatedProduct =
+            ProductModel.fromJson(result['product'] as Map<String, dynamic>);
         final idx = _products.indexWhere((p) => p.id == productId);
         if (idx != -1) _products[idx] = updatedProduct;
       } else {
@@ -582,7 +594,8 @@ class CatalogProvider with ChangeNotifier {
     _errorMessage = null;
     notifyListeners();
     try {
-      final created = await repository.createRubro(name, description: description);
+      final created =
+          await repository.createRubro(name, description: description);
       _rubros = [..._rubros, created];
       return created.id;
     } catch (e) {
@@ -599,7 +612,8 @@ class CatalogProvider with ChangeNotifier {
     _errorMessage = null;
     notifyListeners();
     try {
-      final updated = await repository.updateRubro(id, name, description: description);
+      final updated =
+          await repository.updateRubro(id, name, description: description);
       final idx = _rubros.indexWhere((r) => r.id == id);
       if (idx != -1) {
         final newList = List.of(_rubros);
@@ -637,12 +651,14 @@ class CatalogProvider with ChangeNotifier {
   // GESTIÓN DE CATEGORÍAS
   // ───────────────────────────────────────────────────────
 
-  Future<int?> createCategory(String name, {String? description, int? rubroId}) async {
+  Future<int?> createCategory(String name,
+      {String? description, int? rubroId}) async {
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
     try {
-      final created = await repository.createCategory(name, description: description, rubroId: rubroId);
+      final created = await repository.createCategory(name,
+          description: description, rubroId: rubroId);
       _categories = [..._categories, created];
       return created.id;
     } catch (e) {
@@ -654,12 +670,14 @@ class CatalogProvider with ChangeNotifier {
     }
   }
 
-  Future<bool> updateCategory(int id, String name, {String? description, int? rubroId}) async {
+  Future<bool> updateCategory(int id, String name,
+      {String? description, int? rubroId}) async {
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
     try {
-      final updated = await repository.updateCategory(id, name, description: description, rubroId: rubroId);
+      final updated = await repository.updateCategory(id, name,
+          description: description, rubroId: rubroId);
       final idx = _categories.indexWhere((c) => c.id == id);
       if (idx != -1) {
         final newList = List.of(_categories);
@@ -702,7 +720,8 @@ class CatalogProvider with ChangeNotifier {
     _errorMessage = null;
     notifyListeners();
     try {
-      final created = await repository.createBrand(name, description: description);
+      final created =
+          await repository.createBrand(name, description: description);
       _brands = [..._brands, created];
       return created.id;
     } catch (e) {
@@ -719,7 +738,8 @@ class CatalogProvider with ChangeNotifier {
     _errorMessage = null;
     notifyListeners();
     try {
-      final updated = await repository.updateBrand(id, name, description: description);
+      final updated =
+          await repository.updateBrand(id, name, description: description);
       final idx = _brands.indexWhere((b) => b.id == id);
       if (idx != -1) {
         final newList = List.of(_brands);
@@ -770,8 +790,9 @@ class CatalogProvider with ChangeNotifier {
 
       if (response.statusCode == 200) {
         final now = DateTime.now();
-        final formattedDate = '${now.day.toString().padLeft(2, '0')}_${now.month.toString().padLeft(2, '0')}_${now.year}';
-        
+        final formattedDate =
+            '${now.day.toString().padLeft(2, '0')}_${now.month.toString().padLeft(2, '0')}_${now.year}';
+
         String? outputFile = await FilePicker.platform.saveFile(
           dialogTitle: 'Guardar Lista de Precios',
           fileName: 'lista_precios_$formattedDate.xlsx',
@@ -791,7 +812,8 @@ class CatalogProvider with ChangeNotifier {
       } else {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error del servidor: ${response.statusCode}')),
+            SnackBar(
+                content: Text('Error del servidor: ${response.statusCode}')),
           );
         }
       }
@@ -808,7 +830,8 @@ class CatalogProvider with ChangeNotifier {
     }
   }
 
-  Future<Map<String, dynamic>> importProducts({required List<int> fileBytes, required String filename}) async {
+  Future<Map<String, dynamic>> importProducts(
+      {required List<int> fileBytes, required String filename}) async {
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
@@ -852,4 +875,3 @@ class CatalogProvider with ChangeNotifier {
     }
   }
 }
-

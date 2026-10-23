@@ -75,6 +75,7 @@ dependencies:
   cached_network_image: ^4.0.3
   desktop_drop: ^0.8.4
   archive: ^3.6.1
+  crypto: ^3.0.3
 
 dev_dependencies:
   flutter_test:

@@ -380,9 +380,10 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
       context.read<SupplierProvider>().fetchSuppliers();
     }
 
-    await showDialog(
-      context: context,
-      barrierDismissible: true,
+    try {
+      await showDialog(
+        context: context,
+        barrierDismissible: true,
       builder: (ctx) {
         return StatefulBuilder(
           builder: (context, setStateDialog) {
@@ -914,10 +915,10 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                             return;
                           }
 
+                          bool success = false;
                           setStateDialog(() => isSaving = true);
                           
                           try {
-                            bool success;
                             final payload = {
                               'name': name,
                               'barcode': barcodeCtrl.text.trim().isEmpty ? null : barcodeCtrl.text.trim(),
@@ -988,7 +989,6 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                             }
                             
                             if (success && ctx.mounted) {
-                              Navigator.pop(ctx);
                               if (imageUploadSuccess) {
                                 SnackBarService.success(context, productToEdit == null ? 'Producto creado exitosamente' : 'Producto modificado exitosamente');
                               } else {
@@ -1073,6 +1073,8 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                                   _searchProduct(queryToSearch);
                                 }
                               }
+
+                              Navigator.pop(ctx);
                             } else if (ctx.mounted) {
                               SnackBarService.error(context, catalogProv.errorMessage ?? 'Error desconocido');
                             }
@@ -1081,7 +1083,7 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                               SnackBarService.error(context, 'Error: $e');
                             }
                           } finally {
-                            if (ctx.mounted) {
+                            if (ctx.mounted && !success) {
                               setStateDialog(() {
                                 isSaving = false;
                                 isUploadingImage = false;
@@ -1099,6 +1101,20 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
         );
       },
     );
+    } finally {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        nameCtrl.dispose();
+        barcodeCtrl.dispose();
+        costCtrl.dispose();
+        marginCtrl.dispose();
+        priceCtrl.dispose();
+        stockCtrl.dispose();
+        minStockCtrl.dispose();
+        vencimientoCtrl.dispose();
+        addStockCtrl.dispose();
+        internalCodeCtrl.dispose();
+      });
+    }
 
     if (_scannedProduct == null) {
       try {

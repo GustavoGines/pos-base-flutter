@@ -5,7 +5,7 @@ import '../../../features/settings/presentation/providers/settings_provider.dart
 import '../../../features/auth/presentation/providers/auth_provider.dart';
 import '../../utils/snack_bar_service.dart';
 import '../../services/license_heartbeat_service.dart';
-import '../../config/app_config.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class LicenseLockScreen extends StatefulWidget {
   final GlobalKey<NavigatorState> navigatorKey;
@@ -52,10 +52,30 @@ class _LicenseLockScreenState extends State<LicenseLockScreen> {
     setState(() => _isActivating = true);
     try {
       final provider = context.read<SettingsProvider>();
-      // La base URL se toma de la misma que usa el sistema por defecto
-      await provider.activateLicense(AppConfig.kApiBaseUrl, key);
+      final prefs = await SharedPreferences.getInstance();
+      final activeUrl = prefs.getString('pos_api') ?? provider.currentApiUrl;
+      await provider.activateLicense(activeUrl, key);
       if (mounted) {
         SnackBarService.success(context, '✅ Licencia validada correctamente. El sistema verificará sus módulos.');
+      }
+    } catch (e) {
+      if (mounted) {
+        SnackBarService.error(context, _sanitizeError(e.toString()));
+      }
+    } finally {
+      if (mounted) setState(() => _isActivating = false);
+    }
+  }
+
+  Future<void> _retrySync() async {
+    setState(() => _isActivating = true);
+    try {
+      final provider = context.read<SettingsProvider>();
+      final prefs = await SharedPreferences.getInstance();
+      final activeUrl = prefs.getString('pos_api') ?? provider.currentApiUrl;
+      await provider.syncLicenseWithServer(activeUrl);
+      if (mounted) {
+        SnackBarService.success(context, '✅ Sincronización completada con éxito.');
       }
     } catch (e) {
       if (mounted) {
@@ -249,6 +269,26 @@ class _LicenseLockScreenState extends State<LicenseLockScreen> {
                         : const Text('ACTIVAR AHORA', style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.2)),
                   ),
                 ),
+                if (widget.securityStatus == LicenseSecurityStatus.clockTampered ||
+                    widget.securityStatus == LicenseSecurityStatus.offlineExpired) ...[
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 46,
+                    child: OutlinedButton.icon(
+                      onPressed: _isActivating ? null : _retrySync,
+                      icon: const Icon(Icons.sync_rounded, color: Colors.white70),
+                      label: const Text(
+                        'REINTENTAR SINCRONIZACIÓN',
+                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, letterSpacing: 1.0),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: Colors.white24),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
+                  ),
+                ],
                 
                 const SizedBox(height: 48),
                 const Divider(color: Colors.white10),

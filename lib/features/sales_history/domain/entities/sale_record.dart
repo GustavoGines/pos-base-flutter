@@ -58,12 +58,12 @@ class SaleItemRecord {
   factory SaleItemRecord.fromJson(Map<String, dynamic> json) {
     final product = json['product'] as Map<String, dynamic>?;
     return SaleItemRecord(
-      id: json['id'] as int,
+      id: json['id'] is int ? json['id'] : (int.tryParse(json['id']?.toString() ?? '0') ?? 0),
       productId: json['product_id'] as int?,
-      productName: json['product_name'] as String,
-      quantity: double.parse(json['quantity'].toString()),
-      unitPrice: double.parse(json['unit_price'].toString()),
-      subtotal: double.parse(json['subtotal'].toString()),
+      productName: json['product_name'] as String? ?? '',
+      quantity: double.tryParse(json['quantity']?.toString() ?? '0') ?? 0.0,
+      unitPrice: double.tryParse(json['unit_price']?.toString() ?? '0') ?? 0.0,
+      subtotal: double.tryParse(json['subtotal']?.toString() ?? '0') ?? 0.0,
       isSoldByWeight: product?['is_sold_by_weight'] == true || product?['is_sold_by_weight'] == 1,
     );
   }
@@ -145,9 +145,9 @@ class SaleRecord {
         .toList();
 
     return SaleRecord(
-      id: json['id'] as int,
-      total: double.parse(json['total'].toString()),
-      totalSurcharge: double.parse((json['total_surcharge'] ?? '0').toString()),
+      id: json['id'] is int ? json['id'] : (int.tryParse(json['id']?.toString() ?? '0') ?? 0),
+      total: double.tryParse(json['total']?.toString() ?? '0') ?? 0.0,
+      totalSurcharge: double.tryParse((json['total_surcharge'] ?? '0').toString()) ?? 0.0,
       status: json['status'] as String? ?? 'active',
       createdAt: DateTime.parse(json['created_at'] as String).toLocal(),
       items: itemsList,

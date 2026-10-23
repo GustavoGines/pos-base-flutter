@@ -1508,7 +1508,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
           ...cart
               .map((item) => [
                     TicketLine(
-                      '${item.product.isSoldByWeight ? "${item.quantity.toQty()} kg" : "${item.quantity.toInt()} un"} x \$${item.product.sellingPrice.toCurrency()}',
+                      '${item.product.isSoldByWeight ? "${item.quantity.toQty()} kg" : "${item.quantity.toInt()} un"} x \$${item.unitPrice.toCurrency()}',
                       rightText: '\$${item.subtotal.toCurrency()}',
                     ),
                     TicketLine(item.product.name.toUpperCase(), isBold: true),

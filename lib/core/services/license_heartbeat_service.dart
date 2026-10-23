@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../../features/settings/domain/entities/business_settings.dart';
 
@@ -13,7 +14,12 @@ class LicenseHeartbeatService extends ChangeNotifier with WidgetsBindingObserver
     WidgetsBinding.instance.addObserver(this);
   }
 
-  final _storage = const FlutterSecureStorage();
+  FlutterSecureStorage _storage = const FlutterSecureStorage();
+
+  @visibleForTesting
+  void setStorageForTesting(FlutterSecureStorage storage) {
+    _storage = storage;
+  }
 
   Timer? _heartbeatTimer;
   Timer? _pulseTimer;
@@ -70,8 +76,10 @@ class LicenseHeartbeatService extends ChangeNotifier with WidgetsBindingObserver
     notifyListeners();
   }
 
+  /// L-03: Permitir que _triggerSync se ejecute incluso si el estado actual es clockTampered,
+  /// de modo que cuando la PC recupere la hora oficial o contacte al servidor,
+  /// updateLastSync() restablezca la marca temporal con server_time y destrabe el POS (cero deadlock).
   Future<void> _triggerSync() async {
-    if (_securityStatus == LicenseSecurityStatus.clockTampered) return;
     try {
       if (_onSyncRequested != null) {
         await _onSyncRequested!();
@@ -88,22 +96,34 @@ class LicenseHeartbeatService extends ChangeNotifier with WidgetsBindingObserver
       final lastTimeStr = await _storage.read(key: 'drm_last_system_time');
 
       if (lastTimeStr != null) {
-        final lastTime = DateTime.parse(lastTimeStr);
+        final lastTime = DateTime.tryParse(lastTimeStr);
+        if (lastTime == null) {
+          // L-16: Si el valor en storage fue manipulado con formato inválido, marcar anomalía sin purgar todo el storage
+          _securityStatus = LicenseSecurityStatus.clockTampered;
+          notifyListeners();
+          return;
+        }
         // Si el reloj actual es anterior al último registrado, hay manipulación
         if (now.isBefore(lastTime.subtract(const Duration(minutes: 2)))) {
           _securityStatus = LicenseSecurityStatus.clockTampered;
           notifyListeners();
+          return;
         }
       }
-    } catch (e) {
-      // 🚨 FALLBACK CRÍTICO: Si DPAPI falla al desencriptar (archivo corrupto en Windows),
-      // limpiamos el almacenamiento para evitar bloqueos del sistema.
+    } on PlatformException catch (e) {
+      // L-16: Solo ante excepción nativa de desencriptación DPAPI en Windows,
+      // borrar únicamente la llave corrupta e intentar resincronizar con el servidor.
       debugPrint(
-        'Error de seguridad (Storage): $e. Limpiando datos corruptos...',
+        'Error nativo DPAPI en Storage: $e. Limpiando llave corrupta y forzando sync...',
       );
       try {
-        await _storage.deleteAll();
+        await _storage.delete(key: 'drm_last_system_time');
       } catch (_) {}
+      await _triggerSync();
+      return;
+    } catch (e) {
+      debugPrint('Error verificando reloj DRM: $e');
+      return;
     }
 
     await _updatePulse();
@@ -122,10 +142,18 @@ class LicenseHeartbeatService extends ChangeNotifier with WidgetsBindingObserver
     }
   }
 
-  /// Verifica la regla de las 72hs para planes SaaS
+  /// Verifica la regla de las 72hs y expiración contractual para planes SaaS (L-08)
   Future<void> _checkOfflineGrace(BusinessSettings settings) async {
     // Si es Lifetime, no hay bloqueo por offline
     if (settings.licensePlanMode == 'lifetime') return;
+
+    // L-08: Si se conoce la fecha de expiración contractual y ya venció, bloquear
+    if (settings.licenseExpiresAt != null &&
+        DateTime.now().isAfter(settings.licenseExpiresAt!)) {
+      _securityStatus = LicenseSecurityStatus.offlineExpired;
+      notifyListeners();
+      return;
+    }
 
     final lastCheckStr = settings.lastLicenseCheck;
     if (lastCheckStr == null || lastCheckStr.isEmpty) return;

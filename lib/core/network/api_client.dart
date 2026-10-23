@@ -326,7 +326,19 @@ class ApiClient extends http.BaseClient {
 
               // ── Intercepción de 5xx en el reintento ────────────────────────
               if (retryResponse.statusCode >= 500) {
-                throw NetworkException(_friendlyErrorMessage);
+                String errorMsg = _friendlyErrorMessage;
+                try {
+                  final retryBytes = await retryResponse.stream.toBytes();
+                  final retryString = utf8.decode(retryBytes, allowMalformed: true);
+                  final decoded = json.decode(retryString);
+                  if (decoded is Map<String, dynamic>) {
+                    final msg = decoded['message'] ?? decoded['error'];
+                    if (msg != null && msg.toString().trim().isNotEmpty) {
+                      errorMsg = msg.toString().trim();
+                    }
+                  }
+                } catch (_) {}
+                throw NetworkException(errorMsg);
               }
 
               return retryResponse;
@@ -350,7 +362,19 @@ class ApiClient extends http.BaseClient {
 
       // ── Intercepción de errores del servidor (5xx) ───────────────────────
       if (response.statusCode >= 500) {
-        throw NetworkException(_friendlyErrorMessage);
+        String errorMsg = _friendlyErrorMessage;
+        try {
+          final resBytes = await response.stream.toBytes();
+          final resString = utf8.decode(resBytes, allowMalformed: true);
+          final decoded = json.decode(resString);
+          if (decoded is Map<String, dynamic>) {
+            final msg = decoded['message'] ?? decoded['error'];
+            if (msg != null && msg.toString().trim().isNotEmpty) {
+              errorMsg = msg.toString().trim();
+            }
+          }
+        } catch (_) {}
+        throw NetworkException(errorMsg);
       }
 
       return response;

@@ -99,6 +99,19 @@ class MobileUpdateService {
       ),
     );
 
+    // L-14: Verificar integridad SHA-256 del APK antes de ejecutar el instalador
+    final effectiveInfo = mobileUpdateNotifier.value;
+    if (effectiveInfo != null && effectiveInfo.sha256Checksum != null) {
+      final apkFile = File(apkPath);
+      final isValid = await effectiveInfo.verifyFileIntegrity(apkFile);
+      if (!isValid) {
+        try {
+          if (await apkFile.exists()) await apkFile.delete();
+        } catch (_) {}
+        throw Exception('El archivo APK descargado está corrupto o no pasó la verificación de seguridad SHA-256.');
+      }
+    }
+
     onProgress(1.0);
 
     // ── 3. Lanzar el instalador del sistema ─────────────────────────────────

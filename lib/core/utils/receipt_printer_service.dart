@@ -400,7 +400,7 @@ class ReceiptPrinterService {
 
       if (!isWeight) totalItemsQty += item.quantity.toInt();
 
-      final double price = item.product.sellingPrice;
+      final double price = item.unitPrice;
       final double subtotal = item.subtotal;
 
       final productName = _cleanText(item.product.name.toUpperCase());
@@ -723,7 +723,7 @@ class ReceiptPrinterService {
       if (!isWeight) totalItemsQty += item.quantity.toInt();
 
       bytes += generator.row([
-        PosColumn(text: '$cantStr x \$${_formatPrice(item.product.sellingPrice)}', width: 8),
+        PosColumn(text: '$cantStr x \$${_formatPrice(item.unitPrice)}', width: 8),
         PosColumn(text: '\$${_formatPrice(item.subtotal)}', width: 4, styles: const PosStyles(align: PosAlign.right, bold: true)),
       ]);
       bytes += generator.text(_cleanText(item.product.name.toUpperCase()), styles: const PosStyles(bold: true));

@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:fl_chart/fl_chart.dart';
@@ -1385,7 +1386,7 @@ class _MonthlyBalanceTabState extends State<_MonthlyBalanceTab> {
                       height: 280,
                       child: BarChart(
                         BarChartData(
-                          maxY: provider.balanceMaxRevenue * 1.15,
+                          maxY: math.max(1.0, provider.balanceMaxRevenue * 1.15),
                           gridData: FlGridData(
                             show: true,
                             drawVerticalLine: false,

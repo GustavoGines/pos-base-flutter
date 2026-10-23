@@ -245,6 +245,8 @@ class LogisticsProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _pollingTimer?.cancel();
+    _pollingTimer = null;
     _debounceTimer?.cancel();
     super.dispose();
   }

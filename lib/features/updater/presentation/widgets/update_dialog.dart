@@ -102,6 +102,27 @@ class _UpdateDialogState extends State<UpdateDialog> {
         },
       );
 
+      // L-14: Verificación criptográfica SHA-256 del paquete descargado (si el servidor suministró hash)
+      if (widget.updateInfo.sha256Checksum != null) {
+        if (mounted) {
+          setState(() => _status = 'Verificando integridad del paquete (SHA-256)...');
+        }
+        final downloadedFile = File(zipPath);
+        final isIntegrityValid = await widget.updateInfo.verifyFileIntegrity(downloadedFile);
+        if (!isIntegrityValid) {
+          try {
+            if (downloadedFile.existsSync()) downloadedFile.deleteSync();
+          } catch (_) {}
+          if (mounted) {
+            setState(() {
+              _isDownloading = false;
+              _status = '❌ Error de seguridad: El archivo descargado está corrupto o su firma SHA-256 no coincide.';
+            });
+          }
+          return;
+        }
+      }
+
       if (mounted) {
         setState(() => _status = 'Preparando actualización...');
       }
@@ -115,8 +136,18 @@ class _UpdateDialogState extends State<UpdateDialog> {
       // 1. Intentar obtener la ruta real y absoluta directamente desde el backend (Nueva API 1.8.3)
       try {
         final currentApiUrl = prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
+        final sessionToken = prefs.getString('pos_session_token');
         final response = await http
-            .get(Uri.parse('$currentApiUrl/system/install-path'))
+            .get(
+              Uri.parse('$currentApiUrl/system/install-path'),
+              headers: {
+                'Accept': 'application/json',
+                if (sessionToken != null && sessionToken.isNotEmpty) ...{
+                  'X-Session-Token': sessionToken,
+                  'Authorization': 'Bearer $sessionToken',
+                },
+              },
+            )
             .timeout(const Duration(seconds: 4));
             
         if (response.statusCode == 200) {

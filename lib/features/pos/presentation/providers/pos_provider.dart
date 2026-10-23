@@ -1090,28 +1090,31 @@ class PosProvider with ChangeNotifier {
       }
 
       // Emisión de Factura Fiscal Electrónica ARCA/AFIP si fue requerida
-      _lastElectronicInvoice = null;
-      final fiscalData = _pendingFiscalInvoiceData;
-      _pendingFiscalInvoiceData = null; // Se consume una sola vez
-      if (fiscalData != null) {
-        final sId = int.tryParse(extractedSaleId);
-        if (sId != null) {
-          try {
-            final invRes = await issueFiscalInvoice(sId, fiscalData);
-            if (invRes != null && invRes['invoice'] != null) {
-              _lastElectronicInvoice = invRes['invoice'] as Map<String, dynamic>;
-            }
-          } catch (e) {
-            debugPrint('Rollback de venta por rechazo fiscal duro: $e');
+      // Para ventas pendientes, payPendingSale ya emitió y seteó _lastElectronicInvoice.
+      if (_activePendingSaleId == null) {
+        _lastElectronicInvoice = null;
+        final fiscalData = _pendingFiscalInvoiceData;
+        _pendingFiscalInvoiceData = null; // Se consume una sola vez
+        if (fiscalData != null) {
+          final sId = int.tryParse(extractedSaleId);
+          if (sId != null) {
             try {
-              await voidPendingOrder(sId, shiftId: shiftId);
-            } catch (rollbackError) {
-              debugPrint('Error en rollback automático: $rollbackError');
+              final invRes = await issueFiscalInvoice(sId, fiscalData);
+              if (invRes != null && invRes['invoice'] != null) {
+                _lastElectronicInvoice = invRes['invoice'] as Map<String, dynamic>;
+              }
+            } catch (e) {
+              debugPrint('Rollback de venta por rechazo fiscal duro: $e');
+              try {
+                await voidPendingOrder(sId, shiftId: shiftId);
+              } catch (rollbackError) {
+                debugPrint('Error en rollback automático: $rollbackError');
+              }
+              _errorMessage = 'AFIP rechazó la factura: ${e.toString().replaceAll('Exception: ', '')}';
+              _isLoading = false;
+              notifyListeners();
+              return false;
             }
-            _errorMessage = 'AFIP rechazó la factura: ${e.toString().replaceAll('Exception: ', '')}';
-            _isLoading = false;
-            notifyListeners();
-            return false;
           }
         }
       }
@@ -1578,6 +1581,8 @@ class PosProvider with ChangeNotifier {
       );
 
       // Emisión fiscal para venta pendiente si fue requerida
+      // FN-F4-02: Limpiar factura previa antes de evaluar si esta venta en espera requiere emisión fiscal
+      _lastElectronicInvoice = null;
       final fiscalData = _pendingFiscalInvoiceData;
       _pendingFiscalInvoiceData = null; // Se consume una sola vez
       if (fiscalData != null) {
