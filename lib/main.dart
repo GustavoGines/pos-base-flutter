@@ -257,6 +257,12 @@ void main() async {
   // Inicialización de Dependencias Base (DI)
   final String apiUrl = savedApiUrl;
   final httpClient = ApiClient(http.Client());
+  if (hasValidRemote) {
+    httpClient.configureFailover(
+      primaryUrl: activeApiUrl,
+      fallbackUrl: activeApiUrl == localUrl ? remoteUrl : localUrl,
+    );
+  }
 
   // Auth í creado ANTES de runApp para poder restaurar el token de sesión
   // antes del primer request HTTP (Crash Recovery de la Vulnerabilidad #3)

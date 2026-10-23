@@ -104,10 +104,14 @@ class _CloseShiftScreenState extends State<CloseShiftScreen> {
     } on DifferenceRequiresAdminException catch (e) {
       if (!mounted) return;
 
-      // Mostrar la diferencia detectada y pedir PIN del supervisor
-      final isShortage = e.difference < 0;
+      // F3-CAJA-02: Soportar Arqueo Ciego (sin exponer expectedBalance ni difference al cajero)
+      // mantendo compatibilidad defensiva si un servidor legacy v1.8.5 los envía.
+      final hasLegacyDetails = e.expectedBalance != null && e.difference != null;
+      final isShortage = (e.difference ?? -1) < 0;
       final diffLabel = isShortage ? 'FALTANTE' : 'SOBRANTE';
-      final diffColor = isShortage ? Colors.red : Colors.green;
+      final diffColor = hasLegacyDetails
+          ? (isShortage ? Colors.red : Colors.green)
+          : Colors.orange.shade800;
 
       final supervisorPin = await showDialog<String>(
         context: context,
@@ -124,24 +128,39 @@ class _CloseShiftScreenState extends State<CloseShiftScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Efectivo Esperado: \$${e.expectedBalance.toCurrency()}'),
+              if (hasLegacyDetails)
+                Text('Efectivo Esperado: \$${e.expectedBalance!.toCurrency()}'),
               Text('Efectivo Contado: \$${e.actualBalance.toCurrency()}'),
               const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: diffColor.withAlpha(30),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: diffColor),
+              if (hasLegacyDetails)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: diffColor.withAlpha(30),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: diffColor),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('$diffLabel:', style: TextStyle(fontWeight: FontWeight.bold, color: diffColor)),
+                      Text('\$${e.difference!.abs().toCurrency()}', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: diffColor)),
+                    ],
+                  ),
+                )
+              else
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.orange.shade300),
+                  ),
+                  child: const Text(
+                    'El monto declarado presenta una diferencia respecto al registro del sistema (Arqueo Ciego).',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
                 ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('$diffLabel:', style: TextStyle(fontWeight: FontWeight.bold, color: diffColor)),
-                    Text('\$${e.difference.abs().toCurrency()}', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: diffColor)),
-                  ],
-                ),
-              ),
               const SizedBox(height: 16),
               const Text(
                 'Se requiere autorización de un supervisor para cerrar con diferencia.',

@@ -27,6 +27,7 @@ class ProcessSaleUseCase {
     dynamic checkDetails,
     String? deliveryAddress,
     String? priceList,
+    String? clientTransactionId,
   }) async {
     if (items.isEmpty) throw Exception('El carrito está vacío');
     return await repository.processSale(
@@ -49,6 +50,7 @@ class ProcessSaleUseCase {
       checkDetails: checkDetails,
       deliveryAddress: deliveryAddress,
       priceList: priceList,
+      clientTransactionId: clientTransactionId,
     );
   }
 }

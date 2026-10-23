@@ -115,6 +115,7 @@ class MockProcessSaleUseCase extends _i1.Mock
     dynamic checkDetails,
     String? deliveryAddress,
     String? priceList,
+    String? clientTransactionId,
   }) =>
       (super.noSuchMethod(
         Invocation.method(
@@ -140,6 +141,7 @@ class MockProcessSaleUseCase extends _i1.Mock
             #checkDetails: checkDetails,
             #deliveryAddress: deliveryAddress,
             #priceList: priceList,
+            #clientTransactionId: clientTransactionId,
           },
         ),
         returnValue: _i6.Future<_i3.Sale>.value(_FakeSale_1(
@@ -167,6 +169,7 @@ class MockProcessSaleUseCase extends _i1.Mock
               #checkDetails: checkDetails,
               #deliveryAddress: deliveryAddress,
               #priceList: priceList,
+              #clientTransactionId: clientTransactionId,
             },
           ),
         )),
@@ -251,6 +254,7 @@ class MockPosRepository extends _i1.Mock implements _i2.PosRepository {
     dynamic checkDetails,
     String? deliveryAddress,
     String? priceList,
+    String? clientTransactionId,
   }) =>
       (super.noSuchMethod(
         Invocation.method(
@@ -276,6 +280,7 @@ class MockPosRepository extends _i1.Mock implements _i2.PosRepository {
             #checkDetails: checkDetails,
             #deliveryAddress: deliveryAddress,
             #priceList: priceList,
+            #clientTransactionId: clientTransactionId,
           },
         ),
         returnValue: _i6.Future<_i3.Sale>.value(_FakeSale_1(
@@ -303,6 +308,7 @@ class MockPosRepository extends _i1.Mock implements _i2.PosRepository {
               #checkDetails: checkDetails,
               #deliveryAddress: deliveryAddress,
               #priceList: priceList,
+              #clientTransactionId: clientTransactionId,
             },
           ),
         )),

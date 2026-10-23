@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -145,6 +146,20 @@ class CheckoutDialog extends StatefulWidget {
 class _CheckoutDialogState extends State<CheckoutDialog> {
   bool _isSubmitting = false;
   final List<PaymentLine> _lines = [];
+  late String _clientTransactionId = _generateTransactionUuid();
+
+  static String _generateTransactionUuid() {
+    final rng = Random.secure();
+    final bytes = List<int>.generate(16, (_) => rng.nextInt(256));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40; // version 4
+    bytes[8] = (bytes[8] & 0x3f) | 0x80; // variant 1
+    String hex(int b) => b.toRadixString(16).padLeft(2, '0');
+    return '${hex(bytes[0])}${hex(bytes[1])}${hex(bytes[2])}${hex(bytes[3])}-'
+        '${hex(bytes[4])}${hex(bytes[5])}-'
+        '${hex(bytes[6])}${hex(bytes[7])}-'
+        '${hex(bytes[8])}${hex(bytes[9])}-'
+        '${hex(bytes[10])}${hex(bytes[11])}${hex(bytes[12])}${hex(bytes[13])}${hex(bytes[14])}${hex(bytes[15])}';
+  }
 
   // Devuelve el orden de prioridad comercial (1 al 7) para cada método de pago:
   // 1: Efectivo, 2: MP Point, 3: MP QR, 4: Débito, 5: Crédito, 6: Cta. Cte., 7: Cheque
@@ -1732,6 +1747,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
           deliveryAddress: _deliveryAddressCtrl.text.trim().isEmpty
               ? null
               : _deliveryAddressCtrl.text.trim(),
+          clientTransactionId: _clientTransactionId,
         );
       }
 
@@ -1754,6 +1770,12 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
           Navigator.of(context).pop(true);
         } else {
           final errMsg = posProvider.errorMessage ?? '';
+
+          // FN-F3-04: Si la venta fue asentada y luego revertida (ej. rechazo fiscal AFIP o anulación en vista previa),
+          // rotamos el UUID de transacción para que el próximo intento cree una venta nueva limpia.
+          if (errMsg == 'ANNULLED' || errMsg.contains('AFIP rechazó la factura')) {
+            _clientTransactionId = _generateTransactionUuid();
+          }
 
           if (errMsg == 'ANNULLED') {
             Navigator.of(context).pop(false);

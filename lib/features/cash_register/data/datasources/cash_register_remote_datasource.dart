@@ -7,15 +7,15 @@ import '../models/cash_register_shift_model.dart';
 /// y requiere PIN de un supervisor para autorizar el cierre.
 class DifferenceRequiresAdminException implements Exception {
   final String message;
-  final double expectedBalance;
+  final double? expectedBalance;
   final double actualBalance;
-  final double difference;
+  final double? difference;
 
   DifferenceRequiresAdminException({
     required this.message,
-    required this.expectedBalance,
+    this.expectedBalance,
     required this.actualBalance,
-    required this.difference,
+    this.difference,
   });
 
   @override
@@ -142,9 +142,9 @@ class CashRegisterRemoteDataSourceImpl implements CashRegisterRemoteDataSource {
         if (errorCode == 'DIFFERENCE_REQUIRES_ADMIN') {
           throw DifferenceRequiresAdminException(
             message: responseBody['message'] ?? 'Diferencia de caja requiere autorización.',
-            expectedBalance: (responseBody['expected_balance'] as num).toDouble(),
-            actualBalance: (responseBody['actual_balance'] as num).toDouble(),
-            difference: (responseBody['difference'] as num).toDouble(),
+            expectedBalance: (responseBody['expected_balance'] as num?)?.toDouble(),
+            actualBalance: (responseBody['actual_balance'] as num?)?.toDouble() ?? countedCash,
+            difference: (responseBody['difference'] as num?)?.toDouble(),
           );
         }
 

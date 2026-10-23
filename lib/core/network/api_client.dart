@@ -60,6 +60,62 @@ class ApiClient extends http.BaseClient {
   static const String _friendlyErrorMessage =
       'No se pudo conectar con el servidor principal. Verifique su conexión a red o si el servidor está encendido.';
 
+  /// Configuración de Failover Dinámico en caliente (F3-RESIL-02).
+  /// Permite conmutar automáticamente entre la URL Local (LAN) y Remota (WAN/Túnel)
+  /// cuando la red cambia sin reiniciar la aplicación.
+  String? _primaryBaseUrl;
+  String? _fallbackBaseUrl;
+  bool _useFallbackEndpoint = false;
+  DateTime? _fallbackActivatedAt;
+  Duration fallbackStickyDuration = const Duration(minutes: 2);
+
+  bool get isUsingFallbackEndpoint => _useFallbackEndpoint;
+
+  void configureFailover({String? primaryUrl, String? fallbackUrl}) {
+    final cleanPrimary = primaryUrl?.trim().replaceAll(RegExp(r'/+$'), '');
+    final cleanFallback = fallbackUrl?.trim().replaceAll(RegExp(r'/+$'), '');
+    if (cleanPrimary != null &&
+        cleanPrimary.startsWith('http') &&
+        cleanFallback != null &&
+        cleanFallback.startsWith('http') &&
+        cleanPrimary != cleanFallback) {
+      _primaryBaseUrl = cleanPrimary;
+      _fallbackBaseUrl = cleanFallback;
+    } else {
+      _primaryBaseUrl = null;
+      _fallbackBaseUrl = null;
+    }
+    _useFallbackEndpoint = false;
+    _fallbackActivatedAt = null;
+  }
+
+  Uri? _tryRewriteUri(Uri original, String fromBase, String toBase) {
+    final full = original.toString();
+    if (full.startsWith(fromBase)) {
+      final suffix = full.substring(fromBase.length);
+      return Uri.parse('$toBase$suffix');
+    }
+    return null;
+  }
+
+  http.Request _buildClonedRequest(
+    String method,
+    Uri targetUri,
+    Map<String, String> headers,
+    List<int>? bodyBytes,
+    Encoding encoding,
+  ) {
+    final copyHeaders = Map<String, String>.from(headers)
+      ..removeWhere((k, _) => k.toLowerCase() == 'content-length');
+    final cloned = http.Request(method, targetUri)
+      ..headers.addAll(copyHeaders)
+      ..encoding = encoding;
+    if (bodyBytes != null && method != 'GET' && method != 'HEAD') {
+      cloned.bodyBytes = bodyBytes;
+    }
+    return cloned;
+  }
+
   ApiClient(this._inner);
 
   /// Stack de PINs efímeros asociados a las pantallas activas (PermissionGuard).
@@ -185,13 +241,64 @@ class ApiClient extends http.BaseClient {
       // que ocurre cuando Apache/Nginx cierra la conexión por inactividad.
       request.headers['Connection'] = 'close';
 
-      // Preservar metadatos de la petición para posible reintento ante 403
-      final Uri url = request.url;
+      // Preservar metadatos de la petición para posible reintento ante 403 o Failover de Red (F3-RESIL-02)
+      Uri url = request.url;
       final Map<String, String> headers = Map<String, String>.from(request.headers);
       final List<int>? bodyBytes = (request is http.Request) ? request.bodyBytes : null;
       final Encoding encoding = (request is http.Request) ? request.encoding : utf8;
 
-      final response = await _inner.send(request).timeout(const Duration(seconds: 300));
+      // Evaluar expiración de ventana sticky de Failover para volver a intentar red primaria
+      if (_useFallbackEndpoint && _fallbackActivatedAt != null) {
+        if (DateTime.now().difference(_fallbackActivatedAt!) >= fallbackStickyDuration) {
+          _useFallbackEndpoint = false;
+          _fallbackActivatedAt = null;
+        }
+      }
+
+      http.BaseRequest activeRequest = request;
+      if (_useFallbackEndpoint &&
+          _primaryBaseUrl != null &&
+          _fallbackBaseUrl != null &&
+          request is http.Request) {
+        final rewritten = _tryRewriteUri(url, _primaryBaseUrl!, _fallbackBaseUrl!);
+        if (rewritten != null) {
+          url = rewritten;
+          activeRequest = _buildClonedRequest(method, url, headers, bodyBytes, encoding);
+        }
+      }
+
+      http.StreamedResponse response;
+      try {
+        response = await _inner.send(activeRequest).timeout(const Duration(seconds: 300));
+      } catch (networkErr) {
+        final isNetworkFailure = networkErr is SocketException ||
+            networkErr is TimeoutException ||
+            networkErr is http.ClientException;
+
+        if (isNetworkFailure &&
+            _primaryBaseUrl != null &&
+            _fallbackBaseUrl != null &&
+            request is http.Request) {
+          Uri? alternateUri = _tryRewriteUri(url, _primaryBaseUrl!, _fallbackBaseUrl!);
+          bool switchedToFallback = true;
+          if (alternateUri == null) {
+            alternateUri = _tryRewriteUri(url, _fallbackBaseUrl!, _primaryBaseUrl!);
+            switchedToFallback = false;
+          }
+
+          if (alternateUri != null) {
+            _useFallbackEndpoint = switchedToFallback;
+            _fallbackActivatedAt = switchedToFallback ? DateTime.now() : null;
+            url = alternateUri;
+            final failoverReq = _buildClonedRequest(method, url, headers, bodyBytes, encoding);
+            response = await _inner.send(failoverReq).timeout(const Duration(seconds: 300));
+          } else {
+            rethrow;
+          }
+        } else {
+          rethrow;
+        }
+      }
 
       // ── Intercepción de 401: Sesión expirada ─────────────────────────────
       // El backend devuelve 401 en dos casos:

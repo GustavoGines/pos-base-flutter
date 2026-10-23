@@ -34,7 +34,12 @@ class _CashMovementsScreenState extends State<CashMovementsScreen> {
     super.initState();
     _scrollController.addListener(_onScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<CashMovementProvider>().fetchMovements(refresh: true, all: false);
+      final activeShiftId = context.read<CashRegisterProvider>().currentShift?.id;
+      context.read<CashMovementProvider>().fetchMovements(
+            refresh: true,
+            all: false,
+            cashShiftId: activeShiftId,
+          );
     });
   }
 
@@ -272,8 +277,15 @@ class _CashMovementsScreenState extends State<CashMovementsScreen> {
          urlStr += '&start_date=$sd&end_date=$ed';
       }
     } else {
+      final params = <String>[];
+      if (prov.currentShiftId != null) {
+        params.add('cash_shift_id=${prov.currentShiftId}');
+      }
       if (prov.currentCategoryFilter != null) {
-         urlStr += '?category=${prov.currentCategoryFilter}';
+        params.add('category=${prov.currentCategoryFilter}');
+      }
+      if (params.isNotEmpty) {
+        urlStr += '?${params.join('&')}';
       }
     }
 
@@ -324,7 +336,12 @@ class _CashMovementsScreenState extends State<CashMovementsScreen> {
         tabController.addListener(() {
           if (!tabController.indexIsChanging) {
              final provider = context.read<CashMovementProvider>();
-             provider.fetchMovements(refresh: true, all: tabController.index == 1);
+             final activeShiftId = context.read<CashRegisterProvider>().currentShift?.id;
+             provider.fetchMovements(
+               refresh: true,
+               all: tabController.index == 1,
+               cashShiftId: activeShiftId,
+             );
           }
         });
         

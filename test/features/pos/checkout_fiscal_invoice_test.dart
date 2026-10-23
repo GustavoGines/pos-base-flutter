@@ -149,6 +149,7 @@ class FakeFiscalPosProvider extends ChangeNotifier implements PosProvider {
     String fulfillmentStatus = 'pending',
     dynamic checkDetails, double? iibbPerceptionAmount, double? iibbPerceptionRate,
     String? deliveryAddress,
+    String? clientTransactionId,
   }) async {
     capturedPayments = payments;
     return true;

@@ -1037,6 +1037,7 @@ class PosProvider with ChangeNotifier {
     String? deliveryAddress,
     double? iibbPerceptionAmount,
     double? iibbPerceptionRate,
+    String? clientTransactionId,
   }) async {
     if (_cart.isEmpty || _isLoading) return false;
 
@@ -1105,6 +1106,7 @@ class PosProvider with ChangeNotifier {
           checkDetails: checkDetails,
           deliveryAddress: deliveryAddress,
           priceList: _activeTier == PriceTier.base ? 'Minorista' : (_customTierLabel ?? _activeTier.toString().split('.').last),
+          clientTransactionId: clientTransactionId,
         );
 
         // processSaleUseCase retorna entidad Sale
@@ -1128,15 +1130,25 @@ class PosProvider with ChangeNotifier {
               }
             } catch (e) {
               debugPrint('Rollback de venta por rechazo fiscal duro: $e');
+              bool rolledBack = false;
               try {
-                await voidPendingOrder(sId, shiftId: shiftId);
+                rolledBack = await voidPendingOrder(sId, shiftId: shiftId);
               } catch (rollbackError) {
                 debugPrint('Error en rollback automático: $rollbackError');
               }
-              _errorMessage = 'AFIP rechazó la factura: ${e.toString().replaceAll('Exception: ', '')}';
-              _isLoading = false;
-              notifyListeners();
-              return false;
+              final cleanErr = e.toString().replaceAll('Exception: ', '');
+              if (rolledBack) {
+                _errorMessage = 'AFIP rechazó la factura: $cleanErr';
+                _isLoading = false;
+                notifyListeners();
+                return false;
+              } else {
+                // F3-AFIP-03 / FN-F3-06: Si la anulación automática no pudo completarse,
+                // no retornamos false para evitar que un reintento duplique el cobro de una venta ya asentada.
+                _lastElectronicInvoice = null;
+                _printerWarning =
+                    'AFIP rechazó la factura ($cleanErr). La venta #$sId quedó registrada como Ticket No Fiscal; puede emitir la factura desde Historial de Ventas.';
+              }
             }
           }
         }
@@ -1623,9 +1635,11 @@ class PosProvider with ChangeNotifier {
             _lastElectronicInvoice = invRes['invoice'] as Map<String, dynamic>;
           }
         } catch (e) {
-          debugPrint('Contingencia fiscal en payPendingSale: $e');
+          debugPrint('Contingencia / rechazo fiscal en payPendingSale: $e');
           _lastElectronicInvoice = null;
-          _printerWarning = 'AFIP fuera de servicio. Se emite Ticket No Fiscal en contingencia.';
+          final cleanErr = e.toString().replaceAll('Exception: ', '');
+          _printerWarning =
+              'No se pudo autorizar la Factura Fiscal en AFIP ($cleanErr). Se emite comprobante en contingencia; puede reintentar desde Historial de Ventas.';
         }
       }
 

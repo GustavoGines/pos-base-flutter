@@ -43,6 +43,7 @@ class PosRepositoryImpl implements PosRepository {
     dynamic checkDetails,
     String? deliveryAddress,
     String? priceList,
+    String? clientTransactionId,
   }) async {
     final response = await remoteDataSource.processSale(
       total: total,
@@ -64,6 +65,7 @@ class PosRepositoryImpl implements PosRepository {
       checkDetails: checkDetails,
       deliveryAddress: deliveryAddress,
       priceList: priceList,
+      clientTransactionId: clientTransactionId,
     );
 
     return Sale(

@@ -122,6 +122,7 @@ class FakePosProvider extends ChangeNotifier implements PosProvider {
     String fulfillmentStatus = 'pending',
     dynamic checkDetails,
     String? deliveryAddress,
+    String? clientTransactionId,
   }) async {
     lastProcessedPayments = payments;
     return true;

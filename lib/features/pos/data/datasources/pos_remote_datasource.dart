@@ -38,6 +38,7 @@ abstract class PosRemoteDataSource {
     dynamic checkDetails,
     String? deliveryAddress,
     String? priceList,
+    String? clientTransactionId,
   });
   Future<List<dynamic>> fetchPendingSales();
   Future<dynamic> payPendingSale({
@@ -172,9 +173,12 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
     dynamic checkDetails,
     String? deliveryAddress,
     String? priceList,
+    String? clientTransactionId,
   }) async {
     try {
       final payload = {
+        if (clientTransactionId != null && clientTransactionId.isNotEmpty)
+          'client_transaction_id': clientTransactionId,
         'total': total,
         'total_surcharge': totalSurcharge,
         'shipping_cost': shippingCost,
@@ -206,12 +210,14 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
         Uri.parse('$baseUrl/pos/sales'),
         headers: {
           'Accept': 'application/json',
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          if (clientTransactionId != null && clientTransactionId.isNotEmpty)
+            'X-Idempotency-Key': clientTransactionId,
         },
         body: json.encode(payload),
       );
 
-      if (response.statusCode == 201) {
+      if (response.statusCode == 201 || response.statusCode == 200) {
         return json.decode(response.body);
       } else {
         String detail = '';
@@ -408,8 +414,15 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
           'error': decoded is Map ? decoded['error'] : null,
         };
       } else {
-        final message = decoded is Map ? (decoded['message'] ?? 'Error al emitir factura fiscal (HTTP ${response.statusCode})') : 'Error HTTP ${response.statusCode}';
-        throw Exception(message);
+        final baseMsg = decoded is Map
+            ? (decoded['message'] ?? 'Error al emitir factura fiscal (HTTP ${response.statusCode})')
+            : 'Error HTTP ${response.statusCode}';
+        final detailErr = decoded is Map &&
+                decoded['error'] != null &&
+                decoded['error'].toString().isNotEmpty
+            ? ': ${decoded['error']}'
+            : '';
+        throw Exception('$baseMsg$detailErr (HTTP ${response.statusCode})');
       }
     } catch (e) {
       debugPrint('=== API Error en issueFiscalInvoice: $e ===');
