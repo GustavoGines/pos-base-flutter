@@ -4294,11 +4294,21 @@ class _PosScreenState extends State<PosScreen> {
       onDecrementProduct: _handleDecrementProduct,
       onQuickLook: _showProductQuickLookDialog,
       pinnedProductIds: localTerminal.pinnedProductIds,
-      priceBuilder: (product, isByWeight, fontSize) => _buildPriceWidget(product, isByWeight, fontSize),
+      priceBuilder: (product, isByWeight, fontSize) => _buildPriceWidget(
+        product,
+        isByWeight,
+        fontSize,
+        viewMode: viewMode,
+      ),
     );
   }
 
-  Widget _buildPriceWidget(Product product, bool isByWeight, double fontSize) {
+  Widget _buildPriceWidget(
+    Product product,
+    bool isByWeight,
+    double fontSize, {
+    String? viewMode,
+  }) {
     return Consumer2<PosProvider, OfferProvider>(
       builder: (context, pos, offerProv, _) {
         double displayPrice = product.sellingPrice;
@@ -4321,29 +4331,78 @@ class _PosScreenState extends State<PosScreen> {
           displayPrice = promoPrice;
         }
 
+        final formattedMain = isByWeight
+            ? '\$${displayPrice.toCurrency()}/Kg'
+            : '\$${displayPrice.toCurrency()}';
+        final isRightAligned = viewMode == 'list' || viewMode == 'compact';
+
         if (hasPromo) {
+          final formattedOrig = isByWeight
+              ? '\$${originalPrice.toCurrency()}/Kg'
+              : '\$${originalPrice.toCurrency()}';
+
+          // En modo lista mantenemos el diseño horizontal limpio que ya tiene buen espacio;
+          // en tarjetas (grandes/medianas) y botones compactos apilamos verticalmente
+          // para que el precio de oferta se vea grande y nunca se comprima.
+          if (viewMode == 'list') {
+            return FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerRight,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Text(
+                    formattedOrig,
+                    style: TextStyle(
+                      color: Colors.grey.shade500,
+                      fontSize: fontSize - 2.5,
+                      decoration: TextDecoration.lineThrough,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    formattedMain,
+                    style: TextStyle(
+                      color: const Color(0xFF7B1FA2),
+                      fontWeight: FontWeight.w900,
+                      fontSize: fontSize,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }
+
           return FittedBox(
             fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
-            child: Wrap(
-              crossAxisAlignment: WrapCrossAlignment.center,
+            alignment: isRightAligned ? Alignment.centerRight : Alignment.centerLeft,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment:
+                  isRightAligned ? CrossAxisAlignment.end : CrossAxisAlignment.start,
               children: [
                 Text(
-                  isByWeight ? '\$${originalPrice.toCurrency()}/Kg' : '\$${originalPrice.toCurrency()}',
+                  formattedOrig,
                   style: TextStyle(
                     color: Colors.grey.shade500,
-                    fontSize: fontSize - 2,
+                    fontSize: (fontSize * 0.68).clamp(9.5, 11.5),
                     decoration: TextDecoration.lineThrough,
-                    fontWeight: FontWeight.normal,
+                    decorationColor: Colors.grey.shade500,
+                    fontWeight: FontWeight.w600,
+                    height: 1.0,
                   ),
                 ),
-                const SizedBox(width: 4),
+                const SizedBox(height: 1),
                 Text(
-                  isByWeight ? '\$${displayPrice.toCurrency()}/Kg' : '\$${displayPrice.toCurrency()}',
+                  formattedMain,
                   style: TextStyle(
                     color: const Color(0xFF7B1FA2),
-                    fontWeight: FontWeight.bold,
+                    fontWeight: FontWeight.w900,
                     fontSize: fontSize,
+                    height: 1.05,
+                    letterSpacing: -0.3,
                   ),
                 ),
               ],
@@ -4351,15 +4410,20 @@ class _PosScreenState extends State<PosScreen> {
           );
         }
 
-        return Text(
-          isByWeight ? '\$${displayPrice.toCurrency()}/Kg' : '\$${displayPrice.toCurrency()}',
-          style: TextStyle(
-            color: isByWeight ? Colors.orange.shade800 : Colors.green.shade700,
-            fontWeight: FontWeight.bold,
-            fontSize: fontSize,
+        return FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: isRightAligned ? Alignment.centerRight : Alignment.centerLeft,
+          child: Text(
+            formattedMain,
+            style: TextStyle(
+              color: isByWeight ? Colors.orange.shade800 : const Color(0xFF1B873A),
+              fontWeight: FontWeight.w800,
+              fontSize: fontSize,
+              height: 1.05,
+              letterSpacing: -0.2,
+            ),
+            maxLines: 1,
           ),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
         );
       },
     );

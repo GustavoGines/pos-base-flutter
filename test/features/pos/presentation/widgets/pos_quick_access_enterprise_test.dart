@@ -265,5 +265,99 @@ void main() {
       expect(PosQuickAccessCatalogView.categoryPalette.contains(snacksColor), isTrue);
       expect(PosQuickAccessCatalogView.categoryPalette.contains(panaderiaColor), isTrue);
     });
+
+    testWidgets('Enterprise: Prominent prices and vertical promo stacking render without overflow across all 4 modes', (tester) async {
+      final highValueProduct = Product(
+        id: 500,
+        name: 'CONSOLA PLAY STATION 5 PRO DIGITAL 2TB',
+        internalCode: 'PS5-PRO',
+        costPrice: 1800000,
+        sellingPrice: 2777500,
+        stock: 5,
+        active: true,
+        isSoldByWeight: false,
+        salesCount: 2,
+        imageUrl: 'http://pos-backend.test/storage/products/ps5.jpg',
+      );
+
+      final recordedFontSizes = <String, double>{};
+
+      for (final mode in ['grid_large', 'grid_medium', 'compact', 'list']) {
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: SizedBox(
+                width: 1024,
+                height: 768,
+                child: PosQuickAccessCatalogView(
+                  products: [highValueProduct],
+                  viewMode: mode,
+                  showTopRanks: true,
+                  showKeyboardShortcuts: true,
+                  pinnedProductIds: const {500},
+                  priceBuilder: (p, isByWeight, fontSize) {
+                    recordedFontSizes[mode] = fontSize;
+                    if (mode == 'list') {
+                      return Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            '\$2.777.500',
+                            style: TextStyle(
+                              fontSize: fontSize - 2.5,
+                              decoration: TextDecoration.lineThrough,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            '\$2.222.000',
+                            style: TextStyle(
+                              fontSize: fontSize,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ],
+                      );
+                    }
+                    return Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: mode == 'compact'
+                          ? CrossAxisAlignment.end
+                          : CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '\$2.777.500',
+                          style: TextStyle(
+                            fontSize: (fontSize * 0.68).clamp(9.5, 11.5),
+                            decoration: TextDecoration.lineThrough,
+                          ),
+                        ),
+                        Text(
+                          '\$2.222.000',
+                          style: TextStyle(
+                            fontSize: fontSize,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
+        );
+
+        expect(find.text('\$2.777.500'), findsOneWidget);
+        expect(find.text('\$2.222.000'), findsOneWidget);
+        expect(tester.takeException(), isNull, reason: 'Overflow in mode $mode');
+      }
+
+      // Verificar que los tamaños de fuente principales se incrementaron para legibilidad POS
+      expect(recordedFontSizes['grid_large'], 16.0);
+      expect(recordedFontSizes['grid_medium'], 14.0);
+      expect(recordedFontSizes['compact'], 14.5);
+      expect(recordedFontSizes['list'], 15.0);
+    });
   });
 }
