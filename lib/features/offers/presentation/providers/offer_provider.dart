@@ -6,8 +6,14 @@ import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
 class OfferProvider with ChangeNotifier {
   final OfferRepository repository;
 
+  bool _isLoadingActive = false;
+  bool get isLoadingActive => _isLoadingActive;
+
+  bool _isLoadingHistory = false;
+  bool get isLoadingHistory => _isLoadingHistory;
+
   bool _isLoading = false;
-  bool get isLoading => _isLoading;
+  bool get isLoading => _isLoading || _isLoadingActive || _isLoadingHistory;
 
   String? _errorMessage;
   String? get errorMessage => _errorMessage;
@@ -76,7 +82,7 @@ class OfferProvider with ChangeNotifier {
   }
 
   Future<void> loadActiveOffers() async {
-    _isLoading = true;
+    _isLoadingActive = true;
     _errorMessage = null;
     notifyListeners();
 
@@ -93,7 +99,7 @@ class OfferProvider with ChangeNotifier {
         // para no borrar el contador de ofertas ni desaplicar promociones del carrito.
       }
     } finally {
-      _isLoading = false;
+      _isLoadingActive = false;
       notifyListeners();
     }
   }
@@ -106,7 +112,7 @@ class OfferProvider with ChangeNotifier {
       _lastSearchQuery = search.trim();
     }
 
-    _isLoading = true;
+    _isLoadingHistory = true;
     _errorMessage = null;
     notifyListeners();
 
@@ -118,7 +124,7 @@ class OfferProvider with ChangeNotifier {
     } catch (e) {
       _errorMessage = e.toString().replaceAll('Exception: ', '');
     } finally {
-      _isLoading = false;
+      _isLoadingHistory = false;
       notifyListeners();
     }
   }
@@ -140,6 +146,9 @@ class OfferProvider with ChangeNotifier {
     double? bestPrice;
 
     for (final offer in _activeOffers) {
+      // Validar en tiempo real por si la terminal cruzó la medianoche sin recargar
+      if (!offer.isCurrentlyActive) continue;
+
       final hasProduct = offer.products.any((p) => _extractProductId(p) == productId);
       if (hasProduct) {
         // Obtener el precio base del producto si no se proporcionó
@@ -155,7 +164,7 @@ class OfferProvider with ChangeNotifier {
 
         if (currentBasePrice != null && currentBasePrice > 0) {
           final discountedPrice = offer.calculateDiscountedPrice(currentBasePrice, productId: productId);
-          if (bestPrice == null || discountedPrice < bestPrice) {
+          if (discountedPrice > 0 && (bestPrice == null || discountedPrice < bestPrice)) {
             bestPrice = discountedPrice;
             bestOffer = offer;
           }

@@ -230,5 +230,25 @@ void main() {
       expect(provider.activeOffers.any((o) => o.id == 15), isFalse);
       expect(provider.allOffers.firstWhere((o) => o.id == 15).isActive, isFalse);
     });
+
+    test('getActiveOfferForProduct ignores offers in RAM that expired after midnight or do not match current day', () {
+      final now = DateTime.now();
+      final expiredInRamOffer = OfferModel(
+        id: 20,
+        name: 'Promo Ayer Vencida en RAM',
+        type: 'percentage',
+        discountPercentage: 25,
+        periodType: 'daily',
+        startDate: now.subtract(const Duration(hours: 20)),
+        endDate: now.subtract(const Duration(minutes: 2)),
+        isActive: true,
+        products: [
+          {'id': 500, 'selling_price': '1000.00'},
+        ],
+      );
+
+      provider.activeOffers.add(expiredInRamOffer);
+      expect(provider.getActiveOfferForProduct(500, basePrice: 1000.0), isNull);
+    });
   });
 }

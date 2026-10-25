@@ -63,7 +63,7 @@ class FakeCatalogRepoForR2 implements CatalogRepository {
   @override
   Future<List<Category>> getCategories() async => [Category(id: 1, name: 'Cat 1')];
   @override
-  Future<Map<String, dynamic>> getProducts({int page = 1, String? search, String? sortBy, String? sortDirection, int? perPage}) async => {
+  Future<Map<String, dynamic>> getProducts({int page = 1, String? search, String? sortBy, String? sortDirection, int? perPage, int? categoryId, int? brandId, int? supplierId, bool? active}) async => {
         'data': <Product>[],
         'current_page': 1,
         'last_page': 1,

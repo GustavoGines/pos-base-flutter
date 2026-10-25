@@ -18,6 +18,10 @@ class MockCatalogRepository implements CatalogRepository {
     String? sortBy,
     String? sortDirection,
     int? perPage,
+    int? categoryId,
+    int? brandId,
+    int? supplierId,
+    bool? active,
   }) async {
     lastPageReceived = page;
     lastSearchReceived = search;

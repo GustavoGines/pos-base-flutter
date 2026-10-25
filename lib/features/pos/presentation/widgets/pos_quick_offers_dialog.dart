@@ -24,6 +24,7 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
   final TextEditingController _discountCtrl = TextEditingController(text: '10');
   final TextEditingController _historySearchCtrl = TextEditingController();
 
+  String _offerType = 'percentage'; // 'percentage', 'fixed_price'
   String _periodType = 'daily'; // 'daily', 'weekly', 'monthly'
   final Set<String> _selectedDaysOfWeek = {};
   static const List<MapEntry<String, String>> _weekDayOptions = [
@@ -62,7 +63,12 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final offerProv = Provider.of<OfferProvider>(context, listen: false);
-      offerProv.loadActiveOffers();
+      final posProv = Provider.of<PosProvider>(context, listen: false);
+      offerProv.loadActiveOffers().then((_) {
+        if (mounted) {
+          posProv.syncActiveOffers(offerProv.activeOffers);
+        }
+      });
       offerProv.loadAllOffers(status: _historyFilter);
       final catalogProv = Provider.of<CatalogProvider>(context, listen: false);
       if (catalogProv.categories.isEmpty || catalogProv.brands.isEmpty) {
@@ -118,11 +124,19 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
     );
   }
 
+  String _formatDiscountInputValue(double? value, {required String fallback}) {
+    if (value == null || value <= 0) return fallback;
+    return value == value.roundToDouble() ? value.toInt().toString() : value.toString();
+  }
+
   void _startEditOffer(OfferModel offer) {
     setState(() {
       _editingOffer = offer;
       _offerNameCtrl.text = offer.name;
-      _discountCtrl.text = offer.discountPercentage?.toString() ?? '10';
+      _offerType = offer.type == 'fixed_price' ? 'fixed_price' : 'percentage';
+      _discountCtrl.text = _offerType == 'fixed_price'
+          ? _formatDiscountInputValue(offer.discountAmount, fallback: '1000')
+          : _formatDiscountInputValue(offer.discountPercentage, fallback: '10');
       _periodType = offer.periodType;
       _selectedDaysOfWeek
         ..clear()
@@ -155,7 +169,10 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
     setState(() {
       _editingOffer = null; // No editamos el id existente, creamos una nueva
       _offerNameCtrl.text = '${offer.name} (Copia)';
-      _discountCtrl.text = offer.discountPercentage?.toString() ?? '10';
+      _offerType = offer.type == 'fixed_price' ? 'fixed_price' : 'percentage';
+      _discountCtrl.text = _offerType == 'fixed_price'
+          ? _formatDiscountInputValue(offer.discountAmount, fallback: '1000')
+          : _formatDiscountInputValue(offer.discountPercentage, fallback: '10');
       _periodType = offer.periodType;
       _selectedDaysOfWeek
         ..clear()
@@ -182,13 +199,14 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
       }
     });
     _tabController.animateTo(2);
-    SnackBarService.info(context, '📋 Plantilla cargada. Ajustá productos o porcentajes antes de activar.');
+    SnackBarService.info(context, '📋 Plantilla cargada. Ajustá productos o descuentos antes de activar.');
   }
 
   void _cancelEdit() {
     setState(() {
       _editingOffer = null;
       _offerNameCtrl.clear();
+      _offerType = 'percentage';
       _discountCtrl.text = '10';
       _periodType = 'daily';
       _selectedDaysOfWeek.clear();
@@ -392,8 +410,14 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
         }
       }
       if (_offerNameCtrl.text.trim().isEmpty) {
-        final pct = _discountCtrl.text.trim().isNotEmpty ? _discountCtrl.text.trim() : '10';
-        _offerNameCtrl.text = 'Promo ${selectedGroup.name} $pct% OFF';
+        final rawVal = double.tryParse(_discountCtrl.text.trim().replaceAll(',', '.')) ?? 0;
+        if (_offerType == 'fixed_price') {
+          final amtStr = rawVal > 0 ? '\$${rawVal.toCurrency()}' : '\$1.000';
+          _offerNameCtrl.text = 'Promo ${selectedGroup.name} $amtStr OFF';
+        } else {
+          final pct = _discountCtrl.text.trim().isNotEmpty ? _discountCtrl.text.trim() : '10';
+          _offerNameCtrl.text = 'Promo ${selectedGroup.name} $pct% OFF';
+        }
       }
     });
 
@@ -418,14 +442,32 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
     }
 
     final discount = double.tryParse(_discountCtrl.text.replaceAll(',', '.')) ?? 0;
-    if (discount <= 0 || discount > 100) {
-      SnackBarService.warning(context, 'El porcentaje de descuento debe estar entre 1% y 100%.');
-      return;
+    if (_offerType == 'percentage') {
+      if (discount <= 0 || discount > 100) {
+        SnackBarService.warning(context, 'El porcentaje de descuento debe estar entre 1% y 100%.');
+        return;
+      }
+    } else {
+      if (discount <= 0) {
+        SnackBarService.warning(context, 'El monto fijo de descuento debe ser mayor a \$0.');
+        return;
+      }
     }
 
     if (_selectedProducts.isEmpty) {
       SnackBarService.warning(context, 'Seleccioná al menos un producto para aplicar la oferta.');
       return;
+    }
+
+    if (_offerType == 'fixed_price') {
+      final invalidZero = _selectedProducts.where((p) => p.sellingPrice <= discount).toList();
+      if (invalidZero.isNotEmpty) {
+        SnackBarService.warning(
+          context,
+          'Hay ${invalidZero.length} producto(s) con precio de venta menor o igual al descuento de \$${discount.toCurrency()}. Quitalos con el botón rojo o reducí el monto.',
+        );
+        return;
+      }
     }
 
     final effectiveDays = (_periodType == 'daily' || _selectedDaysOfWeek.isEmpty)
@@ -449,8 +491,9 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
             id: _editingOffer!.id,
             name: name,
             description: _editingOffer!.description,
-            type: 'percentage',
-            discountPercentage: discount,
+            type: _offerType,
+            discountPercentage: _offerType == 'percentage' ? discount : null,
+            discountAmount: _offerType == 'fixed_price' ? discount : null,
             periodType: _periodType,
             daysOfWeek: effectiveDays,
             productIds: _selectedProducts.map((p) => p.id).toList(),
@@ -458,8 +501,9 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
         } else {
           success = await offerProv.createQuickOffer(
             name: name,
-            type: 'percentage',
-            discountPercentage: discount,
+            type: _offerType,
+            discountPercentage: _offerType == 'percentage' ? discount : null,
+            discountAmount: _offerType == 'fixed_price' ? discount : null,
             periodType: _periodType,
             daysOfWeek: effectiveDays,
             productIds: _selectedProducts.map((p) => p.id).toList(),
@@ -470,14 +514,17 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
           pos.syncActiveOffers(offerProv.activeOffers);
           final wasEdit = _editingOffer != null;
           final isActiveToday = offerProv.activeOffers.any((o) => o.name == name);
+          final discountBadge = _offerType == 'fixed_price'
+              ? '\$${discount.toCurrency()} OFF'
+              : '${_formatDiscountInputValue(discount, fallback: '10')}% OFF';
           _cancelEdit();
           SnackBarService.success(
             context,
             wasEdit
                 ? '🏷️ Oferta "$name" actualizada con éxito.'
                 : (isActiveToday
-                    ? '🏷️ Oferta "$name" ($discount% OFF) activada con éxito.'
-                    : '🗓️ Oferta "$name" ($discount% OFF) programada con éxito.'),
+                    ? '🏷️ Oferta "$name" ($discountBadge) activada con éxito.'
+                    : '🗓️ Oferta "$name" ($discountBadge) programada con éxito.'),
           );
           _tabController.animateTo(isActiveToday ? 0 : 1);
         } else if (mounted) {
@@ -491,8 +538,31 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
     );
   }
 
+  List<Map<String, dynamic>> _findInvalidZeroProductsForOffer(OfferModel offer) {
+    if (offer.type != 'fixed_price' || (offer.discountAmount ?? 0) <= 0) {
+      return const [];
+    }
+    final discAmt = offer.discountAmount!;
+    return offer.products.where((p) {
+      final special = double.tryParse(p['pivot']?['special_price']?.toString() ?? '');
+      if (special != null && special > 0) return false;
+      final selling = double.tryParse(p['selling_price']?.toString() ?? '0') ?? 0.0;
+      return selling <= discAmt;
+    }).toList();
+  }
+
   Future<void> _handleToggleStatus(OfferModel offer) async {
-    final isPausing = offer.isCurrentlyActive;
+    final isPausing = offer.isActive;
+    if (!isPausing) {
+      final invalidZero = _findInvalidZeroProductsForOffer(offer);
+      if (invalidZero.isNotEmpty) {
+        SnackBarService.warning(
+          context,
+          'No se puede reanudar: ${invalidZero.length} producto(s) tienen precio de venta menor o igual al descuento (\$${offer.discountAmount!.toCurrency()}). Usá "Editar" para ajustarla.',
+        );
+        return;
+      }
+    }
     await AdminPinDialog.protectAction(
       context,
       action: '${isPausing ? "pausar" : "reanudar"} oferta "${offer.name}"',
@@ -519,6 +589,7 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
   Future<void> _showRelaunchModal(OfferModel offer) async {
     String selectedPeriod = offer.periodType;
     bool duplicate = true;
+    final invalidZeroProducts = _findInvalidZeroProductsForOffer(offer);
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -548,7 +619,7 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Vas a volver a activar la oferta "${offer.name}" (${offer.discountPercentage?.toStringAsFixed(1) ?? "0"}% OFF en ${offer.products.length} productos).',
+                      'Vas a volver a activar la oferta "${offer.name}" (${offer.type == 'percentage' ? "${offer.discountPercentage?.toStringAsFixed(1) ?? "0"}% OFF" : "\$${offer.discountAmount?.toCurrency() ?? "0"} OFF"} en ${offer.products.length} productos).',
                       style: const TextStyle(fontSize: 13, color: Colors.black87),
                     ),
                     const SizedBox(height: 14),
@@ -610,6 +681,30 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
                       ),
                     ),
 
+                    if (invalidZeroProducts.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.red.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.red.shade300),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.error_outline_rounded, color: Colors.red.shade800, size: 20),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Descuento incompatible: ${invalidZeroProducts.length} producto(s) tienen hoy un precio menor o igual a \$${offer.discountAmount?.toCurrency() ?? "0"}. Usá "Plantilla" para ajustarla antes de activar.',
+                                style: TextStyle(fontSize: 11, color: Colors.red.shade900, fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+
                     if (offer.hasMarginWarning) ...[
                       const SizedBox(height: 10),
                       Container(
@@ -641,12 +736,23 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
                   onPressed: () => Navigator.pop(ctx, false),
                   child: const Text('Cancelar'),
                 ),
-                FilledButton.icon(
-                  style: FilledButton.styleFrom(backgroundColor: const Color(0xFF7B1FA2)),
-                  onPressed: () => Navigator.pop(ctx, true),
-                  icon: const Icon(Icons.bolt_rounded, size: 18),
-                  label: const Text('Relanzar Ahora'),
-                ),
+                if (invalidZeroProducts.isNotEmpty)
+                  FilledButton.icon(
+                    style: FilledButton.styleFrom(backgroundColor: Colors.orange.shade800),
+                    onPressed: () {
+                      Navigator.pop(ctx, false);
+                      _useOfferAsTemplate(offer);
+                    },
+                    icon: const Icon(Icons.edit_note_rounded, size: 18),
+                    label: const Text('Ajustar como Plantilla'),
+                  )
+                else
+                  FilledButton.icon(
+                    style: FilledButton.styleFrom(backgroundColor: const Color(0xFF7B1FA2)),
+                    onPressed: () => Navigator.pop(ctx, true),
+                    icon: const Icon(Icons.bolt_rounded, size: 18),
+                    label: const Text('Relanzar Ahora'),
+                  ),
               ],
             );
           },
@@ -813,11 +919,11 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
   Widget _buildActiveOffersTab() {
     return Consumer<OfferProvider>(
       builder: (context, offerProv, _) {
-        if (offerProv.isLoading && offerProv.activeOffers.isEmpty) {
+        final list = offerProv.activeOffers.where((o) => o.isCurrentlyActive).toList();
+
+        if (offerProv.isLoadingActive && list.isEmpty) {
           return const Center(child: CircularProgressIndicator());
         }
-
-        final list = offerProv.activeOffers;
 
         if (list.isEmpty) {
           return Center(
@@ -1045,7 +1151,7 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
 
             // Lista de ofertas del historial
             Expanded(
-              child: offerProv.isLoading && list.isEmpty
+              child: offerProv.isLoadingHistory && list.isEmpty
                   ? const Center(child: CircularProgressIndicator())
                   : list.isEmpty
                       ? Center(
@@ -1251,15 +1357,15 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
                   ),
                   const SizedBox(width: 4),
 
-                  // Pausar / Reanudar (solo para ofertas vigentes o pausadas dentro de fecha)
+                  // Pausar / Reanudar (basado en offer.isActive real, no en si hoy toca su día de semana)
                   if (!isExpired)
                     IconButton(
                       icon: Icon(
-                        isCurrentlyActive ? Icons.pause_circle_outline : Icons.play_circle_outline,
+                        !isPaused ? Icons.pause_circle_outline : Icons.play_circle_outline,
                         size: 20,
-                        color: isCurrentlyActive ? Colors.orange : Colors.green.shade700,
+                        color: !isPaused ? Colors.orange : Colors.green.shade700,
                       ),
-                      tooltip: isCurrentlyActive ? 'Pausar oferta' : 'Reanudar oferta',
+                      tooltip: !isPaused ? 'Pausar oferta' : 'Reanudar oferta',
                       onPressed: () => _handleToggleStatus(offer),
                     ),
 
@@ -1278,17 +1384,94 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
     );
   }
 
+  double _computePreviewDiscountedPrice(double sellingPrice, double rawInputValue) {
+    if (rawInputValue <= 0) return sellingPrice;
+    if (_offerType == 'fixed_price') {
+      final res = (sellingPrice - rawInputValue).clamp(0.0, double.infinity);
+      return (res * 100).roundToDouble() / 100.0;
+    }
+    if (rawInputValue > 100) return sellingPrice;
+    return (sellingPrice * (1.0 - (rawInputValue / 100.0)) * 100).roundToDouble() / 100.0;
+  }
+
+  Widget _buildDiscountTypeOption({
+    required String typeValue,
+    required String label,
+    required IconData icon,
+  }) {
+    final isSelected = _offerType == typeValue;
+    return InkWell(
+      borderRadius: BorderRadius.circular(7),
+      onTap: () {
+        if (_offerType == typeValue) return;
+        setState(() {
+          _offerType = typeValue;
+          final currentNum = double.tryParse(_discountCtrl.text.replaceAll(',', '.')) ?? 0;
+          if (typeValue == 'fixed_price' && (currentNum <= 0 || currentNum <= 100)) {
+            _discountCtrl.text = '1000';
+          } else if (typeValue == 'percentage' && (currentNum <= 0 || currentNum > 100)) {
+            _discountCtrl.text = '10';
+          }
+        });
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFF7B1FA2) : Colors.transparent,
+          borderRadius: BorderRadius.circular(7),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 15,
+              color: isSelected ? Colors.white : Colors.grey.shade700,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                color: isSelected ? Colors.white : Colors.grey.shade800,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildCreateOfferTab() {
-    final currentPct = double.tryParse(_discountCtrl.text.replaceAll(',', '.')) ?? 0.0;
+    final currentVal = double.tryParse(_discountCtrl.text.replaceAll(',', '.')) ?? 0.0;
+    final isValidInput = _offerType == 'fixed_price'
+        ? currentVal > 0
+        : (currentVal > 0 && currentVal <= 100);
+
+    // Candado 1: En Monto Fijo ($), productos cuyo precio de venta <= descuento (quedarían en $0)
+    final invalidZeroProducts = (_offerType == 'fixed_price' && isValidInput)
+        ? _selectedProducts.where((p) => p.sellingPrice <= currentVal).toList()
+        : <Product>[];
+    final invalidZeroIdsSet = invalidZeroProducts.map((e) => e.id).toSet();
+
+    // Candado 2: Escudo de margen (quedan > $0 pero por debajo del costo)
     final riskyProducts = _selectedProducts.where((p) {
-      if (p.costPrice <= 0 || p.sellingPrice <= 0 || currentPct <= 0 || currentPct > 100) {
+      if (!isValidInput || p.costPrice <= 0 || p.sellingPrice <= 0) {
         return false;
       }
-      final discounted = (p.sellingPrice * (1.0 - (currentPct / 100.0)) * 100).roundToDouble() / 100.0;
+      if (invalidZeroIdsSet.contains(p.id)) {
+        return false; // Ya está reportado en el bloqueo rojo de $0
+      }
+      final discounted = _computePreviewDiscountedPrice(p.sellingPrice, currentVal);
       return discounted < p.costPrice;
     }).toList();
     final riskyIdsSet = riskyProducts.map((e) => e.id).toSet();
     final hasSuppliersFeature = Provider.of<SettingsProvider>(context, listen: false).features.suppliers;
+    final discountSummaryText = _offerType == 'fixed_price'
+        ? '\$${currentVal.toCurrency()} OFF'
+        : '${currentVal.toStringAsFixed(1)}% OFF';
 
     return SingleChildScrollView(
       child: Column(
@@ -1432,24 +1615,52 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
           ],
           const SizedBox(height: 12),
 
-          // Descuento
+          // Selector de Tipo (% Porcentaje vs $ Monto Fijo) + Valor + Cargar Carrito
           Row(
             children: [
+              Container(
+                padding: const EdgeInsets.all(3),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(9),
+                  border: Border.all(color: Colors.grey.shade300),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _buildDiscountTypeOption(
+                      typeValue: 'percentage',
+                      label: 'Porcentaje',
+                      icon: Icons.percent_rounded,
+                    ),
+                    const SizedBox(width: 2),
+                    _buildDiscountTypeOption(
+                      typeValue: 'fixed_price',
+                      label: 'Monto Fijo',
+                      icon: Icons.attach_money_rounded,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
               Expanded(
                 child: TextField(
                   controller: _discountCtrl,
                   onChanged: (_) => setState(() {}),
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
                   decoration: InputDecoration(
-                    labelText: 'Porcentaje de Descuento (%)',
-                    suffixText: '%',
-                    prefixIcon: const Icon(Icons.percent_rounded, size: 20),
+                    labelText: _offerType == 'fixed_price'
+                        ? 'Monto a descontar'
+                        : 'Porcentaje de descuento',
+                    prefixText: _offerType == 'fixed_price' ? '\$ ' : null,
+                    suffixText: _offerType == 'percentage' ? '%' : 'OFF',
+                    prefixIcon: const Icon(Icons.discount_outlined, size: 20),
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                     contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                   ),
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
               ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.purple.shade50,
@@ -1602,40 +1813,104 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
                   spacing: 6,
                   runSpacing: 6,
                   children: _selectedProducts.map((p) {
-                    final discounted = (currentPct > 0 && currentPct <= 100)
-                        ? (p.sellingPrice * (1.0 - (currentPct / 100.0)) * 100).roundToDouble() / 100.0
+                    final discounted = isValidInput
+                        ? _computePreviewDiscountedPrice(p.sellingPrice, currentVal)
                         : p.sellingPrice;
-                    final priceLabel = (currentPct > 0 && currentPct <= 100)
+                    final priceLabel = isValidInput
                         ? '\$${p.sellingPrice.toCurrency()} → \$${discounted.toCurrency()}'
                         : '\$${p.sellingPrice.toCurrency()}';
+                    final isInvalidZero = invalidZeroIdsSet.contains(p.id);
                     final isRisky = riskyIdsSet.contains(p.id);
-                    return Chip(
-                      backgroundColor: isRisky ? Colors.amber.shade50 : Colors.white,
-                      side: BorderSide(color: isRisky ? Colors.amber.shade400 : Colors.grey.shade300),
-                      avatar: isRisky
-                          ? Icon(Icons.warning_amber_rounded, size: 14, color: Colors.amber.shade900)
-                          : null,
-                      label: Text(
-                        '${p.name} ($priceLabel)',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: isRisky ? Colors.amber.shade900 : Colors.black87,
-                          fontWeight: isRisky ? FontWeight.w600 : FontWeight.normal,
+                    final displayName = p.name.length > 32 ? '${p.name.substring(0, 32)}…' : p.name;
+                    return Tooltip(
+                      message: '${p.name} ($priceLabel)',
+                      child: Chip(
+                        backgroundColor: isInvalidZero
+                            ? Colors.red.shade50
+                            : (isRisky ? Colors.amber.shade50 : Colors.white),
+                        side: BorderSide(
+                          color: isInvalidZero
+                              ? Colors.red.shade400
+                              : (isRisky ? Colors.amber.shade400 : Colors.grey.shade300),
                         ),
+                        avatar: isInvalidZero
+                            ? Icon(Icons.block_rounded, size: 14, color: Colors.red.shade800)
+                            : (isRisky
+                                ? Icon(Icons.warning_amber_rounded, size: 14, color: Colors.amber.shade900)
+                                : null),
+                        label: Text(
+                          '$displayName ($priceLabel)',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: isInvalidZero
+                                ? Colors.red.shade900
+                                : (isRisky ? Colors.amber.shade900 : Colors.black87),
+                            fontWeight: (isInvalidZero || isRisky) ? FontWeight.w600 : FontWeight.normal,
+                          ),
+                        ),
+                        deleteIcon: const Icon(Icons.close, size: 15),
+                        visualDensity: VisualDensity.compact,
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        onDeleted: () {
+                          setState(() {
+                            _selectedProducts.removeWhere((item) => item.id == p.id);
+                          });
+                        },
                       ),
-                      deleteIcon: const Icon(Icons.close, size: 15),
-                      visualDensity: VisualDensity.compact,
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      onDeleted: () {
-                        setState(() {
-                          _selectedProducts.removeWhere((item) => item.id == p.id);
-                        });
-                      },
                     );
                   }).toList(),
                 ),
               ),
             ),
+
+          if (invalidZeroProducts.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.red.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.red.shade300),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.error_outline_rounded, color: Colors.red.shade800, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Descuento incompatible: Con \$${currentVal.toCurrency()} OFF, ${invalidZeroProducts.length} producto(s) quedan en \$0 (${invalidZeroProducts.map((e) => e.name).take(2).join(", ")}${invalidZeroProducts.length > 2 ? "..." : ""}).',
+                      style: TextStyle(fontSize: 11, color: Colors.red.shade900, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.red.shade900,
+                      backgroundColor: Colors.white,
+                      side: BorderSide(color: Colors.red.shade700),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    icon: const Icon(Icons.remove_circle_outline, size: 15),
+                    label: Text(
+                      'Quitar estos ${invalidZeroProducts.length}',
+                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                    ),
+                    onPressed: () {
+                      final count = invalidZeroIdsSet.length;
+                      setState(() {
+                        _selectedProducts.removeWhere((p) => invalidZeroIdsSet.contains(p.id));
+                      });
+                      SnackBarService.info(
+                        context,
+                        '🧹 Se quitaron $count producto(s) cuyo precio era menor o igual al descuento.',
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ],
 
           if (riskyProducts.isNotEmpty) ...[
             const SizedBox(height: 8),
@@ -1652,7 +1927,7 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Alerta de margen: Con ${currentPct.toStringAsFixed(1)}% OFF, ${riskyProducts.length} producto(s) quedan bajo su costo (${riskyProducts.map((e) => e.name).take(2).join(", ")}${riskyProducts.length > 2 ? "..." : ""}).',
+                      'Alerta de margen: Con $discountSummaryText, ${riskyProducts.length} producto(s) quedan bajo su costo (${riskyProducts.map((e) => e.name).take(2).join(", ")}${riskyProducts.length > 2 ? "..." : ""}).',
                       style: TextStyle(fontSize: 11, color: Colors.amber.shade900, fontWeight: FontWeight.w600),
                     ),
                   ),
@@ -1703,7 +1978,7 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
               label: Text(
                 _isSaving
                     ? 'Guardando...'
-                    : (_editingOffer != null ? '💾 Guardar Cambios de la Oferta' : '🚀 Activar Oferta Inmediatamente'),
+                    : (_editingOffer != null ? 'Guardar Cambios de la Oferta' : 'Activar Oferta Inmediatamente'),
                 style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
               ),
             ),

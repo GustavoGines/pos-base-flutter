@@ -79,7 +79,7 @@ class FakeCatalogRepository implements CatalogRepository {
       ];
 
   @override
-  Future<Map<String, dynamic>> getProducts({int page = 1, String? search, String? sortBy, String? sortDirection, int? perPage}) async => {
+  Future<Map<String, dynamic>> getProducts({int page = 1, String? search, String? sortBy, String? sortDirection, int? perPage, int? categoryId, int? brandId, int? supplierId, bool? active}) async => {
         'data': <Product>[],
         'current_page': 1,
         'last_page': 1,

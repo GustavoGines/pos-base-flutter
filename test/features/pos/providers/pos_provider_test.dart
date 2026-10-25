@@ -10,6 +10,7 @@ import 'package:frontend_desktop/features/pos/domain/repositories/pos_repository
 import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
 import 'package:frontend_desktop/core/utils/receipt_printer_service.dart';
 import 'package:frontend_desktop/features/pos/domain/entities/cart_item.dart';
+import 'package:frontend_desktop/features/offers/data/models/offer_model.dart';
 
 @GenerateMocks([
   ProcessSaleUseCase,
@@ -236,6 +237,54 @@ void main() {
       provider.setPriceTier(PriceTier.base);
       expect(item.activeTier, PriceTier.base);
       expect(item.unitPrice, 1000.0);
+    });
+
+    test('PosProvider syncActiveOffers preserves cheaper frozen price from recalled order when smaller offer is active', () {
+      final pendingSaleData = {
+        'id': 105,
+        'shipping_cost': '0',
+        'price_list': 'base',
+        'items': [
+          {
+            'product_id': 1,
+            'product_name': 'Producto Test',
+            'quantity': '1.0',
+            'unit_price': '700.0', // Precio congelado más barato ($700 sobre $1000)
+            'product': {
+              'id': 1,
+              'name': 'Producto Test',
+              'internal_code': 'PTEST',
+              'cost_price': '500.0',
+              'selling_price': '1000.0',
+              'stock': '10',
+              'is_sold_by_weight': false,
+            }
+          }
+        ]
+      };
+
+      provider.recallOrderToCart(pendingSaleData);
+      expect(provider.cart.first.unitPrice, 700.0);
+
+      // Hoy existe una oferta activa menor (10% OFF -> $900)
+      final smallerOfferToday = OfferModel(
+        id: 88,
+        name: 'Promo Hoy 10%',
+        type: 'percentage',
+        discountPercentage: 10,
+        periodType: 'daily',
+        startDate: DateTime.now().subtract(const Duration(hours: 1)),
+        endDate: DateTime.now().add(const Duration(hours: 5)),
+        isActive: true,
+        products: [
+          {'id': 1, 'selling_price': '1000.0'},
+        ],
+      );
+
+      provider.syncActiveOffers([smallerOfferToday]);
+
+      // Debe conservar los $700 pactados y no encarecerlo a $900
+      expect(provider.cart.first.unitPrice, 700.0);
     });
   });
 }

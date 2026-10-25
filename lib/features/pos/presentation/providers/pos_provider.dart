@@ -576,10 +576,13 @@ class PosProvider with ChangeNotifier {
     dynamic bestOffer;
     double? bestPrice;
     for (final offer in _cachedActiveOffers) {
+      try {
+        if ((offer as dynamic).isCurrentlyActive == false) continue;
+      } catch (_) {}
       final products = offer.products as List? ?? [];
       if (products.any((p) => _extractOfferProductId(p) == product.id)) {
         final discounted = offer.calculateDiscountedPrice(product.sellingPrice, productId: product.id) as double;
-        if (bestPrice == null || discounted < bestPrice) {
+        if (discounted > 0 && (bestPrice == null || discounted < bestPrice)) {
           bestPrice = discounted;
           bestOffer = offer;
         }
@@ -656,9 +659,12 @@ class PosProvider with ChangeNotifier {
     _cachedActiveOffers = List<dynamic>.from(activeOffers);
     bool hasChanges = false;
     for (final item in _cart) {
-      // Buscar todas las ofertas aplicables a este producto
+      // Buscar todas las ofertas aplicables a este producto (vigentes hoy)
       final applicableOffers = <dynamic>[];
       for (final offer in activeOffers) {
+        try {
+          if ((offer as dynamic).isCurrentlyActive == false) continue;
+        } catch (_) {}
         final products = offer.products as List? ?? [];
         if (products.any((p) => _extractOfferProductId(p) == item.product.id)) {
           applicableOffers.add(offer);
@@ -670,7 +676,7 @@ class PosProvider with ChangeNotifier {
       double? bestPrice;
       for (final offer in applicableOffers) {
         final discounted = offer.calculateDiscountedPrice(item.product.sellingPrice, productId: item.product.id) as double;
-        if (bestPrice == null || discounted < bestPrice) {
+        if (discounted > 0 && (bestPrice == null || discounted < bestPrice)) {
           bestPrice = discounted;
           bestOffer = offer;
         }
@@ -679,6 +685,16 @@ class PosProvider with ChangeNotifier {
       if (bestOffer != null) {
         final discounted = bestOffer.calculateDiscountedPrice(item.product.sellingPrice, productId: item.product.id) as double;
         final periodType = bestOffer.periodType as String?;
+        // Salvaguarda: si el ítem proviene de un Presupuesto o Venta en Espera con precio congelado
+        // (sin label ni periodType) y ese precio pactado ya es menor o igual a la oferta actual,
+        // respetarlo para no encarecer el acuerdo pactado con el cliente.
+        final isFrozenAgreement = item.promotionalPrice != null &&
+            item.promotionalPrice! > 0 &&
+            item.promotionalLabel == null &&
+            item.promotionalPeriodType == null;
+        if (isFrozenAgreement && item.promotionalPrice! <= discounted) {
+          continue;
+        }
         if (item.promotionalPrice != discounted ||
             item.promotionalLabel != bestOffer.name ||
             item.promotionalPeriodType != periodType) {
@@ -689,7 +705,7 @@ class PosProvider with ChangeNotifier {
         }
       } else if (item.promotionalPrice != null && item.promotionalLabel != null && item.promotionalPeriodType != null) {
         // Solo limpiar promotionalPrice si es una oferta real (con label y periodType)
-        // No limpiar si es un precio de lista mayorista/custom (que no tiene label/periodType)
+        // No limpiar si es un precio de lista mayorista/custom o acuerdo congelado (que no tiene label/periodType)
         item.promotionalPrice = null;
         item.promotionalLabel = null;
         item.promotionalPeriodType = null;
