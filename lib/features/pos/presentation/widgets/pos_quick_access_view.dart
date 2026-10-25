@@ -489,9 +489,9 @@ class PosQuickAccessCatalogView extends StatelessWidget {
     final cartQty = _getCartQuantity(context, product.id);
     final isPinned = pinnedProductIds.contains(product.id);
     final accent = _resolveSemanticAccent(product);
-    final lowStock = !product.isCombo &&
-        product.minStock != null &&
-        product.stock <= product.minStock!;
+    final lowStock = product.isCombo
+        ? product.stock <= (product.minStock ?? 0)
+        : (product.minStock != null && product.stock <= product.minStock!);
 
     return Card(
       elevation: cartQty > 0 ? 2 : 1,
@@ -1115,9 +1115,10 @@ class PosQuickAccessCatalogView extends StatelessWidget {
                             Flexible(
                               child: _renderPrice(context, product, isByWeight, isMedium ? 13.5 : 15.5),
                             ),
-                            if (!product.isCombo &&
-                                product.minStock != null &&
-                                product.stock <= product.minStock!)
+                            if (product.isCombo
+                                ? product.stock <= (product.minStock ?? 0)
+                                : (product.minStock != null &&
+                                    product.stock <= product.minStock!))
                               Container(
                                 width: 6,
                                 height: 6,

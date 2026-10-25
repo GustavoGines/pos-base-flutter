@@ -246,18 +246,73 @@ class CatalogProvider with ChangeNotifier {
   Future<void> refreshStockForSoldProducts(List<int> soldIds) async {
     if (soldIds.isEmpty) return;
     try {
-      final updates = await repository.fetchBulkStock(soldIds);
+      // Expandir IDs localmente por si se vendió un combo (incluir sus ingredientes)
+      final expandedIds = <int>{...soldIds};
+      for (final p in _products) {
+        if (p.isCombo && p.comboIngredients != null) {
+          final ingIds = p.comboIngredients!
+              .map((ing) => (ing['id'] as num?)?.toInt())
+              .whereType<int>()
+              .toSet();
+          if (expandedIds.contains(p.id) || ingIds.intersection(expandedIds).isNotEmpty) {
+            expandedIds.add(p.id);
+            expandedIds.addAll(ingIds);
+          }
+        }
+      }
+
+      final updates = await repository.fetchBulkStock(expandedIds.toList());
+      final updatedStockById = <int, double>{};
       bool changed = false;
+
       for (final entry in updates) {
         final id = (entry['id'] as num?)?.toInt();
         final stock = double.tryParse(entry['stock']?.toString() ?? '');
         if (id == null || stock == null) continue;
+        updatedStockById[id] = stock;
         final index = _products.indexWhere((p) => p.id == id);
         if (index != -1) {
           _products[index] = _products[index].copyWith(stock: stock);
           changed = true;
         }
       }
+
+      // Sincronizar también el stock de los ingredientes dentro de cada Combo en memoria
+      if (updatedStockById.isNotEmpty) {
+        for (int i = 0; i < _products.length; i++) {
+          final p = _products[i];
+          if (!p.isCombo || p.comboIngredients == null || p.comboIngredients!.isEmpty) continue;
+
+          bool comboChanged = false;
+          int? limitingCombos;
+          final updatedIngredients = p.comboIngredients!.map((ing) {
+            final copy = Map<String, dynamic>.from(ing);
+            final ingId = (copy['id'] as num?)?.toInt();
+            if (ingId != null && updatedStockById.containsKey(ingId)) {
+              copy['stock'] = updatedStockById[ingId];
+              comboChanged = true;
+            }
+            final s = (copy['stock'] as num?)?.toDouble() ?? 0.0;
+            final q = (copy['quantity'] as num?)?.toDouble() ?? 1.0;
+            if (q > 0) {
+              final fit = s < 0 ? 0 : (s / q).floor();
+              if (limitingCombos == null || fit < limitingCombos!) {
+                limitingCombos = fit;
+              }
+            }
+            return copy;
+          }).toList();
+
+          if (comboChanged) {
+            _products[i] = p.copyWith(
+              comboIngredients: updatedIngredients,
+              stock: (limitingCombos ?? 0).toDouble(),
+            );
+            changed = true;
+          }
+        }
+      }
+
       if (changed) notifyListeners();
     } catch (e) {
       // Silent failure: el stock local puede quedar levemente desincronizado hasta

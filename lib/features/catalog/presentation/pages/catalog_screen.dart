@@ -1359,7 +1359,9 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     _active = p?.active ?? true;
     _isCombo = p?.isCombo ?? false;
     if (_isCombo && p?.comboIngredients != null) {
-      _comboIngredients = List<Map<String, dynamic>>.from(p!.comboIngredients!);
+      _comboIngredients = p!.comboIngredients!
+          .map((ing) => Map<String, dynamic>.from(ing))
+          .toList();
     }
     if (p?.priceTiers != null) {
       _priceTiers = List<Map<String, dynamic>>.from(p!.priceTiers!);
@@ -1499,6 +1501,10 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
   }
 
   void _onPriceChanged() {
+    if (_isCombo) {
+      if (mounted) setState(() {});
+      return;
+    }
     if (_isAutoCalculating) return;
     final costStr = _costCtrl.text.replaceAll(',', '.');
     final priceStr = _priceCtrl.text.replaceAll(',', '.');
@@ -1603,6 +1609,35 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+    if (_isCombo && _comboIngredients.isEmpty) {
+      SnackBarService.error(
+        context,
+        'Debes añadir al menos un producto incluido en el Combo / Receta antes de guardar.',
+      );
+      return;
+    }
+    if (_isCombo && _comboIngredients.any((ing) => ((ing['quantity'] as num?) ?? 0) <= 0)) {
+      SnackBarService.error(
+        context,
+        'La cantidad de cada producto incluido en el Combo debe ser mayor a 0.',
+      );
+      return;
+    }
+    if (_isCombo) {
+      for (final ing in _comboIngredients) {
+        final reqQty = (ing['quantity'] as num?)?.toDouble() ?? 0.0;
+        if (ing['stock'] != null) {
+          final availStock = (ing['stock'] as num).toDouble();
+          if (reqQty > availStock) {
+            SnackBarService.error(
+              context,
+              'La cantidad requerida de "${ing['name']}" (${reqQty.toQty()}) supera su stock disponible actual (${availStock.toQty()}).',
+            );
+            return;
+          }
+        }
+      }
+    }
     final parsedStock = double.tryParse(_stockCtrl.text.replaceAll(',', '.')) ?? 0.0;
     final initialStock = widget.product != null
         ? (double.tryParse(widget.product!.stock.toStringAsFixed(widget.product!.isSoldByWeight ? 3 : 0)) ?? widget.product!.stock)
@@ -2729,33 +2764,135 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                             child: Text('Agregá los productos individuales y la cantidad que se descontará del stock al vender este combo.', style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
                           ),
                         ..._comboIngredients.map((ing) {
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 8.0),
-                            child: Row(
+                          final qty = (ing['quantity'] as num?)?.toDouble() ?? 1.0;
+                          final unitCost = (ing['cost_price'] as num?)?.toDouble() ?? 0.0;
+                          final unitSell = (ing['selling_price'] as num?)?.toDouble() ?? 0.0;
+                          final availStock = (ing['stock'] as num?)?.toDouble();
+                          final unitType = ing['unit_type']?.toString() ?? 'un';
+                          final exceedsStock = availStock != null && qty > availStock;
+
+                          return Container(
+                            key: ValueKey('combo_ing_row_${ing['id']}'),
+                            margin: const EdgeInsets.only(bottom: 8.0),
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: exceedsStock ? Colors.red.shade50 : Colors.white,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: exceedsStock ? Colors.red.shade300 : Colors.amber.shade200,
+                              ),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Expanded(
-                                  child: Text(ing['name'], overflow: TextOverflow.ellipsis),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            ing['name']?.toString() ?? '',
+                                            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                          const SizedBox(height: 3),
+                                          Wrap(
+                                            spacing: 10,
+                                            runSpacing: 2,
+                                            children: [
+                                              if (availStock != null)
+                                                Text(
+                                                  'Stock: ${availStock.toQty()} $unitType',
+                                                  style: TextStyle(
+                                                    fontSize: 11.5,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: exceedsStock ? Colors.red.shade700 : Colors.grey.shade700,
+                                                  ),
+                                                ),
+                                              Text(
+                                                'Costo u.: \$${unitCost.toCurrency()}',
+                                                style: TextStyle(fontSize: 11.5, color: Colors.grey.shade700),
+                                              ),
+                                              Text(
+                                                'Venta u.: \$${unitSell.toCurrency()}',
+                                                style: TextStyle(
+                                                  fontSize: 11.5,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: Colors.blue.shade800,
+                                                ),
+                                              ),
+                                              if (qty > 0)
+                                                Text(
+                                                  'Subtotal normal: \$${(unitSell * qty).toCurrency()}',
+                                                  style: TextStyle(
+                                                    fontSize: 11.5,
+                                                    fontWeight: FontWeight.bold,
+                                                    color: Colors.deepPurple.shade700,
+                                                  ),
+                                                ),
+                                            ],
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    SizedBox(
+                                      width: 95,
+                                      child: TextFormField(
+                                        key: ValueKey('combo_ing_qty_${ing['id']}'),
+                                        initialValue: qty.toQty(),
+                                        decoration: InputDecoration(
+                                          labelText: 'Cant.',
+                                          isDense: true,
+                                          border: const OutlineInputBorder(),
+                                          errorStyle: const TextStyle(fontSize: 10),
+                                        ),
+                                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                        validator: (v) {
+                                          final parsed = double.tryParse((v ?? '').replaceAll(',', '.'));
+                                          if (parsed == null || parsed <= 0) return '> 0';
+                                          if (availStock != null && parsed > availStock) {
+                                            return 'Máx ${availStock.toQty()}';
+                                          }
+                                          return null;
+                                        },
+                                        onChanged: (v) {
+                                          setState(() {
+                                            ing['quantity'] = double.tryParse(v.replaceAll(',', '.')) ?? 0.0;
+                                          });
+                                        },
+                                      ),
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.delete_outline, color: Colors.red),
+                                      tooltip: 'Quitar del combo',
+                                      onPressed: () => setState(() => _comboIngredients.remove(ing)),
+                                    ),
+                                  ],
                                 ),
-                                const SizedBox(width: 8),
-                                SizedBox(
-                                  width: 100,
-                                  child: TextFormField(
-                                    initialValue: (ing['quantity'] as num).toQty(),
-                                    decoration: const InputDecoration(labelText: 'Cant.', isDense: true),
-                                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                    onChanged: (v) {
-                                      ing['quantity'] = double.tryParse(v.replaceAll(',', '.')) ?? 1.0;
-                                    },
+                                if (exceedsStock)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 4),
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.warning_amber_rounded, size: 15, color: Colors.red.shade700),
+                                        const SizedBox(width: 4),
+                                        Expanded(
+                                          child: Text(
+                                            'La cantidad (${qty.toQty()}) supera tu stock disponible actual (${availStock.toQty()} $unitType).',
+                                            style: TextStyle(fontSize: 11.5, color: Colors.red.shade700, fontWeight: FontWeight.w600),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ),
-                                ),
-                                IconButton(
-                                  icon: const Icon(Icons.delete, color: Colors.red),
-                                  onPressed: () => setState(() => _comboIngredients.remove(ing)),
-                                ),
                               ],
                             ),
                           );
                         }),
+                        if (_comboIngredients.isNotEmpty)
+                          _buildComboLiveSummaryCard(),
                       ],
                     ),
                   ),
@@ -2911,6 +3048,139 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     );
   }
 
+  Widget _buildComboLiveSummaryCard() {
+    double totalCost = 0.0;
+    double totalIndividualSelling = 0.0;
+    int? possibleCombos;
+
+    for (final ing in _comboIngredients) {
+      final qty = (ing['quantity'] as num?)?.toDouble() ?? 0.0;
+      final unitCost = (ing['cost_price'] as num?)?.toDouble() ?? 0.0;
+      final unitSell = (ing['selling_price'] as num?)?.toDouble() ?? 0.0;
+      final availStock = (ing['stock'] as num?)?.toDouble();
+
+      if (qty > 0) {
+        totalCost += unitCost * qty;
+        totalIndividualSelling += unitSell * qty;
+        if (availStock != null) {
+          final fit = availStock < 0 ? 0 : (availStock / qty).floor();
+          if (possibleCombos == null || fit < possibleCombos) {
+            possibleCombos = fit;
+          }
+        }
+      } else {
+        possibleCombos = 0;
+      }
+    }
+
+    final comboPrice = double.tryParse(_priceCtrl.text.replaceAll(',', '.')) ?? 0.0;
+    final profit = comboPrice - totalCost;
+    final savings = totalIndividualSelling - comboPrice;
+    final discountPct = totalIndividualSelling > 0 ? (savings / totalIndividualSelling) * 100 : 0.0;
+    final armables = possibleCombos ?? 0;
+
+    return Container(
+      margin: const EdgeInsets.only(top: 4),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.amber.shade400),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.calculate_outlined, size: 17, color: Colors.amber.shade900),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Resumen para calcular tu Precio de Combo',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5, color: Colors.amber.shade900),
+                  ),
+                ],
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: armables > 0 ? Colors.green.shade50 : Colors.red.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: armables > 0 ? Colors.green.shade300 : Colors.red.shade300),
+                ),
+                child: Text(
+                  'Combos armables hoy: $armables',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.bold,
+                    color: armables > 0 ? Colors.green.shade800 : Colors.red.shade800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const Divider(height: 14),
+          Wrap(
+            spacing: 16,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Text(
+                'Costo Total Ingredientes: \$${totalCost.toCurrency()}',
+                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+              ),
+              Text(
+                'Suma Venta por Separado: \$${totalIndividualSelling.toCurrency()}',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.blue.shade800),
+              ),
+              if (totalIndividualSelling > 0)
+                InkWell(
+                  onTap: () {
+                    setState(() {
+                      _priceCtrl.text = totalIndividualSelling.toInputFormat();
+                    });
+                  },
+                  child: Text(
+                    'Usar \$${totalIndividualSelling.toCurrency()} como base',
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      color: Colors.deepPurple.shade700,
+                      fontWeight: FontWeight.bold,
+                      decoration: TextDecoration.underline,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          if (comboPrice > 0) ...[
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 16,
+              runSpacing: 4,
+              children: [
+                Text(
+                  'Tu Ganancia por Combo: \$${profit.toCurrency()}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: profit >= 0 ? Colors.green.shade700 : Colors.red.shade700,
+                  ),
+                ),
+                if (savings > 0)
+                  Text(
+                    'Ahorro p/ el cliente: -\$${savings.toCurrency()} (${discountPct.toStringAsFixed(1)}% OFF)',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.orange.shade900),
+                  ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   Future<void> _showIngredientSearchDialog(BuildContext context, CatalogProvider provider) async {
     await showDialog<void>(
       context: context,
@@ -2991,7 +3261,16 @@ class _ComboIngredientPickerDialogState extends State<_ComboIngredientPickerDial
     final alreadyAdded = widget.comboIngredients.any((ing) => ing['id'] == p.id);
     if (alreadyAdded) return;
     setState(() {
-      widget.comboIngredients.add({'id': p.id, 'name': p.name, 'quantity': 1});
+      widget.comboIngredients.add({
+        'id': p.id,
+        'name': p.name,
+        'quantity': 1.0,
+        'cost_price': p.costPrice,
+        'selling_price': p.sellingPrice,
+        'stock': p.stock,
+        'unit_type': p.unitType,
+        'is_sold_by_weight': p.isSoldByWeight,
+      });
     });
     widget.onChanged();
   }
@@ -3044,7 +3323,7 @@ class _ComboIngredientPickerDialogState extends State<_ComboIngredientPickerDial
                     final alreadyAdded = widget.comboIngredients.any((ing) => ing['id'] == p.id);
                     return ListTile(
                       title: Text(p.name),
-                      subtitle: Text('Stock: ${p.stock} ${p.unitType} | \$${p.sellingPrice.toCurrency()}'),
+                      subtitle: Text('Stock: ${p.stock.toQty()} ${p.unitType} | Costo: \$${p.costPrice.toCurrency()} | Venta: \$${p.sellingPrice.toCurrency()}'),
                       onTap: alreadyAdded ? null : () => _addIngredient(p),
                       trailing: alreadyAdded
                           ? const Icon(Icons.check_circle, color: Colors.green)

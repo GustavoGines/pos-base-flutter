@@ -101,6 +101,14 @@ class ProductModel extends Product {
           'quantity': child['pivot']?['quantity'] != null 
               ? double.tryParse(child['pivot']['quantity'].toString()) ?? 1.0 
               : 1.0,
+          'cost_price': double.tryParse(child['cost_price']?.toString() ?? '0') ?? 0.0,
+          'selling_price': double.tryParse(child['selling_price']?.toString() ?? '0') ?? 0.0,
+          'stock': double.tryParse(child['stock']?.toString() ?? '0') ?? 0.0,
+          'unit_type': child['unit_type']?.toString() ?? 'un',
+          'is_sold_by_weight': child['is_sold_by_weight'] == 1 ||
+              child['is_sold_by_weight'] == true ||
+              child['is_sold_by_weight'] == '1' ||
+              child['is_sold_by_weight'] == 'true',
         };
       }).toList();
     }
@@ -128,7 +136,7 @@ class ProductModel extends Product {
       name: json['name']?.toString() ?? 'Sin nombre',
       barcode: json['barcode']?.toString(),
       internalCode: json['internal_code']?.toString() ?? '',
-      costPrice: double.tryParse(json['cost_price']?.toString() ?? '0') ?? 0.0,
+      costPrice: _resolveComboAwareCost(json, parsedCombo),
       sellingPrice: double.tryParse(json['selling_price']?.toString() ?? '0') ?? 0.0,
       // [hardware_store] Precios opcionales — null si no vienen del backend
       priceWholesale: json['price_wholesale'] != null && json['price_wholesale'].toString() != 'null'
@@ -137,7 +145,7 @@ class ProductModel extends Product {
       priceCard: json['price_card'] != null && json['price_card'].toString() != 'null'
           ? double.tryParse(json['price_card'].toString())
           : null,
-      stock: double.tryParse(json['stock']?.toString() ?? '0') ?? 0.0,
+      stock: _resolveComboAwareStock(json, parsedCombo),
       minStock: (json['min_stock'] != null && json['min_stock'].toString().toLowerCase() != 'null') 
           ? double.tryParse(json['min_stock'].toString()) 
           : null,
@@ -169,5 +177,49 @@ class ProductModel extends Product {
           ? Supplier.fromJson(json['supplier'] as Map<String, dynamic>)
           : null,
     );
+  }
+
+  static double _resolveComboAwareCost(
+    Map<String, dynamic> json,
+    List<Map<String, dynamic>>? parsedCombo,
+  ) {
+    final isCombo = json['is_combo'] == 1 ||
+        json['is_combo'] == true ||
+        json['is_combo'] == '1' ||
+        json['is_combo'] == 'true';
+    if (isCombo && parsedCombo != null && parsedCombo.isNotEmpty) {
+      double totalCost = 0.0;
+      for (final ing in parsedCombo) {
+        final c = (ing['cost_price'] as num?)?.toDouble() ?? 0.0;
+        final q = (ing['quantity'] as num?)?.toDouble() ?? 1.0;
+        totalCost += c * q;
+      }
+      return totalCost;
+    }
+    return double.tryParse(json['cost_price']?.toString() ?? '0') ?? 0.0;
+  }
+
+  static double _resolveComboAwareStock(
+    Map<String, dynamic> json,
+    List<Map<String, dynamic>>? parsedCombo,
+  ) {
+    final isCombo = json['is_combo'] == 1 ||
+        json['is_combo'] == true ||
+        json['is_combo'] == '1' ||
+        json['is_combo'] == 'true';
+    if (isCombo && parsedCombo != null && parsedCombo.isNotEmpty) {
+      int? limiting;
+      for (final ing in parsedCombo) {
+        final s = (ing['stock'] as num?)?.toDouble() ?? 0.0;
+        final q = (ing['quantity'] as num?)?.toDouble() ?? 1.0;
+        if (q <= 0) continue;
+        final possible = (s < 0 ? 0 : (s / q).floor());
+        if (limiting == null || possible < limiting) {
+          limiting = possible;
+        }
+      }
+      return (limiting ?? 0).toDouble();
+    }
+    return double.tryParse(json['stock']?.toString() ?? '0') ?? 0.0;
   }
 }

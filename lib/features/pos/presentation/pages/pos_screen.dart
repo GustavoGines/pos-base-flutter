@@ -608,9 +608,9 @@ class _PosScreenState extends State<PosScreen> {
     final hasPromo = promoPrice != null &&
         promoPrice > 0 &&
         promoPrice < product.sellingPrice;
-    final lowStock = !product.isCombo &&
-        product.minStock != null &&
-        product.stock <= product.minStock!;
+    final lowStock = product.isCombo
+        ? product.stock <= (product.minStock ?? 0)
+        : (product.minStock != null && product.stock <= product.minStock!);
 
     final uri = product.imageUrl != null && product.imageUrl!.isNotEmpty
         ? Uri.tryParse(product.imageUrl!)
@@ -4184,10 +4184,67 @@ class _PosScreenState extends State<PosScreen> {
 
   Widget _buildMoreCategoriesMenu(List<MapEntry<String, int>> overflowCategories, String? activeCategory) {
     final isAnyOverflowSelected = overflowCategories.any((e) => e.key == activeCategory);
+    final useSearchDialog = overflowCategories.length > 12;
+
+    final buttonContent = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: isAnyOverflowSelected ? Colors.blue.withAlpha(25) : Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: isAnyOverflowSelected ? Colors.blueAccent : Colors.grey.shade300,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            useSearchDialog ? Icons.search_rounded : Icons.category_outlined,
+            size: 14,
+            color: isAnyOverflowSelected ? Colors.blueAccent : Colors.grey.shade700,
+          ),
+          const SizedBox(width: 5),
+          Text(
+            'Más (${overflowCategories.length})',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: isAnyOverflowSelected ? FontWeight.bold : FontWeight.normal,
+              color: isAnyOverflowSelected ? Colors.blueAccent : Colors.grey.shade700,
+            ),
+          ),
+          const SizedBox(width: 2),
+          Icon(
+            useSearchDialog ? Icons.open_in_new_rounded : Icons.arrow_drop_down,
+            size: useSearchDialog ? 12 : 16,
+            color: isAnyOverflowSelected ? Colors.blueAccent : Colors.grey.shade700,
+          ),
+        ],
+      ),
+    );
+
+    if (useSearchDialog) {
+      return Padding(
+        padding: const EdgeInsets.only(right: 8),
+        child: Tooltip(
+          message: 'Buscar entre las ${overflowCategories.length} categorías',
+          child: InkWell(
+            borderRadius: BorderRadius.circular(20),
+            onTap: () => _showCategoriesSearchDialog(overflowCategories, activeCategory),
+            child: buttonContent,
+          ),
+        ),
+      );
+    }
+
     return Padding(
       padding: const EdgeInsets.only(right: 8),
       child: PopupMenuButton<String>(
         tooltip: 'Ver todas las categorías',
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.55,
+          minWidth: 250,
+          maxWidth: 320,
+        ),
         onSelected: (cat) {
           setState(() {
             _quickAccessFilter = 'cat_$cat';
@@ -4195,41 +4252,7 @@ class _PosScreenState extends State<PosScreen> {
           _searchFocusNode.requestFocus();
         },
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(
-            color: isAnyOverflowSelected ? Colors.blue.withAlpha(25) : Colors.grey.shade100,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: isAnyOverflowSelected ? Colors.blueAccent : Colors.grey.shade300,
-            ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.category_outlined,
-                size: 14,
-                color: isAnyOverflowSelected ? Colors.blueAccent : Colors.grey.shade700,
-              ),
-              const SizedBox(width: 5),
-              Text(
-                'Más (${overflowCategories.length})',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: isAnyOverflowSelected ? FontWeight.bold : FontWeight.normal,
-                  color: isAnyOverflowSelected ? Colors.blueAccent : Colors.grey.shade700,
-                ),
-              ),
-              const SizedBox(width: 2),
-              Icon(
-                Icons.arrow_drop_down,
-                size: 16,
-                color: isAnyOverflowSelected ? Colors.blueAccent : Colors.grey.shade700,
-              ),
-            ],
-          ),
-        ),
+        child: buttonContent,
         itemBuilder: (context) => overflowCategories.map((entry) {
           final catColor = PosQuickAccessCatalogView.resolveCategoryAccent(entry.key);
           final isCurrent = entry.key == activeCategory;
@@ -4280,6 +4303,239 @@ class _PosScreenState extends State<PosScreen> {
         }).toList(),
       ),
     );
+  }
+
+  Future<void> _showCategoriesSearchDialog(
+    List<MapEntry<String, int>> categories,
+    String? activeCategory,
+  ) async {
+    final searchCtrl = TextEditingController();
+
+    final selectedCat = await showDialog<String>(
+      context: context,
+      builder: (dialogCtx) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            final query = searchCtrl.text.trim().toLowerCase();
+            final filtered = query.isEmpty
+                ? categories
+                : categories
+                    .where((e) => e.key.toLowerCase().contains(query))
+                    .toList();
+
+            return Dialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(
+                  maxWidth: 580,
+                  maxHeight: 560,
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // Encabezado
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: Colors.blue.shade50,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Icon(Icons.category_rounded, color: Colors.blue.shade700, size: 22),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Todas las Categorías (${categories.length})',
+                                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  'Selecciona una categoría para filtrar el catálogo',
+                                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                                ),
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close, size: 20),
+                            splashRadius: 18,
+                            tooltip: 'Cerrar',
+                            onPressed: () => Navigator.pop(dialogCtx),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+
+                      // Buscador con auto-focus
+                      TextField(
+                        controller: searchCtrl,
+                        autofocus: true,
+                        decoration: InputDecoration(
+                          hintText: 'Buscar categoría por nombre...',
+                          prefixIcon: const Icon(Icons.search, size: 20),
+                          suffixIcon: searchCtrl.text.isNotEmpty
+                              ? IconButton(
+                                  icon: const Icon(Icons.clear, size: 18),
+                                  splashRadius: 16,
+                                  onPressed: () {
+                                    searchCtrl.clear();
+                                    setModalState(() {});
+                                  },
+                                )
+                              : null,
+                          isDense: true,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                          filled: true,
+                          fillColor: Colors.grey.shade50,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: Colors.grey.shade300),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: Colors.grey.shade300),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(color: Colors.blueAccent, width: 1.5),
+                          ),
+                        ),
+                        onChanged: (_) => setModalState(() {}),
+                        onSubmitted: (_) {
+                          if (filtered.isNotEmpty) {
+                            Navigator.pop(dialogCtx, filtered.first.key);
+                          }
+                        },
+                      ),
+                      const SizedBox(height: 14),
+
+                      // Grilla de Categorías
+                      Expanded(
+                        child: filtered.isEmpty
+                            ? Center(
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.search_off_rounded, size: 48, color: Colors.grey.shade400),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'No se encontró ninguna categoría con "$query"',
+                                      style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                                    ),
+                                  ],
+                                ),
+                              )
+                            : GridView.builder(
+                                itemCount: filtered.length,
+                                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: 2,
+                                  mainAxisExtent: 44,
+                                  crossAxisSpacing: 8,
+                                  mainAxisSpacing: 8,
+                                ),
+                                itemBuilder: (context, index) {
+                                  final entry = filtered[index];
+                                  final isCurrent = entry.key == activeCategory;
+                                  final catColor = PosQuickAccessCatalogView.resolveCategoryAccent(entry.key);
+
+                                  return Material(
+                                    color: isCurrent
+                                        ? catColor.withAlpha(25)
+                                        : Colors.grey.shade50,
+                                    borderRadius: BorderRadius.circular(10),
+                                    child: InkWell(
+                                      borderRadius: BorderRadius.circular(10),
+                                      onTap: () => Navigator.pop(dialogCtx, entry.key),
+                                      hoverColor: catColor.withAlpha(15),
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                        decoration: BoxDecoration(
+                                          borderRadius: BorderRadius.circular(10),
+                                          border: Border.all(
+                                            color: isCurrent
+                                                ? catColor
+                                                : Colors.grey.shade200,
+                                            width: isCurrent ? 1.5 : 1.0,
+                                          ),
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            Container(
+                                              width: 10,
+                                              height: 10,
+                                              decoration: BoxDecoration(
+                                                color: catColor,
+                                                shape: BoxShape.circle,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Expanded(
+                                              child: Text(
+                                                entry.key,
+                                                style: TextStyle(
+                                                  fontSize: 12.5,
+                                                  fontWeight: isCurrent ? FontWeight.bold : FontWeight.w500,
+                                                  color: isCurrent ? catColor : Colors.black87,
+                                                ),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 4),
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                              decoration: BoxDecoration(
+                                                color: Colors.white,
+                                                borderRadius: BorderRadius.circular(8),
+                                                border: Border.all(color: Colors.grey.shade200),
+                                              ),
+                                              child: Text(
+                                                '${entry.value}',
+                                                style: TextStyle(
+                                                  fontSize: 10.5,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: Colors.grey.shade700,
+                                                ),
+                                              ),
+                                            ),
+                                            if (isCurrent) ...[
+                                              const SizedBox(width: 4),
+                                              Icon(Icons.check, size: 14, color: catColor),
+                                            ],
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    searchCtrl.dispose();
+
+    if (selectedCat != null && mounted) {
+      setState(() {
+        _quickAccessFilter = 'cat_$selectedCat';
+      });
+      _searchFocusNode.requestFocus();
+    }
   }
 
   Widget _buildDynamicCatalogView(List<Product> displayItems, String viewMode) {
@@ -4440,18 +4696,80 @@ class _CartItemStockIndicator extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (item.product.isCombo) return const SizedBox.shrink();
-
     // 💡 IMPORTANTE: Todo context.select() debe estar siempre en la raíz del build, NUNCA condicionado.
     final status = context.select<InventoryAlertsProvider, String?>(
         (p) => p.getAlertStatusForProduct(item.product.id));
     final hasPredictive = context
         .select<SettingsProvider, bool>((s) => s.features.predictiveAlerts);
+    final cart = context.select<PosProvider, List<CartItem>>((p) => p.cart);
+    final catalogProducts =
+        context.select<CatalogProvider, List<Product>>((c) => c.products);
 
-    // 1. Verificación en tiempo real (Proyección Local)
-    // Calcula cómo quedará el stock si aprueba esta venta
-    final projectedStock = item.product.stock - item.quantity;
-    final minStock = item.product.minStock ?? 0;
+    // Mapa rápido de productos del catálogo para consultar siempre el stock más fresco
+    final productById = <int, Product>{
+      for (final p in catalogProducts) p.id: p,
+    };
+
+    // Acumular el consumo real de cada producto/ingrediente en todo el carrito actual
+    // (contemplando tanto productos sueltos como ingredientes dentro de Combos).
+    final consumedByProductId = <int, double>{};
+    for (final cartItem in cart) {
+      final prod = productById[cartItem.product.id] ?? cartItem.product;
+      if (prod.isCombo &&
+          prod.comboIngredients != null &&
+          prod.comboIngredients!.isNotEmpty) {
+        for (final ing in prod.comboIngredients!) {
+          final ingId = (ing['id'] as num?)?.toInt();
+          final ingQty = (ing['quantity'] as num?)?.toDouble() ?? 1.0;
+          if (ingId != null && ingQty > 0) {
+            consumedByProductId[ingId] =
+                (consumedByProductId[ingId] ?? 0.0) + (cartItem.quantity * ingQty);
+          }
+        }
+      } else {
+        consumedByProductId[prod.id] =
+            (consumedByProductId[prod.id] ?? 0.0) + cartItem.quantity;
+      }
+    }
+
+    // 1. Verificación en tiempo real (Proyección Local simple y cruzada con Combos)
+    final currentProduct = productById[item.product.id] ?? item.product;
+    double projectedStock;
+
+    if (currentProduct.isCombo &&
+        currentProduct.comboIngredients != null &&
+        currentProduct.comboIngredients!.isNotEmpty) {
+      double? minProjectedCombos;
+      for (final ing in currentProduct.comboIngredients!) {
+        final ingId = (ing['id'] as num?)?.toInt();
+        final reqPerCombo = (ing['quantity'] as num?)?.toDouble() ?? 1.0;
+        if (reqPerCombo <= 0) continue;
+
+        final baseIngStock = (ingId != null && productById.containsKey(ingId))
+            ? productById[ingId]!.stock
+            : ((ing['stock'] as num?)?.toDouble() ?? 0.0);
+        final totalIngConsumed = ingId != null
+            ? (consumedByProductId[ingId] ?? (item.quantity * reqPerCombo))
+            : (item.quantity * reqPerCombo);
+
+        final remainingIngStock = baseIngStock - totalIngConsumed;
+        final combosRemainingForIng =
+            (remainingIngStock / reqPerCombo).floorToDouble();
+
+        if (minProjectedCombos == null ||
+            combosRemainingForIng < minProjectedCombos) {
+          minProjectedCombos = combosRemainingForIng;
+        }
+      }
+      projectedStock =
+          minProjectedCombos ?? (currentProduct.stock - item.quantity);
+    } else {
+      final totalConsumed =
+          consumedByProductId[currentProduct.id] ?? item.quantity;
+      projectedStock = currentProduct.stock - totalConsumed;
+    }
+
+    final minStock = currentProduct.minStock ?? 0;
     final bool isCriticalLocally = projectedStock <= minStock;
 
     // 2. Estado persistente del servidor (Backend)
