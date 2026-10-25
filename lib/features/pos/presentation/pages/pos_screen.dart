@@ -2965,206 +2965,290 @@ class _PosScreenState extends State<PosScreen> {
                           ? item.quantity.toQty()
                           : item.quantity.toInt().toString();
 
-                      return ListTile(
-                        title: Text(item.product.name,
-                            style:
-                                const TextStyle(fontWeight: FontWeight.bold)),
-                        subtitle: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Wrap(
-                              crossAxisAlignment: WrapCrossAlignment.center,
-                              children: [
-                                if (item.unitPrice != item.product.sellingPrice)
-                                  Padding(
-                                    padding: const EdgeInsets.only(right: 6.0),
-                                    child: Text(
-                                      '\$${item.product.sellingPrice.toCurrency()}',
-                                      style: const TextStyle(
-                                        decoration: TextDecoration.lineThrough,
-                                        color: Colors.grey,
-                                        fontSize: 12,
+                      Widget? priceBadge;
+                      if (item.hasActiveOffer) {
+                        priceBadge = Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                              color: const Color(0xFF7B1FA2)
+                                  .withValues(alpha: 0.10),
+                              border: Border.all(
+                                  color: const Color(0xFF7B1FA2)
+                                      .withValues(alpha: 0.35)),
+                              borderRadius: BorderRadius.circular(4)),
+                          child: Text('🏷️ ${item.offerBadgeLabel}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                  fontSize: 10,
+                                  color: Color(0xFF7B1FA2),
+                                  fontWeight: FontWeight.bold)),
+                        );
+                      } else if (item.activeTier == PriceTier.wholesale) {
+                        priceBadge = Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                              color: Colors.blue.shade50,
+                              border: Border.all(color: Colors.blue.shade300),
+                              borderRadius: BorderRadius.circular(4)),
+                          child: Text('🏷️ Lista Mayorista Aplicada',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                  fontSize: 10,
+                                  color: Colors.blue.shade800,
+                                  fontWeight: FontWeight.bold)),
+                        );
+                      } else if (item.activeTier == PriceTier.card) {
+                        priceBadge = Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                              color: Colors.orange.shade50,
+                              border: Border.all(color: Colors.orange.shade300),
+                              borderRadius: BorderRadius.circular(4)),
+                          child: Text('💳 Recargo Tarjeta',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                  fontSize: 10,
+                                  color: Colors.orange.shade800,
+                                  fontWeight: FontWeight.bold)),
+                        );
+                      } else if (item.activeTier == PriceTier.custom) {
+                        priceBadge = Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                              color: Colors.purple.shade50,
+                              border: Border.all(color: Colors.purple.shade300),
+                              borderRadius: BorderRadius.circular(4)),
+                          child: Text(
+                              '🏷️ Lista: ${item.customTierLabel ?? 'Personalizada'}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                  fontSize: 10,
+                                  color: Colors.purple.shade800,
+                                  fontWeight: FontWeight.bold)),
+                        );
+                      } else if (item.product
+                                  .getApplicableTier(item.quantity) !=
+                              null &&
+                          item.unitPrice < item.product.sellingPrice) {
+                        priceBadge = Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                              color: Colors.green.shade50,
+                              border: Border.all(color: Colors.green.shade300),
+                              borderRadius: BorderRadius.circular(4)),
+                          child: Text(
+                            '📦 Desc. Volumétrico (x${(item.product.getApplicableTier(item.quantity)!['min_quantity'] as num).toQty()})',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                fontSize: 10,
+                                color: Colors.green.shade800,
+                                fontWeight: FontWeight.bold),
+                          ),
+                        );
+                      }
+
+                      return InkWell(
+                        onTap: () => _showEditCartItemModal(item, pos),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 8),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Fila 1: Nombre del producto (100% ancho disponible) + Eliminar
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(
+                                    child: Tooltip(
+                                      message: item.product.name,
+                                      waitDuration:
+                                          const Duration(milliseconds: 500),
+                                      child: Text(
+                                        item.product.name,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 13.5,
+                                          height: 1.2,
+                                        ),
                                       ),
                                     ),
                                   ),
-                                Text(
-                                  '$qtyDisplay x \$${item.unitPrice.toCurrency()}',
-                                  style: TextStyle(
-                                    fontWeight: item.unitPrice !=
-                                            item.product.sellingPrice
-                                        ? FontWeight.bold
-                                        : FontWeight.normal,
-                                    color: item.unitPrice >
-                                            item.product.sellingPrice
-                                        ? Colors.red.shade700
-                                        : (item.unitPrice <
-                                                item.product.sellingPrice
-                                            ? Colors.green.shade700
-                                            : Colors.black87),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            if (item.hasActiveOffer)
-                              Container(
-                                margin: const EdgeInsets.only(top: 4),
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(
-                                    color: const Color(0xFF7B1FA2).withValues(alpha: 0.10),
-                                    border: Border.all(
-                                        color: const Color(0xFF7B1FA2).withValues(alpha: 0.35)),
-                                    borderRadius: BorderRadius.circular(4)),
-                                child: Text('🏷️ ${item.offerBadgeLabel}',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                        fontSize: 10,
-                                        color: Color(0xFF7B1FA2),
-                                        fontWeight: FontWeight.bold)),
-                              )
-                            else if (item.activeTier == PriceTier.wholesale)
-                              Container(
-                                margin: const EdgeInsets.only(top: 4),
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(
-                                    color: Colors.blue.shade50,
-                                    border:
-                                        Border.all(color: Colors.blue.shade300),
-                                    borderRadius: BorderRadius.circular(4)),
-                                child: Text('🏷️ Lista Mayorista Aplicada',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                        fontSize: 10,
-                                        color: Colors.blue.shade800,
-                                        fontWeight: FontWeight.bold)),
-                              )
-                            else if (item.activeTier == PriceTier.card)
-                              Container(
-                                margin: const EdgeInsets.only(top: 4),
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(
-                                    color: Colors.orange.shade50,
-                                    border: Border.all(
-                                        color: Colors.orange.shade300),
-                                    borderRadius: BorderRadius.circular(4)),
-                                child: Text('💳 Recargo Tarjeta',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                        fontSize: 10,
-                                        color: Colors.orange.shade800,
-                                        fontWeight: FontWeight.bold)),
-                              )
-                            else if (item.activeTier == PriceTier.custom)
-                              Container(
-                                margin: const EdgeInsets.only(top: 4),
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(
-                                    color: Colors.purple.shade50,
-                                    border: Border.all(
-                                        color: Colors.purple.shade300),
-                                    borderRadius: BorderRadius.circular(4)),
-                                child: Text(
-                                    '🏷️ Lista: ${item.customTierLabel ?? 'Personalizada'}',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                        fontSize: 10,
-                                        color: Colors.purple.shade800,
-                                        fontWeight: FontWeight.bold)),
-                              )
-                            else if (item.product
-                                        .getApplicableTier(item.quantity) !=
-                                    null &&
-                                item.unitPrice < item.product.sellingPrice)
-                              Container(
-                                margin: const EdgeInsets.only(top: 4),
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(
-                                    color: Colors.green.shade50,
-                                    border: Border.all(
-                                        color: Colors.green.shade300),
-                                    borderRadius: BorderRadius.circular(4)),
-                                child: Text(
-                                  '📦 Desc. Volumétrico (x${(item.product.getApplicableTier(item.quantity)!['min_quantity'] as num).toQty()})',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                      fontSize: 10,
-                                      color: Colors.green.shade800,
-                                      fontWeight: FontWeight.bold),
-                                ),
-                              ),
-                            _CartItemStockIndicator(item: item),
-                          ],
-                        ),
-                        trailing: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (item.product.isSoldByWeight)
-                                IconButton(
-                                  icon: const Icon(Icons.scale_outlined,
-                                      color: Colors.blue),
-                                  padding: EdgeInsets.zero,
-                                  constraints: const BoxConstraints(),
-                                  tooltip: 'Editar peso',
-                                  onPressed: () {
-                                    _showEditCartItemModal(item, pos);
-                                  },
-                                )
-                              else ...[
-                                IconButton(
-                                  icon: const Icon(Icons.remove_circle_outline,
-                                      color: Colors.grey),
-                                  padding: EdgeInsets.zero,
-                                  constraints: const BoxConstraints(),
-                                  tooltip: 'Disminuir',
-                                  onPressed: () {
-                                    if (item.quantity > 1) {
-                                      pos.updateQuantity(item, item.quantity - 1);
-                                    } else {
+                                  const SizedBox(width: 6),
+                                  InkWell(
+                                    borderRadius: BorderRadius.circular(6),
+                                    onTap: () {
                                       pos.removeFromCart(item);
-                                    }
-                                    _searchFocusNode.requestFocus();
-                                  },
-                                ),
-                                const SizedBox(width: 8),
-                                IconButton(
-                                  icon: const Icon(Icons.add_circle_outline,
-                                      color: Colors.blue),
-                                  padding: EdgeInsets.zero,
-                                  constraints: const BoxConstraints(),
-                                  tooltip: 'Aumentar',
-                                  onPressed: () {
-                                    pos.updateQuantity(item, item.quantity + 1);
-                                    _searchFocusNode.requestFocus();
-                                  },
-                                ),
+                                      _searchFocusNode.requestFocus();
+                                    },
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(2.0),
+                                      child: Icon(
+                                        Icons.delete_outline,
+                                        size: 19,
+                                        color: Colors.red.shade600,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+
+                              // Fila 2: Precio unitario + Controles de cantidad + Subtotal
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  // Precio unitario (con tachado si hay oferta/descuento)
+                                  Expanded(
+                                    child: Wrap(
+                                      spacing: 5,
+                                      runSpacing: 2,
+                                      crossAxisAlignment:
+                                          WrapCrossAlignment.center,
+                                      children: [
+                                        if (item.unitPrice !=
+                                            item.product.sellingPrice)
+                                          Text(
+                                            '\$${item.product.sellingPrice.toCurrency()}',
+                                            style: const TextStyle(
+                                              decoration:
+                                                  TextDecoration.lineThrough,
+                                              color: Colors.grey,
+                                              fontSize: 11,
+                                            ),
+                                          ),
+                                        Text(
+                                          '$qtyDisplay x \$${item.unitPrice.toCurrency()}',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: item.unitPrice !=
+                                                    item.product.sellingPrice
+                                                ? FontWeight.bold
+                                                : FontWeight.w500,
+                                            color: item.unitPrice >
+                                                    item.product.sellingPrice
+                                                ? Colors.red.shade700
+                                                : (item.unitPrice <
+                                                        item.product
+                                                            .sellingPrice
+                                                    ? Colors.green.shade700
+                                                    : Colors.black87),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+
+                                  // Controles (- / +) y Subtotal adaptables
+                                  Flexible(
+                                    flex: 0,
+                                    child: FittedBox(
+                                      fit: BoxFit.scaleDown,
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          if (item.product.isSoldByWeight)
+                                            IconButton(
+                                              icon: const Icon(
+                                                  Icons.scale_outlined,
+                                                  size: 20,
+                                                  color: Colors.blue),
+                                              padding: EdgeInsets.zero,
+                                              constraints:
+                                                  const BoxConstraints(),
+                                              tooltip: 'Editar peso',
+                                              onPressed: () {
+                                                _showEditCartItemModal(
+                                                    item, pos);
+                                              },
+                                            )
+                                          else ...[
+                                            InkWell(
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                              onTap: () {
+                                                if (item.quantity > 1) {
+                                                  pos.updateQuantity(
+                                                      item, item.quantity - 1);
+                                                } else {
+                                                  pos.removeFromCart(item);
+                                                }
+                                                _searchFocusNode.requestFocus();
+                                              },
+                                              child: const Padding(
+                                                padding: EdgeInsets.all(2.0),
+                                                child: Icon(
+                                                    Icons.remove_circle_outline,
+                                                    size: 20,
+                                                    color: Colors.grey),
+                                              ),
+                                            ),
+                                            Padding(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                      horizontal: 6),
+                                              child: Text(
+                                                qtyDisplay,
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 13,
+                                                ),
+                                              ),
+                                            ),
+                                            InkWell(
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                              onTap: () {
+                                                pos.updateQuantity(
+                                                    item, item.quantity + 1);
+                                                _searchFocusNode.requestFocus();
+                                              },
+                                              child: const Padding(
+                                                padding: EdgeInsets.all(2.0),
+                                                child: Icon(
+                                                    Icons.add_circle_outline,
+                                                    size: 20,
+                                                    color: Colors.blue),
+                                              ),
+                                            ),
+                                          ],
+                                          const SizedBox(width: 10),
+                                          Text(
+                                            '\$${item.subtotal.toCurrency()}',
+                                            style: const TextStyle(
+                                              fontSize: 14.5,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+
+                              // Fila 3: Badges de Oferta / Lista y Alerta de Stock Crítico
+                              if (priceBadge != null) ...[
+                                const SizedBox(height: 4),
+                                priceBadge,
                               ],
-                              const SizedBox(width: 16),
-                              Text('\$${item.subtotal.toCurrency()}',
-                                  style: const TextStyle(fontSize: 16)),
-                              IconButton(
-                                icon: const Icon(Icons.delete, color: Colors.red),
-                                onPressed: () {
-                                  pos.removeFromCart(item);
-                                  _searchFocusNode.requestFocus();
-                                },
-                              )
+                              _CartItemStockIndicator(item: item),
                             ],
                           ),
                         ),
-                        onTap: () {
-                          _showEditCartItemModal(item, pos);
-                        },
                       );
                     },
                   ),
