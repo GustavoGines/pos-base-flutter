@@ -5,6 +5,8 @@ import 'package:frontend_desktop/features/offers/presentation/providers/offer_pr
 import 'package:frontend_desktop/features/offers/data/models/offer_model.dart';
 import 'package:frontend_desktop/features/catalog/presentation/providers/catalog_provider.dart';
 import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
+import 'package:frontend_desktop/features/suppliers/providers/supplier_provider.dart';
+import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import 'package:frontend_desktop/features/auth/presentation/widgets/admin_pin_dialog.dart';
@@ -23,9 +25,21 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
   final TextEditingController _historySearchCtrl = TextEditingController();
 
   String _periodType = 'daily'; // 'daily', 'weekly', 'monthly'
+  final Set<String> _selectedDaysOfWeek = {};
+  static const List<MapEntry<String, String>> _weekDayOptions = [
+    MapEntry('monday', 'Lun'),
+    MapEntry('tuesday', 'Mar'),
+    MapEntry('wednesday', 'Mié'),
+    MapEntry('thursday', 'Jue'),
+    MapEntry('friday', 'Vie'),
+    MapEntry('saturday', 'Sáb'),
+    MapEntry('sunday', 'Dom'),
+  ];
+
   String _historyFilter = 'all'; // 'all', 'expired', 'paused', 'active'
   final List<Product> _selectedProducts = [];
   bool _isSaving = false;
+  bool _isLoadingGroup = false;
   int _searchSeq = 0; // Token de debounce del buscador de productos en formulario
   int _historySearchSeq = 0; // Token de debounce del buscador en historial
   OfferModel? _editingOffer;
@@ -50,6 +64,10 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
       final offerProv = Provider.of<OfferProvider>(context, listen: false);
       offerProv.loadActiveOffers();
       offerProv.loadAllOffers(status: _historyFilter);
+      final catalogProv = Provider.of<CatalogProvider>(context, listen: false);
+      if (catalogProv.categories.isEmpty || catalogProv.brands.isEmpty) {
+        catalogProv.loadMetadata();
+      }
     });
   }
 
@@ -106,6 +124,9 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
       _offerNameCtrl.text = offer.name;
       _discountCtrl.text = offer.discountPercentage?.toString() ?? '10';
       _periodType = offer.periodType;
+      _selectedDaysOfWeek
+        ..clear()
+        ..addAll(offer.daysOfWeek ?? const []);
       _selectedProducts.clear();
       for (final pMap in offer.products) {
         final id = (pMap['id'] as num?)?.toInt() ?? 0;
@@ -136,6 +157,9 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
       _offerNameCtrl.text = '${offer.name} (Copia)';
       _discountCtrl.text = offer.discountPercentage?.toString() ?? '10';
       _periodType = offer.periodType;
+      _selectedDaysOfWeek
+        ..clear()
+        ..addAll(offer.daysOfWeek ?? const []);
       _selectedProducts.clear();
       for (final pMap in offer.products) {
         final id = (pMap['id'] as num?)?.toInt() ?? 0;
@@ -167,6 +191,7 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
       _offerNameCtrl.clear();
       _discountCtrl.text = '10';
       _periodType = 'daily';
+      _selectedDaysOfWeek.clear();
       _selectedProducts.clear();
       final pos = Provider.of<PosProvider>(context, listen: false);
       for (final item in pos.cart) {
@@ -175,6 +200,214 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
         }
       }
     });
+  }
+
+  Future<void> _showGroupPickerAndAddProducts({required String groupType}) async {
+    final catalogProv = Provider.of<CatalogProvider>(context, listen: false);
+    final supplierProv = Provider.of<SupplierProvider>(context, listen: false);
+
+    String title;
+    IconData headerIcon;
+    List<({int id, String name, String? subtitle})> items = [];
+
+    try {
+      if (groupType == 'category') {
+        title = 'Agregar productos por Categoría';
+        headerIcon = Icons.category_outlined;
+        if (catalogProv.categories.isEmpty) {
+          await catalogProv.loadMetadata();
+        }
+        items = catalogProv.categories
+            .map((c) => (id: c.id, name: c.name, subtitle: c.rubro?.name ?? c.description))
+            .toList();
+      } else if (groupType == 'brand') {
+        title = 'Agregar productos por Marca';
+        headerIcon = Icons.sell_outlined;
+        if (catalogProv.brands.isEmpty) {
+          await catalogProv.loadMetadata();
+        }
+        items = catalogProv.brands
+            .map((b) => (id: b.id, name: b.name, subtitle: b.description))
+            .toList();
+      } else {
+        title = 'Agregar productos por Proveedor';
+        headerIcon = Icons.local_shipping_outlined;
+        if (supplierProv.suppliers.isEmpty) {
+          await supplierProv.fetchSuppliers();
+        }
+        items = supplierProv.suppliers
+            .map((s) => (id: s.id, name: s.name, subtitle: s.cuit != null && s.cuit!.isNotEmpty ? 'CUIT: ${s.cuit}' : null))
+            .toList();
+      }
+    } catch (e) {
+      if (mounted) {
+        SnackBarService.error(context, 'No se pudo cargar el listado: $e');
+      }
+      return;
+    }
+
+    if (!mounted) return;
+
+    if (items.isEmpty) {
+      SnackBarService.warning(context, 'No hay registros cargados para seleccionar.');
+      return;
+    }
+
+    final selectedGroup = await showDialog<({int id, String name})>(
+      context: context,
+      builder: (dialogCtx) {
+        String search = '';
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            final q = search.trim().toLowerCase();
+            final filtered = q.isEmpty
+                ? items
+                : items.where((it) {
+                    return it.name.toLowerCase().contains(q) ||
+                        (it.subtitle != null && it.subtitle!.toLowerCase().contains(q));
+                  }).toList();
+
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              titlePadding: const EdgeInsets.fromLTRB(18, 16, 18, 8),
+              contentPadding: const EdgeInsets.fromLTRB(18, 8, 18, 12),
+              title: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(7),
+                    decoration: BoxDecoration(
+                      color: Colors.purple.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(headerIcon, color: const Color(0xFF7B1FA2), size: 20),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 20),
+                    onPressed: () => Navigator.of(dialogCtx).pop(),
+                  ),
+                ],
+              ),
+              content: SizedBox(
+                width: 440,
+                height: 380,
+                child: Column(
+                  children: [
+                    TextField(
+                      autofocus: true,
+                      onChanged: (v) => setDialogState(() => search = v),
+                      decoration: InputDecoration(
+                        hintText: 'Filtrar por nombre...',
+                        prefixIcon: const Icon(Icons.search, size: 18),
+                        isDense: true,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Expanded(
+                      child: filtered.isEmpty
+                          ? Center(
+                              child: Text(
+                                'Sin coincidencias para "$search"',
+                                style: const TextStyle(color: Colors.grey, fontSize: 13),
+                              ),
+                            )
+                          : ListView.separated(
+                              itemCount: filtered.length,
+                              separatorBuilder: (_, __) => Divider(height: 1, color: Colors.grey.shade200),
+                              itemBuilder: (_, idx) {
+                                final item = filtered[idx];
+                                return ListTile(
+                                  dense: true,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                  leading: Icon(headerIcon, size: 18, color: Colors.purple.shade700),
+                                  title: Text(
+                                    item.name,
+                                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                                  ),
+                                  subtitle: (item.subtitle != null && item.subtitle!.isNotEmpty)
+                                      ? Text(item.subtitle!, style: const TextStyle(fontSize: 11))
+                                      : null,
+                                  trailing: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: Colors.purple.shade50,
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      '+ Cargar',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.purple.shade800,
+                                      ),
+                                    ),
+                                  ),
+                                  onTap: () => Navigator.of(dialogCtx).pop((id: item.id, name: item.name)),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    if (selectedGroup == null || !mounted) return;
+
+    setState(() => _isLoadingGroup = true);
+    final products = await catalogProv.fetchProductsByGroup(
+      categoryId: groupType == 'category' ? selectedGroup.id : null,
+      brandId: groupType == 'brand' ? selectedGroup.id : null,
+      supplierId: groupType == 'supplier' ? selectedGroup.id : null,
+    );
+    if (!mounted) return;
+    setState(() => _isLoadingGroup = false);
+
+    if (products.isEmpty) {
+      SnackBarService.warning(
+        context,
+        'No se encontraron productos activos asociados a "${selectedGroup.name}".',
+      );
+      return;
+    }
+
+    int addedCount = 0;
+    setState(() {
+      for (final p in products) {
+        if (!_selectedProducts.any((sp) => sp.id == p.id)) {
+          _selectedProducts.add(p);
+          addedCount++;
+        }
+      }
+      if (_offerNameCtrl.text.trim().isEmpty) {
+        final pct = _discountCtrl.text.trim().isNotEmpty ? _discountCtrl.text.trim() : '10';
+        _offerNameCtrl.text = 'Promo ${selectedGroup.name} $pct% OFF';
+      }
+    });
+
+    if (addedCount > 0) {
+      SnackBarService.success(
+        context,
+        '✅ Se agregaron $addedCount producto(s) de "${selectedGroup.name}" a la oferta.',
+      );
+    } else {
+      SnackBarService.info(
+        context,
+        'ℹ️ Todos los productos de "${selectedGroup.name}" (${products.length}) ya estaban en la lista.',
+      );
+    }
   }
 
   Future<void> _handleSaveOffer() async {
@@ -194,6 +427,10 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
       SnackBarService.warning(context, 'Seleccioná al menos un producto para aplicar la oferta.');
       return;
     }
+
+    final effectiveDays = (_periodType == 'daily' || _selectedDaysOfWeek.isEmpty)
+        ? null
+        : _selectedDaysOfWeek.toList();
 
     final actionType = _editingOffer != null ? 'editar oferta' : 'crear oferta';
     await AdminPinDialog.protectAction(
@@ -215,7 +452,7 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
             type: 'percentage',
             discountPercentage: discount,
             periodType: _periodType,
-            daysOfWeek: _editingOffer!.daysOfWeek,
+            daysOfWeek: effectiveDays,
             productIds: _selectedProducts.map((p) => p.id).toList(),
           );
         } else {
@@ -224,6 +461,7 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
             type: 'percentage',
             discountPercentage: discount,
             periodType: _periodType,
+            daysOfWeek: effectiveDays,
             productIds: _selectedProducts.map((p) => p.id).toList(),
           );
         }
@@ -231,12 +469,17 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
         if (success && mounted) {
           pos.syncActiveOffers(offerProv.activeOffers);
           final wasEdit = _editingOffer != null;
+          final isActiveToday = offerProv.activeOffers.any((o) => o.name == name);
           _cancelEdit();
           SnackBarService.success(
             context,
-            wasEdit ? '🏷️ Oferta "$name" actualizada con éxito.' : '🏷️ Oferta "$name" ($discount% OFF) activada con éxito.',
+            wasEdit
+                ? '🏷️ Oferta "$name" actualizada con éxito.'
+                : (isActiveToday
+                    ? '🏷️ Oferta "$name" ($discount% OFF) activada con éxito.'
+                    : '🗓️ Oferta "$name" ($discount% OFF) programada con éxito.'),
           );
-          _tabController.animateTo(0);
+          _tabController.animateTo(isActiveToday ? 0 : 1);
         } else if (mounted) {
           SnackBarService.error(context, offerProv.errorMessage ?? 'Error al guardar la oferta.');
         }
@@ -716,33 +959,35 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
                     ),
                   ],
                   const SizedBox(height: 6),
-                  Text(
-                    'Productos incluidos (${offer.products.length}):',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.purple.shade900),
+                  Row(
+                    children: [
+                      Text(
+                        'Productos incluidos (${offer.products.length}):',
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.purple.shade900),
+                      ),
+                      if (offer.products.length > 3) ...[
+                        const SizedBox(width: 8),
+                        InkWell(
+                          borderRadius: BorderRadius.circular(4),
+                          onTap: () => _showOfferProductsModal(offer),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                            child: Text(
+                              '🔍 Ver listado completo',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.purple.shade700,
+                                decoration: TextDecoration.underline,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                   const SizedBox(height: 4),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 4,
-                    children: offer.products.map((p) {
-                      final name = p['name']?.toString() ?? 'Producto';
-                      final basePrice = double.tryParse(p['selling_price']?.toString() ?? '0') ?? 0.0;
-                      final pId = (p['id'] as num?)?.toInt();
-                      final discounted = basePrice > 0
-                          ? offer.calculateDiscountedPrice(basePrice, productId: pId)
-                          : 0.0;
-                      final labelText = basePrice > 0
-                          ? '$name (\$${basePrice.toCurrency()} → \$${discounted.toCurrency()})'
-                          : name;
-                      return Chip(
-                        label: Text(labelText, style: const TextStyle(fontSize: 11)),
-                        backgroundColor: Colors.white,
-                        padding: EdgeInsets.zero,
-                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        visualDensity: VisualDensity.compact,
-                      );
-                    }).toList(),
-                  ),
+                  _buildCompactProductChips(offer, showPrices: true, maxVisible: 3),
                 ],
               ),
             );
@@ -974,34 +1219,7 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Expanded(
-                child: Wrap(
-                  spacing: 4,
-                  runSpacing: 4,
-                  children: offer.products.take(4).map((p) {
-                    final name = p['name']?.toString() ?? 'Producto';
-                    return Chip(
-                      label: Text(name, style: const TextStyle(fontSize: 10)),
-                      backgroundColor: Colors.grey.shade100,
-                      padding: EdgeInsets.zero,
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      visualDensity: VisualDensity.compact,
-                    );
-                  }).toList()
-                    ..addAll(
-                      offer.products.length > 4
-                          ? [
-                              Chip(
-                                label: Text('+${offer.products.length - 4}',
-                                    style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
-                                backgroundColor: Colors.purple.shade50,
-                                padding: EdgeInsets.zero,
-                                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                visualDensity: VisualDensity.compact,
-                              ),
-                            ]
-                          : [],
-                    ),
-                ),
+                child: _buildCompactProductChips(offer, showPrices: false, maxVisible: 3),
               ),
               const SizedBox(width: 8),
 
@@ -1069,6 +1287,8 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
       final discounted = (p.sellingPrice * (1.0 - (currentPct / 100.0)) * 100).roundToDouble() / 100.0;
       return discounted < p.costPrice;
     }).toList();
+    final riskyIdsSet = riskyProducts.map((e) => e.id).toSet();
+    final hasSuppliersFeature = Provider.of<SettingsProvider>(context, listen: false).features.suppliers;
 
     return SingleChildScrollView(
       child: Column(
@@ -1124,7 +1344,93 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
               _buildPeriodChip('monthly', '📆 Mensual (30 días)'),
             ],
           ),
-          const SizedBox(height: 14),
+
+          // Selector de Días de la Semana (para ofertas Semanales o Mensuales)
+          if (_periodType != 'daily') ...[
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.purple.shade50.withValues(alpha: 0.45),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.purple.shade100),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.event_repeat_rounded, size: 15, color: Colors.purple.shade700),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Días aplicables:',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.purple.shade900),
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          _selectedDaysOfWeek.isEmpty
+                              ? 'Todos los días (sin restricción)'
+                              : 'Solo ${_selectedDaysOfWeek.length} día(s) seleccionado(s)',
+                          style: TextStyle(fontSize: 11, color: Colors.purple.shade700),
+                        ),
+                      ),
+                      if (_selectedDaysOfWeek.isNotEmpty)
+                        InkWell(
+                          onTap: () => setState(() => _selectedDaysOfWeek.clear()),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                            child: Text(
+                              'Marcar todos',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.purple.shade800,
+                                decoration: TextDecoration.underline,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    children: _weekDayOptions.map((entry) {
+                      final isSelected = _selectedDaysOfWeek.contains(entry.key);
+                      return FilterChip(
+                        label: Text(
+                          entry.value,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                            color: isSelected ? Colors.purple.shade900 : Colors.grey.shade800,
+                          ),
+                        ),
+                        selected: isSelected,
+                        selectedColor: Colors.purple.shade100,
+                        checkmarkColor: Colors.purple.shade800,
+                        backgroundColor: Colors.white,
+                        visualDensity: VisualDensity.compact,
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        onSelected: (val) {
+                          setState(() {
+                            if (val) {
+                              _selectedDaysOfWeek.add(entry.key);
+                            } else {
+                              _selectedDaysOfWeek.remove(entry.key);
+                            }
+                          });
+                        },
+                      );
+                    }).toList(),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          const SizedBox(height: 12),
 
           // Descuento
           Row(
@@ -1167,10 +1473,72 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
               ),
             ],
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 12),
 
-          // Búsqueda de productos adicionales
-          const Text('Productos en la Oferta:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+          // Cabecera de Productos + Botones de Carga Masiva por Categoría / Marca / Proveedor
+          Row(
+            children: [
+              Text(
+                'Productos en la Oferta (${_selectedProducts.length}):',
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+              ),
+              if (_isLoadingGroup) ...[
+                const SizedBox(width: 8),
+                const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ],
+              const Spacer(),
+              Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                children: [
+                  _buildBulkGroupButton(
+                    icon: Icons.category_outlined,
+                    label: '+ Categoría',
+                    onTap: _isLoadingGroup ? null : () => _showGroupPickerAndAddProducts(groupType: 'category'),
+                  ),
+                  _buildBulkGroupButton(
+                    icon: Icons.sell_outlined,
+                    label: '+ Marca',
+                    onTap: _isLoadingGroup ? null : () => _showGroupPickerAndAddProducts(groupType: 'brand'),
+                  ),
+                  if (hasSuppliersFeature)
+                    _buildBulkGroupButton(
+                      icon: Icons.local_shipping_outlined,
+                      label: '+ Proveedor',
+                      onTap: _isLoadingGroup ? null : () => _showGroupPickerAndAddProducts(groupType: 'supplier'),
+                    ),
+                  if (_selectedProducts.isNotEmpty)
+                     InkWell(
+                      borderRadius: BorderRadius.circular(6),
+                      onTap: () => setState(() => _selectedProducts.clear()),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: Colors.red.shade50,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: Colors.red.shade200),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.delete_sweep_outlined, size: 14, color: Colors.red.shade700),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Vaciar',
+                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.red.shade700),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ],
+          ),
           const SizedBox(height: 6),
           Autocomplete<Product>(
             displayStringForOption: (Product p) => '${p.name} (\$${p.sellingPrice.toCurrency()})',
@@ -1194,7 +1562,7 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
                   ctrl.clear();
                 },
                 decoration: InputDecoration(
-                  hintText: 'Buscar y agregar productos del catálogo...',
+                  hintText: 'Buscar y agregar productos individuales del catálogo...',
                   prefixIcon: const Icon(Icons.search, size: 20),
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                   contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -1202,9 +1570,9 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
               );
             },
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
 
-          // Chips de productos seleccionados
+          // Chips de productos seleccionados (con scroll acotado para cargas masivas)
           if (_selectedProducts.isEmpty)
             Container(
               padding: const EdgeInsets.all(12),
@@ -1213,37 +1581,66 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
                 borderRadius: BorderRadius.circular(8),
               ),
               child: const Center(
-                child: Text('No hay productos agregados. Tocá "Cargar Carrito" o buscá arriba.',
-                    style: TextStyle(fontSize: 12, color: Colors.grey)),
+                child: Text(
+                  'No hay productos agregados. Usá "+ Categoría", "+ Marca", "Cargar Carrito" o buscá arriba.',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
               ),
             )
           else
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: _selectedProducts.map((p) {
-                final discounted = (currentPct > 0 && currentPct <= 100)
-                    ? (p.sellingPrice * (1.0 - (currentPct / 100.0)) * 100).roundToDouble() / 100.0
-                    : p.sellingPrice;
-                final priceLabel = (currentPct > 0 && currentPct <= 100)
-                    ? '\$${p.sellingPrice.toCurrency()} → \$${discounted.toCurrency()}'
-                    : '\$${p.sellingPrice.toCurrency()}';
-                return Chip(
-                  label: Text('${p.name} ($priceLabel)', style: const TextStyle(fontSize: 11)),
-                  deleteIcon: const Icon(Icons.close, size: 16),
-                  onDeleted: () {
-                    setState(() {
-                      _selectedProducts.removeWhere((item) => item.id == p.id);
-                    });
-                  },
-                );
-              }).toList(),
+            Container(
+              width: double.infinity,
+              constraints: const BoxConstraints(maxHeight: 135),
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.grey.shade200),
+              ),
+              child: SingleChildScrollView(
+                child: Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: _selectedProducts.map((p) {
+                    final discounted = (currentPct > 0 && currentPct <= 100)
+                        ? (p.sellingPrice * (1.0 - (currentPct / 100.0)) * 100).roundToDouble() / 100.0
+                        : p.sellingPrice;
+                    final priceLabel = (currentPct > 0 && currentPct <= 100)
+                        ? '\$${p.sellingPrice.toCurrency()} → \$${discounted.toCurrency()}'
+                        : '\$${p.sellingPrice.toCurrency()}';
+                    final isRisky = riskyIdsSet.contains(p.id);
+                    return Chip(
+                      backgroundColor: isRisky ? Colors.amber.shade50 : Colors.white,
+                      side: BorderSide(color: isRisky ? Colors.amber.shade400 : Colors.grey.shade300),
+                      avatar: isRisky
+                          ? Icon(Icons.warning_amber_rounded, size: 14, color: Colors.amber.shade900)
+                          : null,
+                      label: Text(
+                        '${p.name} ($priceLabel)',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: isRisky ? Colors.amber.shade900 : Colors.black87,
+                          fontWeight: isRisky ? FontWeight.w600 : FontWeight.normal,
+                        ),
+                      ),
+                      deleteIcon: const Icon(Icons.close, size: 15),
+                      visualDensity: VisualDensity.compact,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      onDeleted: () {
+                        setState(() {
+                          _selectedProducts.removeWhere((item) => item.id == p.id);
+                        });
+                      },
+                    );
+                  }).toList(),
+                ),
+              ),
             ),
 
           if (riskyProducts.isNotEmpty) ...[
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
             Container(
-              padding: const EdgeInsets.all(10),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               decoration: BoxDecoration(
                 color: Colors.amber.shade50,
                 borderRadius: BorderRadius.circular(8),
@@ -1255,19 +1652,44 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Alerta de margen: Con ${currentPct.toStringAsFixed(1)}% de descuento, ${riskyProducts.length} producto(s) quedan por debajo de su costo (${riskyProducts.map((e) => e.name).take(2).join(", ")}${riskyProducts.length > 2 ? "..." : ""}).',
+                      'Alerta de margen: Con ${currentPct.toStringAsFixed(1)}% OFF, ${riskyProducts.length} producto(s) quedan bajo su costo (${riskyProducts.map((e) => e.name).take(2).join(", ")}${riskyProducts.length > 2 ? "..." : ""}).',
                       style: TextStyle(fontSize: 11, color: Colors.amber.shade900, fontWeight: FontWeight.w600),
                     ),
+                  ),
+                  const SizedBox(width: 8),
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.amber.shade900,
+                      backgroundColor: Colors.white,
+                      side: BorderSide(color: Colors.amber.shade700),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    icon: const Icon(Icons.remove_circle_outline, size: 15),
+                    label: Text(
+                      'Quitar estos ${riskyProducts.length}',
+                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                    ),
+                    onPressed: () {
+                      final count = riskyIdsSet.length;
+                      setState(() {
+                        _selectedProducts.removeWhere((p) => riskyIdsSet.contains(p.id));
+                      });
+                      SnackBarService.info(
+                        context,
+                        '🛡️ Se quitaron $count producto(s) que quedaban por debajo del costo.',
+                      );
+                    },
                   ),
                 ],
               ),
             ),
           ],
 
-          const SizedBox(height: 18),
+          const SizedBox(height: 14),
           SizedBox(
             width: double.infinity,
-            height: 46,
+            height: 44,
             child: ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF7B1FA2),
@@ -1288,6 +1710,297 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildBulkGroupButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback? onTap,
+  }) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(6),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        decoration: BoxDecoration(
+          color: Colors.purple.shade50,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: Colors.purple.shade200),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: const Color(0xFF7B1FA2)),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF7B1FA2),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCompactProductChips(
+    OfferModel offer, {
+    required bool showPrices,
+    int maxVisible = 3,
+  }) {
+    final total = offer.products.length;
+    final visibleProducts = offer.products.take(maxVisible).toList();
+    final remaining = total - visibleProducts.length;
+
+    return Wrap(
+      spacing: 6,
+      runSpacing: 4,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        ...visibleProducts.map((p) {
+          final rawName = p['name']?.toString() ?? 'Producto';
+          final shortName = rawName.length > 34 ? '${rawName.substring(0, 34)}…' : rawName;
+          final basePrice = double.tryParse(p['selling_price']?.toString() ?? '0') ?? 0.0;
+          final pId = (p['id'] as num?)?.toInt();
+          final discounted = basePrice > 0
+              ? offer.calculateDiscountedPrice(basePrice, productId: pId)
+              : 0.0;
+          final labelText = (showPrices && basePrice > 0)
+              ? '$shortName (\$${basePrice.toCurrency()} → \$${discounted.toCurrency()})'
+              : shortName;
+
+          return Tooltip(
+            message: (basePrice > 0)
+                ? '$rawName (\$${basePrice.toCurrency()} → \$${discounted.toCurrency()})'
+                : rawName,
+            child: Chip(
+              label: Text(
+                labelText,
+                style: TextStyle(fontSize: showPrices ? 11 : 10),
+              ),
+              backgroundColor: showPrices ? Colors.white : Colors.grey.shade100,
+              padding: EdgeInsets.zero,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              visualDensity: VisualDensity.compact,
+            ),
+          );
+        }),
+        if (remaining > 0)
+          InkWell(
+            borderRadius: BorderRadius.circular(16),
+            onTap: () => _showOfferProductsModal(offer),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: Colors.purple.shade100,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.purple.shade300),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.search_rounded, size: 13, color: Colors.purple.shade900),
+                  const SizedBox(width: 4),
+                  Text(
+                    '+$remaining más (Ver los $total)',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.purple.shade900,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  void _showOfferProductsModal(OfferModel offer) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogCtx) {
+        String search = '';
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            final q = search.trim().toLowerCase();
+            final filtered = q.isEmpty
+                ? offer.products
+                : offer.products.where((p) {
+                    final pName = (p['name'] ?? '').toString().toLowerCase();
+                    final pCode = (p['internal_code'] ?? '').toString().toLowerCase();
+                    final pBar = (p['barcode'] ?? '').toString().toLowerCase();
+                    return pName.contains(q) || pCode.contains(q) || pBar.contains(q);
+                  }).toList();
+
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              titlePadding: const EdgeInsets.fromLTRB(18, 16, 18, 8),
+              contentPadding: const EdgeInsets.fromLTRB(18, 8, 18, 14),
+              title: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(7),
+                    decoration: BoxDecoration(
+                      color: Colors.purple.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.local_offer_rounded, color: Color(0xFF7B1FA2), size: 20),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          offer.name,
+                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                        ),
+                        Text(
+                          '${offer.products.length} producto(s) incluidos • ${offer.periodLabel}',
+                          style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade600,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      offer.type == 'percentage'
+                          ? '-${offer.discountPercentage?.toStringAsFixed(1) ?? "0"}%'
+                          : '-\$${offer.discountAmount?.toCurrency() ?? "0"}',
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 20),
+                    onPressed: () => Navigator.of(dialogCtx).pop(),
+                  ),
+                ],
+              ),
+              content: SizedBox(
+                width: 560,
+                height: 420,
+                child: Column(
+                  children: [
+                    TextField(
+                      autofocus: true,
+                      onChanged: (v) => setDialogState(() => search = v),
+                      decoration: InputDecoration(
+                        hintText: 'Buscar producto por nombre o código dentro de la oferta...',
+                        prefixIcon: const Icon(Icons.search, size: 18),
+                        isDense: true,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Expanded(
+                      child: filtered.isEmpty
+                          ? Center(
+                              child: Text(
+                                'No se encontraron productos para "$search"',
+                                style: const TextStyle(color: Colors.grey, fontSize: 13),
+                              ),
+                            )
+                          : ListView.separated(
+                              itemCount: filtered.length,
+                              separatorBuilder: (_, __) => Divider(height: 1, color: Colors.grey.shade200),
+                              itemBuilder: (_, idx) {
+                                final p = filtered[idx];
+                                final name = p['name']?.toString() ?? 'Producto';
+                                final code = (p['internal_code'] ?? p['barcode'] ?? '').toString();
+                                final basePrice = double.tryParse(p['selling_price']?.toString() ?? '0') ?? 0.0;
+                                final costPrice = double.tryParse(p['cost_price']?.toString() ?? '0') ?? 0.0;
+                                final pId = (p['id'] as num?)?.toInt();
+                                final discounted = basePrice > 0
+                                    ? offer.calculateDiscountedPrice(basePrice, productId: pId)
+                                    : 0.0;
+                                final isBelowCost = costPrice > 0 && discounted > 0 && discounted < costPrice;
+
+                                return Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              name,
+                                              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                                            ),
+                                            if (code.isNotEmpty || isBelowCost)
+                                              Row(
+                                                children: [
+                                                  if (code.isNotEmpty)
+                                                    Text(
+                                                      'Cód: $code',
+                                                      style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                                                    ),
+                                                  if (isBelowCost) ...[
+                                                    if (code.isNotEmpty) const SizedBox(width: 8),
+                                                    Text(
+                                                      '⚠️ Bajo costo (\$${costPrice.toCurrency()})',
+                                                      style: TextStyle(
+                                                        fontSize: 11,
+                                                        fontWeight: FontWeight.bold,
+                                                        color: Colors.amber.shade900,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ],
+                                              ),
+                                          ],
+                                        ),
+                                      ),
+                                      if (basePrice > 0) ...[
+                                        const SizedBox(width: 10),
+                                        Column(
+                                          crossAxisAlignment: CrossAxisAlignment.end,
+                                          children: [
+                                            Text(
+                                              '\$${basePrice.toCurrency()}',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                color: Colors.grey.shade500,
+                                                decoration: TextDecoration.lineThrough,
+                                              ),
+                                            ),
+                                            Text(
+                                              '\$${discounted.toCurrency()}',
+                                              style: TextStyle(
+                                                fontSize: 13,
+                                                fontWeight: FontWeight.bold,
+                                                color: Colors.green.shade700,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 

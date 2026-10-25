@@ -108,6 +108,9 @@ class OfferModel {
   String get statusLabel {
     switch (status) {
       case OfferStatus.active:
+        if (!isCurrentDayValid) {
+          return '🗓️ Programada ($daysShortLabel)';
+        }
         return '🟢 Activa';
       case OfferStatus.scheduled:
         return '🟡 Programada';
@@ -116,6 +119,22 @@ class OfferModel {
       case OfferStatus.paused:
         return '⏸️ Pausada';
     }
+  }
+
+  String get daysShortLabel {
+    if (daysOfWeek == null || daysOfWeek!.isEmpty) return '';
+    const map = {
+      'monday': 'Lun',
+      'tuesday': 'Mar',
+      'wednesday': 'Mié',
+      'thursday': 'Jue',
+      'friday': 'Vie',
+      'saturday': 'Sáb',
+      'sunday': 'Dom',
+    };
+    return daysOfWeek!
+        .map((d) => map[d.trim().toLowerCase()] ?? d)
+        .join(', ');
   }
 
   /// Verifica si algún producto tiene margen en riesgo (precio con oferta < precio costo)
@@ -173,15 +192,24 @@ class OfferModel {
 
   /// Label legible del período
   String get periodLabel {
+    String base;
     switch (periodType) {
       case 'daily':
-        return '☀️ Diaria (Hoy)';
+        base = '☀️ Diaria (Hoy)';
+        break;
       case 'weekly':
-        return '📅 Semanal (7 días)';
+        base = '📅 Semanal (7 días)';
+        break;
       case 'monthly':
-        return '📆 Mensual (30 días)';
+        base = '📆 Mensual (30 días)';
+        break;
       default:
-        return '⏱️ Temporal';
+        base = '⏱️ Temporal';
     }
+    final dLabel = daysShortLabel;
+    if (periodType != 'daily' && dLabel.isNotEmpty) {
+      return '$base • $dLabel';
+    }
+    return base;
   }
 }

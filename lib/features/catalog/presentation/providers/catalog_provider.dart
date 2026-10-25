@@ -214,6 +214,42 @@ class CatalogProvider with ChangeNotifier {
     }
   }
 
+  /// Obtiene todos los productos activos pertenecientes a una Categoría, Marca o Proveedor
+  /// sin alterar el estado de paginación del catálogo principal.
+  Future<List<Product>> fetchProductsByGroup({
+    int? categoryId,
+    int? brandId,
+    int? supplierId,
+  }) async {
+    try {
+      final List<Product> allGroupProducts = [];
+      int page = 1;
+      int lastPage = 1;
+
+      do {
+        final result = await getProductsUseCase(
+          page: page,
+          sortBy: 'name',
+          sortDirection: 'asc',
+          perPage: 500,
+          categoryId: categoryId,
+          brandId: brandId,
+          supplierId: supplierId,
+          active: true,
+        );
+        final pageData = List<Product>.from(result['data'] as List);
+        allGroupProducts.addAll(pageData.where((p) => p.active));
+        lastPage = (result['last_page'] as int?) ?? 1;
+        page++;
+      } while (page <= lastPage && page <= 5);
+
+      return allGroupProducts;
+    } catch (e) {
+      debugPrint('Error en fetchProductsByGroup: $e');
+      return [];
+    }
+  }
+
   /// Refuerzo Senior: Actualiza los contadores de ventas en memoria para que la UI
   /// se reordene al instante sin necesidad de una petición de red.
   ///
@@ -240,15 +276,74 @@ class CatalogProvider with ChangeNotifier {
     return anyMissing;
   }
 
+  /// Descuenta en memoria (0ms) el stock de los productos e ingredientes vendidos,
+  /// devolviendo una función que también actualiza cualquier lista externa (ej. _searchResults).
+  List<Product> deductStockLocallyForProductList(
+    List<Product> sourceList,
+    Map<int, double> consumedByIngredientOrProductId,
+  ) {
+    if (consumedByIngredientOrProductId.isEmpty) return sourceList;
+    return sourceList.map((p) {
+      if (p.isCombo && p.comboIngredients != null && p.comboIngredients!.isNotEmpty) {
+        bool comboTouched = false;
+        int? minCombos;
+        final newIngs = p.comboIngredients!.map((ing) {
+          final copy = Map<String, dynamic>.from(ing);
+          final ingId = (copy['id'] as num?)?.toInt();
+          final oldStock = (copy['stock'] as num?)?.toDouble() ?? 0.0;
+          final consumed = ingId != null ? (consumedByIngredientOrProductId[ingId] ?? 0.0) : 0.0;
+          final newStock = oldStock - consumed;
+          if (consumed != 0.0) {
+            copy['stock'] = newStock;
+            comboTouched = true;
+          }
+          final reqQty = (copy['quantity'] as num?)?.toDouble() ?? 1.0;
+          if (reqQty > 0) {
+            final fit = newStock < 0 ? 0 : (newStock / reqQty).floor();
+            if (minCombos == null || fit < minCombos!) {
+              minCombos = fit;
+            }
+          }
+          return copy;
+        }).toList();
+
+        if (comboTouched) {
+          return p.copyWith(
+            comboIngredients: newIngs,
+            stock: (minCombos ?? 0).toDouble(),
+          );
+        }
+        return p;
+      } else if (consumedByIngredientOrProductId.containsKey(p.id)) {
+        final consumed = consumedByIngredientOrProductId[p.id]!;
+        return p.copyWith(stock: p.stock - consumed);
+      }
+      return p;
+    }).toList();
+  }
+
+  void applyImmediateLocalStockDeduction(Map<int, double> consumedByProductId) {
+    if (consumedByProductId.isEmpty) return;
+    _products = deductStockLocallyForProductList(_products, consumedByProductId);
+    notifyListeners();
+  }
+
   /// Actualiza SILENCIOSAMENTE solo el stock de los productos vendidos.
   /// Reemplaza el loadProducts() completo post-venta, eliminando el parpadeo de la grilla.
   /// Se llama en background (fire-and-forget) tras procesar un cobro exitoso.
-  Future<void> refreshStockForSoldProducts(List<int> soldIds) async {
-    if (soldIds.isEmpty) return;
+  Future<Map<int, double>> refreshStockForSoldProducts(
+    List<int> soldIds, {
+    List<Product>? soldProductsSnapshot,
+  }) async {
+    if (soldIds.isEmpty) return {};
     try {
       // Expandir IDs localmente por si se vendió un combo (incluir sus ingredientes)
       final expandedIds = <int>{...soldIds};
-      for (final p in _products) {
+      final allKnownProducts = <Product>[
+        ..._products,
+        if (soldProductsSnapshot != null) ...soldProductsSnapshot,
+      ];
+      for (final p in allKnownProducts) {
         if (p.isCombo && p.comboIngredients != null) {
           final ingIds = p.comboIngredients!
               .map((ing) => (ing['id'] as num?)?.toInt())
@@ -314,10 +409,12 @@ class CatalogProvider with ChangeNotifier {
       }
 
       if (changed) notifyListeners();
+      return updatedStockById;
     } catch (e) {
       // Silent failure: el stock local puede quedar levemente desincronizado hasta
       // el próximo loadProducts() periódico, lo cual es aceptable en un POS.
       debugPrint('refreshStockForSoldProducts: fallo silencioso ($e)');
+      return {};
     }
   }
 

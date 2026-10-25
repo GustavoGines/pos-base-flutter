@@ -5,7 +5,17 @@ import '../entities/rubro.dart';
 
 abstract class CatalogRepository {
   /// Returns {data: `List<Product>`, current_page: int, last_page: int}
-  Future<Map<String, dynamic>> getProducts({int page = 1, String? search, String? sortBy, String? sortDirection, int? perPage});
+  Future<Map<String, dynamic>> getProducts({
+    int page = 1,
+    String? search,
+    String? sortBy,
+    String? sortDirection,
+    int? perPage,
+    int? categoryId,
+    int? brandId,
+    int? supplierId,
+    bool? active,
+  });
   Future<List<Category>> getCategories();
   // Rubro CRUD
   Future<List<Rubro>> getRubros();

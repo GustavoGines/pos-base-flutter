@@ -76,6 +76,7 @@ class _CatalogImportDialogState extends State<CatalogImportDialog> {
       final response = await http.get(
         downloadUri,
         headers: {
+          'X-Session-Token': token ?? '',
           if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
           'Accept': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/octet-stream, */*',
         },

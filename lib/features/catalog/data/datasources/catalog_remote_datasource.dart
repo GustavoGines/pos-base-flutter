@@ -10,7 +10,17 @@ import '../models/rubro_model.dart';
 
 abstract class CatalogRemoteDataSource {
   /// Returns a map with 'data' (`List<ProductModel>`), 'current_page', 'last_page'.
-  Future<Map<String, dynamic>> fetchProducts({int page = 1, String? search, String? sortBy, String? sortDirection, int? perPage});
+  Future<Map<String, dynamic>> fetchProducts({
+    int page = 1,
+    String? search,
+    String? sortBy,
+    String? sortDirection,
+    int? perPage,
+    int? categoryId,
+    int? brandId,
+    int? supplierId,
+    bool? active,
+  });
   Future<List<CategoryModel>> fetchCategories();
   // Rubro CRUD
   Future<List<RubroModel>> fetchRubros();
@@ -106,7 +116,17 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
   }
 
   @override
-  Future<Map<String, dynamic>> fetchProducts({int page = 1, String? search, String? sortBy, String? sortDirection, int? perPage}) async {
+  Future<Map<String, dynamic>> fetchProducts({
+    int page = 1,
+    String? search,
+    String? sortBy,
+    String? sortDirection,
+    int? perPage,
+    int? categoryId,
+    int? brandId,
+    int? supplierId,
+    bool? active,
+  }) async {
     try {
       final queryParams = <String, String>{'page': page.toString()};
       if (search != null && search.isNotEmpty) queryParams['search'] = search;
@@ -117,6 +137,10 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
         }
       }
       if (perPage != null) queryParams['per_page'] = perPage.toString();
+      if (categoryId != null) queryParams['category_id'] = categoryId.toString();
+      if (brandId != null) queryParams['brand_id'] = brandId.toString();
+      if (supplierId != null) queryParams['supplier_id'] = supplierId.toString();
+      if (active != null) queryParams['active'] = active ? '1' : '0';
 
       final uri = Uri.parse('$baseUrl/catalog/products').replace(queryParameters: queryParams);
       final response = await client.get(uri, headers: {'Accept': 'application/json'});

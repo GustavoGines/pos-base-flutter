@@ -817,6 +817,118 @@ class _PosScreenState extends State<PosScreen> {
                     ],
                   ),
                 ),
+                if (product.isCombo &&
+                    product.comboIngredients != null &&
+                    product.comboIngredients!.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.shade50.withValues(alpha: 0.7),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.amber.shade200),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.layers_outlined,
+                                size: 15, color: Colors.amber.shade900),
+                            const SizedBox(width: 6),
+                            Text(
+                              'Ingredientes del Combo',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12.5,
+                                color: Colors.amber.shade900,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        ...product.comboIngredients!.map((ing) {
+                          final ingId = (ing['id'] as num?)?.toInt();
+                          final ingName = ing['name']?.toString() ?? 'Producto';
+                          final reqQty =
+                              (ing['quantity'] as num?)?.toDouble() ?? 1.0;
+                          final catalogMatch = ingId != null
+                              ? Provider.of<CatalogProvider>(context,
+                                      listen: false)
+                                  .products
+                                  .where((p) => p.id == ingId)
+                                  .firstOrNull
+                              : null;
+                          final ingStock = catalogMatch?.stock ??
+                              ((ing['stock'] as num?)?.toDouble() ?? 0.0);
+                          final ingByWeight = catalogMatch?.isSoldByWeight ??
+                              (ing['is_sold_by_weight'] == true ||
+                                  ing['is_sold_by_weight'] == 1);
+                          final hasEnough = ingStock >= reqQty;
+                          final reqFmt = reqQty == reqQty.toInt()
+                              ? reqQty.toInt().toString()
+                              : reqQty.toStringAsFixed(2);
+
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 3),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  hasEnough
+                                      ? Icons.check_circle_rounded
+                                      : Icons.error_rounded,
+                                  size: 14,
+                                  color: hasEnough
+                                      ? Colors.green.shade600
+                                      : Colors.red.shade600,
+                                ),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    '$ingName (x$reqFmt)',
+                                    style: const TextStyle(
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 7, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: hasEnough
+                                        ? Colors.green.shade50
+                                        : Colors.red.shade50,
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: hasEnough
+                                          ? Colors.green.shade200
+                                          : Colors.red.shade200,
+                                    ),
+                                  ),
+                                  child: Text(
+                                    'Stock: ${_formatQuickLookStock(ingStock, ingByWeight)}',
+                                    style: TextStyle(
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.bold,
+                                      color: hasEnough
+                                          ? Colors.green.shade800
+                                          : Colors.red.shade700,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }),
+                      ],
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 14),
 
                 // ── Footer de acciones (ancho controlado, sin estirar el diálogo) ──
@@ -1857,11 +1969,83 @@ class _PosScreenState extends State<PosScreen> {
           catalogProvider.refreshQuickAccessSilently(preserveVisualOrder: true);
         }
 
+        // 2.b DEDUCCIÓN INMEDIATA EN MEMORIA (0ms) en Catálogo y en _searchResults:
+        // Evita que si el cajero vuelve a tocar el mismo producto/combo enseguida (o desde el buscador),
+        // use el snapshot viejo antes de que termine el refresco HTTP en segundo plano.
+        final Map<int, double> consumedInSale = {};
+        final List<Product> soldProductsSnapshot = [];
+        for (final item in posProvider.lastSaleCart) {
+          if (item.quantity <= 0) continue;
+          soldProductsSnapshot.add(item.product);
+          if (item.product.isCombo &&
+              item.product.comboIngredients != null &&
+              item.product.comboIngredients!.isNotEmpty) {
+            for (final ing in item.product.comboIngredients!) {
+              final ingId = (ing['id'] as num?)?.toInt();
+              final ingQty = (ing['quantity'] as num?)?.toDouble() ?? 1.0;
+              if (ingId != null && ingQty > 0) {
+                consumedInSale[ingId] =
+                    (consumedInSale[ingId] ?? 0.0) + (item.quantity * ingQty);
+              }
+            }
+          } else {
+            consumedInSale[item.product.id] =
+                (consumedInSale[item.product.id] ?? 0.0) + item.quantity;
+          }
+        }
+        catalogProvider.applyImmediateLocalStockDeduction(consumedInSale);
+        if (_searchResults.isNotEmpty) {
+          setState(() {
+            _searchResults = catalogProvider.deductStockLocallyForProductList(
+              _searchResults,
+              consumedInSale,
+            );
+          });
+        }
+
         // 3. REFRESCO SELECTIVO (FIRE-AND-FORGET):
         // Solo actualizamos el stock de los productos vendidos — sin recargar el catálogo completo.
         // Esto elimina el parpadeo de la grilla y acelera la vuelta a pantalla de venta.
         final List<int> soldIds = soldItems.keys.toList();
-        catalogProvider.refreshStockForSoldProducts(soldIds).catchError((e) {
+        catalogProvider
+            .refreshStockForSoldProducts(
+          soldIds,
+          soldProductsSnapshot: soldProductsSnapshot,
+        )
+            .then((updatedMap) {
+          if (!mounted || updatedMap.isEmpty || _searchResults.isEmpty) return;
+          setState(() {
+            _searchResults = _searchResults.map((p) {
+              var updated = updatedMap.containsKey(p.id)
+                  ? p.copyWith(stock: updatedMap[p.id])
+                  : p;
+              if (updated.isCombo &&
+                  updated.comboIngredients != null &&
+                  updated.comboIngredients!.isNotEmpty) {
+                int? minFit;
+                final newIngs = updated.comboIngredients!.map((ing) {
+                  final copy = Map<String, dynamic>.from(ing);
+                  final ingId = (copy['id'] as num?)?.toInt();
+                  if (ingId != null && updatedMap.containsKey(ingId)) {
+                    copy['stock'] = updatedMap[ingId];
+                  }
+                  final s = (copy['stock'] as num?)?.toDouble() ?? 0.0;
+                  final q = (copy['quantity'] as num?)?.toDouble() ?? 1.0;
+                  if (q > 0) {
+                    final fit = s < 0 ? 0 : (s / q).floor();
+                    if (minFit == null || fit < minFit!) minFit = fit;
+                  }
+                  return copy;
+                }).toList();
+                updated = updated.copyWith(
+                  comboIngredients: newIngs,
+                  stock: (minFit ?? 0).toDouble(),
+                );
+              }
+              return updated;
+            }).toList();
+          });
+        }).catchError((e) {
           debugPrint('Refresco de stock silencioso falló (esperado en redes inestables): $e');
         });
 
@@ -4745,9 +4929,12 @@ class _CartItemStockIndicator extends StatelessWidget {
         final reqPerCombo = (ing['quantity'] as num?)?.toDouble() ?? 1.0;
         if (reqPerCombo <= 0) continue;
 
-        final baseIngStock = (ingId != null && productById.containsKey(ingId))
+        final rawIngStock = (ingId != null && productById.containsKey(ingId))
             ? productById[ingId]!.stock
             : ((ing['stock'] as num?)?.toDouble() ?? 0.0);
+        // Base 0 para Combos: si el ingrediente físico ya está en 0 o negativo,
+        // la cantidad de combos armables disponibles antes del carrito es 0.
+        final baseIngStock = rawIngStock < 0 ? 0.0 : rawIngStock;
         final totalIngConsumed = ingId != null
             ? (consumedByProductId[ingId] ?? (item.quantity * reqPerCombo))
             : (item.quantity * reqPerCombo);
