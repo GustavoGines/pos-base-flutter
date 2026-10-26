@@ -76,10 +76,11 @@ class LicenseGuard extends StatelessWidget {
         return ValueListenableBuilder<String?>(
           valueListenable: routeNotifier,
           builder: (context, currentRoute, _) {
-            // Whitelist Estricta: Solo /login y /close-shift son navegables sin licencia
+            // Whitelist Estricta: Solo /login, /close-shift y /close-shift-summary son navegables sin licencia
             final bool isWhitelisted = 
                 currentRoute == '/login' || 
-                currentRoute == '/close-shift';
+                currentRoute == '/close-shift' ||
+                currentRoute == '/close-shift-summary';
 
             final bool isMobile = AppConfig.isMobile;
             final bool missingMobileAddon = isMobile && !settingsProvider.hasFeature('mobile_app');

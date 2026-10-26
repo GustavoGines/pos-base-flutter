@@ -53,7 +53,12 @@ class PaymentDetailDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     final localDate = transaction.createdAt.toLocal();
     final dateStr = DateFormat('dd/MM/yyyy HH:mm').format(localDate);
-    final balanceBefore = transaction.balanceAfter + transaction.amount;
+    final isRefund = transaction.type == 'refund';
+    // CC-09: En un reintegro de saldo a favor (refund), balanceAfter = balanceBefore + amount,
+    // por lo que el saldo previo real es balanceAfter - amount.
+    final balanceBefore = isRefund
+        ? (transaction.balanceAfter - transaction.amount)
+        : (transaction.balanceAfter + transaction.amount);
     final (methodIcon, methodLabel) = _methodInfo(transaction.paymentMethod);
 
     return Dialog(
@@ -64,12 +69,14 @@ class PaymentDetailDialog extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // ── Header verde ──
+            // ── Header ──
             Container(
               padding: const EdgeInsets.fromLTRB(24, 20, 16, 20),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  colors: [Colors.green.shade700, Colors.green.shade500],
+                  colors: isRefund
+                      ? [Colors.amber.shade800, Colors.amber.shade600]
+                      : [Colors.green.shade700, Colors.green.shade500],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
@@ -83,20 +90,24 @@ class PaymentDetailDialog extends StatelessWidget {
                       color: Colors.white.withValues(alpha: 0.2),
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: const Icon(Icons.check_circle_outline, color: Colors.white, size: 24),
+                    child: Icon(
+                      isRefund ? Icons.replay_rounded : Icons.check_circle_outline,
+                      color: Colors.white,
+                      size: 24,
+                    ),
                   ),
                   const SizedBox(width: 14),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          'Abono Registrado',
-                          style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                        Text(
+                          isRefund ? 'Reintegro Registrado' : 'Abono Registrado',
+                          style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
                         ),
                         Text(
                           customerName,
-                          style: TextStyle(color: Colors.green.shade100, fontSize: 13),
+                          style: TextStyle(color: isRefund ? Colors.amber.shade100 : Colors.green.shade100, fontSize: 13),
                           overflow: TextOverflow.ellipsis,
                         ),
                       ],
@@ -113,22 +124,22 @@ class PaymentDetailDialog extends StatelessWidget {
             // ── Monto central destacado ──
             Container(
               padding: const EdgeInsets.symmetric(vertical: 28),
-              color: Colors.green.shade50,
+              color: isRefund ? Colors.amber.shade50 : Colors.green.shade50,
               child: Column(
                 children: [
                   Text(
-                    '+\$${transaction.amount.toCurrency()}',
+                    '${isRefund ? '-' : '+'}\$${transaction.amount.toCurrency()}',
                     style: TextStyle(
                       fontSize: 42,
                       fontWeight: FontWeight.bold,
-                      color: Colors.green.shade700,
+                      color: isRefund ? Colors.amber.shade800 : Colors.green.shade700,
                       letterSpacing: -1,
                     ),
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Abono recibido',
-                    style: TextStyle(fontSize: 14, color: Colors.green.shade600),
+                    isRefund ? 'Reintegro de saldo a favor' : 'Abono recibido',
+                    style: TextStyle(fontSize: 14, color: isRefund ? Colors.amber.shade800 : Colors.green.shade600),
                   ),
                 ],
               ),

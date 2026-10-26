@@ -218,12 +218,14 @@ class _PaymentDialogState extends State<PaymentDialog> {
         setState(() => _isSubmitting = true);
 
         try {
+          final cashProv = context.read<CashRegisterProvider>();
           success = await context.read<CustomerProvider>().registerPayment(
                 customerId: widget.customer.id,
                 payments: paymentsPayload,
                 description: _descriptionController.text.trim(),
                 saleIds: _paymentType == 'specific' ? _selectedSaleIds : const [],
-                cashShiftId: context.read<CashRegisterProvider>().currentShift?.id,
+                cashShiftId: cashProv.currentShift?.id,
+                cashRegisterId: cashProv.activeRegisterId,
                 isRefund: widget.isRefund,
               );
 

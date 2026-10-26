@@ -606,9 +606,10 @@ class _CustomerDetailPanel extends StatelessWidget {
                             itemBuilder: (context, index) {
                               final trx = customer.transactions[index];
                               final isPayment = trx.type == 'payment';
+                              final isRefund = trx.type == 'refund';
                               final isCharge = trx.type == 'charge' || trx.type == 'sale';
                               final hasTicket = isCharge && trx.saleId != null;
-                              final isClickable = isPayment || hasTicket;
+                              final isClickable = isPayment || isRefund || hasTicket;
 
                               final localDate = trx.createdAt.toLocal();
                               final dateStr =
@@ -620,7 +621,7 @@ class _CustomerDetailPanel extends StatelessWidget {
                                 child: InkWell(
                                   onTap: isClickable
                                       ? () {
-                                          if (isPayment) {
+                                          if (isPayment || isRefund) {
                                             PaymentDetailDialog.show(
                                               context,
                                               transaction: trx,
@@ -638,13 +639,15 @@ class _CustomerDetailPanel extends StatelessWidget {
                                       : null,
                                   hoverColor: isPayment
                                       ? Colors.green.shade50
-                                      : Colors.indigo.shade50,
+                                      : (isRefund ? Colors.amber.shade50 : Colors.indigo.shade50),
                                   splashColor: isPayment
                                       ? Colors.green.shade100
-                                      : Colors.indigo.shade100,
+                                      : (isRefund ? Colors.amber.shade100 : Colors.indigo.shade100),
                                   highlightColor: isPayment
                                       ? Colors.green.shade100.withValues(alpha: 0.5)
-                                      : Colors.indigo.shade100.withValues(alpha: 0.5),
+                                      : (isRefund
+                                          ? Colors.amber.shade100.withValues(alpha: 0.5)
+                                          : Colors.indigo.shade100.withValues(alpha: 0.5)),
                                   mouseCursor: isClickable
                                       ? SystemMouseCursors.click
                                       : SystemMouseCursors.basic,
@@ -659,14 +662,14 @@ class _CustomerDetailPanel extends StatelessWidget {
                                           radius: 22,
                                           backgroundColor: isPayment
                                               ? Colors.green.shade100
-                                              : Colors.red.shade100,
+                                              : (isRefund ? Colors.amber.shade100 : Colors.red.shade100),
                                           child: Icon(
                                             isPayment
                                                 ? Icons.arrow_downward_rounded
-                                                : Icons.shopping_cart_outlined,
+                                                : (isRefund ? Icons.replay_rounded : Icons.shopping_cart_outlined),
                                             color: isPayment
                                                 ? Colors.green.shade700
-                                                : Colors.red.shade700,
+                                                : (isRefund ? Colors.amber.shade800 : Colors.red.shade700),
                                             size: 20,
                                           ),
                                         ),
@@ -685,7 +688,7 @@ class _CustomerDetailPanel extends StatelessWidget {
                                                       trx.description ??
                                                           (isPayment
                                                               ? 'Abono en Caja'
-                                                              : 'Factura Cta. Cte.'),
+                                                              : (isRefund ? 'Reintegro de Saldo' : 'Factura Cta. Cte.')),
                                                       style: const TextStyle(
                                                           fontWeight:
                                                               FontWeight.w600,
@@ -697,13 +700,13 @@ class _CustomerDetailPanel extends StatelessWidget {
                                                   if (isClickable) ...[
                                                     const SizedBox(width: 6),
                                                     Icon(
-                                                      isPayment
+                                                      (isPayment || isRefund)
                                                           ? Icons.info_outline_rounded
                                                           : Icons.receipt_long_outlined,
                                                       size: 15,
                                                       color: isPayment
                                                           ? Colors.green.shade400
-                                                          : Colors.indigo.shade400,
+                                                          : (isRefund ? Colors.amber.shade700 : Colors.indigo.shade400),
                                                     ),
                                                   ],
                                                 ],
@@ -734,7 +737,7 @@ class _CustomerDetailPanel extends StatelessWidget {
                                               style: TextStyle(
                                                 color: isPayment
                                                     ? Colors.green.shade700
-                                                    : Colors.red.shade700,
+                                                    : (isRefund ? Colors.amber.shade800 : Colors.red.shade700),
                                                 fontWeight: FontWeight.bold,
                                                 fontSize: 16,
                                               ),

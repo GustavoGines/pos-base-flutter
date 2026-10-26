@@ -63,6 +63,7 @@ class _PosScreenState extends State<PosScreen> {
   final _pendingOrdersPortalController = OverlayPortalController();
   final _pendingOrdersLayerLink = LayerLink();
   bool _isPendingPinned = false; // Modo Híbrido
+  bool _onlyCurrentRegisterPending = false; // MC-03: Filtro de órdenes en espera por caja activa
 
   // Filtro rápido en memoria para el Acceso Rápido
   String _quickAccessFilter = 'all'; // 'all', 'pinned', 'top_sellers', 'offers', 'weight', o 'cat_<id>'
@@ -1598,8 +1599,13 @@ class _PosScreenState extends State<PosScreen> {
       // ── VALIDACIÓN PROACTIVA: Verificar el turno en el servidor ANTES de abrir
       // la pantalla de cobro. Esto intercepta el caso donde el turno fue cerrado
       // desde otra terminal mientras este cliente estaba ocioso con el carrito lleno.
+      // MC-06: Si la terminal no está bloqueada en Ajustes (assignedRegisterId == 0),
+      // usar activeRegisterId de CashRegisterProvider para no secuestrar Caja 2 hacia Caja 1.
       final settingsProvider = Provider.of<SettingsProvider>(context, listen: false);
-      await cashRegisterProvider.checkCurrentShift(registerId: settingsProvider.assignedRegisterId > 0 ? settingsProvider.assignedRegisterId : null);
+      final targetRegId = settingsProvider.assignedRegisterId > 0
+          ? settingsProvider.assignedRegisterId
+          : cashRegisterProvider.activeRegisterId;
+      await cashRegisterProvider.checkCurrentShift(registerId: targetRegId);
 
       final currentShift = cashRegisterProvider.currentShift;
       if (!mounted) return;
@@ -2340,63 +2346,117 @@ class _PosScreenState extends State<PosScreen> {
                       // Header con controles internos
                       Padding(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 20, vertical: 16),
-                        child: Row(
+                            horizontal: 20, vertical: 12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Icon(Icons.pending_actions_rounded,
-                                color: Colors.orange.shade700, size: 24),
-                            const SizedBox(width: 12),
-                            const Expanded(
-                              child: Text('Órdenes en Espera',
-                                  style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 18)),
+                            Row(
+                              children: [
+                                Icon(Icons.pending_actions_rounded,
+                                    color: Colors.orange.shade700, size: 24),
+                                const SizedBox(width: 12),
+                                const Expanded(
+                                  child: Text('Órdenes en Espera',
+                                      style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 18)),
+                                ),
+                                // PIN con setOverlayState para no romper el layout global
+                                IconButton(
+                                  icon: Icon(
+                                    _isPendingPinned
+                                        ? Icons.push_pin
+                                        : Icons.push_pin_outlined,
+                                    size: 20,
+                                    color: _isPendingPinned
+                                        ? Colors.blueAccent
+                                        : Colors.grey,
+                                  ),
+                                  tooltip:
+                                      null, // Parche: eliminamos el tooltip que causa el crash
+                                  onPressed: () {
+                                    setOverlayState(() {
+                                      _isPendingPinned = !_isPendingPinned;
+                                    });
+                                    setState(() {});
+                                  },
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.refresh,
+                                      size: 20, color: Colors.blueGrey),
+                                  tooltip:
+                                      null, // Parche: eliminamos el tooltip que causa el crash
+                                  onPressed: () async {
+                                    await posProvider.loadPendingSales();
+                                    if (context.mounted) setOverlayState(() {});
+                                  },
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.close, size: 20),
+                                  tooltip: null,
+                                  onPressed: () =>
+                                      _pendingOrdersPortalController.hide(),
+                                ),
+                              ],
                             ),
-                            // PIN con setOverlayState para no romper el layout global
-                            IconButton(
-                              icon: Icon(
-                                _isPendingPinned
-                                    ? Icons.push_pin
-                                    : Icons.push_pin_outlined,
-                                size: 20,
-                                color: _isPendingPinned
-                                    ? Colors.blueAccent
-                                    : Colors.grey,
-                              ),
-                              tooltip:
-                                  null, // Parche: eliminamos el tooltip que causa el crash
-                              onPressed: () {
-                                setOverlayState(() {
-                                  _isPendingPinned = !_isPendingPinned;
-                                });
-                                setState(() {});
-                              },
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.refresh,
-                                  size: 20, color: Colors.blueGrey),
-                              tooltip:
-                                  null, // Parche: eliminamos el tooltip que causa el crash
-                              onPressed: () async {
-                                await posProvider.loadPendingSales();
-                                if (context.mounted) setOverlayState(() {});
-                              },
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.close, size: 20),
-                              tooltip: null,
-                              onPressed: () =>
-                                  _pendingOrdersPortalController.hide(),
+                            const SizedBox(height: 8),
+                            // MC-03: Selector rápido Todas las cajas vs Solo esta caja
+                            Row(
+                              children: [
+                                ChoiceChip(
+                                  label: const Text('Todas las cajas', style: TextStyle(fontSize: 11)),
+                                  selected: !_onlyCurrentRegisterPending,
+                                  visualDensity: VisualDensity.compact,
+                                  selectedColor: Colors.orange.shade100,
+                                  onSelected: (_) {
+                                    setOverlayState(() {
+                                      _onlyCurrentRegisterPending = false;
+                                    });
+                                  },
+                                ),
+                                const SizedBox(width: 8),
+                                ChoiceChip(
+                                  label: const Text('Solo esta caja', style: TextStyle(fontSize: 11)),
+                                  selected: _onlyCurrentRegisterPending,
+                                  visualDensity: VisualDensity.compact,
+                                  selectedColor: Colors.orange.shade100,
+                                  onSelected: (_) {
+                                    setOverlayState(() {
+                                      _onlyCurrentRegisterPending = true;
+                                    });
+                                  },
+                                ),
+                              ],
                             ),
                           ],
                         ),
                       ),
                       const Divider(height: 1),
                       Flexible(
-                        child: pendingSales.isEmpty
-                            ? _buildEmptyPendingState()
-                            : _buildPendingOrdersList(
-                                pendingSales, posProvider),
+                        child: Builder(
+                          builder: (ctx) {
+                            final currentShift = ctx.read<CashRegisterProvider>().currentShift;
+                            final activeRegId = ctx.read<CashRegisterProvider>().activeRegisterId;
+                            final filteredPending = !_onlyCurrentRegisterPending
+                                ? pendingSales
+                                : pendingSales.where((s) {
+                                    final sShiftId = s['cash_shift_id'];
+                                    final sRegId = s['cash_shift']?['cash_register_id'] ??
+                                        s['cash_shift']?['cash_register']?['id'];
+                                    if (activeRegId != null && sRegId != null) {
+                                      return sRegId.toString() == activeRegId.toString();
+                                    }
+                                    if (currentShift != null && sShiftId != null) {
+                                      return sShiftId.toString() == currentShift.id.toString();
+                                    }
+                                    return true;
+                                  }).toList();
+                            return filteredPending.isEmpty
+                                ? _buildEmptyPendingState()
+                                : _buildPendingOrdersList(
+                                    filteredPending, posProvider);
+                          },
+                        ),
                       ),
                     ],
                   ),
@@ -2443,6 +2503,8 @@ class _PosScreenState extends State<PosScreen> {
         final saleId = (sale['id'] as num).toInt();
         final total = _toDouble(sale['total']);
         final itemCount = (sale['items'] as List?)?.length ?? 0;
+        final originRegName = sale['cash_shift']?['cash_register']?['name']?.toString();
+        final originUserName = sale['user']?['name']?.toString();
 
         return Card(
           elevation: 0,
@@ -2470,9 +2532,33 @@ class _PosScreenState extends State<PosScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('\$${total.toCurrency()}',
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.bold, fontSize: 16)),
+                          Row(
+                            children: [
+                              Text('\$${total.toCurrency()}',
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.bold, fontSize: 16)),
+                              const Spacer(),
+                              if (originRegName != null && originRegName.isNotEmpty)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.indigo.shade50,
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(color: Colors.indigo.shade100),
+                                  ),
+                                  child: Text(
+                                    originUserName != null && originUserName.isNotEmpty
+                                        ? '$originRegName • $originUserName'
+                                        : originRegName,
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.indigo.shade700,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
                           Row(
                             children: [
                               Icon(Icons.access_time,

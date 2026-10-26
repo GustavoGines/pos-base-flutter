@@ -20,6 +20,9 @@ class SalesHistoryProvider with ChangeNotifier {
   int? _selectedUserId;
   int? get selectedUserId => _selectedUserId;
 
+  int? _selectedRegisterId;
+  int? get selectedRegisterId => _selectedRegisterId;
+
   // Memoria del turno actual para mantener el filtro al cambiar de cajero
   int? _currentShiftId;
   int? get currentShiftId => _currentShiftId;
@@ -36,6 +39,11 @@ class SalesHistoryProvider with ChangeNotifier {
 
   void setSelectedUserId(int? id) {
     _selectedUserId = id;
+    loadSales(shiftId: _currentShiftId);
+  }
+
+  void setSelectedRegisterId(int? id) {
+    _selectedRegisterId = id;
     loadSales(shiftId: _currentShiftId);
   }
 
@@ -60,7 +68,11 @@ class SalesHistoryProvider with ChangeNotifier {
     notifyListeners();
     try {
       _sales = await dataSource.fetchSales(
-          period: _currentPeriod, shiftId: _currentShiftId, userId: _selectedUserId);
+        period: _currentPeriod,
+        shiftId: _currentShiftId,
+        userId: _selectedUserId,
+        cashRegisterId: _currentPeriod == 'shift' ? null : _selectedRegisterId,
+      );
     } catch (e) {
       _errorMessage = e.toString();
     } finally {

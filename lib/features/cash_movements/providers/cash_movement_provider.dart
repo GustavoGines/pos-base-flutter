@@ -47,6 +47,8 @@ class CashMovementProvider extends ChangeNotifier {
   bool get currentAllFilter => _currentAllFilter;
   int? _currentShiftId;
   int? get currentShiftId => _currentShiftId;
+  int? _currentRegisterFilter;
+  int? get currentRegisterFilter => _currentRegisterFilter;
 
   DateTime? _startDate;
   DateTime? get startDate => _startDate;
@@ -66,6 +68,8 @@ class CashMovementProvider extends ChangeNotifier {
     bool clearDates = false,
     String? adminPin,
     int? cashShiftId,
+    int? cashRegisterId,
+    bool clearRegisterFilter = false,
   }) async {
     if (_isLoading && !refresh) return;
 
@@ -86,6 +90,11 @@ class CashMovementProvider extends ChangeNotifier {
       }
       if (all != null) {
         _currentAllFilter = all;
+      }
+      if (clearRegisterFilter) {
+        _currentRegisterFilter = null;
+      } else if (cashRegisterId != null) {
+        _currentRegisterFilter = cashRegisterId;
       }
       if (clearDates) {
         _startDate = null;
@@ -111,6 +120,9 @@ class CashMovementProvider extends ChangeNotifier {
       }
       if (_currentAllFilter) {
         url += '&all=1';
+        if (_currentRegisterFilter != null) {
+          url += '&cash_register_id=$_currentRegisterFilter';
+        }
         if (_startDate != null && _endDate != null) {
           // Format as YYYY-MM-DD
           final sd =

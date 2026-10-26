@@ -304,5 +304,74 @@ void main() {
       expect(apiClient.isUsingFallbackEndpoint, isFalse);
       expect(requestedHosts, equals(['192.168.1.50']));
     });
+
+    test('F3-RESIL-02 (Adversarial): ApiClient conmuta dinamicamente ante HTTP 502/503/504 Gateway Failure', () async {
+      final requestedHosts = <String>[];
+
+      final innerClient = MockClient((request) async {
+        requestedHosts.add(request.url.host);
+        if (request.url.host == '192.168.1.50') {
+          return http.Response('Bad Gateway', 502);
+        }
+        return http.Response(jsonEncode({'ok': true, 'host': request.url.host}), 200);
+      });
+
+      final apiClient = ApiClient(innerClient)
+        ..fallbackStickyDuration = const Duration(milliseconds: 50)
+        ..configureFailover(
+          primaryUrl: 'http://192.168.1.50/api',
+          fallbackUrl: 'https://cloud.negocio.com/api',
+        );
+
+      final resp = await apiClient.get(Uri.parse('http://192.168.1.50/api/settings'));
+      expect(resp.statusCode, equals(200));
+      expect(apiClient.isUsingFallbackEndpoint, isTrue);
+      expect(requestedHosts, equals(['192.168.1.50', 'cloud.negocio.com']));
+    });
+
+    test('COL-04: ApiClient activa ventana sticky pero NO reintenta en caliente POST mutante sin X-Idempotency-Key', () async {
+      final requestedHosts = <String>[];
+
+      final innerClient = MockClient((request) async {
+        requestedHosts.add('${request.method}:${request.url.host}');
+        if (request.url.host == '192.168.1.50') {
+          throw const SocketException('Connection reset by peer');
+        }
+        return http.Response(jsonEncode({'ok': true}), 201);
+      });
+
+      final apiClient = ApiClient(innerClient)
+        ..fallbackStickyDuration = const Duration(seconds: 10)
+        ..configureFailover(
+          primaryUrl: 'http://192.168.1.50/api',
+          fallbackUrl: 'https://cloud.negocio.com/api',
+        );
+
+      // 1. POST sin X-Idempotency-Key falla en primario: NO debe reintentarse en caliente en el fallback
+      await expectLater(
+        () => apiClient.post(
+          Uri.parse('http://192.168.1.50/api/cash-movements'),
+          body: jsonEncode({'amount': 500}),
+        ),
+        throwsA(isA<NetworkException>()),
+      );
+      expect(requestedHosts, equals(['POST:192.168.1.50']));
+      expect(apiClient.isUsingFallbackEndpoint, isTrue);
+
+      // 2. En cambio, si el POST lleva X-Idempotency-Key en un cliente nuevo, SÍ conmuta y reintenta en caliente
+      requestedHosts.clear();
+      final idempClient = ApiClient(innerClient)
+        ..configureFailover(
+          primaryUrl: 'http://192.168.1.50/api',
+          fallbackUrl: 'https://cloud.negocio.com/api',
+        );
+      final respIdemp = await idempClient.post(
+        Uri.parse('http://192.168.1.50/api/pos/sales'),
+        headers: {'X-Idempotency-Key': 'tx-safe-123'},
+        body: jsonEncode({'total': 100}),
+      );
+      expect(respIdemp.statusCode, equals(201));
+      expect(requestedHosts, equals(['POST:192.168.1.50', 'POST:cloud.negocio.com']));
+    });
   });
 }

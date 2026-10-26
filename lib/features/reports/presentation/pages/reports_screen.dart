@@ -700,8 +700,9 @@ class _ChartCard extends StatelessWidget {
                       sideTitles: SideTitles(
                         showTitles: true,
                         getTitlesWidget: (value, meta) {
-                          if (value.toInt() >= displayData.length) return const SizedBox.shrink();
-                          final name = displayData[value.toInt()]['category_name'].toString();
+                          final idx = value.toInt();
+                          if (idx < 0 || idx >= displayData.length) return const SizedBox.shrink();
+                          final name = displayData[idx]['category_name'].toString();
                           final label = name.length > 12 ? '${name.substring(0, 10)}..' : name;
                           return Padding(
                             padding: const EdgeInsets.only(top: 8),

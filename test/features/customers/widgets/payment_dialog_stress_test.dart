@@ -31,6 +31,7 @@ class FakeCustomerProvider extends ChangeNotifier implements CustomerProvider {
     List<int> saleIds = const [],
     dynamic checkDetails,
     int? cashShiftId,
+    int? cashRegisterId,
     bool isRefund = false,
   }) async {
     registerPaymentCallCount++;
@@ -55,6 +56,9 @@ class FakeSettingsProvider extends ChangeNotifier implements SettingsProvider {
 class FakeCashRegisterProvider extends ChangeNotifier implements CashRegisterProvider {
   @override
   CashRegisterShift? get currentShift => null;
+
+  @override
+  int? get activeRegisterId => null;
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);

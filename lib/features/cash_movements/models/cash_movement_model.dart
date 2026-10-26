@@ -19,6 +19,7 @@ class CashMovementModel {
   final Map<String, dynamic>? authorizer;
   final Map<String, dynamic>? supplier;
   final Map<String, dynamic>? check;
+  final Map<String, dynamic>? cashShift;
 
   CashMovementModel({
     required this.id,
@@ -39,7 +40,24 @@ class CashMovementModel {
     this.authorizer,
     this.supplier,
     this.check,
+    this.cashShift,
   });
+
+  int? get cashRegisterId {
+    final raw = cashShift?['cash_register_id'] ?? cashShift?['cash_register']?['id'];
+    if (raw is int) return raw;
+    if (raw != null) return int.tryParse(raw.toString());
+    return null;
+  }
+
+  String? get cashRegisterName {
+    final reg = cashShift?['cash_register'];
+    if (reg is Map) {
+      final name = reg['name']?.toString();
+      if (name != null && name.trim().isNotEmpty) return name;
+    }
+    return null;
+  }
 
   factory CashMovementModel.fromJson(Map<String, dynamic> json) {
     return CashMovementModel(
@@ -61,6 +79,9 @@ class CashMovementModel {
       authorizer: json['authorizer'],
       supplier: json['supplier'],
       check: json['check'],
+      cashShift: json['cash_shift'] is Map<String, dynamic>
+          ? json['cash_shift'] as Map<String, dynamic>
+          : (json['cash_shift'] is Map ? Map<String, dynamic>.from(json['cash_shift'] as Map) : null),
     );
   }
 }

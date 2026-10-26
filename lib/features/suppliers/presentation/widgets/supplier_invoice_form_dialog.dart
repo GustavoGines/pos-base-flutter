@@ -182,7 +182,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
         if (response.statusCode == 200) {
           final data = json.decode(response.body);
           setState(() {
-            _attachmentUrl = data['path'];
+            _attachmentUrl = (data['path'] ?? data['file_url'])?.toString();
             _isUploading = false;
           });
           if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Comprobante subido.')));
@@ -228,6 +228,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
 
           final data = {
             'type': _type,
+            'status': 'pending',
             'amount': _totalAmount,
             'tax_amount': _taxAmount,
             'freight_amount': _freightAmount,

@@ -1776,6 +1776,13 @@ class ReceiptPrinterService {
       'Ventas Transf.:',
       '$currency${(shift.transferSales ?? 0.0).toCurrency()}',
     );
+    if ((shift.mpSales ?? 0) > 0) {
+      bytes += _labelValue(
+        generator,
+        'Ventas MercadoPago:',
+        '$currency${(shift.mpSales ?? 0.0).toCurrency()}',
+      );
+    }
     if (isPremium || (shift.ccSales ?? 0) > 0) {
       bytes += _labelValue(
         generator,

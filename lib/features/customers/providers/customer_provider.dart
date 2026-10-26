@@ -175,6 +175,7 @@ class CustomerProvider extends ChangeNotifier {
     List<int> saleIds = const [],
     dynamic checkDetails,
     int? cashShiftId,
+    int? cashRegisterId,
     bool isRefund = false,
   }) async {
     try {
@@ -203,6 +204,10 @@ class CustomerProvider extends ChangeNotifier {
 
       if (cashShiftId != null) {
         bodyPayload['cash_shift_id'] = cashShiftId;
+      }
+
+      if (cashRegisterId != null && cashRegisterId > 0) {
+        bodyPayload['cash_register_id'] = cashRegisterId;
       }
 
       bodyPayload['is_refund'] = isRefund;

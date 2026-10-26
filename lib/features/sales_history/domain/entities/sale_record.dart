@@ -82,6 +82,9 @@ class SaleRecord {
   final String? userName;
   final int? cashierId;
   final String? cashierName;
+  final int? cashShiftId;
+  final int? cashRegisterId;
+  final String? cashRegisterName;
   final double? iibbPerceptionAmount;
   final double? iibbPerceptionRate;
   final String invoiceStatus;
@@ -102,6 +105,9 @@ class SaleRecord {
     this.userName,
     this.cashierId,
     this.cashierName,
+    this.cashShiftId,
+    this.cashRegisterId,
+    this.cashRegisterName,
     this.iibbPerceptionAmount,
     this.iibbPerceptionRate,
     this.invoiceStatus = 'none',
@@ -150,6 +156,11 @@ class SaleRecord {
         .map((p) => SalePayment.fromJson(p as Map<String, dynamic>))
         .toList();
 
+    final cashShift = json['cash_shift'] as Map<String, dynamic>?;
+    final cashRegister = cashShift?['cash_register'] as Map<String, dynamic>?;
+    final rawShiftId = json['cash_shift_id'] ?? cashShift?['id'];
+    final rawRegId = cashShift?['cash_register_id'] ?? cashRegister?['id'];
+
     return SaleRecord(
       id: json['id'] is int ? json['id'] : (int.tryParse(json['id']?.toString() ?? '0') ?? 0),
       total: double.tryParse(json['total']?.toString() ?? '0') ?? 0.0,
@@ -162,6 +173,9 @@ class SaleRecord {
       userName: json['user']?['name'] as String?,
       cashierId: json['cashier_id'] as int?,
       cashierName: json['cashier']?['name'] as String?,
+      cashShiftId: rawShiftId is int ? rawShiftId : int.tryParse(rawShiftId?.toString() ?? ''),
+      cashRegisterId: rawRegId is int ? rawRegId : int.tryParse(rawRegId?.toString() ?? ''),
+      cashRegisterName: cashRegister?['name']?.toString(),
       iibbPerceptionAmount: json['iibb_perception_amount'] != null
           ? double.tryParse(json['iibb_perception_amount'].toString())
           : null,

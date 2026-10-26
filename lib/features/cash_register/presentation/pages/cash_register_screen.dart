@@ -50,7 +50,7 @@ class _CashRegisterScreenState extends State<CashRegisterScreen> {
 
       // Verificación inmediata al montar
       cashProv.checkCurrentShift(
-        registerId: assignedId > 0 ? assignedId : null,
+        registerId: assignedId > 0 ? assignedId : (_selectedRegisterId ?? cashProv.activeRegisterId),
       );
 
       // Cargar la lista de cajas disponibles (necesaria para el dropdown)
@@ -59,11 +59,13 @@ class _CashRegisterScreenState extends State<CashRegisterScreen> {
       // Polling cada 10 segundos: detecta turnos abiertos por otras terminales
       // sin que el admin tenga que navegar. Usa el método silencioso para no
       // generar flickering visual en la UI durante el uso normal.
+      // MC-06: Respetar _selectedRegisterId cuando assignedId == 0 para no secuestrar Caja 2 hacia Caja 1.
       _shiftPollTimer = Timer.periodic(const Duration(seconds: 10), (_) {
         if (!mounted) return;
         final id = context.read<SettingsProvider>().assignedRegisterId;
+        final targetId = id > 0 ? id : _selectedRegisterId;
         context.read<CashRegisterProvider>().checkCurrentShiftSilently(
-          registerId: id > 0 ? id : null,
+          registerId: targetId,
         );
       });
     });
@@ -191,7 +193,12 @@ class _CashRegisterScreenState extends State<CashRegisterScreen> {
                       if ((_selectedRegisterId == null || !validIds.contains(_selectedRegisterId)) && registers.isNotEmpty) {
                         // Usar addPostFrameCallback para no mutar estado durante build
                         WidgetsBinding.instance.addPostFrameCallback((_) {
-                          if (mounted) setState(() => _selectedRegisterId = registers.first.id);
+                          if (mounted) {
+                            final initialId = (cashProv.activeRegisterId != null && validIds.contains(cashProv.activeRegisterId))
+                                ? cashProv.activeRegisterId!
+                                : registers.first.id;
+                            setState(() => _selectedRegisterId = initialId);
+                          }
                         });
                       }
 
@@ -222,6 +229,9 @@ class _CashRegisterScreenState extends State<CashRegisterScreen> {
                             setState(() {
                               _selectedRegisterId = val;
                             });
+                            if (val != null) {
+                              cashProv.checkCurrentShiftSilently(registerId: val);
+                            }
                           },
                         ),
                       );

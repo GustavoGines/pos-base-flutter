@@ -141,7 +141,7 @@ class SettingsProvider with ChangeNotifier {
       // Iniciar el sistema de seguridad DRM
       await LicenseHeartbeatService().initialize(
         _settings,
-        onSyncRequested: () => syncLicenseWithServer(AppConfig.kApiBaseUrl, isSilent: true),
+        onSyncRequested: () => syncLicenseWithServer(currentApiUrl, isSilent: true),
       );
 
       // Hardware config migrado a LocalTerminalProvider (SharedPreferences por caja).
@@ -185,7 +185,7 @@ class SettingsProvider with ChangeNotifier {
       // Actualizar el Heartbeat con la nueva data (server_time, etc)
       await LicenseHeartbeatService().initialize(
         _settings,
-        onSyncRequested: () => syncLicenseWithServer(AppConfig.kApiBaseUrl),
+        onSyncRequested: () => syncLicenseWithServer(currentApiUrl, isSilent: true),
       );
       
       notifyListeners();

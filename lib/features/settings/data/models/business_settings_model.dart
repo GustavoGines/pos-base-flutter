@@ -108,12 +108,12 @@ class BusinessSettingsModel extends BusinessSettings {
       phone: json['phone'],
       taxId: json['tax_id'],
       receiptFooterMessage: json['receipt_footer_message'],
-      licenseStatus: json['license_key'], // The actual license key string
+      licenseStatus: json['license_key'] ?? json['license_api_key'], // The actual license key string
       licensePlanType:
           json['app_plan'], // Written by LicenseSyncService as 'app_plan'
       licensePlanMode: json['license_plan_mode'] ?? 'saas',
-      lastLicenseCheck: json['last_license_check'],
-      serverTime: json['server_time'],
+      lastLicenseCheck: json['last_license_check'] ?? json['license_last_sync'],
+      serverTime: json['server_time'] ?? json['license_server_time'],
       licenseExpiresAt: json['license_expires_at'] != null
           ? DateTime.tryParse(json['license_expires_at'])
           : null,

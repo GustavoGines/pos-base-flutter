@@ -13,6 +13,8 @@ class CashRegisterShift {
   final double? cashSales;
   final double? cardSales;
   final double? transferSales;
+  final double? mpSales;
+  final int? mpSalesCount;
   final double? totalSurcharge;
   final double? checkSales;
   final int? checkCount;
@@ -50,6 +52,8 @@ class CashRegisterShift {
     this.cashSales,
     this.cardSales,
     this.transferSales,
+    this.mpSales,
+    this.mpSalesCount,
     this.totalSurcharge,
     this.checkSales,
     this.checkCount,

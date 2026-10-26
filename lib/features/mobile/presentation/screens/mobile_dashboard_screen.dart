@@ -91,10 +91,15 @@ class _MobileDashboardScreenState extends State<MobileDashboardScreen> {
       final cashRegisterProvider = context.read<CashRegisterProvider>();
       final alertsProvider = context.read<InventoryAlertsProvider>();
 
+      final settingsProvider = context.read<SettingsProvider>();
+      final targetRegId = settingsProvider.assignedRegisterId > 0
+          ? settingsProvider.assignedRegisterId
+          : cashRegisterProvider.activeRegisterId;
+
       // Ejecutar en paralelo para una carga ultrarrápida en redes 4G
       await Future.wait([
         salesProvider.loadSales(period: _selectedPeriod),
-        cashRegisterProvider.checkCurrentShiftSilently(),
+        cashRegisterProvider.checkCurrentShiftSilently(registerId: targetRegId),
         alertsProvider.fetchAlerts(),
       ]);
 

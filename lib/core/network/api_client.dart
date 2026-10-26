@@ -67,7 +67,7 @@ class ApiClient extends http.BaseClient {
   String? _fallbackBaseUrl;
   bool _useFallbackEndpoint = false;
   DateTime? _fallbackActivatedAt;
-  Duration fallbackStickyDuration = const Duration(minutes: 2);
+  Duration fallbackStickyDuration = const Duration(seconds: 60);
 
   bool get isUsingFallbackEndpoint => _useFallbackEndpoint;
 
@@ -114,6 +114,21 @@ class ApiClient extends http.BaseClient {
       cloned.bodyBytes = bodyBytes;
     }
     return cloned;
+  }
+
+  /// COL-04: Determina si una petición en vuelo puede reintentarse automáticamente en otro
+  /// servidor sin riesgo de duplicar transacciones financieras no idempotentes.
+  bool _isSafeToRetryOnFailover(String method, Map<String, String> headers) {
+    final upper = method.toUpperCase();
+    if (upper == 'GET' || upper == 'HEAD' || upper == 'OPTIONS') {
+      return true;
+    }
+    for (final entry in headers.entries) {
+      if (entry.key.toLowerCase() == 'x-idempotency-key' && entry.value.trim().isNotEmpty) {
+        return true;
+      }
+    }
+    return false;
   }
 
   ApiClient(this._inner);
@@ -289,9 +304,16 @@ class ApiClient extends http.BaseClient {
           if (alternateUri != null) {
             _useFallbackEndpoint = switchedToFallback;
             _fallbackActivatedAt = switchedToFallback ? DateTime.now() : null;
-            url = alternateUri;
-            final failoverReq = _buildClonedRequest(method, url, headers, bodyBytes, encoding);
-            response = await _inner.send(failoverReq).timeout(const Duration(seconds: 300));
+            // COL-04: Solo reintentar en caliente peticiones lectoras o que porten X-Idempotency-Key.
+            // Para mutaciones sin llave de idempotencia, activamos la ventana sticky para el próximo intento
+            // pero propagamos el fallo para evitar doble impacto financiero si el primario llegó a confirmar.
+            if (_isSafeToRetryOnFailover(method, headers)) {
+              url = alternateUri;
+              final failoverReq = _buildClonedRequest(method, url, headers, bodyBytes, encoding);
+              response = await _inner.send(failoverReq).timeout(const Duration(seconds: 300));
+            } else {
+              rethrow;
+            }
           } else {
             rethrow;
           }
@@ -468,6 +490,25 @@ class ApiClient extends http.BaseClient {
       }
 
       // ── Intercepción de errores del servidor (5xx) ───────────────────────
+      if ((response.statusCode == 502 || response.statusCode == 503 || response.statusCode == 504) &&
+          !_useFallbackEndpoint &&
+          _primaryBaseUrl != null &&
+          _fallbackBaseUrl != null &&
+          request is http.Request) {
+        final fallbackUri = _tryRewriteUri(url, _primaryBaseUrl!, _fallbackBaseUrl!);
+        if (fallbackUri != null) {
+          _useFallbackEndpoint = true;
+          _fallbackActivatedAt = DateTime.now();
+          if (_isSafeToRetryOnFailover(method, headers)) {
+            url = fallbackUri;
+            final failoverReq = _buildClonedRequest(method, url, headers, bodyBytes, encoding);
+            try {
+              response = await _inner.send(failoverReq).timeout(const Duration(seconds: 300));
+            } catch (_) {}
+          }
+        }
+      }
+
       if (response.statusCode >= 500) {
         String errorMsg = _friendlyErrorMessage;
         try {

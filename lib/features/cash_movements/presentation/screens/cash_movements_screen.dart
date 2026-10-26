@@ -34,7 +34,11 @@ class _CashMovementsScreenState extends State<CashMovementsScreen> {
     super.initState();
     _scrollController.addListener(_onScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final activeShiftId = context.read<CashRegisterProvider>().currentShift?.id;
+      final cashProv = context.read<CashRegisterProvider>();
+      if (cashProv.availableRegisters == null) {
+        cashProv.loadRegisters();
+      }
+      final activeShiftId = cashProv.currentShift?.id;
       context.read<CashMovementProvider>().fetchMovements(
             refresh: true,
             all: false,
@@ -268,6 +272,9 @@ class _CashMovementsScreenState extends State<CashMovementsScreen> {
     String urlStr = '${prov.baseUrl}/cash-movements/export';
     if (prov.currentAllFilter) {
       urlStr += '?all=1';
+      if (prov.currentRegisterFilter != null) {
+        urlStr += '&cash_register_id=${prov.currentRegisterFilter}';
+      }
       if (prov.currentCategoryFilter != null) {
          urlStr += '&category=${prov.currentCategoryFilter}';
       }
@@ -455,60 +462,112 @@ class _CashMovementsScreenState extends State<CashMovementsScreen> {
               ),
               const SizedBox(height: 16),
               // Filtros Avanzados
-              Row(
+              Wrap(
+                spacing: 16,
+                runSpacing: 12,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  const Text('Filtrar por Categoría: ', style: TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(width: 8),
-                  SizedBox(
-                    width: 250,
-                    child: DropdownButtonFormField<String>(
-                      decoration: const InputDecoration(
-                        isDense: true,
-                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        border: OutlineInputBorder(),
-                      ),
-                      initialValue: provider.currentCategoryFilter,
-                      items: [
-                        const DropdownMenuItem(value: null, child: Text('Todas')),
-                        const DropdownMenuItem(value: 'Venta', child: Text('Ventas')),
-                        const DropdownMenuItem(value: 'Pago a Proveedor', child: Text('Pago a Proveedor')),
-                        const DropdownMenuItem(value: 'Ingreso Manual', child: Text('Ingresos Manuales')),
-                        const DropdownMenuItem(value: 'Gasto', child: Text('Gastos')),
-                        if (provider.currentCategoryFilter != null && !['Venta', 'Pago a Proveedor', 'Ingreso Manual', 'Gasto'].contains(provider.currentCategoryFilter))
-                          DropdownMenuItem(value: provider.currentCategoryFilter, child: Text(provider.currentCategoryFilter!)),
-                      ],
-                      onChanged: (val) {
-                        if (val == null) {
-                          provider.fetchMovements(refresh: true, clearCategory: true);
-                        } else {
-                          provider.fetchMovements(refresh: true, category: val);
-                        }
-                      },
-                    ),
-                  ),
-                  if (provider.currentAllFilter) ...[
-                    const SizedBox(width: 16),
-                    const Text('Fechas: ', style: TextStyle(fontWeight: FontWeight.bold)),
-                    const SizedBox(width: 8),
-                    OutlinedButton.icon(
-                      icon: const Icon(Icons.date_range, size: 18),
-                      label: Text(
-                        provider.startDate != null && provider.endDate != null
-                            ? '${DateFormat('dd/MM/yyyy').format(provider.startDate!)} - ${DateFormat('dd/MM/yyyy').format(provider.endDate!)}'
-                            : 'Seleccionar Rango',
-                      ),
-                      onPressed: _selectDateRange,
-                    ),
-                    if (provider.startDate != null) ...[
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text('Categoría: ', style: TextStyle(fontWeight: FontWeight.bold)),
                       const SizedBox(width: 8),
-                      IconButton(
-                        tooltip: 'Limpiar Fechas',
-                        icon: const Icon(Icons.clear, color: Colors.red),
-                        onPressed: () {
-                          provider.fetchMovements(refresh: true, clearDates: true);
-                        },
+                      SizedBox(
+                        width: 220,
+                        child: DropdownButtonFormField<String>(
+                          decoration: const InputDecoration(
+                            isDense: true,
+                            contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            border: OutlineInputBorder(),
+                          ),
+                          initialValue: provider.currentCategoryFilter,
+                          items: [
+                            const DropdownMenuItem(value: null, child: Text('Todas')),
+                            const DropdownMenuItem(value: 'Venta', child: Text('Ventas')),
+                            const DropdownMenuItem(value: 'Pago a Proveedor', child: Text('Pago a Proveedor')),
+                            const DropdownMenuItem(value: 'Ingreso Manual', child: Text('Ingresos Manuales')),
+                            const DropdownMenuItem(value: 'Gasto', child: Text('Gastos')),
+                            const DropdownMenuItem(value: 'Retiro de Caja', child: Text('Retiros de Caja')),
+                            if (provider.currentCategoryFilter != null && !['Venta', 'Pago a Proveedor', 'Ingreso Manual', 'Gasto', 'Retiro de Caja'].contains(provider.currentCategoryFilter))
+                              DropdownMenuItem(value: provider.currentCategoryFilter, child: Text(provider.currentCategoryFilter!)),
+                          ],
+                          onChanged: (val) {
+                            if (val == null) {
+                              provider.fetchMovements(refresh: true, clearCategory: true);
+                            } else {
+                              provider.fetchMovements(refresh: true, category: val);
+                            }
+                          },
+                        ),
                       ),
                     ],
+                  ),
+                  if (provider.currentAllFilter) ...[
+                    Consumer<CashRegisterProvider>(
+                      builder: (context, cashProv, _) {
+                        final registers = cashProv.availableRegisters ?? [];
+                        return Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Text('Caja: ', style: TextStyle(fontWeight: FontWeight.bold)),
+                            const SizedBox(width: 8),
+                            SizedBox(
+                              width: 190,
+                              child: DropdownButtonFormField<int?>(
+                                decoration: const InputDecoration(
+                                  isDense: true,
+                                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                  border: OutlineInputBorder(),
+                                ),
+                                initialValue: registers.any((r) => r.id == provider.currentRegisterFilter)
+                                    ? provider.currentRegisterFilter
+                                    : null,
+                                items: [
+                                  const DropdownMenuItem<int?>(value: null, child: Text('Todas las cajas')),
+                                  ...registers.map((r) => DropdownMenuItem<int?>(
+                                        value: r.id,
+                                        child: Text(r.name),
+                                      )),
+                                ],
+                                onChanged: (val) {
+                                  if (val == null) {
+                                    provider.fetchMovements(refresh: true, clearRegisterFilter: true);
+                                  } else {
+                                    provider.fetchMovements(refresh: true, cashRegisterId: val);
+                                  }
+                                },
+                              ),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text('Fechas: ', style: TextStyle(fontWeight: FontWeight.bold)),
+                        const SizedBox(width: 8),
+                        OutlinedButton.icon(
+                          icon: const Icon(Icons.date_range, size: 18),
+                          label: Text(
+                            provider.startDate != null && provider.endDate != null
+                                ? '${DateFormat('dd/MM/yyyy').format(provider.startDate!)} - ${DateFormat('dd/MM/yyyy').format(provider.endDate!)}'
+                                : 'Seleccionar Rango',
+                          ),
+                          onPressed: _selectDateRange,
+                        ),
+                        if (provider.startDate != null) ...[
+                          const SizedBox(width: 4),
+                          IconButton(
+                            tooltip: 'Limpiar Fechas',
+                            icon: const Icon(Icons.clear, color: Colors.red),
+                            onPressed: () {
+                              provider.fetchMovements(refresh: true, clearDates: true);
+                            },
+                          ),
+                        ],
+                      ],
+                    ),
                   ],
                 ],
               ),
@@ -543,11 +602,13 @@ class _CashMovementsScreenState extends State<CashMovementsScreen> {
                     );
                   }
                   final movement = provider.movements[index];
-                  final isExpenseOrWithdrawal = movement.type == 'expense' || movement.type == 'withdrawal' || movement.type == 'supplier_payment';
+                  final isExpenseOrWithdrawal = movement.type == 'expense' || movement.type == 'withdrawal' || movement.type == 'supplier_payment' || movement.type == 'refund';
                   final amountColor = isExpenseOrWithdrawal ? Colors.red.shade700 : Colors.green.shade700;
                   final amountPrefix = isExpenseOrWithdrawal ? '-' : '+';
                   
-                  String subtitle = movement.category;
+                  String subtitle = movement.category == 'refund'
+                      ? 'Devolución por Anulación'
+                      : movement.category;
                   if (movement.description != null && movement.description!.isNotEmpty) {
                     subtitle += ' | ${movement.description}';
                   }
@@ -615,6 +676,26 @@ class _CashMovementsScreenState extends State<CashMovementsScreen> {
                                     ),
                                   ),
                                   const SizedBox(width: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: Colors.indigo.shade50,
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(color: Colors.indigo.shade200),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(Icons.point_of_sale, size: 12, color: Colors.indigo.shade700),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          '${movement.cashRegisterName ?? 'Caja'} • Turno #${movement.cashShiftId}',
+                                          style: TextStyle(color: Colors.indigo.shade700, fontSize: 11, fontWeight: FontWeight.bold),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                     decoration: BoxDecoration(
@@ -717,7 +798,7 @@ class _CashMovementsScreenState extends State<CashMovementsScreen> {
                                     child: Icon(Icons.print_outlined, color: Colors.grey.shade600, size: 20),
                                   ),
                                 ),
-                                if (movement.type == 'income' || movement.type == 'expense' || movement.type == 'supplier_payment')
+                                if ((movement.type == 'deposit' || movement.type == 'income' || movement.type == 'expense' || movement.type == 'supplier_payment' || movement.type == 'withdrawal') && movement.category != 'refund')
                                   InkWell(
                                     onTap: () => _voidMovement(movement),
                                     child: Padding(

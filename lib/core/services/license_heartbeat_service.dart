@@ -175,13 +175,15 @@ class LicenseHeartbeatService extends ChangeNotifier with WidgetsBindingObserver
   Future<void> updateLastSync(BusinessSettings settings) async {
     _securityStatus = LicenseSecurityStatus.ok;
 
-    if (settings.serverTime != null) {
-      // Usar el tiempo del servidor para resetear la base de tiempo local
+    // LIC-07: Usar DateTime.now() local al confirmar sincronización exitosa con el servidor,
+    // evitando falsos positivos de clockTampered cuando el reloj de Windows del cliente
+    // tiene algunos minutos de desfase respecto al reloj UTC del servidor en Render.
+    try {
       await _storage.write(
         key: 'drm_last_system_time',
-        value: settings.serverTime,
+        value: DateTime.now().toIso8601String(),
       );
-    }
+    } catch (_) {}
 
     await _checkOfflineGrace(settings);
     notifyListeners();

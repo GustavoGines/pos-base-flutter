@@ -34,6 +34,7 @@ class _SupplierCurrentAccountScreenState extends State<SupplierCurrentAccountScr
   List<dynamic> _history = [];
   List<dynamic> _filteredHistory = [];
   double _currentBalance = 0;
+  String? _supplierCuit;
   String _filterType = 'all';
   DateTimeRange? _dateRange;
 
@@ -57,6 +58,7 @@ class _SupplierCurrentAccountScreenState extends State<SupplierCurrentAccountScr
         setState(() {
           _history = data['history'] ?? [];
           _currentBalance = double.tryParse(data['supplier']['balance'].toString()) ?? 0;
+          _supplierCuit = data['supplier']?['cuit']?.toString();
           _isLoading = false;
           _applyFilter();
         });
@@ -250,7 +252,7 @@ class _SupplierCurrentAccountScreenState extends State<SupplierCurrentAccountScr
                                  SupplierStatementPdfService.printStatement(
                                    context: context,
                                    supplierName: widget.supplierName,
-                                   supplierCuit: null, // Si estuviera en el modelo lo pasaríamos
+                                   supplierCuit: _supplierCuit,
                                    history: _filteredHistory,
                                    currentBalance: _currentBalance,
                                    businessName: settings?.companyName ?? 'MI NEGOCIO',
@@ -265,7 +267,7 @@ class _SupplierCurrentAccountScreenState extends State<SupplierCurrentAccountScr
                                        currentBalance: _currentBalance,
                                        settings: settings,
                                        localTerminal: context.read<LocalTerminalProvider>(),
-                                       supplierCuit: null,
+                                       supplierCuit: _supplierCuit,
                                      );
                                    } catch (e) {
                                      if (context.mounted) {

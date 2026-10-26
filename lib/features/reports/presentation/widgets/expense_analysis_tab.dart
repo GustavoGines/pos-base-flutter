@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/config/app_config.dart';
 import '../../../../core/utils/currency_formatter.dart';
+import '../../../cash_register/presentation/providers/cash_register_provider.dart';
 
 class ExpenseAnalysisTab extends StatefulWidget {
   const ExpenseAnalysisTab({super.key});
@@ -32,6 +33,8 @@ class _ExpenseAnalysisTabState extends State<ExpenseAnalysisTab> {
 
   // Filtros avanzados
   bool _includeSuppliers = true;
+  bool _includeWithdrawals = true;
+  int? _selectedCashRegisterId;
   String? _selectedPaymentMethod;
   final TextEditingController _minAmountController = TextEditingController();
   Timer? _debounceTimer;
@@ -39,6 +42,14 @@ class _ExpenseAnalysisTabState extends State<ExpenseAnalysisTab> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        final cashProv = context.read<CashRegisterProvider>();
+        if (cashProv.availableRegisters == null) {
+          cashProv.loadRegisters();
+        }
+      }
+    });
     _fetchData();
   }
 
@@ -50,7 +61,12 @@ class _ExpenseAnalysisTabState extends State<ExpenseAnalysisTab> {
   }
 
   String _buildQueryParams(String start, String end) {
-    final buffer = StringBuffer('start_date=$start&end_date=$end&include_suppliers=$_includeSuppliers');
+    final buffer = StringBuffer(
+      'start_date=$start&end_date=$end&include_suppliers=$_includeSuppliers&include_withdrawals=$_includeWithdrawals',
+    );
+    if (_selectedCashRegisterId != null) {
+      buffer.write('&cash_register_id=$_selectedCashRegisterId');
+    }
     if (_selectedPaymentMethod != null && _selectedPaymentMethod!.isNotEmpty) {
       buffer.write('&payment_method=$_selectedPaymentMethod');
     }
@@ -322,7 +338,7 @@ class _ExpenseAnalysisTabState extends State<ExpenseAnalysisTab> {
                     boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 4))],
                   ),
                   padding: EdgeInsets.all(isCompact ? 16 : 24),
-                  child: _analysisData.isEmpty
+                  child: (_analysisData.isEmpty || _totalExpenses <= 0)
                       ? _buildEmptyState()
                       : Column(
                           children: [
@@ -470,119 +486,7 @@ class _ExpenseAnalysisTabState extends State<ExpenseAnalysisTab> {
                           elevation: 1,
                           shadowColor: Colors.black.withValues(alpha: 0.08),
                           clipBehavior: Clip.antiAlias,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Padding(
-                                padding: EdgeInsets.all(16),
-                                child: Text('Desglose por Categoría', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.blueGrey)),
-                              ),
-                              const Divider(height: 1),
-                              Expanded(
-                                child: _analysisData.isEmpty
-                                    ? _buildEmptyState()
-                                    : ListView.separated(
-                                        padding: const EdgeInsets.symmetric(vertical: 8),
-                                        itemCount: _analysisData.length,
-                                        separatorBuilder: (_, __) => const Divider(height: 1, indent: 64),
-                                        itemBuilder: (context, index) {
-                                          final item = _analysisData[index];
-                                          final total = double.tryParse(item['amount'].toString()) ?? 0;
-                                          final color = _chartColors[index % _chartColors.length];
-                                          final transactions = int.tryParse(item['transactions'].toString()) ?? 0;
-                                          final categoryName = (item['category'] ?? 'Sin Categoría').toString();
-                                          
-                                          final movements = item['movements'] as List<dynamic>? ?? [];
-
-                                          return Theme(
-                                            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-                                            child: ExpansionTile(
-                                              tilePadding: EdgeInsets.symmetric(
-                                                horizontal: isCompact ? 12 : 16,
-                                                vertical: 2,
-                                              ),
-                                              leading: Container(
-                                                padding: const EdgeInsets.all(8),
-                                                decoration: BoxDecoration(color: color.withValues(alpha: 0.1), shape: BoxShape.circle),
-                                                child: Icon(Icons.category, color: color, size: 18),
-                                              ),
-                                              title: Row(
-                                                children: [
-                                                  Expanded(
-                                                    child: Text(
-                                                      categoryName,
-                                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                                                      maxLines: 1,
-                                                      overflow: TextOverflow.ellipsis,
-                                                    ),
-                                                  ),
-                                                  const SizedBox(width: 8),
-                                                  Flexible(
-                                                    child: FittedBox(
-                                                      fit: BoxFit.scaleDown,
-                                                      child: Text(
-                                                        '\$${total.toCurrency()}',
-                                                        style: TextStyle(fontWeight: FontWeight.w900, fontSize: 15, color: Colors.blueGrey.shade900),
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                              subtitle: Text('$transactions movimientos', style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
-                                              children: movements.map((mov) {
-                                                final movDate = DateTime.tryParse(mov['date'].toString()) ?? DateTime.now();
-                                                final movAmount = double.tryParse(mov['amount'].toString()) ?? 0;
-                                                String desc = mov['description']?.toString() ?? '';
-                                                if (desc.trim().isEmpty) desc = 'Gasto sin descripción';
-                                                
-                                                return Container(
-                                                  color: Colors.grey.shade50,
-                                                  padding: EdgeInsets.only(
-                                                    left: isCompact ? 36 : 64,
-                                                    right: isCompact ? 12 : 16,
-                                                    top: 8,
-                                                    bottom: 8,
-                                                  ),
-                                                  child: Row(
-                                                    children: [
-                                                      Icon(Icons.subdirectory_arrow_right, size: 16, color: Colors.grey.shade400),
-                                                      const SizedBox(width: 8),
-                                                      Expanded(
-                                                        child: Column(
-                                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                                          children: [
-                                                            Text(
-                                                              desc,
-                                                              style: TextStyle(color: Colors.blueGrey.shade800, fontSize: 13, fontWeight: FontWeight.w500),
-                                                              maxLines: 2,
-                                                              overflow: TextOverflow.ellipsis,
-                                                            ),
-                                                            const SizedBox(height: 2),
-                                                            Text(DateFormat('dd MMM yyyy, HH:mm').format(movDate), style: TextStyle(color: Colors.grey.shade500, fontSize: 11)),
-                                                          ],
-                                                        ),
-                                                      ),
-                                                      const SizedBox(width: 8),
-                                                      Flexible(
-                                                        child: FittedBox(
-                                                          fit: BoxFit.scaleDown,
-                                                          child: Text(
-                                                            '\$${movAmount.toCurrency()}',
-                                                            style: TextStyle(color: Colors.red.shade700, fontWeight: FontWeight.bold, fontSize: 13),
-                                                          ),
-                                                        ),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                );
-                                              }).toList(),
-                                            ),
-                                          );
-                                        },
-                                      ),
-                              ),
-                            ],
-                          ),
+                          child: _buildCategoriesList(isCompact: isCompact),
                         ),
                       )
                     else
@@ -593,111 +497,7 @@ class _ExpenseAnalysisTabState extends State<ExpenseAnalysisTab> {
                           elevation: 1,
                           shadowColor: Colors.black.withValues(alpha: 0.08),
                           clipBehavior: Clip.antiAlias,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Padding(
-                                padding: EdgeInsets.all(16),
-                                child: Text('Desglose por Categoría', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.blueGrey)),
-                              ),
-                              const Divider(height: 1),
-                              Expanded(
-                                child: _analysisData.isEmpty
-                                    ? _buildEmptyState()
-                                    : ListView.separated(
-                                        padding: const EdgeInsets.symmetric(vertical: 8),
-                                        itemCount: _analysisData.length,
-                                        separatorBuilder: (_, __) => const Divider(height: 1, indent: 64),
-                                        itemBuilder: (context, index) {
-                                          final item = _analysisData[index];
-                                          final total = double.tryParse(item['amount'].toString()) ?? 0;
-                                          final color = _chartColors[index % _chartColors.length];
-                                          final transactions = int.tryParse(item['transactions'].toString()) ?? 0;
-                                          final categoryName = (item['category'] ?? 'Sin Categoría').toString();
-                                          
-                                          final movements = item['movements'] as List<dynamic>? ?? [];
-
-                                          return Theme(
-                                            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-                                            child: ExpansionTile(
-                                              tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-                                              leading: Container(
-                                                padding: const EdgeInsets.all(8),
-                                                decoration: BoxDecoration(color: color.withValues(alpha: 0.1), shape: BoxShape.circle),
-                                                child: Icon(Icons.category, color: color, size: 18),
-                                              ),
-                                              title: Row(
-                                                children: [
-                                                  Expanded(
-                                                    child: Text(
-                                                      categoryName,
-                                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                                                      maxLines: 1,
-                                                      overflow: TextOverflow.ellipsis,
-                                                    ),
-                                                  ),
-                                                  const SizedBox(width: 8),
-                                                  Flexible(
-                                                    child: FittedBox(
-                                                      fit: BoxFit.scaleDown,
-                                                      child: Text(
-                                                        '\$${total.toCurrency()}',
-                                                        style: TextStyle(fontWeight: FontWeight.w900, fontSize: 15, color: Colors.blueGrey.shade900),
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                              subtitle: Text('$transactions movimientos', style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
-                                              children: movements.map((mov) {
-                                                final movDate = DateTime.tryParse(mov['date'].toString()) ?? DateTime.now();
-                                                final movAmount = double.tryParse(mov['amount'].toString()) ?? 0;
-                                                String desc = mov['description']?.toString() ?? '';
-                                                if (desc.trim().isEmpty) desc = 'Gasto sin descripción';
-                                                
-                                                return Container(
-                                                  color: Colors.grey.shade50,
-                                                  padding: const EdgeInsets.only(left: 64, right: 16, top: 8, bottom: 8),
-                                                  child: Row(
-                                                    children: [
-                                                      Icon(Icons.subdirectory_arrow_right, size: 16, color: Colors.grey.shade400),
-                                                      const SizedBox(width: 8),
-                                                      Expanded(
-                                                        child: Column(
-                                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                                          children: [
-                                                            Text(
-                                                              desc,
-                                                              style: TextStyle(color: Colors.blueGrey.shade800, fontSize: 13, fontWeight: FontWeight.w500),
-                                                              maxLines: 2,
-                                                              overflow: TextOverflow.ellipsis,
-                                                            ),
-                                                            const SizedBox(height: 2),
-                                                            Text(DateFormat('dd MMM yyyy, HH:mm').format(movDate), style: TextStyle(color: Colors.grey.shade500, fontSize: 11)),
-                                                          ],
-                                                        ),
-                                                      ),
-                                                      const SizedBox(width: 8),
-                                                      Flexible(
-                                                        child: FittedBox(
-                                                          fit: BoxFit.scaleDown,
-                                                          child: Text(
-                                                            '\$${movAmount.toCurrency()}',
-                                                            style: TextStyle(color: Colors.red.shade700, fontWeight: FontWeight.bold, fontSize: 13),
-                                                          ),
-                                                        ),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                );
-                                              }).toList(),
-                                            ),
-                                          );
-                                        },
-                                      ),
-                              ),
-                            ],
-                          ),
+                          child: _buildCategoriesList(isCompact: isCompact),
                         ),
                       ),
                   ],
@@ -726,6 +526,147 @@ class _ExpenseAnalysisTabState extends State<ExpenseAnalysisTab> {
               },
             ),
           ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCategoriesList({required bool isCompact}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.all(16),
+          child: Text('Desglose por Categoría', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.blueGrey)),
+        ),
+        const Divider(height: 1),
+        Expanded(
+          child: _analysisData.isEmpty
+              ? _buildEmptyState()
+              : ListView.separated(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  itemCount: _analysisData.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1, indent: 64),
+                  itemBuilder: (context, index) {
+                    final item = _analysisData[index];
+                    final total = double.tryParse(item['amount'].toString()) ?? 0;
+                    final color = _chartColors[index % _chartColors.length];
+                    final transactions = int.tryParse(item['transactions'].toString()) ?? 0;
+                    final categoryName = (item['category'] ?? 'Sin Categoría').toString();
+                    
+                    final movements = item['movements'] as List<dynamic>? ?? [];
+
+                    return Theme(
+                      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                      child: ExpansionTile(
+                        tilePadding: EdgeInsets.symmetric(
+                          horizontal: isCompact ? 12 : 16,
+                          vertical: 2,
+                        ),
+                        leading: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(color: color.withValues(alpha: 0.1), shape: BoxShape.circle),
+                          child: Icon(Icons.category, color: color, size: 18),
+                        ),
+                        title: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                categoryName,
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Flexible(
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Text(
+                                  '\$${total.toCurrency()}',
+                                  style: TextStyle(fontWeight: FontWeight.w900, fontSize: 15, color: Colors.blueGrey.shade900),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        subtitle: Text('$transactions movimientos', style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
+                        children: movements.map((mov) {
+                          final movDate = DateTime.tryParse(mov['date'].toString()) ?? DateTime.now();
+                          final movAmount = double.tryParse(mov['amount'].toString()) ?? 0;
+                          String desc = mov['description']?.toString() ?? '';
+                          if (desc.trim().isEmpty) desc = 'Gasto sin descripción';
+                          final regName = mov['cash_register_name']?.toString();
+                          final shiftId = mov['cash_shift_id']?.toString();
+                          
+                          return Container(
+                            color: Colors.grey.shade50,
+                            padding: EdgeInsets.only(
+                              left: isCompact ? 36 : 64,
+                              right: isCompact ? 12 : 16,
+                              top: 8,
+                              bottom: 8,
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(Icons.subdirectory_arrow_right, size: 16, color: Colors.grey.shade400),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        desc,
+                                        style: TextStyle(color: Colors.blueGrey.shade800, fontSize: 13, fontWeight: FontWeight.w500),
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Wrap(
+                                        spacing: 8,
+                                        runSpacing: 2,
+                                        crossAxisAlignment: WrapCrossAlignment.center,
+                                        children: [
+                                          Text(
+                                            DateFormat('dd MMM yyyy, HH:mm').format(movDate),
+                                            style: TextStyle(color: Colors.grey.shade500, fontSize: 11),
+                                          ),
+                                          if (regName != null && regName.isNotEmpty)
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                                              decoration: BoxDecoration(
+                                                color: Colors.indigo.shade50,
+                                                borderRadius: BorderRadius.circular(4),
+                                                border: Border.all(color: Colors.indigo.shade100),
+                                              ),
+                                              child: Text(
+                                                shiftId != null ? '$regName • Turno #$shiftId' : regName,
+                                                style: TextStyle(color: Colors.indigo.shade700, fontSize: 10, fontWeight: FontWeight.w600),
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Flexible(
+                                  child: FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    child: Text(
+                                      '\$${movAmount.toCurrency()}',
+                                      style: TextStyle(color: Colors.red.shade700, fontWeight: FontWeight.bold, fontSize: 13),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    );
+                  },
+                ),
         ),
       ],
     );
@@ -783,7 +724,99 @@ class _ExpenseAnalysisTabState extends State<ExpenseAnalysisTab> {
           ),
         ),
 
-        // 2. Dropdown: "Método de Pago"
+        // 1b. Switch/Toggle: "Incluir Retiros de Caja" (MC-04)
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 270),
+          child: SizedBox(
+            height: 40,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.money_off_csred_outlined,
+                  size: 18,
+                  color: _includeWithdrawals ? Colors.deepOrange.shade700 : Colors.grey.shade600,
+                ),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    'Incluir Retiros de Caja',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: _includeWithdrawals ? Colors.deepOrange.shade900 : Colors.grey.shade700,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Transform.scale(
+                  scale: 0.85,
+                  child: Switch(
+                    key: const Key('switch_include_withdrawals'),
+                    value: _includeWithdrawals,
+                    activeThumbColor: Colors.deepOrange.shade600,
+                    onChanged: (val) {
+                      setState(() {
+                        _includeWithdrawals = val;
+                      });
+                      _fetchData();
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        // 2. Dropdown: "Caja" (MC-04)
+        Consumer<CashRegisterProvider>(
+          builder: (context, cashProv, _) {
+            final registers = cashProv.availableRegisters ?? [];
+            if (registers.isEmpty) return const SizedBox.shrink();
+            return Tooltip(
+              message: 'Filtrar por Caja',
+              child: Container(
+                height: 40,
+                width: 175,
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.grey.shade300),
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<int?>(
+                    key: const Key('dropdown_cash_register'),
+                    value: registers.any((r) => r.id == _selectedCashRegisterId) ? _selectedCashRegisterId : null,
+                    isExpanded: true,
+                    icon: const Icon(Icons.arrow_drop_down, color: Colors.blueGrey, size: 20),
+                    style: const TextStyle(fontSize: 13, color: Colors.black87),
+                    items: [
+                      const DropdownMenuItem<int?>(
+                        value: null,
+                        child: Text('Caja: Todas', style: TextStyle(fontWeight: FontWeight.w600)),
+                      ),
+                      ...registers.map((r) => DropdownMenuItem<int?>(
+                            value: r.id,
+                            child: Text(r.name, overflow: TextOverflow.ellipsis),
+                          )),
+                    ],
+                    onChanged: (val) {
+                      setState(() {
+                        _selectedCashRegisterId = val;
+                      });
+                      _fetchData();
+                    },
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+
+        // 3. Dropdown: "Método de Pago"
         Tooltip(
           message: 'Método de Pago',
           child: Container(
@@ -840,7 +873,7 @@ class _ExpenseAnalysisTabState extends State<ExpenseAnalysisTab> {
           ),
         ),
 
-        // 3. Numeric text field: "Monto Mínimo"
+        // 4. Numeric text field: "Monto Mínimo"
         SizedBox(
           width: 150,
           height: 40,

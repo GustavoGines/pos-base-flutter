@@ -19,6 +19,9 @@ class CashRegisterProvider with ChangeNotifier {
   CashRegisterShift? _currentShift;
   CashRegisterShift? get currentShift => _currentShift;
 
+  int? _activeRegisterId;
+  int? get activeRegisterId => _currentShift?.cashRegisterId ?? _activeRegisterId;
+
   List<CashRegisterShift> _shiftsHistory = [];
   List<CashRegisterShift> get shiftsHistory => _shiftsHistory;
 
@@ -62,9 +65,16 @@ class CashRegisterProvider with ChangeNotifier {
   Future<void> checkCurrentShift({int? registerId}) async {
     _clearError();
     _setLoading(true);
+    if (registerId != null && registerId > 0) {
+      _activeRegisterId = registerId;
+    }
     try {
-      final result = await getCurrentShiftUseCase(registerId: registerId);
+      final targetRegisterId = (registerId != null && registerId > 0) ? registerId : _activeRegisterId;
+      final result = await getCurrentShiftUseCase(registerId: targetRegisterId);
       _currentShift = result; // Solo actualiza si la llamada tuvo éxito
+      if (result != null) {
+        _activeRegisterId = result.cashRegisterId;
+      }
     } catch (e) {
       // No limpiamos _currentShift: un error de red no debe borrar el estado conocido.
       // Tampoco seteamos _errorMessage para no contaminar la UI en chequeos de fondo.
@@ -77,8 +87,15 @@ class CashRegisterProvider with ChangeNotifier {
   /// Verifica el turno activo de forma SILENCIOSA (sin loading ni flicker de UI).
   /// Usar en el polling periódico para no interrumpir la pantalla en curso.
   Future<void> checkCurrentShiftSilently({int? registerId}) async {
+    if (registerId != null && registerId > 0) {
+      _activeRegisterId = registerId;
+    }
     try {
-      final result = await getCurrentShiftUseCase(registerId: registerId);
+      final targetRegisterId = (registerId != null && registerId > 0) ? registerId : _activeRegisterId;
+      final result = await getCurrentShiftUseCase(registerId: targetRegisterId);
+      if (result != null) {
+        _activeRegisterId = result.cashRegisterId;
+      }
       if (_currentShift?.id != result?.id || _currentShift?.expectedBalance != result?.expectedBalance || _currentShift?.userName != result?.userName) {
         // Solo notificar si el estado, el saldo esperado o el usuario cambió realmente
         _currentShift = result;
@@ -107,8 +124,14 @@ class CashRegisterProvider with ChangeNotifier {
   Future<bool> openShift(double openingBalance, int userId, [int? registerId]) async {
     _clearError();
     _setLoading(true);
+    if (registerId != null && registerId > 0) {
+      _activeRegisterId = registerId;
+    }
     try {
       _currentShift = await openShiftUseCase(openingBalance, userId, registerId);
+      if (_currentShift != null) {
+        _activeRegisterId = _currentShift!.cashRegisterId;
+      }
       return true;
     } on SessionExpiredException catch (e) {
       // Sesión única: otro dispositivo inició sesión con este usuario.
@@ -127,9 +150,10 @@ class CashRegisterProvider with ChangeNotifier {
       if (errorMsg.contains('Ya existe un turno abierto')) {
         debugPrint('=== CashRegisterProvider: turno ya existe → buscando turno activo ===');
         try {
-          final existing = await getCurrentShiftUseCase(registerId: registerId);
+          final existing = await getCurrentShiftUseCase(registerId: registerId ?? _activeRegisterId);
           if (existing != null) {
             _currentShift = existing;
+            _activeRegisterId = existing.cashRegisterId;
             debugPrint('=== CashRegisterProvider: turno activo recuperado (ID:${existing.id}) → redirigiendo ===');
             return true; // Tratamos como éxito: main.dart navegará a /pos
           }

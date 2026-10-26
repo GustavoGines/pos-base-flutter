@@ -88,7 +88,8 @@ class ZClosePdfService {
     
     // El total de gastos es negativo o positivo? En la base es positivo normalmente, pero en el resumen lo mostramos como salida
     
-    final expectedCash = shift.openingBalance + cashSales + otherIncomes - expenses - ownerWithdrawals - supplierPayments - refunds;
+    // REP-10: Priorizar expectedBalance persistido por backend con fallback al cálculo local
+    final expectedCash = shift.expectedBalance ?? (shift.openingBalance + cashSales + otherIncomes - expenses - ownerWithdrawals - supplierPayments - refunds);
     final physicalCash = shift.actualBalance ?? 0;
     final difference = shift.difference ?? (physicalCash - expectedCash);
 
@@ -182,6 +183,8 @@ class ZClosePdfService {
 
               _buildRow('Ventas con Tarjeta (Deb/Cred):', currencyFmt.format(shift.cardSales ?? 0)),
               _buildRow('Ventas por Transferencia:', currencyFmt.format(shift.transferSales ?? 0)),
+              if ((shift.mpSales ?? 0) > 0)
+                _buildRow('Ventas Mercado Pago (QR/Point):', currencyFmt.format(shift.mpSales ?? 0)),
               if (isPremium || (shift.ccSales ?? 0) > 0)
                 _buildRow('Ventas Cta. Cte. (Deuda):', currencyFmt.format(shift.ccSales ?? 0)),
               _buildRow('Recargos Cobrados:', currencyFmt.format(shift.totalSurcharge ?? 0)),

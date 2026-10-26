@@ -79,7 +79,11 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final shiftId = context.read<CashRegisterProvider>().currentShift?.id;
+      final cashProv = context.read<CashRegisterProvider>();
+      if (cashProv.availableRegisters == null) {
+        cashProv.loadRegisters();
+      }
+      final shiftId = cashProv.currentShift?.id;
       final provider = context.read<SalesHistoryProvider>();
       // Reseteamos filtros que hayan quedado sucios en el singleton de sesiones anteriores
       provider.setMethodFilter(null);
@@ -371,6 +375,58 @@ class _FiltersPanel extends StatelessWidget {
                         ),
                       ),
                     ),
+                    // MC-08: Filtro por Caja cuando se visualizan períodos globales (Hoy/Mes/Año)
+                    if (provider.currentPeriod != 'shift')
+                      Consumer<CashRegisterProvider>(
+                        builder: (context, cashProv, _) {
+                          final registers = cashProv.availableRegisters ?? [];
+                          if (registers.isEmpty) return const SizedBox.shrink();
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 10),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                const Text('Caja:',
+                                    style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.blueGrey,
+                                        fontSize: 12)),
+                                const SizedBox(height: 6),
+                                Container(
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(color: Colors.grey.shade300),
+                                  ),
+                                  child: DropdownButtonHideUnderline(
+                                    child: DropdownButton<int?>(
+                                      value: registers.any((r) => r.id == provider.selectedRegisterId)
+                                          ? provider.selectedRegisterId
+                                          : null,
+                                      isExpanded: true,
+                                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                                      items: [
+                                        const DropdownMenuItem<int?>(
+                                          value: null,
+                                          child: Text('Todas las cajas'),
+                                        ),
+                                        ...registers.map((r) => DropdownMenuItem<int?>(
+                                              value: r.id,
+                                              child: Text(r.name),
+                                            )),
+                                      ],
+                                      onChanged: (val) {
+                                        provider.setSelectedRegisterId(val);
+                                        onSaleDeselect();
+                                      },
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
                   ],
                 ),
               );
@@ -663,6 +719,24 @@ class _SaleListTile extends StatelessWidget {
                 const SizedBox(width: 8),
                 Text('$dateStr $timeStr Hs',
                     style: TextStyle(color: Colors.grey.shade500, fontSize: 13, fontWeight: FontWeight.w600)),
+                if (sale.cashRegisterName != null && sale.cashRegisterName!.isNotEmpty)
+                  Container(
+                    margin: const EdgeInsets.only(left: 6),
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: Colors.indigo.shade50,
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(color: Colors.indigo.shade100),
+                    ),
+                    child: Text(
+                      sale.cashRegisterName!,
+                      style: TextStyle(
+                        color: Colors.indigo.shade700,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
                 if (sale.isVoided)
                   Container(
                     margin: const EdgeInsets.only(left: 8),

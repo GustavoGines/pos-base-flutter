@@ -30,6 +30,8 @@ import '../../domain/entities/ecommerce_integration.dart';
 import '../../../catalog/presentation/providers/catalog_provider.dart';
 import '../../../customers/providers/customer_provider.dart';
 import '../../../offers/presentation/providers/offer_provider.dart';
+import '../../../cash_movements/providers/cash_movement_provider.dart';
+import '../../../sales_history/presentation/providers/sales_history_provider.dart';
 
 enum SettingsSection { general, prices, subscription, network, integrations, mobileApp }
 
@@ -5856,12 +5858,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
               // Esto actualizará globalmente el CashRegisterProvider y el Consumer en /home
               // echará al usuario a la pantalla de "Abrir Caja" si la nueva terminal está cerrada.
               await cashProvider.checkCurrentShift(registerId: id);
+              final newShiftId = cashProvider.currentShift?.id;
 
-              // Limpiar carrito para que no quede huérfano de la terminal anterior
+              // Limpiar carrito y sincronizar providers dependientes del turno para que no queden con datos huérfanos de la caja anterior (MC-09)
               if (AppConfig.navigatorKey.currentContext != null) {
-                AppConfig.navigatorKey.currentContext!
-                    .read<PosProvider>()
-                    .clearCart();
+                final navCtx = AppConfig.navigatorKey.currentContext!;
+                navCtx.read<PosProvider>().clearCart();
+                try {
+                  navCtx.read<CashMovementProvider>().fetchMovements(
+                        refresh: true,
+                        all: false,
+                        cashShiftId: newShiftId,
+                      );
+                } catch (_) {}
+                try {
+                  navCtx.read<SalesHistoryProvider>().loadSales(
+                        period: 'shift',
+                        shiftId: newShiftId,
+                      );
+                } catch (_) {}
               }
 
               // Redirigir a /home para que reevalúe el estado y muestre la apertura de caja si es necesario

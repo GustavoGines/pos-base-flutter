@@ -94,7 +94,10 @@ class _CloseShiftScreenState extends State<CloseShiftScreen> {
       if (mounted) {
         if (closedShift != null) {
           Navigator.of(context).pushAndRemoveUntil(
-            MaterialPageRoute(builder: (_) => CashShiftSummaryScreen(closedShift: closedShift)),
+            MaterialPageRoute(
+              settings: const RouteSettings(name: '/close-shift-summary'),
+              builder: (_) => CashShiftSummaryScreen(closedShift: closedShift),
+            ),
             (route) => false,
           );
         } else {

@@ -316,6 +316,7 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
         headers: {
           'Accept': 'application/json',
           'Content-Type': 'application/json',
+          'X-Idempotency-Key': 'pay-pending-$saleId-$shiftId',
         },
         body: json.encode(payload),
       );

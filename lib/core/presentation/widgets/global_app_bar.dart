@@ -12,6 +12,11 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:frontend_desktop/features/updater/data/services/update_service.dart';
 import 'package:frontend_desktop/features/updater/presentation/widgets/update_dialog.dart';
 import 'package:frontend_desktop/core/presentation/widgets/live_clock_widget.dart';
+import 'package:frontend_desktop/features/cash_register/presentation/providers/cash_register_provider.dart';
+import 'package:frontend_desktop/features/pos/presentation/providers/pos_provider.dart';
+import 'package:frontend_desktop/features/cash_movements/providers/cash_movement_provider.dart';
+import 'package:frontend_desktop/features/sales_history/presentation/providers/sales_history_provider.dart';
+import 'package:frontend_desktop/core/config/app_config.dart';
 
 
 class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
@@ -325,7 +330,7 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                 ),
               ),
 
-              // ── RIGHT: Alertas + Impresora + Usuario ───────────────────────────────────
+              // ── RIGHT: Alertas + Caja Activa + Impresora + Usuario ───────────────────
               Padding(
                 padding: EdgeInsets.only(right: screenWidth < 500 ? 6 : 12),
                 child: Row(
@@ -333,7 +338,91 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                   children: [
                     const UpdateBadgeWidget(),
                     const InventoryAlertsWidget(),
-                    const SizedBox(width: 2),
+                    const SizedBox(width: 4),
+                    // ── MC-01: Badge de Caja Activa y Turno ────────────────────────
+                    Consumer2<CashRegisterProvider, SettingsProvider>(
+                      builder: (ctx, cashProv, settingsProv, _) {
+                        final shift = cashProv.currentShift;
+                        final isOpen = shift != null && shift.isOpen;
+                        final assignedId = settingsProv.assignedRegisterId;
+                        final activeRegId = shift?.cashRegisterId ??
+                            (assignedId > 0 ? assignedId : cashProv.activeRegisterId);
+
+                        String regName = shift?.cashRegisterName ?? '';
+                        if (regName.trim().isEmpty && activeRegId != null) {
+                          if (cashProv.availableRegisters != null) {
+                            final match = cashProv.availableRegisters!
+                                .where((r) => r.id == activeRegId)
+                                .firstOrNull;
+                            if (match != null) regName = match.name;
+                          } else if (!cashProv.isLoading) {
+                            WidgetsBinding.instance.addPostFrameCallback((_) {
+                              if (ctx.mounted && cashProv.availableRegisters == null && !cashProv.isLoading) {
+                                cashProv.loadRegisters();
+                              }
+                            });
+                          }
+                        }
+                        if (regName.trim().isEmpty) {
+                          regName = activeRegId != null ? 'Caja #$activeRegId' : 'Caja Principal';
+                        }
+
+                        final compactBadge = screenWidth < 720;
+                        final badgeColor = isOpen ? Colors.teal.shade700 : Colors.amber.shade800;
+                        final badgeBg = isOpen ? Colors.teal.shade50 : Colors.amber.shade50;
+                        final badgeBorder = isOpen ? Colors.teal.shade200 : Colors.amber.shade300;
+
+                        return Padding(
+                          padding: const EdgeInsets.only(right: 4),
+                          child: Tooltip(
+                            message: isOpen
+                                ? 'Terminal operando en: $regName\nTurno abierto #${shift.id}${shift.userName != null ? ' (${shift.userName})' : ''}\n(Clic para ver estado o cambiar de caja)'
+                                : 'Terminal en: $regName (Sin turno abierto)\n(Clic para ver estado o cambiar de caja)',
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(20),
+                              onTap: () => _showActiveRegisterStatusDialog(ctx),
+                              child: Container(
+                                key: const Key('global_app_bar_register_badge'),
+                                padding: EdgeInsets.symmetric(
+                                  horizontal: compactBadge ? 8 : 10,
+                                  vertical: 5,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: badgeBg,
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(color: badgeBorder),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      isOpen ? Icons.point_of_sale_rounded : Icons.lock_clock_outlined,
+                                      size: 15,
+                                      color: badgeColor,
+                                    ),
+                                    const SizedBox(width: 5),
+                                    ConstrainedBox(
+                                      constraints: BoxConstraints(maxWidth: compactBadge ? 90 : 155),
+                                      child: Text(
+                                        compactBadge
+                                            ? regName
+                                            : (isOpen ? '$regName • T#${shift.id}' : '$regName (Cerrada)'),
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w700,
+                                          color: badgeColor,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
                     // ─ Ícono de Periféricos de Caja (Impresora / Gaveta / Balanza) ─
                     Consumer<LocalTerminalProvider>(
                       builder: (ctx, terminal, _) {
@@ -1662,4 +1751,166 @@ class UpdateBadgeWidget extends StatelessWidget {
       },
     );
   }
+}
+
+void _showActiveRegisterStatusDialog(BuildContext context) {
+  final cashProv = context.read<CashRegisterProvider>();
+  if (cashProv.availableRegisters == null && !cashProv.isLoading) {
+    cashProv.loadRegisters();
+  }
+
+  showDialog(
+    context: context,
+    builder: (dialogCtx) {
+      return Consumer2<CashRegisterProvider, SettingsProvider>(
+        builder: (ctx, cashProvider, settingsProvider, _) {
+          final shift = cashProvider.currentShift;
+          final isOpen = shift != null && shift.isOpen;
+          final registers = cashProvider.availableRegisters ?? [];
+          final assignedId = settingsProvider.assignedRegisterId;
+          final activeRegId = shift?.cashRegisterId ??
+              (assignedId > 0 ? assignedId : (cashProvider.activeRegisterId ?? registers.firstOrNull?.id ?? 1));
+
+          String regName = shift?.cashRegisterName ?? '';
+          if (regName.trim().isEmpty && registers.isNotEmpty) {
+            final match = registers.where((r) => r.id == activeRegId).firstOrNull;
+            if (match != null) regName = match.name;
+          }
+          if (regName.trim().isEmpty) {
+            regName = 'Caja #$activeRegId';
+          }
+
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: Row(
+              children: [
+                Icon(
+                  isOpen ? Icons.point_of_sale_rounded : Icons.lock_clock_outlined,
+                  color: isOpen ? Colors.teal.shade700 : Colors.amber.shade800,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    regName,
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                  ),
+                ),
+              ],
+            ),
+            content: SizedBox(
+              width: 380,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: isOpen ? Colors.teal.shade50 : Colors.amber.shade50,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: isOpen ? Colors.teal.shade200 : Colors.amber.shade200,
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          isOpen ? 'TURNO ABIERTO (#${shift.id})' : 'CAJA CERRADA',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                            color: isOpen ? Colors.teal.shade800 : Colors.amber.shade900,
+                          ),
+                        ),
+                        if (isOpen && shift.userName != null) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            'Operador de apertura: ${shift.userName}',
+                            style: TextStyle(fontSize: 12, color: Colors.blueGrey.shade700),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  if (registers.length > 1) ...[
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Cambiar de Caja en esta Terminal:',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.blueGrey),
+                    ),
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<int>(
+                      initialValue: registers.any((r) => r.id == activeRegId)
+                          ? activeRegId
+                          : registers.first.id,
+                      decoration: const InputDecoration(
+                        isDense: true,
+                        prefixIcon: Icon(Icons.desktop_windows_outlined, size: 18),
+                        border: OutlineInputBorder(),
+                      ),
+                      items: registers
+                          .map((r) => DropdownMenuItem<int>(
+                                value: r.id,
+                                child: Text(r.name),
+                              ))
+                          .toList(),
+                      onChanged: (newId) {
+                        if (newId == null || newId == activeRegId) return;
+                        Navigator.pop(dialogCtx);
+                        AdminPinDialog.protectAction(
+                          context,
+                          action: 'Cambiar Terminal de Caja',
+                          permissionKey: AppPermissions.manageSettings,
+                          onAuthorized: () async {
+                            await settingsProvider.setAssignedRegisterId(newId);
+                            await cashProvider.checkCurrentShift(registerId: newId);
+                            final newShiftId = cashProvider.currentShift?.id;
+                            final navCtx = AppConfig.navigatorKey.currentContext;
+                            if (navCtx != null && navCtx.mounted) {
+                              navCtx.read<PosProvider>().clearCart();
+                              try {
+                                navCtx.read<CashMovementProvider>().fetchMovements(
+                                      refresh: true,
+                                      all: false,
+                                      cashShiftId: newShiftId,
+                                    );
+                              } catch (_) {}
+                              try {
+                                navCtx.read<SalesHistoryProvider>().loadSales(
+                                      period: 'shift',
+                                      shiftId: newShiftId,
+                                    );
+                              } catch (_) {}
+                            }
+                            AppConfig.navigatorKey.currentState
+                                ?.pushNamedAndRemoveUntil('/home', (route) => false);
+                          },
+                        );
+                      },
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton.icon(
+                onPressed: () {
+                  Navigator.pop(dialogCtx);
+                  showTerminalPeripheralsDialog(context);
+                },
+                icon: const Icon(Icons.print_outlined, size: 18),
+                label: const Text('Periféricos'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(dialogCtx),
+                child: const Text('Cerrar'),
+              ),
+            ],
+          );
+        },
+      );
+    },
+  );
 }

@@ -1426,7 +1426,9 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         final ccNeed = _lines
             .where((l) => l.method?.code == 'cuenta_corriente')
             .fold(0.0, (s, l) => s + l.total);
+        // CC-08: Si creditLimit <= 0 (campo opcional no configurado), el cliente no tiene tope bloqueante.
         if (!_selectedCustomer!.isInternalAccount &&
+            _selectedCustomer!.creditLimit > 0 &&
             ccNeed > _availableCredit) {
           SnackBarService.error(
               context,
@@ -3956,7 +3958,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                                                             const SizedBox(
                                                                 height: 2),
                                                             Text(
-                                                              '${_selectedCustomer!.documentType == 80 ? "CUIT" : "DNI"}: ${_selectedCustomer!.documentNumber} • ${_selectedCustomer!.isInternalAccount ? "Crédito disp: Ilimitado" : "Crédito disp: \$${_availableCredit.toCurrency()}"}',
+                                                              '${_selectedCustomer!.documentType == 80 ? "CUIT" : "DNI"}: ${_selectedCustomer!.documentNumber} • ${(_selectedCustomer!.isInternalAccount || _selectedCustomer!.creditLimit <= 0) ? "Crédito disp: Sin límite" : "Crédito disp: \$${_availableCredit.toCurrency()}"}',
                                                               style: TextStyle(
                                                                   fontSize: 12,
                                                                   color: Colors
@@ -4368,8 +4370,8 @@ class _CustomerPickerDialogState extends State<_CustomerPickerDialog> {
                     separatorBuilder: (_, __) => const Divider(),
                     itemBuilder: (ctx, i) {
                       final c = list[i];
-                      final creditInfo = c.isInternalAccount
-                          ? 'Ilimitado'
+                      final creditInfo = (c.isInternalAccount || c.creditLimit <= 0)
+                          ? 'Sin límite'
                           : '\$${(c.creditLimit - c.balance).toCurrency()}';
                       return ListTile(
                         leading: CircleAvatar(

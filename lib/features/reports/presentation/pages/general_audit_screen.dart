@@ -394,6 +394,9 @@ class _ShiftAuditTabState extends State<_ShiftAuditTab> {
                               currencyFormat.format(shift.cardSales ?? 0)),
                           _detailRow('Ventas por Transferencia',
                               currencyFormat.format(shift.transferSales ?? 0)),
+                          if ((shift.mpSales ?? 0) > 0)
+                            _detailRow('Ventas Mercado Pago',
+                                currencyFormat.format(shift.mpSales ?? 0)),
                           _detailRow('Ventas con Cheque',
                               currencyFormat.format(shift.checkSales ?? 0)),
                           if (shift.totalSurcharge != null &&

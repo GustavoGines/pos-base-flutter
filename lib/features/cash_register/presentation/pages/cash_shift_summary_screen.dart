@@ -253,6 +253,8 @@ class _CashShiftSummaryScreenState extends State<CashShiftSummaryScreen> {
                               _buildRow('Ventas en Efectivo', '\$${(closedShift.cashSales ?? 0).toCurrency()}'),
                               _buildRow('Ventas con Tarjeta', '\$${(closedShift.cardSales ?? 0).toCurrency()}'),
                               _buildRow('Ventas por Transf.', '\$${(closedShift.transferSales ?? 0).toCurrency()}'),
+                              if ((closedShift.mpSales ?? 0) > 0)
+                                _buildRow('Ventas Mercado Pago', '\$${(closedShift.mpSales ?? 0).toCurrency()}'),
                               _buildRow('Total Recargos (Tarj/Billeteras)', '\$${(closedShift.totalSurcharge ?? 0).toCurrency()}'),
 
                               // Cuenta Corriente: sección informativa

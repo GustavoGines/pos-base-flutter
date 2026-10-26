@@ -8,11 +8,19 @@ class SalesHistoryRemoteDataSource {
 
   SalesHistoryRemoteDataSource({required this.baseUrl, required this.client});
 
-  /// Obtiene las ventas filtradas por período (shift, today, month, year, all) y opcionalmente shiftId.
-  Future<List<SaleRecord>> fetchSales({String period = 'shift', int? shiftId, int? userId}) async {
+  /// Obtiene las ventas filtradas por período (shift, today, month, year, all) y opcionalmente shiftId o cashRegisterId.
+  Future<List<SaleRecord>> fetchSales({
+    String period = 'shift',
+    int? shiftId,
+    int? userId,
+    int? cashRegisterId,
+  }) async {
     final queryParams = {'period': period};
     if (shiftId != null) queryParams['shift_id'] = shiftId.toString();
     if (userId != null) queryParams['user_id'] = userId.toString();
+    if (cashRegisterId != null && period != 'shift') {
+      queryParams['cash_register_id'] = cashRegisterId.toString();
+    }
 
     final uri = Uri.parse('$baseUrl/sales').replace(queryParameters: queryParams);
     final response = await client.get(uri, headers: {'Accept': 'application/json'});
