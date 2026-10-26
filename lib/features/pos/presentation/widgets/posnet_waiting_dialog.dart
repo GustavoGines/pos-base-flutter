@@ -63,6 +63,13 @@ class _PosnetWaitingDialogState extends State<PosnetWaitingDialog> {
     return prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
   }
 
+  void _retryPointIntent() {
+    _isResolved = false;
+    _externalReference = widget.externalReference;
+    _paymentIntentId = null;
+    _createPointIntent();
+  }
+
   Future<void> _createPointIntent() async {
     setState(() {
       _isLoading = true;
@@ -240,8 +247,8 @@ class _PosnetWaitingDialogState extends State<PosnetWaitingDialog> {
           if (status == 'approved') {
             final paymentId = data['mp_payment_id']?.toString();
             _onPaymentApproved(paymentId);
-          } else if (['cancelled', 'canceled', 'abandoned', 'error'].contains(status) ||
-              ['CANCELED', 'ABANDONED', 'ERROR'].contains(state)) {
+          } else if (['cancelled', 'canceled', 'abandoned', 'error', 'rejected', 'expired'].contains(status) ||
+              ['CANCELED', 'ABANDONED', 'ERROR', 'REJECTED'].contains(state)) {
             _pollingTimer?.cancel();
             _pollingTimer = null;
             _disconnectPusher();
@@ -424,7 +431,7 @@ class _PosnetWaitingDialogState extends State<PosnetWaitingDialog> {
                         backgroundColor: const Color(0xFF009EE3),
                         foregroundColor: Colors.white,
                       ),
-                      onPressed: _createPointIntent,
+                      onPressed: _retryPointIntent,
                       child: const Text('Reintentar'),
                     ),
                   ],

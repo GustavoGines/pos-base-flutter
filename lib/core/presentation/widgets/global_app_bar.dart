@@ -958,7 +958,14 @@ class _TerminalPeripheralsDialogState
         }
       }
     } catch (e) {
-      _setFeedback('Error buscando terminales Point: $e', isError: true);
+      if (e is FormatException && e.message == 'ENDPOINT_NOT_FOUND') {
+        _setFeedback(
+          'Servidor en versión v1.8.5: Ingrese el Device ID manualmente en el campo.',
+          isError: false,
+        );
+      } else {
+        _setFeedback('Error buscando terminales Point: $e', isError: true);
+      }
     } finally {
       if (mounted) {
         setState(() => _isSearchingPointDevices = false);

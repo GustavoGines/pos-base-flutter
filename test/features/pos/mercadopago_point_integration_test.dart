@@ -167,6 +167,101 @@ void main() {
       expect(find.text('Reintentar'), findsOneWidget);
     });
 
+    testWidgets('Al presionar Reintentar tras rechazo/cancelación genera nueva orden limpia',
+        (WidgetTester tester) async {
+      int createCount = 0;
+      final List<Map<String, dynamic>> createPayloads = [];
+
+      final client = ApiClient(
+        MockClient((request) async {
+          if (request.url.path.contains('create-point-intent')) {
+            createCount++;
+            createPayloads.add(jsonDecode(request.body) as Map<String, dynamic>);
+            return http.Response(
+              jsonEncode({
+                'success': true,
+                'payment_intent_id': 'INTENT-RETRY-$createCount',
+                'external_reference': 'POS-REF-RETRY-$createCount',
+              }),
+              200,
+            );
+          }
+          if (request.url.path.contains('status/POS-REF-RETRY-1')) {
+            return http.Response(
+              jsonEncode({
+                'status': 'rejected',
+                'message': 'Tarjeta rechazada por fondos insuficientes.',
+              }),
+              200,
+            );
+          }
+          if (request.url.path.contains('status/POS-REF-RETRY-2')) {
+            return http.Response(
+              jsonEncode({
+                'status': 'approved',
+                'mp_payment_id': 'MP-PAY-RETRY-OK',
+              }),
+              200,
+            );
+          }
+          return http.Response('{"success": true}', 200);
+        }),
+      );
+
+      Map<String, dynamic>? dialogResult;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: ElevatedButton(
+                onPressed: () async {
+                  dialogResult = await showDialog<Map<String, dynamic>>(
+                    context: context,
+                    builder: (_) => PosnetWaitingDialog(
+                      amount: 1900.0,
+                      client: client,
+                      baseUrl: 'http://localhost/api',
+                    ),
+                  );
+                },
+                child: const Text('Abrir Dialog'),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('Abrir Dialog'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      // Primer sondeo -> devuelve 'rejected'
+      await tester.pump(const Duration(seconds: 2));
+      await tester.pump();
+
+      expect(find.text('Tarjeta rechazada por fondos insuficientes.'), findsOneWidget);
+      expect(find.text('Reintentar'), findsOneWidget);
+
+      // Tocar Reintentar -> no debe enviar el external_reference viejo
+      await tester.tap(find.text('Reintentar'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(createCount, equals(2));
+      expect(createPayloads[1].containsKey('external_reference'), isFalse);
+
+      // Sondeo del segundo intento -> aprueba
+      await tester.pump(const Duration(seconds: 2));
+      await tester.pump(const Duration(seconds: 2));
+      await tester.pumpAndSettle();
+
+      expect(dialogResult, isNotNull);
+      expect(dialogResult!['status'], equals('approved'));
+      expect(dialogResult!['mp_payment_id'], equals('MP-PAY-RETRY-OK'));
+      expect(dialogResult!['external_reference'], equals('POS-REF-RETRY-2'));
+    });
+
     testWidgets('Al cancelar la operación en pantalla invoca cancel-order en backend',
         (WidgetTester tester) async {
       String? cancelledRef;
