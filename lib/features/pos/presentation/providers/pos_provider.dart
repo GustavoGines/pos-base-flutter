@@ -1441,6 +1441,7 @@ class PosProvider with ChangeNotifier {
                       ?.toString() ??
                   _lastDeliveryNote!['sale']?['customer_name']?.toString() ??
                   customerSnapshot?.name,
+              customerDoc: customerSnapshot?.documentNumber,
               paperSizeOverride:
                   localTerminal.printerFormat == 'thermal_58' ? '58mm' : '80mm',
               iibbPerceptionAmount: effectivePerceptionAmount,
@@ -1457,6 +1458,8 @@ class PosProvider with ChangeNotifier {
               receiptNumber: extractedSaleId,
               userName: recalledUserSnapshot ?? userName,
               cashierName: userName,
+              customerName: customerSnapshot?.name,
+              customerDoc: customerSnapshot?.documentNumber,
               surchargeAmount: totalSurcharge,
               tenderedAmount: tenderedAmount,
               changeAmount: changeAmount,
@@ -1870,18 +1873,31 @@ class PosProvider with ChangeNotifier {
               }
             } else {
               _activePrinter.electronicInvoice = _lastElectronicInvoice;
+              final resolvedCustName = (customerId != null && _selectedCustomer?.id == customerId)
+                  ? _selectedCustomer?.name
+                  : (pendingEntry['customer']?['name'] as String? ??
+                      pendingEntry['customer_name'] as String? ??
+                      _selectedCustomer?.name);
+              final resolvedCustDoc = (customerId != null && _selectedCustomer?.id == customerId)
+                  ? _selectedCustomer?.documentNumber
+                  : (pendingEntry['customer']?['document_number'] as String? ??
+                      _selectedCustomer?.documentNumber);
               await printerService!.printSaleTicket(
                 items: ticketItems,
                 total: saleTotal,
                 settings: safeSettings,
                 localTerminal: localTerminal,
+                receiptNumber: saleId.toString(),
                 paymentDetails: resolvedPayments,
                 userName: pendingEntry['user']?['name'] as String? ?? userName,
                 cashierName: userName,
+                customerName: resolvedCustName,
+                customerDoc: resolvedCustDoc,
                 surchargeAmount: totalSurcharge,
                 tenderedAmount: tenderedAmount,
                 changeAmount: changeAmount,
                 shippingCost: shippingCost,
+                paperSizeOverride: localTerminal.printerFormat == 'thermal_58' ? '58mm' : '80mm',
                 iibbPerceptionAmount: iibbPerceptionAmount ?? 0.0,
               );
             }

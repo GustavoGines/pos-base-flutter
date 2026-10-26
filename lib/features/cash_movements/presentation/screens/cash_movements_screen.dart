@@ -77,7 +77,7 @@ class _CashMovementsScreenState extends State<CashMovementsScreen> {
 
     showDialog(
       context: context,
-      barrierDismissible: false,
+      barrierDismissible: true,
       builder: (context) => const MovementFormDialog(),
     );
   }

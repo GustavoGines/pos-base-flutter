@@ -48,7 +48,7 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
     Future.microtask(() async {
       await showDialog(
         context: context,
-        barrierDismissible: false,
+        barrierDismissible: true,
         builder: (_) => MovementFormDialog(
           initialSupplierId: supplierId,
           initialType: balance > 0 ? 'supplier_payment' : 'deposit',

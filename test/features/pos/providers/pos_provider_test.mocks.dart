@@ -524,6 +524,8 @@ class MockReceiptPrinterService extends _i1.Mock
     String? receiptNumber,
     String? userName,
     String? cashierName,
+    String? customerName,
+    String? customerDoc,
     double? surchargeAmount = 0.0,
     double? tenderedAmount = 0.0,
     double? changeAmount = 0.0,
@@ -545,6 +547,8 @@ class MockReceiptPrinterService extends _i1.Mock
             #receiptNumber: receiptNumber,
             #userName: userName,
             #cashierName: cashierName,
+            #customerName: customerName,
+            #customerDoc: customerDoc,
             #surchargeAmount: surchargeAmount,
             #tenderedAmount: tenderedAmount,
             #changeAmount: changeAmount,
@@ -575,6 +579,7 @@ class MockReceiptPrinterService extends _i1.Mock
     double? changeAmount = 0.0,
     double? iibbPerceptionAmount = 0.0,
     String? customerName,
+    String? customerDoc,
     String? paperSizeOverride,
   }) =>
       (super.noSuchMethod(
@@ -598,6 +603,7 @@ class MockReceiptPrinterService extends _i1.Mock
             #changeAmount: changeAmount,
             #iibbPerceptionAmount: iibbPerceptionAmount,
             #customerName: customerName,
+            #customerDoc: customerDoc,
             #paperSizeOverride: paperSizeOverride,
           },
         ),

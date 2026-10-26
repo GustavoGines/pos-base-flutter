@@ -683,7 +683,9 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
         .where((c) => c.status == 'in_wallet' && !selectedCheckIds.contains(c.id))
         .toList();
 
-    return AlertDialog(
+    return PopScope(
+      canPop: !_isLoading && !_isUploadingFile,
+      child: AlertDialog(
       title: const Text('Registrar Movimiento de Caja'),
       content: SizedBox(
         width: 600,
@@ -1451,6 +1453,7 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
           label: const Text('Procesar Movimiento'),
         ),
       ],
+      ),
     );
   }
 }

@@ -6,6 +6,8 @@ import 'package:provider/provider.dart';
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
 import 'package:frontend_desktop/features/reports/presentation/widgets/inventory_alerts_widget.dart';
 import 'package:frontend_desktop/core/providers/local_terminal_provider.dart';
+import 'package:frontend_desktop/core/utils/receipt_printer_service.dart';
+import 'package:frontend_desktop/core/utils/scale_serial_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:frontend_desktop/features/updater/data/services/update_service.dart';
 import 'package:frontend_desktop/features/updater/presentation/widgets/update_dialog.dart';
@@ -332,19 +334,23 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                     const UpdateBadgeWidget(),
                     const InventoryAlertsWidget(),
                     const SizedBox(width: 2),
-                    // ─ Ícono de Ajustes de Impresión (siempre visible en todas las pantallas) ─
+                    // ─ Ícono de Periféricos de Caja (Impresora / Gaveta / Balanza) ─
                     Consumer<LocalTerminalProvider>(
                       builder: (ctx, terminal, _) {
                         final isA4 = terminal.printerFormat == 'a4';
+                        final scaleStatus = terminal.scaleComPort.trim().isNotEmpty
+                            ? ' • Balanza: ${terminal.scaleComPort}'
+                            : '';
                         return Tooltip(
-                          message: 'Ajustes de Impresión\n'
+                          message: 'Periféricos de esta Caja (Impresora / Cajón / Balanza)\n'
                               'Formato: ${terminal.printerFormat}'
-                              '${isA4 ? ' • Papel: ${terminal.pdfPaperSize.toUpperCase()}' : ''}',
+                              '${isA4 ? ' • Papel: ${terminal.pdfPaperSize.toUpperCase()}' : ''}'
+                              '$scaleStatus',
                           child: IconButton(
                             icon: const Icon(Icons.print_rounded, size: 22),
                             color: Colors.blueGrey,
                             visualDensity: screenWidth < 500 ? VisualDensity.compact : VisualDensity.standard,
-                            onPressed: () => _showPrinterSettingsDialog(ctx),
+                            onPressed: () => showTerminalPeripheralsDialog(ctx),
                           ),
                         );
                       },
@@ -732,103 +738,682 @@ void _showUpgradeDialog(
   );
 }
 
-// ── Dialog de Ajustes de Impresión (Accesible desde toda la app) ──────
-void _showPrinterSettingsDialog(BuildContext context) {
+// ── Dialog de Periféricos de Caja (Impresora, Gaveta Registradora y Balanza) ──────
+void showTerminalPeripheralsDialog(BuildContext context) {
   showDialog(
     context: context,
-    builder: (ctx) => AlertDialog(
-      title: const Row(
-        children: [
-          Icon(Icons.print_rounded, color: Colors.blue),
-          SizedBox(width: 8),
-          Text('Ajustes de Impresión'),
-        ],
-      ),
-      content: Consumer<LocalTerminalProvider>(
-        builder: (context, p, _) => SizedBox(
-          width: 400,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('Formato de Impresión:', style: TextStyle(fontWeight: FontWeight.bold)),
-                const SizedBox(height: 8),
-                DropdownButtonFormField<String>(
-                  initialValue: p.printerFormat,
-                  decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
-                  items: const [
-                    DropdownMenuItem(value: 'thermal_80', child: Text('Térmica 80mm')),
-                    DropdownMenuItem(value: 'thermal_58', child: Text('Térmica 58mm')),
-                    DropdownMenuItem(value: 'a4', child: Text('Hoja Completa (Impresora normal)')),
-                  ],
-                  onChanged: (v) { if (v != null) p.setPrinterFormat(v); },
+    barrierDismissible: true,
+    builder: (ctx) => const _TerminalPeripheralsDialog(),
+  );
+}
+
+class _TerminalPeripheralsDialog extends StatefulWidget {
+  const _TerminalPeripheralsDialog();
+
+  @override
+  State<_TerminalPeripheralsDialog> createState() =>
+      _TerminalPeripheralsDialogState();
+}
+
+class _TerminalPeripheralsDialogState
+    extends State<_TerminalPeripheralsDialog> {
+  static const String _manualUsbSentinel = '__manual_usb_entry__';
+
+  late TextEditingController _printerNameController;
+  List<String> _usbPrinters = [];
+  List<SerialPortInfo> _serialPorts = [];
+  bool _isLoadingPrinters = false;
+  bool _isLoadingPorts = false;
+  bool _useManualPrinterName = false;
+
+  bool _isTestingPrinter = false;
+  bool _isTestingDrawer = false;
+  bool _isTestingScale = false;
+  String? _statusMessage;
+  bool _statusIsError = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final p = context.read<LocalTerminalProvider>();
+    _printerNameController = TextEditingController(text: p.printerNameOrIp);
+    _refreshHardwareLists();
+  }
+
+  @override
+  void dispose() {
+    _printerNameController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _refreshHardwareLists() async {
+    await Future.wait([
+      _loadUsbPrinters(),
+      _loadSerialPorts(),
+    ]);
+  }
+
+  Future<void> _loadUsbPrinters() async {
+    if (!mounted) return;
+    setState(() => _isLoadingPrinters = true);
+    try {
+      final list = await ReceiptPrinterService.instance.getAvailableUsbPrinters();
+      if (!mounted) return;
+      setState(() {
+        _usbPrinters = list;
+        _isLoadingPrinters = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _isLoadingPrinters = false);
+    }
+  }
+
+  Future<void> _loadSerialPorts() async {
+    if (!mounted) return;
+    setState(() => _isLoadingPorts = true);
+    try {
+      final ports = ScaleSerialService.instance.getAvailablePorts();
+      if (!mounted) return;
+      setState(() {
+        _serialPorts = ports;
+        _isLoadingPorts = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _isLoadingPorts = false);
+    }
+  }
+
+  void _setFeedback(String message, {bool isError = false}) {
+    if (!mounted) return;
+    setState(() {
+      _statusMessage = message;
+      _statusIsError = isError;
+    });
+  }
+
+  Future<void> _handleTestPrinter(LocalTerminalProvider p) async {
+    setState(() {
+      _isTestingPrinter = true;
+      _statusMessage = null;
+    });
+    try {
+      await ReceiptPrinterService.instance.printTestTicket(p);
+      _setFeedback('Ticket de prueba enviado correctamente a "${p.printerNameOrIp}".');
+    } catch (e) {
+      _setFeedback(
+        'Error al imprimir: ${e.toString().replaceFirst('Exception: ', '')}',
+        isError: true,
+      );
+    } finally {
+      if (mounted) setState(() => _isTestingPrinter = false);
+    }
+  }
+
+  Future<void> _handleTestDrawer(LocalTerminalProvider p) async {
+    setState(() {
+      _isTestingDrawer = true;
+      _statusMessage = null;
+    });
+    try {
+      await ReceiptPrinterService.instance.openCashDrawer(p, throwOnError: true);
+      _setFeedback('Pulso de apertura RJ-11 enviado a la gaveta a través de "${p.printerNameOrIp}".');
+    } catch (e) {
+      _setFeedback(
+        'No se pudo abrir el cajón: ${e.toString().replaceFirst('Exception: ', '')}',
+        isError: true,
+      );
+    } finally {
+      if (mounted) setState(() => _isTestingDrawer = false);
+    }
+  }
+
+  Future<void> _handleTestScale(LocalTerminalProvider p) async {
+    final port = p.scaleComPort.trim();
+    if (port.isEmpty) {
+      _setFeedback('Seleccione primero un puerto COM para la balanza.', isError: true);
+      return;
+    }
+    setState(() {
+      _isTestingScale = true;
+      _statusMessage = 'Leyendo balanza en $port...';
+      _statusIsError = false;
+    });
+    try {
+      final res = await ScaleSerialService.instance.readWeight(port);
+      if (res.success && res.weightKg != null) {
+        _setFeedback(
+          'Lectura exitosa en $port: ${res.weightKg!.toStringAsFixed(3)} Kg',
+          isError: false,
+        );
+      } else {
+        _setFeedback(
+          res.errorMessage ?? 'No se pudo leer el peso en $port.',
+          isError: true,
+        );
+      }
+    } catch (e) {
+      _setFeedback('Error al probar balanza en $port: $e', isError: true);
+    } finally {
+      if (mounted) setState(() => _isTestingScale = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<LocalTerminalProvider>(
+      builder: (context, p, _) {
+        final savedPrinter = p.printerNameOrIp.trim();
+        final savedComPort = p.scaleComPort.trim();
+
+        // Armar opciones de impresora USB garantizando que el valor guardado siempre exista
+        final List<DropdownMenuItem<String>> usbPrinterItems = [
+          const DropdownMenuItem(
+            value: '',
+            child: Text('Seleccione una impresora de Windows...'),
+          ),
+        ];
+        final Set<String> addedPrinters = {''};
+        for (final name in _usbPrinters) {
+          if (addedPrinters.add(name)) {
+            usbPrinterItems.add(
+              DropdownMenuItem(
+                value: name,
+                child: Text(name, overflow: TextOverflow.ellipsis),
+              ),
+            );
+          }
+        }
+        if (savedPrinter.isNotEmpty && !addedPrinters.contains(savedPrinter)) {
+          addedPrinters.add(savedPrinter);
+          usbPrinterItems.add(
+            DropdownMenuItem(
+              value: savedPrinter,
+              child: Text(
+                '$savedPrinter (Guardada)',
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          );
+        }
+        usbPrinterItems.add(
+          const DropdownMenuItem(
+            value: _manualUsbSentinel,
+            child: Text('✏️ Escribir nombre manualmente...'),
+          ),
+        );
+
+        final String selectedUsbDropdownValue = _useManualPrinterName
+            ? _manualUsbSentinel
+            : (addedPrinters.contains(savedPrinter) ? savedPrinter : '');
+
+        // Armar opciones de puerto COM de balanza garantizando que el puerto guardado siempre exista
+        final List<DropdownMenuItem<String>> scalePortItems = [
+          const DropdownMenuItem(
+            value: '',
+            child: Text('Sin balanza (Ingreso manual de peso)'),
+          ),
+        ];
+        final Set<String> addedPorts = {''};
+        for (final info in _serialPorts) {
+          if (addedPorts.add(info.portName)) {
+            scalePortItems.add(
+              DropdownMenuItem(
+                value: info.portName,
+                child: Text(
+                  info.displayName,
+                  overflow: TextOverflow.ellipsis,
                 ),
-                if (p.printerFormat == 'a4') ...[
-                  const SizedBox(height: 16),
-                  const Text('Tamaño de Papel:', style: TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 8),
-                  DropdownButtonFormField<String>(
-                    initialValue: p.pdfPaperSize,
-                    decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
-                    items: const [
-                      DropdownMenuItem(value: 'a4', child: Text('A4 (Predeterminado)')),
-                      DropdownMenuItem(value: 'letter', child: Text('Carta (Letter)')),
-                    ],
-                    onChanged: (v) { if (v != null) p.setPdfPaperSize(v); },
+              ),
+            );
+          }
+        }
+        if (savedComPort.isNotEmpty && !addedPorts.contains(savedComPort)) {
+          addedPorts.add(savedComPort);
+          scalePortItems.add(
+            DropdownMenuItem(
+              value: savedComPort,
+              child: Text(
+                '$savedComPort (Guardado - No detectado ahora)',
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          );
+        }
+
+        final bool canTestThermal = p.printerConnection != 'none' &&
+            p.printerFormat != 'a4' &&
+            savedPrinter.isNotEmpty;
+
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          title: Row(
+            children: [
+              const Icon(Icons.print_rounded, color: Colors.blue),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text(
+                  'Periféricos de esta Caja',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                ),
+              ),
+              IconButton(
+                tooltip: 'Refrescar dispositivos conectados',
+                icon: (_isLoadingPrinters || _isLoadingPorts)
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.refresh_rounded, color: Colors.blueGrey),
+                onPressed: (_isLoadingPrinters || _isLoadingPorts)
+                    ? null
+                    : _refreshHardwareLists,
+              ),
+            ],
+          ),
+          content: SizedBox(
+            width: 500,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // ── SECCIÓN 1: IMPRESORA ──
+                  _buildSectionHeader(
+                    icon: Icons.receipt_long_rounded,
+                    title: '1. Impresora de Tickets / Comprobantes',
+                    color: Colors.blue.shade700,
                   ),
-                ],
-                const SizedBox(height: 16),
-                const Text('Tipo de Conexión:', style: TextStyle(fontWeight: FontWeight.bold)),
-                const SizedBox(height: 8),
-                DropdownButtonFormField<String>(
-                  initialValue: p.printerConnection,
-                  decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
-                  items: const [
-                    DropdownMenuItem(value: 'none', child: Text('Desactivada')),
-                    DropdownMenuItem(value: 'usb', child: Text('USB / Serial')),
-                    DropdownMenuItem(value: 'network', child: Text('Red LAN / WiFi')),
-                  ],
-                  onChanged: (v) { if (v != null) p.setPrinterConnection(v); },
-                ),
-                const SizedBox(height: 16),
-                const Text('Nombre de Impresora o IP:', style: TextStyle(fontWeight: FontWeight.bold)),
-                const SizedBox(height: 8),
-                TextFormField(
-                  initialValue: p.printerNameOrIp,
-                  decoration: const InputDecoration(
-                    border: OutlineInputBorder(), isDense: true,
-                    hintText: 'Ej: POS-58 o 192.168.1.100',
-                  ),
-                  onChanged: (v) => p.setPrinterNameOrIp(v),
-                ),
-                const SizedBox(height: 24),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(8)),
-                  child: const Row(
+                  const SizedBox(height: 10),
+                  Row(
                     children: [
-                      Icon(Icons.info_outline, color: Colors.blue),
-                      SizedBox(width: 8),
                       Expanded(
-                        child: Text(
-                          'Estos ajustes se guardan automáticamente y aplican solo a esta terminal física.',
-                          style: TextStyle(fontSize: 12, color: Colors.blue),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Formato de Impresión',
+                              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                            ),
+                            const SizedBox(height: 6),
+                            DropdownButtonFormField<String>(
+                              key: ValueKey('fmt_${p.printerFormat}'),
+                              initialValue: p.printerFormat,
+                              isExpanded: true,
+                              decoration: const InputDecoration(
+                                border: OutlineInputBorder(),
+                                isDense: true,
+                              ),
+                              items: const [
+                                DropdownMenuItem(
+                                  value: 'thermal_80',
+                                  child: Text('Térmica 80mm'),
+                                ),
+                                DropdownMenuItem(
+                                  value: 'thermal_58',
+                                  child: Text('Térmica 58mm'),
+                                ),
+                                DropdownMenuItem(
+                                  value: 'a4',
+                                  child: Text('Hoja A4 / Carta'),
+                                ),
+                              ],
+                              onChanged: (v) {
+                                if (v != null) p.setPrinterFormat(v);
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Tipo de Conexión',
+                              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                            ),
+                            const SizedBox(height: 6),
+                            DropdownButtonFormField<String>(
+                              key: ValueKey('conn_${p.printerConnection}'),
+                              initialValue: p.printerConnection,
+                              isExpanded: true,
+                              decoration: const InputDecoration(
+                                border: OutlineInputBorder(),
+                                isDense: true,
+                              ),
+                              items: const [
+                                DropdownMenuItem(
+                                  value: 'none',
+                                  child: Text('Desactivada'),
+                                ),
+                                DropdownMenuItem(
+                                  value: 'usb',
+                                  child: Text('USB (Windows)'),
+                                ),
+                                DropdownMenuItem(
+                                  value: 'network',
+                                  child: Text('Red LAN / Wi-Fi (IP)'),
+                                ),
+                              ],
+                              onChanged: (v) {
+                                if (v != null) {
+                                  setState(() => _useManualPrinterName = false);
+                                  p.setPrinterConnection(v);
+                                }
+                              },
+                            ),
+                          ],
                         ),
                       ),
                     ],
                   ),
-                ),
-              ],
+                  if (p.printerFormat == 'a4') ...[
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Tamaño de Hoja PDF:',
+                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                    ),
+                    const SizedBox(height: 6),
+                    DropdownButtonFormField<String>(
+                      key: ValueKey('paper_${p.pdfPaperSize}'),
+                      initialValue: p.pdfPaperSize,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'a4',
+                          child: Text('A4 (Predeterminado)'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'letter',
+                          child: Text('Carta (Letter)'),
+                        ),
+                      ],
+                      onChanged: (v) {
+                        if (v != null) p.setPdfPaperSize(v);
+                      },
+                    ),
+                  ],
+                  if (p.printerConnection == 'usb') ...[
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Impresora Instalada en Windows:',
+                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                    ),
+                    const SizedBox(height: 6),
+                    DropdownButtonFormField<String>(
+                      key: ValueKey('usb_sel_$selectedUsbDropdownValue'),
+                      initialValue: selectedUsbDropdownValue,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                      items: usbPrinterItems,
+                      onChanged: (v) {
+                        if (v == null) return;
+                        if (v == _manualUsbSentinel) {
+                          setState(() => _useManualPrinterName = true);
+                        } else {
+                          setState(() => _useManualPrinterName = false);
+                          _printerNameController.text = v;
+                          p.setPrinterNameOrIp(v);
+                        }
+                      },
+                    ),
+                    if (_useManualPrinterName || _usbPrinters.isEmpty) ...[
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: _printerNameController,
+                        decoration: const InputDecoration(
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                          labelText: 'Nombre exacto de la impresora en Windows',
+                          hintText: 'Ej: POS-80 o EPSON TM-T20II',
+                        ),
+                        onChanged: (v) => p.setPrinterNameOrIp(v),
+                      ),
+                    ],
+                  ] else if (p.printerConnection == 'network') ...[
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Dirección IP de la Impresora (Puerto 9100):',
+                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                    ),
+                    const SizedBox(height: 6),
+                    TextField(
+                      controller: _printerNameController,
+                      decoration: const InputDecoration(
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                        hintText: 'Ej: 192.168.1.100',
+                      ),
+                      onChanged: (v) => p.setPrinterNameOrIp(v),
+                    ),
+                  ],
+                  if (p.printerConnection != 'none' && p.printerFormat != 'a4') ...[
+                    const SizedBox(height: 10),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: OutlinedButton.icon(
+                        onPressed: (!canTestThermal || _isTestingPrinter)
+                            ? null
+                            : () => _handleTestPrinter(p),
+                        icon: _isTestingPrinter
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.print_outlined, size: 18),
+                        label: const Text('Probar Ticket'),
+                      ),
+                    ),
+                  ],
+
+                  const Divider(height: 26),
+
+                  // ── SECCIÓN 2: GAVETA DE DINERO (RJ-11) ──
+                  _buildSectionHeader(
+                    icon: Icons.point_of_sale_rounded,
+                    title: '2. Caja Registradora / Gaveta de Dinero (RJ-11)',
+                    color: Colors.teal.shade700,
+                  ),
+                  const SizedBox(height: 6),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                    title: const Text(
+                      'Abrir cajón automáticamente al cobrar',
+                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5),
+                    ),
+                    subtitle: const Text(
+                      'Envía el pulso eléctrico por el cable telefónico (RJ-11) conectado detrás de la impresora térmica.',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                    value: p.autoOpenCashDrawer,
+                    onChanged: (val) => p.setAutoOpenCashDrawer(val),
+                  ),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: OutlinedButton.icon(
+                      onPressed: (p.printerConnection == 'none' ||
+                              savedPrinter.isEmpty ||
+                              _isTestingDrawer)
+                          ? null
+                          : () => _handleTestDrawer(p),
+                      icon: _isTestingDrawer
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.lock_open_rounded, size: 18),
+                      label: const Text('Probar Abrir Cajón'),
+                    ),
+                  ),
+
+                  const Divider(height: 26),
+
+                  // ── SECCIÓN 3: BALANZA ELECTRÓNICA (COM / USB) ──
+                  _buildSectionHeader(
+                    icon: Icons.scale_rounded,
+                    title: '3. Balanza Electrónica (Cable Serie / USB-COM)',
+                    color: Colors.indigo.shade700,
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Puerto COM de la Balanza (Systel, Kretz, Moretti, etc.):',
+                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                  ),
+                  const SizedBox(height: 6),
+                  DropdownButtonFormField<String>(
+                    key: ValueKey('scale_port_$savedComPort'),
+                    initialValue: addedPorts.contains(savedComPort) ? savedComPort : '',
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    items: scalePortItems,
+                    onChanged: (v) {
+                      if (v != null) {
+                        p.setScaleComPort(v);
+                        _setFeedback(
+                          v.isEmpty
+                              ? 'Balanza desactivada (modo ingreso manual).'
+                              : 'Puerto $v seleccionado para la balanza.',
+                        );
+                      }
+                    },
+                  ),
+                  if (savedComPort.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: OutlinedButton.icon(
+                        onPressed: _isTestingScale ? null : () => _handleTestScale(p),
+                        icon: _isTestingScale
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.monitor_weight_outlined, size: 18),
+                        label: const Text('Probar Lectura de Peso'),
+                      ),
+                    ),
+                  ],
+
+                  // ── MENSAJE DE ESTADO / FEEDBACK EN VIVO ──
+                  if (_statusMessage != null) ...[
+                    const SizedBox(height: 14),
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: _statusIsError
+                            ? Colors.red.shade50
+                            : Colors.green.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: _statusIsError
+                              ? Colors.red.shade200
+                              : Colors.green.shade200,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            _statusIsError
+                                ? Icons.error_outline_rounded
+                                : Icons.check_circle_outline_rounded,
+                            color: _statusIsError
+                                ? Colors.red.shade700
+                                : Colors.green.shade700,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              _statusMessage!,
+                              style: TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w600,
+                                color: _statusIsError
+                                    ? Colors.red.shade800
+                                    : Colors.green.shade800,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.info_outline, color: Colors.blue, size: 18),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Estos ajustes se guardan automáticamente y aplican solo a esta computadora (Caja).',
+                            style: TextStyle(fontSize: 12, color: Colors.blue),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Listo'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildSectionHeader({
+    required IconData icon,
+    required String title,
+    required Color color,
+  }) {
+    return Row(
+      children: [
+        Icon(icon, size: 19, color: color),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            title,
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 14,
+              color: color,
             ),
           ),
         ),
-      ),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cerrar')),
       ],
-    ),
-  );
+    );
+  }
 }
 
 class UpdateBadgeWidget extends StatelessWidget {

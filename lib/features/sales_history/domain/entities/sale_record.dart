@@ -86,6 +86,9 @@ class SaleRecord {
   final double? iibbPerceptionRate;
   final String invoiceStatus;
   final Map<String, dynamic>? electronicInvoice;
+  final int? customerId;
+  final String? customerName;
+  final String? customerDocumentNumber;
 
   const SaleRecord({
     required this.id,
@@ -103,6 +106,9 @@ class SaleRecord {
     this.iibbPerceptionRate,
     this.invoiceStatus = 'none',
     this.electronicInvoice,
+    this.customerId,
+    this.customerName,
+    this.customerDocumentNumber,
   });
 
   bool get isVoided => status == 'voided';
@@ -165,6 +171,9 @@ class SaleRecord {
       invoiceStatus: json['invoice_status'] as String? ?? 'none',
       electronicInvoice: json['electronic_invoice'] as Map<String, dynamic>? ??
           json['electronicInvoice'] as Map<String, dynamic>?,
+      customerId: json['customer_id'] as int? ?? json['customer']?['id'] as int?,
+      customerName: json['customer']?['name'] as String? ?? json['customer_name'] as String?,
+      customerDocumentNumber: json['customer']?['document_number'] as String? ?? json['customer_document_number'] as String?,
     );
   }
 }

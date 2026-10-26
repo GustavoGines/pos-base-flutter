@@ -1,9 +1,11 @@
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
 import 'package:frontend_desktop/core/providers/local_terminal_provider.dart';
 import 'package:flutter_pos_printer_platform_image_3/flutter_pos_printer_platform_image_3.dart';
+import 'package:printing/printing.dart';
 import '../../../features/cash_register/domain/entities/cash_register_shift.dart';
 import '../../../features/pos/domain/entities/cart_item.dart';
 import '../../../features/settings/domain/entities/business_settings.dart';
@@ -131,15 +133,138 @@ class ReceiptPrinterService {
     );
   }
 
-  Future<void> openCashDrawer(LocalTerminalProvider localTerminal) async {
-    if (localTerminal.printerConnection.toLowerCase() == 'none') return;
-    if (config.connectionType == PrinterConnectionType.usb && (config.comPort == null || config.comPort!.trim().isEmpty)) return;
+  /// Lista las impresoras instaladas en el Spooler de Windows (USB / Virtuales)
+  Future<List<String>> getAvailableUsbPrinters() async {
+    final Set<String> names = {};
+
+    try {
+      final subCompleter = Completer<void>();
+      StreamSubscription<PrinterDevice>? sub;
+      sub = PrinterManager.instance
+          .discovery(type: PrinterType.usb)
+          .listen((device) {
+        final name = device.name.trim();
+        if (name.isNotEmpty) {
+          names.add(name);
+        }
+      }, onDone: () {
+        if (!subCompleter.isCompleted) subCompleter.complete();
+      }, onError: (_) {
+        if (!subCompleter.isCompleted) subCompleter.complete();
+      });
+
+      await subCompleter.future.timeout(
+        const Duration(milliseconds: 600),
+        onTimeout: () {},
+      );
+      await sub.cancel();
+    } catch (e) {
+      debugPrint('PrinterService: Error en discovery USB primario: $e');
+    }
+
+    if (names.isEmpty) {
+      try {
+        final printers = await Printing.listPrinters();
+        for (final p in printers) {
+          final name = p.name.trim();
+          if (name.isNotEmpty) {
+            names.add(name);
+          }
+        }
+      } catch (e) {
+        debugPrint('PrinterService: Error listando impresoras via Printing: $e');
+      }
+    }
+
+    final result = names.toList()..sort();
+    return result;
+  }
+
+  /// Dispara el pulso eléctrico RJ-11 (Pin 2 y Pin 5) hacia la gaveta portamonedas
+  Future<void> openCashDrawer(
+    LocalTerminalProvider localTerminal, {
+    bool throwOnError = false,
+  }) async {
+    await reconfigure(localTerminal);
+    if (localTerminal.printerConnection.toLowerCase() == 'none') {
+      if (throwOnError) {
+        throw Exception(
+          'La impresora está desactivada. Seleccione conexión USB o Red primero.',
+        );
+      }
+      return;
+    }
+    if (localTerminal.printerNameOrIp.trim().isEmpty) {
+      if (throwOnError) {
+        throw Exception(
+          'Debe seleccionar el nombre de la impresora o IP para enviar el pulso al cajón.',
+        );
+      }
+      return;
+    }
+
+    final profile = await _getProfile();
+    final generator = Generator(config.paperSize, profile);
+    final bytes = _drawerKickBytes(generator);
+    await _send(Uint8List.fromList(bytes));
+  }
+
+  /// Imprime un ticket corto de diagnóstico para verificar conexión y formato
+  Future<void> printTestTicket(LocalTerminalProvider localTerminal) async {
+    await reconfigure(localTerminal);
+    if (localTerminal.printerConnection.toLowerCase() == 'none') {
+      throw Exception('Seleccione un tipo de conexión (USB o Red) antes de probar.');
+    }
+    if (localTerminal.printerNameOrIp.trim().isEmpty) {
+      throw Exception('Seleccione o ingrese el nombre de la impresora o IP.');
+    }
 
     final profile = await _getProfile();
     final generator = Generator(config.paperSize, profile);
     List<int> bytes = [];
 
-    bytes += generator.drawer();
+    bytes += generator.reset();
+    bytes += generator.text(
+      'PRUEBA DE IMPRESION',
+      styles: const PosStyles(
+        bold: true,
+        align: PosAlign.center,
+        height: PosTextSize.size2,
+        width: PosTextSize.size2,
+      ),
+    );
+    bytes += generator.hr(ch: '=');
+    bytes += _labelValue(
+      generator,
+      'Terminal:',
+      _cleanText(localTerminal.terminalId.toUpperCase()),
+    );
+    bytes += _labelValue(
+      generator,
+      'Formato:',
+      localTerminal.printerFormat == 'thermal_80' ? 'Termica 80mm' : 'Termica 58mm',
+    );
+    bytes += _labelValue(
+      generator,
+      'Conexion:',
+      localTerminal.printerConnection.toUpperCase(),
+    );
+    bytes += generator.text(
+      'Destino: ${_cleanText(localTerminal.printerNameOrIp)}',
+      styles: const PosStyles(align: PosAlign.left),
+    );
+    bytes += generator.text(
+      'Fecha: ${_formatDate(DateTime.now())}',
+      styles: const PosStyles(align: PosAlign.left),
+    );
+    bytes += generator.hr(ch: '-');
+    bytes += generator.text(
+      'CONEXION CORRECTA',
+      styles: const PosStyles(bold: true, align: PosAlign.center),
+    );
+    bytes += generator.feed(3);
+    bytes += generator.cut();
+
     await _send(Uint8List.fromList(bytes));
   }
 
@@ -246,6 +371,8 @@ class ReceiptPrinterService {
     String? receiptNumber,
     String? userName,
     String? cashierName,
+    String? customerName,
+    String? customerDoc,
     double surchargeAmount = 0.0,
     double tenderedAmount = 0.0,
     double changeAmount = 0.0,
@@ -342,10 +469,14 @@ class ReceiptPrinterService {
       );
       final pv = invoice['point_of_sale']?.toString().padLeft(5, '0') ?? '00001';
       bytes += generator.text('PUNTO DE VENTA: $pv', styles: const PosStyles(align: PosAlign.center));
-      final recName = invoice['receiver_name']?.toString() ?? 'CONSUMIDOR FINAL';
-      final recDoc = invoice['doc_number']?.toString() ?? '---';
-      final recCond = (invoice['receiver_tax_condition']?.toString() ?? 'CONSUMIDOR FINAL').toUpperCase();
-      bytes += generator.text('CLIENTE: ${_cleanText(recName)}', styles: const PosStyles(align: PosAlign.left));
+      final recName = (invoice['receiver_name']?.toString().trim().isNotEmpty == true)
+          ? invoice['receiver_name'].toString()
+          : (customerName?.trim().isNotEmpty == true ? customerName! : 'CONSUMIDOR FINAL');
+      final recDoc = (invoice['doc_number']?.toString().trim().isNotEmpty == true)
+          ? invoice['doc_number'].toString()
+          : (customerDoc?.trim().isNotEmpty == true ? customerDoc! : '---');
+      final recCond = (invoice['receiver_tax_condition']?.toString() ?? 'CONSUMIDOR FINAL').replaceAll('_', ' ').toUpperCase();
+      bytes += generator.text('CLIENTE: ${_cleanText(recName).toUpperCase()}', styles: const PosStyles(align: PosAlign.left));
       if (targetPaperSize == PaperSize.mm58) {
         bytes += generator.text('DOC: $recDoc', styles: const PosStyles(align: PosAlign.left));
         bytes += generator.text('IVA: $recCond', styles: const PosStyles(align: PosAlign.left));
@@ -383,6 +514,21 @@ class ReceiptPrinterService {
         cashierLine,
         styles: const PosStyles(align: PosAlign.left),
       );
+    }
+    if (invoice == null &&
+        customerName != null &&
+        customerName.trim().isNotEmpty &&
+        customerName.trim().toUpperCase() != 'CONSUMIDOR FINAL') {
+      bytes += generator.text(
+        'CLIENTE: ${_cleanText(customerName).toUpperCase()}',
+        styles: const PosStyles(bold: true, align: PosAlign.left),
+      );
+      if (customerDoc != null && customerDoc.trim().isNotEmpty) {
+        bytes += generator.text(
+          'DOC/CUIT: ${_cleanText(customerDoc).trim()}',
+          styles: const PosStyles(align: PosAlign.left),
+        );
+      }
     }
     // ── Items ─────────────────────────────────────────────────────
     // Formato profesional estilo POS moderno:
@@ -601,8 +747,10 @@ class ReceiptPrinterService {
     bytes += generator.feed(3);
     bytes += generator.cut();
 
-    // ── Drawer Kick (apertura de gaveta) ─────────────────────────
-    bytes += _drawerKickBytes(generator);
+    // ── Drawer Kick (apertura de gaveta si está habilitada en la terminal) ──
+    if (localTerminal.autoOpenCashDrawer) {
+      bytes += _drawerKickBytes(generator);
+    }
 
     await _send(Uint8List.fromList(bytes));
   }
@@ -631,6 +779,7 @@ class ReceiptPrinterService {
     double changeAmount = 0.0,
     double iibbPerceptionAmount = 0.0,
     String? customerName,
+    String? customerDoc,
     String? paperSizeOverride,
   }) async {
     if (localTerminal.printerConnection.toLowerCase() == 'none') return;
@@ -688,10 +837,14 @@ class ReceiptPrinterService {
       );
       final pv = invoice['point_of_sale']?.toString().padLeft(5, '0') ?? '00001';
       bytes += generator.text('PUNTO DE VENTA: $pv', styles: const PosStyles(align: PosAlign.center));
-      final recName = invoice['receiver_name']?.toString() ?? customerName ?? 'CONSUMIDOR FINAL';
-      final recDoc = invoice['doc_number']?.toString() ?? '---';
-      final recCond = (invoice['receiver_tax_condition']?.toString() ?? 'CONSUMIDOR FINAL').toUpperCase();
-      bytes += generator.text('CLIENTE: ${_cleanText(recName)}', styles: const PosStyles(align: PosAlign.left));
+      final recName = (invoice['receiver_name']?.toString().trim().isNotEmpty == true)
+          ? invoice['receiver_name'].toString()
+          : (customerName?.trim().isNotEmpty == true ? customerName! : 'CONSUMIDOR FINAL');
+      final recDoc = (invoice['doc_number']?.toString().trim().isNotEmpty == true)
+          ? invoice['doc_number'].toString()
+          : (customerDoc?.trim().isNotEmpty == true ? customerDoc! : '---');
+      final recCond = (invoice['receiver_tax_condition']?.toString() ?? 'CONSUMIDOR FINAL').replaceAll('_', ' ').toUpperCase();
+      bytes += generator.text('CLIENTE: ${_cleanText(recName).toUpperCase()}', styles: const PosStyles(align: PosAlign.left));
       if (targetPaperSize == PaperSize.mm58) {
         bytes += generator.text('DOC: $recDoc', styles: const PosStyles(align: PosAlign.left));
         bytes += generator.text('IVA: $recCond', styles: const PosStyles(align: PosAlign.left));
@@ -711,8 +864,15 @@ class ReceiptPrinterService {
     if (userName != null) {
       bytes += generator.text('CAJERO: ${_cleanText(userName).toUpperCase()}');
     }
-    if (invoice == null && customerName != null && customerName.isNotEmpty && customerName != 'Consumidor Final') {
+    if (invoice == null &&
+        customerName != null &&
+        customerName.trim().isNotEmpty &&
+        customerName.trim().toUpperCase() != 'CONSUMIDOR FINAL' &&
+        customerName.trim().toUpperCase() != 'CONSUMIDOR_FINAL') {
       bytes += generator.text('CLIENTE: ${_cleanText(customerName).toUpperCase()}', styles: const PosStyles(bold: true));
+      if (customerDoc != null && customerDoc.trim().isNotEmpty) {
+        bytes += generator.text('DOC/CUIT: ${_cleanText(customerDoc).trim()}', styles: const PosStyles(align: PosAlign.left));
+      }
     }
     bytes += generator.hr(ch: '-');
 
@@ -865,7 +1025,9 @@ class ReceiptPrinterService {
     bytes += generator.feed(3);
     bytes += generator.cut();
 
-    bytes += _drawerKickBytes(generator);
+    if (localTerminal.autoOpenCashDrawer) {
+      bytes += _drawerKickBytes(generator);
+    }
 
     await _send(Uint8List.fromList(bytes));
   }
@@ -1707,11 +1869,14 @@ class ReceiptPrinterService {
     ]);
   }
 
-  /// Genera el comando de apertura de gaveta (Drawer Kick) mediante el pin 2 o pin 5 del conector RJ-11
+  /// Genera el comando de apertura de gaveta (Drawer Kick) mediante el pin 2 y pin 5 del conector RJ-11
   List<int> _drawerKickBytes(Generator gen) {
     // ESC/POS comando: ESC p m t1 t2
-    // p=0 (pin2), on=100ms, off=200ms
-    return [0x1B, 0x70, 0x00, 0x64, 0xC8];
+    // Enviamos pulso a Pin 2 (m=0) y Pin 5 (m=1) para compatibilidad universal con gavetas RJ-11 (Gadnic, 3nStar, Epson, Hasar)
+    return [
+      0x1B, 0x70, 0x00, 0x32, 0x64, // Pin 2
+      0x1B, 0x70, 0x01, 0x32, 0x64, // Pin 5
+    ];
   }
 
   /// Formatea un precio eliminando decimales si son .00

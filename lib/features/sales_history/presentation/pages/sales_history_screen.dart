@@ -1006,7 +1006,12 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
           'surcharge_amount': sale.surchargeTotal,
           'tendered_amount': sale.grandTotal,
           'change_amount': 0,
-          'customer_name': 'Consumidor Final',
+          'customer_name': sale.customerName ?? 'Consumidor Final',
+          'customer': {
+            'name': sale.customerName ?? 'Consumidor Final',
+            if (sale.customerDocumentNumber != null && sale.customerDocumentNumber!.isNotEmpty)
+              'document_number': sale.customerDocumentNumber,
+          },
           'created_at': sale.createdAt.toIso8601String(),
           'cashier': {'name': sale.cashierName ?? sale.userName ?? 'Cajero'},
           'cashier_name': sale.cashierName ?? sale.userName ?? 'Cajero',
@@ -1119,6 +1124,8 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
           receiptNumber: sale.id.toString(),
           userName: sale.userName,
           cashierName: sale.cashierName,
+          customerName: sale.customerName,
+          customerDoc: sale.customerDocumentNumber,
           surchargeAmount: sale.surchargeTotal,
         );
         if (context.mounted) {
@@ -1313,6 +1320,8 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
           receiptNumber: sale.id.toString(),
           userName: sale.userName,
           cashierName: sale.cashierName,
+          customerName: sale.customerName,
+          customerDoc: sale.customerDocumentNumber,
           surchargeAmount: sale.surchargeTotal,
         );
         if (context.mounted) {

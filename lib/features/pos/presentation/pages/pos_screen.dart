@@ -28,7 +28,7 @@ import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import 'package:frontend_desktop/features/cash_movements/presentation/widgets/movement_form_dialog.dart' as frontend_desktop_cash_movements_dialog;
-import 'package:flutter_libserialport/flutter_libserialport.dart';
+import 'package:frontend_desktop/core/utils/scale_serial_service.dart';
 import 'package:frontend_desktop/features/quotes/presentation/providers/quote_provider.dart';
 import 'package:frontend_desktop/features/reports/presentation/providers/inventory_alerts_provider.dart';
 import 'package:frontend_desktop/core/providers/local_terminal_provider.dart';
@@ -1255,16 +1255,18 @@ class _PosScreenState extends State<PosScreen> {
       {double? promotionalPrice, String? promotionalLabel, String? promotionalPeriodType}) {
     showDialog(
         context: context,
-        barrierDismissible: false,
+        barrierDismissible: true,
         builder: (context) {
           return _ManagedControllerScope(
             builder: (context, weightController, isDialogMounted) {
               return ValueListenableBuilder<TextEditingValue>(
                   valueListenable: weightController,
                   builder: (context, value, child) {
-                    final isValid = value.text.trim().isNotEmpty &&
-                        double.tryParse(value.text.replaceAll(',', '.')) != null &&
-                        double.parse(value.text.replaceAll(',', '.')) > 0;
+                    final parsedVal =
+                        double.tryParse(value.text.trim().replaceAll(',', '.'));
+                    final isValid = parsedVal != null &&
+                        parsedVal >= 0.001 &&
+                        parsedVal < 1000;
                     return AlertDialog(
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(20)),
@@ -1302,19 +1304,30 @@ class _PosScreenState extends State<PosScreen> {
                         Consumer<LocalTerminalProvider>(
                           builder: (ctx, localTerminal, _) {
                             final comPort = localTerminal.scaleComPort;
-                            if (comPort.isEmpty) {
-                              return const SizedBox.shrink(); // Sin balanza local
-                            }
+                            final isConfigured = comPort.trim().isNotEmpty;
                             return OutlinedButton.icon(
-                              onPressed: () => _readWeightFromScale(
-                                  comPort, weightController,
-                                  isDialogMounted: isDialogMounted),
-                              icon: const Icon(Icons.scale_rounded,
-                                  color: Colors.blueGrey),
-                              label: const Text('Leer Balanza'),
+                              onPressed: () {
+                                if (!isConfigured) {
+                                  showTerminalPeripheralsDialog(context);
+                                  return;
+                                }
+                                _readWeightFromScale(
+                                    comPort, weightController,
+                                    isDialogMounted: isDialogMounted);
+                              },
+                              icon: Icon(Icons.scale_rounded,
+                                  color: isConfigured ? Colors.blueGrey : Colors.grey),
+                              label: Text(
+                                isConfigured ? 'Leer Balanza' : 'Configurar Balanza',
+                                style: TextStyle(
+                                  color: isConfigured ? Colors.blueGrey : Colors.grey,
+                                ),
+                              ),
                               style: OutlinedButton.styleFrom(
-                                foregroundColor: Colors.blueGrey,
-                                side: const BorderSide(color: Colors.blueGrey),
+                                foregroundColor: isConfigured ? Colors.blueGrey : Colors.grey,
+                                side: BorderSide(
+                                  color: isConfigured ? Colors.blueGrey : Colors.grey.shade400,
+                                ),
                                 shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(8)),
                               ),
@@ -1355,88 +1368,47 @@ class _PosScreenState extends State<PosScreen> {
   void _readWeightFromScale(
       String comPort, TextEditingController controller,
       {bool Function()? isDialogMounted}) async {
-    if (comPort.isEmpty) return;
+    final trimmedPort = comPort.trim();
+    if (trimmedPort.isEmpty) {
+      if (mounted) {
+        SnackBarService.warning(
+          context,
+          'La balanza no está configurada en esta terminal.',
+        );
+      }
+      return;
+    }
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Conectando a balanza en $comPort...')),
+        SnackBar(
+          content: Text('Leyendo balanza en $trimmedPort...'),
+          duration: const Duration(seconds: 2),
+        ),
       );
     }
 
     try {
-      final port = SerialPort(comPort);
-      if (!port.openReadWrite()) {
-        final err = SerialPort.lastError;
-        if (mounted) {
-          SnackBarService.error(context,
-              'No se pudo abrir el puerto $comPort. ${err != null ? err.message : ""}');
-        }
-        port.dispose();
-        return;
-      }
+      final result = await ScaleSerialService.instance.readWeight(trimmedPort);
 
-      String accumulatedData = '';
-      StreamSubscription? subscription;
+      if (!mounted || !(isDialogMounted?.call() ?? true)) return;
 
-      try {
-        // Configuración estándar de balanzas (ej. Kretz/Systel en Argentina)
-        final config = port.config;
-        config.baudRate = 9600;
-        config.bits = 8;
-        config.stopBits = 1;
-        config.parity = 0; // SerialPortParity.none
-        port.config = config;
-
-        final reader = SerialPortReader(port, timeout: 500);
-
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-                content: Text('Esperando peso estable... (1.5 seg)'),
-                duration: Duration(milliseconds: 1500)),
-          );
-        }
-
-        // Escuchar el stream durante 1.5 segundos
-        subscription = reader.stream.listen((data) {
-          accumulatedData += String.fromCharCodes(data);
-        });
-
-        await Future.delayed(const Duration(milliseconds: 1500));
-      } finally {
-        await subscription?.cancel();
-        port.close();
-        port.dispose();
-      }
-
-      // Buscar si la balanza mandó un valor numérico continuo
-      if (accumulatedData.isNotEmpty) {
-        final RegExp weightRegex = RegExp(r'(\d+[\.,]\d+)');
-        final matches = weightRegex.allMatches(accumulatedData);
-
-        if (matches.isNotEmpty) {
-          String weightStr = matches.last.group(0)!;
-          weightStr = weightStr.replaceAll(',', '.');
-
-          if (mounted && (isDialogMounted?.call() ?? true)) {
-            controller.text = weightStr;
-            SnackBarService.success(context, 'Lectura exitosa: $weightStr Kg');
-          }
-        } else {
-          if (mounted) {
-            SnackBarService.error(context,
-                'No se detectó un peso numérico. Datos: "$accumulatedData"');
-          }
-        }
+      if (result.success && result.weightKg != null) {
+        final weightStr = result.weightKg!.toStringAsFixed(3);
+        controller.text = weightStr;
+        controller.selection = TextSelection.fromPosition(
+          TextPosition(offset: weightStr.length),
+        );
+        SnackBarService.success(context, 'Lectura exitosa: $weightStr Kg');
       } else {
-        if (mounted) {
-          SnackBarService.error(context,
-              'No se recibieron datos. Revise la conexión de la balanza en $comPort.');
-        }
+        SnackBarService.error(
+          context,
+          result.errorMessage ?? 'No se pudo obtener el peso de la balanza.',
+        );
       }
     } catch (e) {
       if (mounted) {
-        SnackBarService.error(context, 'Error en el puerto $comPort: $e');
+        SnackBarService.error(context, 'Error al comunicar con la balanza: $e');
       }
     }
   }
@@ -1445,11 +1417,11 @@ class _PosScreenState extends State<PosScreen> {
       BuildContext dialogContext,
       {double? promotionalPrice, String? promotionalLabel, String? promotionalPeriodType}) {
     // Reemplaza comas por puntos en caso de que teclados latinos obligen coma
-    String sanitizedValue = value.replaceAll(',', '.');
+    String sanitizedValue = value.trim().replaceAll(',', '.');
     final weight = double.tryParse(sanitizedValue);
 
-    // Validación básica: El peso debe ser positivo y menor a una exageración (Ej: >1000Kg es raro en POS base)
-    if (weight != null && weight > 0 && weight < 1000) {
+    // Validación alineada con ProcessSaleRequest (min:0.001) en v1.8.5 y tope anti-código de barras (<1000Kg)
+    if (weight != null && weight >= 0.001 && weight < 1000) {
       provider.submitWeighedProductWithPromo(product, weight,
           promotionalPrice: promotionalPrice,
           promotionalLabel: promotionalLabel,
@@ -1457,18 +1429,18 @@ class _PosScreenState extends State<PosScreen> {
       Navigator.pop(dialogContext);
     } else {
       SnackBarService.error(
-          dialogContext, 'Por favor, ingrese un peso válido en Kg.');
+          dialogContext, 'Por favor, ingrese un peso válido entre 0.001 y 999.999 Kg.');
     }
   }
 
-  void _showEditCartItemModal(dynamic cartItem, PosProvider provider) {
+  void _showEditCartItemModal(CartItem cartItem, PosProvider provider) {
     final initialText = cartItem.product.isSoldByWeight
         ? cartItem.quantity.toQty()
         : cartItem.quantity.toInt().toString();
 
     showDialog(
         context: context,
-        barrierDismissible: false,
+        barrierDismissible: true,
         builder: (context) {
           return _ManagedControllerScope(
             initialText: initialText,
@@ -1476,9 +1448,15 @@ class _PosScreenState extends State<PosScreen> {
               return ValueListenableBuilder<TextEditingValue>(
                   valueListenable: qtyController,
                   builder: (context, value, child) {
-                    final isValid = value.text.trim().isNotEmpty &&
-                        double.tryParse(value.text.replaceAll(',', '.')) != null &&
-                        double.parse(value.text.replaceAll(',', '.')) > 0;
+                    final parsedVal =
+                        double.tryParse(value.text.trim().replaceAll(',', '.'));
+                    final minQty =
+                        cartItem.product.isSoldByWeight ? 0.001 : 1.0;
+                    final maxQty =
+                        cartItem.product.isSoldByWeight ? 1000.0 : 100000.0;
+                    final isValid = parsedVal != null &&
+                        parsedVal >= minQty &&
+                        parsedVal < maxQty;
                     return AlertDialog(
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(20)),
@@ -1522,19 +1500,30 @@ class _PosScreenState extends State<PosScreen> {
                           Consumer<LocalTerminalProvider>(
                             builder: (ctx, localTerminal, _) {
                               final comPort = localTerminal.scaleComPort;
-                              if (comPort.isEmpty) {
-                                return const SizedBox.shrink(); // Sin balanza local
-                              }
+                              final isConfigured = comPort.trim().isNotEmpty;
                               return OutlinedButton.icon(
-                                onPressed: () => _readWeightFromScale(
-                                    comPort, qtyController,
-                                    isDialogMounted: isDialogMounted),
-                                icon: const Icon(Icons.scale_rounded,
-                                    color: Colors.blueGrey),
-                                label: const Text('Leer Balanza'),
+                                onPressed: () {
+                                  if (!isConfigured) {
+                                    showTerminalPeripheralsDialog(context);
+                                    return;
+                                  }
+                                  _readWeightFromScale(
+                                      comPort, qtyController,
+                                      isDialogMounted: isDialogMounted);
+                                },
+                                icon: Icon(Icons.scale_rounded,
+                                    color: isConfigured ? Colors.blueGrey : Colors.grey),
+                                label: Text(
+                                  isConfigured ? 'Leer Balanza' : 'Configurar Balanza',
+                                  style: TextStyle(
+                                    color: isConfigured ? Colors.blueGrey : Colors.grey,
+                                  ),
+                                ),
                                 style: OutlinedButton.styleFrom(
-                                  foregroundColor: Colors.blueGrey,
-                                  side: const BorderSide(color: Colors.blueGrey),
+                                  foregroundColor: isConfigured ? Colors.blueGrey : Colors.grey,
+                                  side: BorderSide(
+                                    color: isConfigured ? Colors.blueGrey : Colors.grey.shade400,
+                                  ),
                                   shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(8)),
                                 ),
@@ -1569,12 +1558,14 @@ class _PosScreenState extends State<PosScreen> {
     });
   }
 
-  void _processCartItemEdit(String value, dynamic cartItem,
+  void _processCartItemEdit(String value, CartItem cartItem,
       PosProvider provider, BuildContext dialogContext) {
-    String sanitizedValue = value.replaceAll(',', '.');
+    String sanitizedValue = value.trim().replaceAll(',', '.');
     final newQuantity = double.tryParse(sanitizedValue);
+    final minQty = cartItem.product.isSoldByWeight ? 0.001 : 1.0;
+    final maxQty = cartItem.product.isSoldByWeight ? 1000.0 : 100000.0;
 
-    if (newQuantity != null && newQuantity > 0) {
+    if (newQuantity != null && newQuantity >= minQty && newQuantity < maxQty) {
       // Si el producto NO es pesado, forzar entero por si acaso.
       final finalQuantity = cartItem.product.isSoldByWeight
           ? newQuantity
@@ -1584,7 +1575,10 @@ class _PosScreenState extends State<PosScreen> {
       Navigator.pop(dialogContext);
     } else {
       SnackBarService.error(
-          dialogContext, 'Por favor, ingrese una cantidad válida mayor a 0.');
+          dialogContext,
+          cartItem.product.isSoldByWeight
+              ? 'Por favor, ingrese un peso válido entre 0.001 y 999.999 Kg.'
+              : 'Por favor, ingrese una cantidad válida mayor a 0.');
     }
   }
 
@@ -2587,7 +2581,7 @@ class _PosScreenState extends State<PosScreen> {
                 onTap: () {
                   showDialog(
                     context: context,
-                    barrierDismissible: false,
+                    barrierDismissible: true,
                     builder: (context) => const frontend_desktop_cash_movements_dialog.MovementFormDialog(),
                   );
                 },
@@ -5161,6 +5155,12 @@ class _ManagedControllerScopeState extends State<_ManagedControllerScope> {
   void initState() {
     super.initState();
     _controller = TextEditingController(text: widget.initialText);
+    if (widget.initialText.isNotEmpty) {
+      _controller.selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: widget.initialText.length,
+      );
+    }
   }
 
   @override

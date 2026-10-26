@@ -265,7 +265,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                 if (cashProv.currentShift != null && cashProv.currentShift!.isOpen) {
                    showDialog(
                     context: context,
-                    barrierDismissible: false,
+                    barrierDismissible: true,
                     builder: (_) => MovementFormDialog(
                       initialSupplierId: widget.supplierId,
                       initialType: 'supplier_payment',

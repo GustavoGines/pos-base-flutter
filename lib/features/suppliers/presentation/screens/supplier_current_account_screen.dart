@@ -300,7 +300,7 @@ class _SupplierCurrentAccountScreenState extends State<SupplierCurrentAccountScr
 
                               await showDialog(
                                 context: context,
-                                barrierDismissible: false,
+                                barrierDismissible: true,
                                 builder: (_) => MovementFormDialog(
                                   initialSupplierId: widget.supplierId,
                                   initialType: 'supplier_payment',

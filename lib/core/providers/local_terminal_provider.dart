@@ -7,6 +7,8 @@ class LocalTerminalProvider extends ChangeNotifier {
   static const String _printerConnectionKey = 'local_printer_connection';
   static const String _printerNameOrIpKey = 'local_printer_name_or_ip';
   static const String _scaleComPortKey = 'local_scale_com_port';
+  static const String _autoOpenCashDrawerKey = 'local_auto_open_drawer';
+  static const String _mpPointDeviceIdKey = 'local_mp_point_device_id';
   static const String _pdfPaperSizeKey = 'local_pdf_paper_size';
   static const String _lockedPriceTierKey = 'local_locked_price_tier';
   static const String _lockedPriceTierLabelKey = 'local_locked_price_tier_label';
@@ -22,6 +24,8 @@ class LocalTerminalProvider extends ChangeNotifier {
 
   String _printerNameOrIp = '';
   String _scaleComPort = '';
+  bool _autoOpenCashDrawer = true;
+  String _mpPointDeviceId = '';
   String _pdfPaperSize = 'a4'; // Opciones válidas: 'a4', 'letter'
 
   String _lockedPriceTier = 'none';
@@ -39,6 +43,8 @@ class LocalTerminalProvider extends ChangeNotifier {
   String get printerConnection => _printerConnection;
   String get printerNameOrIp => _printerNameOrIp;
   String get scaleComPort => _scaleComPort;
+  bool get autoOpenCashDrawer => _autoOpenCashDrawer;
+  String get mpPointDeviceId => _mpPointDeviceId;
   String get pdfPaperSize => _pdfPaperSize;
   String get lockedPriceTier => _lockedPriceTier;
   String? get lockedPriceTierLabel => _lockedPriceTierLabel;
@@ -55,13 +61,17 @@ class LocalTerminalProvider extends ChangeNotifier {
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
     _printerFormat = prefs.getString(_printerFormatKey) ?? 'thermal_80';
-    if (_printerFormat == 'a4_split' || _printerFormat == 'a4_standard' || _printerFormat == 'a4_normal') {
+    if (_printerFormat == 'a4_split' ||
+        _printerFormat == 'a4_standard' ||
+        _printerFormat == 'a4_normal') {
       _printerFormat = 'a4';
       prefs.setString(_printerFormatKey, 'a4');
     }
     _printerConnection = prefs.getString(_printerConnectionKey) ?? 'none';
     _printerNameOrIp = prefs.getString(_printerNameOrIpKey) ?? '';
     _scaleComPort = prefs.getString(_scaleComPortKey) ?? '';
+    _autoOpenCashDrawer = prefs.getBool(_autoOpenCashDrawerKey) ?? true;
+    _mpPointDeviceId = prefs.getString(_mpPointDeviceIdKey) ?? '';
     _pdfPaperSize = prefs.getString(_pdfPaperSizeKey) ?? 'a4';
     _lockedPriceTier = prefs.getString(_lockedPriceTierKey) ?? 'none';
     _lockedPriceTierLabel = prefs.getString(_lockedPriceTierLabelKey);
@@ -79,7 +89,7 @@ class LocalTerminalProvider extends ChangeNotifier {
 
     _isInitialized = true;
 
-    // áááá CRÍTICO: sincronizar el singleton de impresión con la config guardada.
+    // CRÍTICO: sincronizar el singleton de impresión con la config guardada.
     // Sin esto, ReceiptPrinterService arranca siempre con defaultUsb() (COM3
     // hardcodeado) ignorando lo que el usuario configuró en Ajustes > Hardware.
     _syncPrinterService();
@@ -94,7 +104,7 @@ class LocalTerminalProvider extends ChangeNotifier {
     ReceiptPrinterService.instance.reconfigure(this);
   }
 
-    Future<void> setPosSplitRatio(double ratio) async {
+  Future<void> setPosSplitRatio(double ratio) async {
     _posSplitRatio = ratio;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble(_posSplitRatioKey, ratio);
@@ -109,7 +119,7 @@ class LocalTerminalProvider extends ChangeNotifier {
   }
 
   Future<void> setPrinterFormat(String format) async {
-    // áááá IMPORTANTE: actualizar la memoria ANTES del await para que
+    // IMPORTANTE: actualizar la memoria ANTES del await para que
     // _syncPrinterService() lea el valor nuevo y no el viejo.
     _printerFormat = format;
     _syncPrinterService();
@@ -139,6 +149,20 @@ class LocalTerminalProvider extends ChangeNotifier {
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_scaleComPortKey, port);
+  }
+
+  Future<void> setAutoOpenCashDrawer(bool value) async {
+    _autoOpenCashDrawer = value;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_autoOpenCashDrawerKey, value);
+  }
+
+  Future<void> setMpPointDeviceId(String deviceId) async {
+    _mpPointDeviceId = deviceId.trim();
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_mpPointDeviceIdKey, _mpPointDeviceId);
   }
 
   Future<void> setPdfPaperSize(String size) async {

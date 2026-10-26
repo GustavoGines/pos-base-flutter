@@ -1500,6 +1500,13 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
             _lines.length > 1 || _totalSurcharge > 0.01;
         final bool hasTendered = _actualTendered > 0.01;
 
+        final String effectiveCustName = _isFiscalMode && _fiscalReceiverNameCtrl.text.trim().isNotEmpty
+            ? _fiscalReceiverNameCtrl.text.trim()
+            : (_selectedCustomer?.name ?? '');
+        final String effectiveCustDoc = _isFiscalMode && _fiscalDocNumberCtrl.text.trim().isNotEmpty
+            ? _fiscalDocNumberCtrl.text.trim()
+            : (_selectedCustomer?.documentNumber ?? '');
+
         final lines = <TicketLine>[
           // Encabezado
           if (settings?.companyName != null)
@@ -1517,6 +1524,13 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
           TicketLine(
               'FECHA: ${DateTime.now().day.toString().padLeft(2, '0')}/${DateTime.now().month.toString().padLeft(2, '0')}/${DateTime.now().year}'),
           if (userName != null) TicketLine('CAJERO: ${userName.toUpperCase()}'),
+          if (effectiveCustName.isNotEmpty &&
+              effectiveCustName.trim().toUpperCase() != 'CONSUMIDOR FINAL' &&
+              effectiveCustName.trim().toUpperCase() != 'CONSUMIDOR_FINAL') ...[
+            TicketLine('CLIENTE: ${effectiveCustName.toUpperCase()}', isBold: true),
+            if (effectiveCustDoc.isNotEmpty)
+              TicketLine('DOC/CUIT: $effectiveCustDoc'),
+          ],
           const TicketLine.hr(),
 
           // Ítems del carrito
