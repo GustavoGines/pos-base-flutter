@@ -291,6 +291,24 @@ class SettingsProvider with ChangeNotifier {
     }
   }
 
+  Future<List<Map<String, dynamic>>> fetchMpPointDevices({String? mpAccessToken}) async {
+    final repo = updateSettingsUseCase.repository;
+    return await repo.fetchMpPointDevices(mpAccessToken: mpAccessToken);
+  }
+
+  Future<Map<String, dynamic>> updateMpPointDeviceOperatingMode({
+    required String deviceId,
+    required String operatingMode,
+    String? mpAccessToken,
+  }) async {
+    final repo = updateSettingsUseCase.repository;
+    return await repo.updateMpPointDeviceOperatingMode(
+      deviceId: deviceId,
+      operatingMode: operatingMode,
+      mpAccessToken: mpAccessToken,
+    );
+  }
+
   Future<Map<String, dynamic>> testMercadoPagoConnection({String? mpAccessToken}) async {
     final repo = updateSettingsUseCase.repository;
     return await repo.testMercadoPagoConnection(mpAccessToken: mpAccessToken);

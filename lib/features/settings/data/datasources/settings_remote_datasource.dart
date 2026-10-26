@@ -13,6 +13,12 @@ abstract class SettingsRemoteDataSource {
   Future<Map<String, dynamic>> fetchIntegrations();
   Future<bool> updateIntegrations(Map<String, dynamic> data);
   Future<Map<String, dynamic>> testMercadoPagoConnection({String? mpAccessToken});
+  Future<List<Map<String, dynamic>>> fetchMpPointDevices({String? mpAccessToken});
+  Future<Map<String, dynamic>> updateMpPointDeviceOperatingMode({
+    required String deviceId,
+    required String operatingMode,
+    String? mpAccessToken,
+  });
   Future<Map<String, dynamic>> uploadAfipCertificates({
     required String cuit,
     required List<int> certBytes,
@@ -320,6 +326,73 @@ class SettingsRemoteDataSourceImpl implements SettingsRemoteDataSource {
         'success': false,
         'message': 'Error inesperado al probar la conexión.',
       };
+    }
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchMpPointDevices({String? mpAccessToken}) async {
+    try {
+      final uri = Uri.parse('$baseUrl/pos/mp/devices').replace(
+        queryParameters: (mpAccessToken != null && mpAccessToken.trim().isNotEmpty)
+            ? {'mp_access_token': mpAccessToken.trim()}
+            : null,
+      );
+      final response = await client.get(
+        uri,
+        headers: {'Accept': 'application/json'},
+      );
+
+      if (response.statusCode == 200) {
+        final decoded = json.decode(response.body);
+        if (decoded is Map<String, dynamic> && decoded['devices'] is List) {
+          return List<Map<String, dynamic>>.from(
+            (decoded['devices'] as List).whereType<Map<String, dynamic>>(),
+          );
+        }
+        return [];
+      } else if (response.statusCode == 404) {
+        throw const FormatException('ENDPOINT_NOT_FOUND');
+      } else {
+        throw Exception(_parseApiError(response.body, 'Error al consultar terminales Point.'));
+      }
+    } catch (e) {
+      if (e is FormatException && e.message == 'ENDPOINT_NOT_FOUND') rethrow;
+      rethrow;
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> updateMpPointDeviceOperatingMode({
+    required String deviceId,
+    required String operatingMode,
+    String? mpAccessToken,
+  }) async {
+    try {
+      final payload = <String, dynamic>{
+        'device_id': deviceId,
+        'operating_mode': operatingMode,
+        if (mpAccessToken != null && mpAccessToken.trim().isNotEmpty)
+          'mp_access_token': mpAccessToken.trim(),
+      };
+      final response = await client.patch(
+        Uri.parse('$baseUrl/pos/mp/devices/operating-mode'),
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: json.encode(payload),
+      );
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body) as Map<String, dynamic>;
+      } else if (response.statusCode == 404) {
+        throw const FormatException('ENDPOINT_NOT_FOUND');
+      } else {
+        throw Exception(_parseApiError(response.body, 'Error al actualizar modo de la terminal Point.'));
+      }
+    } catch (e) {
+      if (e is FormatException && e.message == 'ENDPOINT_NOT_FOUND') rethrow;
+      rethrow;
     }
   }
 

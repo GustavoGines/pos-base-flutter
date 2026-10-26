@@ -1874,12 +1874,16 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       return;
     }
 
+    final localTerminal = context.read<LocalTerminalProvider>();
+    final terminalDeviceId = localTerminal.mpPointDeviceId.trim();
+
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => PosnetWaitingDialog(
         amount: chargeAmount,
         description: 'Venta POS',
+        deviceId: terminalDeviceId.isNotEmpty ? terminalDeviceId : null,
         externalReference: line.mpExternalReference,
       ),
     );

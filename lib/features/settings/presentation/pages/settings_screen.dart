@@ -102,6 +102,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _obscureMpToken = true;
   bool _obscureMpSecret = true;
   bool _isTestingMpConnection = false;
+  bool _isSearchingMpDevices = false;
   bool _isSavingIntegrations = false;
 
   final _afipCuitCtrl = TextEditingController();
@@ -493,6 +494,210 @@ class _SettingsScreenState extends State<SettingsScreen> {
         setState(() => _isTestingMpConnection = false);
       }
     }
+  }
+
+  Future<void> _searchMpPointDevices() async {
+    if (_isSavingIntegrations || _isSearchingMpDevices) return;
+    final token = _mpAccessTokenCtrl.text.trim();
+    if (token.isEmpty) {
+      SnackBarService.warning(
+        context,
+        'Debe ingresar o guardar un Access Token de Mercado Pago para buscar sus terminales Point.',
+      );
+      return;
+    }
+
+    setState(() => _isSearchingMpDevices = true);
+    try {
+      final provider = context.read<SettingsProvider>();
+      final devices = await provider.fetchMpPointDevices(
+        mpAccessToken: (!token.contains('****')) ? token : null,
+      );
+
+      if (!mounted) return;
+
+      if (devices.isEmpty) {
+        SnackBarService.info(
+          context,
+          'No se encontraron terminales Point vinculadas a esta cuenta de Mercado Pago.',
+        );
+        return;
+      }
+
+      await _showMpPointDevicesDialog(devices, token);
+    } on FormatException catch (e) {
+      if (e.message == 'ENDPOINT_NOT_FOUND' && mounted) {
+        SnackBarService.info(
+          context,
+          'Servidor en versión v1.8.5: Ingrese el Device ID manualmente en el campo.',
+        );
+      } else if (mounted) {
+        SnackBarService.error(context, 'Error al consultar terminales: ${e.message}');
+      }
+    } catch (e) {
+      if (mounted) {
+        SnackBarService.error(context, 'Error al consultar terminales Point: $e');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSearchingMpDevices = false);
+      }
+    }
+  }
+
+  Future<void> _showMpPointDevicesDialog(
+    List<Map<String, dynamic>> initialDevices,
+    String token,
+  ) async {
+    List<Map<String, dynamic>> devices = List.from(initialDevices);
+    final provider = context.read<SettingsProvider>();
+
+    await showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: const Row(
+              children: [
+                Icon(Icons.point_of_sale_rounded, color: Color(0xFF009EE3)),
+                SizedBox(width: 8),
+                Text('Terminales Point Encontradas'),
+              ],
+            ),
+            content: SizedBox(
+              width: 520,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Seleccione el Posnet que desea vincular a este sistema. '
+                      'Para que el sistema envíe los cobros a la pantalla automáticamente, '
+                      'la terminal debe estar en Modo Integrado (PDV).',
+                      style: TextStyle(fontSize: 13, color: Colors.black87),
+                    ),
+                    const SizedBox(height: 16),
+                    ...devices.map((device) {
+                      final id = device['id']?.toString() ?? '';
+                      final mode = (device['operating_mode']?.toString() ?? 'PDV').toUpperCase();
+                      final isPdv = mode == 'PDV';
+
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: isPdv ? Colors.green.shade50 : Colors.amber.shade50,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: isPdv ? Colors.green.shade200 : Colors.amber.shade300,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.payment_rounded,
+                              color: isPdv ? Colors.green.shade700 : Colors.amber.shade800,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    id,
+                                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Wrap(
+                                    spacing: 6,
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: isPdv ? Colors.green.shade100 : Colors.amber.shade100,
+                                          borderRadius: BorderRadius.circular(4),
+                                        ),
+                                        child: Text(
+                                          isPdv ? 'Modo PDV (Integrado)' : 'Modo Autónomo (Standalone)',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.bold,
+                                            color: isPdv ? Colors.green.shade900 : Colors.amber.shade900,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            if (!isPdv)
+                              TextButton(
+                                onPressed: () async {
+                                  try {
+                                    await provider.updateMpPointDeviceOperatingMode(
+                                      deviceId: id,
+                                      operatingMode: 'PDV',
+                                      mpAccessToken: (!token.contains('****')) ? token : null,
+                                    );
+                                    setDialogState(() {
+                                      device['operating_mode'] = 'PDV';
+                                    });
+                                    if (mounted) {
+                                      SnackBarService.success(
+                                        context,
+                                        'Terminal $id pasada a Modo PDV.',
+                                      );
+                                    }
+                                  } catch (e) {
+                                    if (mounted) {
+                                      SnackBarService.error(
+                                        context,
+                                        'No se pudo cambiar el modo: $e',
+                                      );
+                                    }
+                                  }
+                                },
+                                child: const Text('Activar PDV'),
+                              ),
+                            FilledButton(
+                              style: FilledButton.styleFrom(
+                                backgroundColor: const Color(0xFF009EE3),
+                              ),
+                              onPressed: () {
+                                setState(() {
+                                  _mpPointDeviceIdCtrl.text = id;
+                                });
+                                Navigator.pop(ctx);
+                                SnackBarService.success(
+                                  context,
+                                  'Posnet $id seleccionado.',
+                                );
+                              },
+                              child: const Text('Usar'),
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cerrar'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
   }
 
   Future<void> _pickAfipCert() async {
@@ -3430,18 +3635,81 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             const SizedBox(height: 20),
 
-            // Device ID Posnet
-            TextFormField(
-              key: const ValueKey('field_mp_point_device_id'),
-              controller: _mpPointDeviceIdCtrl,
-              decoration: _inputDecoration(
-                'Device ID Posnet (Point)',
-                Icons.point_of_sale_outlined,
-                hint: 'Ej: POINT_SMART_01',
-              ).copyWith(
-                helperText:
-                    'Identificador del dispositivo Point asociado a esta caja (opcional).',
+            // Guía visual integrada (Con Cable vs. Inalámbrico)
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.blue.shade100),
               ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.help_outline_rounded, size: 18, color: Colors.blue.shade700),
+                      const SizedBox(width: 8),
+                      Text(
+                        '¿Cómo funciona el Posnet en el sistema?',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.blue.shade900,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '• Posnet Inalámbrico Mercado Pago Point (Smart / Air / Mini): Se vincula aquí con el Access Token y el Device ID. Al cobrar, el sistema envía el importe a la pantalla del aparato automáticamente.\n'
+                    '• Posnet con Cable o Bancario tradicional (Payway, Clover, Lapos): No requiere vincular Device ID ni Token. En el checkout, el cajero selecciona "Tarjeta de Débito" o "Tarjeta de Crédito" y pasa la tarjeta en el aparato físico.',
+                    style: TextStyle(fontSize: 12, color: Colors.blue.shade800, height: 1.35),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            // Device ID Posnet con botón de búsqueda automática
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: TextFormField(
+                    key: const ValueKey('field_mp_point_device_id'),
+                    controller: _mpPointDeviceIdCtrl,
+                    decoration: _inputDecoration(
+                      'Device ID Posnet (Point)',
+                      Icons.point_of_sale_outlined,
+                      hint: 'Ej: PAX_A910__SMARTPOS...',
+                    ).copyWith(
+                      helperText:
+                          'Identificador del Posnet físico en Mercado Pago (opcional por empresa).',
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: OutlinedButton.icon(
+                    key: const ValueKey('btn_search_mp_point_devices'),
+                    onPressed: _isSearchingMpDevices ? null : _searchMpPointDevices,
+                    icon: _isSearchingMpDevices
+                        ? const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.search_rounded, size: 18),
+                    label: const Text('Buscar Point'),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 15),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 20),
 

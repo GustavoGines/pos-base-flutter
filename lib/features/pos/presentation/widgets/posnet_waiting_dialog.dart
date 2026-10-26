@@ -233,9 +233,23 @@ class _PosnetWaitingDialogState extends State<PosnetWaitingDialog> {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        if (data is Map && data['status'] == 'approved') {
-          final paymentId = data['mp_payment_id']?.toString();
-          _onPaymentApproved(paymentId);
+        if (data is Map) {
+          final status = data['status']?.toString().toLowerCase();
+          final state = data['state']?.toString().toUpperCase();
+
+          if (status == 'approved') {
+            final paymentId = data['mp_payment_id']?.toString();
+            _onPaymentApproved(paymentId);
+          } else if (['cancelled', 'canceled', 'abandoned', 'error'].contains(status) ||
+              ['CANCELED', 'ABANDONED', 'ERROR'].contains(state)) {
+            _pollingTimer?.cancel();
+            _pollingTimer = null;
+            _disconnectPusher();
+            setState(() {
+              _errorMessage = data['message']?.toString() ??
+                  'La operación fue cancelada o rechazada en el dispositivo Point.';
+            });
+          }
         }
       }
     } catch (e) {
@@ -279,12 +293,35 @@ class _PosnetWaitingDialogState extends State<PosnetWaitingDialog> {
     if (_isResolved) return;
     _isResolved = true;
 
+    final extRef = _externalReference;
+
     _pollingTimer?.cancel();
     _pollingTimer = null;
     _disconnectPusher();
 
+    if (extRef != null && extRef.isNotEmpty) {
+      _notifyBackendCancellation(extRef);
+    }
+
     if (mounted) {
       Navigator.of(context).pop(null);
+    }
+  }
+
+  Future<void> _notifyBackendCancellation(String externalReference) async {
+    try {
+      final client = _getClient();
+      final apiUrl = await _getApiUrl();
+      await client.post(
+        Uri.parse('$apiUrl/pos/mp/cancel-order'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: jsonEncode({'external_reference': externalReference}),
+      );
+    } catch (e) {
+      debugPrint('Error notificando cancelación a Point: $e');
     }
   }
 

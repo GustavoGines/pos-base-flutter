@@ -760,6 +760,7 @@ class _TerminalPeripheralsDialogState
   static const String _manualUsbSentinel = '__manual_usb_entry__';
 
   late TextEditingController _printerNameController;
+  late TextEditingController _mpDeviceIdController;
   List<String> _usbPrinters = [];
   List<SerialPortInfo> _serialPorts = [];
   bool _isLoadingPrinters = false;
@@ -769,6 +770,7 @@ class _TerminalPeripheralsDialogState
   bool _isTestingPrinter = false;
   bool _isTestingDrawer = false;
   bool _isTestingScale = false;
+  bool _isSearchingPointDevices = false;
   String? _statusMessage;
   bool _statusIsError = false;
 
@@ -777,12 +779,14 @@ class _TerminalPeripheralsDialogState
     super.initState();
     final p = context.read<LocalTerminalProvider>();
     _printerNameController = TextEditingController(text: p.printerNameOrIp);
+    _mpDeviceIdController = TextEditingController(text: p.mpPointDeviceId);
     _refreshHardwareLists();
   }
 
   @override
   void dispose() {
     _printerNameController.dispose();
+    _mpDeviceIdController.dispose();
     super.dispose();
   }
 
@@ -866,6 +870,99 @@ class _TerminalPeripheralsDialogState
       );
     } finally {
       if (mounted) setState(() => _isTestingDrawer = false);
+    }
+  }
+
+  Future<void> _handleSearchPointDevices(LocalTerminalProvider p) async {
+    setState(() {
+      _isSearchingPointDevices = true;
+      _statusMessage = null;
+    });
+
+    try {
+      final settingsProvider = context.read<SettingsProvider>();
+      final devices = await settingsProvider.fetchMpPointDevices();
+      if (!mounted) return;
+
+      if (devices.isEmpty) {
+        _setFeedback(
+          'No se encontraron terminales Point en la cuenta de Mercado Pago.',
+          isError: true,
+        );
+        return;
+      }
+
+      final selectedDevice = await showDialog<Map<String, dynamic>>(
+        context: context,
+        builder: (dialogCtx) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.point_of_sale, color: Color(0xFF009EE3)),
+              SizedBox(width: 8),
+              Text(
+                'Seleccionar Point para esta Caja',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+          content: SizedBox(
+            width: 420,
+            child: ListView.separated(
+              shrinkWrap: true,
+              itemCount: devices.length,
+              separatorBuilder: (_, __) => const Divider(height: 1),
+              itemBuilder: (ctx, i) {
+                final d = devices[i];
+                final id = d['id']?.toString() ?? '';
+                final posId = d['pos_id']?.toString() ?? '';
+                final mode = d['operating_mode']?.toString().toUpperCase() ?? 'PDV';
+                final isSelected = p.mpPointDeviceId == id;
+
+                return ListTile(
+                  dense: true,
+                  leading: Icon(
+                    Icons.contactless_rounded,
+                    color: isSelected ? const Color(0xFF009EE3) : Colors.grey,
+                  ),
+                  title: Text(
+                    id,
+                    style: TextStyle(
+                      fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                      color: isSelected ? const Color(0xFF009EE3) : Colors.black87,
+                    ),
+                  ),
+                  subtitle: Text('Modo: $mode ${posId.isNotEmpty ? "• Caja MP #$posId" : ""}'),
+                  trailing: isSelected
+                      ? const Icon(Icons.check_circle, color: Color(0xFF009EE3), size: 20)
+                      : null,
+                  onTap: () => Navigator.of(dialogCtx).pop(d),
+                );
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogCtx).pop(null),
+              child: const Text('Cancelar'),
+            ),
+          ],
+        ),
+      );
+
+      if (selectedDevice != null && mounted) {
+        final newId = selectedDevice['id']?.toString() ?? '';
+        if (newId.isNotEmpty) {
+          _mpDeviceIdController.text = newId;
+          await p.setMpPointDeviceId(newId);
+          _setFeedback('Point "$newId" asignado a esta Caja.');
+        }
+      }
+    } catch (e) {
+      _setFeedback('Error buscando terminales Point: $e', isError: true);
+    } finally {
+      if (mounted) {
+        setState(() => _isSearchingPointDevices = false);
+      }
     }
   }
 
@@ -1311,6 +1408,81 @@ class _TerminalPeripheralsDialogState
                       ),
                     ),
                   ],
+
+                  const Divider(height: 26),
+
+                  // ── SECCIÓN 4: POSNET MERCADO PAGO POINT (POR CAJA) ──
+                  _buildSectionHeader(
+                    icon: Icons.credit_card_rounded,
+                    title: '4. Posnet Mercado Pago Point (Opcional por Caja)',
+                    color: const Color(0xFF009EE3),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Dispositivo Point asignado a este puesto de venta:',
+                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Si se deja vacío, se utilizará el terminal Point predeterminado configurado en Ajustes Generales.',
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _mpDeviceIdController,
+                          decoration: InputDecoration(
+                            border: const OutlineInputBorder(),
+                            isDense: true,
+                            hintText: 'Ej: PAX_A910__12345678 (o vacío)',
+                            prefixIcon: const Icon(
+                              Icons.point_of_sale,
+                              size: 20,
+                              color: Color(0xFF009EE3),
+                            ),
+                            suffixIcon: p.mpPointDeviceId.isNotEmpty
+                                ? IconButton(
+                                    tooltip: 'Limpiar (Usar predeterminado)',
+                                    icon: const Icon(Icons.clear, size: 18),
+                                    onPressed: () {
+                                      _mpDeviceIdController.clear();
+                                      p.setMpPointDeviceId('');
+                                      _setFeedback('Se usará el Point predeterminado de la empresa.');
+                                    },
+                                  )
+                                : null,
+                          ),
+                          onChanged: (val) {
+                            p.setMpPointDeviceId(val);
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFF009EE3),
+                          side: const BorderSide(color: Color(0xFF009EE3)),
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                        ),
+                        onPressed: _isSearchingPointDevices
+                            ? null
+                            : () => _handleSearchPointDevices(p),
+                        icon: _isSearchingPointDevices
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Color(0xFF009EE3),
+                                ),
+                              )
+                            : const Icon(Icons.search, size: 18),
+                        label: const Text('Buscar Point'),
+                      ),
+                    ],
+                  ),
 
                   // ── MENSAJE DE ESTADO / FEEDBACK EN VIVO ──
                   if (_statusMessage != null) ...[

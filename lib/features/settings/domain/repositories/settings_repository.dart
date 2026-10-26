@@ -8,6 +8,12 @@ abstract class SettingsRepository {
   Future<Map<String, dynamic>> fetchIntegrations();
   Future<bool> updateIntegrations(Map<String, dynamic> data);
   Future<Map<String, dynamic>> testMercadoPagoConnection({String? mpAccessToken});
+  Future<List<Map<String, dynamic>>> fetchMpPointDevices({String? mpAccessToken});
+  Future<Map<String, dynamic>> updateMpPointDeviceOperatingMode({
+    required String deviceId,
+    required String operatingMode,
+    String? mpAccessToken,
+  });
   Future<Map<String, dynamic>> uploadAfipCertificates({
     required String cuit,
     required List<int> certBytes,
@@ -26,4 +32,3 @@ abstract class SettingsRepository {
   Future<Map<String, dynamic>> exportEcommerceCatalog(int id);
   void updateBaseUrl(String newUrl);
 }
-

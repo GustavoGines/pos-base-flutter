@@ -175,6 +175,9 @@ class FakeLocalTerminalProvider extends ChangeNotifier
   String get printerFormat => 'thermal_80';
 
   @override
+  String get mpPointDeviceId => '';
+
+  @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 

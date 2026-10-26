@@ -39,6 +39,24 @@ class SettingsRepositoryImpl implements SettingsRepository {
   }
 
   @override
+  Future<List<Map<String, dynamic>>> fetchMpPointDevices({String? mpAccessToken}) async {
+    return await remoteDataSource.fetchMpPointDevices(mpAccessToken: mpAccessToken);
+  }
+
+  @override
+  Future<Map<String, dynamic>> updateMpPointDeviceOperatingMode({
+    required String deviceId,
+    required String operatingMode,
+    String? mpAccessToken,
+  }) async {
+    return await remoteDataSource.updateMpPointDeviceOperatingMode(
+      deviceId: deviceId,
+      operatingMode: operatingMode,
+      mpAccessToken: mpAccessToken,
+    );
+  }
+
+  @override
   Future<Map<String, dynamic>> uploadAfipCertificates({
     required String cuit,
     required List<int> certBytes,
@@ -105,4 +123,3 @@ class SettingsRepositoryImpl implements SettingsRepository {
     }
   }
 }
-
