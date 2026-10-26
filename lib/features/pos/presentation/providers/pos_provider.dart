@@ -542,6 +542,22 @@ class PosProvider with ChangeNotifier {
   ReceiptPrinterService get _activePrinter =>
       printerService ?? ReceiptPrinterService.instance;
 
+  /// Determina si una lista de pagos incluye efectivo físico
+  bool _hasCashInPayments(List<Map<String, dynamic>> rawPayments) {
+    for (final p in rawPayments) {
+      if (p['_isCash'] == true) return true;
+      final id = (p['payment_method_id'] as num?)?.toInt();
+      if (id != null) {
+        final match = _paymentMethods.where((m) => m.id == id);
+        if (match.isNotEmpty && match.first.isCash) return true;
+      }
+      final name =
+          (p['name'] ?? p['method_name'] ?? '').toString().toUpperCase();
+      if (name.contains('EFECTIVO') || name == 'CASH') return true;
+    }
+    return false;
+  }
+
   bool requestAddToCart(Product product) {
     return requestAddToCartWithPromo(product);
   }
@@ -1417,6 +1433,15 @@ class PosProvider with ChangeNotifier {
               }
             }
           }
+          // ── Apertura de gaveta en formato A4 si hubo pago en Efectivo ──
+          if ((_hasCashInPayments(resolvedPayments) || tenderedAmount > 0) &&
+              localTerminal.autoOpenCashDrawer) {
+            try {
+              await _activePrinter.openCashDrawer(localTerminal);
+            } catch (e) {
+              debugPrint('=== Drawer Kick Aislado (A4) no bloqueante: $e ===');
+            }
+          }
         } else {
           // Ruta Térmica: leer hardware 100% del LocalTerminalProvider
           _activePrinter.electronicInvoice = _lastElectronicInvoice;
@@ -1473,6 +1498,14 @@ class PosProvider with ChangeNotifier {
             'Venta exitosa, pero la impresora no responde: ${e.toString()}';
         debugPrint('=== Printer Error: $e ===');
       }
+      } else if ((_hasCashInPayments(resolvedPayments) || tenderedAmount > 0) &&
+          localTerminal.autoOpenCashDrawer) {
+        // ── Drawer Kick Aislado: el cajero destildó "Imprimir Comprobante", pero cobró en Efectivo ──
+        try {
+          await _activePrinter.openCashDrawer(localTerminal);
+        } catch (e) {
+          debugPrint('=== Drawer Kick Aislado (sin ticket) no bloqueante: $e ===');
+        }
       }
 
       // ── El Remito de Logística (Fricción Cero) ──
@@ -1664,7 +1697,7 @@ class PosProvider with ChangeNotifier {
 
       // Imprimir ticket si hay impresora configurada.
       // (Si items != null, significa que venimos desde processCheckout, que YA imprime el ticket)
-      if (printerService != null && settings != null && items == null) {
+      if (settings != null && items == null) {
         final safeSettings =
             settings; // non-nullable alias for Dart type promotion
         // Reconstruir CartItems desde el mapa en memoria para el ticket
@@ -1871,6 +1904,14 @@ class PosProvider with ChangeNotifier {
                   );
                 }
               }
+              if ((_hasCashInPayments(payments) || tenderedAmount > 0) &&
+                  localTerminal.autoOpenCashDrawer) {
+                try {
+                  await _activePrinter.openCashDrawer(localTerminal);
+                } catch (e) {
+                  debugPrint('=== Drawer Kick Aislado (pending A4) no bloqueante: $e ===');
+                }
+              }
             } else {
               _activePrinter.electronicInvoice = _lastElectronicInvoice;
               final resolvedCustName = (customerId != null && _selectedCustomer?.id == customerId)
@@ -1882,7 +1923,7 @@ class PosProvider with ChangeNotifier {
                   ? _selectedCustomer?.documentNumber
                   : (pendingEntry['customer']?['document_number'] as String? ??
                       _selectedCustomer?.documentNumber);
-              await printerService!.printSaleTicket(
+              await _activePrinter.printSaleTicket(
                 items: ticketItems,
                 total: saleTotal,
                 settings: safeSettings,
@@ -1906,6 +1947,16 @@ class PosProvider with ChangeNotifier {
                 'Cobro exitoso, pero la impresora no responde: ${e.toString()}';
             debugPrint('=== Printer Error (pending): $e ===');
           }
+        }
+      } else if (items == null &&
+          settings == null &&
+          (_hasCashInPayments(payments) || tenderedAmount > 0) &&
+          localTerminal.autoOpenCashDrawer) {
+        // ── Drawer Kick Aislado en orden pendiente cuando se destildó "Imprimir Comprobante" ──
+        try {
+          await _activePrinter.openCashDrawer(localTerminal);
+        } catch (e) {
+          debugPrint('=== Drawer Kick Aislado (pending sin ticket) no bloqueante: $e ===');
         }
       }
 

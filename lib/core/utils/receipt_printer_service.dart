@@ -185,6 +185,9 @@ class ReceiptPrinterService {
     LocalTerminalProvider localTerminal, {
     bool throwOnError = false,
   }) async {
+    if (!throwOnError && !localTerminal.autoOpenCashDrawer) {
+      return;
+    }
     await reconfigure(localTerminal);
     if (localTerminal.printerConnection.toLowerCase() == 'none') {
       if (throwOnError) {
@@ -1386,7 +1389,7 @@ class ReceiptPrinterService {
     bytes += generator.cut();
 
     // ── Drawer Kick ──
-    if (openDrawer) {
+    if (openDrawer && localTerminal.autoOpenCashDrawer) {
       bytes += _drawerKickBytes(generator);
     }
 
@@ -1641,7 +1644,7 @@ class ReceiptPrinterService {
     bytes += generator.feed(3);
     bytes += generator.cut();
 
-    if (openDrawer) {
+    if (openDrawer && localTerminal.autoOpenCashDrawer) {
       bytes += _drawerKickBytes(generator);
     }
 

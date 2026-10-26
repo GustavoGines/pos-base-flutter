@@ -1,12 +1,18 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mockito/mockito.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:frontend_desktop/core/providers/local_terminal_provider.dart';
 import 'package:frontend_desktop/core/utils/scale_serial_service.dart';
+import 'package:frontend_desktop/features/cash_register/domain/entities/cash_register_shift.dart';
+import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
+import 'package:frontend_desktop/features/pos/domain/entities/sale.dart';
+import 'package:frontend_desktop/features/pos/presentation/providers/pos_provider.dart';
+import '../pos/providers/pos_provider_test.mocks.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  group('ScaleSerialService Frame Parser & Hardening Tests', () {
+  group('Bloque 1 - ScaleSerialService Frame Parser & Hardening Tests', () {
     test('Parsea tramas estándar con signo y unidades (Systel Cuora / Toledo)', () {
       const raw = 'ST,GS,+0001.250kg\r\n';
       final weight = ScaleSerialService.parseWeightString(raw);
@@ -140,13 +146,271 @@ void main() {
       expect(provider.autoOpenCashDrawer, isFalse);
       expect(provider.mpPointDeviceId, equals('PAX_A910__SMARTPOS999'));
 
-      // Verificar que una nueva instancia recupere los valores persistidos
       final reloaded = LocalTerminalProvider();
       await Future.delayed(const Duration(milliseconds: 50));
 
       expect(reloaded.scaleComPort, equals('COM4'));
       expect(reloaded.autoOpenCashDrawer, isFalse);
       expect(reloaded.mpPointDeviceId, equals('PAX_A910__SMARTPOS999'));
+    });
+  });
+
+  group('Bloque 3 - Apertura de Gaveta al Cobrar en Efectivo sin Imprimir Ticket', () {
+    late MockProcessSaleUseCase mockProcessSaleUseCase;
+    late MockSearchProductsUseCase mockSearchProductsUseCase;
+    late MockPosRepository mockPosRepository;
+    late MockReceiptPrinterService mockPrinterService;
+
+    final cashMethodMap = <String, dynamic>{
+      'id': 1,
+      'name': 'EFECTIVO',
+      'code': 'cash',
+      'surcharge_type': 'none',
+      'surcharge_value': 0,
+      'is_cash': true,
+      'is_active': true,
+      'sort_order': 1,
+    };
+
+    final transferMethodMap = <String, dynamic>{
+      'id': 2,
+      'name': 'TRANSFERENCIA',
+      'code': 'transfer',
+      'surcharge_type': 'none',
+      'surcharge_value': 0,
+      'is_cash': false,
+      'is_active': true,
+      'sort_order': 2,
+    };
+
+    final sampleProduct = Product(
+      id: 10,
+      name: 'Yerba Mate 1Kg',
+      internalCode: '00010',
+      costPrice: 2000,
+      sellingPrice: 3500,
+      stock: 50,
+      active: true,
+      isSoldByWeight: false,
+    );
+
+    setUp(() {
+      SharedPreferences.setMockInitialValues({});
+      mockProcessSaleUseCase = MockProcessSaleUseCase();
+      mockSearchProductsUseCase = MockSearchProductsUseCase();
+      mockPosRepository = MockPosRepository();
+      mockPrinterService = MockReceiptPrinterService();
+
+      when(mockPosRepository.fetchPaymentMethods())
+          .thenAnswer((_) async => [cashMethodMap, transferMethodMap]);
+    });
+
+    test('Abre la gaveta automáticamente cuando se cobra en Efectivo con "Imprimir Comprobante" destildado (settings == null)', () async {
+      final localTerminal = LocalTerminalProvider();
+      await Future.delayed(const Duration(milliseconds: 30));
+
+      final posProvider = PosProvider(
+        processSaleUseCase: mockProcessSaleUseCase,
+        searchProductsUseCase: mockSearchProductsUseCase,
+        repository: mockPosRepository,
+        printerService: mockPrinterService,
+      );
+      await Future.delayed(const Duration(milliseconds: 30));
+
+      posProvider.requestAddToCart(sampleProduct);
+
+      when(mockProcessSaleUseCase.call(
+        total: anyNamed('total'),
+        totalSurcharge: anyNamed('totalSurcharge'),
+        payments: anyNamed('payments'),
+        tenderedAmount: anyNamed('tenderedAmount'),
+        changeAmount: anyNamed('changeAmount'),
+        shiftId: anyNamed('shiftId'),
+        items: anyNamed('items'),
+        userId: anyNamed('userId'),
+        customerId: anyNamed('customerId'),
+        deliveryAddress: anyNamed('deliveryAddress'),
+        quoteId: anyNamed('quoteId'),
+        shippingCost: anyNamed('shippingCost'),
+        priceList: anyNamed('priceList'),
+        checkDetails: anyNamed('checkDetails'),
+        requiresDispatch: anyNamed('requiresDispatch'),
+        fulfillmentStatus: anyNamed('fulfillmentStatus'),
+        iibbPerceptionAmount: anyNamed('iibbPerceptionAmount'),
+        iibbPerceptionRate: anyNamed('iibbPerceptionRate'),
+      )).thenAnswer((_) async => Sale(
+            id: 501,
+            total: 3500.0,
+            paymentMethod: 'EFECTIVO',
+            shift: CashRegisterShift(
+              id: 1,
+              cashRegisterId: 1,
+              userId: 1,
+              openingBalance: 0,
+              status: 'open',
+              openedAt: DateTime.now(),
+            ),
+          ));
+
+      final ok = await posProvider.processCheckout(
+        payments: [
+          {
+            'payment_method_id': 1,
+            'base_amount': 3500.0,
+            'surcharge_amount': 0.0,
+            'total_amount': 3500.0,
+          }
+        ],
+        totalSurcharge: 0.0,
+        tenderedAmount: 4000.0,
+        changeAmount: 500.0,
+        shiftId: 1,
+        printerFormat: 'thermal_80',
+        localTerminal: localTerminal,
+        settings: null, // "Imprimir Comprobante" destildado
+      );
+
+      expect(ok, isTrue);
+      verify(mockPrinterService.openCashDrawer(localTerminal)).called(1);
+    });
+
+    test('NO abre la gaveta cuando se cobra sin ticket pero el pago es 100% Transferencia (sin Efectivo)', () async {
+      final localTerminal = LocalTerminalProvider();
+      await Future.delayed(const Duration(milliseconds: 30));
+
+      final posProvider = PosProvider(
+        processSaleUseCase: mockProcessSaleUseCase,
+        searchProductsUseCase: mockSearchProductsUseCase,
+        repository: mockPosRepository,
+        printerService: mockPrinterService,
+      );
+      await Future.delayed(const Duration(milliseconds: 30));
+
+      posProvider.requestAddToCart(sampleProduct);
+
+      when(mockProcessSaleUseCase.call(
+        total: anyNamed('total'),
+        totalSurcharge: anyNamed('totalSurcharge'),
+        payments: anyNamed('payments'),
+        tenderedAmount: anyNamed('tenderedAmount'),
+        changeAmount: anyNamed('changeAmount'),
+        shiftId: anyNamed('shiftId'),
+        items: anyNamed('items'),
+        userId: anyNamed('userId'),
+        customerId: anyNamed('customerId'),
+        deliveryAddress: anyNamed('deliveryAddress'),
+        quoteId: anyNamed('quoteId'),
+        shippingCost: anyNamed('shippingCost'),
+        priceList: anyNamed('priceList'),
+        checkDetails: anyNamed('checkDetails'),
+        requiresDispatch: anyNamed('requiresDispatch'),
+        fulfillmentStatus: anyNamed('fulfillmentStatus'),
+        iibbPerceptionAmount: anyNamed('iibbPerceptionAmount'),
+        iibbPerceptionRate: anyNamed('iibbPerceptionRate'),
+      )).thenAnswer((_) async => Sale(
+            id: 502,
+            total: 3500.0,
+            paymentMethod: 'TRANSFERENCIA',
+            shift: CashRegisterShift(
+              id: 1,
+              cashRegisterId: 1,
+              userId: 1,
+              openingBalance: 0,
+              status: 'open',
+              openedAt: DateTime.now(),
+            ),
+          ));
+
+      final ok = await posProvider.processCheckout(
+        payments: [
+          {
+            'payment_method_id': 2,
+            'base_amount': 3500.0,
+            'surcharge_amount': 0.0,
+            'total_amount': 3500.0,
+          }
+        ],
+        totalSurcharge: 0.0,
+        tenderedAmount: 0.0,
+        changeAmount: 0.0,
+        shiftId: 1,
+        printerFormat: 'thermal_80',
+        localTerminal: localTerminal,
+        settings: null, // Sin imprimir ticket
+      );
+
+      expect(ok, isTrue);
+      verifyNever(mockPrinterService.openCashDrawer(any));
+    });
+
+    test('NO abre la gaveta si el usuario desactivó autoOpenCashDrawer en el panel de periféricos', () async {
+      final localTerminal = LocalTerminalProvider();
+      await Future.delayed(const Duration(milliseconds: 30));
+      await localTerminal.setAutoOpenCashDrawer(false);
+
+      final posProvider = PosProvider(
+        processSaleUseCase: mockProcessSaleUseCase,
+        searchProductsUseCase: mockSearchProductsUseCase,
+        repository: mockPosRepository,
+        printerService: mockPrinterService,
+      );
+      await Future.delayed(const Duration(milliseconds: 30));
+
+      posProvider.requestAddToCart(sampleProduct);
+
+      when(mockProcessSaleUseCase.call(
+        total: anyNamed('total'),
+        totalSurcharge: anyNamed('totalSurcharge'),
+        payments: anyNamed('payments'),
+        tenderedAmount: anyNamed('tenderedAmount'),
+        changeAmount: anyNamed('changeAmount'),
+        shiftId: anyNamed('shiftId'),
+        items: anyNamed('items'),
+        userId: anyNamed('userId'),
+        customerId: anyNamed('customerId'),
+        deliveryAddress: anyNamed('deliveryAddress'),
+        quoteId: anyNamed('quoteId'),
+        shippingCost: anyNamed('shippingCost'),
+        priceList: anyNamed('priceList'),
+        checkDetails: anyNamed('checkDetails'),
+        requiresDispatch: anyNamed('requiresDispatch'),
+        fulfillmentStatus: anyNamed('fulfillmentStatus'),
+        iibbPerceptionAmount: anyNamed('iibbPerceptionAmount'),
+        iibbPerceptionRate: anyNamed('iibbPerceptionRate'),
+      )).thenAnswer((_) async => Sale(
+            id: 503,
+            total: 3500.0,
+            paymentMethod: 'EFECTIVO',
+            shift: CashRegisterShift(
+              id: 1,
+              cashRegisterId: 1,
+              userId: 1,
+              openingBalance: 0,
+              status: 'open',
+              openedAt: DateTime.now(),
+            ),
+          ));
+
+      final ok = await posProvider.processCheckout(
+        payments: [
+          {
+            'payment_method_id': 1,
+            'base_amount': 3500.0,
+            'surcharge_amount': 0.0,
+            'total_amount': 3500.0,
+          }
+        ],
+        totalSurcharge: 0.0,
+        tenderedAmount: 3500.0,
+        changeAmount: 0.0,
+        shiftId: 1,
+        printerFormat: 'thermal_80',
+        localTerminal: localTerminal,
+        settings: null,
+      );
+
+      expect(ok, isTrue);
+      verifyNever(mockPrinterService.openCashDrawer(any));
     });
   });
 }

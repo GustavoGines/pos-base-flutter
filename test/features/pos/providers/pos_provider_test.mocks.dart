@@ -481,10 +481,35 @@ class MockReceiptPrinterService extends _i1.Mock
       ) as _i6.Future<void>);
 
   @override
-  _i6.Future<void> openCashDrawer(_i11.LocalTerminalProvider? localTerminal) =>
+  _i6.Future<List<String>> getAvailableUsbPrinters() => (super.noSuchMethod(
+        Invocation.method(
+          #getAvailableUsbPrinters,
+          [],
+        ),
+        returnValue: _i6.Future<List<String>>.value(<String>[]),
+        returnValueForMissingStub: _i6.Future<List<String>>.value(<String>[]),
+      ) as _i6.Future<List<String>>);
+
+  @override
+  _i6.Future<void> openCashDrawer(
+    _i11.LocalTerminalProvider? localTerminal, {
+    bool? throwOnError = false,
+  }) =>
       (super.noSuchMethod(
         Invocation.method(
           #openCashDrawer,
+          [localTerminal],
+          {#throwOnError: throwOnError},
+        ),
+        returnValue: _i6.Future<void>.value(),
+        returnValueForMissingStub: _i6.Future<void>.value(),
+      ) as _i6.Future<void>);
+
+  @override
+  _i6.Future<void> printTestTicket(_i11.LocalTerminalProvider? localTerminal) =>
+      (super.noSuchMethod(
+        Invocation.method(
+          #printTestTicket,
           [localTerminal],
         ),
         returnValue: _i6.Future<void>.value(),
