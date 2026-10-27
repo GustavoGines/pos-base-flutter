@@ -1171,15 +1171,16 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   }
 
   double get _currentIibbAmount {
-    // FINDING-SALES-09: No contaminar venta diferida con percepciones del carrito activo en fondo
-    if (widget.saleId != null) return 0.0;
+    // FINDING-SALES-09: Si es una venta diferida cobrada desde la lista (widget.saleId != null),
+    // usar overrideTotal: widget.total para no contaminar con netSubtotal del carrito activo en fondo.
     final posProvider = context.read<PosProvider>();
     final settings = context.read<SettingsProvider>().settings;
     final extra = _totalSurcharge + _shippingCostToApply;
     return posProvider.calculateIibbPerceptionAmount(
         settings: settings,
         customer: _selectedCustomer,
-        extraAmount: extra);
+        extraAmount: extra,
+        overrideTotal: widget.saleId != null ? widget.total : null);
   }
 
   double get _effectiveCartTotal {

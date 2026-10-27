@@ -475,11 +475,14 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
         }
       }
 
-      final activeShift = context.read<CashRegisterProvider>().currentShift;
+      final cashRegProv = context.read<CashRegisterProvider>();
+      final activeShift = cashRegProv.currentShift;
       final data = {
         'type': _type,
         'category': _category,
         'cash_shift_id': activeShift?.id,
+        if (cashRegProv.activeRegisterId != null)
+          'cash_register_id': cashRegProv.activeRegisterId,
         'expense_category_id': (_expenseCategoryId == -1) ? null : _expenseCategoryId,
         'description': _descriptionController.text,
         'receipt_number': _receiptController.text,

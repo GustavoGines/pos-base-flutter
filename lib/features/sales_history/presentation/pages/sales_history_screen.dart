@@ -1075,9 +1075,12 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
         final saleJson = {
           'id': sale.id,
           'electronic_invoice': null,
-          'total': sale.total,
-          'total_amount': sale.total,
+          'total': sale.totalWithShipping,
+          'total_amount': sale.totalWithShipping,
+          'shipping_cost': sale.shippingCost,
           'surcharge_amount': sale.surchargeTotal,
+          'iibb_perception_amount': sale.iibbPerceptionAmount,
+          'iibb_perception_rate': sale.iibbPerceptionRate,
           'tendered_amount': sale.grandTotal,
           'change_amount': 0,
           'customer_name': sale.customerName ?? 'Consumidor Final',
@@ -1191,7 +1194,8 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
         ReceiptPrinterService.instance.electronicInvoice = null;
         await ReceiptPrinterService.instance.printSaleTicket(
           items: itemsParaImprimir,
-          total: sale.grandTotal,
+          total: sale.totalWithShipping,
+          shippingCost: sale.shippingCost,
           settings: settings,
           localTerminal: localTerminal,
           paymentDetails: paymentDetails,
@@ -1273,6 +1277,7 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
           'electronic_invoice': invoice,
           'total': sale.total,
           'total_amount': sale.total,
+          'shipping_cost': sale.shippingCost,
           'surcharge_amount': sale.surchargeTotal,
           'tendered_amount': sale.grandTotal,
           'change_amount': 0,
@@ -1388,7 +1393,8 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
         await ReceiptPrinterService.instance.printSaleTicket(
           electronicInvoice: invoice,
           items: itemsParaImprimir,
-          total: sale.grandTotal,
+          total: sale.totalWithShipping,
+          shippingCost: sale.shippingCost,
           settings: settings,
           localTerminal: localTerminal,
           paymentDetails: paymentDetails,

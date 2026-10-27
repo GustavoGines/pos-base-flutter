@@ -290,6 +290,7 @@ class A4SplitPdfService {
     final total = double.tryParse(totalStr.toString()) ?? 0.0;
     final shippingCost = double.tryParse(sale['shipping_cost']?.toString() ?? '0') ?? 0.0;
     final surchargeAmount = double.tryParse(sale['surcharge_amount']?.toString() ?? '0') ?? 0.0;
+    final iibbPerceptionAmount = double.tryParse(sale['iibb_perception_amount']?.toString() ?? '0') ?? 0.0;
     
     final grandTotal = total + surchargeAmount;
     
@@ -638,7 +639,7 @@ class A4SplitPdfService {
               child: pw.Column(
                 crossAxisAlignment: pw.CrossAxisAlignment.end,
                 children: [
-                  if (isFiscal && invoice['net_amount'] != null) ...[
+                  if (isFiscal && voucherLetter != 'C' && invoice['net_amount'] != null) ...[
                     pw.Row(
                       mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                       children: [
@@ -654,12 +655,20 @@ class A4SplitPdfService {
                       ],
                     ),
                   ],
-                  if (shippingCost > 0)
+                  if (shippingCost > 0 || iibbPerceptionAmount > 0 || surchargeAmount > 0)
                     pw.Row(
                       mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                       children: [
                         pw.Text('Subtotal:', style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey700)),
-                        pw.Text(_currencyFmt.format(total - shippingCost), style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey700)),
+                        pw.Text(_currencyFmt.format(total - shippingCost - iibbPerceptionAmount), style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey700)),
+                      ]
+                    ),
+                  if (iibbPerceptionAmount > 0)
+                    pw.Row(
+                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                      children: [
+                        pw.Text('Percepción IIBB:', style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey700)),
+                        pw.Text(_currencyFmt.format(iibbPerceptionAmount), style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey700)),
                       ]
                     ),
                   if (shippingCost > 0)

@@ -82,18 +82,28 @@ void main() {
       expect(shouldPrintIvaBreakdown(facturaA), isTrue);
     });
 
-    test('FINDING-SALES-06: SaleRecord parses and exposes iibbPerceptionAmount for reprints', () {
+    test('FINDING-SALES-06: SaleRecord parses and exposes iibbPerceptionAmount and totalWithShipping without double surcharge', () {
       final jsonSample = {
         'id': 105,
         'total': 12100.0,
-        'total_surcharge': 0.0,
+        'total_surcharge': 500.0,
+        'shipping_cost': 1000.0,
         'payment_status': 'paid',
         'status': 'completed',
         'created_at': '2026-10-27T10:30:00.000Z',
         'iibb_perception_amount': 363.0, // 3% sobre base neta gravada
         'iibb_perception_rate': 3.0,
         'items': [],
-        'payments': [],
+        'payments': [
+          {
+            'id': 1,
+            'payment_method_id': 2,
+            'base_amount': 13100.0,
+            'surcharge_amount': 500.0,
+            'total_amount': 13600.0,
+            'payment_method': {'name': 'Tarjeta Crédito', 'code': 'credito', 'is_cash': false},
+          }
+        ],
       };
 
       final sale = SaleRecord.fromJson(jsonSample);
@@ -101,6 +111,12 @@ void main() {
       expect(sale.iibbPerceptionAmount, isNotNull);
       expect(sale.iibbPerceptionAmount, equals(363.0));
       expect(sale.iibbPerceptionRate, equals(3.0));
+      expect(sale.shippingCost, equals(1000.0));
+      expect(sale.totalWithShipping, equals(13100.0));
+      expect(sale.surchargeTotal, equals(500.0));
+      expect(sale.grandTotal, equals(13600.0));
+      // Al pasar totalWithShipping + surchargeTotal a la impresora, el total cobrado es exactamente grandTotal (sin duplicar recargo)
+      expect(sale.totalWithShipping + sale.surchargeTotal, equals(sale.grandTotal));
     });
   });
 }

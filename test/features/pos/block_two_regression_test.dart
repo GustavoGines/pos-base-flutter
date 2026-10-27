@@ -143,6 +143,15 @@ void main() {
         extraAmount: 121.0,
       );
       expect(perceptionWithExtra, equals(33.0));
+
+      // Caso C: Con overrideTotal (cobro de venta pendiente desde listado sin usar carrito activo)
+      // overrideTotal = 2420.0 -> baseNet = 2000.0 -> Percepción 3% = 60.00
+      final perceptionPendingOverride = provider.calculateIibbPerceptionAmount(
+        customer: customerWithIibb,
+        settings: settings,
+        overrideTotal: 2420.0,
+      );
+      expect(perceptionPendingOverride, equals(60.0));
     });
   });
 }

@@ -541,8 +541,11 @@ class PosProvider with ChangeNotifier {
     final targetCustomer = customer ?? _selectedCustomer;
     final rate = targetCustomer?.iibbPerceptionRate ?? 0.0;
     // FINDING-SALES-02: Sincronización con AfipWsfeService: base gravada incluye neto de recargos/fletes gravados al 21%
+    final baseNet = overrideTotal != null
+        ? ((overrideTotal / 1.21) * 100).roundToDouble() / 100.0
+        : netSubtotal;
     final extraNet = extraAmount > 0 ? (extraAmount / 1.21) : 0.0;
-    final totalBaseNet = netSubtotal + extraNet;
+    final totalBaseNet = baseNet + extraNet;
     return ((totalBaseNet * (rate / 100.0)) * 100).roundToDouble() / 100.0;
   }
 
@@ -1089,13 +1092,13 @@ class PosProvider with ChangeNotifier {
     notifyListeners();
 
     final cartSnapshot = List<CartItem>.from(_cart);
-    final totalSnapshot = cartTotal;
     final recalledUserSnapshot = _recalledUserName;
     final customerSnapshot = _selectedCustomer;
     // Solo aplicamos flete al comprobante si se requiere despacho y no es entrega inmediata
     final shippingCostSnapshot = (requiresDispatch && fulfillmentStatus == 'pending') ? _shippingCost : 0.0;
     final effectivePerceptionAmount = iibbPerceptionAmount ?? this.iibbPerceptionAmount;
     final effectivePerceptionRate = iibbPerceptionRate ?? (this.iibbPerceptionRate > 0 ? this.iibbPerceptionRate : null);
+    final totalSnapshot = ((cartSubtotal + effectivePerceptionAmount + shippingCostSnapshot) * 100).roundToDouble() / 100.0;
 
     try {
       String? extractedSaleId;

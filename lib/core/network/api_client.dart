@@ -69,10 +69,24 @@ class ApiClient extends http.BaseClient {
   DateTime? _fallbackActivatedAt;
   Duration fallbackStickyDuration = const Duration(seconds: 60);
 
-  /// FINDING-RESIL-03: Timeout de 20s para operaciones estándar,
-  /// preservando 300s únicamente para tareas pesadas (backups, imports/exports).
+  /// FINDING-RESIL-03: Timeout de 20s para operaciones estándar de red local,
+  /// 90s para servicios externos sincrónicos (AFIP WSAA/WSFE, Licencias Render cold-start, Ecommerce)
+  /// y 300s para tareas pesadas de base de datos o archivos (backups, restore, imports/exports).
   static const Duration defaultTimeout = Duration(seconds: 20);
+  static const Duration externalServiceTimeout = Duration(seconds: 90);
   static const Duration heavyOperationTimeout = Duration(seconds: 300);
+
+  bool _isHeavyOrExternalPath(String lowerPath) {
+    return lowerPath.contains('/backup') ||
+        lowerPath.contains('/restore') ||
+        lowerPath.contains('/export') ||
+        lowerPath.contains('/import') ||
+        lowerPath.contains('/license') ||
+        lowerPath.contains('/invoice') ||
+        lowerPath.contains('/void') ||
+        lowerPath.contains('/afip') ||
+        lowerPath.contains('/ecommerce');
+  }
 
   Duration _resolveTimeout(Uri uri, Map<String, String> headers) {
     if (headers.containsKey('X-Request-Timeout')) {
@@ -82,8 +96,18 @@ class ApiClient extends http.BaseClient {
       }
     }
     final path = uri.path.toLowerCase();
-    if (path.contains('/backup') || path.contains('/export') || path.contains('/import')) {
+    if (path.contains('/backup') ||
+        path.contains('/restore') ||
+        path.contains('/export') ||
+        path.contains('/import')) {
       return heavyOperationTimeout;
+    }
+    if (path.contains('/license') ||
+        path.contains('/invoice') ||
+        path.contains('/void') ||
+        path.contains('/afip') ||
+        path.contains('/ecommerce')) {
+      return externalServiceTimeout;
     }
     return defaultTimeout;
   }
@@ -306,9 +330,12 @@ class ApiClient extends http.BaseClient {
       try {
         response = await _inner.send(activeRequest).timeout(effectiveTimeout);
       } catch (networkErr) {
-        final isNetworkFailure = networkErr is SocketException ||
-            networkErr is TimeoutException ||
-            networkErr is http.ClientException;
+        final isExternalTimeout = networkErr is TimeoutException &&
+            _isHeavyOrExternalPath(url.path.toLowerCase());
+        final isNetworkFailure = !isExternalTimeout &&
+            (networkErr is SocketException ||
+                networkErr is TimeoutException ||
+                networkErr is http.ClientException);
 
         if (isNetworkFailure &&
             _primaryBaseUrl != null &&
@@ -396,7 +423,9 @@ class ApiClient extends http.BaseClient {
 
               final isLicenseOrFeatureBlock = errorCode == 'FEATURE_NOT_LICENSED' ||
                   errorCode == 'MODULE_DISABLED' ||
-                  errorCode == 'DIFFERENCE_REQUIRES_ADMIN';
+                  errorCode == 'DIFFERENCE_REQUIRES_ADMIN' ||
+                  errorCode == 'LICENSE_BLOCKED' ||
+                  errorCode == 'LICENSE_INTEGRITY_VIOLATION';
 
               if (!isLicenseOrFeatureBlock) {
                 if (errorCode == 'PIN_REQUIRED' ||

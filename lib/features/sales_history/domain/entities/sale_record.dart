@@ -74,6 +74,7 @@ class SaleRecord {
   final int id;
   final double total;
   final double totalSurcharge;
+  final double shippingCost;
   final String status;  // 'active' | 'voided' | 'pending' | 'completed'
   final DateTime createdAt;
   final List<SaleItemRecord> items;
@@ -97,6 +98,7 @@ class SaleRecord {
     required this.id,
     required this.total,
     this.totalSurcharge = 0.0,
+    this.shippingCost = 0.0,
     required this.status,
     required this.createdAt,
     required this.items,
@@ -131,8 +133,11 @@ class SaleRecord {
   /// Ingreso NETO del negocio = total de items vendidos (sin recargo bancario).
   double get netTotal => total;
 
-  /// Total real cobrado al cliente = base + recargo bancario.
-  double get grandTotal => total + surchargeTotal;
+  /// Total de venta con flete (sin recargo bancario), homologado con cartTotal de PosProvider.
+  double get totalWithShipping => total + shippingCost;
+
+  /// Total real cobrado al cliente = base + flete + recargo bancario.
+  double get grandTotal => total + shippingCost + surchargeTotal;
 
   /// Etiqueta resumida de métodos de pago para mostrar en la lista.
   /// Ej: "Efectivo + Tarjeta" o "Transferencia"
@@ -165,6 +170,7 @@ class SaleRecord {
       id: json['id'] is int ? json['id'] : (int.tryParse(json['id']?.toString() ?? '0') ?? 0),
       total: double.tryParse(json['total']?.toString() ?? '0') ?? 0.0,
       totalSurcharge: double.tryParse((json['total_surcharge'] ?? '0').toString()) ?? 0.0,
+      shippingCost: double.tryParse((json['shipping_cost'] ?? '0').toString()) ?? 0.0,
       status: json['status'] as String? ?? 'active',
       createdAt: DateTime.parse(json['created_at'] as String).toLocal(),
       items: itemsList,

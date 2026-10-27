@@ -371,7 +371,7 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                         }
                         final isOpen = shift != null && shift.isOpen;
                         if (regName.trim().isEmpty) {
-                          regName = activeRegId != null ? 'Caja #' : 'Caja Principal';
+                          regName = activeRegId != null ? 'Caja #$activeRegId' : 'Caja Principal';
                         }
 
                         final compactBadge = screenWidth < 720;
