@@ -898,11 +898,13 @@ class _StockMovementsTabState extends State<_StockMovementsTab> {
                         final typeStr = mov['type'].toString().toLowerCase();
                         final isOut = typeStr == 'out' ||
                             typeStr == 'sale' ||
-                            typeStr == 'decrement';
+                            typeStr == 'decrement' ||
+                            typeStr == 'sale_ecommerce';
                         final typeLabel = switch (typeStr) {
                           'in' => 'INGRESO',
                           'out' => 'EGRESO',
                           'sale' => 'VENTA',
+                          'sale_ecommerce' => 'VENTA ONLINE',
                           'decrement' => 'BAJA',
                           'increment' => 'ALTA',
                           _ => typeStr.toUpperCase(),

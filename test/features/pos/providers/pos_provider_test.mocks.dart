@@ -559,6 +559,7 @@ class MockReceiptPrinterService extends _i1.Mock
     double? shippingCost = 0.0,
     double? iibbPerceptionAmount = 0.0,
     String? paperSizeOverride,
+    Map<String, dynamic>? electronicInvoice,
   }) =>
       (super.noSuchMethod(
         Invocation.method(
@@ -582,6 +583,7 @@ class MockReceiptPrinterService extends _i1.Mock
             #shippingCost: shippingCost,
             #iibbPerceptionAmount: iibbPerceptionAmount,
             #paperSizeOverride: paperSizeOverride,
+            #electronicInvoice: electronicInvoice,
           },
         ),
         returnValue: _i6.Future<void>.value(),
@@ -608,6 +610,7 @@ class MockReceiptPrinterService extends _i1.Mock
     String? customerName,
     String? customerDoc,
     String? paperSizeOverride,
+    Map<String, dynamic>? electronicInvoice,
   }) =>
       (super.noSuchMethod(
         Invocation.method(
@@ -632,6 +635,7 @@ class MockReceiptPrinterService extends _i1.Mock
             #customerName: customerName,
             #customerDoc: customerDoc,
             #paperSizeOverride: paperSizeOverride,
+            #electronicInvoice: electronicInvoice,
           },
         ),
         returnValue: _i6.Future<void>.value(),

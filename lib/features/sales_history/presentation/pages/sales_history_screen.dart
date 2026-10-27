@@ -1384,8 +1384,8 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
             return aCash ? -1 : 1;
           });
 
-        ReceiptPrinterService.instance.electronicInvoice = invoice;
         await ReceiptPrinterService.instance.printSaleTicket(
+          electronicInvoice: invoice,
           items: itemsParaImprimir,
           total: sale.grandTotal,
           settings: settings,

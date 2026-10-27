@@ -382,24 +382,27 @@ class ReceiptPrinterService {
     double shippingCost = 0.0,
     double iibbPerceptionAmount = 0.0,
     String? paperSizeOverride,
+    Map<String, dynamic>? electronicInvoice,
   }) async {
-    // Guardia: si la impresora está desactivada, no hacer nada
-    if (localTerminal.printerConnection.toLowerCase() == 'none') {
-      debugPrint('=== PrinterService: connection=none, saltando impresión ===');
-      return;
-    }
-    // Guardia: si el comPort está vacío en modo USB, no hacer nada
-    if (config.connectionType == PrinterConnectionType.usb &&
-        (config.comPort == null || config.comPort!.trim().isEmpty)) {
-      debugPrint('=== PrinterService: comPort vacío — configure el puerto en Ajustes > Hardware ===');
-      return;
-    }
+    final resolvedInvoice = electronicInvoice ?? this.electronicInvoice;
+    try {
+      // Guardia: si la impresora está desactivada, no hacer nada
+      if (localTerminal.printerConnection.toLowerCase() == 'none') {
+        debugPrint('=== PrinterService: connection=none, saltando impresión ===');
+        return;
+      }
+      // Guardia: si el comPort está vacío en modo USB, no hacer nada
+      if (config.connectionType == PrinterConnectionType.usb &&
+          (config.comPort == null || config.comPort!.trim().isEmpty)) {
+        debugPrint('=== PrinterService: comPort vacío — configure el puerto en Ajustes > Hardware ===');
+        return;
+      }
 
-    debugPrint('=== PrinterService: Iniciando impresión ===');
-    debugPrint('  comPort: ${config.comPort}  paperSize: ${config.paperSize}  type: ${config.connectionType}');
-    debugPrint('  receiptNumber: $receiptNumber  items: ${items.length}');
+      debugPrint('=== PrinterService: Iniciando impresión ===');
+      debugPrint('  comPort: ${config.comPort}  paperSize: ${config.paperSize}  type: ${config.connectionType}');
+      debugPrint('  receiptNumber: $receiptNumber  items: ${items.length}');
 
-    final profile = await _getProfile();
+      final profile = await _getProfile();
     
     // Calcular el tamaño de papel final
     PaperSize targetPaperSize = config.paperSize;
@@ -448,7 +451,7 @@ class ReceiptPrinterService {
     }
     bytes += generator.hr(ch: '=');
 
-    final invoice = electronicInvoice;
+    final invoice = resolvedInvoice;
     if (invoice != null) {
       final letter = invoice['voucher_letter']?.toString().toUpperCase() ?? 'B';
       final type = int.tryParse(invoice['voucher_type']?.toString() ?? '6') ?? 6;
@@ -755,7 +758,10 @@ class ReceiptPrinterService {
       bytes += _drawerKickBytes(generator);
     }
 
-    await _send(Uint8List.fromList(bytes));
+      await _send(Uint8List.fromList(bytes));
+    } finally {
+      this.electronicInvoice = null;
+    }
   }
 
   /// Imprime el SPLIT TICKET completo en el rollo térmico:
@@ -784,14 +790,17 @@ class ReceiptPrinterService {
     String? customerName,
     String? customerDoc,
     String? paperSizeOverride,
+    Map<String, dynamic>? electronicInvoice,
   }) async {
-    if (localTerminal.printerConnection.toLowerCase() == 'none') return;
-    if (config.connectionType == PrinterConnectionType.usb &&
-        (config.comPort == null || config.comPort!.trim().isEmpty)) {
-      return;
-    }
+    final resolvedInvoice = electronicInvoice ?? this.electronicInvoice;
+    try {
+      if (localTerminal.printerConnection.toLowerCase() == 'none') return;
+      if (config.connectionType == PrinterConnectionType.usb &&
+          (config.comPort == null || config.comPort!.trim().isEmpty)) {
+        return;
+      }
 
-    final profile = await _getProfile();
+      final profile = await _getProfile();
     PaperSize targetPaperSize = config.paperSize;
     if (paperSizeOverride != null) {
       if (paperSizeOverride == '80' || paperSizeOverride == '80mm') targetPaperSize = PaperSize.mm80;
@@ -816,7 +825,7 @@ class ReceiptPrinterService {
       bytes += generator.text('CUIT: ${settings.taxId}', styles: const PosStyles(align: PosAlign.center, bold: true));
     }
     bytes += generator.hr(ch: '=');
-    final invoice = electronicInvoice;
+    final invoice = resolvedInvoice;
     if (invoice != null) {
       final letter = invoice['voucher_letter']?.toString().toUpperCase() ?? 'B';
       final type = int.tryParse(invoice['voucher_type']?.toString() ?? '6') ?? 6;
@@ -1032,7 +1041,10 @@ class ReceiptPrinterService {
       bytes += _drawerKickBytes(generator);
     }
 
-    await _send(Uint8List.fromList(bytes));
+      await _send(Uint8List.fromList(bytes));
+    } finally {
+      this.electronicInvoice = null;
+    }
   }
 
 

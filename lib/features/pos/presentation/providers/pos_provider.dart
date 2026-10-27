@@ -531,11 +531,19 @@ class PosProvider with ChangeNotifier {
   }
 
   /// Helper que calcula el monto de percepción pasando BusinessSettings opcionales
-  double calculateIibbPerceptionAmount({BusinessSettings? settings, Customer? customer}) {
+  double calculateIibbPerceptionAmount({
+    BusinessSettings? settings,
+    Customer? customer,
+    double extraAmount = 0.0,
+    double? overrideTotal,
+  }) {
     if (!checkAppliesIibbPerception(settings: settings, customer: customer)) return 0.0;
     final targetCustomer = customer ?? _selectedCustomer;
     final rate = targetCustomer?.iibbPerceptionRate ?? 0.0;
-    return ((netSubtotal * (rate / 100.0)) * 100).roundToDouble() / 100.0;
+    // FINDING-SALES-02: Sincronización con AfipWsfeService: base gravada incluye neto de recargos/fletes gravados al 21%
+    final extraNet = extraAmount > 0 ? (extraAmount / 1.21) : 0.0;
+    final totalBaseNet = netSubtotal + extraNet;
+    return ((totalBaseNet * (rate / 100.0)) * 100).roundToDouble() / 100.0;
   }
 
   // Garantiza que siempre tengamos un printerService, incluso si no se inyecta
@@ -1453,6 +1461,7 @@ class PosProvider with ChangeNotifier {
           if (requiresDispatch && _lastDeliveryNote != null) {
             // SPLIT TICKET: Venta + Orden de Retiro en el mismo rollo
             await _activePrinter.printSplitTicket(
+              electronicInvoice: _lastElectronicInvoice,
               items: cartSnapshot,
               total: totalSnapshot,
               shippingCost: shippingCostSnapshot,
@@ -1478,6 +1487,7 @@ class PosProvider with ChangeNotifier {
             );
           } else {
             await _activePrinter.printSaleTicket(
+              electronicInvoice: _lastElectronicInvoice,
               items: cartSnapshot,
               total: totalSnapshot,
               settings: settings,
@@ -1939,6 +1949,7 @@ class PosProvider with ChangeNotifier {
                   : (pendingEntry['customer']?['document_number'] as String? ??
                       _selectedCustomer?.documentNumber);
               await _activePrinter.printSaleTicket(
+                electronicInvoice: _lastElectronicInvoice,
                 items: ticketItems,
                 total: saleTotal,
                 settings: safeSettings,

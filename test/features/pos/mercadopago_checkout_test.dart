@@ -129,7 +129,7 @@ class FakePosProvider extends ChangeNotifier implements PosProvider {
   }
 
   @override
-  double calculateIibbPerceptionAmount({BusinessSettings? settings, Customer? customer, double? overrideTotal}) => 0.0;
+  double calculateIibbPerceptionAmount({BusinessSettings? settings, Customer? customer, double extraAmount = 0.0, double? overrideTotal}) => 0.0;
 
   @override
   bool checkAppliesIibbPerception({BusinessSettings? settings, Customer? customer}) => false;
