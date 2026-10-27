@@ -1201,6 +1201,7 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
           customerName: sale.customerName,
           customerDoc: sale.customerDocumentNumber,
           surchargeAmount: sale.surchargeTotal,
+          iibbPerceptionAmount: sale.iibbPerceptionAmount ?? 0.0,
         );
         if (context.mounted) {
           SnackBarService.success(
@@ -1397,6 +1398,7 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
           customerName: sale.customerName,
           customerDoc: sale.customerDocumentNumber,
           surchargeAmount: sale.surchargeTotal,
+          iibbPerceptionAmount: sale.iibbPerceptionAmount ?? 0.0,
         );
         if (context.mounted) {
           SnackBarService.success(

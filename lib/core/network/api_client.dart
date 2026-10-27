@@ -69,6 +69,25 @@ class ApiClient extends http.BaseClient {
   DateTime? _fallbackActivatedAt;
   Duration fallbackStickyDuration = const Duration(seconds: 60);
 
+  /// FINDING-RESIL-03: Timeout de 20s para operaciones estándar,
+  /// preservando 300s únicamente para tareas pesadas (backups, imports/exports).
+  static const Duration defaultTimeout = Duration(seconds: 20);
+  static const Duration heavyOperationTimeout = Duration(seconds: 300);
+
+  Duration _resolveTimeout(Uri uri, Map<String, String> headers) {
+    if (headers.containsKey('X-Request-Timeout')) {
+      final customSeconds = int.tryParse(headers['X-Request-Timeout']!);
+      if (customSeconds != null && customSeconds > 0) {
+        return Duration(seconds: customSeconds);
+      }
+    }
+    final path = uri.path.toLowerCase();
+    if (path.contains('/backup') || path.contains('/export') || path.contains('/import')) {
+      return heavyOperationTimeout;
+    }
+    return defaultTimeout;
+  }
+
   bool get isUsingFallbackEndpoint => _useFallbackEndpoint;
 
   void configureFailover({String? primaryUrl, String? fallbackUrl}) {
@@ -282,9 +301,10 @@ class ApiClient extends http.BaseClient {
         }
       }
 
+      final effectiveTimeout = _resolveTimeout(url, headers);
       http.StreamedResponse response;
       try {
-        response = await _inner.send(activeRequest).timeout(const Duration(seconds: 300));
+        response = await _inner.send(activeRequest).timeout(effectiveTimeout);
       } catch (networkErr) {
         final isNetworkFailure = networkErr is SocketException ||
             networkErr is TimeoutException ||
@@ -310,7 +330,7 @@ class ApiClient extends http.BaseClient {
             if (_isSafeToRetryOnFailover(method, headers)) {
               url = alternateUri;
               final failoverReq = _buildClonedRequest(method, url, headers, bodyBytes, encoding);
-              response = await _inner.send(failoverReq).timeout(const Duration(seconds: 300));
+              response = await _inner.send(failoverReq).timeout(effectiveTimeout);
             } else {
               rethrow;
             }
@@ -429,7 +449,7 @@ class ApiClient extends http.BaseClient {
               }
               retryRequest.headers['Connection'] = 'close';
 
-              final retryResponse = await _inner.send(retryRequest).timeout(const Duration(seconds: 300));
+              final retryResponse = await _inner.send(retryRequest).timeout(effectiveTimeout);
 
               // ── Intercepción de 401 en el reintento (Sesión expirada durante espera del PIN) ──
               if (retryResponse.statusCode == 401) {
@@ -503,7 +523,7 @@ class ApiClient extends http.BaseClient {
             url = fallbackUri;
             final failoverReq = _buildClonedRequest(method, url, headers, bodyBytes, encoding);
             try {
-              response = await _inner.send(failoverReq).timeout(const Duration(seconds: 300));
+              response = await _inner.send(failoverReq).timeout(effectiveTimeout);
             } catch (_) {}
           }
         }

@@ -700,10 +700,12 @@ class ReceiptPrinterService {
     }
 
     if (invoice != null) {
-      // Desglose de impuestos para Factura A o B
+      // FINDING-SALES-05: Desglose de impuestos solo para Factura A o B (en Factura C no se discrimina IVA segun RG 1415 AFIP)
+      final voucherLetter = invoice['voucher_letter']?.toString().toUpperCase();
+      final isFacturaC = voucherLetter == 'C' || invoice['voucher_type'] == 11 || invoice['voucher_type'] == 13;
       final netAmount = invoice['net_amount'];
       final ivaAmount = invoice['iva_amount'];
-      if (netAmount != null && ivaAmount != null) {
+      if (!isFacturaC && netAmount != null && ivaAmount != null) {
         final net = double.tryParse(netAmount.toString()) ?? 0.0;
         final iva = double.tryParse(ivaAmount.toString()) ?? 0.0;
         bytes += generator.hr(ch: '-');
@@ -934,9 +936,12 @@ class ReceiptPrinterService {
     bytes += generator.text('UNIDADES VENDIDAS: $totalItemsQty', styles: const PosStyles(bold: true));
     bytes += generator.hr(ch: '-');
     if (invoice != null) {
+      // FINDING-SALES-05: Desglose de impuestos solo para Factura A o B (en Factura C no se discrimina IVA segun RG 1415 AFIP)
+      final voucherLetter = invoice['voucher_letter']?.toString().toUpperCase();
+      final isFacturaC = voucherLetter == 'C' || invoice['voucher_type'] == 11 || invoice['voucher_type'] == 13;
       final netAmount = invoice['net_amount'];
       final ivaAmount = invoice['iva_amount'];
-      if (netAmount != null && ivaAmount != null) {
+      if (!isFacturaC && netAmount != null && ivaAmount != null) {
         final net = double.tryParse(netAmount.toString()) ?? 0.0;
         final iva = double.tryParse(ivaAmount.toString()) ?? 0.0;
         bytes += generator.hr(ch: '-');
