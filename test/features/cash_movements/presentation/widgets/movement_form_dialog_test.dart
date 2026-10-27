@@ -91,6 +91,9 @@ class FakeCashRegisterProvider extends ChangeNotifier implements CashRegisterPro
   @override
   CashRegisterShift? get currentShift => _currentShift;
 
+  @override
+  int? get activeRegisterId => _currentShift?.cashRegisterId ?? 1;
+
   void setShift(CashRegisterShift? shift) {
     _currentShift = shift;
     notifyListeners();

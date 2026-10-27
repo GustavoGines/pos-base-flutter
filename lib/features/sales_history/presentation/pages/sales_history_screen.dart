@@ -697,68 +697,80 @@ class _SaleListTile extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Fila 1: ID y Fecha/Hora a la izq | Total a la der
+            // Fila 1: ID y Fecha/Hora a la izq | Total a la der (FE-03: anti-overflow con Caja + ANULADA)
             Row(
               children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: sale.isVoided
-                        ? Colors.grey.shade300
-                        : (isSelected ? Colors.blue.shade600 : Colors.blue.shade100),
-                    borderRadius: BorderRadius.circular(4),
+                Expanded(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: sale.isVoided
+                                ? Colors.grey.shade300
+                                : (isSelected ? Colors.blue.shade600 : Colors.blue.shade100),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text('#${sale.id}',
+                              style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                  color: sale.isVoided
+                                      ? Colors.grey.shade600
+                                      : (isSelected ? Colors.white : Colors.blue.shade800))),
+                        ),
+                        const SizedBox(width: 6),
+                        Text('$dateStr $timeStr Hs',
+                            style: TextStyle(color: Colors.grey.shade500, fontSize: 12.5, fontWeight: FontWeight.w600)),
+                        if (sale.cashRegisterName != null && sale.cashRegisterName!.isNotEmpty)
+                          Container(
+                            margin: const EdgeInsets.only(left: 5),
+                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                            decoration: BoxDecoration(
+                              color: Colors.indigo.shade50,
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(color: Colors.indigo.shade100),
+                            ),
+                            child: Text(
+                              sale.cashRegisterName!,
+                              style: TextStyle(
+                                color: Colors.indigo.shade700,
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        if (sale.isVoided)
+                          Container(
+                            margin: const EdgeInsets.only(left: 5),
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                                color: Colors.grey.shade400,
+                                borderRadius: BorderRadius.circular(12)),
+                            child: const Text('ANULADA',
+                                style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.bold)),
+                          ),
+                      ],
+                    ),
                   ),
-                  child: Text('#${sale.id}',
-                      style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                          color: sale.isVoided
-                              ? Colors.grey.shade600
-                              : (isSelected ? Colors.white : Colors.blue.shade800))),
                 ),
                 const SizedBox(width: 8),
-                Text('$dateStr $timeStr Hs',
-                    style: TextStyle(color: Colors.grey.shade500, fontSize: 13, fontWeight: FontWeight.w600)),
-                if (sale.cashRegisterName != null && sale.cashRegisterName!.isNotEmpty)
-                  Container(
-                    margin: const EdgeInsets.only(left: 6),
-                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                    decoration: BoxDecoration(
-                      color: Colors.indigo.shade50,
-                      borderRadius: BorderRadius.circular(4),
-                      border: Border.all(color: Colors.indigo.shade100),
-                    ),
-                    child: Text(
-                      sale.cashRegisterName!,
-                      style: TextStyle(
-                        color: Colors.indigo.shade700,
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                if (sale.isVoided)
-                  Container(
-                    margin: const EdgeInsets.only(left: 8),
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                        color: Colors.grey.shade400,
-                        borderRadius: BorderRadius.circular(12)),
-                    child: const Text('ANULADA',
-                        style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold)),
-                  ),
-                const SizedBox(width: 8),
-                Expanded(
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 110),
                   child: FittedBox(
                     fit: BoxFit.scaleDown,
                     alignment: Alignment.centerRight,
                     child: Text(
                       '\$${sale.total.toCurrency()}',
                       style: TextStyle(
-                        fontSize: 18,
+                        fontSize: 17,
                         fontWeight: FontWeight.bold,
                         color: sale.isVoided ? Colors.grey : Colors.green.shade800,
                         decoration: sale.isVoided ? TextDecoration.lineThrough : null,
@@ -1255,6 +1267,13 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
         return;
       }
       invoice = Map<String, dynamic>.from(invoice);
+      final origPos = invoice['point_of_sale'] ?? 1;
+      final origNum = invoice['voucher_number'] ?? 0;
+      final origLetter = invoice['voucher_letter']?.toString().toUpperCase() ?? 'B';
+      final origFormatted = invoice['formatted_number']?.toString() ??
+          '${origPos.toString().padLeft(5, '0')}-${origNum.toString().padLeft(8, '0')}';
+      invoice['associated_formatted_number'] = origFormatted;
+      invoice['associated_voucher_label'] = 'Factura $origLetter Nº $origFormatted';
       invoice['voucher_type'] = invoice['credit_note_voucher_type'];
       invoice['voucher_number'] = invoice['credit_note_number'];
       invoice['cae'] = invoice['credit_note_cae'];
@@ -1558,74 +1577,96 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
 
         // ── Tabla de ítems ────────────────────────────────────────────────────
         Expanded(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(8),
-                boxShadow: [
-                  BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.04),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2))
-                ],
-                border: Border.all(color: Colors.black12),
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: DataTable(
-                  headingRowHeight: 40,
-                  dataRowMinHeight: 40,
-                  dataRowMaxHeight: 45,
-                  columnSpacing: 32,
-                  headingRowColor:
-                      WidgetStateProperty.all(Colors.grey.shade100),
-                  columns: const [
-                    DataColumn(
-                        label: Text('Producto',
-                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold))),
-                    DataColumn(
-                        label: Text('Cant/Peso',
-                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold))),
-                    DataColumn(
-                        label: Text('P. Unitario',
-                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold))),
-                    DataColumn(
-                        label: Text('Subtotal',
-                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold))),
-                  ],
-                  rows: sale.items.map((item) {
-                    final textStyle = TextStyle(
-                      fontSize: 14,
-                      color: sale.isVoided ? Colors.grey : Colors.black87,
-                      decoration: sale.isVoided ? TextDecoration.lineThrough : null,
-                    );
-                    return DataRow(cells: [
-                      DataCell(Text(item.productName, 
-                          style: textStyle.copyWith(fontWeight: FontWeight.w500))),
-                      DataCell(Text(
-                          item.isSoldByWeight
-                              ? '${item.quantity.toQty()} Kg'
-                              : '${item.quantity.toInt()} u',
-                          style: textStyle)),
-                      DataCell(Text(
-                          '\$${item.unitPrice.toCurrency()}',
-                          style: textStyle)),
-                      DataCell(Text('\$${item.subtotal.toCurrency()}',
-                          style: textStyle.copyWith(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold))),
-                    ]);
-                  }).toList(),
-                ), // End DataTable
-              ), // End horizontal SingleChildScrollView
-            ), // End ClipRRect
-          ), // End Container
-        ), // End vertical SingleChildScrollView
-      ), // End Expanded
+          child: LayoutBuilder(
+            builder: (context, tableConstraints) {
+              final availableTableWidth =
+                  (tableConstraints.maxWidth - 48).clamp(320.0, double.infinity);
+              final maxProductColWidth =
+                  (availableTableWidth * 0.46).clamp(180.0, 520.0);
+
+              return SingleChildScrollView(
+                padding: const EdgeInsets.all(24),
+                child: Container(
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                    boxShadow: [
+                      BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.04),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2))
+                    ],
+                    border: Border.all(color: Colors.black12),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(minWidth: availableTableWidth),
+                        child: DataTable(
+                          headingRowHeight: 40,
+                          dataRowMinHeight: 40,
+                          dataRowMaxHeight: 54,
+                          columnSpacing: 24,
+                          headingRowColor:
+                              WidgetStateProperty.all(Colors.grey.shade100),
+                          columns: const [
+                            DataColumn(
+                                label: Text('Producto',
+                                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold))),
+                            DataColumn(
+                                label: Text('Cant/Peso',
+                                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold))),
+                            DataColumn(
+                                label: Text('P. Unitario',
+                                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold))),
+                            DataColumn(
+                                label: Text('Subtotal',
+                                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold))),
+                          ],
+                          rows: sale.items.map((item) {
+                            final textStyle = TextStyle(
+                              fontSize: 14,
+                              color: sale.isVoided ? Colors.grey : Colors.black87,
+                              decoration: sale.isVoided ? TextDecoration.lineThrough : null,
+                            );
+                            return DataRow(cells: [
+                              DataCell(
+                                ConstrainedBox(
+                                  constraints: BoxConstraints(maxWidth: maxProductColWidth),
+                                  child: Text(
+                                    item.productName,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: textStyle.copyWith(fontWeight: FontWeight.w500),
+                                  ),
+                                ),
+                              ),
+                              DataCell(Text(
+                                  item.isSoldByWeight
+                                      ? '${item.quantity.toQty()} Kg'
+                                      : '${item.quantity.toInt()} u',
+                                  style: textStyle)),
+                              DataCell(Text(
+                                  '\$${item.unitPrice.toCurrency()}',
+                                  style: textStyle)),
+                              DataCell(Text('\$${item.subtotal.toCurrency()}',
+                                  style: textStyle.copyWith(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold))),
+                            ]);
+                          }).toList(),
+                        ), // End DataTable
+                      ), // End ConstrainedBox
+                    ), // End horizontal SingleChildScrollView
+                  ), // End ClipRRect
+                ), // End Container
+              ); // End vertical SingleChildScrollView
+            },
+          ), // End LayoutBuilder
+        ), // End Expanded
 
         // ── Footer de acciones ────────────────────────────────────────────────
         Container(

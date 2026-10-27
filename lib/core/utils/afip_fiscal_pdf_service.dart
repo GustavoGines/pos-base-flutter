@@ -521,7 +521,15 @@ class AfipFiscalPdfService {
           mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
           children: [
             pw.Text('COMPROBANTE ASOCIADO (RG 1415)', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
-            pw.Text('Factura Original Autorizada', style: pw.TextStyle(fontSize: 8)),
+            pw.Text(
+              (electronicInvoice['associated_voucher_label'] ??
+                      sale['associated_voucher_label'] ??
+                      (electronicInvoice['associated_formatted_number'] != null
+                          ? 'Factura $voucherLetter Nº ${electronicInvoice['associated_formatted_number']}'
+                          : 'Factura $voucherLetter Original Autorizada'))
+                  .toString(),
+              style: const pw.TextStyle(fontSize: 8),
+            ),
           ]
         )
       ),

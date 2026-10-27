@@ -282,6 +282,9 @@ class ThermalReceiptWidget extends StatelessWidget {
 
   Widget _buildFiscalFooter(double factor) {
     final invoice = electronicInvoice!;
+    final voucherLetter = invoice['voucher_letter']?.toString().toUpperCase();
+    final vType = int.tryParse(invoice['voucher_type']?.toString() ?? '0') ?? 0;
+    final isFacturaA = voucherLetter == 'A' || vType == 1 || vType == 2 || vType == 3;
     final netAmount = invoice['net_amount'];
     final ivaAmount = invoice['iva_amount'];
     final cae = invoice['cae']?.toString() ?? '';
@@ -292,7 +295,7 @@ class ThermalReceiptWidget extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         // Desglose de IVA si existe (Factura A o B)
-        if (netAmount != null && ivaAmount != null) ...[
+        if (isFacturaA && netAmount != null && ivaAmount != null) ...[
           const SizedBox(height: 4),
           _buildDivider(),
           _buildKeyValueRow(

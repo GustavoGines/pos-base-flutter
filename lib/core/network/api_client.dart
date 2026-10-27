@@ -540,6 +540,7 @@ class ApiClient extends http.BaseClient {
 
       // ── Intercepción de errores del servidor (5xx) ───────────────────────
       if ((response.statusCode == 502 || response.statusCode == 503 || response.statusCode == 504) &&
+          !_isHeavyOrExternalPath(url.path.toLowerCase()) &&
           !_useFallbackEndpoint &&
           _primaryBaseUrl != null &&
           _fallbackBaseUrl != null &&
