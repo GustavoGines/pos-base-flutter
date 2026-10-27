@@ -70,6 +70,8 @@ class FakeCatalogProvider extends ChangeNotifier implements CatalogProvider {
 }
 
 class FakeSettingsProvider extends ChangeNotifier implements SettingsProvider {
+  @override
+  int get assignedRegisterId => 1;
   final BusinessSettings _settings;
 
   FakeSettingsProvider({required BusinessSettings settings}) : _settings = settings;

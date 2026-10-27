@@ -1,4 +1,4 @@
-﻿import 'dart:io';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -40,6 +40,8 @@ class FakeCatalogProvider extends ChangeNotifier implements CatalogProvider {
 }
 
 class FakeSettingsProvider extends ChangeNotifier implements SettingsProvider {
+  @override
+  int get assignedRegisterId => 1;
   @override
   BusinessSettings? get settings => BusinessSettings();
   @override

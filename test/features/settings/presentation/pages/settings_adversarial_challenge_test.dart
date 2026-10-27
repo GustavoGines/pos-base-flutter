@@ -1,4 +1,4 @@
-
+﻿
 import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -77,6 +77,10 @@ class FakeAdversarialAuthProvider extends ChangeNotifier implements AuthProvider
 
 class FakeAdversarialLocalTerminalProvider extends ChangeNotifier implements LocalTerminalProvider {
   @override
+  bool get autoOpenCashDrawer => false;
+  @override
+  String get scaleComPort => '';
+  @override
   String get printerFormat => 'thermal_80';
   @override
   String get printerConnection => 'none';
@@ -117,6 +121,8 @@ class FakeAdversarialCashRegisterProvider extends ChangeNotifier implements Cash
 }
 
 class FakeAdversarialSettingsProvider extends ChangeNotifier implements SettingsProvider {
+  @override
+  int get assignedRegisterId => 1;
   final BusinessSettings? _settings;
   Map<String, dynamic>? _integrationsData;
   final bool _isLoading = false;

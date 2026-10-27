@@ -65,6 +65,8 @@ class FakeAuthProvider extends ChangeNotifier implements AuthProvider {
 
 class FakeSettingsProvider extends ChangeNotifier implements SettingsProvider {
   @override
+  int get assignedRegisterId => 1;
+  @override
   BusinessSettings get settings => BusinessSettings(companyName: 'POS Test', taxId: '20-12345678-9');
   @override
   FeatureFlags get features => const FeatureFlags(fastPos: true, suppliers: true, quotes: true);
@@ -74,6 +76,10 @@ class FakeSettingsProvider extends ChangeNotifier implements SettingsProvider {
 }
 
 class FakeLocalTerminalProvider extends ChangeNotifier implements LocalTerminalProvider {
+  @override
+  bool get autoOpenCashDrawer => false;
+  @override
+  String get scaleComPort => '';
   @override
   String get printerFormat => 'thermal_80';
   @override

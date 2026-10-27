@@ -14,6 +14,8 @@ import 'package:frontend_desktop/features/cash_register/presentation/providers/c
 import 'package:frontend_desktop/features/reports/presentation/providers/inventory_alerts_provider.dart';
 
 class FakeSettingsProvider extends ChangeNotifier implements SettingsProvider {
+  @override
+  int get assignedRegisterId => 1;
   final bool _isPremium;
   final bool _hasChecks;
 
@@ -59,6 +61,10 @@ class FakeInventoryAlertsProvider extends ChangeNotifier
 class FakeLocalTerminalProvider extends ChangeNotifier
     implements LocalTerminalProvider {
   @override
+  bool get autoOpenCashDrawer => false;
+  @override
+  String get scaleComPort => '';
+  @override
   String get printerFormat => 'thermal_80';
 
   @override
@@ -99,6 +105,9 @@ class FakeCashRegisterProvider extends ChangeNotifier
 
   @override
   Future<void> loadAllShifts() async {}
+
+  @override
+  CashRegisterShift? get currentShift => null;
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);

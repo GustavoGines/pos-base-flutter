@@ -45,7 +45,12 @@ abstract class PosRepository {
     double shippingCost = 0.0,
     dynamic checkDetails,
   });
-  Future<Map<String, dynamic>> voidPendingSale(int saleId, {required int shiftId});
+  Future<Map<String, dynamic>> voidPendingSale(
+    int saleId, {
+    required int shiftId,
+    bool fiscalRollback = false,
+    String? voidReason,
+  });
   Future<void> updatePaymentMethodSurcharge(int id, double surchargeValue);
   Future<Uint8List> downloadTicketPdf(int saleId);
   /// Crea automáticamente un Remito de Logística a partir de una venta ya procesada.

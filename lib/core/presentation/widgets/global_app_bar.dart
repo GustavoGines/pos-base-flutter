@@ -340,34 +340,42 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                     const InventoryAlertsWidget(),
                     const SizedBox(width: 4),
                     // ── MC-01: Badge de Caja Activa y Turno ────────────────────────
-                    Consumer2<CashRegisterProvider, SettingsProvider>(
-                      builder: (ctx, cashProv, settingsProv, _) {
-                        final shift = cashProv.currentShift;
-                        final isOpen = shift != null && shift.isOpen;
-                        final assignedId = settingsProv.assignedRegisterId;
-                        final activeRegId = shift?.cashRegisterId ??
-                            (assignedId > 0 ? assignedId : cashProv.activeRegisterId);
-
-                        String regName = shift?.cashRegisterName ?? '';
-                        if (regName.trim().isEmpty && activeRegId != null) {
-                          if (cashProv.availableRegisters != null) {
-                            final match = cashProv.availableRegisters!
-                                .where((r) => r.id == activeRegId)
-                                .firstOrNull;
-                            if (match != null) regName = match.name;
-                          } else if (!cashProv.isLoading) {
-                            WidgetsBinding.instance.addPostFrameCallback((_) {
-                              if (ctx.mounted && cashProv.availableRegisters == null && !cashProv.isLoading) {
-                                cashProv.loadRegisters();
-                              }
-                            });
+                    Consumer<SettingsProvider>(
+                      builder: (ctx, settingsProv, _) {
+                        final cashProv = ctx.watch<CashRegisterProvider?>();
+                        dynamic shift;
+                        int? activeRegId;
+                        String regName = '';
+                        try {
+                          shift = cashProv?.currentShift;
+                          final assignedId = settingsProv.assignedRegisterId;
+                          activeRegId = shift?.cashRegisterId ??
+                              (assignedId > 0 ? assignedId : cashProv?.activeRegisterId);
+                          regName = shift?.cashRegisterName ?? '';
+                          if (regName.trim().isEmpty && activeRegId != null) {
+                            if (cashProv?.availableRegisters != null) {
+                              final match = cashProv!.availableRegisters!
+                                  .where((r) => r.id == activeRegId)
+                                  .firstOrNull;
+                              if (match != null) regName = match.name;
+                            } else if (cashProv != null && !cashProv.isLoading) {
+                              WidgetsBinding.instance.addPostFrameCallback((_) {
+                                if (ctx.mounted && cashProv.availableRegisters == null && !cashProv.isLoading) {
+                                  cashProv.loadRegisters();
+                                }
+                              });
+                            }
                           }
+                        } catch (_) {
+                          shift = null;
                         }
+                        final isOpen = shift != null && shift.isOpen;
                         if (regName.trim().isEmpty) {
-                          regName = activeRegId != null ? 'Caja #$activeRegId' : 'Caja Principal';
+                          regName = activeRegId != null ? 'Caja #' : 'Caja Principal';
                         }
 
                         final compactBadge = screenWidth < 720;
+                        final isVeryNarrow = screenWidth < 360;
                         final badgeColor = isOpen ? Colors.teal.shade700 : Colors.amber.shade800;
                         final badgeBg = isOpen ? Colors.teal.shade50 : Colors.amber.shade50;
                         final badgeBorder = isOpen ? Colors.teal.shade200 : Colors.amber.shade300;
@@ -380,11 +388,11 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                                 : 'Terminal en: $regName (Sin turno abierto)\n(Clic para ver estado o cambiar de caja)',
                             child: InkWell(
                               borderRadius: BorderRadius.circular(20),
-                              onTap: () => _showActiveRegisterStatusDialog(ctx),
+                              onTap: cashProv != null ? () => _showActiveRegisterStatusDialog(ctx) : null,
                               child: Container(
                                 key: const Key('global_app_bar_register_badge'),
                                 padding: EdgeInsets.symmetric(
-                                  horizontal: compactBadge ? 8 : 10,
+                                  horizontal: isVeryNarrow ? 6 : (compactBadge ? 8 : 10),
                                   vertical: 5,
                                 ),
                                 decoration: BoxDecoration(
@@ -400,21 +408,27 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                                       size: 15,
                                       color: badgeColor,
                                     ),
-                                    const SizedBox(width: 5),
-                                    ConstrainedBox(
-                                      constraints: BoxConstraints(maxWidth: compactBadge ? 90 : 155),
-                                      child: Text(
-                                        compactBadge
-                                            ? regName
-                                            : (isOpen ? '$regName • T#${shift.id}' : '$regName (Cerrada)'),
-                                        overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w700,
-                                          color: badgeColor,
+                                    if (!isVeryNarrow) ...[
+                                      const SizedBox(width: 5),
+                                      ConstrainedBox(
+                                        constraints: BoxConstraints(
+                                          maxWidth: compactBadge
+                                              ? (screenWidth < 400 ? 55 : 90)
+                                              : 155,
+                                        ),
+                                        child: Text(
+                                          compactBadge
+                                              ? regName
+                                              : (isOpen ? '$regName • T#${shift.id}' : '$regName (Cerrada)'),
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w700,
+                                            color: badgeColor,
+                                          ),
                                         ),
                                       ),
-                                    ),
+                                    ],
                                   ],
                                 ),
                               ),

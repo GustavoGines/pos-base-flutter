@@ -148,6 +148,8 @@ class FakePosProvider extends ChangeNotifier implements PosProvider {
 }
 
 class FakeSettingsProvider extends ChangeNotifier implements SettingsProvider {
+  @override
+  int get assignedRegisterId => 1;
   final BusinessSettings _businessSettings = const BusinessSettings(
     companyName: 'POS Mercado Pago Test',
     features: FeatureFlags(fastPos: true),
@@ -168,6 +170,10 @@ class FakeSettingsProvider extends ChangeNotifier implements SettingsProvider {
 
 class FakeLocalTerminalProvider extends ChangeNotifier
     implements LocalTerminalProvider {
+  @override
+  bool get autoOpenCashDrawer => false;
+  @override
+  String get scaleComPort => '';
   @override
   String get terminalId => 'caja-1';
 

@@ -127,8 +127,18 @@ class PosRepositoryImpl implements PosRepository {
   }
 
   @override
-  Future<Map<String, dynamic>> voidPendingSale(int saleId, {required int shiftId}) async {
-    final response = await remoteDataSource.voidPendingSale(saleId, shiftId: shiftId);
+  Future<Map<String, dynamic>> voidPendingSale(
+    int saleId, {
+    required int shiftId,
+    bool fiscalRollback = false,
+    String? voidReason,
+  }) async {
+    final response = await remoteDataSource.voidPendingSale(
+      saleId,
+      shiftId: shiftId,
+      fiscalRollback: fiscalRollback,
+      voidReason: voidReason,
+    );
     return response as Map<String, dynamic>;
   }
 

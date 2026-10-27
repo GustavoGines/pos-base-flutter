@@ -183,6 +183,8 @@ class FakeFiscalPosProvider extends ChangeNotifier implements PosProvider {
 }
 
 class FakeSettingsProvider extends ChangeNotifier implements SettingsProvider {
+  @override
+  int get assignedRegisterId => 1;
   final BusinessSettings _settings = const BusinessSettings(
     companyName: 'Comercio Fiscal Test',
     taxId: '30-50001091-2',
@@ -205,6 +207,10 @@ class FakeSettingsProvider extends ChangeNotifier implements SettingsProvider {
 }
 
 class FakeLocalTerminalProvider extends ChangeNotifier implements LocalTerminalProvider {
+  @override
+  bool get autoOpenCashDrawer => false;
+  @override
+  String get scaleComPort => '';
   @override
   String get terminalId => 'caja-1';
 

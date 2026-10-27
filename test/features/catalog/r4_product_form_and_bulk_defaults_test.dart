@@ -143,6 +143,8 @@ class MockCatalogRepository implements CatalogRepository {
 
 class MockSettingsProvider extends ChangeNotifier implements SettingsProvider {
   @override
+  int get assignedRegisterId => 1;
+  @override
   BusinessSettings? get settings => const BusinessSettings(
         licensePlanType: 'premium',
         features: FeatureFlags(quotes: true, suppliers: true, multiRubro: true),
@@ -189,6 +191,10 @@ class MockSupplierProvider extends ChangeNotifier implements SupplierProvider {
 }
 
 class MockLocalTerminalProvider extends ChangeNotifier implements LocalTerminalProvider {
+  @override
+  bool get autoOpenCashDrawer => false;
+  @override
+  String get scaleComPort => '';
   @override
   String get printerFormat => 'thermal_80';
   @override

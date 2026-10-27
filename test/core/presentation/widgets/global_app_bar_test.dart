@@ -31,6 +31,8 @@ class FakeSettingsProvider extends ChangeNotifier implements SettingsProvider {
   bool get isLicenseActive => true;
   @override
   List<String> get allowedAddons => _settings?.licenseFeatures ?? [];
+  @override
+  int get assignedRegisterId => 1;
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -38,11 +40,15 @@ class FakeSettingsProvider extends ChangeNotifier implements SettingsProvider {
 
 class FakeLocalTerminalProvider extends ChangeNotifier implements LocalTerminalProvider {
   @override
+  bool get autoOpenCashDrawer => false;
+  @override
   String get printerFormat => 'thermal_80';
   @override
   String get printerConnection => 'none';
   @override
   String get pdfPaperSize => 'a4';
+  @override
+  String get scaleComPort => '';
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);

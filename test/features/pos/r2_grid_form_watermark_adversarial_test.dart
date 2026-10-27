@@ -20,6 +20,8 @@ import 'package:frontend_desktop/features/suppliers/providers/supplier_provider.
 // ─── MOCKS & FAKES ──────────────────────────────────────────────────────────
 
 class MockSettingsProvider extends ChangeNotifier implements SettingsProvider {
+  @override
+  int get assignedRegisterId => 1;
   BusinessSettings? _settings;
 
   MockSettingsProvider({BusinessSettings? initialSettings}) {

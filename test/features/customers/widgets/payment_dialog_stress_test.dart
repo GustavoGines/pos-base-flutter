@@ -47,6 +47,8 @@ class FakeCustomerProvider extends ChangeNotifier implements CustomerProvider {
 
 class FakeSettingsProvider extends ChangeNotifier implements SettingsProvider {
   @override
+  int get assignedRegisterId => 1;
+  @override
   BusinessSettings? get settings => null;
 
   @override

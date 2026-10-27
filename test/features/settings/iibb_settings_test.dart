@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
@@ -33,6 +33,10 @@ class FakeInventoryAlertsProvider extends ChangeNotifier implements InventoryAle
 
 class FakeLocalTerminalProvider extends ChangeNotifier implements LocalTerminalProvider {
   @override
+  bool get autoOpenCashDrawer => false;
+  @override
+  String get scaleComPort => '';
+  @override
   String get printerFormat => 'thermal_80';
   @override
   String get printerConnection => 'none';
@@ -61,6 +65,8 @@ class FakeAuthProvider extends ChangeNotifier implements AuthProvider {
 }
 
 class FakeIibbSettingsProvider extends ChangeNotifier implements SettingsProvider {
+  @override
+  int get assignedRegisterId => 1;
   BusinessSettings? _settings;
   final FeatureFlags _features;
   bool saveSettingsCalled = false;

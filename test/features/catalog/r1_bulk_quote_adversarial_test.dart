@@ -98,6 +98,8 @@ class AdversarialCatalogRepository implements CatalogRepository {
 
 class AdversarialSettingsProvider extends ChangeNotifier implements SettingsProvider {
   @override
+  int get assignedRegisterId => 1;
+  @override
   BusinessSettings? get settings => const BusinessSettings(
         licensePlanType: 'premium',
         features: FeatureFlags(quotes: true, suppliers: true, multiRubro: true, multiplePrices: true),
@@ -135,6 +137,10 @@ class AdversarialSupplierProvider extends ChangeNotifier implements SupplierProv
 }
 
 class AdversarialLocalTerminalProvider extends ChangeNotifier implements LocalTerminalProvider {
+  @override
+  bool get autoOpenCashDrawer => false;
+  @override
+  String get scaleComPort => '';
   @override
   String get printerFormat => 'thermal_80';
   @override

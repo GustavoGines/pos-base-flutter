@@ -1164,7 +1164,12 @@ class PosProvider with ChangeNotifier {
               debugPrint('Rollback de venta por rechazo fiscal duro: $e');
               bool rolledBack = false;
               try {
-                rolledBack = await voidPendingOrder(sId, shiftId: shiftId);
+                rolledBack = await voidPendingOrder(
+                  sId,
+                  shiftId: shiftId,
+                  fiscalRollback: true,
+                  voidReason: 'Rollback automático por rechazo fiscal AFIP',
+                );
               } catch (rollbackError) {
                 debugPrint('Error en rollback automático: $rollbackError');
               }
@@ -1606,13 +1611,23 @@ class PosProvider with ChangeNotifier {
   // ─────────────────────────────────────────────────────────────────
   // Anular una orden pendiente (eliminarla y devolver stock)
   // ─────────────────────────────────────────────────────────────────
-  Future<bool> voidPendingOrder(int saleId, {required int shiftId}) async {
+  Future<bool> voidPendingOrder(
+    int saleId, {
+    required int shiftId,
+    bool fiscalRollback = false,
+    String? voidReason,
+  }) async {
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
 
     try {
-      await repository.voidPendingSale(saleId, shiftId: shiftId);
+      await repository.voidPendingSale(
+        saleId,
+        shiftId: shiftId,
+        fiscalRollback: fiscalRollback,
+        voidReason: voidReason,
+      );
 
       if (_activePendingSaleId == saleId) {
         clearRecall();

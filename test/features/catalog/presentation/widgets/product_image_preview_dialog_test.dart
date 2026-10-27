@@ -111,6 +111,8 @@ class FakeCatalogProviderForPreview extends ChangeNotifier implements CatalogPro
 
 class FakeSettingsProviderForPreview extends ChangeNotifier implements SettingsProvider {
   @override
+  int get assignedRegisterId => 1;
+  @override
   BusinessSettings? get settings => const BusinessSettings(licensePlanType: 'basic', features: FeatureFlags());
   @override
   String get currentPlan => 'basic';

@@ -126,6 +126,8 @@ class FakeCatalogRepositoryForMobile implements CatalogRepository {
 
 class FakeSettingsProviderForMobile extends ChangeNotifier implements SettingsProvider {
   @override
+  int get assignedRegisterId => 1;
+  @override
   FeatureFlags get features => const FeatureFlags(suppliers: false, multiRubro: false);
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);

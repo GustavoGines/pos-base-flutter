@@ -38,6 +38,10 @@ class FakeInventoryAlertsProvider extends ChangeNotifier implements InventoryAle
 
 class FakeLocalTerminalProvider extends ChangeNotifier implements LocalTerminalProvider {
   @override
+  bool get autoOpenCashDrawer => false;
+  @override
+  String get scaleComPort => '';
+  @override
   String get printerFormat => 'thermal_80';
   @override
   String get printerConnection => 'none';
@@ -61,6 +65,8 @@ class FakeAuthProvider extends ChangeNotifier implements AuthProvider {
 }
 
 class FakeSettingsProvider extends ChangeNotifier implements SettingsProvider {
+  @override
+  int get assignedRegisterId => 1;
   final BusinessSettings? _settings;
   final bool _isLoading;
   final String? _errorMessage = null;

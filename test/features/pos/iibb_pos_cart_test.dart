@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mockito/mockito.dart';
 import 'package:provider/provider.dart';
@@ -348,6 +348,10 @@ void main() {
 
 class FakeTestTerminalProvider extends ChangeNotifier implements LocalTerminalProvider {
   @override
+  bool get autoOpenCashDrawer => false;
+  @override
+  String get scaleComPort => '';
+  @override
   String get terminalId => 'term-1';
   @override
   String get printerFormat => 'thermal_80';
@@ -399,6 +403,8 @@ class FakeTestCatalogProvider extends ChangeNotifier implements CatalogProvider 
 }
 
 class FakeSettingsProviderWithPerception extends ChangeNotifier implements SettingsProvider {
+  @override
+  int get assignedRegisterId => 1;
   final BusinessSettings _settings = const BusinessSettings(
     companyName: 'Empresa Mayorista SA',
     taxId: '30-50001091-2',

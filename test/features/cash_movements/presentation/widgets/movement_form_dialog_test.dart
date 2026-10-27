@@ -101,6 +101,8 @@ class FakeCashRegisterProvider extends ChangeNotifier implements CashRegisterPro
 }
 
 class FakeSettingsProvider extends ChangeNotifier implements SettingsProvider {
+  @override
+  int get assignedRegisterId => 1;
   BusinessSettings? _settings = const BusinessSettings();
   @override
   BusinessSettings? get settings => _settings;
@@ -129,6 +131,10 @@ class FakeAuthProvider extends ChangeNotifier implements AuthProvider {
 }
 
 class FakeLocalTerminalProvider extends ChangeNotifier implements LocalTerminalProvider {
+  @override
+  bool get autoOpenCashDrawer => false;
+  @override
+  String get scaleComPort => '';
   @override
   String get printerConnection => 'none';
 

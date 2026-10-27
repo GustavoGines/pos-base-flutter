@@ -12,6 +12,8 @@ import 'package:frontend_desktop/features/settings/presentation/providers/settin
 // ─── MOCK SETTINGS PROVIDER ─────────────────────────────────────────────────
 
 class MockSettingsProvider extends ChangeNotifier implements SettingsProvider {
+  @override
+  int get assignedRegisterId => 1;
   BusinessSettings? _settings;
 
   MockSettingsProvider({BusinessSettings? initialSettings}) {

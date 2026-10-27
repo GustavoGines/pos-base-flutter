@@ -9,6 +9,8 @@ import '../../domain/entities/cart_item.dart';
 import '../../domain/entities/payment_method.dart';
 import '../../../cash_register/presentation/providers/cash_register_provider.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
+import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
+import '../../../../core/network/api_client.dart';
 import '../../../settings/presentation/providers/settings_provider.dart';
 import '../../../settings/domain/entities/business_settings.dart';
 import '../../../customers/presentation/widgets/customer_form_dialog.dart';
@@ -1213,6 +1215,17 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     return (_selectedCustomer!.creditLimit) - (_selectedCustomer!.balance);
   }
 
+  double get _ccRequestedAmount => _lines
+      .where((l) => l.method?.code == 'cuenta_corriente')
+      .fold(0.0, (s, l) => s + l.total);
+
+  bool get _exceedsCreditLimit =>
+      _hasCuentaCorriente &&
+      _selectedCustomer != null &&
+      !_selectedCustomer!.isInternalAccount &&
+      _selectedCustomer!.creditLimit > 0 &&
+      _ccRequestedAmount > (_availableCredit + 0.01);
+
   bool get _canSubmit {
     // Bloquear si falta saldo O si hay sobrepago en las líneas
     if (_pendingBalance.abs() > 0.01) return false;
@@ -1417,24 +1430,30 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     if (_isSubmitting) return;
     setState(() => _isSubmitting = true);
     try {
+      String? creditLimitAdminPin;
       if (_hasCuentaCorriente) {
         if (_selectedCustomer == null) {
           SnackBarService.error(
               context, 'Debe seleccionar un cliente para fiar.');
           return;
         }
-        final ccNeed = _lines
-            .where((l) => l.method?.code == 'cuenta_corriente')
-            .fold(0.0, (s, l) => s + l.total);
-        // CC-08: Si creditLimit <= 0 (campo opcional no configurado), el cliente no tiene tope bloqueante.
-        if (!_selectedCustomer!.isInternalAccount &&
-            _selectedCustomer!.creditLimit > 0 &&
-            ccNeed > _availableCredit) {
+        // CC-08 / FINDING-CC-01: Si creditLimit > 0 y el cobro excede el disponible, exigir PIN de supervisor o rechazar.
+        if (_exceedsCreditLimit) {
           SnackBarService.error(
               context,
               'El cliente no tiene límite de crédito suficiente. '
               'Disponible: \$${_availableCredit.toCurrency()}');
-          return;
+          final pinResult = await AdminPinDialog.verifyAndGetPin(
+            context,
+            action:
+                'Exceder límite de crédito de ${_selectedCustomer!.name} (Disp: \$${_availableCredit.toCurrency()})',
+          );
+          if (!mounted || pinResult == null) {
+            return;
+          }
+          if (pinResult != 'ALREADY_AUTHORIZED') {
+            creditLimitAdminPin = pinResult;
+          }
         }
       }
 
@@ -1715,56 +1734,72 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         (_isFiscalMode && fiscalPayload != null) ? fiscalPayload : null,
       );
 
-      if (isPending) {
-        success = await posProvider.payPendingSale(
-          saleId: widget.saleId!,
-          saleTotal: _grandTotal,
-          totalSurcharge: _totalSurcharge,
-          iibbPerceptionAmount:
-              _currentIibbAmount > 0 ? _currentIibbAmount : null,
-          iibbPerceptionRate: _currentIibbAmount > 0
-              ? _selectedCustomer?.iibbPerceptionRate
-              : null,
-          payments: paymentsPayload,
-          tenderedAmount: _actualTendered,
-          changeAmount: _change > 0 ? _change : 0.0,
-          shiftId: shiftId,
-          localTerminal: localTerminal,
-          userName: userName,
-          settings: _printReceipt ? settings : null,
-          userId: userId,
-          customerId: _selectedCustomer?.id,
-          showPreview: _showPreview,
-          shippingCost: _shippingCostToApply,
-          checkDetails: checkDetailsPayload,
+      Future<bool> executeCheckoutCall() async {
+        if (isPending) {
+          return await posProvider.payPendingSale(
+            saleId: widget.saleId!,
+            saleTotal: _grandTotal,
+            totalSurcharge: _totalSurcharge,
+            iibbPerceptionAmount:
+                _currentIibbAmount > 0 ? _currentIibbAmount : null,
+            iibbPerceptionRate: _currentIibbAmount > 0
+                ? _selectedCustomer?.iibbPerceptionRate
+                : null,
+            payments: paymentsPayload,
+            tenderedAmount: _actualTendered,
+            changeAmount: _change > 0 ? _change : 0.0,
+            shiftId: shiftId,
+            localTerminal: localTerminal,
+            userName: userName,
+            settings: _printReceipt ? settings : null,
+            userId: userId,
+            customerId: _selectedCustomer?.id,
+            showPreview: _showPreview,
+            shippingCost: _shippingCostToApply,
+            checkDetails: checkDetailsPayload,
+          );
+        } else {
+          return await posProvider.processCheckout(
+            shiftId: shiftId,
+            totalSurcharge: _totalSurcharge,
+            iibbPerceptionAmount:
+                _currentIibbAmount > 0 ? _currentIibbAmount : null,
+            iibbPerceptionRate: _currentIibbAmount > 0
+                ? _selectedCustomer?.iibbPerceptionRate
+                : null,
+            payments: paymentsPayload,
+            tenderedAmount: _actualTendered,
+            changeAmount: _change > 0 ? _change : 0.0,
+            printerFormat: localTerminal.printerFormat,
+            localTerminal: localTerminal,
+            userId: userId,
+            customerId: _selectedCustomer?.id,
+            userName: userName,
+            settings: _printReceipt ? settings : null,
+            showPreview: _showPreview,
+            requiresDispatch: _requiresDispatch,
+            fulfillmentStatus: _fulfillmentStatus,
+            checkDetails: checkDetailsPayload,
+            deliveryAddress: _deliveryAddressCtrl.text.trim().isEmpty
+                ? null
+                : _deliveryAddressCtrl.text.trim(),
+            clientTransactionId: _clientTransactionId,
+          );
+        }
+      }
+
+      ApiClient? apiClient;
+      try {
+        apiClient = context.read<ApiClient>();
+      } catch (_) {}
+
+      if (creditLimitAdminPin != null && apiClient != null) {
+        success = await apiClient.withAdminPin(
+          creditLimitAdminPin,
+          executeCheckoutCall,
         );
       } else {
-        success = await posProvider.processCheckout(
-          shiftId: shiftId,
-          totalSurcharge: _totalSurcharge,
-          iibbPerceptionAmount:
-              _currentIibbAmount > 0 ? _currentIibbAmount : null,
-          iibbPerceptionRate: _currentIibbAmount > 0
-              ? _selectedCustomer?.iibbPerceptionRate
-              : null,
-          payments: paymentsPayload,
-          tenderedAmount: _actualTendered,
-          changeAmount: _change > 0 ? _change : 0.0,
-          printerFormat: localTerminal.printerFormat,
-          localTerminal: localTerminal,
-          userId: userId,
-          customerId: _selectedCustomer?.id,
-          userName: userName,
-          settings: _printReceipt ? settings : null,
-          showPreview: _showPreview,
-          requiresDispatch: _requiresDispatch,
-          fulfillmentStatus: _fulfillmentStatus,
-          checkDetails: checkDetailsPayload,
-          deliveryAddress: _deliveryAddressCtrl.text.trim().isEmpty
-              ? null
-              : _deliveryAddressCtrl.text.trim(),
-          clientTransactionId: _clientTransactionId,
-        );
+        success = await executeCheckoutCall();
       }
 
       if (mounted) {
@@ -3965,6 +4000,17 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                                                                       .purple
                                                                       .shade900),
                                                             ),
+                                                            if (_exceedsCreditLimit) ...[
+                                                              const SizedBox(height: 2),
+                                                              Text(
+                                                                '⚠️ Excede cupo por \$${(_ccRequestedAmount - _availableCredit).toCurrency()} (requiere PIN supervisor)',
+                                                                style: TextStyle(
+                                                                  fontSize: 11,
+                                                                  fontWeight: FontWeight.bold,
+                                                                  color: Colors.red.shade700,
+                                                                ),
+                                                              ),
+                                                            ],
                                                           ],
                                                         ),
                                                 ),

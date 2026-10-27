@@ -56,7 +56,12 @@ abstract class PosRemoteDataSource {
     double shippingCost = 0.0,
     dynamic checkDetails,
   });
-  Future<dynamic> voidPendingSale(int saleId, {required int shiftId});
+  Future<dynamic> voidPendingSale(
+    int saleId, {
+    required int shiftId,
+    bool fiscalRollback = false,
+    String? voidReason,
+  });
   Future<void> updatePaymentMethodSurcharge(int id, double surchargeValue);
   Future<Uint8List> downloadTicketPdf(int saleId);
   /// Crea un Remito de Logística a partir de una venta procesada.
@@ -339,7 +344,12 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
   }
 
   @override
-  Future<dynamic> voidPendingSale(int saleId, {required int shiftId}) async {
+  Future<dynamic> voidPendingSale(
+    int saleId, {
+    required int shiftId,
+    bool fiscalRollback = false,
+    String? voidReason,
+  }) async {
     try {
       final response = await client.post(
         Uri.parse('$baseUrl/sales/$saleId/void'),
@@ -347,7 +357,12 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
           'Accept': 'application/json',
           'Content-Type': 'application/json',
         },
-        body: json.encode({'cash_shift_id': shiftId}),
+        body: json.encode({
+          'cash_shift_id': shiftId,
+          if (fiscalRollback) 'fiscal_rollback': true,
+          if (voidReason != null && voidReason.isNotEmpty)
+            'void_reason': voidReason,
+        }),
       );
 
       if (response.statusCode == 200 || response.statusCode == 201) {

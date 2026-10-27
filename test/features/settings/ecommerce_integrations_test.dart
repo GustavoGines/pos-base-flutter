@@ -1,4 +1,4 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -32,6 +32,10 @@ class TestAuthProvider extends ChangeNotifier implements AuthProvider {
 
 class TestTerminalProvider extends ChangeNotifier implements LocalTerminalProvider {
   @override
+  bool get autoOpenCashDrawer => false;
+  @override
+  String get scaleComPort => '';
+  @override
   String get printerFormat => 'thermal_80';
   @override
   String get printerConnection => 'none';
@@ -59,6 +63,8 @@ class TestAlertsProvider extends ChangeNotifier implements InventoryAlertsProvid
 }
 
 class FakeEcommerceSettingsProvider extends ChangeNotifier implements SettingsProvider {
+  @override
+  int get assignedRegisterId => 1;
   final List<EcommerceIntegration> _integrations;
   final bool _isLoading = false;
   Map<String, dynamic>? _generalIntegrations;

@@ -86,6 +86,8 @@ class StressCatalogRepository implements CatalogRepository {
 }
 
 class StressSettingsProvider extends ChangeNotifier implements SettingsProvider {
+  @override
+  int get assignedRegisterId => 1;
   BusinessSettings? _settings;
 
   StressSettingsProvider({BusinessSettings? initialSettings}) {

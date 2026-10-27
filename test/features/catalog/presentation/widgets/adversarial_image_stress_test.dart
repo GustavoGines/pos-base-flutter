@@ -73,6 +73,8 @@ class FakeAdversarialCatalogProvider extends ChangeNotifier implements CatalogPr
 
 class FakeAdversarialSettingsProvider extends ChangeNotifier implements SettingsProvider {
   @override
+  int get assignedRegisterId => 1;
+  @override
   BusinessSettings? get settings => const BusinessSettings(
         licensePlanType: 'premium',
         features: FeatureFlags(quotes: true, suppliers: true),
@@ -106,6 +108,10 @@ class FakeAdversarialSupplierProvider extends ChangeNotifier implements Supplier
 }
 
 class FakeAdversarialLocalTerminalProvider extends ChangeNotifier implements LocalTerminalProvider {
+  @override
+  bool get autoOpenCashDrawer => false;
+  @override
+  String get scaleComPort => '';
   @override
   String get printerFormat => 'thermal_80';
   @override

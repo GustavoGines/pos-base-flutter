@@ -369,12 +369,14 @@ class MockPosRepository extends _i1.Mock implements _i2.PosRepository {
   _i6.Future<Map<String, dynamic>> voidPendingSale(
     int? saleId, {
     required int? shiftId,
+    bool? fiscalRollback = false,
+    String? voidReason,
   }) =>
       (super.noSuchMethod(
         Invocation.method(
           #voidPendingSale,
           [saleId],
-          {#shiftId: shiftId},
+          {#shiftId: shiftId, #fiscalRollback: fiscalRollback, #voidReason: voidReason},
         ),
         returnValue:
             _i6.Future<Map<String, dynamic>>.value(<String, dynamic>{}),

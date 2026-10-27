@@ -19,6 +19,8 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class FakeSettingsProvider extends ChangeNotifier implements SettingsProvider {
+  @override
+  int get assignedRegisterId => 1;
   final BusinessSettings _settings;
 
   FakeSettingsProvider({required BusinessSettings settings}) : _settings = settings;
@@ -46,6 +48,10 @@ class FakeCheckProvider extends ChangeNotifier implements CheckProvider {
 }
 
 class FakeLocalTerminalProvider extends ChangeNotifier implements LocalTerminalProvider {
+  @override
+  bool get autoOpenCashDrawer => false;
+  @override
+  String get scaleComPort => '';
   @override
   String get printerFormat => 'thermal_80';
   @override

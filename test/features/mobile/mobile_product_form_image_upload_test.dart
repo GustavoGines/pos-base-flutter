@@ -138,6 +138,8 @@ class MockCatalogRepo implements CatalogRepository {
 
 class MockSettingsProvider extends ChangeNotifier implements SettingsProvider {
   @override
+  int get assignedRegisterId => 1;
+  @override
   FeatureFlags get features => const FeatureFlags(suppliers: true, multiRubro: true);
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);

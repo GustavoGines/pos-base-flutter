@@ -34,6 +34,8 @@ import 'package:frontend_desktop/features/reports/presentation/providers/invento
 // ─── FAKES PARA AISLAMIENTO DE TESTS ──────────────────────────────────────────
 
 class FakeSettingsProvider extends ChangeNotifier implements SettingsProvider {
+  @override
+  int get assignedRegisterId => 1;
   final BusinessSettings _settings = const BusinessSettings(
     companyName: 'Negocio Test S.A.',
     taxId: '30-71234567-8',
