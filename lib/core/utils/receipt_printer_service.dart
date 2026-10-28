@@ -475,6 +475,18 @@ class ReceiptPrinterService {
       );
       final pv = invoice['point_of_sale']?.toString().padLeft(5, '0') ?? '00001';
       bytes += generator.text('PUNTO DE VENTA: $pv', styles: const PosStyles(align: PosAlign.center));
+      if (<int>[3, 8, 13, 113].contains(type)) {
+        final assocLabel = invoice['associated_voucher_label']?.toString() ??
+            (invoice['associated_formatted_number'] != null
+                ? 'Factura $letter Nro ${invoice['associated_formatted_number']}'
+                : null);
+        if (assocLabel != null && assocLabel.trim().isNotEmpty) {
+          bytes += generator.text(
+            'COMP. ASOC: ${_cleanText(assocLabel)}',
+            styles: const PosStyles(align: PosAlign.center, bold: true),
+          );
+        }
+      }
       final recName = (invoice['receiver_name']?.toString().trim().isNotEmpty == true)
           ? invoice['receiver_name'].toString()
           : (customerName?.trim().isNotEmpty == true ? customerName! : 'CONSUMIDOR FINAL');
@@ -851,6 +863,18 @@ class ReceiptPrinterService {
       );
       final pv = invoice['point_of_sale']?.toString().padLeft(5, '0') ?? '00001';
       bytes += generator.text('PUNTO DE VENTA: $pv', styles: const PosStyles(align: PosAlign.center));
+      if (<int>[3, 8, 13, 113].contains(type)) {
+        final assocLabel = invoice['associated_voucher_label']?.toString() ??
+            (invoice['associated_formatted_number'] != null
+                ? 'Factura $letter Nro ${invoice['associated_formatted_number']}'
+                : null);
+        if (assocLabel != null && assocLabel.trim().isNotEmpty) {
+          bytes += generator.text(
+            'COMP. ASOC: ${_cleanText(assocLabel)}',
+            styles: const PosStyles(align: PosAlign.center, bold: true),
+          );
+        }
+      }
       final recName = (invoice['receiver_name']?.toString().trim().isNotEmpty == true)
           ? invoice['receiver_name'].toString()
           : (customerName?.trim().isNotEmpty == true ? customerName! : 'CONSUMIDOR FINAL');

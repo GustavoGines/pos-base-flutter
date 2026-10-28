@@ -54,6 +54,14 @@ void main() {
         throwsA(isA<NetworkException>()),
       );
       expect(apiClient.isUsingFallbackEndpoint, isFalse);
+
+      // FE-HIGH-01: Invocación a ruta externa de Mercado Pago (/pos/mp/*)
+      await expectLater(
+        () => apiClient.post(Uri.parse('http://192.168.1.50/api/pos/mp/create-order')),
+        throwsA(isA<NetworkException>()),
+      );
+      expect(apiClient.isUsingFallbackEndpoint, isFalse,
+          reason: 'Mercado Pago cloud timeout must NOT switch POS terminal to WAN fallback');
     });
 
     test('CHALLENGE-02: Normal internal LAN path timeout DOES trigger failover to WAN', () async {
@@ -86,7 +94,7 @@ void main() {
       ]);
     });
 
-    test('CHALLENGE-03 (Auditor Finding FE-01): HTTP 504 on external path DOES trigger failover because lines 542-546 lack _isHeavyOrExternalPath check', () async {
+    test('CHALLENGE-03: HTTP 504 on external path STRICTLY prevents failover to WAN', () async {
       final requestedUrls = <String>[];
       final mockClient = MockClient((request) async {
         requestedUrls.add(request.url.toString());
@@ -105,18 +113,16 @@ void main() {
 
       expect(apiClient.isUsingFallbackEndpoint, isFalse);
 
-      // Petición a ruta externa /afip/status que devuelve 504
-      final response = await apiClient.get(Uri.parse('http://192.168.1.50/api/afip/status'));
-      expect(response.statusCode, 200);
+      // Petición a ruta externa /afip/status que devuelve 504 no debe conmutar a WAN
+      await expectLater(
+        () => apiClient.get(Uri.parse('http://192.168.1.50/api/afip/status')),
+        throwsA(isA<NetworkException>()),
+      );
 
-      // COMPROBACIÓN EMPÍRICA: El finding FE-01 es 100% REAL.
-      // A diferencia de TimeoutException (que respeta isExternalTimeout), HTTP 504 en ruta externa
-      // activa el failover a WAN indebidamente porque falta la guarda en línea 542.
-      expect(apiClient.isUsingFallbackEndpoint, isTrue,
-          reason: 'Finding FE-01 confirmed: HTTP 504 triggers failover even on external paths');
+      expect(apiClient.isUsingFallbackEndpoint, isFalse,
+          reason: 'HTTP 504 on external path must not trigger WAN failover');
       expect(requestedUrls, [
         'http://192.168.1.50/api/afip/status',
-        'https://cloud.pos.com/api/afip/status',
       ]);
     });
   });

@@ -1109,7 +1109,7 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
             }
           }).toList(),
           'payments': sale.payments.map((p) => {
-            'amount': p.baseAmount,
+            'amount': p.totalAmount > 0 ? p.totalAmount : p.baseAmount,
             'payment_method': {
               'name': p.methodName,
             }
@@ -1185,7 +1185,7 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
 
         final paymentDetails = sale.payments.map((p) => {
           'name': p.methodName,
-          'amount': p.baseAmount,
+          'amount': p.totalAmount > 0 ? p.totalAmount : p.baseAmount,
           '_isCash': p.isCash,
         }).toList()
           ..sort((a, b) {
@@ -1316,7 +1316,7 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
             }
           }).toList(),
           'payments': sale.payments.map((p) => {
-            'amount': p.baseAmount,
+            'amount': p.totalAmount > 0 ? p.totalAmount : p.baseAmount,
             'payment_method': {
               'name': p.methodName,
             }
@@ -1391,7 +1391,7 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
 
         final paymentDetails = sale.payments.map((p) => {
           'name': p.methodName,
-          'amount': p.baseAmount,
+          'amount': p.totalAmount > 0 ? p.totalAmount : p.baseAmount,
           '_isCash': p.isCash,
         }).toList()
           ..sort((a, b) {

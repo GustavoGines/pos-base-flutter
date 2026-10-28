@@ -85,7 +85,9 @@ class ApiClient extends http.BaseClient {
         lowerPath.contains('/invoice') ||
         lowerPath.contains('/void') ||
         lowerPath.contains('/afip') ||
-        lowerPath.contains('/ecommerce');
+        lowerPath.contains('/ecommerce') ||
+        lowerPath.contains('/pos/mp') ||
+        lowerPath.contains('mercadopago');
   }
 
   Duration _resolveTimeout(Uri uri, Map<String, String> headers) {
@@ -106,7 +108,9 @@ class ApiClient extends http.BaseClient {
         path.contains('/invoice') ||
         path.contains('/void') ||
         path.contains('/afip') ||
-        path.contains('/ecommerce')) {
+        path.contains('/ecommerce') ||
+        path.contains('/pos/mp') ||
+        path.contains('mercadopago')) {
       return externalServiceTimeout;
     }
     return defaultTimeout;

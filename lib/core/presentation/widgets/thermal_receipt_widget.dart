@@ -242,6 +242,10 @@ class ThermalReceiptWidget extends StatelessWidget {
     final vType = int.tryParse(invoice['voucher_type']?.toString() ?? '0') ?? 0;
     final isNotaCredito = [3, 8, 13, 113].contains(vType);
     final tipoComp = isNotaCredito ? 'NOTA DE CREDITO' : 'FACTURA';
+    final assocLabel = invoice['associated_voucher_label']?.toString() ??
+        (invoice['associated_formatted_number'] != null
+            ? 'Factura $letter Nro ${invoice['associated_formatted_number']}'
+            : null);
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -253,7 +257,9 @@ class ThermalReceiptWidget extends StatelessWidget {
         ),
         const SizedBox(height: 2),
         _buildCenterText(
-          'PUNTO DE VENTA: $pv',
+          (isNotaCredito && assocLabel != null && assocLabel.trim().isNotEmpty)
+              ? 'PUNTO DE VENTA: $pv\nCOMP. ASOC: ${assocLabel.trim()}'
+              : 'PUNTO DE VENTA: $pv',
           fontSize: 10.5 * factor,
         ),
       ],

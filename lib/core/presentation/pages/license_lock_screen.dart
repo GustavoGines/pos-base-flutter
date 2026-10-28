@@ -299,6 +299,24 @@ class _LicenseLockScreenState extends State<LicenseLockScreen> {
                   width: double.infinity,
                   child: TextButton.icon(
                     onPressed: () {
+                      widget.navigatorKey.currentState?.pushNamed('/close-shift');
+                    },
+                    icon: const Icon(Icons.point_of_sale_rounded, color: Colors.orangeAccent),
+                    label: const Text(
+                      'CERRAR CAJA / ARQUEO DE TURNO',
+                      style: TextStyle(color: Colors.orangeAccent, letterSpacing: 1, fontWeight: FontWeight.bold),
+                    ),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: TextButton.icon(
+                    onPressed: () {
                       context.read<AuthProvider>().logout();
                       widget.navigatorKey.currentState?.pushNamedAndRemoveUntil('/login', (route) => false);
                     },
