@@ -2983,9 +2983,26 @@ class _PosScreenState extends State<PosScreen> {
                         style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
                   ],
                 ),
-                Row(
-                  children: [
-                    if (pos.cart.isNotEmpty)
+                if (pos.cart.isNotEmpty)
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: Colors.blueAccent.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          '${pos.cart.length} ${pos.cart.length == 1 ? 'ítem' : 'ítems'}',
+                          style: const TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.blueAccent,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
                       IconButton(
                         icon: const Icon(Icons.delete_sweep, color: Colors.red),
                         tooltip: 'Vaciar Carrito',
@@ -3013,10 +3030,8 @@ class _PosScreenState extends State<PosScreen> {
                           }
                         },
                       ),
-                    const SizedBox(width: 8),
-                    const Icon(Icons.shopping_cart),
-                  ],
-                ),
+                    ],
+                  ),
               ],
             ),
           ),

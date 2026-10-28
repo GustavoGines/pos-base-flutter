@@ -384,11 +384,13 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                           padding: const EdgeInsets.only(right: 4),
                           child: Tooltip(
                             message: isOpen
-                                ? 'Terminal operando en: $regName\nTurno abierto #${shift.id}${shift.userName != null ? ' (${shift.userName})' : ''}\n(Clic para ver estado o cambiar de caja)'
-                                : 'Terminal en: $regName (Sin turno abierto)\n(Clic para ver estado o cambiar de caja)',
+                                ? 'Terminal operando en: $regName\nTurno abierto #${shift.id}${shift.userName != null ? ' (${shift.userName})' : ''}\n(Clic para ver estado de Terminal y Periféricos)'
+                                : 'Terminal en: $regName (Sin turno abierto)\n(Clic para ver estado de Terminal y Periféricos)',
                             child: InkWell(
                               borderRadius: BorderRadius.circular(20),
-                              onTap: cashProv != null ? () => _showActiveRegisterStatusDialog(ctx) : null,
+                              onTap: cashProv != null
+                                  ? () => showTerminalPeripheralsDialog(ctx, initialTab: 0)
+                                  : null,
                               child: Container(
                                 key: const Key('global_app_bar_register_badge'),
                                 padding: EdgeInsets.symmetric(
@@ -433,27 +435,6 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                                 ),
                               ),
                             ),
-                          ),
-                        );
-                      },
-                    ),
-                    // ─ Ícono de Periféricos de Caja (Impresora / Gaveta / Balanza) ─
-                    Consumer<LocalTerminalProvider>(
-                      builder: (ctx, terminal, _) {
-                        final isA4 = terminal.printerFormat == 'a4';
-                        final scaleStatus = terminal.scaleComPort.trim().isNotEmpty
-                            ? ' • Balanza: ${terminal.scaleComPort}'
-                            : '';
-                        return Tooltip(
-                          message: 'Periféricos de esta Caja (Impresora / Cajón / Balanza)\n'
-                              'Formato: ${terminal.printerFormat}'
-                              '${isA4 ? ' • Papel: ${terminal.pdfPaperSize.toUpperCase()}' : ''}'
-                              '$scaleStatus',
-                          child: IconButton(
-                            icon: const Icon(Icons.print_rounded, size: 22),
-                            color: Colors.blueGrey,
-                            visualDensity: screenWidth < 500 ? VisualDensity.compact : VisualDensity.standard,
-                            onPressed: () => showTerminalPeripheralsDialog(ctx),
                           ),
                         );
                       },
@@ -841,17 +822,25 @@ void _showUpgradeDialog(
   );
 }
 
-// ── Dialog de Periféricos de Caja (Impresora, Gaveta Registradora y Balanza) ──────
-void showTerminalPeripheralsDialog(BuildContext context) {
+// ── Dialog Enterprise de Terminal, Caja y Periféricos (Impresora, Gaveta, Balanza y Point) ──
+void showTerminalPeripheralsDialog(BuildContext context, {int initialTab = 0}) {
+  try {
+    final cashProv = context.read<CashRegisterProvider?>();
+    if (cashProv != null && cashProv.availableRegisters == null && !cashProv.isLoading) {
+      cashProv.loadRegisters();
+    }
+  } catch (_) {}
+
   showDialog(
     context: context,
     barrierDismissible: true,
-    builder: (ctx) => const _TerminalPeripheralsDialog(),
+    builder: (ctx) => _TerminalPeripheralsDialog(initialTab: initialTab),
   );
 }
 
 class _TerminalPeripheralsDialog extends StatefulWidget {
-  const _TerminalPeripheralsDialog();
+  final int initialTab;
+  const _TerminalPeripheralsDialog({this.initialTab = 0});
 
   @override
   State<_TerminalPeripheralsDialog> createState() =>
@@ -1193,484 +1182,870 @@ class _TerminalPeripheralsDialogState
             p.printerFormat != 'a4' &&
             savedPrinter.isNotEmpty;
 
-        return AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-          title: Row(
-            children: [
-              const Icon(Icons.print_rounded, color: Colors.blue),
-              const SizedBox(width: 10),
-              const Expanded(
-                child: Text(
-                  'Periféricos de esta Caja',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-                ),
-              ),
-              IconButton(
-                tooltip: 'Refrescar dispositivos conectados',
-                icon: (_isLoadingPrinters || _isLoadingPorts)
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.refresh_rounded, color: Colors.blueGrey),
-                onPressed: (_isLoadingPrinters || _isLoadingPorts)
-                    ? null
-                    : _refreshHardwareLists,
-              ),
-            ],
-          ),
-          content: SizedBox(
-            width: 500,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // ── SECCIÓN 1: IMPRESORA ──
-                  _buildSectionHeader(
-                    icon: Icons.receipt_long_rounded,
-                    title: '1. Impresora de Tickets / Comprobantes',
-                    color: Colors.blue.shade700,
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Formato de Impresión',
-                              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+        final cashProvider = context.watch<CashRegisterProvider?>();
+        final settingsProvider = context.watch<SettingsProvider?>();
+        final shift = cashProvider?.currentShift;
+        final isOpen = shift != null && shift.isOpen;
+        final registers = cashProvider?.availableRegisters ?? [];
+        final assignedId = settingsProvider?.assignedRegisterId ?? 1;
+        final activeRegId = shift?.cashRegisterId ??
+            (assignedId > 0 ? assignedId : (cashProvider?.activeRegisterId ?? registers.firstOrNull?.id ?? 1));
+
+        String regName = shift?.cashRegisterName ?? '';
+        if (regName.trim().isEmpty && registers.isNotEmpty) {
+          final match = registers.where((r) => r.id == activeRegId).firstOrNull;
+          if (match != null) regName = match.name;
+        }
+        if (regName.trim().isEmpty) {
+          regName = activeRegId == 1 ? 'Caja Principal' : 'Caja #$activeRegId';
+        }
+
+        final String printerSummary = p.printerConnection == 'none'
+            ? 'Desactivada'
+            : (p.printerFormat == 'a4'
+                ? 'Hoja ${p.pdfPaperSize.toUpperCase()}'
+                : '${p.printerFormat == 'thermal_58' ? 'Térmica 58mm' : 'Térmica 80mm'}${savedPrinter.isNotEmpty ? ' • $savedPrinter' : ''}');
+        final String drawerSummary = p.autoOpenCashDrawer
+            ? 'Apertura automática RJ-11'
+            : 'Apertura manual';
+        final String scaleSummary = savedComPort.isNotEmpty
+            ? 'Conectada en $savedComPort'
+            : 'Sin balanza (Peso manual)';
+        final String pointSummary = p.mpPointDeviceId.trim().isNotEmpty
+            ? p.mpPointDeviceId.trim()
+            : 'Predeterminado del sistema';
+
+        return DefaultTabController(
+          length: 3,
+          initialIndex: widget.initialTab.clamp(0, 2),
+          child: Builder(
+            builder: (tabContext) {
+              return AlertDialog(
+                backgroundColor: Colors.white,
+                surfaceTintColor: Colors.transparent,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                titlePadding: const EdgeInsets.fromLTRB(22, 18, 16, 0),
+                contentPadding: const EdgeInsets.fromLTRB(22, 14, 22, 12),
+                title: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: isOpen ? Colors.teal.shade50 : Colors.blue.shade50,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: isOpen ? Colors.teal.shade200 : Colors.blue.shade200,
                             ),
-                            const SizedBox(height: 6),
-                            DropdownButtonFormField<String>(
-                              key: ValueKey('fmt_${p.printerFormat}'),
-                              initialValue: p.printerFormat,
-                              isExpanded: true,
-                              decoration: const InputDecoration(
-                                border: OutlineInputBorder(),
-                                isDense: true,
+                          ),
+                          child: Icon(
+                            Icons.point_of_sale_rounded,
+                            color: isOpen ? Colors.teal.shade700 : Colors.blue.shade700,
+                            size: 22,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Flexible(
+                                    child: Text(
+                                      regName,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: isOpen ? Colors.teal.shade50 : Colors.amber.shade50,
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color: isOpen ? Colors.teal.shade200 : Colors.amber.shade300,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      isOpen ? 'TURNO #${shift.id}' : 'CERRADA',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                        color: isOpen ? Colors.teal.shade800 : Colors.amber.shade900,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
-                              items: const [
-                                DropdownMenuItem(
-                                  value: 'thermal_80',
-                                  child: Text('Térmica 80mm'),
-                                ),
-                                DropdownMenuItem(
-                                  value: 'thermal_58',
-                                  child: Text('Térmica 58mm'),
-                                ),
-                                DropdownMenuItem(
-                                  value: 'a4',
-                                  child: Text('Hoja A4 / Carta'),
-                                ),
-                              ],
-                              onChanged: (v) {
-                                if (v != null) p.setPrinterFormat(v);
-                              },
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Tipo de Conexión',
-                              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-                            ),
-                            const SizedBox(height: 6),
-                            DropdownButtonFormField<String>(
-                              key: ValueKey('conn_${p.printerConnection}'),
-                              initialValue: p.printerConnection,
-                              isExpanded: true,
-                              decoration: const InputDecoration(
-                                border: OutlineInputBorder(),
-                                isDense: true,
+                              const SizedBox(height: 2),
+                              Text(
+                                'Configuración de Terminal Física y Periféricos Conectados',
+                                style: TextStyle(fontSize: 12, color: Colors.blueGrey.shade500, fontWeight: FontWeight.w500),
                               ),
-                              items: const [
-                                DropdownMenuItem(
-                                  value: 'none',
-                                  child: Text('Desactivada'),
-                                ),
-                                DropdownMenuItem(
-                                  value: 'usb',
-                                  child: Text('USB (Windows)'),
-                                ),
-                                DropdownMenuItem(
-                                  value: 'network',
-                                  child: Text('Red LAN / Wi-Fi (IP)'),
-                                ),
-                              ],
-                              onChanged: (v) {
-                                if (v != null) {
-                                  setState(() => _useManualPrinterName = false);
-                                  p.setPrinterConnection(v);
-                                }
-                              },
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
-                  if (p.printerFormat == 'a4') ...[
-                    const SizedBox(height: 12),
-                    const Text(
-                      'Tamaño de Hoja PDF:',
-                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-                    ),
-                    const SizedBox(height: 6),
-                    DropdownButtonFormField<String>(
-                      key: ValueKey('paper_${p.pdfPaperSize}'),
-                      initialValue: p.pdfPaperSize,
-                      isExpanded: true,
-                      decoration: const InputDecoration(
-                        border: OutlineInputBorder(),
-                        isDense: true,
-                      ),
-                      items: const [
-                        DropdownMenuItem(
-                          value: 'a4',
-                          child: Text('A4 (Predeterminado)'),
+                        IconButton(
+                          tooltip: 'Refrescar dispositivos conectados',
+                          icon: (_isLoadingPrinters || _isLoadingPorts)
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.refresh_rounded, color: Colors.blueGrey),
+                          onPressed: (_isLoadingPrinters || _isLoadingPorts)
+                              ? null
+                              : _refreshHardwareLists,
                         ),
-                        DropdownMenuItem(
-                          value: 'letter',
-                          child: Text('Carta (Letter)'),
+                        IconButton(
+                          tooltip: 'Cerrar',
+                          icon: const Icon(Icons.close_rounded, color: Colors.blueGrey),
+                          onPressed: () => Navigator.pop(context),
                         ),
                       ],
-                      onChanged: (v) {
-                        if (v != null) p.setPdfPaperSize(v);
-                      },
                     ),
-                  ],
-                  if (p.printerConnection == 'usb') ...[
                     const SizedBox(height: 12),
-                    const Text(
-                      'Impresora Instalada en Windows:',
-                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-                    ),
-                    const SizedBox(height: 6),
-                    DropdownButtonFormField<String>(
-                      key: ValueKey('usb_sel_$selectedUsbDropdownValue'),
-                      initialValue: selectedUsbDropdownValue,
-                      isExpanded: true,
-                      decoration: const InputDecoration(
-                        border: OutlineInputBorder(),
-                        isDense: true,
-                      ),
-                      items: usbPrinterItems,
-                      onChanged: (v) {
-                        if (v == null) return;
-                        if (v == _manualUsbSentinel) {
-                          setState(() => _useManualPrinterName = true);
-                        } else {
-                          setState(() => _useManualPrinterName = false);
-                          _printerNameController.text = v;
-                          p.setPrinterNameOrIp(v);
-                        }
-                      },
-                    ),
-                    if (_useManualPrinterName || _usbPrinters.isEmpty) ...[
-                      const SizedBox(height: 10),
-                      TextField(
-                        controller: _printerNameController,
-                        decoration: const InputDecoration(
-                          border: OutlineInputBorder(),
-                          isDense: true,
-                          labelText: 'Nombre exacto de la impresora en Windows',
-                          hintText: 'Ej: POS-80 o EPSON TM-T20II',
-                        ),
-                        onChanged: (v) => p.setPrinterNameOrIp(v),
-                      ),
-                    ],
-                  ] else if (p.printerConnection == 'network') ...[
-                    const SizedBox(height: 12),
-                    const Text(
-                      'Dirección IP de la Impresora (Puerto 9100):',
-                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-                    ),
-                    const SizedBox(height: 6),
-                    TextField(
-                      controller: _printerNameController,
-                      decoration: const InputDecoration(
-                        border: OutlineInputBorder(),
-                        isDense: true,
-                        hintText: 'Ej: 192.168.1.100',
-                      ),
-                      onChanged: (v) => p.setPrinterNameOrIp(v),
-                    ),
-                  ],
-                  if (p.printerConnection != 'none' && p.printerFormat != 'a4') ...[
-                    const SizedBox(height: 10),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: OutlinedButton.icon(
-                        onPressed: (!canTestThermal || _isTestingPrinter)
-                            ? null
-                            : () => _handleTestPrinter(p),
-                        icon: _isTestingPrinter
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              )
-                            : const Icon(Icons.print_outlined, size: 18),
-                        label: const Text('Probar Ticket'),
-                      ),
-                    ),
-                  ],
-
-                  const Divider(height: 26),
-
-                  // ── SECCIÓN 2: GAVETA DE DINERO (RJ-11) ──
-                  _buildSectionHeader(
-                    icon: Icons.point_of_sale_rounded,
-                    title: '2. Caja Registradora / Gaveta de Dinero (RJ-11)',
-                    color: Colors.teal.shade700,
-                  ),
-                  const SizedBox(height: 6),
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    dense: true,
-                    title: const Text(
-                      'Abrir cajón automáticamente al cobrar',
-                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5),
-                    ),
-                    subtitle: const Text(
-                      'Envía el pulso eléctrico por el cable telefónico (RJ-11) conectado detrás de la impresora térmica.',
-                      style: TextStyle(fontSize: 12),
-                    ),
-                    value: p.autoOpenCashDrawer,
-                    onChanged: (val) => p.setAutoOpenCashDrawer(val),
-                  ),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: OutlinedButton.icon(
-                      onPressed: (p.printerConnection == 'none' ||
-                              savedPrinter.isEmpty ||
-                              _isTestingDrawer)
-                          ? null
-                          : () => _handleTestDrawer(p),
-                      icon: _isTestingDrawer
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.lock_open_rounded, size: 18),
-                      label: const Text('Probar Abrir Cajón'),
-                    ),
-                  ),
-
-                  const Divider(height: 26),
-
-                  // ── SECCIÓN 3: BALANZA ELECTRÓNICA (COM / USB) ──
-                  _buildSectionHeader(
-                    icon: Icons.scale_rounded,
-                    title: '3. Balanza Electrónica (Cable Serie / USB-COM)',
-                    color: Colors.indigo.shade700,
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Puerto COM de la Balanza (Systel, Kretz, Moretti, etc.):',
-                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-                  ),
-                  const SizedBox(height: 6),
-                  DropdownButtonFormField<String>(
-                    key: ValueKey('scale_port_$savedComPort'),
-                    initialValue: addedPorts.contains(savedComPort) ? savedComPort : '',
-                    isExpanded: true,
-                    decoration: const InputDecoration(
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                    ),
-                    items: scalePortItems,
-                    onChanged: (v) {
-                      if (v != null) {
-                        p.setScaleComPort(v);
-                        _setFeedback(
-                          v.isEmpty
-                              ? 'Balanza desactivada (modo ingreso manual).'
-                              : 'Puerto $v seleccionado para la balanza.',
-                        );
-                      }
-                    },
-                  ),
-                  if (savedComPort.isNotEmpty) ...[
-                    const SizedBox(height: 10),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: OutlinedButton.icon(
-                        onPressed: _isTestingScale ? null : () => _handleTestScale(p),
-                        icon: _isTestingScale
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              )
-                            : const Icon(Icons.monitor_weight_outlined, size: 18),
-                        label: const Text('Probar Lectura de Peso'),
-                      ),
-                    ),
-                  ],
-
-                  const Divider(height: 26),
-
-                  // ── SECCIÓN 4: POSNET MERCADO PAGO POINT (POR CAJA) ──
-                  _buildSectionHeader(
-                    icon: Icons.credit_card_rounded,
-                    title: '4. Posnet Mercado Pago Point (Opcional por Caja)',
-                    color: const Color(0xFF009EE3),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Dispositivo Point asignado a este puesto de venta:',
-                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Si se deja vacío, se utilizará el terminal Point predeterminado configurado en Ajustes Generales.',
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _mpDeviceIdController,
-                          decoration: InputDecoration(
-                            border: const OutlineInputBorder(),
-                            isDense: true,
-                            hintText: 'Ej: PAX_A910__12345678 (o vacío)',
-                            prefixIcon: const Icon(
-                              Icons.point_of_sale,
-                              size: 20,
-                              color: Color(0xFF009EE3),
-                            ),
-                            suffixIcon: p.mpPointDeviceId.isNotEmpty
-                                ? IconButton(
-                                    tooltip: 'Limpiar (Usar predeterminado)',
-                                    icon: const Icon(Icons.clear, size: 18),
-                                    onPressed: () {
-                                      _mpDeviceIdController.clear();
-                                      p.setMpPointDeviceId('');
-                                      _setFeedback('Se usará el Point predeterminado de la empresa.');
-                                    },
-                                  )
-                                : null,
-                          ),
-                          onChanged: (val) {
-                            p.setMpPointDeviceId(val);
-                          },
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      OutlinedButton.icon(
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: const Color(0xFF009EE3),
-                          side: const BorderSide(color: Color(0xFF009EE3)),
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                        ),
-                        onPressed: _isSearchingPointDevices
-                            ? null
-                            : () => _handleSearchPointDevices(p),
-                        icon: _isSearchingPointDevices
-                            ? const SizedBox(
-                                width: 14,
-                                height: 14,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Color(0xFF009EE3),
-                                ),
-                              )
-                            : const Icon(Icons.search, size: 18),
-                        label: const Text('Buscar Point'),
-                      ),
-                    ],
-                  ),
-
-                  // ── MENSAJE DE ESTADO / FEEDBACK EN VIVO ──
-                  if (_statusMessage != null) ...[
-                    const SizedBox(height: 14),
                     Container(
-                      padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
-                        color: _statusIsError
-                            ? Colors.red.shade50
-                            : Colors.green.shade50,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: _statusIsError
-                              ? Colors.red.shade200
-                              : Colors.green.shade200,
-                        ),
+                        color: Colors.grey.shade100,
+                        borderRadius: BorderRadius.circular(10),
                       ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            _statusIsError
-                                ? Icons.error_outline_rounded
-                                : Icons.check_circle_outline_rounded,
-                            color: _statusIsError
-                                ? Colors.red.shade700
-                                : Colors.green.shade700,
-                            size: 20,
+                      child: TabBar(
+                        labelColor: Colors.blue.shade800,
+                        unselectedLabelColor: Colors.blueGrey.shade600,
+                        indicatorSize: TabBarIndicatorSize.tab,
+                        dividerColor: Colors.transparent,
+                        indicator: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(8),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.06),
+                              blurRadius: 4,
+                              offset: const Offset(0, 1),
+                            ),
+                          ],
+                        ),
+                        labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5),
+                        unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5),
+                        tabs: const [
+                          Tab(
+                            height: 38,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.desktop_windows_outlined, size: 16),
+                                SizedBox(width: 6),
+                                Text('Terminal y Turno'),
+                              ],
+                            ),
                           ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              _statusMessage!,
-                              style: TextStyle(
-                                fontSize: 12.5,
-                                fontWeight: FontWeight.w600,
-                                color: _statusIsError
-                                    ? Colors.red.shade800
-                                    : Colors.green.shade800,
-                              ),
+                          Tab(
+                            height: 38,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.print_outlined, size: 16),
+                                SizedBox(width: 6),
+                                Text('Impresora y Cajón'),
+                              ],
+                            ),
+                          ),
+                          Tab(
+                            height: 38,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.scale_outlined, size: 16),
+                                SizedBox(width: 6),
+                                Text('Balanza y Point'),
+                              ],
                             ),
                           ),
                         ],
                       ),
                     ),
                   ],
+                ),
+                content: SizedBox(
+                  width: 580,
+                  height: 455,
+                  child: Column(
+                    children: [
+                      Expanded(
+                        child: TabBarView(
+                          children: [
+                            // ── TAB 1: TERMINAL Y TURNO ──
+                            SingleChildScrollView(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.all(14),
+                                    decoration: BoxDecoration(
+                                      color: isOpen ? Colors.teal.shade50 : Colors.amber.shade50,
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color: isOpen ? Colors.teal.shade200 : Colors.amber.shade200,
+                                      ),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          isOpen ? Icons.verified_user_outlined : Icons.lock_clock_outlined,
+                                          color: isOpen ? Colors.teal.shade700 : Colors.amber.shade800,
+                                          size: 24,
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                isOpen ? 'TURNO ABIERTO (#${shift.id}) EN ${regName.toUpperCase()}' : 'SIN TURNO ABIERTO EN ${regName.toUpperCase()}',
+                                                style: TextStyle(
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 13,
+                                                  color: isOpen ? Colors.teal.shade900 : Colors.amber.shade900,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                isOpen && shift.userName != null
+                                                    ? 'Operador de apertura: ${shift.userName}'
+                                                    : 'Esta computadora está vinculada a $regName (ID #$activeRegId).',
+                                                style: TextStyle(fontSize: 12, color: Colors.blueGrey.shade700),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  if (registers.length > 1 && cashProvider != null && settingsProvider != null) ...[
+                                    const SizedBox(height: 16),
+                                    Text(
+                                      'Cambiar de Caja en esta Terminal:',
+                                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.blueGrey.shade800),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    DropdownButtonFormField<int>(
+                                      initialValue: registers.any((r) => r.id == activeRegId)
+                                          ? activeRegId
+                                          : registers.first.id,
+                                      decoration: const InputDecoration(
+                                        isDense: true,
+                                        prefixIcon: Icon(Icons.desktop_windows_outlined, size: 18),
+                                        border: OutlineInputBorder(),
+                                      ),
+                                      items: registers
+                                          .map((r) => DropdownMenuItem<int>(
+                                                value: r.id,
+                                                child: Text(r.name),
+                                              ))
+                                          .toList(),
+                                      onChanged: (newId) {
+                                        if (newId == null || newId == activeRegId) return;
+                                        Navigator.pop(context);
+                                        AdminPinDialog.protectAction(
+                                          context,
+                                          action: 'Cambiar Terminal de Caja',
+                                          permissionKey: AppPermissions.manageSettings,
+                                          onAuthorized: () async {
+                                            await settingsProvider.setAssignedRegisterId(newId);
+                                            await cashProvider.checkCurrentShift(registerId: newId);
+                                            final newShiftId = cashProvider.currentShift?.id;
+                                            final navCtx = AppConfig.navigatorKey.currentContext;
+                                            if (navCtx != null && navCtx.mounted) {
+                                              navCtx.read<PosProvider>().clearCart();
+                                              try {
+                                                navCtx.read<CashMovementProvider>().fetchMovements(
+                                                      refresh: true,
+                                                      all: false,
+                                                      cashShiftId: newShiftId,
+                                                    );
+                                              } catch (_) {}
+                                              try {
+                                                navCtx.read<SalesHistoryProvider>().loadSales(
+                                                      period: 'shift',
+                                                      shiftId: newShiftId,
+                                                    );
+                                              } catch (_) {}
+                                            }
+                                            AppConfig.navigatorKey.currentState
+                                                ?.pushNamedAndRemoveUntil('/home', (route) => false);
+                                          },
+                                        );
+                                      },
+                                    ),
+                                  ],
+                                  const SizedBox(height: 18),
+                                  Text(
+                                    'ESTADO DE PERIFÉRICOS EN ESTE PUESTO (CLIC PARA CONFIGURAR)',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      letterSpacing: 0.7,
+                                      color: Colors.blueGrey.shade500,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: _buildHardwareSummaryCard(
+                                          icon: Icons.print_outlined,
+                                          title: 'Impresora',
+                                          value: printerSummary,
+                                          isActive: p.printerConnection != 'none',
+                                          color: Colors.blue.shade700,
+                                          onTap: () => DefaultTabController.of(tabContext).animateTo(1),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: _buildHardwareSummaryCard(
+                                          icon: Icons.lock_open_rounded,
+                                          title: 'Gaveta RJ-11',
+                                          value: drawerSummary,
+                                          isActive: p.autoOpenCashDrawer,
+                                          color: Colors.teal.shade700,
+                                          onTap: () => DefaultTabController.of(tabContext).animateTo(1),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 10),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: _buildHardwareSummaryCard(
+                                          icon: Icons.scale_outlined,
+                                          title: 'Balanza Serie',
+                                          value: scaleSummary,
+                                          isActive: savedComPort.isNotEmpty,
+                                          color: Colors.indigo.shade700,
+                                          onTap: () => DefaultTabController.of(tabContext).animateTo(2),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: _buildHardwareSummaryCard(
+                                          icon: Icons.credit_card_rounded,
+                                          title: 'Posnet Point',
+                                          value: pointSummary,
+                                          isActive: p.mpPointDeviceId.trim().isNotEmpty,
+                                          color: const Color(0xFF009EE3),
+                                          onTap: () => DefaultTabController.of(tabContext).animateTo(2),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
 
-                  const SizedBox(height: 16),
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: Colors.blue.shade50,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Row(
-                      children: [
-                        Icon(Icons.info_outline, color: Colors.blue, size: 18),
-                        SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'Estos ajustes se guardan automáticamente y aplican solo a esta computadora (Caja).',
-                            style: TextStyle(fontSize: 12, color: Colors.blue),
+                            // ── TAB 2: IMPRESORA Y GAVETA ──
+                            SingleChildScrollView(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  _buildSectionHeader(
+                                    icon: Icons.receipt_long_rounded,
+                                    title: 'Impresora de Tickets / Comprobantes',
+                                    color: Colors.blue.shade700,
+                                  ),
+                                  const SizedBox(height: 10),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            const Text(
+                                              'Formato de Impresión',
+                                              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                                            ),
+                                            const SizedBox(height: 6),
+                                            DropdownButtonFormField<String>(
+                                              key: ValueKey('fmt_${p.printerFormat}'),
+                                              initialValue: p.printerFormat,
+                                              isExpanded: true,
+                                              decoration: const InputDecoration(
+                                                border: OutlineInputBorder(),
+                                                isDense: true,
+                                              ),
+                                              items: const [
+                                                DropdownMenuItem(
+                                                  value: 'thermal_80',
+                                                  child: Text('Térmica 80mm'),
+                                                ),
+                                                DropdownMenuItem(
+                                                  value: 'thermal_58',
+                                                  child: Text('Térmica 58mm'),
+                                                ),
+                                                DropdownMenuItem(
+                                                  value: 'a4',
+                                                  child: Text('Hoja A4 / Carta'),
+                                                ),
+                                              ],
+                                              onChanged: (v) {
+                                                if (v != null) p.setPrinterFormat(v);
+                                              },
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            const Text(
+                                              'Tipo de Conexión',
+                                              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                                            ),
+                                            const SizedBox(height: 6),
+                                            DropdownButtonFormField<String>(
+                                              key: ValueKey('conn_${p.printerConnection}'),
+                                              initialValue: p.printerConnection,
+                                              isExpanded: true,
+                                              decoration: const InputDecoration(
+                                                border: OutlineInputBorder(),
+                                                isDense: true,
+                                              ),
+                                              items: const [
+                                                DropdownMenuItem(
+                                                  value: 'none',
+                                                  child: Text('Desactivada'),
+                                                ),
+                                                DropdownMenuItem(
+                                                  value: 'usb',
+                                                  child: Text('USB (Windows)'),
+                                                ),
+                                                DropdownMenuItem(
+                                                  value: 'network',
+                                                  child: Text('Red LAN / Wi-Fi (IP)'),
+                                                ),
+                                              ],
+                                              onChanged: (v) {
+                                                if (v != null) {
+                                                  setState(() => _useManualPrinterName = false);
+                                                  p.setPrinterConnection(v);
+                                                }
+                                              },
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  if (p.printerFormat == 'a4') ...[
+                                    const SizedBox(height: 12),
+                                    const Text(
+                                      'Tamaño de Hoja PDF:',
+                                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    DropdownButtonFormField<String>(
+                                      key: ValueKey('paper_${p.pdfPaperSize}'),
+                                      initialValue: p.pdfPaperSize,
+                                      isExpanded: true,
+                                      decoration: const InputDecoration(
+                                        border: OutlineInputBorder(),
+                                        isDense: true,
+                                      ),
+                                      items: const [
+                                        DropdownMenuItem(
+                                          value: 'a4',
+                                          child: Text('A4 (Predeterminado)'),
+                                        ),
+                                        DropdownMenuItem(
+                                          value: 'letter',
+                                          child: Text('Carta (Letter)'),
+                                        ),
+                                      ],
+                                      onChanged: (v) {
+                                        if (v != null) p.setPdfPaperSize(v);
+                                      },
+                                    ),
+                                  ],
+                                  if (p.printerConnection == 'usb') ...[
+                                    const SizedBox(height: 12),
+                                    const Text(
+                                      'Impresora Instalada en Windows:',
+                                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    DropdownButtonFormField<String>(
+                                      key: ValueKey('usb_sel_$selectedUsbDropdownValue'),
+                                      initialValue: selectedUsbDropdownValue,
+                                      isExpanded: true,
+                                      decoration: const InputDecoration(
+                                        border: OutlineInputBorder(),
+                                        isDense: true,
+                                      ),
+                                      items: usbPrinterItems,
+                                      onChanged: (v) {
+                                        if (v == null) return;
+                                        if (v == _manualUsbSentinel) {
+                                          setState(() => _useManualPrinterName = true);
+                                        } else {
+                                          setState(() => _useManualPrinterName = false);
+                                          _printerNameController.text = v;
+                                          p.setPrinterNameOrIp(v);
+                                        }
+                                      },
+                                    ),
+                                    if (_useManualPrinterName || _usbPrinters.isEmpty) ...[
+                                      const SizedBox(height: 10),
+                                      TextField(
+                                        controller: _printerNameController,
+                                        decoration: const InputDecoration(
+                                          border: OutlineInputBorder(),
+                                          isDense: true,
+                                          labelText: 'Nombre exacto de la impresora en Windows',
+                                          hintText: 'Ej: POS-80 o EPSON TM-T20II',
+                                        ),
+                                        onChanged: (v) => p.setPrinterNameOrIp(v),
+                                      ),
+                                    ],
+                                  ] else if (p.printerConnection == 'network') ...[
+                                    const SizedBox(height: 12),
+                                    const Text(
+                                      'Dirección IP de la Impresora (Puerto 9100):',
+                                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    TextField(
+                                      controller: _printerNameController,
+                                      decoration: const InputDecoration(
+                                        border: OutlineInputBorder(),
+                                        isDense: true,
+                                        hintText: 'Ej: 192.168.1.100',
+                                      ),
+                                      onChanged: (v) => p.setPrinterNameOrIp(v),
+                                    ),
+                                  ],
+                                  if (p.printerConnection != 'none' && p.printerFormat != 'a4') ...[
+                                    const SizedBox(height: 10),
+                                    Align(
+                                      alignment: Alignment.centerRight,
+                                      child: OutlinedButton.icon(
+                                        onPressed: (!canTestThermal || _isTestingPrinter)
+                                            ? null
+                                            : () => _handleTestPrinter(p),
+                                        icon: _isTestingPrinter
+                                            ? const SizedBox(
+                                                width: 16,
+                                                height: 16,
+                                                child: CircularProgressIndicator(strokeWidth: 2),
+                                              )
+                                            : const Icon(Icons.print_outlined, size: 18),
+                                        label: const Text('Probar Ticket'),
+                                      ),
+                                    ),
+                                  ],
+                                  const Divider(height: 26),
+                                  _buildSectionHeader(
+                                    icon: Icons.point_of_sale_rounded,
+                                    title: 'Caja Registradora / Gaveta de Dinero (RJ-11)',
+                                    color: Colors.teal.shade700,
+                                  ),
+                                  const SizedBox(height: 6),
+                                  SwitchListTile(
+                                    contentPadding: EdgeInsets.zero,
+                                    dense: true,
+                                    title: const Text(
+                                      'Abrir cajón automáticamente al cobrar',
+                                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5),
+                                    ),
+                                    subtitle: const Text(
+                                      'Envía el pulso eléctrico por el cable telefónico (RJ-11) conectado detrás de la impresora térmica.',
+                                      style: TextStyle(fontSize: 12),
+                                    ),
+                                    value: p.autoOpenCashDrawer,
+                                    onChanged: (val) => p.setAutoOpenCashDrawer(val),
+                                  ),
+                                  Align(
+                                    alignment: Alignment.centerRight,
+                                    child: OutlinedButton.icon(
+                                      onPressed: (p.printerConnection == 'none' ||
+                                              savedPrinter.isEmpty ||
+                                              _isTestingDrawer)
+                                          ? null
+                                          : () => _handleTestDrawer(p),
+                                      icon: _isTestingDrawer
+                                          ? const SizedBox(
+                                              width: 16,
+                                              height: 16,
+                                              child: CircularProgressIndicator(strokeWidth: 2),
+                                            )
+                                          : const Icon(Icons.lock_open_rounded, size: 18),
+                                      label: const Text('Probar Abrir Cajón'),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+
+                            // ── TAB 3: BALANZA Y POSNET POINT ──
+                            SingleChildScrollView(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  _buildSectionHeader(
+                                    icon: Icons.scale_rounded,
+                                    title: 'Balanza Electrónica (Cable Serie / USB-COM)',
+                                    color: Colors.indigo.shade700,
+                                  ),
+                                  const SizedBox(height: 8),
+                                  const Text(
+                                    'Puerto COM de la Balanza (Systel, Kretz, Moretti, etc.):',
+                                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  DropdownButtonFormField<String>(
+                                    key: ValueKey('scale_port_$savedComPort'),
+                                    initialValue: addedPorts.contains(savedComPort) ? savedComPort : '',
+                                    isExpanded: true,
+                                    decoration: const InputDecoration(
+                                      border: OutlineInputBorder(),
+                                      isDense: true,
+                                    ),
+                                    items: scalePortItems,
+                                    onChanged: (v) {
+                                      if (v != null) {
+                                        p.setScaleComPort(v);
+                                        _setFeedback(
+                                          v.isEmpty
+                                              ? 'Balanza desactivada (modo ingreso manual).'
+                                              : 'Puerto $v seleccionado para la balanza.',
+                                        );
+                                      }
+                                    },
+                                  ),
+                                  if (savedComPort.isNotEmpty) ...[
+                                    const SizedBox(height: 10),
+                                    Align(
+                                      alignment: Alignment.centerRight,
+                                      child: OutlinedButton.icon(
+                                        onPressed: _isTestingScale ? null : () => _handleTestScale(p),
+                                        icon: _isTestingScale
+                                            ? const SizedBox(
+                                                width: 16,
+                                                height: 16,
+                                                child: CircularProgressIndicator(strokeWidth: 2),
+                                              )
+                                            : const Icon(Icons.monitor_weight_outlined, size: 18),
+                                        label: const Text('Probar Lectura de Peso'),
+                                      ),
+                                    ),
+                                  ],
+                                  const Divider(height: 26),
+                                  _buildSectionHeader(
+                                    icon: Icons.credit_card_rounded,
+                                    title: 'Posnet Mercado Pago Point (Opcional por Caja)',
+                                    color: const Color(0xFF009EE3),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  const Text(
+                                    'Dispositivo Point asignado a este puesto de venta:',
+                                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'Si se deja vacío, se utilizará el terminal Point predeterminado configurado en Ajustes Generales.',
+                                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: TextField(
+                                          controller: _mpDeviceIdController,
+                                          decoration: InputDecoration(
+                                            border: const OutlineInputBorder(),
+                                            isDense: true,
+                                            hintText: 'Ej: PAX_A910__12345678 (o vacío)',
+                                            prefixIcon: const Icon(
+                                              Icons.point_of_sale,
+                                              size: 20,
+                                              color: Color(0xFF009EE3),
+                                            ),
+                                            suffixIcon: p.mpPointDeviceId.isNotEmpty
+                                                ? IconButton(
+                                                    tooltip: 'Limpiar (Usar predeterminado)',
+                                                    icon: const Icon(Icons.clear, size: 18),
+                                                    onPressed: () {
+                                                      _mpDeviceIdController.clear();
+                                                      p.setMpPointDeviceId('');
+                                                      _setFeedback('Se usará el Point predeterminado de la empresa.');
+                                                    },
+                                                  )
+                                                : null,
+                                          ),
+                                          onChanged: (val) {
+                                            p.setMpPointDeviceId(val);
+                                          },
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      OutlinedButton.icon(
+                                        style: OutlinedButton.styleFrom(
+                                          foregroundColor: const Color(0xFF009EE3),
+                                          side: const BorderSide(color: Color(0xFF009EE3)),
+                                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                                        ),
+                                        onPressed: _isSearchingPointDevices
+                                            ? null
+                                            : () => _handleSearchPointDevices(p),
+                                        icon: _isSearchingPointDevices
+                                            ? const SizedBox(
+                                                width: 14,
+                                                height: 14,
+                                                child: CircularProgressIndicator(
+                                                  strokeWidth: 2,
+                                                  color: Color(0xFF009EE3),
+                                                ),
+                                              )
+                                            : const Icon(Icons.search, size: 18),
+                                        label: const Text('Buscar Point'),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (_statusMessage != null) ...[
+                        const SizedBox(height: 10),
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: _statusIsError ? Colors.red.shade50 : Colors.green.shade50,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: _statusIsError ? Colors.red.shade200 : Colors.green.shade200,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                _statusIsError
+                                    ? Icons.error_outline_rounded
+                                    : Icons.check_circle_outline_rounded,
+                                color: _statusIsError ? Colors.red.shade700 : Colors.green.shade700,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  _statusMessage!,
+                                  style: TextStyle(
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w600,
+                                    color: _statusIsError ? Colors.red.shade800 : Colors.green.shade800,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ],
+                    ],
+                  ),
+                ),
+                actions: [
+                  Row(
+                    children: [
+                      Icon(Icons.info_outline, color: Colors.blue.shade600, size: 16),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          'Guardado automático local para esta computadora.',
+                          style: TextStyle(fontSize: 11.5, color: Colors.blueGrey.shade600),
+                        ),
+                      ),
+                      FilledButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('Listo'),
+                      ),
+                    ],
+                  ),
+                ],
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildHardwareSummaryCard({
+    required IconData icon,
+    required String title,
+    required String value,
+    required bool isActive,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(10),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade50,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: isActive ? color.withValues(alpha: 0.35) : Colors.grey.shade300),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: isActive ? color.withValues(alpha: 0.1) : Colors.grey.shade200,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(icon, size: 18, color: isActive ? color : Colors.blueGrey),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5, color: Colors.black87),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    value,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w500,
+                      color: isActive ? color : Colors.blueGrey.shade600,
                     ),
                   ),
                 ],
               ),
             ),
-          ),
-          actions: [
-            FilledButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Listo'),
-            ),
+            Icon(Icons.chevron_right_rounded, size: 18, color: Colors.blueGrey.shade400),
           ],
-        );
-      },
+        ),
+      ),
     );
   }
 
@@ -1767,164 +2142,3 @@ class UpdateBadgeWidget extends StatelessWidget {
   }
 }
 
-void _showActiveRegisterStatusDialog(BuildContext context) {
-  final cashProv = context.read<CashRegisterProvider>();
-  if (cashProv.availableRegisters == null && !cashProv.isLoading) {
-    cashProv.loadRegisters();
-  }
-
-  showDialog(
-    context: context,
-    builder: (dialogCtx) {
-      return Consumer2<CashRegisterProvider, SettingsProvider>(
-        builder: (ctx, cashProvider, settingsProvider, _) {
-          final shift = cashProvider.currentShift;
-          final isOpen = shift != null && shift.isOpen;
-          final registers = cashProvider.availableRegisters ?? [];
-          final assignedId = settingsProvider.assignedRegisterId;
-          final activeRegId = shift?.cashRegisterId ??
-              (assignedId > 0 ? assignedId : (cashProvider.activeRegisterId ?? registers.firstOrNull?.id ?? 1));
-
-          String regName = shift?.cashRegisterName ?? '';
-          if (regName.trim().isEmpty && registers.isNotEmpty) {
-            final match = registers.where((r) => r.id == activeRegId).firstOrNull;
-            if (match != null) regName = match.name;
-          }
-          if (regName.trim().isEmpty) {
-            regName = 'Caja #$activeRegId';
-          }
-
-          return AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            title: Row(
-              children: [
-                Icon(
-                  isOpen ? Icons.point_of_sale_rounded : Icons.lock_clock_outlined,
-                  color: isOpen ? Colors.teal.shade700 : Colors.amber.shade800,
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    regName,
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-                  ),
-                ),
-              ],
-            ),
-            content: SizedBox(
-              width: 380,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: isOpen ? Colors.teal.shade50 : Colors.amber.shade50,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                        color: isOpen ? Colors.teal.shade200 : Colors.amber.shade200,
-                      ),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          isOpen ? 'TURNO ABIERTO (#${shift.id})' : 'CAJA CERRADA',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13,
-                            color: isOpen ? Colors.teal.shade800 : Colors.amber.shade900,
-                          ),
-                        ),
-                        if (isOpen && shift.userName != null) ...[
-                          const SizedBox(height: 4),
-                          Text(
-                            'Operador de apertura: ${shift.userName}',
-                            style: TextStyle(fontSize: 12, color: Colors.blueGrey.shade700),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                  if (registers.length > 1) ...[
-                    const SizedBox(height: 16),
-                    const Text(
-                      'Cambiar de Caja en esta Terminal:',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.blueGrey),
-                    ),
-                    const SizedBox(height: 8),
-                    DropdownButtonFormField<int>(
-                      initialValue: registers.any((r) => r.id == activeRegId)
-                          ? activeRegId
-                          : registers.first.id,
-                      decoration: const InputDecoration(
-                        isDense: true,
-                        prefixIcon: Icon(Icons.desktop_windows_outlined, size: 18),
-                        border: OutlineInputBorder(),
-                      ),
-                      items: registers
-                          .map((r) => DropdownMenuItem<int>(
-                                value: r.id,
-                                child: Text(r.name),
-                              ))
-                          .toList(),
-                      onChanged: (newId) {
-                        if (newId == null || newId == activeRegId) return;
-                        Navigator.pop(dialogCtx);
-                        AdminPinDialog.protectAction(
-                          context,
-                          action: 'Cambiar Terminal de Caja',
-                          permissionKey: AppPermissions.manageSettings,
-                          onAuthorized: () async {
-                            await settingsProvider.setAssignedRegisterId(newId);
-                            await cashProvider.checkCurrentShift(registerId: newId);
-                            final newShiftId = cashProvider.currentShift?.id;
-                            final navCtx = AppConfig.navigatorKey.currentContext;
-                            if (navCtx != null && navCtx.mounted) {
-                              navCtx.read<PosProvider>().clearCart();
-                              try {
-                                navCtx.read<CashMovementProvider>().fetchMovements(
-                                      refresh: true,
-                                      all: false,
-                                      cashShiftId: newShiftId,
-                                    );
-                              } catch (_) {}
-                              try {
-                                navCtx.read<SalesHistoryProvider>().loadSales(
-                                      period: 'shift',
-                                      shiftId: newShiftId,
-                                    );
-                              } catch (_) {}
-                            }
-                            AppConfig.navigatorKey.currentState
-                                ?.pushNamedAndRemoveUntil('/home', (route) => false);
-                          },
-                        );
-                      },
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            actions: [
-              TextButton.icon(
-                onPressed: () {
-                  Navigator.pop(dialogCtx);
-                  showTerminalPeripheralsDialog(context);
-                },
-                icon: const Icon(Icons.print_outlined, size: 18),
-                label: const Text('Periféricos'),
-              ),
-              TextButton(
-                onPressed: () => Navigator.pop(dialogCtx),
-                child: const Text('Cerrar'),
-              ),
-            ],
-          );
-        },
-      );
-    },
-  );
-}

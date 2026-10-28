@@ -5736,6 +5736,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
               borderRadius: BorderRadius.circular(16),
               side: BorderSide(color: Colors.grey.shade200)),
           leading: const CircleAvatar(
+              backgroundColor: Color(0xFFE0F2F1),
+              child: Icon(Icons.print_rounded, color: Color(0xFF00796B))),
+          title: const Text('Periféricos de esta Terminal',
+              style: TextStyle(fontWeight: FontWeight.bold)),
+          subtitle: const Text(
+              'Impresora térmica (80mm/58mm/A4), cajón de dinero RJ-11, balanza serie y Posnet Point.'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => showTerminalPeripheralsDialog(context, initialTab: 1),
+        ),
+        const SizedBox(height: 16),
+        ListTile(
+          contentPadding: const EdgeInsets.all(20),
+          tileColor: Colors.white,
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(color: Colors.grey.shade200)),
+          leading: const CircleAvatar(
               backgroundColor: Color(0xFFFFF3E0),
               child:
                   Icon(Icons.settings_suggest_outlined, color: Colors.orange)),

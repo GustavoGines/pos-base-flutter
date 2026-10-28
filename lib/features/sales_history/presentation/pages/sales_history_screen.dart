@@ -697,7 +697,7 @@ class _SaleListTile extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Fila 1: ID y Fecha/Hora a la izq | Total a la der (FE-03: anti-overflow con Caja + ANULADA)
+            // Fila 1: ID y Fecha/Hora a la izq | Total a la der
             Row(
               children: [
                 Expanded(
@@ -744,55 +744,35 @@ class _SaleListTile extends StatelessWidget {
                               ),
                             ),
                           ),
-                        if (sale.isVoided)
-                          Container(
-                            margin: const EdgeInsets.only(left: 5),
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                                color: Colors.grey.shade400,
-                                borderRadius: BorderRadius.circular(12)),
-                            child: const Text('ANULADA',
-                                style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 10.5,
-                                    fontWeight: FontWeight.bold)),
-                          ),
                       ],
                     ),
                   ),
                 ),
                 const SizedBox(width: 8),
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 110),
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.centerRight,
-                    child: Text(
-                      '\$${sale.total.toCurrency()}',
-                      style: TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.bold,
-                        color: sale.isVoided ? Colors.grey : Colors.green.shade800,
-                        decoration: sale.isVoided ? TextDecoration.lineThrough : null,
-                      ),
-                    ),
+                Text(
+                  '\$${sale.total.toCurrency()}',
+                  style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.bold,
+                    color: sale.isVoided ? Colors.grey : Colors.green.shade800,
+                    decoration: sale.isVoided ? TextDecoration.lineThrough : null,
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 8),
             
-            // Fila 2: Métodos de Pago a la izq | Ítems y Cajero a la der
+            // Fila 2: Métodos de Pago (+ ANULADA) a la izq | Ítems y Cajero a la der
             Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                // Izquierda: Métodos de pago
-                if (sale.payments.isNotEmpty)
-                  Expanded(
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Row(
-                        children: sale.payments.map((p) => Padding(
+                // Izquierda: Métodos de pago y estado ANULADA
+                Expanded(
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        ...sale.payments.map((p) => Padding(
                               padding: const EdgeInsets.only(right: 4),
                               child: Container(
                                 padding: const EdgeInsets.symmetric(
@@ -823,12 +803,24 @@ class _SaleListTile extends StatelessWidget {
                                   ],
                                 ),
                               ),
-                            )).toList(),
-                      ),
+                            )),
+                        if (sale.isVoided)
+                          Container(
+                            margin: const EdgeInsets.only(left: 2),
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                                color: Colors.grey.shade400,
+                                borderRadius: BorderRadius.circular(12)),
+                            child: const Text('ANULADA',
+                                style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.bold)),
+                          ),
+                      ],
                     ),
-                  )
-                else
-                  const Spacer(),
+                  ),
+                ),
                   
                 // Derecha: Ítems y Cajero
                 const SizedBox(width: 8),
