@@ -16,6 +16,19 @@ abstract class CatalogRepository {
     int? supplierId,
     bool? active,
   });
+  Future<Map<String, dynamic>> getProductsAdvanced({
+    int page = 1,
+    String? search,
+    String? sortBy,
+    String? sortDirection,
+    int? perPage,
+    int? categoryId,
+    int? brandId,
+    int? supplierId,
+    bool? active,
+    bool? isSoldByWeight,
+    List<int>? ids,
+  });
   Future<List<Category>> getCategories();
   // Rubro CRUD
   Future<List<Rubro>> getRubros();

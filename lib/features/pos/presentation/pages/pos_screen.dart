@@ -13,6 +13,7 @@ import 'package:provider/provider.dart';
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import '../providers/pos_provider.dart';
 import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
+import 'package:frontend_desktop/features/catalog/domain/entities/category.dart';
 import 'package:frontend_desktop/features/catalog/presentation/providers/catalog_provider.dart';
 import 'package:frontend_desktop/features/cash_register/presentation/providers/cash_register_provider.dart';
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
@@ -89,6 +90,7 @@ class _PosScreenState extends State<PosScreen> {
       // búsqueda u ordenamiento que el módulo de Catálogo haya dejado activo.
       Provider.of<CatalogProvider>(context, listen: false)
           .loadProducts(page: 1, search: '', sortBy: '', perPage: 500);
+      Provider.of<CatalogProvider>(context, listen: false).loadMetadata();
       // Sincronizar y aplicar lista de precios fijada por la terminal
       final localTerminal = Provider.of<LocalTerminalProvider>(context, listen: false);
       final posProvider = Provider.of<PosProvider>(context, listen: false);
@@ -3645,6 +3647,57 @@ class _PosScreenState extends State<PosScreen> {
     });
   }
 
+  List<Product> _categoryCandidateProducts(CatalogProvider catalog, int categoryId) {
+    final extra = catalog.getCategoryExtraProducts(categoryId);
+    if (extra.isEmpty) return List<Product>.from(catalog.products);
+    final loadedIds = catalog.products.map((p) => p.id).toSet();
+    return [
+      ...catalog.products,
+      ...extra.where((p) => !loadedIds.contains(p.id)),
+    ];
+  }
+
+  void _scheduleCategoryProductsSync(CatalogProvider catalog, int categoryId) {
+    if (catalog.isLoading || catalog.products.isEmpty || _searchQuery.isNotEmpty) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) catalog.syncCategoryProducts(categoryId);
+    });
+  }
+
+  List<Product> _weightCandidateProducts(CatalogProvider catalog) {
+    final extra = catalog.weightOnlyProducts;
+    if (extra.isEmpty) return List<Product>.from(catalog.products);
+    final loadedIds = catalog.products.map((p) => p.id).toSet();
+    return [
+      ...catalog.products,
+      ...extra.where((p) => !loadedIds.contains(p.id)),
+    ];
+  }
+
+  void _scheduleWeightProductsSync(CatalogProvider catalog) {
+    if (catalog.isLoading || catalog.products.isEmpty || _searchQuery.isNotEmpty) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) catalog.syncWeightProducts();
+    });
+  }
+
+  List<Product> _pinnedCandidateProducts(CatalogProvider catalog) {
+    final extra = catalog.pinnedExtraProducts;
+    if (extra.isEmpty) return List<Product>.from(catalog.products);
+    final loadedIds = catalog.products.map((p) => p.id).toSet();
+    return [
+      ...catalog.products,
+      ...extra.where((p) => !loadedIds.contains(p.id)),
+    ];
+  }
+
+  void _schedulePinnedProductsSync(CatalogProvider catalog, Set<int> pinnedIds) {
+    if (catalog.isLoading || catalog.products.isEmpty || _searchQuery.isNotEmpty || pinnedIds.isEmpty) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) catalog.syncPinnedProducts(pinnedIds);
+    });
+  }
+
   List<Product> _getFilteredProducts(CatalogProvider catalog, OfferProvider offerProv, LocalTerminalProvider localTerminal) {
     if (_searchQuery.isNotEmpty) {
       return _searchResults;
@@ -3656,7 +3709,10 @@ class _PosScreenState extends State<PosScreen> {
     List<Product> filtered = List<Product>.from(catalog.products);
 
     if (_quickAccessFilter == 'pinned') {
-      filtered = filtered.where((p) => localTerminal.pinnedProductIds.contains(p.id)).toList();
+      _schedulePinnedProductsSync(catalog, localTerminal.pinnedProductIds);
+      filtered = _pinnedCandidateProducts(catalog)
+          .where((p) => localTerminal.pinnedProductIds.contains(p.id))
+          .toList();
     } else if (_quickAccessFilter == 'top_sellers') {
       filtered = filtered.where((p) => p.salesCount > 0).toList();
     } else if (_quickAccessFilter == 'offers') {
@@ -3665,10 +3721,25 @@ class _PosScreenState extends State<PosScreen> {
           .where((p) => offerProv.getActiveOfferForProduct(p.id, basePrice: p.sellingPrice) != null)
           .toList();
     } else if (_quickAccessFilter == 'weight') {
-      filtered = filtered.where((p) => p.isSoldByWeight).toList();
+      _scheduleWeightProductsSync(catalog);
+      filtered = _weightCandidateProducts(catalog).where((p) => p.isSoldByWeight).toList();
     } else if (_quickAccessFilter.startsWith('cat_')) {
       final categoryName = _quickAccessFilter.substring(4).trim();
-      filtered = filtered.where((p) => p.category?.name.trim() == categoryName).toList();
+      Category? catObj;
+      for (final c in catalog.categories) {
+        if (c.name.trim().toLowerCase() == categoryName.toLowerCase()) {
+          catObj = c;
+          break;
+        }
+      }
+      if (catObj != null) {
+        _scheduleCategoryProductsSync(catalog, catObj.id);
+        filtered = _categoryCandidateProducts(catalog, catObj.id)
+            .where((p) => p.category?.name.trim().toLowerCase() == categoryName.toLowerCase())
+            .toList();
+      } else {
+        filtered = filtered.where((p) => p.category?.name.trim().toLowerCase() == categoryName.toLowerCase()).toList();
+      }
     }
 
     final pinnedSorted = localTerminal.pinnedProductIds.toList()..sort();
@@ -4031,7 +4102,10 @@ class _PosScreenState extends State<PosScreen> {
                           icon: const Icon(Icons.refresh, color: Colors.grey),
                           tooltip: 'Actualizar catálogo y ofertas',
                           onPressed: () {
-                            context.read<CatalogProvider>().loadProducts(page: 1, search: '', sortBy: '', perPage: 500);
+                            final catProv = context.read<CatalogProvider>();
+                            catProv.invalidateQuickAccessExtraCaches();
+                            catProv.loadMetadata(force: true);
+                            catProv.loadProducts(page: 1, search: '', sortBy: '', perPage: 500);
                             final offerProv = context.read<OfferProvider>();
                             final posProv = context.read<PosProvider>();
                             offerProv.invalidateOfferOnlyProducts(); // OF-01: refrescar stock de ofertas fuera del catálogo
@@ -4397,10 +4471,13 @@ class _PosScreenState extends State<PosScreen> {
         _offerCandidateProducts(catalog, offerProv)
             .any((p) => offerProv.getActiveOfferForProduct(p.id, basePrice: p.sellingPrice) != null);
 
+    final hasWeight = catalog.products.any((p) => p.isSoldByWeight) || catalog.weightOnlyProducts.isNotEmpty;
+
     // Si un filtro dinámico queda sin productos asociados, regresar automáticamente a 'all'
     if ((_quickAccessFilter == 'top_sellers' && !hasTopSellers) ||
         (_quickAccessFilter == 'pinned' && !hasPinned) ||
-        (_quickAccessFilter == 'offers' && !hasOffers)) {
+        (_quickAccessFilter == 'offers' && !hasOffers) ||
+        (_quickAccessFilter == 'weight' && !hasWeight)) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           setState(() {
@@ -4411,10 +4488,20 @@ class _PosScreenState extends State<PosScreen> {
     }
 
     final categories = <String, int>{};
+    if (catalog.categories.isNotEmpty) {
+      for (final cat in catalog.categories) {
+        final count = cat.productsCount ?? 0;
+        if (count > 0) {
+          categories[cat.name.trim()] = count;
+        }
+      }
+    }
     for (final p in catalog.products) {
       final catName = p.category?.name.trim();
       if (catName != null && catName.isNotEmpty) {
-        categories[catName] = (categories[catName] ?? 0) + 1;
+        if (!categories.containsKey(catName)) {
+          categories[catName] = 1;
+        }
       }
     }
     final allCategories = categories.entries.toList()

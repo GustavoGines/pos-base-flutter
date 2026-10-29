@@ -6,6 +6,7 @@ class Category {
   final String? description;
   final int? rubroId;
   final Rubro? rubro;
+  final int? productsCount;
 
   Category({
     required this.id,
@@ -13,6 +14,7 @@ class Category {
     this.description,
     this.rubroId,
     this.rubro,
+    this.productsCount,
   });
 
   Category copyWith({
@@ -21,6 +23,7 @@ class Category {
     String? description,
     int? rubroId,
     Rubro? rubro,
+    int? productsCount,
   }) {
     return Category(
       id: id ?? this.id,
@@ -28,6 +31,7 @@ class Category {
       description: description ?? this.description,
       rubroId: rubroId ?? this.rubroId,
       rubro: rubro ?? this.rubro,
+      productsCount: productsCount ?? this.productsCount,
     );
   }
 }

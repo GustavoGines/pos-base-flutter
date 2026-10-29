@@ -36,6 +36,35 @@ class CatalogRepositoryImpl implements CatalogRepository {
   }
 
   @override
+  Future<Map<String, dynamic>> getProductsAdvanced({
+    int page = 1,
+    String? search,
+    String? sortBy,
+    String? sortDirection,
+    int? perPage,
+    int? categoryId,
+    int? brandId,
+    int? supplierId,
+    bool? active,
+    bool? isSoldByWeight,
+    List<int>? ids,
+  }) async {
+    return await remoteDataSource.fetchProducts(
+      page: page,
+      search: search,
+      sortBy: sortBy,
+      sortDirection: sortDirection,
+      perPage: perPage,
+      categoryId: categoryId,
+      brandId: brandId,
+      supplierId: supplierId,
+      active: active,
+      isSoldByWeight: isSoldByWeight,
+      ids: ids,
+    );
+  }
+
+  @override
   Future<List<Category>> getCategories() async {
     return await remoteDataSource.fetchCategories();
   }

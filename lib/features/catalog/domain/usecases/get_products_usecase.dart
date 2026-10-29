@@ -16,7 +16,24 @@ class GetProductsUseCase {
     int? brandId,
     int? supplierId,
     bool? active,
+    bool? isSoldByWeight,
+    List<int>? ids,
   }) async {
+    if (isSoldByWeight != null || ids != null) {
+      return await repository.getProductsAdvanced(
+        page: page,
+        search: search,
+        sortBy: sortBy,
+        sortDirection: sortDirection,
+        perPage: perPage,
+        categoryId: categoryId,
+        brandId: brandId,
+        supplierId: supplierId,
+        active: active,
+        isSoldByWeight: isSoldByWeight,
+        ids: ids,
+      );
+    }
     return await repository.getProducts(
       page: page,
       search: search,

@@ -14,6 +14,7 @@ import 'package:frontend_desktop/features/cash_register/domain/entities/cash_reg
 import 'package:frontend_desktop/features/cash_register/presentation/providers/cash_register_provider.dart';
 import 'package:frontend_desktop/features/catalog/presentation/providers/catalog_provider.dart';
 import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
+import 'package:frontend_desktop/features/catalog/domain/entities/category.dart';
 import 'package:frontend_desktop/features/customers/models/customer_model.dart';
 import 'package:frontend_desktop/features/customers/providers/customer_provider.dart';
 import 'package:frontend_desktop/features/pos/domain/entities/cart_item.dart';
@@ -126,6 +127,33 @@ class FakeCatalogProvider extends ChangeNotifier implements CatalogProvider {
 
   @override
   List<Product> get products => [];
+
+  @override
+  List<Category> get categories => [];
+
+  @override
+  List<Product> get weightOnlyProducts => [];
+
+  @override
+  List<Product> get pinnedExtraProducts => [];
+
+  @override
+  List<Product> getCategoryExtraProducts(int categoryId) => [];
+
+  @override
+  Future<void> syncCategoryProducts(int categoryId) async {}
+
+  @override
+  Future<void> syncWeightProducts() async {}
+
+  @override
+  Future<void> syncPinnedProducts(Set<int> pinnedIds) async {}
+
+  @override
+  Future<void> loadMetadata({bool force = false}) async {}
+
+  @override
+  void invalidateQuickAccessExtraCaches() {}
 
   @override
   Future<void> loadProducts({

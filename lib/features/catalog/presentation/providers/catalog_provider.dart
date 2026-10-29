@@ -44,6 +44,28 @@ class CatalogProvider with ChangeNotifier {
   String? _errorMessage;
   String? get errorMessage => _errorMessage;
 
+  // ── Quick Access Dynamic Filter Cache ─────────────────────
+  final Map<int, List<Product>> _categoryExtraProducts = {};
+  final Set<int> _categoriesLoading = {};
+  List<Product> _weightOnlyProducts = [];
+  bool _weightLoading = false;
+  List<Product> _pinnedExtraProducts = [];
+  bool _pinnedLoading = false;
+
+  List<Product> getCategoryExtraProducts(int categoryId) => _categoryExtraProducts[categoryId] ?? const [];
+  List<Product> get weightOnlyProducts => _weightOnlyProducts;
+  List<Product> get pinnedExtraProducts => _pinnedExtraProducts;
+
+  /// Limpia las cachés adicionales del Acceso Rápido al recargar o refrescar el catálogo
+  void invalidateQuickAccessExtraCaches() {
+    _categoryExtraProducts.clear();
+    _categoriesLoading.clear();
+    _weightOnlyProducts.clear();
+    _weightLoading = false;
+    _pinnedExtraProducts.clear();
+    _pinnedLoading = false;
+  }
+
   // ── Pagination State ─────────────────────────────────────
   int _currentPage = 1;
   int _lastPage = 1;
@@ -79,11 +101,11 @@ class CatalogProvider with ChangeNotifier {
 
   CatalogProvider({required this.getProductsUseCase, required this.repository});
 
-  Future<void> loadMetadata() async {
+  Future<void> loadMetadata({bool force = false}) async {
     try {
-      if (_categories.isEmpty) _categories = await repository.getCategories();
-      if (_brands.isEmpty) _brands = await repository.getBrands();
-      if (_rubros.isEmpty) _rubros = await repository.getRubros();
+      if (_categories.isEmpty || force) _categories = await repository.getCategories();
+      if (_brands.isEmpty || force) _brands = await repository.getBrands();
+      if (_rubros.isEmpty || force) _rubros = await repository.getRubros();
       notifyListeners();
     } catch (e) {
       debugPrint('Error loading metadata: $e');
@@ -117,6 +139,7 @@ class CatalogProvider with ChangeNotifier {
       _lastPage = result['last_page'] as int;
       _catalogOrderVersion++;
       if (page == 1) {
+        invalidateQuickAccessExtraCaches();
         if (_categories.isEmpty) {
           _categories = await repository.getCategories();
         }
@@ -325,7 +348,127 @@ class CatalogProvider with ChangeNotifier {
   void applyImmediateLocalStockDeduction(Map<int, double> consumedByProductId) {
     if (consumedByProductId.isEmpty) return;
     _products = deductStockLocallyForProductList(_products, consumedByProductId);
+
+    if (_categoryExtraProducts.isNotEmpty) {
+      for (final key in _categoryExtraProducts.keys.toList()) {
+        _categoryExtraProducts[key] = deductStockLocallyForProductList(_categoryExtraProducts[key]!, consumedByProductId);
+      }
+    }
+    if (_weightOnlyProducts.isNotEmpty) {
+      _weightOnlyProducts = deductStockLocallyForProductList(_weightOnlyProducts, consumedByProductId);
+    }
+    if (_pinnedExtraProducts.isNotEmpty) {
+      _pinnedExtraProducts = deductStockLocallyForProductList(_pinnedExtraProducts, consumedByProductId);
+    }
     notifyListeners();
+  }
+
+  /// Trae del backend los productos de la categoría que NO estén presentes en `_products`.
+  /// Idempotente y protegido contra peticiones concurrentes.
+  Future<void> syncCategoryProducts(int categoryId) async {
+    if (_categoriesLoading.contains(categoryId) || _categoryExtraProducts.containsKey(categoryId)) {
+      return;
+    }
+    _categoriesLoading.add(categoryId);
+    try {
+      final List<Product> extras = [];
+      final loadedIds = _products.map((p) => p.id).toSet();
+      int page = 1;
+      int lastPage = 1;
+
+      do {
+        final result = await getProductsUseCase(
+          page: page,
+          perPage: 500,
+          categoryId: categoryId,
+          active: true,
+        );
+        final pageData = List<Product>.from(result['data'] as List);
+        for (final p in pageData) {
+          if (p.active && !loadedIds.contains(p.id) && !extras.any((e) => e.id == p.id)) {
+            extras.add(p);
+          }
+        }
+        lastPage = (result['last_page'] as int?) ?? 1;
+        page++;
+      } while (page <= lastPage && page <= 5);
+
+      _categoryExtraProducts[categoryId] = extras;
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error en syncCategoryProducts($categoryId): $e');
+    } finally {
+      _categoriesLoading.remove(categoryId);
+    }
+  }
+
+  /// Trae del backend los productos pesables que NO estén presentes en `_products`.
+  Future<void> syncWeightProducts() async {
+    if (_weightLoading || _weightOnlyProducts.isNotEmpty) return;
+    _weightLoading = true;
+    try {
+      final List<Product> extras = [];
+      final loadedIds = _products.map((p) => p.id).toSet();
+      int page = 1;
+      int lastPage = 1;
+
+      do {
+        final result = await getProductsUseCase(
+          page: page,
+          perPage: 500,
+          isSoldByWeight: true,
+          active: true,
+        );
+        final pageData = List<Product>.from(result['data'] as List);
+        for (final p in pageData) {
+          if (p.active && !loadedIds.contains(p.id) && !extras.any((e) => e.id == p.id)) {
+            extras.add(p);
+          }
+        }
+        lastPage = (result['last_page'] as int?) ?? 1;
+        page++;
+      } while (page <= lastPage && page <= 5);
+
+      _weightOnlyProducts = extras;
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error en syncWeightProducts: $e');
+    } finally {
+      _weightLoading = false;
+    }
+  }
+
+  /// Trae del backend los productos fijados que NO estén presentes en `_products`.
+  Future<void> syncPinnedProducts(Set<int> pinnedIds) async {
+    if (_pinnedLoading || pinnedIds.isEmpty) return;
+    final loadedIds = _products.map((p) => p.id).toSet();
+    final missingIds = pinnedIds.where((id) => !loadedIds.contains(id)).toList();
+    if (missingIds.isEmpty) return;
+
+    final currentExtraIds = _pinnedExtraProducts.map((p) => p.id).toSet();
+    if (missingIds.every((id) => currentExtraIds.contains(id))) return;
+
+    _pinnedLoading = true;
+    try {
+      final result = await getProductsUseCase(
+        page: 1,
+        perPage: 500,
+        ids: missingIds,
+      );
+      final pageData = List<Product>.from(result['data'] as List);
+      final List<Product> extras = List<Product>.from(_pinnedExtraProducts);
+      for (final p in pageData) {
+        if (!loadedIds.contains(p.id) && !extras.any((e) => e.id == p.id)) {
+          extras.add(p);
+        }
+      }
+      _pinnedExtraProducts = extras;
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error en syncPinnedProducts: $e');
+    } finally {
+      _pinnedLoading = false;
+    }
   }
 
   /// Actualiza SILENCIOSAMENTE solo el stock de los productos vendidos.

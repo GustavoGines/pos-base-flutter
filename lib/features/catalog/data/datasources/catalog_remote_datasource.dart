@@ -20,6 +20,8 @@ abstract class CatalogRemoteDataSource {
     int? brandId,
     int? supplierId,
     bool? active,
+    bool? isSoldByWeight,
+    List<int>? ids,
   });
   Future<List<CategoryModel>> fetchCategories();
   // Rubro CRUD
@@ -126,6 +128,8 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
     int? brandId,
     int? supplierId,
     bool? active,
+    bool? isSoldByWeight,
+    List<int>? ids,
   }) async {
     try {
       final queryParams = <String, String>{'page': page.toString()};
@@ -141,6 +145,8 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
       if (brandId != null) queryParams['brand_id'] = brandId.toString();
       if (supplierId != null) queryParams['supplier_id'] = supplierId.toString();
       if (active != null) queryParams['active'] = active ? '1' : '0';
+      if (isSoldByWeight != null) queryParams['is_sold_by_weight'] = isSoldByWeight ? '1' : '0';
+      if (ids != null && ids.isNotEmpty) queryParams['ids'] = ids.join(',');
 
       final uri = Uri.parse('$baseUrl/catalog/products').replace(queryParameters: queryParams);
       final response = await client.get(uri, headers: {'Accept': 'application/json'});
