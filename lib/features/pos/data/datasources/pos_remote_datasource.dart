@@ -394,8 +394,8 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
         },
         body: json.encode({'status': fulfillmentStatus}),
       );
-      // 201 = creado correctamente, 400 = ya existía un remito (idempotente, no es error fatal)
-      if (response.statusCode != 201 && response.statusCode != 400) {
+      // 200 = ya existía un remito (idempotente), 201 = creado correctamente, 400 = compatibilidad legacy
+      if (response.statusCode != 200 && response.statusCode != 201 && response.statusCode != 400) {
         throw Exception('Error al crear remito automático (HTTP ${response.statusCode})');
       }
       return json.decode(response.body);

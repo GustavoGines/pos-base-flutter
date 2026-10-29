@@ -2571,19 +2571,26 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         final bool isLocked =
             (isCuentaCorriente && settings?.features.currentAccounts != true) ||
                 (isCheque && settings?.features.checks != true);
-        final badge = _getShortcutBadge(m);
+        final String? badge = _getShortcutBadge(m);
+        final screenWidth = MediaQuery.of(context).size.width;
+        // FE-CRASH-01: En pantallas angostas (<900px) omitir atajos; en móviles (<600px) compactar íconos para evitar RenderFlex overflow
+        final bool showBadge = screenWidth >= 900;
+        final bool showLeadingIcon = screenWidth >= 600;
+        final bool showLock = isLocked && screenWidth >= 600;
 
         return DropdownMenuItem<PaymentMethod>(
           value: m,
           enabled: true,
           child: Row(
             children: [
-              Icon(
-                _getIconForMethod(m.code),
-                color: Colors.blue.shade700,
-                size: 18,
-              ),
-              const SizedBox(width: 8),
+              if (showLeadingIcon) ...[
+                Icon(
+                  _getIconForMethod(m.code),
+                  color: Colors.blue.shade700,
+                  size: 18,
+                ),
+                const SizedBox(width: 8),
+              ],
               Expanded(
                 child: Text(
                   m.name,
@@ -2594,27 +2601,30 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              if (badge != null) ...[
-                const SizedBox(width: 6),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: Colors.blue.shade100,
-                    borderRadius: BorderRadius.circular(4),
-                    border: Border.all(color: Colors.blue.shade300, width: 0.5),
-                  ),
-                  child: Text(
-                    badge,
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: Colors.blue.shade900,
-                      fontWeight: FontWeight.w700,
+              if (showBadge && badge != null) ...[
+                const SizedBox(width: 4),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade100,
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(color: Colors.blue.shade300, width: 0.5),
+                    ),
+                    child: Text(
+                      badge,
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: Colors.blue.shade900,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
                 ),
               ],
-              if (isLocked) ...[
-                const SizedBox(width: 6),
+              if (showLock) ...[
+                const SizedBox(width: 4),
                 Tooltip(
                   message: 'Función Pro — Hacé clic para conocer más',
                   child: Icon(
@@ -3775,7 +3785,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                                       _fulfillmentStatus == 'pending') ...[
                                     const SizedBox(height: 12),
                                     Container(
-                                      margin: const EdgeInsets.only(left: 48),
+                                      margin: EdgeInsets.only(
+                                          left: MediaQuery.of(context).size.width < 1024 ? 12 : 32),
                                       padding: const EdgeInsets.all(8),
                                       decoration: BoxDecoration(
                                         color: Colors.blueGrey.shade50,
@@ -3795,31 +3806,39 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                                                       fontWeight:
                                                           FontWeight.bold,
                                                       fontSize: 13)),
-                                              const Spacer(),
-                                              SizedBox(
-                                                width: 120,
-                                                height: 36,
-                                                child: TextField(
-                                                  controller: _shippingCostCtrl,
-                                                  keyboardType:
-                                                      const TextInputType
-                                                          .numberWithOptions(
-                                                          decimal: true),
-                                                  textAlign: TextAlign.right,
-                                                  decoration:
-                                                      const InputDecoration(
-                                                    prefixText: '\$ ',
-                                                    isDense: true,
-                                                    contentPadding:
-                                                        EdgeInsets.symmetric(
-                                                            horizontal: 8,
-                                                            vertical: 8),
-                                                    border:
-                                                        OutlineInputBorder(),
+                                              const SizedBox(width: 8),
+                                              Expanded(
+                                                child: Align(
+                                                  alignment: Alignment.centerRight,
+                                                  child: ConstrainedBox(
+                                                    constraints: const BoxConstraints(
+                                                        maxWidth: 120, minWidth: 60),
+                                                    child: SizedBox(
+                                                      height: 36,
+                                                      child: TextField(
+                                                        controller: _shippingCostCtrl,
+                                                        keyboardType:
+                                                            const TextInputType
+                                                                .numberWithOptions(
+                                                                decimal: true),
+                                                        textAlign: TextAlign.right,
+                                                        decoration:
+                                                            const InputDecoration(
+                                                          prefixText: '\$ ',
+                                                          isDense: true,
+                                                          contentPadding:
+                                                              EdgeInsets.symmetric(
+                                                                  horizontal: 8,
+                                                                  vertical: 8),
+                                                          border:
+                                                              OutlineInputBorder(),
+                                                        ),
+                                                        onChanged: (val) {
+                                                          // El listener de _shippingCostCtrl ya dispara setState() y _syncPaymentsWithGrandTotal()
+                                                        },
+                                                      ),
+                                                    ),
                                                   ),
-                                                  onChanged: (val) {
-                                                    // El listener de _shippingCostCtrl ya dispara setState() y _syncPaymentsWithGrandTotal()
-                                                  },
                                                 ),
                                               ),
                                             ],
