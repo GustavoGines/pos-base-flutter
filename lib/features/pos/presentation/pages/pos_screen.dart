@@ -1994,6 +1994,16 @@ class _PosScreenState extends State<PosScreen> {
           }
         }
         catalogProvider.applyImmediateLocalStockDeduction(consumedInSale);
+        // OF-01: mismo descuento inmediato para los productos en oferta fuera del catálogo en memoria
+        final offerProvForStock = Provider.of<OfferProvider>(context, listen: false);
+        if (offerProvForStock.offerOnlyProducts.isNotEmpty) {
+          offerProvForStock.replaceOfferOnlyProducts(
+            catalogProvider.deductStockLocallyForProductList(
+              offerProvForStock.offerOnlyProducts,
+              consumedInSale,
+            ),
+          );
+        }
         if (_searchResults.isNotEmpty) {
           setState(() {
             _searchResults = catalogProvider.deductStockLocallyForProductList(
@@ -3612,6 +3622,29 @@ class _PosScreenState extends State<PosScreen> {
     });
   }
 
+  /// OF-01: Productos candidatos para el filtro "Ofertas": el catálogo en memoria (primeros 500)
+  /// más los productos en oferta vigente que no entraron en ese bloque, traídos completos aparte.
+  /// Si un producto está en ambos, prevalece el del catálogo (stock y contadores en caliente).
+  List<Product> _offerCandidateProducts(CatalogProvider catalog, OfferProvider offerProv) {
+    final extra = offerProv.offerOnlyProducts;
+    if (extra.isEmpty) return List<Product>.from(catalog.products);
+    final loadedIds = catalog.products.map((p) => p.id).toSet();
+    return [
+      ...catalog.products,
+      ...extra.where((p) => !loadedIds.contains(p.id)),
+    ];
+  }
+
+  /// OF-01: Pide al servidor los productos en oferta que faltan en el catálogo en memoria.
+  /// Idempotente (el provider compara el conjunto faltante), por eso puede llamarse en cada build.
+  void _scheduleOfferOnlyProductsSync(CatalogProvider catalog, OfferProvider offerProv) {
+    if (catalog.isLoading || catalog.products.isEmpty || _searchQuery.isNotEmpty) return;
+    final loadedIds = catalog.products.map((p) => p.id).toSet();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) offerProv.syncOfferOnlyProducts(loadedIds);
+    });
+  }
+
   List<Product> _getFilteredProducts(CatalogProvider catalog, OfferProvider offerProv, LocalTerminalProvider localTerminal) {
     if (_searchQuery.isNotEmpty) {
       return _searchResults;
@@ -3627,7 +3660,10 @@ class _PosScreenState extends State<PosScreen> {
     } else if (_quickAccessFilter == 'top_sellers') {
       filtered = filtered.where((p) => p.salesCount > 0).toList();
     } else if (_quickAccessFilter == 'offers') {
-      filtered = filtered.where((p) => offerProv.getActiveOfferForProduct(p.id, basePrice: p.sellingPrice) != null).toList();
+      // OF-01: incluir productos en oferta que quedaron fuera del bloque inicial de 500 del catálogo
+      filtered = _offerCandidateProducts(catalog, offerProv)
+          .where((p) => offerProv.getActiveOfferForProduct(p.id, basePrice: p.sellingPrice) != null)
+          .toList();
     } else if (_quickAccessFilter == 'weight') {
       filtered = filtered.where((p) => p.isSoldByWeight).toList();
     } else if (_quickAccessFilter.startsWith('cat_')) {
@@ -3998,6 +4034,7 @@ class _PosScreenState extends State<PosScreen> {
                             context.read<CatalogProvider>().loadProducts(page: 1, search: '', sortBy: '', perPage: 500);
                             final offerProv = context.read<OfferProvider>();
                             final posProv = context.read<PosProvider>();
+                            offerProv.invalidateOfferOnlyProducts(); // OF-01: refrescar stock de ofertas fuera del catálogo
                             offerProv.loadActiveOffers().then((_) {
                               if (mounted) {
                                 posProv.syncActiveOffers(offerProv.activeOffers);
@@ -4354,7 +4391,11 @@ class _PosScreenState extends State<PosScreen> {
 
     final hasPinned = localTerminal.pinnedProductIds.isNotEmpty;
     final hasTopSellers = catalog.products.any((p) => p.salesCount > 0);
-    final hasOffers = catalog.products.any((p) => offerProv.getActiveOfferForProduct(p.id, basePrice: p.sellingPrice) != null);
+    // OF-01: considerar también los productos en oferta fuera del bloque inicial del catálogo
+    _scheduleOfferOnlyProductsSync(catalog, offerProv);
+    final hasOffers = offerProv.currentlyActiveOfferProductIds.isNotEmpty ||
+        _offerCandidateProducts(catalog, offerProv)
+            .any((p) => offerProv.getActiveOfferForProduct(p.id, basePrice: p.sellingPrice) != null);
 
     // Si un filtro dinámico queda sin productos asociados, regresar automáticamente a 'all'
     if ((_quickAccessFilter == 'top_sellers' && !hasTopSellers) ||

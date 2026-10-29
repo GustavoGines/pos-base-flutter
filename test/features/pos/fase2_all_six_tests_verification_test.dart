@@ -162,6 +162,19 @@ class FakeOfferProvider extends ChangeNotifier implements OfferProvider {
   @override
   OfferModel? getActiveOfferForProduct(int productId, {double? basePrice}) => null;
 
+  // OF-01: productos en oferta fuera del bloque inicial del catálogo (sin ofertas en este fake)
+  @override
+  Set<int> get currentlyActiveOfferProductIds => const {};
+
+  @override
+  List<Product> get offerOnlyProducts => const [];
+
+  @override
+  Future<void> syncOfferOnlyProducts(Set<int> loadedProductIds, {bool force = false}) async {}
+
+  @override
+  void invalidateOfferOnlyProducts() {}
+
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

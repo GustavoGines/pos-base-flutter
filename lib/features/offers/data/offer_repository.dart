@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:frontend_desktop/core/network/api_client.dart';
+import 'package:frontend_desktop/features/catalog/data/models/product_model.dart';
+import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
 import 'models/offer_model.dart';
 
 class OfferRepository {
@@ -27,6 +29,27 @@ class OfferRepository {
       return list.map((item) => OfferModel.fromJson(item as Map<String, dynamic>)).toList();
     } else {
       throw Exception('Error al obtener ofertas activas (${response.statusCode})');
+    }
+  }
+
+  /// OF-01: Trae COMPLETOS (stock, combo, pesable, imagen, escalas) los productos indicados,
+  /// con el mismo formato que el listado del catálogo. Se usa para los productos en oferta
+  /// activa que quedaron fuera del bloque inicial de 500 del Acceso Rápido.
+  Future<List<Product>> getProductsByIds(List<int> ids) async {
+    if (ids.isEmpty) return [];
+    final url = await _getActiveUrl();
+    final uri = Uri.parse('$url/catalog/products').replace(queryParameters: {
+      'ids': ids.join(','),
+      'per_page': '500',
+    });
+    final response = await client.get(uri, headers: {'Accept': 'application/json'});
+
+    if (response.statusCode == 200) {
+      final jsonResponse = jsonDecode(response.body);
+      final list = jsonResponse['data'] as List? ?? [];
+      return list.map((item) => ProductModel.fromJson(item as Map<String, dynamic>)).toList();
+    } else {
+      throw Exception('Error al obtener productos en oferta (${response.statusCode})');
     }
   }
 

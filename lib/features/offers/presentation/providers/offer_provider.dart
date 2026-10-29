@@ -174,6 +174,69 @@ class OfferProvider with ChangeNotifier {
     return bestOffer;
   }
 
+  // ── OF-01: Productos en oferta fuera del bloque inicial del Acceso Rápido ──────────
+  // El POS carga solo los primeros 500 productos (por ventas). Un producto en oferta con
+  // pocas ventas puede quedar afuera y desaparecer del filtro "Ofertas". Aquí se guardan,
+  // completos y en una lista aparte, para no alterar "Todos", categorías ni atajos Ctrl+N.
+  List<Product> _offerOnlyProducts = [];
+  List<Product> get offerOnlyProducts => _offerOnlyProducts;
+
+  String? _offerOnlySignature;
+  int _offerOnlyRequestSeq = 0;
+
+  /// IDs de productos incluidos en ofertas vigentes en este momento (fecha + día de semana).
+  Set<int> get currentlyActiveOfferProductIds {
+    final ids = <int>{};
+    for (final offer in _activeOffers) {
+      if (!offer.isCurrentlyActive) continue;
+      for (final p in offer.products) {
+        final id = _extractProductId(p);
+        if (id != null && id > 0) ids.add(id);
+      }
+    }
+    return ids;
+  }
+
+  /// Trae del servidor los productos en oferta vigente que NO están en [loadedProductIds].
+  /// Es idempotente: si el conjunto faltante no cambió, no vuelve a consultar (salvo [force]).
+  Future<void> syncOfferOnlyProducts(Set<int> loadedProductIds, {bool force = false}) async {
+    final missing = currentlyActiveOfferProductIds.difference(loadedProductIds).toList()..sort();
+    final signature = missing.join(',');
+    if (!force && signature == _offerOnlySignature) return;
+    _offerOnlySignature = signature;
+    final seq = ++_offerOnlyRequestSeq;
+
+    if (missing.isEmpty) {
+      if (_offerOnlyProducts.isNotEmpty) {
+        _offerOnlyProducts = [];
+        notifyListeners();
+      }
+      return;
+    }
+
+    try {
+      final fetched = await repository.getProductsByIds(missing);
+      if (seq != _offerOnlyRequestSeq) return; // Respuesta vieja: llegó otra sincronización después
+      _offerOnlyProducts = fetched;
+      notifyListeners();
+    } catch (e) {
+      // Error de red: se conserva la lista anterior. No se reintenta en cada frame; se vuelve a
+      // intentar cuando cambie el conjunto faltante o al refrescar manualmente (force/invalidate).
+      debugPrint('OF-01: no se pudieron traer productos en oferta fuera del catálogo: $e');
+    }
+  }
+
+  /// Obliga a que la próxima [syncOfferOnlyProducts] vuelva a consultar (ej. botón Actualizar).
+  void invalidateOfferOnlyProducts() {
+    _offerOnlySignature = null;
+  }
+
+  /// Reemplaza la lista (ej. tras descontar stock en memoria al cobrar), sin consultar al servidor.
+  void replaceOfferOnlyProducts(List<Product> products) {
+    _offerOnlyProducts = products;
+    notifyListeners();
+  }
+
   /// Retorna el precio unitario con oferta si aplica hoy, o null si no hay oferta.
   double? getDiscountedPrice(Product product) {
     final offer = getActiveOfferForProduct(product.id, basePrice: product.sellingPrice);
