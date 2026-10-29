@@ -17,8 +17,10 @@ class _FakeCatalogRepository extends Fake implements CatalogRepository {
   @override
   Future<List<Brand>> getBrands() async => [];
 
+  List<Map<String, dynamic>> bulkStockResponse = [];
+
   @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+  Future<List<Map<String, dynamic>>> fetchBulkStock(List<int> ids) async => bulkStockResponse;
 }
 
 class _FakeGetProductsUseCase extends Fake implements GetProductsUseCase {
@@ -257,6 +259,60 @@ void main() {
       expect(provider.pinnedExtraProducts.isEmpty, isTrue);
       expect(provider.weightOnlyProducts.isEmpty, isTrue);
       expect(provider.getCategoryExtraProducts(128).isEmpty, isTrue);
+    });
+
+    test('FT-01: refreshStockForSoldProducts actualiza stock en _products y en todas las colecciones extra', () async {
+      repo = _FakeCatalogRepository();
+      final useCase = _FakeGetProductsUseCase(({page = 1, perPage, categoryId, isSoldByWeight, ids}) {
+        if (categoryId == 128) {
+          return {
+            'data': [_makeProduct(id: 2, name: 'Xiaomi Extra', stock: 10, categoryId: 128)],
+            'current_page': 1,
+            'last_page': 1,
+          };
+        }
+        if (isSoldByWeight == true) {
+          return {
+            'data': [_makeProduct(id: 3, name: 'Queso Extra', stock: 5.0, isWeight: true)],
+            'current_page': 1,
+            'last_page': 1,
+          };
+        }
+        if (ids != null) {
+          return {
+            'data': [_makeProduct(id: 4, name: 'Fijado Extra', stock: 7)],
+            'current_page': 1,
+            'last_page': 1,
+          };
+        }
+        return {
+          'data': [_makeProduct(id: 1, name: 'Prod Memoria', stock: 20)],
+          'current_page': 1,
+          'last_page': 1,
+        };
+      });
+
+      provider = CatalogProvider(getProductsUseCase: useCase, repository: repo);
+      await provider.loadProducts(page: 1, perPage: 500);
+      await provider.syncCategoryProducts(128);
+      await provider.syncWeightProducts();
+      await provider.syncPinnedProducts({4});
+
+      // Configuramos respuesta del backend para bulkStock
+      repo.bulkStockResponse = [
+        {'id': 1, 'stock': '15.0'},
+        {'id': 2, 'stock': '6.0'},
+        {'id': 3, 'stock': '2.5'},
+        {'id': 4, 'stock': '3.0'},
+      ];
+
+      final res = await provider.refreshStockForSoldProducts([1, 2, 3, 4]);
+
+      expect(res[1], 15.0);
+      expect(provider.products.first.stock, 15.0);
+      expect(provider.getCategoryExtraProducts(128).first.stock, 6.0);
+      expect(provider.weightOnlyProducts.first.stock, 2.5);
+      expect(provider.pinnedExtraProducts.first.stock, 3.0);
     });
   });
 }

@@ -156,6 +156,24 @@ class FakeCatalogProvider extends ChangeNotifier implements CatalogProvider {
   void invalidateQuickAccessExtraCaches() {}
 
   @override
+  bool isCategoryHydrated(int categoryId) => true;
+
+  @override
+  bool get isWeightHydrated => true;
+
+  @override
+  bool isPinnedHydrated(Set<int> pinnedIds) => true;
+
+  @override
+  Future<void> prefetchCategories(List<int> categoryIds) async {}
+
+  @override
+  List<Product> applyStockUpdatesToProductList(
+    List<Product> list,
+    Map<int, double> updatedStockById,
+  ) => list;
+
+  @override
   Future<void> loadProducts({
     int page = 1,
     String? search,

@@ -1069,7 +1069,7 @@ class PosQuickAccessCatalogView extends StatelessWidget {
                                     style: TextStyle(
                                       fontSize: isMedium ? 8.5 : 9.0,
                                       color: accentColor,
-                                      fontWeight: FontWeight.w600,
+                                      fontWeight: FontWeight.w700,
                                     ),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
@@ -1086,8 +1086,8 @@ class PosQuickAccessCatalogView extends StatelessWidget {
                             product.name,
                             textAlign: TextAlign.start,
                             style: TextStyle(
-                              fontWeight: FontWeight.w600,
-                              fontSize: isMedium ? 10 : 11,
+                              fontWeight: FontWeight.w700,
+                              fontSize: _typographicNameFontSize(product.name, isMedium),
                               height: 1.2,
                               color: const Color(0xFF1E293B),
                             ),
@@ -1202,5 +1202,12 @@ class PosQuickAccessCatalogView extends StatelessWidget {
         maxLines: 1,
       ),
     );
+  }
+
+  double _typographicNameFontSize(String name, bool isMedium) {
+    final len = name.trim().length;
+    if (len <= 12) return isMedium ? 13.0 : 15.0;
+    if (len <= 24) return isMedium ? 11.5 : 13.0;
+    return isMedium ? 10.5 : 11.5;
   }
 }

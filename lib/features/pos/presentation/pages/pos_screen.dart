@@ -13,7 +13,6 @@ import 'package:provider/provider.dart';
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import '../providers/pos_provider.dart';
 import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
-import 'package:frontend_desktop/features/catalog/domain/entities/category.dart';
 import 'package:frontend_desktop/features/catalog/presentation/providers/catalog_provider.dart';
 import 'package:frontend_desktop/features/cash_register/presentation/providers/cash_register_provider.dart';
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
@@ -300,6 +299,19 @@ class _PosScreenState extends State<PosScreen> {
     }
     String cleanQuery = query.trim().toUpperCase();
 
+    // FT-02: Limpiar inmediatamente el debounce y el controlador antes de cualquier await.
+    // Evita la concatenación de códigos cuando el lector láser dispara en ráfaga
+    // y cancela cualquier búsqueda por texto parcial en vuelo para ese mismo término.
+    _debounceSearchTimer?.cancel();
+    _searchController.clear();
+    if (_searchQuery.isNotEmpty || _searchResults.isNotEmpty || _isSearching) {
+      setState(() {
+        _searchQuery = '';
+        _searchResults = [];
+        _isSearching = false;
+      });
+    }
+
     final posProvider = Provider.of<PosProvider>(context, listen: false);
 
     // 0. Interceptar Presupuestos (Código de barras PRES-)
@@ -352,9 +364,9 @@ class _PosScreenState extends State<PosScreen> {
         SnackBarService.error(context, 'Error al recuperar presupuesto: $e');
       }
 
-      _searchController.clear();
-      setState(() => _searchQuery = '');
-      _searchFocusNode.requestFocus();
+      if (mounted) {
+        _searchFocusNode.requestFocus();
+      }
       return;
     }
 
@@ -389,10 +401,8 @@ class _PosScreenState extends State<PosScreen> {
                 'Etiqueta de balanza inválida (precio \$0) para "${results.first.name}". '
                 'Revise la etiqueta o ingrese el peso manualmente.',
               );
+              _searchFocusNode.requestFocus();
             }
-            _searchController.clear();
-            setState(() => _searchQuery = '');
-            _searchFocusNode.requestFocus();
             return;
           }
           appliedScaleLogic = true;
@@ -405,10 +415,8 @@ class _PosScreenState extends State<PosScreen> {
             if (mounted) {
               SnackBarService.error(context,
                   'El producto "${results.first.name}" no se vende por peso. Revise la etiqueta.');
+              _searchFocusNode.requestFocus();
             }
-            _searchController.clear();
-            setState(() => _searchQuery = '');
-            _searchFocusNode.requestFocus();
             return;
           }
         }
@@ -446,9 +454,9 @@ class _PosScreenState extends State<PosScreen> {
       await _showProductPickerDialog(results, cleanQuery);
     }
 
-    _searchController.clear();
-    setState(() => _searchQuery = '');
-    _searchFocusNode.requestFocus();
+    if (mounted) {
+      _searchFocusNode.requestFocus();
+    }
   }
 
   /// Diálogo para seleccionar entre múltiples resultados de búsqueda
@@ -2025,38 +2033,24 @@ class _PosScreenState extends State<PosScreen> {
           soldProductsSnapshot: soldProductsSnapshot,
         )
             .then((updatedMap) {
-          if (!mounted || updatedMap.isEmpty || _searchResults.isEmpty) return;
-          setState(() {
-            _searchResults = _searchResults.map((p) {
-              var updated = updatedMap.containsKey(p.id)
-                  ? p.copyWith(stock: updatedMap[p.id])
-                  : p;
-              if (updated.isCombo &&
-                  updated.comboIngredients != null &&
-                  updated.comboIngredients!.isNotEmpty) {
-                int? minFit;
-                final newIngs = updated.comboIngredients!.map((ing) {
-                  final copy = Map<String, dynamic>.from(ing);
-                  final ingId = (copy['id'] as num?)?.toInt();
-                  if (ingId != null && updatedMap.containsKey(ingId)) {
-                    copy['stock'] = updatedMap[ingId];
-                  }
-                  final s = (copy['stock'] as num?)?.toDouble() ?? 0.0;
-                  final q = (copy['quantity'] as num?)?.toDouble() ?? 1.0;
-                  if (q > 0) {
-                    final fit = s < 0 ? 0 : (s / q).floor();
-                    if (minFit == null || fit < minFit!) minFit = fit;
-                  }
-                  return copy;
-                }).toList();
-                updated = updated.copyWith(
-                  comboIngredients: newIngs,
-                  stock: (minFit ?? 0).toDouble(),
-                );
-              }
-              return updated;
-            }).toList();
-          });
+          if (!mounted || updatedMap.isEmpty) return;
+          if (offerProvForStock.offerOnlyProducts.isNotEmpty) {
+            final updatedOffers = catalogProvider.applyStockUpdatesToProductList(
+              offerProvForStock.offerOnlyProducts,
+              updatedMap,
+            );
+            if (!identical(updatedOffers, offerProvForStock.offerOnlyProducts)) {
+              offerProvForStock.replaceOfferOnlyProducts(updatedOffers);
+            }
+          }
+          if (_searchResults.isNotEmpty) {
+            setState(() {
+              _searchResults = catalogProvider.applyStockUpdatesToProductList(
+                _searchResults,
+                updatedMap,
+              );
+            });
+          }
         }).catchError((e) {
           debugPrint('Refresco de stock silencioso falló (esperado en redes inestables): $e');
         });
@@ -3659,8 +3653,47 @@ class _PosScreenState extends State<PosScreen> {
 
   void _scheduleCategoryProductsSync(CatalogProvider catalog, int categoryId) {
     if (catalog.isLoading || catalog.products.isEmpty || _searchQuery.isNotEmpty) return;
+    if (catalog.isCategoryHydrated(categoryId)) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) catalog.syncCategoryProducts(categoryId);
+    });
+  }
+
+  int? _categoryIdByName(CatalogProvider catalog, String categoryName) {
+    final target = categoryName.trim().toLowerCase();
+    for (final c in catalog.categories) {
+      if (c.name.trim().toLowerCase() == target) return c.id;
+    }
+    return null;
+  }
+
+  /// `true` mientras el filtro activo espera del servidor productos que no están en los
+  /// primeros 500 (solo la primera vez por sesión: luego queda en caché y es instantáneo).
+  bool _isQuickAccessFilterHydrating(CatalogProvider catalog, LocalTerminalProvider localTerminal) {
+    if (_searchQuery.isNotEmpty || catalog.isLoading || catalog.products.isEmpty) return false;
+    if (_quickAccessFilter == 'weight') return !catalog.isWeightHydrated;
+    if (_quickAccessFilter == 'pinned') {
+      return !catalog.isPinnedHydrated(localTerminal.pinnedProductIds);
+    }
+    if (_quickAccessFilter.startsWith('cat_')) {
+      final catId = _categoryIdByName(catalog, _quickAccessFilter.substring(4));
+      return catId != null && !catalog.isCategoryHydrated(catId);
+    }
+    return false;
+  }
+
+  /// Precarga en segundo plano las categorías visibles como chips, para que al tocarlas
+  /// aparezcan completas sin espera. Secuencial y deduplicada en el provider.
+  void _schedulePrefetchVisibleCategories(CatalogProvider catalog, Iterable<String> categoryNames) {
+    if (catalog.isLoading || catalog.products.isEmpty || catalog.categories.isEmpty) return;
+    final ids = <int>[];
+    for (final name in categoryNames) {
+      final id = _categoryIdByName(catalog, name);
+      if (id != null && !catalog.isCategoryHydrated(id)) ids.add(id);
+    }
+    if (ids.isEmpty) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) catalog.prefetchCategories(ids);
     });
   }
 
@@ -3676,6 +3709,7 @@ class _PosScreenState extends State<PosScreen> {
 
   void _scheduleWeightProductsSync(CatalogProvider catalog) {
     if (catalog.isLoading || catalog.products.isEmpty || _searchQuery.isNotEmpty) return;
+    if (catalog.isWeightHydrated) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) catalog.syncWeightProducts();
     });
@@ -3693,6 +3727,7 @@ class _PosScreenState extends State<PosScreen> {
 
   void _schedulePinnedProductsSync(CatalogProvider catalog, Set<int> pinnedIds) {
     if (catalog.isLoading || catalog.products.isEmpty || _searchQuery.isNotEmpty || pinnedIds.isEmpty) return;
+    if (catalog.isPinnedHydrated(pinnedIds)) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) catalog.syncPinnedProducts(pinnedIds);
     });
@@ -3725,21 +3760,22 @@ class _PosScreenState extends State<PosScreen> {
       filtered = _weightCandidateProducts(catalog).where((p) => p.isSoldByWeight).toList();
     } else if (_quickAccessFilter.startsWith('cat_')) {
       final categoryName = _quickAccessFilter.substring(4).trim();
-      Category? catObj;
-      for (final c in catalog.categories) {
-        if (c.name.trim().toLowerCase() == categoryName.toLowerCase()) {
-          catObj = c;
-          break;
-        }
-      }
-      if (catObj != null) {
-        _scheduleCategoryProductsSync(catalog, catObj.id);
-        filtered = _categoryCandidateProducts(catalog, catObj.id)
+      final catId = _categoryIdByName(catalog, categoryName);
+      if (catId != null) {
+        _scheduleCategoryProductsSync(catalog, catId);
+        filtered = _categoryCandidateProducts(catalog, catId)
             .where((p) => p.category?.name.trim().toLowerCase() == categoryName.toLowerCase())
             .toList();
       } else {
         filtered = filtered.where((p) => p.category?.name.trim().toLowerCase() == categoryName.toLowerCase()).toList();
       }
+    }
+
+    // Mientras el filtro trae del servidor los productos que faltan, no se muestra la lista
+    // parcial (evita el "aparecen 2 y después de golpe todos"). Tampoco se congela el orden
+    // con datos incompletos: se calcula una sola vez con el conjunto completo.
+    if (_isQuickAccessFilterHydrating(catalog, localTerminal)) {
+      return const <Product>[];
     }
 
     final pinnedSorted = localTerminal.pinnedProductIds.toList()..sort();
@@ -4164,6 +4200,17 @@ class _PosScreenState extends State<PosScreen> {
                     final localTerminal = context.watch<LocalTerminalProvider>();
                     final displayItems = _getFilteredProducts(catalog, offerProv, localTerminal);
 
+                    if (displayItems.isEmpty && _isQuickAccessFilterHydrating(catalog, localTerminal)) {
+                      // Carga única del catálogo completo del filtro (luego queda en caché).
+                      return const Center(
+                        child: SizedBox(
+                          width: 28,
+                          height: 28,
+                          child: CircularProgressIndicator(strokeWidth: 2.5),
+                        ),
+                      );
+                    }
+
                     if (displayItems.isEmpty) {
                       if (_searchQuery.isEmpty && _quickAccessFilter != 'all' && catalog.products.isNotEmpty) {
                         // Filtro activo devuelve 0 ítems pero el catálogo tiene productos
@@ -4487,21 +4534,32 @@ class _PosScreenState extends State<PosScreen> {
       });
     }
 
-    final categories = <String, int>{};
-    if (catalog.categories.isNotEmpty) {
-      for (final cat in catalog.categories) {
-        final count = cat.productsCount ?? 0;
-        if (count > 0) {
-          categories[cat.name.trim()] = count;
-        }
-      }
-    }
+    final localCounts = <String, int>{};
     for (final p in catalog.products) {
       final catName = p.category?.name.trim();
       if (catName != null && catName.isNotEmpty) {
-        if (!categories.containsKey(catName)) {
-          categories[catName] = 1;
+        localCounts[catName] = (localCounts[catName] ?? 0) + 1;
+      }
+    }
+
+    final categories = <String, int>{};
+    if (catalog.categories.isNotEmpty) {
+      for (final cat in catalog.categories) {
+        final name = cat.name.trim();
+        final serverCount = cat.productsCount ?? 0;
+        final localCount = localCounts[name] ?? 0;
+        final extraCount = catalog.getCategoryExtraProducts(cat.id).length;
+        final totalCount = serverCount > (localCount + extraCount)
+            ? serverCount
+            : (localCount + extraCount);
+        if (totalCount > 0) {
+          categories[name] = totalCount;
         }
+      }
+    }
+    for (final entry in localCounts.entries) {
+      if (!categories.containsKey(entry.key) && entry.value > 0) {
+        categories[entry.key] = entry.value;
       }
     }
     final allCategories = categories.entries.toList()
@@ -4547,6 +4605,16 @@ class _PosScreenState extends State<PosScreen> {
     } else {
       visibleCategories.addAll(allCategories.take(maxDirectCategories));
       overflowCategories.addAll(allCategories.skip(maxDirectCategories));
+    }
+
+    // Precarga silenciosa: pesables + categorías visibles, para que al tocarlas aparezcan
+    // completas al instante (las del menú "Más" se cargan al elegirlas, con indicador breve).
+    if (_searchQuery.isEmpty) {
+      _scheduleWeightProductsSync(catalog);
+      _schedulePrefetchVisibleCategories(
+        catalog,
+        visibleCategories.map((e) => e.key),
+      );
     }
 
     return SizedBox(

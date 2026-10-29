@@ -49,21 +49,80 @@ class CatalogProvider with ChangeNotifier {
   final Set<int> _categoriesLoading = {};
   List<Product> _weightOnlyProducts = [];
   bool _weightLoading = false;
+  // Bandera explícita de "ya sincronizado": una lista vacía es un resultado válido
+  // (todos los pesables ya estaban en memoria) y no debe disparar otra consulta.
+  bool _weightSynced = false;
   List<Product> _pinnedExtraProducts = [];
   bool _pinnedLoading = false;
+  // IDs fijados ya consultados (existan o no en el servidor) para no reconsultar en cada build.
+  final Set<int> _pinnedRequestedIds = {};
+  bool _prefetchRunning = false;
+  // Generación de caché: invalida respuestas en vuelo iniciadas antes de un refresco.
+  int _quickAccessCacheGeneration = 0;
 
   List<Product> getCategoryExtraProducts(int categoryId) => _categoryExtraProducts[categoryId] ?? const [];
   List<Product> get weightOnlyProducts => _weightOnlyProducts;
   List<Product> get pinnedExtraProducts => _pinnedExtraProducts;
 
+  /// La categoría ya tiene su catálogo completo disponible en memoria (sin red pendiente).
+  /// Si el servidor informa `productsCount` y ya hay esa cantidad de activos cargados en
+  /// los primeros 500, no hace falta consultar: se considera hidratada al instante.
+  bool isCategoryHydrated(int categoryId) {
+    if (_categoryExtraProducts.containsKey(categoryId)) return true;
+    return _categoryFullyInMemory(categoryId);
+  }
+
+  bool get isWeightHydrated => _weightSynced;
+
+  /// Los fijados que no están en memoria ya fueron consultados al servidor.
+  bool isPinnedHydrated(Set<int> pinnedIds) {
+    final loadedIds = _products.map((p) => p.id).toSet();
+    return pinnedIds.every((id) => loadedIds.contains(id) || _pinnedRequestedIds.contains(id));
+  }
+
+  bool _categoryFullyInMemory(int categoryId) {
+    int? expected;
+    for (final c in _categories) {
+      if (c.id == categoryId) {
+        expected = c.productsCount;
+        break;
+      }
+    }
+    // Backend v1.8.5 no envía products_count: sin dato no se puede asumir completitud.
+    if (expected == null) return false;
+    final localActive = _products.where((p) => p.active && p.category?.id == categoryId).length;
+    return localActive >= expected;
+  }
+
   /// Limpia las cachés adicionales del Acceso Rápido al recargar o refrescar el catálogo
   void invalidateQuickAccessExtraCaches() {
+    _quickAccessCacheGeneration++;
     _categoryExtraProducts.clear();
     _categoriesLoading.clear();
-    _weightOnlyProducts.clear();
+    _weightOnlyProducts = [];
     _weightLoading = false;
-    _pinnedExtraProducts.clear();
+    _weightSynced = false;
+    _pinnedExtraProducts = [];
     _pinnedLoading = false;
+    _pinnedRequestedIds.clear();
+    _prefetchRunning = false;
+  }
+
+  /// Precarga en segundo plano (secuencial, una petición a la vez) las categorías indicadas
+  /// para que al tocarlas el Acceso Rápido muestre todos sus productos al instante.
+  Future<void> prefetchCategories(List<int> categoryIds) async {
+    if (_prefetchRunning || categoryIds.isEmpty) return;
+    _prefetchRunning = true;
+    final generation = _quickAccessCacheGeneration;
+    try {
+      for (final id in categoryIds) {
+        if (generation != _quickAccessCacheGeneration) return;
+        if (isCategoryHydrated(id) || _categoriesLoading.contains(id)) continue;
+        await syncCategoryProducts(id);
+      }
+    } finally {
+      if (generation == _quickAccessCacheGeneration) _prefetchRunning = false;
+    }
   }
 
   // ── Pagination State ─────────────────────────────────────
@@ -283,6 +342,15 @@ class CatalogProvider with ChangeNotifier {
   bool updateProductSalesCountLocally(Map<int, int> productSales) {
     bool changed = false;
     bool anyMissing = false;
+
+    List<Product> bumpInList(List<Product> list, int productId, int delta) {
+      final idx = list.indexWhere((p) => p.id == productId);
+      if (idx == -1) return list;
+      final copy = List<Product>.from(list);
+      copy[idx] = copy[idx].copyWith(salesCount: copy[idx].salesCount + delta);
+      return copy;
+    }
+
     for (var entry in productSales.entries) {
       final index = _products.indexWhere((p) => p.id == entry.key);
       if (index != -1) {
@@ -293,6 +361,31 @@ class CatalogProvider with ChangeNotifier {
         changed = true;
       } else {
         anyMissing = true;
+      }
+
+      if (_categoryExtraProducts.isNotEmpty) {
+        for (final key in _categoryExtraProducts.keys.toList()) {
+          final orig = _categoryExtraProducts[key]!;
+          final next = bumpInList(orig, entry.key, entry.value);
+          if (!identical(orig, next)) {
+            _categoryExtraProducts[key] = next;
+            changed = true;
+          }
+        }
+      }
+      if (_weightOnlyProducts.isNotEmpty) {
+        final next = bumpInList(_weightOnlyProducts, entry.key, entry.value);
+        if (!identical(_weightOnlyProducts, next)) {
+          _weightOnlyProducts = next;
+          changed = true;
+        }
+      }
+      if (_pinnedExtraProducts.isNotEmpty) {
+        final next = bumpInList(_pinnedExtraProducts, entry.key, entry.value);
+        if (!identical(_pinnedExtraProducts, next)) {
+          _pinnedExtraProducts = next;
+          changed = true;
+        }
       }
     }
     if (changed) notifyListeners();
@@ -366,10 +459,11 @@ class CatalogProvider with ChangeNotifier {
   /// Trae del backend los productos de la categoría que NO estén presentes en `_products`.
   /// Idempotente y protegido contra peticiones concurrentes.
   Future<void> syncCategoryProducts(int categoryId) async {
-    if (_categoriesLoading.contains(categoryId) || _categoryExtraProducts.containsKey(categoryId)) {
+    if (_categoriesLoading.contains(categoryId) || isCategoryHydrated(categoryId)) {
       return;
     }
     _categoriesLoading.add(categoryId);
+    final generation = _quickAccessCacheGeneration;
     try {
       final List<Product> extras = [];
       final loadedIds = _products.map((p) => p.id).toSet();
@@ -393,19 +487,28 @@ class CatalogProvider with ChangeNotifier {
         page++;
       } while (page <= lastPage && page <= 5);
 
+      if (generation != _quickAccessCacheGeneration) return; // respuesta vieja: descartar
       _categoryExtraProducts[categoryId] = extras;
-      notifyListeners();
     } catch (e) {
       debugPrint('Error en syncCategoryProducts($categoryId): $e');
+      // Sin red: se muestra lo que hay en memoria (sin loader infinito). El botón
+      // "Actualizar" invalida la caché y reintenta.
+      if (generation == _quickAccessCacheGeneration) {
+        _categoryExtraProducts[categoryId] = const [];
+      }
     } finally {
-      _categoriesLoading.remove(categoryId);
+      if (generation == _quickAccessCacheGeneration) {
+        _categoriesLoading.remove(categoryId);
+        notifyListeners();
+      }
     }
   }
 
   /// Trae del backend los productos pesables que NO estén presentes en `_products`.
   Future<void> syncWeightProducts() async {
-    if (_weightLoading || _weightOnlyProducts.isNotEmpty) return;
+    if (_weightLoading || _weightSynced) return;
     _weightLoading = true;
+    final generation = _quickAccessCacheGeneration;
     try {
       final List<Product> extras = [];
       final loadedIds = _products.map((p) => p.id).toSet();
@@ -429,12 +532,16 @@ class CatalogProvider with ChangeNotifier {
         page++;
       } while (page <= lastPage && page <= 5);
 
+      if (generation != _quickAccessCacheGeneration) return;
       _weightOnlyProducts = extras;
-      notifyListeners();
     } catch (e) {
       debugPrint('Error en syncWeightProducts: $e');
     } finally {
-      _weightLoading = false;
+      if (generation == _quickAccessCacheGeneration) {
+        _weightSynced = true; // también ante error: evita reintentos en cada build
+        _weightLoading = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -442,19 +549,22 @@ class CatalogProvider with ChangeNotifier {
   Future<void> syncPinnedProducts(Set<int> pinnedIds) async {
     if (_pinnedLoading || pinnedIds.isEmpty) return;
     final loadedIds = _products.map((p) => p.id).toSet();
-    final missingIds = pinnedIds.where((id) => !loadedIds.contains(id)).toList();
+    // Solo los que nunca se consultaron: un fijado eliminado en el servidor no vuelve
+    // a pedirse en cada build.
+    final missingIds = pinnedIds
+        .where((id) => !loadedIds.contains(id) && !_pinnedRequestedIds.contains(id))
+        .toList();
     if (missingIds.isEmpty) return;
 
-    final currentExtraIds = _pinnedExtraProducts.map((p) => p.id).toSet();
-    if (missingIds.every((id) => currentExtraIds.contains(id))) return;
-
     _pinnedLoading = true;
+    final generation = _quickAccessCacheGeneration;
     try {
       final result = await getProductsUseCase(
         page: 1,
         perPage: 500,
         ids: missingIds,
       );
+      if (generation != _quickAccessCacheGeneration) return;
       final pageData = List<Product>.from(result['data'] as List);
       final List<Product> extras = List<Product>.from(_pinnedExtraProducts);
       for (final p in pageData) {
@@ -463,12 +573,62 @@ class CatalogProvider with ChangeNotifier {
         }
       }
       _pinnedExtraProducts = extras;
-      notifyListeners();
     } catch (e) {
       debugPrint('Error en syncPinnedProducts: $e');
     } finally {
-      _pinnedLoading = false;
+      if (generation == _quickAccessCacheGeneration) {
+        _pinnedRequestedIds.addAll(missingIds);
+        _pinnedLoading = false;
+        notifyListeners();
+      }
     }
+  }
+
+  List<Product> applyStockUpdatesToProductList(
+    List<Product> list,
+    Map<int, double> updatedStockById,
+  ) {
+    if (updatedStockById.isEmpty || list.isEmpty) return list;
+    bool anyChanged = false;
+    final updatedList = list.map((p) {
+      Product current = p;
+      if (updatedStockById.containsKey(current.id)) {
+        anyChanged = true;
+        current = current.copyWith(stock: updatedStockById[current.id]!);
+      }
+      if (current.isCombo && current.comboIngredients != null && current.comboIngredients!.isNotEmpty) {
+        bool comboChanged = false;
+        int? limitingCombos;
+        final updatedIngredients = current.comboIngredients!.map((ing) {
+          final copy = Map<String, dynamic>.from(ing);
+          final ingId = (copy['id'] as num?)?.toInt();
+          if (ingId != null && updatedStockById.containsKey(ingId)) {
+            copy['stock'] = updatedStockById[ingId];
+            comboChanged = true;
+          }
+          final s = (copy['stock'] as num?)?.toDouble() ?? 0.0;
+          final q = (copy['quantity'] as num?)?.toDouble() ?? 1.0;
+          if (q > 0) {
+            final fit = s < 0 ? 0 : (s / q).floor();
+            if (limitingCombos == null || fit < limitingCombos!) {
+              limitingCombos = fit;
+            }
+          }
+          return copy;
+        }).toList();
+
+        if (comboChanged) {
+          anyChanged = true;
+          current = current.copyWith(
+            comboIngredients: updatedIngredients,
+            stock: (limitingCombos ?? 0).toDouble(),
+          );
+        }
+      }
+      return current;
+    }).toList();
+
+    return anyChanged ? updatedList : list;
   }
 
   /// Actualiza SILENCIOSAMENTE solo el stock de los productos vendidos.
@@ -484,6 +644,9 @@ class CatalogProvider with ChangeNotifier {
       final expandedIds = <int>{...soldIds};
       final allKnownProducts = <Product>[
         ..._products,
+        for (final extra in _categoryExtraProducts.values) ...extra,
+        ..._weightOnlyProducts,
+        ..._pinnedExtraProducts,
         if (soldProductsSnapshot != null) ...soldProductsSnapshot,
       ];
       for (final p in allKnownProducts) {
@@ -508,44 +671,38 @@ class CatalogProvider with ChangeNotifier {
         final stock = double.tryParse(entry['stock']?.toString() ?? '');
         if (id == null || stock == null) continue;
         updatedStockById[id] = stock;
-        final index = _products.indexWhere((p) => p.id == id);
-        if (index != -1) {
-          _products[index] = _products[index].copyWith(stock: stock);
-          changed = true;
-        }
       }
 
-      // Sincronizar también el stock de los ingredientes dentro de cada Combo en memoria
+      // FT-01: Replicar la actualización de stock en _products y en todas las
+      // colecciones complementarias del Acceso Rápido (categorías, pesables y fijados).
       if (updatedStockById.isNotEmpty) {
-        for (int i = 0; i < _products.length; i++) {
-          final p = _products[i];
-          if (!p.isCombo || p.comboIngredients == null || p.comboIngredients!.isEmpty) continue;
+        final updatedMain = applyStockUpdatesToProductList(_products, updatedStockById);
+        if (!identical(updatedMain, _products)) {
+          _products = updatedMain;
+          changed = true;
+        }
 
-          bool comboChanged = false;
-          int? limitingCombos;
-          final updatedIngredients = p.comboIngredients!.map((ing) {
-            final copy = Map<String, dynamic>.from(ing);
-            final ingId = (copy['id'] as num?)?.toInt();
-            if (ingId != null && updatedStockById.containsKey(ingId)) {
-              copy['stock'] = updatedStockById[ingId];
-              comboChanged = true;
+        if (_categoryExtraProducts.isNotEmpty) {
+          for (final key in _categoryExtraProducts.keys.toList()) {
+            final original = _categoryExtraProducts[key]!;
+            final updated = applyStockUpdatesToProductList(original, updatedStockById);
+            if (!identical(original, updated)) {
+              _categoryExtraProducts[key] = updated;
+              changed = true;
             }
-            final s = (copy['stock'] as num?)?.toDouble() ?? 0.0;
-            final q = (copy['quantity'] as num?)?.toDouble() ?? 1.0;
-            if (q > 0) {
-              final fit = s < 0 ? 0 : (s / q).floor();
-              if (limitingCombos == null || fit < limitingCombos!) {
-                limitingCombos = fit;
-              }
-            }
-            return copy;
-          }).toList();
-
-          if (comboChanged) {
-            _products[i] = p.copyWith(
-              comboIngredients: updatedIngredients,
-              stock: (limitingCombos ?? 0).toDouble(),
-            );
+          }
+        }
+        if (_weightOnlyProducts.isNotEmpty) {
+          final updated = applyStockUpdatesToProductList(_weightOnlyProducts, updatedStockById);
+          if (!identical(_weightOnlyProducts, updated)) {
+            _weightOnlyProducts = updated;
+            changed = true;
+          }
+        }
+        if (_pinnedExtraProducts.isNotEmpty) {
+          final updated = applyStockUpdatesToProductList(_pinnedExtraProducts, updatedStockById);
+          if (!identical(_pinnedExtraProducts, updated)) {
+            _pinnedExtraProducts = updated;
             changed = true;
           }
         }
@@ -652,6 +809,7 @@ class CatalogProvider with ChangeNotifier {
         }
         _lastUpdatedProduct = _products[idx];
       }
+      invalidateQuickAccessExtraCaches();
       return true;
     } catch (e) {
       _errorMessage = e.toString();
@@ -669,6 +827,7 @@ class CatalogProvider with ChangeNotifier {
     try {
       await repository.deleteProduct(id);
       _products.removeWhere((p) => p.id == id);
+      invalidateQuickAccessExtraCaches();
       return true;
     } catch (e) {
       _errorMessage = e.toString();
