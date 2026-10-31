@@ -31,6 +31,9 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
   late TextEditingController _iibbRateController;
 
   bool _isSubmitting = false;
+  bool _isLookingUpPadron = false;
+  bool _autoFilledFromPadron = false;
+  String? _padronMatchedName;
 
   @override
   void initState() {
@@ -136,6 +139,68 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
     );
   }
 
+  Future<void> _lookupPadronIfNeeded(String rawDoc) async {
+    final clean = rawDoc.replaceAll(RegExp(r'\D'), '');
+    if (clean.length != 7 &&
+        clean.length != 8 &&
+        !(clean.length == 11 && AfipModulo11.validateCuit(clean))) {
+      return;
+    }
+
+    setState(() => _isLookingUpPadron = true);
+    try {
+      final custProv = context.read<CustomerProvider>();
+      final data = await custProv.lookupFiscalRecipient(clean);
+      if (!mounted) return;
+      if (_documentController.text.replaceAll(RegExp(r'\D'), '') != clean) {
+        return;
+      }
+      if (data != null && data['found'] == true) {
+        final name = (data['name'] ?? '').toString().trim();
+        final address = (data['address'] ?? '').toString().trim();
+        final taxCond = (data['tax_condition'] ?? 'consumidor_final').toString();
+        if (name.isNotEmpty) {
+          setState(() {
+            if (_nameController.text.trim().isEmpty || _autoFilledFromPadron) {
+              _nameController.text = name;
+              _autoFilledFromPadron = true;
+            }
+            if (address.isNotEmpty) {
+              if (_fiscalAddressController.text.trim().isEmpty) {
+                _fiscalAddressController.text = address;
+              }
+              if (_deliveryAddressController.text.trim().isEmpty) {
+                _deliveryAddressController.text = address;
+              }
+            }
+            if ([
+              'consumidor_final',
+              'responsable_inscripto',
+              'monotributo',
+              'exento'
+            ].contains(taxCond)) {
+              _taxCondition = taxCond;
+              if (taxCond == 'responsable_inscripto' ||
+                  taxCond == 'monotributo') {
+                _documentType = 80;
+                final cuit = (data['cuit'] ?? '').toString().trim();
+                if (cuit.length == 11) {
+                  _documentController.text = cuit;
+                }
+              }
+            }
+            _padronMatchedName = name;
+          });
+        }
+      }
+    } catch (_) {
+    } finally {
+      if (mounted) {
+        setState(() => _isLookingUpPadron = false);
+      }
+    }
+  }
+
   @override
   void dispose() {
     _nameController.dispose();
@@ -170,17 +235,17 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
               ),
               const SizedBox(height: 16),
               DropdownButtonFormField<int>(
+                key: ValueKey('customer_form_doc_type_$_documentType'),
                 initialValue: _documentType,
                 isExpanded: true,
                 decoration: const InputDecoration(
-                  labelText: 'Tipo de Documento AFIP',
+                  labelText: 'Tipo de Documento ARCA',
                   border: OutlineInputBorder(),
                 ),
                 items: const [
                   DropdownMenuItem(value: 80, child: Text('80 - CUIT')),
                   DropdownMenuItem(value: 86, child: Text('86 - CUIL')),
                   DropdownMenuItem(value: 96, child: Text('96 - DNI')),
-                  
                 ],
                 onChanged: (val) {
                   if (val != null) {
@@ -203,19 +268,36 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
                       : (_documentType == 86
                           ? 'CUIL (11 dígitos) *'
                           : (_documentType == 96
-                              ? 'DNI (7 u 8 dígitos) *'
+                              ? 'DNI (7 u 8 dígitos) o CUIT (11 dígitos) *'
                               : 'Nro de Documento')),
                   border: const OutlineInputBorder(),
                 ),
                 keyboardType: TextInputType.number,
                 inputFormatters: [
                   FilteringTextInputFormatter.digitsOnly,
-                  LengthLimitingTextInputFormatter(_documentType == 96 ? 8 : 11),
+                  LengthLimitingTextInputFormatter(11),
                 ],
+                onChanged: (val) {
+                  final inferred = AfipModulo11.inferDocType(
+                    val,
+                    currentDocType: _documentType,
+                    requiresIdentification: true,
+                  );
+                  setState(() {
+                    _padronMatchedName = null;
+                    if (inferred != _documentType) {
+                      _documentType = inferred;
+                      if (inferred == 96) {
+                        _taxCondition = 'consumidor_final';
+                        _appliesIibbPerception = false;
+                      }
+                    }
+                  });
+                  _lookupPadronIfNeeded(val);
+                },
                 validator: (val) {
                   final text = val?.trim() ?? '';
                   if (text.isEmpty) {
-                    
                     return 'Requerido';
                   }
                   if (_documentType == 80 || _documentType == 86) {
@@ -230,8 +312,75 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
                   return null;
                 },
               ),
+              Builder(
+                builder: (context) {
+                  final cleanDoc = _documentController.text.trim();
+                  if (cleanDoc.length < 7) return const SizedBox.shrink();
+                  Customer? existing;
+                  try {
+                    final custProv = context.read<CustomerProvider>();
+                    final match = AfipModulo11.findMatchingCustomer(
+                      custProv.customers,
+                      cleanDoc,
+                    );
+                    if (match != null && match.id != widget.customer?.id) {
+                      existing = match;
+                    }
+                  } catch (_) {}
+                  if (existing != null) {
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 6, left: 4),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          '⚠️ Ya existe en el padrón local: ${existing.name} (${existing.documentNumber})',
+                          style: TextStyle(
+                            color: Colors.amber.shade900,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    );
+                  }
+                  if (_isLookingUpPadron) {
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 6, left: 4),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          '⏳ Consultando padrón ARCA...',
+                          style: TextStyle(
+                            color: Colors.blueGrey.shade600,
+                            fontSize: 12,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      ),
+                    );
+                  }
+                  if (_padronMatchedName != null) {
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 6, left: 4),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          '✓ Datos obtenidos de ARCA: $_padronMatchedName',
+                          style: TextStyle(
+                            color: Colors.indigo.shade700,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    );
+                  }
+                  return const SizedBox.shrink();
+                },
+              ),
               const SizedBox(height: 16),
               DropdownButtonFormField<String>(
+                key: ValueKey('customer_form_tax_cond_$_taxCondition'),
                 initialValue: _taxCondition,
                 isExpanded: true,
                 decoration: const InputDecoration(
@@ -271,7 +420,7 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
               TextFormField(
                 controller: _fiscalAddressController,
                 decoration: const InputDecoration(
-                    labelText: 'Dirección Fiscal (AFIP) (Opcional)',
+                    labelText: 'Dirección Fiscal (ARCA) (Opcional)',
                     border: OutlineInputBorder()),
               ),
               const SizedBox(height: 16),

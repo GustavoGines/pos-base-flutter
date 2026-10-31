@@ -1,5 +1,6 @@
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../providers/sales_history_provider.dart';
@@ -18,11 +19,16 @@ import 'package:frontend_desktop/features/pos/presentation/providers/pos_provide
 import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
 import 'package:frontend_desktop/features/catalog/presentation/providers/catalog_provider.dart';
 import 'package:frontend_desktop/features/cash_register/presentation/providers/cash_register_provider.dart';
+import 'package:frontend_desktop/features/customers/models/customer_model.dart';
+import 'package:frontend_desktop/features/customers/providers/customer_provider.dart';
+import 'package:frontend_desktop/features/customers/presentation/widgets/customer_form_dialog.dart';
 import 'package:frontend_desktop/core/utils/a4_split_pdf_service.dart';
 import 'package:frontend_desktop/core/utils/afip_fiscal_pdf_service.dart';
 import 'package:printing/printing.dart';
 
 import 'package:frontend_desktop/core/presentation/widgets/print_format_selector.dart';
+import 'package:frontend_desktop/core/presentation/widgets/thermal_receipt_widget.dart';
+import 'package:frontend_desktop/core/presentation/widgets/ticket_preview_dialog.dart';
 
 // ─── Helpers de presentación para métodos de pago ────────────────────────────
 
@@ -1045,7 +1051,7 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
             showDialog(
               context: context,
               builder: (ctx) => AlertDialog(
-                title: const Text('Error de AFIP / Anulación', style: TextStyle(color: Colors.red)),
+                title: const Text('Error de ARCA / Anulación', style: TextStyle(color: Colors.red)),
                 content: Text(provider.errorMessage ?? 'Error al anular el ticket.'),
                 actions: [
                   TextButton(
@@ -1081,12 +1087,15 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
           'electronic_invoice': null,
           'total': sale.totalWithShipping,
           'total_amount': sale.totalWithShipping,
+          'subtotal_list': sale.subtotalList,
+          'discount_amount': sale.totalSavings,
+          'discount_label': sale.hasSavings ? 'Ahorro / Descuento' : null,
           'shipping_cost': sale.shippingCost,
           'surcharge_amount': sale.surchargeTotal,
           'iibb_perception_amount': sale.iibbPerceptionAmount,
           'iibb_perception_rate': sale.iibbPerceptionRate,
-          'tendered_amount': sale.grandTotal,
-          'change_amount': 0,
+          'tendered_amount': sale.tenderedAmount ?? sale.grandTotal,
+          'change_amount': sale.changeAmount ?? 0,
           'customer_name': sale.customerName ?? 'Consumidor Final',
           'customer': {
             'name': sale.customerName ?? 'Consumidor Final',
@@ -1102,10 +1111,19 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
             'subtotal': i.subtotal,
             'quantity': i.quantity,
             'unit_price': i.unitPrice,
+            'iva_rate': i.ivaRate,
+            'regular_price': i.regularPrice > 0 ? i.regularPrice : i.unitPrice,
+            'regular_subtotal': (i.regularPrice > 0 ? i.regularPrice : i.unitPrice) * i.quantity,
+            'discount_amount': i.discountSavings,
+            'has_discount': i.hasDiscount,
+            'discount_label': i.discountLabel ?? '',
             'product_name': i.productName,
             'product': {
               'name': i.productName,
+              'internal_code': i.internalCode,
+              'iva_rate': i.ivaRate,
               'is_sold_by_weight': i.isSoldByWeight,
+              'selling_price': i.regularPrice > 0 ? i.regularPrice : i.unitPrice,
             }
           }).toList(),
           'payments': sale.payments.map((p) => {
@@ -1116,15 +1134,40 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
           }).toList(),
         };
 
-        final pdfBytes = await A4SplitPdfService.generateA4SingleReceipt(
-          sale: saleJson,
-          businessName: settings.companyName ?? 'MI NEGOCIO',
-          businessAddress: settings.address,
-          phone: settings.phone ?? '',
-          cuit: settings.taxId ?? '',
-          vendorName: sale.userName,
-          paperSize: localTerminal.pdfPaperSize,
-        );
+        final hasDeliveredNote = sale.deliveryNote != null &&
+            sale.deliveryNote!['status']?.toString().toLowerCase() ==
+                'delivered';
+        if (hasDeliveredNote) {
+          saleJson['requires_dispatch'] = true;
+        }
+        final pdfBytes = hasDeliveredNote
+            ? await A4SplitPdfService.generateA4SplitReceiptAndDispatch(
+                sale: saleJson,
+                deliveryNote: sale.deliveryNote!,
+                businessName: settings.companyName ?? 'MI NEGOCIO',
+                businessAddress: settings.address,
+                phone: settings.phone ?? '',
+                cuit: settings.taxId ?? '',
+                taxCondition: settings.taxCondition,
+                iibb: settings.iibb,
+                activityStartDate: settings.activityStartDate,
+                vendorName: sale.userName,
+                paperSize: localTerminal.pdfPaperSize,
+                businessSettings: settings,
+              )
+            : await A4SplitPdfService.generateA4SingleReceipt(
+                sale: saleJson,
+                businessName: settings.companyName ?? 'MI NEGOCIO',
+                businessAddress: settings.address,
+                phone: settings.phone ?? '',
+                cuit: settings.taxId ?? '',
+                taxCondition: settings.taxCondition,
+                iibb: settings.iibb,
+                activityStartDate: settings.activityStartDate,
+                vendorName: sale.userName,
+                paperSize: localTerminal.pdfPaperSize,
+                businessSettings: settings,
+              );
 
         if (context.mounted) {
           await showDialog(
@@ -1171,15 +1214,19 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
             product: Product(
               id: item.productId ?? 0,
               name: item.productName,
-              sellingPrice: item.unitPrice,
+              sellingPrice: item.regularPrice > 0 ? item.regularPrice : item.unitPrice,
               costPrice: item.unitPrice,
+              ivaRate: item.ivaRate,
               isSoldByWeight: item.isSoldByWeight,
               stock: 0,
-              internalCode: '',
+              internalCode: item.internalCode,
               barcode: '',
               active: true,
             ),
             quantity: item.quantity,
+            promotionalPrice:
+                item.regularPrice > item.unitPrice + 0.01 ? item.unitPrice : null,
+            promotionalLabel: item.discountLabel,
           );
         }).toList();
 
@@ -1195,22 +1242,98 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
             return aCash ? -1 : 1;
           });
 
+        final hasDeliveredNote = sale.deliveryNote != null &&
+            sale.deliveryNote!['status']?.toString().toLowerCase() ==
+                'delivered';
+        final isNarrow = localTerminal.printerFormat == 'thermal_58';
+        final paperWidth =
+            isNarrow ? ThermalPaperWidth.mm58 : ThermalPaperWidth.mm80;
+        if (context.mounted) {
+          final confirmed = await TicketPreviewDialog.show(
+            context,
+            title:
+                'Vista Previa — Ticket #${sale.id} (${isNarrow ? "58mm" : "80mm"})',
+            paperWidth: paperWidth,
+            receiptWidget: ThermalReceiptWidget(
+              paperWidth: paperWidth,
+              businessSettings: settings,
+              items: itemsParaImprimir,
+              payments: paymentDetails,
+              total: sale.totalWithShipping,
+              surchargeAmount: sale.surchargeTotal,
+              discountAmount: sale.totalSavings,
+              discountLabel: sale.hasSavings ? 'Ahorro / Descuento' : null,
+              shippingCost: sale.shippingCost,
+              tenderedAmount: sale.tenderedAmount ?? sale.grandTotal,
+              changeAmount: sale.changeAmount ?? 0.0,
+              iibbPerceptionAmount: sale.iibbPerceptionAmount ?? 0.0,
+              iibbPerceptionRate: sale.iibbPerceptionRate ?? 0.0,
+              electronicInvoice: null,
+              deliveryNote: hasDeliveredNote ? sale.deliveryNote : null,
+              saleNumber: sale.id.toString(),
+              cashierName: sale.cashierName ?? sale.userName,
+              customerName: sale.customerName,
+              customerDoc: sale.customerDocumentNumber,
+              customerAddress: sale.customerAddress ??
+                  (sale.deliveryNote?['delivery_address'] as String?),
+              dateTime: sale.createdAt,
+            ),
+          );
+          if (!confirmed) return;
+        }
+
+        ReceiptPrinterService.instance.reconfigure(localTerminal);
         ReceiptPrinterService.instance.electronicInvoice = null;
-        await ReceiptPrinterService.instance.printSaleTicket(
-          items: itemsParaImprimir,
-          total: sale.totalWithShipping,
-          shippingCost: sale.shippingCost,
-          settings: settings,
-          localTerminal: localTerminal,
-          paymentDetails: paymentDetails,
-          receiptNumber: sale.id.toString(),
-          userName: sale.userName,
-          cashierName: sale.cashierName,
-          customerName: sale.customerName,
-          customerDoc: sale.customerDocumentNumber,
-          surchargeAmount: sale.surchargeTotal,
-          iibbPerceptionAmount: sale.iibbPerceptionAmount ?? 0.0,
-        );
+        if (hasDeliveredNote) {
+          await ReceiptPrinterService.instance.printSplitTicket(
+            electronicInvoice: null,
+            items: itemsParaImprimir,
+            total: sale.totalWithShipping,
+            shippingCost: sale.shippingCost,
+            settings: settings,
+            localTerminal: localTerminal,
+            deliveryNote: sale.deliveryNote!,
+            paymentDetails: paymentDetails,
+            receiptNumber: sale.id.toString(),
+            deliveryNoteNumber: sale.deliveryNote!['id']?.toString(),
+            userName: sale.userName,
+            cashierName: sale.cashierName,
+            customerName: sale.customerName,
+            customerDoc: sale.customerDocumentNumber,
+            customerAddress: sale.customerAddress ??
+                (sale.deliveryNote?['delivery_address'] as String?),
+            surchargeAmount: sale.surchargeTotal,
+            discountAmount: sale.totalSavings,
+            discountLabel: sale.hasSavings ? 'Ahorro / Descuento' : null,
+            tenderedAmount: sale.tenderedAmount ?? sale.grandTotal,
+            changeAmount: sale.changeAmount ?? 0.0,
+            paperSizeOverride: isNarrow ? '58mm' : '80mm',
+            iibbPerceptionAmount: sale.iibbPerceptionAmount ?? 0.0,
+          );
+        } else {
+          await ReceiptPrinterService.instance.printSaleTicket(
+            items: itemsParaImprimir,
+            total: sale.totalWithShipping,
+            shippingCost: sale.shippingCost,
+            settings: settings,
+            localTerminal: localTerminal,
+            paymentDetails: paymentDetails,
+            receiptNumber: sale.id.toString(),
+            userName: sale.userName,
+            cashierName: sale.cashierName,
+            customerName: sale.customerName,
+            customerDoc: sale.customerDocumentNumber,
+            customerAddress: sale.customerAddress ??
+                (sale.deliveryNote?['delivery_address'] as String?),
+            surchargeAmount: sale.surchargeTotal,
+            discountAmount: sale.totalSavings,
+            discountLabel: sale.hasSavings ? 'Ahorro / Descuento' : null,
+            tenderedAmount: sale.tenderedAmount ?? sale.grandTotal,
+            changeAmount: sale.changeAmount ?? 0.0,
+            paperSizeOverride: isNarrow ? '58mm' : '80mm',
+            iibbPerceptionAmount: sale.iibbPerceptionAmount ?? 0.0,
+          );
+        }
         if (context.mounted) {
           SnackBarService.success(
               context, 'Copia Interna #${sale.id} enviada a la impresora.');
@@ -1286,12 +1409,15 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
         final salePayload = {
           'id': sale.id,
           'electronic_invoice': invoice,
-          'total': sale.total,
-          'total_amount': sale.total,
+          'total': sale.totalWithShipping,
+          'total_amount': sale.totalWithShipping,
+          'subtotal_list': sale.subtotalList,
+          'discount_amount': sale.totalSavings,
+          'discount_label': sale.hasSavings ? 'Ahorro / Descuento' : null,
           'shipping_cost': sale.shippingCost,
           'surcharge_amount': sale.surchargeTotal,
-          'tendered_amount': sale.grandTotal,
-          'change_amount': 0,
+          'tendered_amount': sale.tenderedAmount ?? sale.grandTotal,
+          'change_amount': sale.changeAmount ?? 0.0,
           'customer_name': invoice['receiver_name'] ?? 'Consumidor Final',
           'customer': {
             'name': invoice['receiver_name'] ?? 'Consumidor Final',
@@ -1309,10 +1435,19 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
             'subtotal': i.subtotal,
             'quantity': i.quantity,
             'unit_price': i.unitPrice,
+            'iva_rate': i.ivaRate,
+            'regular_price': i.regularPrice > 0 ? i.regularPrice : i.unitPrice,
+            'regular_subtotal': (i.regularPrice > 0 ? i.regularPrice : i.unitPrice) * i.quantity,
+            'discount_amount': i.discountSavings,
+            'has_discount': i.hasDiscount,
+            'discount_label': i.discountLabel ?? '',
             'product_name': i.productName,
             'product': {
               'name': i.productName,
+              'internal_code': i.internalCode,
+              'iva_rate': i.ivaRate,
               'is_sold_by_weight': i.isSoldByWeight,
+              'selling_price': i.regularPrice > 0 ? i.regularPrice : i.unitPrice,
             }
           }).toList(),
           'payments': sale.payments.map((p) => {
@@ -1323,9 +1458,15 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
           }).toList(),
         };
 
+        final hasDeliveredNote = !isCreditNote &&
+            sale.deliveryNote != null &&
+            sale.deliveryNote!['status']?.toString().toLowerCase() ==
+                'delivered';
+
         final pdfBytes = await AfipFiscalPdfService.generateFiscalInvoice(
           sale: salePayload,
           electronicInvoice: invoice,
+          deliveryNote: hasDeliveredNote ? sale.deliveryNote : null,
           businessSettings: settings,
           paperSize: localTerminal.pdfPaperSize,
         );
@@ -1345,7 +1486,7 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
                         Padding(
                           padding: const EdgeInsets.all(16.0),
                           child: Text(
-                            'Factura AFIP #${invoice?['formatted_number'] ?? sale.id}',
+                            '${isCreditNote ? "Nota de Crédito" : "Factura"} ARCA #${invoice?['formatted_number'] ?? sale.id}',
                             style: const TextStyle(
                                 fontSize: 18, fontWeight: FontWeight.bold),
                           ),
@@ -1361,7 +1502,7 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
                         build: (format) async => pdfBytes,
                         canChangePageFormat: false,
                         canChangeOrientation: false,
-                        pdfFileName: 'Factura_AFIP_${sale.id}.pdf',
+                        pdfFileName: 'Factura_ARCA_${sale.id}.pdf',
                         canDebug: false,
                       ),
                     ),
@@ -1377,15 +1518,19 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
             product: Product(
               id: item.productId ?? 0,
               name: item.productName,
-              sellingPrice: item.unitPrice,
+              sellingPrice: item.regularPrice > 0 ? item.regularPrice : item.unitPrice,
               costPrice: item.unitPrice,
+              ivaRate: item.ivaRate,
               isSoldByWeight: item.isSoldByWeight,
               stock: 0,
-              internalCode: '',
+              internalCode: item.internalCode,
               barcode: '',
               active: true,
             ),
             quantity: item.quantity,
+            promotionalPrice:
+                item.regularPrice > item.unitPrice + 0.01 ? item.unitPrice : null,
+            promotionalLabel: item.discountLabel,
           );
         }).toList();
 
@@ -1401,30 +1546,141 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
             return aCash ? -1 : 1;
           });
 
-        await ReceiptPrinterService.instance.printSaleTicket(
-          electronicInvoice: invoice,
-          items: itemsParaImprimir,
-          total: sale.totalWithShipping,
-          shippingCost: sale.shippingCost,
-          settings: settings,
-          localTerminal: localTerminal,
-          paymentDetails: paymentDetails,
-          receiptNumber: sale.id.toString(),
-          userName: sale.userName,
-          cashierName: sale.cashierName,
-          customerName: sale.customerName,
-          customerDoc: sale.customerDocumentNumber,
-          surchargeAmount: sale.surchargeTotal,
-          iibbPerceptionAmount: sale.iibbPerceptionAmount ?? 0.0,
-        );
+        final hasDeliveredNote = !isCreditNote &&
+            sale.deliveryNote != null &&
+            sale.deliveryNote!['status']?.toString().toLowerCase() ==
+                'delivered';
+        final isNarrow = localTerminal.printerFormat == 'thermal_58';
+        final paperWidth =
+            isNarrow ? ThermalPaperWidth.mm58 : ThermalPaperWidth.mm80;
+        if (context.mounted) {
+          final confirmed = await TicketPreviewDialog.show(
+            context,
+            title:
+                'Vista Previa — ${isCreditNote ? "Nota de Crédito" : "Factura"} ARCA (${isNarrow ? "58mm" : "80mm"})',
+            paperWidth: paperWidth,
+            receiptWidget: ThermalReceiptWidget(
+              paperWidth: paperWidth,
+              businessSettings: settings,
+              items: itemsParaImprimir,
+              payments: paymentDetails,
+              total: sale.totalWithShipping,
+              surchargeAmount: sale.surchargeTotal,
+              discountAmount: sale.totalSavings,
+              discountLabel: sale.hasSavings ? 'Ahorro / Descuento' : null,
+              shippingCost: sale.shippingCost,
+              tenderedAmount: sale.tenderedAmount ?? sale.grandTotal,
+              changeAmount: sale.changeAmount ?? 0.0,
+              iibbPerceptionAmount: sale.iibbPerceptionAmount ?? 0.0,
+              iibbPerceptionRate: sale.iibbPerceptionRate ?? 0.0,
+              electronicInvoice: invoice,
+              deliveryNote: hasDeliveredNote ? sale.deliveryNote : null,
+              saleNumber: sale.id.toString(),
+              cashierName: sale.cashierName ?? sale.userName,
+              customerName:
+                  invoice['receiver_name']?.toString() ?? sale.customerName,
+              customerDoc:
+                  invoice['doc_number']?.toString() ?? sale.customerDocumentNumber,
+              customerAddress:
+                  invoice['receiver_address']?.toString() ??
+                      sale.customerAddress ??
+                      (sale.deliveryNote?['delivery_address'] as String?),
+              dateTime: sale.createdAt,
+            ),
+          );
+          if (!confirmed) return;
+        }
+
+        ReceiptPrinterService.instance.reconfigure(localTerminal);
+        if (hasDeliveredNote) {
+          await ReceiptPrinterService.instance.printSplitTicket(
+            electronicInvoice: invoice,
+            items: itemsParaImprimir,
+            total: sale.totalWithShipping,
+            shippingCost: sale.shippingCost,
+            settings: settings,
+            localTerminal: localTerminal,
+            deliveryNote: sale.deliveryNote!,
+            paymentDetails: paymentDetails,
+            receiptNumber: sale.id.toString(),
+            deliveryNoteNumber: sale.deliveryNote!['id']?.toString(),
+            userName: sale.userName,
+            cashierName: sale.cashierName,
+            customerName:
+                invoice['receiver_name']?.toString() ?? sale.customerName,
+            customerDoc:
+                invoice['doc_number']?.toString() ?? sale.customerDocumentNumber,
+            customerAddress:
+                invoice['receiver_address']?.toString() ??
+                    sale.customerAddress ??
+                    (sale.deliveryNote?['delivery_address'] as String?),
+            surchargeAmount: sale.surchargeTotal,
+            discountAmount: sale.totalSavings,
+            discountLabel: sale.hasSavings ? 'Ahorro / Descuento' : null,
+            tenderedAmount: sale.tenderedAmount ?? sale.grandTotal,
+            changeAmount: sale.changeAmount ?? 0.0,
+            paperSizeOverride: isNarrow ? '58mm' : '80mm',
+            iibbPerceptionAmount: sale.iibbPerceptionAmount ?? 0.0,
+          );
+        } else {
+          await ReceiptPrinterService.instance.printSaleTicket(
+            electronicInvoice: invoice,
+            items: itemsParaImprimir,
+            total: sale.totalWithShipping,
+            shippingCost: sale.shippingCost,
+            settings: settings,
+            localTerminal: localTerminal,
+            paymentDetails: paymentDetails,
+            receiptNumber: sale.id.toString(),
+            userName: sale.userName,
+            cashierName: sale.cashierName,
+            customerName:
+                invoice['receiver_name']?.toString() ?? sale.customerName,
+            customerDoc:
+                invoice['doc_number']?.toString() ?? sale.customerDocumentNumber,
+            customerAddress:
+                invoice['receiver_address']?.toString() ??
+                    sale.customerAddress ??
+                    (sale.deliveryNote?['delivery_address'] as String?),
+            surchargeAmount: sale.surchargeTotal,
+            discountAmount: sale.totalSavings,
+            discountLabel: sale.hasSavings ? 'Ahorro / Descuento' : null,
+            tenderedAmount: sale.tenderedAmount ?? sale.grandTotal,
+            changeAmount: sale.changeAmount ?? 0.0,
+            paperSizeOverride: isNarrow ? '58mm' : '80mm',
+            iibbPerceptionAmount: sale.iibbPerceptionAmount ?? 0.0,
+          );
+        }
         if (context.mounted) {
           SnackBarService.success(
-              context, 'Factura AFIP #${sale.id} enviada a la impresora.');
+              context, 'Factura ARCA #${sale.id} enviada a la impresora.');
         }
       }
     } catch (e) {
       if (context.mounted) {
         SnackBarService.error(context, 'Error de impresión fiscal: $e');
+      }
+    }
+  }
+
+  Future<void> _handleEmitArcaInvoice(BuildContext context) async {
+    final sale = widget.sale;
+    final authorizedInvoice = await showDialog<Map<String, dynamic>>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => _EmitArcaInvoiceDialog(sale: sale),
+    );
+
+    if (authorizedInvoice != null && mounted) {
+      setState(() {
+        _electronicInvoice = authorizedInvoice;
+      });
+      if (context.mounted) {
+        SnackBarService.success(
+          context,
+          'Factura ARCA ${authorizedInvoice['voucher_letter'] ?? ''}-${authorizedInvoice['formatted_number'] ?? ''} autorizada exitosamente (CAE: ${authorizedInvoice['cae'] ?? ''})',
+        );
+        context.read<SalesHistoryProvider>().loadSales();
       }
     }
   }
@@ -1628,11 +1884,27 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
                               DataCell(
                                 ConstrainedBox(
                                   constraints: BoxConstraints(maxWidth: maxProductColWidth),
-                                  child: Text(
-                                    item.productName,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: textStyle.copyWith(fontWeight: FontWeight.w500),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Text(
+                                        item.productName,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: textStyle.copyWith(fontWeight: FontWeight.w500),
+                                      ),
+                                      if (item.hasDiscount && item.discountLabel != null)
+                                        Text(
+                                          '(${item.discountLabel}) Reg: \$${item.regularPrice.toCurrency()}',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            fontStyle: FontStyle.italic,
+                                            color: Colors.green.shade700,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                    ],
                                   ),
                                 ),
                               ),
@@ -1673,26 +1945,16 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
             spacing: 16,
             runSpacing: 16,
             children: [
-              if (!hasCae && (sale.status == 'pending' || sale.status == 'active'))
+              if (!hasCae &&
+                  (sale.status == 'completed' ||
+                      sale.status == 'pending' ||
+                      sale.status == 'active'))
                 FilledButton.icon(
                   icon: const Icon(Icons.cloud_upload_outlined),
-                  label: const Text('Emitir a AFIP'),
+                  label: const Text('Emitir a ARCA'),
                   style: FilledButton.styleFrom(
                       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16)),
-                  onPressed: () async {
-                    try {
-                      final posProvider = context.read<PosProvider>();
-                      final result = await posProvider.issueFiscalInvoice(sale.id, {});
-                      if (result != null && result['success'] == true) {
-                        SnackBarService.success(context, 'Factura autorizada exitosamente');
-                        context.read<SalesHistoryProvider>().loadSales();
-                      } else {
-                        SnackBarService.error(context, result?['message'] ?? 'Error al emitir factura');
-                      }
-                    } catch (e) {
-                      SnackBarService.error(context, e.toString());
-                    }
-                  },
+                  onPressed: () => _handleEmitArcaInvoice(context),
                 ),
               OutlinedButton.icon(
                 icon: const Icon(Icons.receipt_long_outlined),
@@ -1705,7 +1967,7 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
               if (hasCae)
                 FilledButton.icon(
                   icon: const Icon(Icons.verified_outlined),
-                  label: const Text('Imprimir Factura AFIP'),
+                  label: const Text('Imprimir Factura ARCA'),
                   style: FilledButton.styleFrom(
                     backgroundColor: Colors.teal.shade700,
                     padding: const EdgeInsets.symmetric(
@@ -1822,6 +2084,975 @@ class _PaymentBadge extends StatelessWidget {
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ─── Diálogo para Emitir Comprobante Fiscal ARCA desde Registro de Ventas ────
+
+class _EmitArcaInvoiceDialog extends StatefulWidget {
+  final SaleRecord sale;
+
+  const _EmitArcaInvoiceDialog({required this.sale});
+
+  @override
+  State<_EmitArcaInvoiceDialog> createState() => _EmitArcaInvoiceDialogState();
+}
+
+class _EmitArcaInvoiceDialogState extends State<_EmitArcaInvoiceDialog> {
+  static const double _cfAnonymousLimit = 340000.0;
+
+  late int _voucherType; // 1 = Factura A, 6 = Factura B, 11 = Factura C
+  late int _docType; // 80 = CUIT, 86 = CUIL, 96 = DNI, 99 = Consumidor Final
+  late String _taxCondition;
+  late TextEditingController _docNumberCtrl;
+  late TextEditingController _receiverNameCtrl;
+  late TextEditingController _receiverAddressCtrl;
+
+  Customer? _selectedCustomer;
+  String? _remoteMatchedName;
+  String? _remoteMatchedSource;
+  bool _isLookingUpPadron = false;
+  bool _autoMatchedCustomerByDoc = false;
+  bool _isSubmitting = false;
+  String? _errorMessage;
+
+  bool get _exceedsAnonymousLimit => widget.sale.total >= _cfAnonymousLimit;
+
+  @override
+  void initState() {
+    super.initState();
+    final settings = context.read<SettingsProvider>().settings;
+    final issuerCond = (settings?.taxCondition ?? '').trim().toLowerCase();
+    final isIssuerMonotributo =
+        issuerCond.contains('monotributo') || issuerCond.contains('exento');
+
+    final sale = widget.sale;
+    final initialDocNum =
+        (sale.customerDocumentNumber ?? '').replaceAll(RegExp(r'\D'), '');
+    final initialTaxCond =
+        (sale.customerTaxCondition ?? '').trim().toLowerCase();
+
+    if (isIssuerMonotributo) {
+      _voucherType = 11;
+    } else if (initialTaxCond == 'responsable_inscripto' ||
+        initialTaxCond == 'monotributo') {
+      _voucherType = 1;
+    } else {
+      _voucherType = 6;
+    }
+
+    if (_voucherType == 1) {
+      _docType = 80;
+      _taxCondition = initialTaxCond == 'monotributo'
+          ? 'monotributo'
+          : 'responsable_inscripto';
+    } else {
+      _taxCondition = initialTaxCond == 'exento' ? 'exento' : 'consumidor_final';
+      if (sale.customerDocumentType != null &&
+          [80, 86, 96, 99].contains(sale.customerDocumentType)) {
+        _docType = sale.customerDocumentType!;
+      } else if (initialDocNum.length == 11) {
+        _docType = 80;
+      } else if (initialDocNum.length >= 7 && initialDocNum.length <= 8) {
+        _docType = 96;
+      } else {
+        // Si supera el límite anónimo ($340.000), preseleccionamos DNI (96) para guiar al cajero
+        _docType = _exceedsAnonymousLimit ? 96 : 99;
+      }
+    }
+
+    _docNumberCtrl = TextEditingController(text: initialDocNum);
+    _receiverNameCtrl = TextEditingController(
+      text: (sale.customerName != null &&
+              sale.customerName!.trim().isNotEmpty &&
+              sale.customerName!.trim().toLowerCase() != 'consumidor final')
+          ? sale.customerName!.trim()
+          : '',
+    );
+    _receiverAddressCtrl = TextEditingController(
+      text: sale.customerAddress ?? '',
+    );
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      try {
+        final custProv = context.read<CustomerProvider>();
+        if (custProv.customers.isEmpty && !custProv.isLoading) {
+          custProv.fetchCustomers();
+        }
+      } catch (_) {}
+    });
+  }
+
+  @override
+  void dispose() {
+    _docNumberCtrl.dispose();
+    _receiverNameCtrl.dispose();
+    _receiverAddressCtrl.dispose();
+    super.dispose();
+  }
+
+  void _applyCustomer(Customer c) {
+    final settings = context.read<SettingsProvider>().settings;
+    final issuerCond = (settings?.taxCondition ?? '').trim().toLowerCase();
+    final isIssuerMonotributo =
+        issuerCond.contains('monotributo') || issuerCond.contains('exento');
+
+    setState(() {
+      _selectedCustomer = c;
+      _autoMatchedCustomerByDoc = false;
+      _errorMessage = null;
+      _docNumberCtrl.text = c.documentNumber.replaceAll(RegExp(r'\D'), '');
+      _receiverNameCtrl.text = c.name;
+      _receiverAddressCtrl.text = c.fiscalAddress ?? c.deliveryAddress ?? '';
+      _docType = c.documentType;
+      _taxCondition = c.taxCondition;
+
+      if (isIssuerMonotributo) {
+        _voucherType = 11;
+      } else if (c.taxCondition == 'responsable_inscripto' ||
+          c.taxCondition == 'monotributo') {
+        _voucherType = 1;
+        _docType = 80;
+      } else {
+        _voucherType = 6;
+        if (_docType == 99 && _docNumberCtrl.text.isNotEmpty) {
+          _docType = _docNumberCtrl.text.length == 11 ? 80 : 96;
+        }
+      }
+    });
+  }
+
+  void _onVoucherTypeChanged(int newType) {
+    setState(() {
+      _voucherType = newType;
+      _errorMessage = null;
+      if (newType == 1) {
+        _docType = 80;
+        if (_taxCondition != 'responsable_inscripto' &&
+            _taxCondition != 'monotributo') {
+          _taxCondition = 'responsable_inscripto';
+        }
+      } else if (newType == 6) {
+        if (_taxCondition == 'responsable_inscripto' ||
+            _taxCondition == 'monotributo') {
+          _taxCondition = 'consumidor_final';
+        }
+        if (_docNumberCtrl.text.trim().isEmpty) {
+          _docType = _exceedsAnonymousLimit ? 96 : 99;
+        }
+      }
+    });
+  }
+
+  void _onDocNumberChanged(String val) {
+    final clean = val.replaceAll(RegExp(r'\D'), '');
+    Customer? matched;
+    try {
+      final custProv = context.read<CustomerProvider>();
+      matched = AfipModulo11.findMatchingCustomer(custProv.customers, clean);
+    } catch (_) {}
+
+    final settings = context.read<SettingsProvider>().settings;
+    final issuerCond = (settings?.taxCondition ?? '').trim().toLowerCase();
+    final isIssuerMonotributo =
+        issuerCond.contains('monotributo') || issuerCond.contains('exento');
+
+    setState(() {
+      _errorMessage = null;
+      _docType = AfipModulo11.inferDocType(
+        clean,
+        currentDocType: _docType,
+        isFacturaA: _voucherType == 1,
+        requiresIdentification: _exceedsAnonymousLimit,
+      );
+
+      if (matched != null) {
+        _selectedCustomer = matched;
+        _remoteMatchedName = null;
+        _remoteMatchedSource = null;
+        _autoMatchedCustomerByDoc = true;
+        _receiverNameCtrl.text = matched.name;
+        final addr = matched.fiscalAddress ?? matched.deliveryAddress ?? '';
+        if (addr.isNotEmpty) {
+          _receiverAddressCtrl.text = addr;
+        }
+        _taxCondition = matched.taxCondition;
+        if (isIssuerMonotributo) {
+          _voucherType = 11;
+        } else if (matched.taxCondition == 'responsable_inscripto' ||
+            matched.taxCondition == 'monotributo') {
+          if (clean.length == 11) {
+            _voucherType = 1;
+            _docType = 80;
+          } else {
+            _voucherType = 6;
+            _taxCondition = 'consumidor_final';
+          }
+        } else {
+          _voucherType = 6;
+        }
+      } else if (_autoMatchedCustomerByDoc) {
+        _selectedCustomer = null;
+        _remoteMatchedName = null;
+        _remoteMatchedSource = null;
+        _autoMatchedCustomerByDoc = false;
+        _receiverNameCtrl.clear();
+        _receiverAddressCtrl.clear();
+        _taxCondition =
+            _voucherType == 1 ? 'responsable_inscripto' : 'consumidor_final';
+      }
+    });
+
+    if (matched == null &&
+        (clean.length == 7 ||
+            clean.length == 8 ||
+            (clean.length == 11 && AfipModulo11.validateCuit(clean)))) {
+      _lookupRemoteRecipient(clean);
+    }
+  }
+
+  Future<void> _lookupRemoteRecipient(String clean) async {
+    setState(() => _isLookingUpPadron = true);
+    try {
+      final custProv = context.read<CustomerProvider>();
+      final data = await custProv.lookupFiscalRecipient(clean);
+      if (!mounted) return;
+      final currentClean = _docNumberCtrl.text.replaceAll(RegExp(r'\D'), '');
+      if (currentClean != clean) return;
+
+      if (data != null && data['found'] == true) {
+        final name = (data['name'] ?? '').toString().trim();
+        final address = (data['address'] ?? '').toString().trim();
+        final taxCond = (data['tax_condition'] ?? 'consumidor_final').toString();
+        final source = (data['source'] ?? 'arca_padron').toString();
+
+        if (name.isNotEmpty) {
+          setState(() {
+            if (_receiverNameCtrl.text.trim().isEmpty ||
+                _autoMatchedCustomerByDoc) {
+              _receiverNameCtrl.text = name;
+              if (address.isNotEmpty) {
+                _receiverAddressCtrl.text = address;
+              }
+              _remoteMatchedName = name;
+              _remoteMatchedSource = source;
+              _autoMatchedCustomerByDoc = true;
+              if (_voucherType == 1) {
+                _taxCondition = taxCond == 'monotributo'
+                    ? 'monotributo'
+                    : 'responsable_inscripto';
+              } else if (_voucherType == 6) {
+                _taxCondition =
+                    taxCond == 'exento' ? 'exento' : 'consumidor_final';
+              } else {
+                _taxCondition = taxCond;
+              }
+            }
+          });
+        }
+      }
+    } catch (_) {
+    } finally {
+      if (mounted) {
+        setState(() => _isLookingUpPadron = false);
+      }
+    }
+  }
+
+  bool get _isFormValid {
+    final cleanDoc = _docNumberCtrl.text.trim().replaceAll(RegExp(r'\D'), '');
+    if (_voucherType == 1) {
+      if (_docType != 80) return false;
+      if (!AfipModulo11.validateCuit(cleanDoc)) return false;
+      if (_receiverNameCtrl.text.trim().isEmpty) return false;
+      return true;
+    }
+    // Factura B o C
+    if (_exceedsAnonymousLimit && (_docType == 99 || cleanDoc.isEmpty)) {
+      return false;
+    }
+    if (_docType == 80 || _docType == 86) {
+      return AfipModulo11.validateCuit(cleanDoc);
+    }
+    if (_docType == 96) {
+      return AfipModulo11.validateDni(cleanDoc);
+    }
+    return true;
+  }
+
+  Future<void> _openCustomerSearch() async {
+    final customerProvider = context.read<CustomerProvider>();
+    if (customerProvider.customers.isEmpty && !customerProvider.isLoading) {
+      try {
+        await customerProvider.fetchCustomers();
+      } catch (_) {}
+    }
+    if (!mounted) return;
+
+    final picked = await showDialog<Customer>(
+      context: context,
+      builder: (ctx) => const _QuickCustomerPickerDialog(),
+    );
+    if (picked != null && mounted) {
+      _applyCustomer(picked);
+    }
+  }
+
+  Future<void> _submit() async {
+    if (!_isFormValid || _isSubmitting) return;
+
+    setState(() {
+      _isSubmitting = true;
+      _errorMessage = null;
+    });
+
+    final cleanDoc = _docNumberCtrl.text.trim().replaceAll(RegExp(r'\D'), '');
+    final payload = <String, dynamic>{
+      'voucher_type': _voucherType,
+      'doc_type': _docType,
+      'doc_number': _docType == 99 ? '0' : cleanDoc,
+      'receiver_name': _receiverNameCtrl.text.trim().isNotEmpty
+          ? _receiverNameCtrl.text.trim()
+          : 'Consumidor Final',
+      'receiver_address': _receiverAddressCtrl.text.trim(),
+      'receiver_tax_condition': _taxCondition,
+      if (_selectedCustomer != null) 'customer_id': _selectedCustomer!.id,
+    };
+
+    try {
+      final posProvider = context.read<PosProvider>();
+      final result =
+          await posProvider.issueFiscalInvoice(widget.sale.id, payload);
+      if (!mounted) return;
+
+      if (result != null &&
+          result['success'] == true &&
+          result['invoice'] != null) {
+        Navigator.pop(
+          context,
+          Map<String, dynamic>.from(result['invoice'] as Map),
+        );
+      } else {
+        setState(() {
+          _errorMessage =
+              result?['message']?.toString() ?? 'No se pudo autorizar el comprobante en ARCA.';
+          _isSubmitting = false;
+        });
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = e.toString().replaceAll('Exception: ', '');
+        _isSubmitting = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final settings = context.watch<SettingsProvider>().settings;
+    final issuerCond = (settings?.taxCondition ?? '').trim().toLowerCase();
+    final isIssuerInscripto = issuerCond.contains('inscripto');
+    final isIssuerMonotributo =
+        issuerCond.contains('monotributo') || issuerCond.contains('exento');
+    final cleanDoc = _docNumberCtrl.text.trim().replaceAll(RegExp(r'\D'), '');
+
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 540),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Cabecera
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.indigo.shade50,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Icon(Icons.verified_outlined,
+                          color: Colors.indigo.shade700, size: 24),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Emitir Comprobante ARCA — Ticket #${widget.sale.id}',
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          Text(
+                            'Total a facturar: \$${widget.sale.grandTotal.toCurrency()}',
+                            style: TextStyle(
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.green.shade700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed:
+                          _isSubmitting ? null : () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+
+                // Aviso de Tope Consumidor Final Anónimo ($340.000)
+                if (_exceedsAnonymousLimit &&
+                    _voucherType != 1 &&
+                    !_isFormValid) ...[
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.shade50,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.amber.shade300),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.info_outline,
+                            color: Colors.amber.shade900, size: 20),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'El monto supera el tope de Consumidor Final anónimo (\$${_cfAnonymousLimit.toCurrency()}). '
+                            'ARCA exige identificar al comprador con su DNI o CUIT.',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              color: Colors.amber.shade900,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                ],
+
+                // Selector de Tipo de Comprobante (A / B / C)
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Clase de Comprobante:',
+                      style:
+                          TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                    ),
+                    SegmentedButton<int>(
+                      showSelectedIcon: false,
+                      style: const ButtonStyle(
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      segments: [
+                        ButtonSegment<int>(
+                          value: 1,
+                          enabled: !isIssuerMonotributo,
+                          label: const Text('Factura A',
+                              style: TextStyle(fontSize: 12)),
+                        ),
+                        ButtonSegment<int>(
+                          value: 6,
+                          enabled: !isIssuerMonotributo,
+                          label: const Text('Factura B',
+                              style: TextStyle(fontSize: 12)),
+                        ),
+                        ButtonSegment<int>(
+                          value: 11,
+                          enabled: !isIssuerInscripto,
+                          label: const Text('Factura C',
+                              style: TextStyle(fontSize: 12)),
+                        ),
+                      ],
+                      selected: {_voucherType},
+                      onSelectionChanged: (s) => _onVoucherTypeChanged(s.first),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+
+                // Barra de selección rápida de cliente registrado
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade50,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.grey.shade300),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.person_outline,
+                          size: 18, color: Colors.indigo.shade700),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _selectedCustomer != null
+                              ? 'Cliente vinculado: ${_selectedCustomer!.name}'
+                              : 'Podés buscar un cliente registrado o escribir el DNI/CUIT abajo',
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: _selectedCustomer != null
+                                ? FontWeight.bold
+                                : FontWeight.normal,
+                            color: _selectedCustomer != null
+                                ? Colors.indigo.shade900
+                                : Colors.grey.shade700,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      TextButton.icon(
+                        icon: const Icon(Icons.person_search, size: 16),
+                        label: Text(_selectedCustomer == null
+                            ? 'Buscar Cliente'
+                            : 'Cambiar'),
+                        onPressed: _isSubmitting ? null : _openCustomerSearch,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+
+                // Tipo Doc + Número de Documento
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      width: 155,
+                      child: DropdownButtonFormField<int>(
+                        key: ValueKey('arca_emit_doc_type_$_docType'),
+                        initialValue: _docType,
+                        isExpanded: true,
+                        decoration: InputDecoration(
+                          labelText: 'Tipo Doc.',
+                          isDense: true,
+                          border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8)),
+                        ),
+                        items: [
+                          const DropdownMenuItem(
+                              value: 80, child: Text('CUIT (80)')),
+                          if (_voucherType != 1) ...[
+                            const DropdownMenuItem(
+                                value: 86, child: Text('CUIL (86)')),
+                            const DropdownMenuItem(
+                                value: 96, child: Text('DNI (96)')),
+                            if (!_exceedsAnonymousLimit)
+                              const DropdownMenuItem(
+                                  value: 99, child: Text('Sin Doc. (99)')),
+                          ],
+                        ],
+                        onChanged: _voucherType == 1
+                            ? null
+                            : (val) {
+                                if (val != null) {
+                                  setState(() {
+                                    _docType = val;
+                                    _errorMessage = null;
+                                  });
+                                }
+                              },
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: TextFormField(
+                        controller: _docNumberCtrl,
+                        enabled: !_isSubmitting,
+                        autofocus: true,
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                          LengthLimitingTextInputFormatter(11),
+                        ],
+                        decoration: InputDecoration(
+                          labelText: _docType == 80
+                              ? 'N° de CUIT (11 dígitos)'
+                              : (_docType == 96
+                                  ? 'N° de DNI (7 u 8 dígitos)'
+                                  : 'N° de Documento / CUIT'),
+                          hintText:
+                              _docType == 80 ? 'Ej: 20396063299' : 'Ej: 39606329',
+                          isDense: true,
+                          border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8)),
+                          suffixIcon: cleanDoc.isEmpty
+                              ? null
+                              : Icon(
+                                  _isFormValid
+                                      ? Icons.check_circle
+                                      : Icons.error_outline,
+                                  color:
+                                      _isFormValid ? Colors.green : Colors.red,
+                                  size: 20,
+                                ),
+                        ),
+                        onChanged: _onDocNumberChanged,
+                        onFieldSubmitted: (_) => _submit(),
+                      ),
+                    ),
+                  ],
+                ),
+
+                // Feedback de validación del documento
+                if (_docType == 80 || _docType == 86) ...[
+                  if (cleanDoc.isNotEmpty &&
+                      !AfipModulo11.validateCuit(cleanDoc))
+                    const Padding(
+                      padding: EdgeInsets.only(top: 4, left: 4),
+                      child: Text(
+                        'El CUIT/CUIL ingresado no es válido (verifica los 11 dígitos / Módulo 11).',
+                        style: TextStyle(color: Colors.red, fontSize: 11.5),
+                      ),
+                    )
+                  else if (cleanDoc.isNotEmpty &&
+                      AfipModulo11.validateCuit(cleanDoc))
+                    const Padding(
+                      padding: EdgeInsets.only(top: 4, left: 4),
+                      child: Text(
+                        'CUIT/CUIL válido (Módulo 11 OK)',
+                        style: TextStyle(color: Colors.green, fontSize: 11.5),
+                      ),
+                    ),
+                ] else if (_docType == 96 &&
+                    cleanDoc.isNotEmpty &&
+                    !AfipModulo11.validateDni(cleanDoc)) ...[
+                  const Padding(
+                    padding: EdgeInsets.only(top: 4, left: 4),
+                    child: Text(
+                      'El DNI debe tener entre 7 y 8 dígitos numéricos.',
+                      style: TextStyle(color: Colors.red, fontSize: 11.5),
+                    ),
+                  ),
+                ],
+                if (_isLookingUpPadron) ...[
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4, left: 4),
+                    child: Text(
+                      '⏳ Consultando padrón ARCA...',
+                      style: TextStyle(
+                        color: Colors.blueGrey.shade600,
+                        fontSize: 11.5,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ),
+                ] else if (_autoMatchedCustomerByDoc &&
+                    (_selectedCustomer != null ||
+                        _remoteMatchedName != null)) ...[
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4, left: 4),
+                    child: Text(
+                      _selectedCustomer != null
+                          ? '✓ Cliente encontrado en padrón local: ${_selectedCustomer!.name}'
+                          : (_remoteMatchedSource == 'arca_padron'
+                              ? '✓ Padrón ARCA: $_remoteMatchedName'
+                              : '✓ Historial de facturación: $_remoteMatchedName'),
+                      style: TextStyle(
+                        color: Colors.indigo.shade700,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 12),
+
+                // Nombre / Razón Social
+                TextFormField(
+                  controller: _receiverNameCtrl,
+                  enabled: !_isSubmitting,
+                  decoration: InputDecoration(
+                    labelText: _voucherType == 1
+                        ? 'Razón Social / Nombre del Receptor *'
+                        : 'Apellido y Nombre / Razón Social (Opcional)',
+                    hintText: _voucherType == 1
+                        ? 'Obligatorio para Factura A'
+                        : 'Consumidor Final',
+                    isDense: true,
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8)),
+                  ),
+                  onChanged: (_) => setState(() {}),
+                ),
+                const SizedBox(height: 12),
+
+                // Condición frente al IVA + Domicilio
+                Row(
+                  children: [
+                    Expanded(
+                      flex: 2,
+                      child: DropdownButtonFormField<String>(
+                        key: ValueKey('arca_emit_tax_cond_$_taxCondition'),
+                        initialValue: _taxCondition,
+                        isExpanded: true,
+                        decoration: InputDecoration(
+                          labelText: 'Condición frente al IVA',
+                          isDense: true,
+                          border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8)),
+                        ),
+                        items: _voucherType == 1
+                            ? const [
+                                DropdownMenuItem(
+                                    value: 'responsable_inscripto',
+                                    child: Text('IVA Resp. Inscripto',
+                                        style: TextStyle(fontSize: 12.5))),
+                                DropdownMenuItem(
+                                    value: 'monotributo',
+                                    child: Text('Resp. Monotributo',
+                                        style: TextStyle(fontSize: 12.5))),
+                              ]
+                            : const [
+                                DropdownMenuItem(
+                                    value: 'consumidor_final',
+                                    child: Text('Consumidor Final',
+                                        style: TextStyle(fontSize: 12.5))),
+                                DropdownMenuItem(
+                                    value: 'exento',
+                                    child: Text('IVA Sujeto Exento',
+                                        style: TextStyle(fontSize: 12.5))),
+                              ],
+                        onChanged: _isSubmitting
+                            ? null
+                            : (val) {
+                                if (val != null) {
+                                  setState(() => _taxCondition = val);
+                                }
+                              },
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      flex: 3,
+                      child: TextFormField(
+                        controller: _receiverAddressCtrl,
+                        enabled: !_isSubmitting,
+                        decoration: InputDecoration(
+                          labelText: 'Domicilio (Opcional)',
+                          isDense: true,
+                          border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8)),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+
+                // Mensaje de error de ARCA en línea (sin cerrar el modal)
+                if (_errorMessage != null) ...[
+                  const SizedBox(height: 14),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.red.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.red.shade300),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.error_outline,
+                            color: Colors.red.shade700, size: 20),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _errorMessage!,
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              color: Colors.red.shade800,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+
+                const SizedBox(height: 20),
+
+                // Botones de acción
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed:
+                          _isSubmitting ? null : () => Navigator.pop(context),
+                      child: const Text('Cancelar'),
+                    ),
+                    const SizedBox(width: 12),
+                    FilledButton.icon(
+                      icon: _isSubmitting
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                  color: Colors.white, strokeWidth: 2),
+                            )
+                          : const Icon(Icons.cloud_upload_outlined),
+                      label: Text(_isSubmitting
+                          ? 'Autorizando en ARCA...'
+                          : 'Autorizar Factura en ARCA'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: Colors.indigo.shade700,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 20, vertical: 14),
+                      ),
+                      onPressed:
+                          (_isFormValid && !_isSubmitting) ? _submit : null,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _QuickCustomerPickerDialog extends StatefulWidget {
+  const _QuickCustomerPickerDialog();
+
+  @override
+  State<_QuickCustomerPickerDialog> createState() =>
+      _QuickCustomerPickerDialogState();
+}
+
+class _QuickCustomerPickerDialogState
+    extends State<_QuickCustomerPickerDialog> {
+  final _searchCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Container(
+        width: 460,
+        height: 540,
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Seleccionar Cliente para Facturar',
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _searchCtrl,
+              autofocus: true,
+              decoration: InputDecoration(
+                hintText: 'Buscar por nombre, DNI o CUIT...',
+                prefixIcon: const Icon(Icons.search),
+                isDense: true,
+                border:
+                    OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              onChanged: (_) => setState(() {}),
+            ),
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                icon: const Icon(Icons.person_add, size: 18),
+                label: const Text('NUEVO CLIENTE'),
+                onPressed: () async {
+                  await showDialog(
+                    context: context,
+                    builder: (ctx) => const CustomerFormDialog(),
+                  );
+                },
+              ),
+            ),
+            Expanded(
+              child: Consumer<CustomerProvider>(
+                builder: (ctx, provider, _) {
+                  if (provider.isLoading && provider.customers.isEmpty) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  final q = _searchCtrl.text.trim().toLowerCase();
+                  final list = provider.customers.where((c) {
+                    return c.name.toLowerCase().contains(q) ||
+                        c.documentNumber.toLowerCase().contains(q);
+                  }).toList();
+
+                  if (list.isEmpty) {
+                    return const Center(
+                      child: Text('No se encontraron clientes.'),
+                    );
+                  }
+
+                  return ListView.separated(
+                    itemCount: list.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    itemBuilder: (ctx, i) {
+                      final c = list[i];
+                      return ListTile(
+                        leading: CircleAvatar(
+                          backgroundColor: Colors.indigo.shade50,
+                          child: Text(
+                            c.name.trim().isNotEmpty
+                                ? c.name.trim()[0].toUpperCase()
+                                : '?',
+                            style: TextStyle(
+                              color: Colors.indigo.shade700,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        title: Text(
+                          c.name,
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        subtitle: Text(
+                          'Doc: ${c.documentNumber} • ${c.taxCondition.replaceAll('_', ' ').toUpperCase()}',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                        onTap: () => Navigator.pop(context, c),
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

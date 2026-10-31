@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
+import 'package:frontend_desktop/core/utils/currency_formatter.dart';
+import 'package:frontend_desktop/core/presentation/widgets/thermal_receipt_widget.dart';
 import 'package:frontend_desktop/core/presentation/widgets/ticket_preview_dialog.dart';
 import 'package:frontend_desktop/core/utils/receipt_printer_service.dart';
 import 'package:frontend_desktop/core/providers/local_terminal_provider.dart';
@@ -240,10 +242,15 @@ class _ReprintSheetState extends State<_ReprintSheet> {
                   })
               .toList();
 
+      final localTerminal = ctx.read<LocalTerminalProvider>();
+      final isNarrow = localTerminal.printerFormat == 'thermal_58';
+      final paperWidth =
+          isNarrow ? ThermalPaperWidth.mm58 : ThermalPaperWidth.mm80;
+
       if (widget.showPreview) {
         final previewLines = _buildTicketLines(sale, customerName, vendorName,
             dispatcherName, payloadToUse, items, settings,
-            isReprint: true);
+            isReprint: true, isNarrow: isNarrow);
         if (!ctx.mounted) return;
         final docLabel = noteStatus == 'pending'
             ? 'Orden de Retiro'
@@ -252,7 +259,8 @@ class _ReprintSheetState extends State<_ReprintSheet> {
                 : 'Remito de Despacho';
         final confirmed = await TicketPreviewDialog.show(
           ctx,
-          title: '$docLabel #${widget.note['id']}',
+          title: '$docLabel #${widget.note['id']} (${isNarrow ? "58mm" : "80mm"})',
+          paperWidth: paperWidth,
           lines: previewLines,
         );
         if (!confirmed || !ctx.mounted) return;
@@ -262,7 +270,7 @@ class _ReprintSheetState extends State<_ReprintSheet> {
         note: widget.note,
         deliveredItemsData: payloadToUse,
         settings: settings!,
-        localTerminal: ctx.read<LocalTerminalProvider>(),
+        localTerminal: localTerminal,
         customerName: customerName,
         vendorName: vendorName,
         dispatcherName: dispatcherName,
@@ -299,6 +307,7 @@ class _ReprintSheetState extends State<_ReprintSheet> {
         vendorName: vendorName,
         dispatcherName: dispatcherName,
         paperSize: ctx.read<LocalTerminalProvider>().pdfPaperSize,
+        businessSettings: settings,
       );
 
       if (ctx.mounted) Navigator.pop(ctx);
@@ -327,6 +336,7 @@ class _ReprintSheetState extends State<_ReprintSheet> {
         vendorName: vendorName,
         dispatcherName: dispatcherName,
         paperSize: ctx.read<LocalTerminalProvider>().pdfPaperSize,
+        businessSettings: settings,
       );
 
       if (ctx.mounted) {
@@ -349,6 +359,7 @@ class _ReprintSheetState extends State<_ReprintSheet> {
     List items,
     settings, {
     bool isReprint = false,
+    bool isNarrow = false,
   }) {
     final now = DateTime.now().toLocal();
     String pad(int n) => n.toString().padLeft(2, '0');
@@ -375,8 +386,13 @@ class _ReprintSheetState extends State<_ReprintSheet> {
               align: TicketAlign.center,
               isBold: true),
           TicketLine('[ $copyLabel ]', align: TicketAlign.center),
+          TicketLine(
+              isNarrow
+                  ? 'DOC. NO VALIDO COMO FACTURA'
+                  : 'DOCUMENTO NO VÁLIDO COMO FACTURA',
+              align: TicketAlign.center),
           const TicketLine.hr(),
-          TicketLine('REM N°: $remNum', isBold: true),
+          TicketLine('REM Nro: $remNum', isBold: true),
           TicketLine('FECHA: $fecha'),
           TicketLine('CLIENTE: ${customerName ?? 'Consumidor Final'}',
               isBold: true),
@@ -394,33 +410,44 @@ class _ReprintSheetState extends State<_ReprintSheet> {
             final deliveredBefore =
                 double.parse(item['quantity_delivered'].toString());
             final deliveredNow = (d['delivered_now'] as num).toDouble();
-            // Para reimpresión: deliveredNow YA ES el total acumulado → remaining = purchased - deliveredNow
-            // Para despacho: deliveredNow es incremental → remaining = purchased - deliveredBefore - deliveredNow
             final remaining = isReprint
                 ? purchased - deliveredNow
                 : purchased - deliveredBefore - deliveredNow;
+            final actionLabel = isReprint ? 'Entregado' : 'Entregando';
             return [
               TicketLine(name, isBold: true),
               TicketLine(
-                  'Entregando: ${deliveredNow.toStringAsFixed(1)} | Saldo: ${remaining.toStringAsFixed(1)}'),
+                  '$actionLabel: ${deliveredNow.toQty()} | Saldo: ${remaining.toQty()}'),
               const TicketLine.space(),
             ];
           }),
           const TicketLine.hr(bold: true),
         ];
 
-    // Copia 1 (Cliente) + separador visual + Copia 2 (Despachante con firma)
     return [
       ...buildCopy('COPIA CLIENTE'),
       const TicketLine.space(),
-      const TicketLine('✂ - - - - - - - CORTE - - - - - - - ✂',
+      TicketLine(
+          isNarrow
+              ? '✂ - - - - CORTE - - - - ✂'
+              : '✂ - - - - - - - CORTE - - - - - - - ✂',
           align: TicketAlign.center),
       const TicketLine.space(),
       ...buildCopy('COPIA DESPACHANTE - ORIGINAL'),
-      const TicketLine('FIRMA CONFORMIDAD DEL CLIENTE:', isBold: true),
-      const TicketLine('___________________________________'),
-      const TicketLine('Aclaración: ________________________'),
-      const TicketLine('DNI / CUIT: ________________________'),
+      TicketLine(
+          isNarrow
+              ? 'FIRMA CONFORMIDAD CLIENTE:'
+              : 'FIRMA CONFORMIDAD DEL CLIENTE:',
+          isBold: true),
+      TicketLine(isNarrow
+          ? '____________________________'
+          : '___________________________________'),
+      TicketLine(isNarrow
+          ? 'Aclaración: ________________'
+          : 'Aclaración: ________________________'),
+      TicketLine(isNarrow
+          ? 'DNI / CUIT: ________________'
+          : 'DNI / CUIT: ________________________'),
     ];
   }
 

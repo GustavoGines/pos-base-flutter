@@ -322,7 +322,9 @@ class ReceiptPrinterService {
     // Ítems
     for (final item in quote.items) {
       final isWeight = item.product?.isSoldByWeight ?? (item.quantity % 1 != 0);
-      final cantStr = isWeight ? '${item.quantity.toQty()} kg' : '${item.quantity.toInt()} un';
+      final cantStr = isWeight
+          ? '${item.quantity.toQty()} kg'
+          : (item.quantity % 1 == 0 ? '${item.quantity.toInt()}' : item.quantity.toQty());
 
       final productName = _cleanText(item.productName.toUpperCase());
       bytes += generator.row([
@@ -376,7 +378,10 @@ class ReceiptPrinterService {
     String? cashierName,
     String? customerName,
     String? customerDoc,
+    String? customerAddress,
     double surchargeAmount = 0.0,
+    double discountAmount = 0.0,
+    String? discountLabel,
     double tenderedAmount = 0.0,
     double changeAmount = 0.0,
     double shippingCost = 0.0,
@@ -439,9 +444,28 @@ class ReceiptPrinterService {
     }
     if (settings.taxId != null && settings.taxId!.isNotEmpty) {
       bytes += generator.text(
-        'CUIT: ${settings.taxId}',
+        'CUIT: ${_formatCuit(settings.taxId!)}',
         styles: const PosStyles(align: PosAlign.center, bold: true),
       );
+    }
+    final invoice = resolvedInvoice;
+    if (invoice != null) {
+      final iibbStr = (settings.iibb != null && settings.iibb!.trim().isNotEmpty)
+          ? settings.iibb!.trim()
+          : 'Exento';
+      final startDateStr = (settings.activityStartDate != null && settings.activityStartDate!.trim().isNotEmpty)
+          ? settings.activityStartDate!.trim()
+          : '';
+      bytes += generator.text(
+        _cleanText('Ing. Brutos: $iibbStr'),
+        styles: const PosStyles(align: PosAlign.center),
+      );
+      if (startDateStr.isNotEmpty) {
+        bytes += generator.text(
+          _cleanText('Inicio Act.: $startDateStr'),
+          styles: const PosStyles(align: PosAlign.center),
+        );
+      }
     }
     if (settings.phone != null && settings.phone!.isNotEmpty) {
       bytes += generator.text(
@@ -449,17 +473,24 @@ class ReceiptPrinterService {
         styles: const PosStyles(align: PosAlign.center),
       );
     }
-    bytes += generator.hr(ch: '=');
-
-    final invoice = resolvedInvoice;
     if (invoice != null) {
       final letter = invoice['voucher_letter']?.toString().toUpperCase() ?? 'B';
-      final type = int.tryParse(invoice['voucher_type']?.toString() ?? '6') ?? 6;
+      bytes += generator.text(
+        _resolveIssuerTaxCondition(settings, letter),
+        styles: const PosStyles(align: PosAlign.center, bold: true),
+      );
+    }
+    bytes += generator.hr(ch: '=');
+
+    if (invoice != null) {
+      final letter = invoice['voucher_letter']?.toString().toUpperCase() ?? 'B';
+      final defaultCode = letter == 'A' ? 1 : (letter == 'C' ? 11 : 6);
+      final type = int.tryParse(invoice['voucher_type']?.toString() ?? '') ?? defaultCode;
       String voucherTitle = 'FACTURA';
       if (<int>[3, 8, 13].contains(type)) {
-        voucherTitle = 'NOTA DE CRÉDITO';
+        voucherTitle = 'NOTA DE CREDITO';
       } else if (<int>[2, 7, 12].contains(type)) {
-        voucherTitle = 'NOTA DE DÉBITO';
+        voucherTitle = 'NOTA DE DEBITO';
       }
       final nro = invoice['formatted_number']?.toString() ??
           invoice['voucher_number']?.toString() ??
@@ -472,6 +503,10 @@ class ReceiptPrinterService {
           height: PosTextSize.size1,
           width: PosTextSize.size1,
         ),
+      );
+      bytes += generator.text(
+        'COD. ${type.toString().padLeft(3, '0')}',
+        styles: const PosStyles(align: PosAlign.center, bold: true),
       );
       final pv = invoice['point_of_sale']?.toString().padLeft(5, '0') ?? '00001';
       bytes += generator.text('PUNTO DE VENTA: $pv', styles: const PosStyles(align: PosAlign.center));
@@ -493,17 +528,25 @@ class ReceiptPrinterService {
       final recDoc = (invoice['doc_number']?.toString().trim().isNotEmpty == true)
           ? invoice['doc_number'].toString()
           : (customerDoc?.trim().isNotEmpty == true ? customerDoc! : '---');
-      final recCond = (invoice['receiver_tax_condition']?.toString() ?? 'CONSUMIDOR FINAL').replaceAll('_', ' ').toUpperCase();
+      final recCond = _formatReceiverTaxCondition(invoice['receiver_tax_condition']?.toString(), letter);
+      final recAddress = (invoice['receiver_address']?.toString() ?? customerAddress ?? '').trim();
       bytes += generator.text('CLIENTE: ${_cleanText(recName).toUpperCase()}', styles: const PosStyles(align: PosAlign.left));
       if (targetPaperSize == PaperSize.mm58) {
         bytes += generator.text('DOC: $recDoc', styles: const PosStyles(align: PosAlign.left));
-        bytes += generator.text('IVA: $recCond', styles: const PosStyles(align: PosAlign.left));
+        bytes += generator.text('IVA: ${_cleanText(recCond)}', styles: const PosStyles(align: PosAlign.left));
       } else {
-        bytes += generator.text('DOC: $recDoc | IVA: $recCond', styles: const PosStyles(align: PosAlign.left));
+        bytes += generator.text('DOC: $recDoc | IVA: ${_cleanText(recCond)}', styles: const PosStyles(align: PosAlign.left));
+      }
+      if (recAddress.isNotEmpty && recAddress != '---') {
+        bytes += generator.text('DOMICILIO: ${_cleanText(recAddress).toUpperCase()}', styles: const PosStyles(align: PosAlign.left));
       }
     } else {
       bytes += generator.text(
         _cleanText('COMPROBANTE DE VENTA'),
+        styles: const PosStyles(align: PosAlign.center, bold: true),
+      );
+      bytes += generator.text(
+        '*** NO VALIDO COMO FACTURA ***',
         styles: const PosStyles(align: PosAlign.center, bold: true),
       );
     }
@@ -511,39 +554,42 @@ class ReceiptPrinterService {
 
     // ── Fecha y número de comprobante ────────────────────────────
     final now = DateTime.now();
-    // Fecha ocupa la línea completa
-    bytes += generator.text(
-      'FECHA: ${_formatDate(now)}',
-      styles: const PosStyles(bold: true, align: PosAlign.left),
-    );
-    // Número de ticket en su propia línea — funciona con cualquier cantidad de dígitos
+    bytes += _labelValue(generator, 'FECHA:', _formatDate(now));
     if (receiptNumber != null) {
-      bytes += generator.text(
-        'TICKET N°: ${receiptNumber.padLeft(6, '0')}',
-        styles: const PosStyles(bold: true, align: PosAlign.right),
-      );
+      bytes += _labelValue(generator, 'TICKET Nro:', receiptNumber.padLeft(6, '0'));
     }
     if (userName != null) {
-      final String cashierLine = (cashierName == null || userName == cashierName)
-          ? 'CAJERO: ${_cleanText(userName).toUpperCase()}'
-          : 'GENERO: ${_cleanText(userName).toUpperCase()} | COBRO: ${_cleanText(cashierName).toUpperCase()}';
-      
-      bytes += generator.text(
-        cashierLine,
-        styles: const PosStyles(align: PosAlign.left),
-      );
-    }
-    if (invoice == null &&
-        customerName != null &&
-        customerName.trim().isNotEmpty &&
-        customerName.trim().toUpperCase() != 'CONSUMIDOR FINAL') {
-      bytes += generator.text(
-        'CLIENTE: ${_cleanText(customerName).toUpperCase()}',
-        styles: const PosStyles(bold: true, align: PosAlign.left),
-      );
-      if (customerDoc != null && customerDoc.trim().isNotEmpty) {
+      if (cashierName == null || userName == cashierName) {
+        bytes += _labelValue(generator, 'CAJERO:', _cleanText(userName).toUpperCase());
+      } else {
         bytes += generator.text(
-          'DOC/CUIT: ${_cleanText(customerDoc).trim()}',
+          'GENERO: ${_cleanText(userName).toUpperCase()} | COBRO: ${_cleanText(cashierName).toUpperCase()}',
+          styles: const PosStyles(align: PosAlign.left),
+        );
+      }
+    }
+    if (invoice == null) {
+      final resolvedCust = (customerName != null && customerName.trim().isNotEmpty)
+          ? _cleanText(customerName.trim()).toUpperCase()
+          : 'CONSUMIDOR FINAL';
+      if (resolvedCust.length > 16) {
+        bytes += generator.text('CLIENTE: $resolvedCust',
+            styles: PosStyles(
+                align: PosAlign.left,
+                bold: resolvedCust != 'CONSUMIDOR FINAL'));
+      } else {
+        bytes += _labelValue(generator, 'CLIENTE:', resolvedCust);
+      }
+      if (customerDoc != null &&
+          customerDoc.trim().isNotEmpty &&
+          customerDoc.trim() != '---') {
+        bytes += _labelValue(generator, 'DOC/CUIT:', _cleanText(customerDoc).trim());
+      }
+      if (customerAddress != null &&
+          customerAddress.trim().isNotEmpty &&
+          customerAddress.trim() != '---') {
+        bytes += generator.text(
+          'DOMICILIO: ${_cleanText(customerAddress).toUpperCase()}',
           styles: const PosStyles(align: PosAlign.left),
         );
       }
@@ -555,12 +601,18 @@ class ReceiptPrinterService {
     bytes += generator.hr(ch: '-');
 
     int totalItemsQty = 0;
+    final letterForItems = invoice?['voucher_letter']?.toString().toUpperCase() ?? 'B';
+    final showIvaAliquot = invoice != null && (letterForItems == 'A' || letterForItems == 'B');
 
+    double totalSavings = discountAmount;
     for (final item in items) {
+      if (discountAmount <= 0.01) {
+        totalSavings += item.discountSavings;
+      }
       final isWeight = item.product.isSoldByWeight;
       final cantStr = isWeight
           ? '${item.quantity.toQty()} kg'
-          : '${item.quantity.toInt()} un';
+          : (item.quantity % 1 == 0 ? '${item.quantity.toInt()}' : item.quantity.toQty());
 
       if (!isWeight) totalItemsQty += item.quantity.toInt();
 
@@ -568,10 +620,32 @@ class ReceiptPrinterService {
       final double subtotal = item.subtotal;
 
       final productName = _cleanText(item.product.name.toUpperCase());
-      final unitPriceStr = '$cantStr x \$${_formatPrice(price)}';
+      final ivaRateVal = item.product.ivaRate;
+      final ivaRateFormatted = ivaRateVal.truncateToDouble() == ivaRateVal
+          ? ivaRateVal.toInt().toString()
+          : ivaRateVal.toStringAsFixed(1);
+      final aliquotTag = showIvaAliquot ? ' ($ivaRateFormatted)' : '';
+      final unitPriceStr = '$cantStr x \$${_formatPrice(price)}$aliquotTag';
       final subtotalStr = '\$${_formatPrice(subtotal)}';
 
-      // Línea 1: [3 un x $1500    LEFT] [$4500 RIGHT]
+      // Línea 1: NOMBRE DEL PRODUCTO en negrita
+      bytes += generator.text(
+        productName,
+        styles: const PosStyles(bold: true),
+      );
+      if (item.hasDiscount) {
+        final tag = item.hasActiveOffer
+            ? item.offerBadgeLabel
+            : (item.promotionalLabel != null &&
+                    item.promotionalLabel!.trim().isNotEmpty
+                ? item.promotionalLabel!.trim()
+                : 'Descuento');
+        bytes += generator.text(
+          _cleanText('($tag)'),
+          styles: const PosStyles(align: PosAlign.left),
+        );
+      }
+      // Línea 2: [3 un x $1500    LEFT] [$4500 RIGHT]
       bytes += generator.row([
         PosColumn(
           text: unitPriceStr,
@@ -584,28 +658,37 @@ class ReceiptPrinterService {
           styles: const PosStyles(align: PosAlign.right, bold: true),
         ),
       ]);
-      // Línea 2: NOMBRE DEL PRODUCTO en negrita
-      bytes += generator.text(
-        productName,
-        styles: const PosStyles(bold: true),
-      );
     }
     bytes += generator.hr(ch: '=');
 
-
-
     // ── Resumen de Pago (Anti-Redundancia) ──────────────────────────
+    final hasSavings = totalSavings > 0.01;
     final hasSurcharge = surchargeAmount > 0.01;
     final hasShipping = shippingCost > 0.01;
     final grandTotal = total + surchargeAmount;
     final hasTendered = tenderedAmount > 0.01;
 
     final hasPerception = iibbPerceptionAmount > 0.01;
-    final bool isComplexPayment = paymentDetails.length > 1 || hasSurcharge || hasShipping || hasPerception;
+    final bool isComplexPayment = paymentDetails.length > 1 ||
+        hasSurcharge ||
+        hasShipping ||
+        hasPerception ||
+        hasSavings;
 
     if (isComplexPayment) {
-      // Caso 3: Venta Compleja (Múltiples métodos, Envío, Recargos, o Percepciones)
-      bytes += _labelValue(generator, 'SUBTOTAL:', '\$${_formatPrice(total - shippingCost - iibbPerceptionAmount)}');
+      // Caso 3: Venta Compleja (Múltiples métodos, Envío, Recargos, Ahorro o Percepciones)
+      if (hasSavings) {
+        bytes += _labelValue(
+            generator,
+            'SUBTOTAL LISTA:',
+            '\$${_formatPrice(total + totalSavings - shippingCost - iibbPerceptionAmount)}');
+        final discTitle = (discountLabel != null && discountLabel.trim().isNotEmpty)
+            ? '${discountLabel.replaceAll(RegExp(r'[^\w\s\/\-]'), '').trim().toUpperCase()}:'
+            : 'AHORRO / DESCUENTO:';
+        bytes += _labelValue(generator, discTitle, '-\$${_formatPrice(totalSavings)}');
+      } else {
+        bytes += _labelValue(generator, 'SUBTOTAL:', '\$${_formatPrice(total - shippingCost - iibbPerceptionAmount)}');
+      }
       
       if (hasPerception) {
         bytes += _labelValue(generator, 'PERC. IIBB:', '\$${_formatPrice(iibbPerceptionAmount)}');
@@ -634,10 +717,8 @@ class ReceiptPrinterService {
       bytes += generator.hr(ch: '-');
       bytes += _labelValue(generator, 'TOTAL COBRADO:', '\$${_formatPrice(grandTotal)}');
 
-      if (hasTendered) {
+      if (hasTendered && (paymentDetails.length <= 1 || changeAmount > 0.01)) {
         bytes += _labelValue(generator, 'EFECTIVO RECIBIDO:', '\$${_formatPrice(tenderedAmount)}');
-      }
-      if (hasTendered) {
         bytes += _labelValue(generator, 'SU VUELTO:', '\$${_formatPrice(changeAmount)}');
       }
     } else {
@@ -652,10 +733,8 @@ class ReceiptPrinterService {
       bytes += _labelValue(generator, 'PAGO EN:', singlePaymentName);
 
       // Si pagó con efectivo, mostramos siempre con cuánto abonó para control de caja.
-      if (hasTendered) {
+      if (hasTendered && (paymentDetails.length <= 1 || changeAmount > 0.01)) {
         bytes += _labelValue(generator, 'EFECTIVO RECIBIDO:', '\$${_formatPrice(tenderedAmount)}');
-      }
-      if (hasTendered) {
         bytes += _labelValue(generator, 'SU VUELTO:', '\$${_formatPrice(changeAmount)}');
       }
     }
@@ -700,21 +779,33 @@ class ReceiptPrinterService {
       bytes += generator.feed(1);
     }
 
-    // ── Pie de ticket (SOLO el mensaje configurado por el usuario) ──
-    // No se agregan mensajes hardcodeados adicionales para evitar duplicados.
-    if (settings.receiptFooterMessage != null &&
-        settings.receiptFooterMessage!.isNotEmpty) {
+    // ── Pie de ticket ──
+    if (hasSavings) {
       bytes += generator.text(
-        _cleanText(settings.receiptFooterMessage!),
+        _cleanText('*** ¡USTED AHORRO: \$${_formatPrice(totalSavings)}! ***'),
+        styles: const PosStyles(align: PosAlign.center, bold: true),
+      );
+      bytes += generator.feed(1);
+    }
+
+    final footerText = (settings.receiptFooterMessage != null &&
+            settings.receiptFooterMessage!.trim().isNotEmpty)
+        ? settings.receiptFooterMessage!.trim()
+        : (invoice == null ? 'Gracias por su compra!' : '');
+    if (footerText.isNotEmpty) {
+      bytes += generator.text(
+        _cleanText(footerText),
         styles: const PosStyles(align: PosAlign.center, bold: true),
       );
       bytes += generator.feed(1);
     }
 
     if (invoice != null) {
-      // FINDING-SALES-05: Desglose de impuestos solo para Factura A o B (en Factura C no se discrimina IVA segun RG 1415 AFIP)
+      // FINDING-SALES-05: Desglose de impuestos para Factura A y Transparencia Fiscal (RG 5614 Ley 27.743) para Factura B
       final voucherLetter = invoice['voucher_letter']?.toString().toUpperCase();
-      final isFacturaA = voucherLetter == 'A' || invoice['voucher_type'] == 1 || invoice['voucher_type'] == 2 || invoice['voucher_type'] == 3;
+      final vType = int.tryParse(invoice['voucher_type']?.toString() ?? '0') ?? 0;
+      final isFacturaA = voucherLetter == 'A' || vType == 1 || vType == 2 || vType == 3;
+      final isFacturaB = voucherLetter == 'B' || vType == 6 || vType == 7 || vType == 8;
       final netAmount = invoice['net_amount'];
       final ivaAmount = invoice['iva_amount'];
       if (isFacturaA && netAmount != null && ivaAmount != null) {
@@ -730,10 +821,36 @@ class ReceiptPrinterService {
           PosColumn(text: '\$${iva.toStringAsFixed(2)}', width: 6, styles: const PosStyles(align: PosAlign.right)),
         ]);
         bytes += generator.hr(ch: '-');
+      } else if (isFacturaB) {
+        final explicitNet = double.tryParse(netAmount?.toString() ?? '') ?? 0.0;
+        final explicitIva = double.tryParse(ivaAmount?.toString() ?? '') ?? 0.0;
+        final baseTotal = total - shippingCost - iibbPerceptionAmount;
+        final containedIva = explicitIva > 0
+            ? explicitIva
+            : (baseTotal > 0 ? (baseTotal - (baseTotal / 1.21)) : 0.0);
+        final containedNet = explicitNet > 0
+            ? explicitNet
+            : (baseTotal - containedIva).clamp(0.0, double.infinity);
+        bytes += generator.hr(ch: '-');
+        bytes += generator.text(
+          'Regimen Trans. Fiscal al Consumidor (Ley 27.743)',
+          styles: const PosStyles(align: PosAlign.center, bold: true),
+        );
+        bytes += generator.text(
+          'Precio s/imp: \$${_formatPrice(containedNet)} - IVA Contenido: \$${_formatPrice(containedIva)}',
+          styles: PosStyles(
+            align: PosAlign.center,
+            fontType: config.paperSize == PaperSize.mm58
+                ? PosFontType.fontB
+                : PosFontType.fontA,
+          ),
+        );
+        bytes += _labelValue(generator, 'Otros Imp. Nac. Ind.:', '\$0');
+        bytes += generator.hr(ch: '-');
       }
 
       final cae = invoice['cae']?.toString() ?? '';
-      final caeVto = invoice['cae_expiration']?.toString() ?? '';
+      final caeVto = _formatCaeExpiration(invoice['cae_expiration']);
       if (cae.isNotEmpty) {
         bytes += generator.text('CAE: $cae', styles: const PosStyles(align: PosAlign.center, bold: true));
         bytes += generator.text('VTO. CAE: $caeVto', styles: const PosStyles(align: PosAlign.center, bold: true));
@@ -755,11 +872,6 @@ class ReceiptPrinterService {
       }
       bytes += generator.text(
         'Comprobante Autorizado por AFIP',
-        styles: const PosStyles(align: PosAlign.center, bold: true),
-      );
-    } else {
-      bytes += generator.text(
-        '*** NO VALIDO COMO FACTURA ***',
         styles: const PosStyles(align: PosAlign.center, bold: true),
       );
     }
@@ -798,11 +910,14 @@ class ReceiptPrinterService {
     String? userName,
     String? cashierName,
     double surchargeAmount = 0.0,
+    double discountAmount = 0.0,
+    String? discountLabel,
     double tenderedAmount = 0.0,
     double changeAmount = 0.0,
     double iibbPerceptionAmount = 0.0,
     String? customerName,
     String? customerDoc,
+    String? customerAddress,
     String? paperSizeOverride,
     Map<String, dynamic>? electronicInvoice,
   }) async {
@@ -838,16 +953,31 @@ class ReceiptPrinterService {
     if (settings.taxId != null && settings.taxId!.isNotEmpty) {
       bytes += generator.text('CUIT: ${settings.taxId}', styles: const PosStyles(align: PosAlign.center, bold: true));
     }
-    bytes += generator.hr(ch: '=');
     final invoice = resolvedInvoice;
     if (invoice != null) {
+      final iibbStr = (settings.iibb != null && settings.iibb!.trim().isNotEmpty)
+          ? settings.iibb!.trim()
+          : 'Exento';
+      final startDateStr = (settings.activityStartDate != null && settings.activityStartDate!.trim().isNotEmpty)
+          ? settings.activityStartDate!.trim()
+          : '';
+      bytes += generator.text(_cleanText('Ing. Brutos: $iibbStr'), styles: const PosStyles(align: PosAlign.center));
+      if (startDateStr.isNotEmpty) {
+        bytes += generator.text(_cleanText('Inicio Act.: $startDateStr'), styles: const PosStyles(align: PosAlign.center));
+      }
       final letter = invoice['voucher_letter']?.toString().toUpperCase() ?? 'B';
-      final type = int.tryParse(invoice['voucher_type']?.toString() ?? '6') ?? 6;
+      bytes += generator.text(_resolveIssuerTaxCondition(settings, letter), styles: const PosStyles(align: PosAlign.center, bold: true));
+    }
+    bytes += generator.hr(ch: '=');
+    if (invoice != null) {
+      final letter = invoice['voucher_letter']?.toString().toUpperCase() ?? 'B';
+      final defaultCode = letter == 'A' ? 1 : (letter == 'C' ? 11 : 6);
+      final type = int.tryParse(invoice['voucher_type']?.toString() ?? '') ?? defaultCode;
       String voucherTitle = 'FACTURA';
       if (<int>[3, 8, 13].contains(type)) {
-        voucherTitle = 'NOTA DE CRÉDITO';
+        voucherTitle = 'NOTA DE CREDITO';
       } else if (<int>[2, 7, 12].contains(type)) {
-        voucherTitle = 'NOTA DE DÉBITO';
+        voucherTitle = 'NOTA DE DEBITO';
       }
       final nro = invoice['formatted_number']?.toString() ??
           invoice['voucher_number']?.toString() ??
@@ -861,6 +991,7 @@ class ReceiptPrinterService {
           width: PosTextSize.size1,
         ),
       );
+      bytes += generator.text('COD. ${type.toString().padLeft(3, '0')}', styles: const PosStyles(align: PosAlign.center, bold: true));
       final pv = invoice['point_of_sale']?.toString().padLeft(5, '0') ?? '00001';
       bytes += generator.text('PUNTO DE VENTA: $pv', styles: const PosStyles(align: PosAlign.center));
       if (<int>[3, 8, 13, 113].contains(type)) {
@@ -881,60 +1012,116 @@ class ReceiptPrinterService {
       final recDoc = (invoice['doc_number']?.toString().trim().isNotEmpty == true)
           ? invoice['doc_number'].toString()
           : (customerDoc?.trim().isNotEmpty == true ? customerDoc! : '---');
-      final recCond = (invoice['receiver_tax_condition']?.toString() ?? 'CONSUMIDOR FINAL').replaceAll('_', ' ').toUpperCase();
+      final recCond = _formatReceiverTaxCondition(invoice['receiver_tax_condition']?.toString(), letter);
+      final recAddress = (invoice['receiver_address']?.toString() ?? customerAddress ?? '').trim();
       bytes += generator.text('CLIENTE: ${_cleanText(recName).toUpperCase()}', styles: const PosStyles(align: PosAlign.left));
       if (targetPaperSize == PaperSize.mm58) {
         bytes += generator.text('DOC: $recDoc', styles: const PosStyles(align: PosAlign.left));
-        bytes += generator.text('IVA: $recCond', styles: const PosStyles(align: PosAlign.left));
+        bytes += generator.text('IVA: ${_cleanText(recCond)}', styles: const PosStyles(align: PosAlign.left));
       } else {
-        bytes += generator.text('DOC: $recDoc | IVA: $recCond', styles: const PosStyles(align: PosAlign.left));
+        bytes += generator.text('DOC: $recDoc | IVA: ${_cleanText(recCond)}', styles: const PosStyles(align: PosAlign.left));
+      }
+      if (recAddress.isNotEmpty && recAddress != '---') {
+        bytes += generator.text('DOMICILIO: ${_cleanText(recAddress).toUpperCase()}', styles: const PosStyles(align: PosAlign.left));
       }
     } else {
       bytes += generator.text('COMPROBANTE DE VENTA', styles: const PosStyles(align: PosAlign.center, bold: true));
+      bytes += generator.text('*** NO VALIDO COMO FACTURA ***', styles: const PosStyles(align: PosAlign.center, bold: true));
     }
     bytes += generator.hr(ch: '-');
 
     final now = DateTime.now();
-    bytes += generator.text('FECHA: ${_formatDate(now)}', styles: const PosStyles(bold: true));
+    bytes += _labelValue(generator, 'FECHA:', _formatDate(now));
     if (receiptNumber != null) {
-      bytes += generator.text('TICKET N°: ${receiptNumber.padLeft(6, '0')}', styles: const PosStyles(bold: true, align: PosAlign.right));
+      bytes += _labelValue(generator, 'TICKET Nro:', receiptNumber.padLeft(6, '0'));
     }
     if (userName != null) {
-      bytes += generator.text('CAJERO: ${_cleanText(userName).toUpperCase()}');
+      bytes += _labelValue(generator, 'CAJERO:', _cleanText(userName).toUpperCase());
     }
-    if (invoice == null &&
-        customerName != null &&
-        customerName.trim().isNotEmpty &&
-        customerName.trim().toUpperCase() != 'CONSUMIDOR FINAL' &&
-        customerName.trim().toUpperCase() != 'CONSUMIDOR_FINAL') {
-      bytes += generator.text('CLIENTE: ${_cleanText(customerName).toUpperCase()}', styles: const PosStyles(bold: true));
-      if (customerDoc != null && customerDoc.trim().isNotEmpty) {
-        bytes += generator.text('DOC/CUIT: ${_cleanText(customerDoc).trim()}', styles: const PosStyles(align: PosAlign.left));
+    if (invoice == null) {
+      final resolvedCust = (customerName != null && customerName.trim().isNotEmpty)
+          ? _cleanText(customerName.trim()).toUpperCase()
+          : 'CONSUMIDOR FINAL';
+      if (resolvedCust.length > 16) {
+        bytes += generator.text('CLIENTE: $resolvedCust',
+            styles: PosStyles(
+                align: PosAlign.left,
+                bold: resolvedCust != 'CONSUMIDOR FINAL'));
+      } else {
+        bytes += _labelValue(generator, 'CLIENTE:', resolvedCust);
+      }
+      if (customerDoc != null &&
+          customerDoc.trim().isNotEmpty &&
+          customerDoc.trim() != '---') {
+        bytes += _labelValue(generator, 'DOC/CUIT:', _cleanText(customerDoc).trim());
+      }
+      if (customerAddress != null &&
+          customerAddress.trim().isNotEmpty &&
+          customerAddress.trim() != '---') {
+        bytes += generator.text(
+          'DOMICILIO: ${_cleanText(customerAddress).toUpperCase()}',
+          styles: const PosStyles(align: PosAlign.left),
+        );
       }
     }
     bytes += generator.hr(ch: '-');
 
     int totalItemsQty = 0;
+    final splitLetterForItems = invoice?['voucher_letter']?.toString().toUpperCase() ?? 'B';
+    final splitShowIvaAliquot = invoice != null && (splitLetterForItems == 'A' || splitLetterForItems == 'B');
+    double splitTotalSavings = discountAmount;
+
     for (final item in items) {
+      if (discountAmount <= 0.01) {
+        splitTotalSavings += item.discountSavings;
+      }
       final isWeight = item.product.isSoldByWeight;
-      final cantStr = isWeight ? '${item.quantity.toQty()} kg' : '${item.quantity.toInt()} un';
+      final cantStr = isWeight
+          ? '${item.quantity.toQty()} kg'
+          : (item.quantity % 1 == 0 ? '${item.quantity.toInt()}' : item.quantity.toQty());
       if (!isWeight) totalItemsQty += item.quantity.toInt();
 
+      final ivaRateVal = item.product.ivaRate;
+      final ivaRateFormatted = ivaRateVal.truncateToDouble() == ivaRateVal
+          ? ivaRateVal.toInt().toString()
+          : ivaRateVal.toStringAsFixed(1);
+      final aliquotTag = splitShowIvaAliquot ? ' ($ivaRateFormatted)' : '';
+      bytes += generator.text(_cleanText(item.product.name.toUpperCase()), styles: const PosStyles(bold: true));
+      if (item.hasDiscount) {
+        final tag = item.hasActiveOffer
+            ? item.offerBadgeLabel
+            : (item.promotionalLabel != null &&
+                    item.promotionalLabel!.trim().isNotEmpty
+                ? item.promotionalLabel!.trim()
+                : 'Descuento');
+        bytes += generator.text(
+          _cleanText('($tag)'),
+          styles: const PosStyles(align: PosAlign.left),
+        );
+      }
       bytes += generator.row([
-        PosColumn(text: '$cantStr x \$${_formatPrice(item.unitPrice)}', width: 8),
+        PosColumn(text: '$cantStr x \$${_formatPrice(item.unitPrice)}$aliquotTag', width: 8),
         PosColumn(text: '\$${_formatPrice(item.subtotal)}', width: 4, styles: const PosStyles(align: PosAlign.right, bold: true)),
       ]);
-      bytes += generator.text(_cleanText(item.product.name.toUpperCase()), styles: const PosStyles(bold: true));
     }
     bytes += generator.hr(ch: '=');
 
+    final hasSplitSavings = splitTotalSavings > 0.01;
     final hasSurcharge = surchargeAmount > 0.01;
     final hasShipping = shippingCost > 0.01;
     final grandTotal = total + surchargeAmount;
 
     final hasPerception = iibbPerceptionAmount > 0.01;
-    if (paymentDetails.length > 1 || hasSurcharge || hasShipping || hasPerception) {
-      bytes += _labelValue(generator, 'SUBTOTAL:', '\$${_formatPrice(total - shippingCost - iibbPerceptionAmount)}');
+    if (paymentDetails.length > 1 || hasSurcharge || hasShipping || hasPerception || hasSplitSavings) {
+      if (hasSplitSavings) {
+        bytes += _labelValue(generator, 'SUBTOTAL LISTA:', '\$${_formatPrice(total + splitTotalSavings - shippingCost - iibbPerceptionAmount)}');
+        final discTitle = (discountLabel != null && discountLabel.trim().isNotEmpty)
+            ? '${discountLabel.replaceAll(RegExp(r'[^\w\s\/\-]'), '').trim().toUpperCase()}:'
+            : 'AHORRO / DESCUENTO:';
+        bytes += _labelValue(generator, discTitle, '-\$${_formatPrice(splitTotalSavings)}');
+      } else {
+        bytes += _labelValue(generator, 'SUBTOTAL:', '\$${_formatPrice(total - shippingCost - iibbPerceptionAmount)}');
+      }
       if (hasPerception) bytes += _labelValue(generator, 'PERC. IIBB:', '\$${_formatPrice(iibbPerceptionAmount)}');
       if (hasShipping) bytes += _labelValue(generator, 'FLETE / ENVIO:', '\$${_formatPrice(shippingCost)}');
       if (paymentDetails.isNotEmpty) {
@@ -953,16 +1140,20 @@ class ReceiptPrinterService {
         bytes += _labelValue(generator, 'PAGO EN:', _cleanText((paymentDetails.first['name'] as String? ?? 'PAGO').toUpperCase()));
       }
     }
-    if (tenderedAmount > 0.01) bytes += _labelValue(generator, 'EFECTIVO RECIBIDO:', '\$${_formatPrice(tenderedAmount)}');
-    if (tenderedAmount > 0.01) bytes += _labelValue(generator, 'SU VUELTO:', '\$${_formatPrice(changeAmount)}');
+    if (tenderedAmount > 0.01 && (paymentDetails.length <= 1 || changeAmount > 0.01)) {
+      bytes += _labelValue(generator, 'EFECTIVO RECIBIDO:', '\$${_formatPrice(tenderedAmount)}');
+      bytes += _labelValue(generator, 'SU VUELTO:', '\$${_formatPrice(changeAmount)}');
+    }
 
     bytes += generator.feed(1);
     bytes += generator.text('UNIDADES VENDIDAS: $totalItemsQty', styles: const PosStyles(bold: true));
     bytes += generator.hr(ch: '-');
     if (invoice != null) {
-      // FINDING-SALES-05: Desglose de impuestos solo para Factura A o B (en Factura C no se discrimina IVA segun RG 1415 AFIP)
+      // FINDING-SALES-05: Desglose de impuestos para Factura A y Transparencia Fiscal (RG 5614 Ley 27.743) para Factura B
       final voucherLetter = invoice['voucher_letter']?.toString().toUpperCase();
-      final isFacturaA = voucherLetter == 'A' || invoice['voucher_type'] == 1 || invoice['voucher_type'] == 2 || invoice['voucher_type'] == 3;
+      final vType = int.tryParse(invoice['voucher_type']?.toString() ?? '0') ?? 0;
+      final isFacturaA = voucherLetter == 'A' || vType == 1 || vType == 2 || vType == 3;
+      final isFacturaB = voucherLetter == 'B' || vType == 6 || vType == 7 || vType == 8;
       final netAmount = invoice['net_amount'];
       final ivaAmount = invoice['iva_amount'];
       if (isFacturaA && netAmount != null && ivaAmount != null) {
@@ -978,10 +1169,36 @@ class ReceiptPrinterService {
           PosColumn(text: '\$${iva.toStringAsFixed(2)}', width: 6, styles: const PosStyles(align: PosAlign.right)),
         ]);
         bytes += generator.hr(ch: '-');
+      } else if (isFacturaB) {
+        final explicitNet = double.tryParse(netAmount?.toString() ?? '') ?? 0.0;
+        final explicitIva = double.tryParse(ivaAmount?.toString() ?? '') ?? 0.0;
+        final baseTotal = total - shippingCost - iibbPerceptionAmount;
+        final containedIva = explicitIva > 0
+            ? explicitIva
+            : (baseTotal > 0 ? (baseTotal - (baseTotal / 1.21)) : 0.0);
+        final containedNet = explicitNet > 0
+            ? explicitNet
+            : (baseTotal - containedIva).clamp(0.0, double.infinity);
+        bytes += generator.hr(ch: '-');
+        bytes += generator.text(
+          'Regimen Trans. Fiscal al Consumidor (Ley 27.743)',
+          styles: const PosStyles(align: PosAlign.center, bold: true),
+        );
+        bytes += generator.text(
+          'Precio s/imp: \$${_formatPrice(containedNet)} - IVA Contenido: \$${_formatPrice(containedIva)}',
+          styles: PosStyles(
+            align: PosAlign.center,
+            fontType: config.paperSize == PaperSize.mm58
+                ? PosFontType.fontB
+                : PosFontType.fontA,
+          ),
+        );
+        bytes += _labelValue(generator, 'Otros Imp. Nac. Ind.:', '\$0');
+        bytes += generator.hr(ch: '-');
       }
 
       final cae = invoice['cae']?.toString() ?? '';
-      final caeVto = invoice['cae_expiration']?.toString() ?? '';
+      final caeVto = _formatCaeExpiration(invoice['cae_expiration']);
       if (cae.isNotEmpty) {
         bytes += generator.text('CAE: $cae', styles: const PosStyles(align: PosAlign.center, bold: true));
         bytes += generator.text('VTO. CAE: $caeVto', styles: const PosStyles(align: PosAlign.center, bold: true));
@@ -1006,7 +1223,21 @@ class ReceiptPrinterService {
         styles: const PosStyles(align: PosAlign.center, bold: true),
       );
     } else {
-      bytes += generator.text('*** NO VALIDO COMO FACTURA ***', styles: const PosStyles(align: PosAlign.center, bold: true));
+      if (hasSplitSavings) {
+        bytes += generator.text(
+          _cleanText('*** ¡USTED AHORRO: \$${_formatPrice(splitTotalSavings)}! ***'),
+          styles: const PosStyles(align: PosAlign.center, bold: true),
+        );
+        bytes += generator.feed(1);
+      }
+      final splitFooter = (settings.receiptFooterMessage != null &&
+              settings.receiptFooterMessage!.trim().isNotEmpty)
+          ? settings.receiptFooterMessage!.trim()
+          : 'Gracias por su compra!';
+      bytes += generator.text(
+        _cleanText(splitFooter),
+        styles: const PosStyles(align: PosAlign.center, bold: true),
+      );
     }
     bytes += generator.feed(3);
     // Corte parcial entre los dos comprobantes
@@ -1015,26 +1246,52 @@ class ReceiptPrinterService {
     // ═══════════════════════════════════════════════════════
     // PARTE 2: ORDEN DE RETIRO / REMITO
     // ═══════════════════════════════════════════════════════
+    final isSplit58 = targetPaperSize == PaperSize.mm58;
+    final splitStatus =
+        (deliveryNote['status'] ?? 'delivered').toString().toLowerCase();
+    final isDeliveredSplit =
+        splitStatus == 'delivered' || splitStatus == 'partial';
     bytes += generator.text(
       _cleanText(settings.companyName?.toUpperCase() ?? 'MI NEGOCIO'),
       styles: const PosStyles(bold: true, align: PosAlign.center, height: PosTextSize.size2, width: PosTextSize.size2),
     );
     bytes += generator.feed(1);
     bytes += generator.hr(ch: '=');
-    bytes += generator.text('ORDEN DE RETIRO / REMITO', styles: const PosStyles(align: PosAlign.center, bold: true));
+    bytes += generator.text(
+      isDeliveredSplit
+          ? 'REMITO - ENTREGA INMEDIATA'
+          : 'ORDEN DE RETIRO / REMITO',
+      styles: const PosStyles(align: PosAlign.center, bold: true),
+    );
+    bytes += generator.text(
+      isSplit58 ? 'DOC. NO VALIDO COMO FACTURA' : 'DOCUMENTO NO VALIDO COMO FACTURA',
+      styles: const PosStyles(align: PosAlign.center),
+    );
     bytes += generator.hr(ch: '-');
 
     if (deliveryNoteNumber != null) {
-      bytes += generator.text('REMITO N°: ${deliveryNoteNumber.padLeft(6, '0')}', styles: const PosStyles(bold: true));
+      bytes += generator.text('REMITO Nro: ${deliveryNoteNumber.padLeft(6, '0')}', styles: const PosStyles(bold: true));
     }
     if (receiptNumber != null) {
       bytes += generator.text('VENTA ASOC: ${receiptNumber.padLeft(6, '0')}');
     }
     bytes += generator.text('FECHA: ${_formatDate(now)}');
-    if (customerName != null && customerName.isNotEmpty) {
-      bytes += generator.text('CLIENTE: ${_cleanText(customerName).toUpperCase()}', styles: const PosStyles(bold: true));
+    final effectiveCustName = (customerName != null && customerName.isNotEmpty)
+        ? customerName
+        : invoice?['receiver_name']?.toString();
+    if (effectiveCustName != null && effectiveCustName.isNotEmpty) {
+      bytes += generator.text('CLIENTE: ${_cleanText(effectiveCustName).toUpperCase()}', styles: const PosStyles(bold: true));
     }
-    final deliveryAddress = deliveryNote['sale']?['delivery_address'];
+    final effectiveCustDoc = (customerDoc != null && customerDoc.isNotEmpty)
+        ? customerDoc
+        : invoice?['doc_number']?.toString();
+    if (effectiveCustDoc != null && effectiveCustDoc.isNotEmpty) {
+      bytes += generator.text('DOC / CUIT: ${_cleanText(effectiveCustDoc)}');
+    }
+    final deliveryAddress = deliveryNote['delivery_address'] ??
+        deliveryNote['sale']?['delivery_address'] ??
+        invoice?['receiver_address'] ??
+        customerAddress;
     if (deliveryAddress != null && deliveryAddress.toString().trim().isNotEmpty) {
       bytes += generator.text('ENTREGA: ${_cleanText(deliveryAddress.toString()).toUpperCase()}', styles: const PosStyles(bold: true));
     }
@@ -1042,15 +1299,18 @@ class ReceiptPrinterService {
       bytes += generator.text('VENDIO: ${_cleanText(userName).toUpperCase()}');
     }
     bytes += generator.hr(ch: '-');
-    bytes += generator.text('ARTICULOS A RETIRAR:', styles: const PosStyles(bold: true));
+    bytes += generator.text(
+      isDeliveredSplit ? 'ARTICULOS ENTREGADOS:' : 'ARTICULOS A RETIRAR:',
+      styles: const PosStyles(bold: true),
+    );
     bytes += generator.hr(ch: '-');
 
     for (final item in items) {
       final isWeight = item.product.isSoldByWeight;
       final qtyStr = isWeight ? '${item.quantity.toQty()} kg' : '${item.quantity.toInt()} un';
       bytes += generator.row([
-        PosColumn(text: _cleanText(item.product.name.toUpperCase()), width: 10, styles: const PosStyles(bold: true)),
-        PosColumn(text: qtyStr, width: 2, styles: const PosStyles(align: PosAlign.right)),
+        PosColumn(text: _cleanText(item.product.name.toUpperCase()), width: 9, styles: const PosStyles(bold: true)),
+        PosColumn(text: qtyStr, width: 3, styles: const PosStyles(align: PosAlign.right)),
       ]);
     }
 
@@ -1058,11 +1318,17 @@ class ReceiptPrinterService {
     bytes += generator.feed(1);
     bytes += generator.text('FIRMA DESPACHANTE:', styles: const PosStyles(align: PosAlign.left));
     bytes += generator.feed(3);
-    bytes += generator.text('____________________________', styles: const PosStyles(align: PosAlign.center));
+    bytes += generator.text(
+      isSplit58 ? '______________________________' : '________________________________________',
+      styles: const PosStyles(align: PosAlign.center),
+    );
     bytes += generator.feed(2);
     bytes += generator.text('FIRMA CLIENTE / RETIRA:', styles: const PosStyles(align: PosAlign.left));
     bytes += generator.feed(3);
-    bytes += generator.text('____________________________', styles: const PosStyles(align: PosAlign.center));
+    bytes += generator.text(
+      isSplit58 ? '______________________________' : '________________________________________',
+      styles: const PosStyles(align: PosAlign.center),
+    );
     bytes += generator.feed(3);
     bytes += generator.cut();
 
@@ -1087,11 +1353,13 @@ class ReceiptPrinterService {
     String? dispatcherName,
     bool isReprint = false,
   }) async {
+    reconfigure(localTerminal);
     if (localTerminal.printerConnection.toLowerCase() == 'none') return;
     if (config.connectionType == PrinterConnectionType.usb && (config.comPort == null || config.comPort!.trim().isEmpty)) return;
 
     final profile = await _getProfile();
     final generator = Generator(config.paperSize, profile);
+    final is58mm = config.paperSize == PaperSize.mm58;
     List<int> bytes = [];
 
     final now = DateTime.now().toLocal();
@@ -1138,9 +1406,13 @@ class ReceiptPrinterService {
       b += gen.hr(ch: '=');
       b += gen.text(_cleanText(docTitle), styles: const PosStyles(align: PosAlign.center, bold: true));
       b += gen.text('[ $copyLabel ]', styles: const PosStyles(align: PosAlign.center));
+      b += gen.text(
+        is58mm ? 'DOC. NO VALIDO COMO FACTURA' : 'DOCUMENTO NO VALIDO COMO FACTURA',
+        styles: const PosStyles(align: PosAlign.center),
+      );
       b += gen.hr(ch: '-');
 
-      b += gen.text('$docCode N°: $remNum', styles: const PosStyles(bold: true));
+      b += gen.text('$docCode Nro: $remNum', styles: const PosStyles(bold: true));
       b += gen.text('FECHA: ${_formatDate(now)}');
       if (customerName != null && customerName.isNotEmpty) {
         b += gen.text('CLIENTE: ${_cleanText(customerName).toUpperCase()}', styles: const PosStyles(bold: true));
@@ -1207,13 +1479,25 @@ class ReceiptPrinterService {
     // ═══════════════════════════════════════════════
     bytes += buildRemitoBody(generator, copyLabel: 'COPIA DESPACHANTE - ORIGINAL');
     bytes += generator.feed(1);
-    bytes += generator.text('FIRMA CONFORMIDAD DEL CLIENTE:', styles: const PosStyles(align: PosAlign.left));
+    bytes += generator.text(
+      is58mm ? 'FIRMA CONFORMIDAD CLIENTE:' : 'FIRMA CONFORMIDAD DEL CLIENTE:',
+      styles: const PosStyles(align: PosAlign.left, bold: true),
+    );
     bytes += generator.feed(3);
-    bytes += generator.text('_________________________________', styles: const PosStyles(align: PosAlign.center));
+    bytes += generator.text(
+      is58mm ? '______________________________' : '________________________________________',
+      styles: const PosStyles(align: PosAlign.center),
+    );
     bytes += generator.feed(1);
-    bytes += generator.text('Aclaración: _____________________', styles: const PosStyles(align: PosAlign.center));
+    bytes += generator.text(
+      is58mm ? 'Aclaracion: __________________' : 'Aclaracion: ____________________________',
+      styles: const PosStyles(align: PosAlign.center),
+    );
     bytes += generator.feed(1);
-    bytes += generator.text('DNI / CUIT: _____________________', styles: const PosStyles(align: PosAlign.center));
+    bytes += generator.text(
+      is58mm ? 'DNI / CUIT: __________________' : 'DNI / CUIT: ____________________________',
+      styles: const PosStyles(align: PosAlign.center),
+    );
     bytes += generator.feed(3);
     bytes += generator.cut();
 
@@ -1307,7 +1591,7 @@ class ReceiptPrinterService {
     }
     if (settings.taxId != null && settings.taxId!.isNotEmpty) {
       bytes += generator.text(
-        'CUIT: ${settings.taxId}',
+        'CUIT: ${_formatCuit(settings.taxId!)}',
         styles: const PosStyles(align: PosAlign.center, bold: true),
       );
     }
@@ -1540,7 +1824,7 @@ class ReceiptPrinterService {
 
     if (settings.taxId != null && settings.taxId!.isNotEmpty) {
       bytes += generator.text(
-        'CUIT: ${settings.taxId}',
+        'CUIT: ${_formatCuit(settings.taxId!)}',
         styles: const PosStyles(align: PosAlign.center, bold: true),
       );
     }
@@ -1887,6 +2171,61 @@ class ReceiptPrinterService {
   // HELPERS
   // ─────────────────────────────────────────────────────────────────────────────
 
+  String _resolveIssuerTaxCondition(BusinessSettings settings, String voucherLetter) {
+    final letter = voucherLetter.trim().toUpperCase();
+    final rawCond = settings.taxCondition?.trim() ?? '';
+    switch (rawCond.toLowerCase()) {
+      case 'monotributo':
+      case 'responsable_monotributo':
+      case 'responsable monotributo':
+        return 'RESPONSABLE MONOTRIBUTO';
+      case 'exento':
+      case 'sujeto_exento':
+      case 'iva_exento':
+      case 'iva sujeto exento':
+        return 'IVA SUJETO EXENTO';
+      case 'responsable_inscripto':
+      case 'responsable inscripto':
+      case 'iva responsable inscripto':
+        return 'IVA RESPONSABLE INSCRIPTO';
+      default:
+        if (rawCond.isNotEmpty) {
+          return _cleanText(rawCond.toUpperCase());
+        }
+        return letter == 'C' ? 'RESPONSABLE MONOTRIBUTO' : 'IVA RESPONSABLE INSCRIPTO';
+    }
+  }
+
+  String _formatReceiverTaxCondition(String? raw, String voucherLetter) {
+    final clean = (raw ?? '').trim().toLowerCase();
+    switch (clean) {
+      case 'consumidor_final':
+      case 'consumidor final':
+      case 'a consumidor final':
+        return 'A CONSUMIDOR FINAL';
+      case 'responsable_inscripto':
+      case 'responsable inscripto':
+      case 'iva responsable inscripto':
+        return 'IVA RESPONSABLE INSCRIPTO';
+      case 'monotributo':
+      case 'responsable_monotributo':
+      case 'responsable monotributo':
+        return 'RESPONSABLE MONOTRIBUTO';
+      case 'exento':
+      case 'sujeto_exento':
+      case 'iva_exento':
+      case 'iva sujeto exento':
+        return 'IVA SUJETO EXENTO';
+      default:
+        if (clean.isEmpty) {
+          return voucherLetter.toUpperCase() == 'A'
+              ? 'IVA RESPONSABLE INSCRIPTO'
+              : 'A CONSUMIDOR FINAL';
+        }
+        return _cleanText(raw!.trim().toUpperCase());
+    }
+  }
+
   /// Elimina acentos y caracteres especiales que no soportan las impresoras térmicas chinas (CP437).
   String _cleanText(String text) {
     if (text.isEmpty) return text;
@@ -1903,18 +2242,37 @@ class ReceiptPrinterService {
       'Ú':'U', 'Ù':'U', 'Û':'U', 'Ü':'U',
       'ú':'u', 'ù':'u', 'û':'u', 'ü':'u',
       'Ñ':'N', 'ñ':'n',
+      '°':'o', 'º':'o',
+      '¡':'', '¿':'',
     };
     return text.split('').map((char) => accents[char] ?? char).join();
   }
 
+  String _formatCuit(String raw) {
+    final digits = raw.replaceAll(RegExp(r'[^0-9]'), '');
+    if (digits.length == 11) {
+      return '${digits.substring(0, 2)}-${digits.substring(2, 10)}-${digits.substring(10)}';
+    }
+    return _cleanText(raw.trim());
+  }
+
   List<int> _labelValue(Generator gen, String label, String value) {
-    // Para 58mm, si width es 7, usa 18 chars; si width es 5, usa 13 chars.
-    final bool is58mm = config.paperSize == PaperSize.mm58;
+    final cleanLbl = _cleanText(label);
+    final cleanVal = _cleanText(value);
+    int leftWidth = 7;
+    int rightWidth = 5;
+    if (cleanLbl.length <= 10 && cleanVal.length > 9) {
+      leftWidth = 5;
+      rightWidth = 7;
+    } else if (cleanVal.length <= 9) {
+      leftWidth = 8;
+      rightWidth = 4;
+    }
     return gen.row([
-      PosColumn(text: label, width: is58mm ? 8 : 7),
+      PosColumn(text: cleanLbl, width: leftWidth),
       PosColumn(
-        text: value,
-        width: is58mm ? 4 : 5,
+        text: cleanVal,
+        width: rightWidth,
         styles: const PosStyles(align: PosAlign.right, bold: true),
       ),
     ]);
@@ -1930,12 +2288,20 @@ class ReceiptPrinterService {
     ];
   }
 
-  /// Formatea un precio eliminando decimales si son .00
+  /// Formatea un precio con separador de miles (ej: 22.000) y decimales si existen
   String _formatPrice(double value) {
-    if (value == value.truncate()) {
-      return value.toInt().toString();
-    }
     return value.toCurrency();
+  }
+
+  String _formatCaeExpiration(dynamic raw) {
+    final str = (raw ?? '').toString().trim();
+    if (str.isEmpty) return '';
+    final datePart = str.split('T').first.split(' ').first;
+    final parts = datePart.split('-');
+    if (parts.length == 3 && parts[0].length == 4) {
+      return '${parts[2].padLeft(2, '0')}/${parts[1].padLeft(2, '0')}/${parts[0]}';
+    }
+    return datePart;
   }
 
   String _formatDate(DateTime dt) {

@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:frontend_desktop/core/presentation/widgets/thermal_receipt_widget.dart';
@@ -121,7 +121,7 @@ void main() {
       expect(find.text('FACTURA A Nro 00003-00000142'), findsOneWidget);
       expect(find.text('PUNTO DE VENTA: 00003'), findsOneWidget);
       expect(find.text('CAE: 74239847120394'), findsOneWidget);
-      expect(find.text('VTO. CAE: 2026-10-25'), findsOneWidget);
+      expect(find.text('VTO. CAE: 25/10/2026'), findsOneWidget);
       expect(find.text('Comprobante Autorizado por AFIP'), findsOneWidget);
       expect(find.byType(QrImageView), findsOneWidget);
     });
@@ -159,7 +159,7 @@ void main() {
       expect(find.text('FACTURA A Nro 00003-00000142'), findsOneWidget);
       expect(find.text('PUNTO DE VENTA: 00003'), findsOneWidget);
       expect(find.text('CAE: 74239847120394'), findsOneWidget);
-      expect(find.text('VTO. CAE: 2026-10-25'), findsOneWidget);
+      expect(find.text('VTO. CAE: 25/10/2026'), findsOneWidget);
       expect(find.text('Comprobante Autorizado por AFIP'), findsOneWidget);
       expect(find.byType(QrImageView), findsOneWidget);
     });
@@ -381,6 +381,280 @@ void main() {
       expect(tester.takeException(), isNull);
       expect(find.text('MI NEGOCIO'), findsOneWidget);
       expect(find.text('TOTAL GENERAL:'), findsOneWidget);
+    });
+
+    testWidgets(
+        'R3.8: Factura B fiscal thermal receipt renders RG 5614 (Ley 27.743) IVA Contenido and RG 5616 receiver condition at 58mm & 80mm with zero overflow',
+        (tester) async {
+      tester.view.physicalSize = const Size(210, 1200);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      final facturaBInvoice = {
+        'voucher_type': 6,
+        'voucher_letter': 'B',
+        'point_of_sale': 1,
+        'voucher_number': 35,
+        'formatted_number': '00001-00000035',
+        'cae': '86441034905904',
+        'cae_expiration': '09/11/2026',
+        'qr_data': 'https://www.afip.gob.ar/fe/qr/?p=TEST_QR_B',
+        'receiver_name': 'CONSUMIDOR FINAL',
+        'doc_type': 96,
+        'doc_number': '39606329',
+        'receiver_tax_condition': 'consumidor_final',
+        'receiver_address': '25 DE MAYO 161 - FORMOSA',
+      };
+
+      await tester.pumpWidget(
+        buildAppWrapper(
+          child: ThermalReceiptWidget(
+            paperWidth: ThermalPaperWidth.mm58,
+            businessSettings: testSettings,
+            items: testItems,
+            payments: testPayments,
+            total: 186738.88,
+            electronicInvoice: facturaBInvoice,
+            saleNumber: '000035',
+            cashierName: 'ADMINISTRADOR',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('FACTURA B Nro 00001-00000035'), findsOneWidget);
+      expect(find.text('COD. 006'), findsOneWidget);
+      expect(find.text('IVA RESPONSABLE INSCRIPTO'), findsOneWidget);
+      expect(find.text('A CONSUMIDOR FINAL'), findsOneWidget);
+      expect(find.textContaining('25 DE MAYO 161 - FORMOSA'), findsOneWidget);
+      expect(find.text('Régimen Trans. Fiscal al Consumidor (Ley 27.743)'), findsOneWidget);
+      expect(find.textContaining('Precio s/imp:'), findsOneWidget);
+      expect(find.textContaining('- IVA Contenido:'), findsOneWidget);
+      expect(find.text('Otros Imp. Nac. Indirectos:'), findsOneWidget);
+      expect(find.byType(QrImageView), findsOneWidget);
+    });
+
+    testWidgets('R3.9: Non-fiscal thermal receipt with offers & discounts renders savings breakdown & banner at 58mm & 80mm', (WidgetTester tester) async {
+      final discountItems = [
+        {
+          'product_name': 'CONSOLA PLAY STATION 5 PRO DIGITAL 2TB',
+          'quantity': 1.0,
+          'unit_price': 2155120.0,
+          'regular_price': 2693900.0,
+          'subtotal': 2155120.0,
+          'discount_amount': 538780.0,
+          'discount_label': 'Oferta Semanal',
+          'has_discount': true,
+          'product': {
+            'name': 'CONSOLA PLAY STATION 5 PRO DIGITAL 2TB',
+            'internal_code': 'G3-1455',
+            'selling_price': 2693900.0,
+          },
+        },
+      ];
+
+      await tester.pumpWidget(
+        buildAppWrapper(
+          child: ThermalReceiptWidget(
+            paperWidth: ThermalPaperWidth.mm58,
+            businessSettings: testSettings,
+            items: discountItems,
+            payments: const [
+              {'name': 'Efectivo', 'amount': 2155120.0},
+            ],
+            total: 2155120.0,
+            discountAmount: 538780.0,
+            discountLabel: 'Ahorro / Descuento',
+            tenderedAmount: 2155120.0,
+            changeAmount: 0.0,
+            saleNumber: '000075',
+            cashierName: 'ADMINISTRADOR',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('COMPROBANTE DE VENTA'), findsOneWidget);
+      expect(find.text('(Oferta Semanal)'), findsOneWidget);
+      expect(find.text('SUBTOTAL LISTA:'), findsOneWidget);
+      expect(find.text('AHORRO / DESCUENTO:'), findsOneWidget);
+      expect(find.text('TOTAL COBRADO:'), findsOneWidget);
+      expect(find.text('*** ¡USTED AHORRÓ: \$2.155.120! ***'), findsNothing); // sanity check
+      expect(find.textContaining('¡USTED AHORRÓ:'), findsOneWidget);
+    });
+
+    testWidgets('R3.10: Item quantity displays "X x \$price" without "un" suffix for space optimization', (WidgetTester tester) async {
+      await tester.pumpWidget(
+        buildAppWrapper(
+          child: ThermalReceiptWidget(
+            paperWidth: ThermalPaperWidth.mm58,
+            businessSettings: testSettings,
+            items: testItems, // 10 units of cement (non-weight) and 2.75 kg of sand (weight)
+            payments: testPayments,
+            total: 186738.88,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      // Unit item (non-weight): should be "10 x $12.500", NOT "10 un x $12.500"
+      expect(find.textContaining('10 x \$12.500'), findsOneWidget);
+      expect(find.textContaining('un x'), findsNothing);
+
+      // Weight item: should retain "kg" unit
+      expect(find.textContaining('2.75 kg x \$22.450,50'), findsOneWidget);
+    });
+
+    testWidgets(
+        'R3.11: Long ARCA Padron address wraps cleanly in Fiscal & Non-Fiscal at 58mm & 80mm without FittedBox squishing',
+        (WidgetTester tester) async {
+      const longAddress =
+          'YRIGOYEN HIPOLITO 201 PISO 2 DPTO B, CIUDAD AUTONOMA DE BUENOS AIRES';
+
+      // ── 1. Fiscal Receipt at 58mm (210px viewport) ──
+      tester.view.physicalSize = const Size(210, 1500);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      final fiscalInvoiceWithLongAddress = Map<String, dynamic>.from(testFiscalInvoice)
+        ..['receiver_name'] = 'PRUEBA F713 WEB 2'
+        ..['doc_number'] = '33-69345023-9'
+        ..['receiver_address'] = longAddress;
+
+      await tester.pumpWidget(
+        buildAppWrapper(
+          child: ThermalReceiptWidget(
+            paperWidth: ThermalPaperWidth.mm58,
+            businessSettings: testSettings,
+            items: testItems,
+            payments: testPayments,
+            total: 186738.88,
+            electronicInvoice: fiscalInvoiceWithLongAddress,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(find.textContaining('PRUEBA F713 WEB 2'), findsOneWidget);
+      expect(find.textContaining('DOMICILIO:'), findsOneWidget);
+      expect(find.textContaining(longAddress), findsOneWidget);
+
+      // Verify that DOMICILIO text is NOT inside a FittedBox (which would squish it)
+      final addressFinder = find.textContaining(longAddress);
+      final fittedBoxAncestor = find.ancestor(
+        of: addressFinder,
+        matching: find.byType(FittedBox),
+      );
+      expect(fittedBoxAncestor, findsNothing,
+          reason: 'Address must wrap naturally without FittedBox downscaling');
+
+      // ── 2. Non-Fiscal Receipt at 58mm with customerDoc and customerAddress ──
+      await tester.pumpWidget(
+        buildAppWrapper(
+          child: const ThermalReceiptWidget(
+            paperWidth: ThermalPaperWidth.mm58,
+            items: [],
+            total: 5000.0,
+            customerName: 'PRUEBA F713 WEB 2',
+            customerDoc: '33-69345023-9',
+            customerAddress: longAddress,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(find.textContaining('COMPROBANTE DE VENTA'), findsOneWidget);
+      expect(find.textContaining('PRUEBA F713 WEB 2'), findsOneWidget);
+      expect(find.textContaining('DOC / CUIT:'), findsOneWidget);
+      expect(find.textContaining('DOMICILIO:'), findsOneWidget);
+      expect(find.textContaining(longAddress), findsOneWidget);
+
+      final nonFiscalFittedBoxAncestor = find.ancestor(
+        of: find.textContaining(longAddress),
+        matching: find.byType(FittedBox),
+      );
+      expect(nonFiscalFittedBoxAncestor, findsNothing);
+
+      // ── 3. Fiscal Receipt at 80mm (290px viewport) ──
+      tester.view.physicalSize = const Size(290, 1500);
+      await tester.pumpWidget(
+        buildAppWrapper(
+          child: ThermalReceiptWidget(
+            paperWidth: ThermalPaperWidth.mm80,
+            businessSettings: testSettings,
+            items: testItems,
+            payments: testPayments,
+            total: 186738.88,
+            electronicInvoice: fiscalInvoiceWithLongAddress,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(find.textContaining(longAddress), findsOneWidget);
+    });
+
+    testWidgets(
+        'R3.12: Delivery note / Remito with long delivery address wraps multiline at 58mm without overflow',
+        (WidgetTester tester) async {
+      const longDeliveryAddress =
+          'AV. PTE. ROQUE SAENZ PENA 1145 PISO 8 DPTO 14, CIUDAD AUTONOMA DE BUENOS AIRES';
+
+      tester.view.physicalSize = const Size(210, 1600);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      final deliveryNoteLong = {
+        'id': 991,
+        'status': 'delivered',
+        'sale': {
+          'delivery_address': longDeliveryAddress,
+          'customer': {
+            'name': 'SOCIEDAD COMERCIAL E INDUSTRIAL DEL SUR SOCIEDAD ANONIMA',
+            'document_number': '30-71122334-5',
+          },
+        },
+      };
+
+      await tester.pumpWidget(
+        buildAppWrapper(
+          child: ThermalReceiptWidget(
+            paperWidth: ThermalPaperWidth.mm58,
+            businessSettings: testSettings,
+            items: testItems,
+            total: 50000.0,
+            deliveryNote: deliveryNoteLong,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('REMITO — ENTREGA INMEDIATA'), findsOneWidget);
+      expect(find.textContaining('ENTREGA:'), findsOneWidget);
+      expect(find.textContaining(longDeliveryAddress), findsOneWidget);
+
+      final deliveryFittedBoxAncestor = find.ancestor(
+        of: find.textContaining(longDeliveryAddress),
+        matching: find.byType(FittedBox),
+      );
+      expect(deliveryFittedBoxAncestor, findsNothing,
+          reason: 'Delivery address must wrap naturally without FittedBox');
     });
   });
 }

@@ -6,20 +6,22 @@ import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+import '../../../core/utils/afip_fiscal_pdf_service.dart';
+import '../../../core/utils/currency_formatter.dart';
 
-/// Genera el PDF del Remito de Entrega en A4 con diseño profesional.
+/// Genera el PDF del Remito de Entrega / Orden de Retiro en A4 y Letter
+/// con diseño técnico reglamentario estilo ARCA (Letra R / X).
 class DeliveryNotePdfService {
-  static final _dateFmt = DateFormat('dd/MM/yyyy');
+  static final _dateFmt = DateFormat('dd/MM/yyyy HH:mm');
 
-  // ─── Paleta de colores corporativa (naranja logística) ───────────────
-  static const _primary   = PdfColor.fromInt(0xFFE65100); // naranja entrega
-  static const _accent    = PdfColor.fromInt(0xFF1A4B8C); // azul corporativo
-  static const _bgLight   = PdfColor.fromInt(0xFFF5F7FA);
-  static const _textGrey  = PdfColor.fromInt(0xFF6B7280);
-  static const _greenOk   = PdfColor.fromInt(0xFF2E7D32);
-  static const _redPend   = PdfColor.fromInt(0xFFC62828);
-
-  // ─── API principal ────────────────────────────────────────────────────
+  static String _formatCuit(String? raw) {
+    if (raw == null || raw.trim().isEmpty) return '';
+    final digits = raw.replaceAll(RegExp(r'[^0-9]'), '');
+    if (digits.length == 11) {
+      return '${digits.substring(0, 2)}-${digits.substring(2, 10)}-${digits.substring(10)}';
+    }
+    return raw.trim();
+  }
 
   /// Genera y muestra el visor PDF dentro de la app (preview real con botón imprimir).
   static Future<void> preview({
@@ -29,12 +31,14 @@ class DeliveryNotePdfService {
     String? businessAddress,
     String? businessPhone,
     String? businessTaxId,
-    /// Mapa de itemId → cantidad entregada en este despacho (puede ser vacío para el comprobante inicial).
     Map<int, double> deliveredNow = const {},
     String? vendorName,
     String? dispatcherName,
     String paperSize = 'a4',
+    dynamic businessSettings,
+    Uint8List? logoBytes,
   }) async {
+    final paperLabel = paperSize.toLowerCase() == 'letter' ? 'Carta' : 'A4';
     await showGeneralDialog(
       context: context,
       barrierDismissible: true,
@@ -44,7 +48,7 @@ class DeliveryNotePdfService {
           color: Colors.black54,
           child: Center(
             child: Container(
-              width: 860,
+              width: 880,
               height: MediaQuery.of(ctx).size.height * 0.92,
               margin: const EdgeInsets.all(24),
               decoration: BoxDecoration(
@@ -54,20 +58,32 @@ class DeliveryNotePdfService {
               clipBehavior: Clip.antiAlias,
               child: Column(
                 children: [
-                  // Barra superior
                   Container(
-                    color: const Color(0xFFE65100),
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    color: Colors.grey.shade900,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 12,
+                    ),
                     child: Row(
                       children: [
-                        const Icon(Icons.local_shipping, color: Colors.white, size: 22),
+                        const Icon(
+                          Icons.local_shipping,
+                          color: Colors.white,
+                          size: 22,
+                        ),
                         const SizedBox(width: 10),
                         Expanded(
                           child: Text(
-                            (deliveredNow.values.fold(0.0, (s, v) => s + v) > 0)
-                                ? 'Remito N° ${note['id'].toString().padLeft(6, '0')} — Vista Previa A4'
-                                : 'Orden de Retiro N° ${note['id'].toString().padLeft(6, '0')} — Vista Previa A4',
-                            style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                            (deliveredNow.values.fold(0.0, (s, v) => s + v) > 0 ||
+                                    note['status'] == 'partial' ||
+                                    note['status'] == 'delivered')
+                                ? 'Remito de Despacho N° ${note['id'].toString().padLeft(6, '0')} — Vista Previa $paperLabel'
+                                : 'Orden de Retiro N° ${note['id'].toString().padLeft(6, '0')} — Vista Previa $paperLabel',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
                         IconButton(
@@ -77,15 +93,15 @@ class DeliveryNotePdfService {
                       ],
                     ),
                   ),
-                  // Visor
                   Expanded(
                     child: PdfPreview(
                       allowPrinting: true,
                       allowSharing: true,
                       canChangeOrientation: false,
                       canChangePageFormat: false,
-                      pdfFileName: 'Remito_${note['id'].toString().padLeft(6,'0')}.pdf',
-                      build: (_) async => _buildPdf(
+                      pdfFileName:
+                          'Remito_${note['id'].toString().padLeft(6, '0')}.pdf',
+                      build: (_) async => generatePdf(
                         note: note,
                         businessName: businessName,
                         businessAddress: businessAddress,
@@ -95,6 +111,8 @@ class DeliveryNotePdfService {
                         vendorName: vendorName,
                         dispatcherName: dispatcherName,
                         paperSize: paperSize,
+                        businessSettings: businessSettings,
+                        logoBytes: logoBytes,
                       ),
                     ),
                   ),
@@ -118,8 +136,10 @@ class DeliveryNotePdfService {
     String? vendorName,
     String? dispatcherName,
     String paperSize = 'a4',
+    dynamic businessSettings,
+    Uint8List? logoBytes,
   }) async {
-    final bytes = await _buildPdf(
+    final bytes = await generatePdf(
       note: note,
       businessName: businessName,
       businessAddress: businessAddress,
@@ -129,6 +149,8 @@ class DeliveryNotePdfService {
       vendorName: vendorName,
       dispatcherName: dispatcherName,
       paperSize: paperSize,
+      businessSettings: businessSettings,
+      logoBytes: logoBytes,
     );
     await Printing.layoutPdf(
       onLayout: (_) async => bytes,
@@ -147,8 +169,10 @@ class DeliveryNotePdfService {
     String? vendorName,
     String? dispatcherName,
     String paperSize = 'a4',
+    dynamic businessSettings,
+    Uint8List? logoBytes,
   }) async {
-    final bytes = await _buildPdf(
+    final bytes = await generatePdf(
       note: note,
       businessName: businessName,
       businessAddress: businessAddress,
@@ -158,18 +182,23 @@ class DeliveryNotePdfService {
       vendorName: vendorName,
       dispatcherName: dispatcherName,
       paperSize: paperSize,
+      businessSettings: businessSettings,
+      logoBytes: logoBytes,
     );
     final docsDir = await getApplicationDocumentsDirectory();
-    final remitosDir = Directory('${docsDir.path}${Platform.pathSeparator}Sistema_POS${Platform.pathSeparator}Remitos');
+    final remitosDir = Directory(
+      '${docsDir.path}${Platform.pathSeparator}Sistema_POS${Platform.pathSeparator}Remitos',
+    );
     if (!await remitosDir.exists()) await remitosDir.create(recursive: true);
-    final file = File('${remitosDir.path}${Platform.pathSeparator}Remito_${note['id'].toString().padLeft(6,'0')}.pdf');
+    final file = File(
+      '${remitosDir.path}${Platform.pathSeparator}Remito_${note['id'].toString().padLeft(6, '0')}.pdf',
+    );
     await file.writeAsBytes(bytes);
     return file.path;
   }
 
-  // ─── Builder PDF ──────────────────────────────────────────────────────
-
-  static Future<Uint8List> _buildPdf({
+  /// Builder principal del PDF (público para previsualización, impresión y tests).
+  static Future<Uint8List> generatePdf({
     required Map<String, dynamic> note,
     required String businessName,
     String? businessAddress,
@@ -179,7 +208,13 @@ class DeliveryNotePdfService {
     String? vendorName,
     String? dispatcherName,
     String paperSize = 'a4',
+    dynamic businessSettings,
+    Uint8List? logoBytes,
   }) async {
+    final resolvedLogo = await AfipFiscalPdfService.resolveLogoBytes(
+      logoBytes: logoBytes,
+      businessSettings: businessSettings,
+    );
     pw.ThemeData? theme;
     try {
       final font = await PdfGoogleFonts.robotoRegular();
@@ -189,39 +224,50 @@ class DeliveryNotePdfService {
 
     final doc = pw.Document(theme: theme);
 
-    final noteId  = note['id']?.toString().padLeft(6, '0') ?? '000000';
-    final items   = (note['items'] as List?) ?? [];
-    final sale    = note['sale'] as Map<String, dynamic>? ?? {};
-    final customer= sale['customer'] as Map<String, dynamic>?;
-    final customerName = customer?['name'] as String?;
+    final noteId = note['id']?.toString().padLeft(6, '0') ?? '000000';
+    final items = (note['items'] as List?) ?? [];
+    final sale = note['sale'] as Map<String, dynamic>? ?? {};
+    final customer = sale['customer'] as Map<String, dynamic>?;
+    final customerName =
+        customer?['name'] as String? ?? sale['customer_name'] as String?;
+    final customerDoc = customer?['document_number']?.toString() ??
+        customer?['tax_id']?.toString() ??
+        '---';
     final createdAt = note['created_at'] as String?;
     final DateTime createdDate = createdAt != null
-        ? DateTime.tryParse(createdAt) ?? DateTime.now()
+        ? (DateTime.tryParse(createdAt)?.toLocal() ?? DateTime.now())
         : DateTime.now();
 
-    // Total de bultos / unidades
     final int totalUnits = items.fold(0, (sum, item) {
-      final qty = double.tryParse(item['quantity_purchased']?.toString() ?? '') ?? 0.0;
-      return sum + (item['product']?['is_sold_by_weight'] == true ? 0 : qty.toInt());
+      final qty =
+          double.tryParse(item['quantity_purchased']?.toString() ?? '') ?? 0.0;
+      final isWeight = item['product']?['is_sold_by_weight'] == true ||
+          item['is_sold_by_weight'] == true;
+      return sum + (isWeight ? 0 : qty.toInt());
     });
 
-    final deliveredNowSum = deliveredNow.values.fold(0.0, (sum, val) => sum + val);
-    final isAlreadyDispatched = note['status'] == 'partial' || note['status'] == 'delivered';
-    // Es remito de despacho si estamos entregando ahora o si ya se entregó mercadería en el pasado
+    final deliveredNowSum =
+        deliveredNow.values.fold(0.0, (sum, val) => sum + val);
+    final isAlreadyDispatched =
+        note['status'] == 'partial' || note['status'] == 'delivered';
     final isDispatch = deliveredNowSum > 0 || isAlreadyDispatched;
-    
-    // Calcular estado proyectado del documento
+
     double totalPendingAfter = 0.0;
     double totalDeliveredAfter = 0.0;
     for (final item in items) {
       final it = item as Map<String, dynamic>;
-      final tq = double.tryParse(it['quantity_purchased']?.toString() ?? '') ?? 0.0;
-      final dqDb = double.tryParse(it['quantity_delivered']?.toString() ?? '') ?? 0.0;
+      final tq =
+          double.tryParse(it['quantity_purchased']?.toString() ?? '') ?? 0.0;
+      final dqDb =
+          double.tryParse(it['quantity_delivered']?.toString() ?? '') ?? 0.0;
       final dqNow = deliveredNow[it['id']] ?? 0.0;
-      totalDeliveredAfter += (dqDb + dqNow);
-      totalPendingAfter += (tq - dqDb - dqNow).clamp(0.0, double.infinity);
+      final effectiveDelivered =
+          deliveredNow.isNotEmpty ? (dqDb + dqNow) : dqDb;
+      totalDeliveredAfter += effectiveDelivered;
+      totalPendingAfter +=
+          (tq - effectiveDelivered).clamp(0.0, double.infinity);
     }
-    
+
     String effectiveDocStatus = 'pending';
     if (totalPendingAfter <= 0 && totalDeliveredAfter > 0) {
       effectiveDocStatus = 'delivered';
@@ -229,81 +275,126 @@ class DeliveryNotePdfService {
       effectiveDocStatus = 'partial';
     }
 
-    final documentTitle = isDispatch ? 'REMITO DE DESPACHO' : 'ORDEN DE RETIRO';
+    final documentTitle =
+        isDispatch ? 'REMITO DE DESPACHO' : 'ORDEN DE RETIRO';
     final documentCode = isDispatch ? 'REM$noteId' : 'ORD$noteId';
 
     final bool isSmallOrder = items.length <= 5;
-    final format = paperSize.toLowerCase() == 'letter' ? PdfPageFormat.letter : PdfPageFormat.a4;
+    final format = paperSize.toLowerCase() == 'letter'
+        ? PdfPageFormat.letter
+        : PdfPageFormat.a4;
 
     if (isSmallOrder) {
-      // ── RUTA A: AHORRO DE PAPEL (A4 SPLIT) ──
+      // RUTA A: AHORRO DE PAPEL (SPLIT EN 1 HOJA: ORIGINAL + DUPLICADO)
       doc.addPage(
         pw.Page(
           pageFormat: format,
-          margin: const pw.EdgeInsets.all(24),
+          margin: const pw.EdgeInsets.all(22),
           build: (pw.Context ctx) {
-            final copyLabelTop = isDispatch ? 'COPIA\nCLIENTE' : 'ORIGINAL';
-            final copyLabelBot = isDispatch ? 'COPIA\nDESPACHANTE' : 'DUPLICADO';
+            final copyLabelTop = isDispatch
+                ? 'ORIGINAL - COPIA CLIENTE'
+                : 'ORIGINAL - ORDEN DE RETIRO';
+            final copyLabelBot = isDispatch
+                ? 'DUPLICADO - COPIA DESPACHANTE / CONFORMIDAD'
+                : 'DUPLICADO - CONTROL DE DEPÓSITO';
             return pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.stretch,
               children: [
                 // MITAD SUPERIOR
                 pw.Expanded(
-                  child: pw.Stack(
+                  child: pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                     children: [
                       pw.Column(
-                        crossAxisAlignment: pw.CrossAxisAlignment.start,
-                        children: [
-                          ..._buildContentList(
-                            businessName: businessName, businessAddress: businessAddress, businessPhone: businessPhone, businessTaxId: businessTaxId,
-                            documentTitle: documentTitle, noteId: noteId, documentCode: documentCode, createdDate: createdDate, customerName: customerName,
-                            sale: sale, vendorName: vendorName, dispatcherName: dispatcherName, effectiveDocStatus: effectiveDocStatus,
-                            isDispatch: isDispatch, items: items, deliveredNow: deliveredNow, totalUnits: totalUnits, isCompact: true,
-                            copyLabel: copyLabelTop,
-                          ),
-                        ],
+                        crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+                        children: _buildContentList(
+                          businessName: businessName,
+                          businessAddress: businessAddress,
+                          businessPhone: businessPhone,
+                          businessTaxId: businessTaxId,
+                          documentTitle: documentTitle,
+                          noteId: noteId,
+                          documentCode: documentCode,
+                          createdDate: createdDate,
+                          customerName: customerName,
+                          customerDoc: customerDoc,
+                          sale: sale,
+                          vendorName: vendorName,
+                          dispatcherName: dispatcherName,
+                          effectiveDocStatus: effectiveDocStatus,
+                          isDispatch: isDispatch,
+                          items: items,
+                          deliveredNow: deliveredNow,
+                          totalUnits: totalUnits,
+                          isCompact: true,
+                          copyLabel: copyLabelTop,
+                          logoBytes: resolvedLogo,
+                        ),
                       ),
-                      pw.Positioned(
-                        bottom: 0, left: 0, right: 0,
-                        child: _buildCompactFooter(businessName, createdDate),
-                      ),
-                      _buildWatermark(copyLabelTop, true),
+                      _buildCompactFooter(businessName, createdDate),
                     ],
                   ),
                 ),
 
-                // DIVISOR
+                // LÍNEA DE CORTE
                 pw.Padding(
                   padding: const pw.EdgeInsets.symmetric(vertical: 5),
                   child: pw.Row(
                     children: [
-                      pw.Text('CORTAR AQUÍ', style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey500)),
+                      pw.Text(
+                        '--- CORTAR AQUÍ ---',
+                        style: pw.TextStyle(
+                          fontSize: 7.5,
+                          color: PdfColors.grey700,
+                          fontWeight: pw.FontWeight.bold,
+                        ),
+                      ),
                       pw.SizedBox(width: 8),
-                      pw.Expanded(child: pw.Divider(color: PdfColors.grey500, borderStyle: pw.BorderStyle.dashed)),
+                      pw.Expanded(
+                        child: pw.Divider(
+                          color: PdfColors.grey600,
+                          borderStyle: pw.BorderStyle.dashed,
+                          thickness: 0.8,
+                        ),
+                      ),
                     ],
                   ),
                 ),
 
                 // MITAD INFERIOR
                 pw.Expanded(
-                  child: pw.Stack(
+                  child: pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                     children: [
                       pw.Column(
-                        crossAxisAlignment: pw.CrossAxisAlignment.start,
-                        children: [
-                          ..._buildContentList(
-                            businessName: businessName, businessAddress: businessAddress, businessPhone: businessPhone, businessTaxId: businessTaxId,
-                            documentTitle: documentTitle, noteId: noteId, documentCode: documentCode, createdDate: createdDate, customerName: customerName,
-                            sale: sale, vendorName: vendorName, dispatcherName: dispatcherName, effectiveDocStatus: effectiveDocStatus,
-                            isDispatch: isDispatch, items: items, deliveredNow: deliveredNow, totalUnits: totalUnits, isCompact: true,
-                            copyLabel: copyLabelBot,
-                          ),
-                        ],
+                        crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+                        children: _buildContentList(
+                          businessName: businessName,
+                          businessAddress: businessAddress,
+                          businessPhone: businessPhone,
+                          businessTaxId: businessTaxId,
+                          documentTitle: documentTitle,
+                          noteId: noteId,
+                          documentCode: documentCode,
+                          createdDate: createdDate,
+                          customerName: customerName,
+                          customerDoc: customerDoc,
+                          sale: sale,
+                          vendorName: vendorName,
+                          dispatcherName: dispatcherName,
+                          effectiveDocStatus: effectiveDocStatus,
+                          isDispatch: isDispatch,
+                          items: items,
+                          deliveredNow: deliveredNow,
+                          totalUnits: totalUnits,
+                          isCompact: true,
+                          copyLabel: copyLabelBot,
+                          logoBytes: resolvedLogo,
+                        ),
                       ),
-                      pw.Positioned(
-                        bottom: 0, left: 0, right: 0,
-                        child: _buildCompactFooter(businessName, createdDate),
-                      ),
-                      _buildWatermark(copyLabelBot, true),
+                      _buildCompactFooter(businessName, createdDate),
                     ],
                   ),
                 ),
@@ -313,42 +404,76 @@ class DeliveryNotePdfService {
         ),
       );
     } else {
-      // ── RUTA B: PEDIDO MAYORISTA (PÁGINAS COMPLETAS) ──
-      final copyLabelFull1 = isDispatch ? 'COPIA\nCLIENTE' : 'ORIGINAL';
-      final copyLabelFull2 = isDispatch ? 'COPIA\nDESPACHANTE' : 'DUPLICADO';
-      // Página 1
+      // RUTA B: PEDIDO GRANDE (PÁGINAS COMPLETAS MULTIPAGE)
+      final copyLabelFull1 = isDispatch
+          ? 'ORIGINAL - COPIA CLIENTE'
+          : 'ORIGINAL - ORDEN DE RETIRO';
+      final copyLabelFull2 = isDispatch
+          ? 'DUPLICADO - COPIA DESPACHANTE / CONFORMIDAD'
+          : 'DUPLICADO - CONTROL DE DEPÓSITO';
+
       doc.addPage(
         pw.MultiPage(
           pageTheme: pw.PageTheme(
             pageFormat: format,
-            margin: const pw.EdgeInsets.fromLTRB(32, 32, 32, 48),
-            buildForeground: (ctx) => _buildWatermark(copyLabelFull1, false),
+            margin: const pw.EdgeInsets.all(24),
           ),
           footer: (pw.Context ctx) => _buildFooter(ctx, businessName),
           build: (pw.Context ctx) => _buildContentList(
-            businessName: businessName, businessAddress: businessAddress, businessPhone: businessPhone, businessTaxId: businessTaxId,
-            documentTitle: documentTitle, noteId: noteId, documentCode: documentCode, createdDate: createdDate, customerName: customerName,
-            sale: sale, vendorName: vendorName, dispatcherName: dispatcherName, effectiveDocStatus: effectiveDocStatus,
-            isDispatch: isDispatch, items: items, deliveredNow: deliveredNow, totalUnits: totalUnits, isCompact: false,
+            businessName: businessName,
+            businessAddress: businessAddress,
+            businessPhone: businessPhone,
+            businessTaxId: businessTaxId,
+            documentTitle: documentTitle,
+            noteId: noteId,
+            documentCode: documentCode,
+            createdDate: createdDate,
+            customerName: customerName,
+            customerDoc: customerDoc,
+            sale: sale,
+            vendorName: vendorName,
+            dispatcherName: dispatcherName,
+            effectiveDocStatus: effectiveDocStatus,
+            isDispatch: isDispatch,
+            items: items,
+            deliveredNow: deliveredNow,
+            totalUnits: totalUnits,
+            isCompact: false,
             copyLabel: copyLabelFull1,
+            logoBytes: resolvedLogo,
           ),
         ),
       );
-      // Página 2
+
       doc.addPage(
         pw.MultiPage(
           pageTheme: pw.PageTheme(
             pageFormat: format,
-            margin: const pw.EdgeInsets.fromLTRB(32, 32, 32, 48),
-            buildForeground: (ctx) => _buildWatermark(copyLabelFull2, false),
+            margin: const pw.EdgeInsets.all(24),
           ),
           footer: (pw.Context ctx) => _buildFooter(ctx, businessName),
           build: (pw.Context ctx) => _buildContentList(
-            businessName: businessName, businessAddress: businessAddress, businessPhone: businessPhone, businessTaxId: businessTaxId,
-            documentTitle: documentTitle, noteId: noteId, documentCode: documentCode, createdDate: createdDate, customerName: customerName,
-            sale: sale, vendorName: vendorName, dispatcherName: dispatcherName, effectiveDocStatus: effectiveDocStatus,
-            isDispatch: isDispatch, items: items, deliveredNow: deliveredNow, totalUnits: totalUnits, isCompact: false,
+            businessName: businessName,
+            businessAddress: businessAddress,
+            businessPhone: businessPhone,
+            businessTaxId: businessTaxId,
+            documentTitle: documentTitle,
+            noteId: noteId,
+            documentCode: documentCode,
+            createdDate: createdDate,
+            customerName: customerName,
+            customerDoc: customerDoc,
+            sale: sale,
+            vendorName: vendorName,
+            dispatcherName: dispatcherName,
+            effectiveDocStatus: effectiveDocStatus,
+            isDispatch: isDispatch,
+            items: items,
+            deliveredNow: deliveredNow,
+            totalUnits: totalUnits,
+            isCompact: false,
             copyLabel: copyLabelFull2,
+            logoBytes: resolvedLogo,
           ),
         ),
       );
@@ -357,44 +482,29 @@ class DeliveryNotePdfService {
     return doc.save();
   }
 
-  // ─── Helpers Paginación Inteligente ──────────────────────────────────
-  
-  static pw.Widget _buildWatermark(String text, bool isCompact) {
-    return pw.Positioned.fill(
-      child: pw.Center(
-        child: pw.Opacity(
-          opacity: 0.1, // 10% negro = gris sutil
-          child: pw.Transform.rotateBox(
-            angle: 0.6,
-            child: pw.Text(
-              text,
-              style: pw.TextStyle(
-                fontSize: isCompact ? 36 : 60,
-                fontWeight: pw.FontWeight.bold,
-                color: PdfColors.black,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
   static pw.Widget _buildCompactFooter(String businessName, DateTime date) {
     return pw.Column(
       mainAxisSize: pw.MainAxisSize.min,
       children: [
-        pw.Divider(color: PdfColors.grey300),
+        pw.Divider(color: PdfColors.grey500, thickness: 0.5),
         pw.Row(
           mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
           children: [
             pw.Text(
-              'Remito generado el ${_dateFmt.format(date)} - $businessName',
-              style: const pw.TextStyle(fontSize: 6, color: PdfColors.grey),
+              'Emitido el ${_dateFmt.format(date)} - $businessName',
+              style: pw.TextStyle(
+                fontSize: 6.5,
+                color: PdfColors.grey800,
+                fontWeight: pw.FontWeight.bold,
+              ),
             ),
             pw.Text(
-              'DOCUMENTO NO VALIDO COMO FACTURA',
-              style: const pw.TextStyle(fontSize: 6, color: PdfColors.grey),
+              'DOCUMENTO NO VÁLIDO COMO FACTURA',
+              style: pw.TextStyle(
+                fontSize: 6.5,
+                color: PdfColors.grey800,
+                fontWeight: pw.FontWeight.bold,
+              ),
             ),
           ],
         ),
@@ -402,366 +512,622 @@ class DeliveryNotePdfService {
     );
   }
 
-  static pw.Widget _buildFooter(pw.Context ctx, String businessName, {bool isCompact = false}) {
+  static pw.Widget _buildFooter(pw.Context ctx, String businessName) {
     return pw.Column(
       mainAxisSize: pw.MainAxisSize.min,
       children: [
-        pw.SizedBox(height: isCompact ? 4 : 8),
-        pw.Divider(color: PdfColors.grey300),
+        pw.SizedBox(height: 6),
+        pw.Divider(color: PdfColors.grey500, thickness: 0.6),
         pw.Row(
           mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
           children: [
             pw.Text(
-              'Remito generado el ${_dateFmt.format(DateTime.now())} - $businessName',
-              style: pw.TextStyle(fontSize: isCompact ? 6 : 7, color: PdfColors.grey),
-            ),
-            if (!isCompact)
-              pw.Text(
-                'Página ${ctx.pageNumber} de ${ctx.pagesCount}',
-                style: const pw.TextStyle(fontSize: 7, color: PdfColors.grey),
+              'DOCUMENTO NO VÁLIDO COMO FACTURA - SOLO COMPROBANTE DE ENTREGA - $businessName',
+              style: pw.TextStyle(
+                fontSize: 7.5,
+                color: PdfColors.grey800,
+                fontWeight: pw.FontWeight.bold,
               ),
+            ),
+            pw.Text(
+              'Página ${ctx.pageNumber} de ${ctx.pagesCount}',
+              style: pw.TextStyle(
+                fontSize: 7.5,
+                color: PdfColors.grey800,
+                fontWeight: pw.FontWeight.bold,
+              ),
+            ),
           ],
         ),
       ],
     );
   }
 
-  // ─── Contenido Principal del Remito ──────────────────────────────────
   static List<pw.Widget> _buildContentList({
-    required String businessName, String? businessAddress, String? businessPhone, String? businessTaxId,
-    required String documentTitle, required String noteId, required String documentCode, required DateTime createdDate,
-    required String? customerName, required Map<String, dynamic> sale, String? vendorName, String? dispatcherName,
-    required String effectiveDocStatus, required bool isDispatch, required List<dynamic> items,
-    required Map<int, double> deliveredNow, required int totalUnits, required bool isCompact,
+    required String businessName,
+    String? businessAddress,
+    String? businessPhone,
+    String? businessTaxId,
+    required String documentTitle,
+    required String noteId,
+    required String documentCode,
+    required DateTime createdDate,
+    required String? customerName,
+    required String customerDoc,
+    required Map<String, dynamic> sale,
+    String? vendorName,
+    String? dispatcherName,
+    required String effectiveDocStatus,
+    required bool isDispatch,
+    required List<dynamic> items,
+    required Map<int, double> deliveredNow,
+    required int totalUnits,
+    required bool isCompact,
     String copyLabel = 'ORIGINAL',
+    Uint8List? logoBytes,
   }) {
+    final boxLetter = isDispatch ? 'R' : 'X';
+    final boxCode = isDispatch ? 'COD. 091' : 'INTERNO';
+    final saleIdStr = sale['id'] != null
+        ? '#${sale['id'].toString().padLeft(8, '0')}'
+        : '---';
+    final customerMap = sale['customer'] as Map<String, dynamic>?;
+    final rawDeliveryAddr = (sale['delivery_address'] ??
+            customerMap?['delivery_address'] ??
+            customerMap?['fiscal_address'] ??
+            customerMap?['address'] ??
+            '')
+        .toString()
+        .trim();
+    final deliveryAddress =
+        rawDeliveryAddr.toLowerCase() == 'null' ? '' : rawDeliveryAddr;
+    final formattedBusinessCuit = _formatCuit(businessTaxId);
+    final formattedCustomerDoc =
+        customerDoc != '---' ? _formatCuit(customerDoc) : '---';
+
     return [
-      // ══ ENCABEZADO (Diseño limpio - menos tinta) ═══════════════════════
-      pw.Row(
-        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-        crossAxisAlignment: pw.CrossAxisAlignment.start,
-        children: [
-          pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
-            children: [
-              pw.Text(
-                businessName,
-                style: pw.TextStyle(
-                  fontSize: isCompact ? 16 : 20,
-                  fontWeight: pw.FontWeight.bold,
-                  color: PdfColors.black,
-                ),
+      // BARRA SUPERIOR ORIGINAL / DUPLICADO
+      pw.Container(
+        width: double.infinity,
+        padding: const pw.EdgeInsets.symmetric(vertical: 3, horizontal: 8),
+        decoration: pw.BoxDecoration(
+          color: PdfColors.grey200,
+          border: pw.Border.all(color: PdfColors.black, width: 1.0),
+        ),
+        child: pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+          children: [
+            pw.Text(
+              copyLabel,
+              style: pw.TextStyle(
+                fontSize: isCompact ? 7.5 : 8.5,
+                fontWeight: pw.FontWeight.bold,
+                letterSpacing: 0.8,
               ),
-              pw.Text(
-                documentTitle,
-                style: pw.TextStyle(
-                  fontSize: isCompact ? 11 : 14,
-                  fontWeight: pw.FontWeight.bold,
-                  color: _primary,
-                ),
-              ),
-              if (businessAddress != null && businessAddress.isNotEmpty)
-                pw.Text(businessAddress,
-                    style: pw.TextStyle(fontSize: isCompact ? 8 : 10, color: PdfColors.grey700)),
-              if (businessPhone != null && businessPhone.isNotEmpty)
-                pw.Text('Tel: $businessPhone',
-                    style: pw.TextStyle(fontSize: isCompact ? 8 : 10, color: PdfColors.grey700)),
-              if (businessTaxId != null && businessTaxId.isNotEmpty)
-                pw.Text('CUIT: $businessTaxId',
-                    style: pw.TextStyle(fontSize: isCompact ? 8 : 10, color: PdfColors.grey700)),
-            ],
-          ),
-          pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.end,
-            children: [
-              pw.Text(
-                copyLabel,
-                style: pw.TextStyle(fontSize: 8, color: PdfColors.grey500, fontWeight: pw.FontWeight.bold),
-              ),
-              pw.SizedBox(height: 2),
-              pw.Text('Remito N°: $noteId',
-                  style: pw.TextStyle(fontSize: isCompact ? 10 : 12, fontWeight: pw.FontWeight.bold)),
-              pw.Text('Fecha: ${_dateFmt.format(createdDate)}',
-                  style: pw.TextStyle(fontSize: isCompact ? 9 : 10)),
-              pw.Text('Cliente: ${(customerName ?? 'Consumidor Final').toUpperCase()}',
-                  style: pw.TextStyle(fontSize: isCompact ? 9 : 10, fontWeight: pw.FontWeight.bold)),
-            ],
-          ),
-        ],
-      ),
-      pw.SizedBox(height: isCompact ? 5 : 10),
-      pw.Divider(thickness: 2, color: PdfColors.black),
-      pw.SizedBox(height: isCompact ? 6 : 12),
-
-          // ══ ESTADO + DATOS CLIENTE ═══════════════════════════════════════
-          pw.Container(
-            decoration: const pw.BoxDecoration(
-              color: _bgLight,
-              borderRadius: pw.BorderRadius.all(pw.Radius.circular(6)),
             ),
-            padding: const pw.EdgeInsets.all(12),
-            child: pw.Row(
-              children: [
-                pw.Expanded(
-                  flex: 3,
-                  child: pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.start,
-                    children: [
-                      pw.Text('CLIENTE', style: pw.TextStyle(fontSize: 9, color: _textGrey, fontWeight: pw.FontWeight.bold)),
-                      pw.SizedBox(height: 4),
-                      pw.Text(customerName ?? 'Consumidor Final',
-                          style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold)),
-                      if (sale['id'] != null)
-                        pw.Text('Venta N°: ${sale['id'].toString().padLeft(6,'0')}',
-                            style: const pw.TextStyle(fontSize: 10, color: _textGrey)),
-                      if (sale['delivery_address'] != null && sale['delivery_address'].toString().trim().isNotEmpty) ...[
-                        pw.SizedBox(height: 4),
-                        pw.Text('Entrega: ${sale['delivery_address']}', style: pw.TextStyle(fontSize: 11, color: _primary, fontWeight: pw.FontWeight.bold)),
-                      ],
-                    ],
-                  ),
-                ),
-                if (vendorName != null || dispatcherName != null)
-                  pw.Expanded(
-                    flex: 2,
-                    child: pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.start,
-                      children: [
-                        if (vendorName != null) ...[
-                          pw.Text('VENDIÓ', style: pw.TextStyle(fontSize: 9, color: _textGrey, fontWeight: pw.FontWeight.bold)),
-                          pw.SizedBox(height: 2),
-                          pw.Text(vendorName.toUpperCase(), style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold)),
-                          pw.SizedBox(height: 8),
-                        ],
-                        if (dispatcherName != null) ...[
-                          pw.Text('DESPACHÓ', style: pw.TextStyle(fontSize: 9, color: _textGrey, fontWeight: pw.FontWeight.bold)),
-                          pw.SizedBox(height: 2),
-                          pw.Text(dispatcherName.toUpperCase(), style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold)),
-                        ],
-                      ],
-                    ),
-                  ),
-                pw.SizedBox(width: 24),
-                // Badge de estado
-                pw.Container(
-                  padding: const pw.EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  decoration: pw.BoxDecoration(
-                    color: _statusColor(effectiveDocStatus),
-                    borderRadius: const pw.BorderRadius.all(pw.Radius.circular(20)),
-                  ),
-                  child: pw.Text(
-                    isDispatch ? _statusLabel(effectiveDocStatus) : 'A PREPARAR',
-                    style: pw.TextStyle(
-                      color: PdfColors.white,
-                      fontSize: 11,
-                      fontWeight: pw.FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          pw.SizedBox(height: 16),
-
-          // ══ TABLA DE ÍTEMS ════════════════════════════════════════════════
-          pw.Table(
-            border: pw.TableBorder(
-              bottom: const pw.BorderSide(color: PdfColors.grey300, width: 0.5),
-              horizontalInside: const pw.BorderSide(color: PdfColors.grey200, width: 0.5),
-            ),
-            columnWidths: {
-              0: const pw.FlexColumnWidth(5),
-              1: const pw.FlexColumnWidth(1.8), // Cant. pedida
-              2: const pw.FlexColumnWidth(2),   // Entregado hoy
-              3: const pw.FlexColumnWidth(1.8), // Saldo
-              4: const pw.FlexColumnWidth(2.5), // Estado
-            },
-            children: [
-              // Encabezado
-              pw.TableRow(
-                decoration: const pw.BoxDecoration(color: _primary),
-                repeat: true,
-                children: [
-                  _th('DESCRIPCIÓN'),
-                  _th('CANT. TOTAL', align: pw.TextAlign.center),
-                  _th(deliveredNow.isNotEmpty ? 'ENTREGADO HOY' : 'ENTREGADO', align: pw.TextAlign.center),
-                  _th('SALDO PEND.', align: pw.TextAlign.center),
-                  _th('ESTADO', align: pw.TextAlign.center),
-                ],
-              ),
-              // Filas de ítems
-              ...items.asMap().entries.map((e) {
-                final idx  = e.key;
-                final item = e.value as Map<String, dynamic>;
-                final product = item['product'] as Map<String, dynamic>? ?? {};
-                final isByWeight = product['is_sold_by_weight'] == true;
-                final totalQty    = double.tryParse(item['quantity_purchased']?.toString() ?? '') ?? 0.0;
-                final deliveredQtyDb = double.tryParse(item['quantity_delivered']?.toString() ?? '') ?? 0.0;
-                final deliveredQtyNow = deliveredNow[item['id']] ?? 0.0;
-                final pendingQty  = (totalQty - deliveredQtyDb - deliveredQtyNow).clamp(0.0, double.infinity);
-                
-                String effectiveItemStatus = 'pending';
-                if (pendingQty <= 0) {
-                  effectiveItemStatus = 'delivered';
-                } else if (deliveredQtyDb + deliveredQtyNow > 0) {
-                  effectiveItemStatus = 'partial';
-                }
-
-                String fmt(double v) => isByWeight
-                    ? '${v.toStringAsFixed(3)} kg'
-                    : '${v.toInt()} un';
-
-                final valToShow = deliveredNow.isNotEmpty ? deliveredQtyNow : deliveredQtyDb;
-
-                return pw.TableRow(
-                  decoration: pw.BoxDecoration(
-                    color: idx % 2 == 0 ? PdfColors.white : _bgLight,
-                  ),
-                  children: [
-                    _td(product['name']?.toString().toUpperCase() ?? '-', bold: true),
-                    _td(fmt(totalQty), align: pw.TextAlign.center),
-                    _td(valToShow > 0 ? fmt(valToShow) : '-', align: pw.TextAlign.center,
-                        color: valToShow > 0 ? _greenOk : _textGrey),
-                    _td(pendingQty > 0 ? fmt(pendingQty) : '-', align: pw.TextAlign.center,
-                        color: pendingQty > 0 ? _redPend : _greenOk),
-                    _tdBadge(_statusLabel(effectiveItemStatus), _statusColor(effectiveItemStatus)),
-                  ],
-                );
-              }),
-            ],
-          ),
-          pw.SizedBox(height: isCompact ? 10 : 20),
-
-          // ══ RESUMEN / FIRMA ════════════════════════════════════════════════
-          pw.Row(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
-            children: [
-              // Nota de instrucción
-              pw.Expanded(
-                child: pw.Container(
-                  decoration: pw.BoxDecoration(
-                    border: pw.Border.all(color: _accent, width: 1),
-                    borderRadius: const pw.BorderRadius.all(pw.Radius.circular(6)),
-                  ),
-                  padding: pw.EdgeInsets.all(isCompact ? 8 : 12),
-                  child: pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.start,
-                    children: [
-                      pw.Text(
-                          isDispatch ? '! INSTRUCCIONES DE RECEPCIÓN' : '! INSTRUCCIONES DE ENTREGA',
-                          style: pw.TextStyle(fontSize: isCompact ? 7.5 : 9, fontWeight: pw.FontWeight.bold, color: _accent)),
-                      pw.SizedBox(height: isCompact ? 4 : 6),
-                      pw.Text(
-                        isDispatch 
-                          ? 'Por favor verifique que los artículos recibidos coincidan con las cantidades indicadas en este comprobante antes de firmar la conformidad.'
-                          : 'Presente este comprobante al retirar la mercadería en depósito. El operador escaneará el código de barras o buscará por N° de Remito. Solo se entregarán los artículos indicados y en las cantidades autorizadas.',
-                        style: pw.TextStyle(fontSize: isCompact ? 7 : 9),
-                      ),
-                      if (totalUnits > 0) ...[
-                        pw.SizedBox(height: isCompact ? 4 : 8),
-                        pw.Text('Total de unidades: $totalUnits',
-                            style: pw.TextStyle(fontSize: isCompact ? 8 : 10, fontWeight: pw.FontWeight.bold)),
-                      ],
-                    ],
-                  ),
-                ),
-              ),
-              pw.SizedBox(width: isCompact ? 12 : 24),
-              // Firma del receptor
-              pw.Expanded(
-                child: pw.Container(
-                  decoration: const pw.BoxDecoration(
-                    color: _bgLight,
-                    borderRadius: pw.BorderRadius.all(pw.Radius.circular(6)),
-                  ),
-                  padding: pw.EdgeInsets.all(isCompact ? 8 : 12),
-                  child: pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.start,
-                    children: [
-                      pw.Text('FIRMA Y ACLARACIÓN DEL RECEPTOR',
-                          style: pw.TextStyle(fontSize: 8, color: _textGrey, fontWeight: pw.FontWeight.bold)),
-                      pw.SizedBox(height: isCompact ? 20 : 32),
-                      pw.Divider(color: PdfColors.grey500, thickness: 0.5),
-                      pw.SizedBox(height: 4),
-                      pw.Text('DNI:', style: pw.TextStyle(fontSize: isCompact ? 8 : 9, color: _textGrey)),
-                      pw.SizedBox(height: isCompact ? 8 : 16),
-                      pw.Divider(color: PdfColors.grey500, thickness: 0.5),
-                      pw.SizedBox(height: 4),
-                      pw.Text('Fecha de retiro:', style: pw.TextStyle(fontSize: isCompact ? 8 : 9, color: _textGrey)),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-
-          pw.SizedBox(height: isCompact ? 6 : 16),
-          // ══ PIE / FOOTER ══════════════════════════════════════
-          if (!isCompact) ...[
-            pw.Center(
-              child: pw.Text(
-                'DOCUMENTO NO VALIDO COMO FACTURA - SOLO SIRVE COMO COMPROBANTE DE ENTREGA DE MERCADERIA',
-                style: pw.TextStyle(fontSize: 8, color: _textGrey, fontWeight: pw.FontWeight.bold),
+            pw.Text(
+              'DOCUMENTO NO VÁLIDO COMO FACTURA',
+              style: pw.TextStyle(
+                fontSize: isCompact ? 7 : 8,
+                fontWeight: pw.FontWeight.bold,
+                color: PdfColors.grey800,
               ),
             ),
           ],
-        ];
-  }
+        ),
+      ),
 
-  // ─── Helpers ─────────────────────────────────────────────────────────
+      // ENCABEZADO PARTIDO ESTILO ARCA CON LETRA R / X Y CÓDIGO DE BARRAS
+      pw.Stack(
+        alignment: pw.Alignment.topCenter,
+        children: [
+          pw.Table(
+            border: const pw.TableBorder(
+              left: pw.BorderSide(color: PdfColors.black, width: 1.0),
+              right: pw.BorderSide(color: PdfColors.black, width: 1.0),
+              bottom: pw.BorderSide(color: PdfColors.black, width: 1.0),
+              verticalInside: pw.BorderSide(color: PdfColors.black, width: 1.0),
+            ),
+            columnWidths: const {
+              0: pw.FlexColumnWidth(1),
+              1: pw.FlexColumnWidth(1),
+            },
+            children: [
+              pw.TableRow(
+                children: [
+                  // COLUMNA IZQUIERDA: EMISOR + BARCODE
+                  pw.Padding(
+                    padding: pw.EdgeInsets.fromLTRB(
+                      isCompact ? 6 : 8,
+                      isCompact ? 6 : 8,
+                      26,
+                      isCompact ? 6 : 8,
+                    ),
+                    child: pw.Row(
+                      crossAxisAlignment: pw.CrossAxisAlignment.center,
+                      children: [
+                        if (logoBytes != null) ...[
+                          pw.Container(
+                            width: isCompact ? 36 : 46,
+                            height: isCompact ? 36 : 46,
+                            child: pw.Image(
+                              pw.MemoryImage(logoBytes),
+                              fit: pw.BoxFit.contain,
+                            ),
+                          ),
+                          pw.SizedBox(width: 8),
+                        ],
+                        pw.Expanded(
+                          child: pw.Column(
+                            crossAxisAlignment: pw.CrossAxisAlignment.start,
+                            children: [
+                              pw.Text(
+                                businessName.toUpperCase(),
+                                style: pw.TextStyle(
+                                  fontSize: isCompact ? 13 : 15,
+                                  fontWeight: pw.FontWeight.bold,
+                                  color: PdfColors.black,
+                                ),
+                              ),
+                              if (businessAddress != null &&
+                                  businessAddress.isNotEmpty)
+                                pw.Text(
+                                  'Domicilio Comercial: $businessAddress',
+                                  style: pw.TextStyle(
+                                      fontSize: isCompact ? 7 : 7.5),
+                                ),
+                              if (businessPhone != null &&
+                                  businessPhone.isNotEmpty)
+                                pw.Text(
+                                  'Teléfono: $businessPhone',
+                                  style: pw.TextStyle(
+                                      fontSize: isCompact ? 7 : 7.5),
+                                ),
+                              if (formattedBusinessCuit.isNotEmpty)
+                                pw.Text(
+                                  'CUIT: $formattedBusinessCuit',
+                                  style: pw.TextStyle(
+                                    fontSize: isCompact ? 7 : 7.5,
+                                    fontWeight: pw.FontWeight.bold,
+                                  ),
+                                ),
+                              pw.SizedBox(height: 3),
+                              pw.BarcodeWidget(
+                                barcode: pw.Barcode.code128(),
+                                data: documentCode,
+                                width: isCompact ? 105 : 130,
+                                height: isCompact ? 18 : 24,
+                                drawText: false,
+                              ),
+                              pw.Text(
+                                documentCode,
+                                style: pw.TextStyle(
+                                  fontSize: 6.5,
+                                  fontWeight: pw.FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // COLUMNA DERECHA: DATOS DEL REMITO
+                  pw.Padding(
+                    padding: pw.EdgeInsets.fromLTRB(
+                      26,
+                      isCompact ? 6 : 8,
+                      isCompact ? 6 : 8,
+                      isCompact ? 6 : 8,
+                    ),
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text(
+                          documentTitle,
+                          style: pw.TextStyle(
+                            fontSize: isCompact ? 11.5 : 13.5,
+                            fontWeight: pw.FontWeight.bold,
+                            color: PdfColors.black,
+                          ),
+                        ),
+                        pw.SizedBox(height: 2),
+                        pw.Text(
+                          'Remito Nro: 00001-$noteId   ($documentCode)',
+                          style: pw.TextStyle(
+                            fontSize: isCompact ? 8 : 9,
+                            fontWeight: pw.FontWeight.bold,
+                          ),
+                        ),
+                        pw.Text(
+                          'Fecha de Emisión: ${_dateFmt.format(createdDate)}',
+                          style: pw.TextStyle(fontSize: isCompact ? 7.5 : 8),
+                        ),
+                        pw.Text(
+                          'Venta Asociada: $saleIdStr',
+                          style: pw.TextStyle(fontSize: isCompact ? 7.5 : 8),
+                        ),
+                        if (vendorName != null && vendorName.isNotEmpty)
+                          pw.Text(
+                            'Vendió: ${vendorName.toUpperCase()}',
+                            style: pw.TextStyle(fontSize: isCompact ? 7 : 7.5),
+                          ),
+                        if (dispatcherName != null &&
+                            dispatcherName.isNotEmpty)
+                          pw.Text(
+                            'Despachó: ${dispatcherName.toUpperCase()}',
+                            style: pw.TextStyle(
+                              fontSize: isCompact ? 7 : 7.5,
+                              fontWeight: pw.FontWeight.bold,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+
+          // RECUADRO CENTRAL SUPERIOR DE LETRA (R / X)
+          pw.Positioned(
+            top: 0,
+            child: pw.Container(
+              width: isCompact ? 36 : 42,
+              height: isCompact ? 36 : 42,
+              decoration: pw.BoxDecoration(
+                color: PdfColors.white,
+                border: pw.Border.all(color: PdfColors.black, width: 1.5),
+              ),
+              child: pw.Column(
+                mainAxisAlignment: pw.MainAxisAlignment.center,
+                children: [
+                  pw.Text(
+                    boxLetter,
+                    style: pw.TextStyle(
+                      fontSize: isCompact ? 16 : 20,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  ),
+                  pw.Text(
+                    boxCode,
+                    style: pw.TextStyle(
+                      fontSize: isCompact ? 4.8 : 5.5,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+
+      pw.SizedBox(height: isCompact ? 4 : 6),
+
+      // CASILLERO DE DESTINATARIO Y ESTADO LOGÍSTICO
+      pw.Container(
+        decoration: pw.BoxDecoration(
+          border: pw.Border.all(color: PdfColors.black, width: 1.0),
+        ),
+        padding: pw.EdgeInsets.symmetric(
+          horizontal: 8,
+          vertical: isCompact ? 4 : 6,
+        ),
+        child: pw.Row(
+          children: [
+            pw.Expanded(
+              flex: 7,
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Text(
+                    'Destinatario / Cliente: ${(customerName ?? "Consumidor Final").toUpperCase()}   |   CUIT / DNI: $formattedCustomerDoc',
+                    style: pw.TextStyle(
+                      fontSize: isCompact ? 7.5 : 8.5,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  ),
+                  pw.SizedBox(height: 2),
+                  pw.Text(
+                    deliveryAddress.isNotEmpty
+                        ? 'Domicilio de Entrega: $deliveryAddress'
+                        : 'Modalidad de Entrega: Retiro en mostrador / depósito comercial',
+                    style: pw.TextStyle(
+                      fontSize: isCompact ? 7.5 : 8,
+                      fontWeight: deliveryAddress.isNotEmpty
+                          ? pw.FontWeight.bold
+                          : pw.FontWeight.normal,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            pw.SizedBox(width: 8),
+            pw.Container(
+              padding: const pw.EdgeInsets.symmetric(
+                horizontal: 8,
+                vertical: 4,
+              ),
+              decoration: pw.BoxDecoration(
+                color: PdfColors.grey200,
+                border: pw.Border.all(color: PdfColors.black, width: 0.8),
+              ),
+              child: pw.Text(
+                isDispatch ? _statusLabel(effectiveDocStatus) : 'A PREPARAR',
+                style: pw.TextStyle(
+                  color: PdfColors.black,
+                  fontSize: isCompact ? 7.5 : 8.5,
+                  fontWeight: pw.FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+
+      pw.SizedBox(height: isCompact ? 4 : 6),
+
+      // TABLA TÉCNICA DE MERCADERÍA
+      pw.Table(
+        border: pw.TableBorder.all(color: PdfColors.black, width: 0.5),
+        columnWidths: {
+          0: const pw.FlexColumnWidth(1.4),
+          1: const pw.FlexColumnWidth(4.8),
+          2: const pw.FlexColumnWidth(1.6),
+          3: const pw.FlexColumnWidth(1.7),
+          4: const pw.FlexColumnWidth(1.6),
+          5: const pw.FlexColumnWidth(1.7),
+        },
+        children: [
+          pw.TableRow(
+            decoration: const pw.BoxDecoration(color: PdfColors.grey200),
+            repeat: true,
+            children: [
+              _th('CÓDIGO', align: pw.TextAlign.center, isCompact: isCompact),
+              _th(
+                'DESCRIPCIÓN DEL ARTÍCULO',
+                align: pw.TextAlign.left,
+                isCompact: isCompact,
+              ),
+              _th(
+                'CANT. TOTAL',
+                align: pw.TextAlign.center,
+                isCompact: isCompact,
+              ),
+              _th(
+                deliveredNow.isNotEmpty ? 'ENTREGADO HOY' : 'ENTREGADO',
+                align: pw.TextAlign.center,
+                isCompact: isCompact,
+              ),
+              _th(
+                'SALDO PEND.',
+                align: pw.TextAlign.center,
+                isCompact: isCompact,
+              ),
+              _th('ESTADO', align: pw.TextAlign.center, isCompact: isCompact),
+            ],
+          ),
+          ...items.map((rawItem) {
+            final item = rawItem as Map<String, dynamic>;
+            final product = item['product'] as Map<String, dynamic>? ?? {};
+            final isByWeight = product['is_sold_by_weight'] == true ||
+                item['is_sold_by_weight'] == true;
+            final totalQty = double.tryParse(
+                    item['quantity_purchased']?.toString() ?? '') ??
+                0.0;
+            final deliveredQtyDb = double.tryParse(
+                    item['quantity_delivered']?.toString() ?? '') ??
+                0.0;
+            final deliveredQtyNow = deliveredNow[item['id']] ?? 0.0;
+            final effectiveDelivered = deliveredNow.isNotEmpty
+                ? (deliveredQtyDb + deliveredQtyNow)
+                : deliveredQtyDb;
+            final pendingQty =
+                (totalQty - effectiveDelivered).clamp(0.0, double.infinity);
+
+            String effectiveItemStatus = 'pending';
+            if (pendingQty <= 0 && totalQty > 0) {
+              effectiveItemStatus = 'delivered';
+            } else if (effectiveDelivered > 0) {
+              effectiveItemStatus = 'partial';
+            }
+
+            String fmt(double v) =>
+                isByWeight ? '${v.toQty()} kg' : '${v.toInt()} un';
+
+            final valToShow =
+                deliveredNow.isNotEmpty ? deliveredQtyNow : deliveredQtyDb;
+            final code =
+                (product['internal_code'] ?? item['internal_code'] ?? '-')
+                    .toString();
+            final name = (product['name'] ?? item['product_name'] ?? '-')
+                .toString()
+                .toUpperCase();
+
+            return pw.TableRow(
+              children: [
+                _td(
+                  code.trim().isEmpty ? '-' : code,
+                  align: pw.TextAlign.center,
+                  isCompact: isCompact,
+                ),
+                _td(
+                  name,
+                  align: pw.TextAlign.left,
+                  bold: true,
+                  isCompact: isCompact,
+                ),
+                _td(
+                  fmt(totalQty),
+                  align: pw.TextAlign.center,
+                  isCompact: isCompact,
+                ),
+                _td(
+                  valToShow > 0 ? fmt(valToShow) : '-',
+                  align: pw.TextAlign.center,
+                  bold: valToShow > 0,
+                  isCompact: isCompact,
+                ),
+                _td(
+                  pendingQty > 0 ? fmt(pendingQty) : '0',
+                  align: pw.TextAlign.center,
+                  bold: pendingQty > 0,
+                  isCompact: isCompact,
+                ),
+                _td(
+                  _statusLabel(effectiveItemStatus),
+                  align: pw.TextAlign.center,
+                  bold: true,
+                  isCompact: isCompact,
+                ),
+              ],
+            );
+          }),
+        ],
+      ),
+
+      pw.SizedBox(height: isCompact ? 5 : 10),
+
+      // PIE DE INSTRUCCIONES Y CONFORMIDAD DEL RECEPTOR
+      pw.Row(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Expanded(
+            child: pw.Container(
+              decoration: pw.BoxDecoration(
+                border: pw.Border.all(color: PdfColors.black, width: 0.8),
+              ),
+              padding: pw.EdgeInsets.all(isCompact ? 6 : 9),
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Text(
+                    isDispatch
+                        ? 'INSTRUCCIONES DE RECEPCIÓN DE MERCADERÍA'
+                        : 'INSTRUCCIONES DE RETIRO EN DEPÓSITO',
+                    style: pw.TextStyle(
+                      fontSize: isCompact ? 7 : 8,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  ),
+                  pw.SizedBox(height: isCompact ? 2 : 4),
+                  pw.Text(
+                    isDispatch
+                        ? 'Por favor verifique que los artículos recibidos coincidan con las cantidades detalladas en este comprobante antes de firmar la conformidad.'
+                        : 'Presente este comprobante al retirar la mercadería en depósito. El operador escaneará el código de barras superior o buscará por N° de Remito.',
+                    style: pw.TextStyle(fontSize: isCompact ? 6.5 : 7.5),
+                  ),
+                  if (totalUnits > 0) ...[
+                    pw.SizedBox(height: isCompact ? 3 : 6),
+                    pw.Text(
+                      'Total de unidades / bultos: $totalUnits',
+                      style: pw.TextStyle(
+                        fontSize: isCompact ? 7.5 : 8.5,
+                        fontWeight: pw.FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          pw.SizedBox(width: 10),
+          pw.Expanded(
+            child: pw.Container(
+              decoration: pw.BoxDecoration(
+                border: pw.Border.all(color: PdfColors.black, width: 0.8),
+              ),
+              padding: pw.EdgeInsets.all(isCompact ? 6 : 9),
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Text(
+                    'RECIBÍ CONFORME (FIRMA Y ACLARACIÓN DEL RECEPTOR)',
+                    style: pw.TextStyle(
+                      fontSize: isCompact ? 7 : 8,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  ),
+                  pw.SizedBox(height: isCompact ? 14 : 24),
+                  pw.Divider(color: PdfColors.black, thickness: 0.5),
+                  pw.SizedBox(height: 3),
+                  pw.Row(
+                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                    children: [
+                      pw.Text(
+                        'DNI / CUIT: ___________________',
+                        style: pw.TextStyle(fontSize: isCompact ? 6.5 : 7.5),
+                      ),
+                      pw.Text(
+                        'Fecha retiro: ____/____/______',
+                        style: pw.TextStyle(fontSize: isCompact ? 6.5 : 7.5),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    ];
+  }
 
   static String _statusLabel(String status) {
     switch (status) {
-      case 'pending': return 'PENDIENTE';
-      case 'partial': return 'PARCIAL';
-      case 'delivered': return 'ENTREGADO';
-      default: return status.toUpperCase();
+      case 'pending':
+        return 'PENDIENTE';
+      case 'partial':
+        return 'PARCIAL';
+      case 'delivered':
+        return 'ENTREGADO';
+      default:
+        return status.toUpperCase();
     }
   }
 
-  static PdfColor _statusColor(String status) {
-    switch (status) {
-      case 'pending': return _accent;
-      case 'partial': return const PdfColor.fromInt(0xFFF57F17);
-      case 'delivered': return _greenOk;
-      default: return _textGrey;
-    }
-  }
-
-  static pw.Widget _th(String text, {pw.TextAlign align = pw.TextAlign.left}) =>
+  static pw.Widget _th(
+    String text, {
+    pw.TextAlign align = pw.TextAlign.left,
+    bool isCompact = false,
+  }) =>
       pw.Padding(
-        padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 6),
-        child: pw.Text(text,
-            style: pw.TextStyle(color: PdfColors.white, fontSize: 8, fontWeight: pw.FontWeight.bold),
-            textAlign: align),
-      );
-
-  static pw.Widget _td(String text,
-      {pw.TextAlign align = pw.TextAlign.left, bool bold = false, PdfColor? color}) =>
-      pw.Padding(
-        padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 5),
-        child: pw.Text(text,
-            style: pw.TextStyle(
-              fontSize: 9,
-              fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
-              color: color,
-            ),
-            textAlign: align),
-      );
-
-  static pw.Widget _tdBadge(String text, PdfColor color) =>
-      pw.Padding(
-        padding: const pw.EdgeInsets.all(4),
-        child: pw.Center(
-          child: pw.Container(
-            padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-            decoration: pw.BoxDecoration(
-              color: color,
-              borderRadius: const pw.BorderRadius.all(pw.Radius.circular(10)),
-            ),
-            child: pw.Text(text,
-                style: pw.TextStyle(color: PdfColors.white, fontSize: 7, fontWeight: pw.FontWeight.bold)),
+        padding: pw.EdgeInsets.symmetric(
+          horizontal: 5,
+          vertical: isCompact ? 3.5 : 5,
+        ),
+        child: pw.Text(
+          text,
+          style: pw.TextStyle(
+            color: PdfColors.black,
+            fontSize: isCompact ? 7 : 8,
+            fontWeight: pw.FontWeight.bold,
           ),
+          textAlign: align,
+        ),
+      );
+
+  static pw.Widget _td(
+    String text, {
+    pw.TextAlign align = pw.TextAlign.left,
+    bool bold = false,
+    bool isCompact = false,
+  }) =>
+      pw.Padding(
+        padding: pw.EdgeInsets.symmetric(
+          horizontal: 5,
+          vertical: isCompact ? 3 : 4.5,
+        ),
+        child: pw.Text(
+          text,
+          style: pw.TextStyle(
+            fontSize: isCompact ? 7.5 : 8.5,
+            fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
+            color: PdfColors.black,
+          ),
+          textAlign: align,
         ),
       );
 }

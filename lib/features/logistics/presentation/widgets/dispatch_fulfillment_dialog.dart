@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/logistics_provider.dart';
 import '../../../../core/utils/snack_bar_service.dart';
+import '../../../../core/utils/currency_formatter.dart';
+import '../../../../core/presentation/widgets/thermal_receipt_widget.dart';
+import '../../../../core/presentation/widgets/ticket_preview_dialog.dart';
 import '../../../../core/utils/receipt_printer_service.dart';
 import '../../../../core/providers/local_terminal_provider.dart';
 import '../../../../features/auth/presentation/providers/auth_provider.dart';
@@ -359,6 +363,7 @@ class _PostDispatchPrintSheetState extends State<_PostDispatchPrintSheet> {
         vendorName: vendorName,
         dispatcherName: dispatcherName,
         paperSize: context.read<LocalTerminalProvider>().pdfPaperSize,
+        businessSettings: settings,
       );
 
       if (mounted) Navigator.pop(context);
@@ -372,7 +377,15 @@ class _PostDispatchPrintSheetState extends State<_PostDispatchPrintSheet> {
   Future<void> _printThermal() async {
     setState(() => _isPrinting = true);
     try {
+      final prefs = await SharedPreferences.getInstance();
+      final showPreview = prefs.getBool('show_preview_remito') ?? false;
+      if (!mounted) return;
+
       final settings = context.read<SettingsProvider>().settings;
+      final localTerminal = context.read<LocalTerminalProvider>();
+      final isNarrow = localTerminal.printerFormat == 'thermal_58';
+      final paperWidth =
+          isNarrow ? ThermalPaperWidth.mm58 : ThermalPaperWidth.mm80;
       final sale = widget.note['sale'] ?? {};
       final customerName = sale['customer']?['name'];
       final vendorName = sale['user']?['name'];
@@ -383,11 +396,105 @@ class _PostDispatchPrintSheetState extends State<_PostDispatchPrintSheet> {
           .map((e) => {'id': e.key, 'delivered_now': e.value})
           .toList();
 
+      if (showPreview) {
+        final items = (widget.note['items'] as List? ?? []);
+        final now = DateTime.now().toLocal();
+        String pad(int n) => n.toString().padLeft(2, '0');
+        final fecha =
+            '${pad(now.day)}/${pad(now.month)}/${now.year} ${pad(now.hour)}:${pad(now.minute)}';
+        final remNum = widget.note['id'].toString().padLeft(6, '0');
+
+        List<TicketLine> buildCopy(String copyLabel) => [
+              if (settings?.companyName != null)
+                TicketLine(settings!.companyName!.toUpperCase(),
+                    align: TicketAlign.center, isBold: true, isLarge: true),
+              if (settings?.address != null && settings!.address!.isNotEmpty)
+                TicketLine(settings.address!, align: TicketAlign.center),
+              if (settings?.taxId != null && settings!.taxId!.isNotEmpty)
+                TicketLine('CUIT: ${settings.taxId}',
+                    align: TicketAlign.center, isBold: true),
+              const TicketLine.hr(bold: true),
+              const TicketLine('REMITO DE DESPACHO',
+                  align: TicketAlign.center, isBold: true),
+              TicketLine('[ $copyLabel ]', align: TicketAlign.center),
+              TicketLine(
+                  isNarrow
+                      ? 'DOC. NO VALIDO COMO FACTURA'
+                      : 'DOCUMENTO NO VÁLIDO COMO FACTURA',
+                  align: TicketAlign.center),
+              const TicketLine.hr(),
+              TicketLine('REM Nro: $remNum', isBold: true),
+              TicketLine('FECHA: $fecha'),
+              TicketLine('CLIENTE: ${customerName ?? 'Consumidor Final'}',
+                  isBold: true),
+              if (vendorName != null)
+                TicketLine('VENDIO: ${vendorName.toUpperCase()}'),
+              TicketLine('DESPACHO: ${dispatcherName.toUpperCase()}'),
+              const TicketLine.hr(),
+              ...deliveredList.expand((d) {
+                final item = items.firstWhere((i) => i['id'] == d['id'],
+                    orElse: () => null);
+                if (item == null) return [const TicketLine.space()];
+                final name =
+                    (item['product']?['name'] ?? 'Producto').toUpperCase();
+                final purchased =
+                    double.parse(item['quantity_purchased'].toString());
+                final deliveredBefore =
+                    double.parse(item['quantity_delivered'].toString());
+                final deliveredNow = (d['delivered_now'] as num).toDouble();
+                final remaining =
+                    (purchased - deliveredBefore - deliveredNow).clamp(0.0, double.infinity);
+                return [
+                  TicketLine(name, isBold: true),
+                  TicketLine(
+                      'Entregando: ${deliveredNow.toQty()} | Saldo: ${remaining.toQty()}'),
+                  const TicketLine.space(),
+                ];
+              }),
+              const TicketLine.hr(bold: true),
+            ];
+
+        final previewLines = [
+          ...buildCopy('COPIA CLIENTE'),
+          const TicketLine.space(),
+          TicketLine(
+              isNarrow
+                  ? '✂ - - - - CORTE - - - - ✂'
+                  : '✂ - - - - - - - CORTE - - - - - - - ✂',
+              align: TicketAlign.center),
+          const TicketLine.space(),
+          ...buildCopy('COPIA DESPACHANTE - ORIGINAL'),
+          TicketLine(
+              isNarrow
+                  ? 'FIRMA CONFORMIDAD CLIENTE:'
+                  : 'FIRMA CONFORMIDAD DEL CLIENTE:',
+              isBold: true),
+          TicketLine(isNarrow
+              ? '____________________________'
+              : '___________________________________'),
+          TicketLine(isNarrow
+              ? 'Aclaración: ________________'
+              : 'Aclaración: ________________________'),
+          TicketLine(isNarrow
+              ? 'DNI / CUIT: ________________'
+              : 'DNI / CUIT: ________________________'),
+        ];
+
+        final confirmed = await TicketPreviewDialog.show(
+          context,
+          title:
+              'Remito de Despacho #${widget.note['id']} (${isNarrow ? "58mm" : "80mm"})',
+          paperWidth: paperWidth,
+          lines: previewLines,
+        );
+        if (!confirmed || !mounted) return;
+      }
+
       await ReceiptPrinterService.instance.printDeliveryNoteTicket(
         note: widget.note,
         deliveredItemsData: deliveredList,
         settings: settings!,
-        localTerminal: context.read<LocalTerminalProvider>(),
+        localTerminal: localTerminal,
         customerName: customerName,
         vendorName: vendorName,
         dispatcherName: dispatcherName,

@@ -1718,10 +1718,15 @@ class _PosScreenState extends State<PosScreen> {
         final localFormat = localTerminalProvider.printerFormat;
 
         // ── Post-venta Logística (Fricción Cero) ──────────────────────────
-        // El remito ya fue creado en processCheckout(). Aquí decidimos cómo mostrarlo.
-        if (posProvider.wasLastSaleDispatched && posProvider.lastSalePrinted) {
+        // El remito ya fue creado en processCheckout(). Aquí decidimos cómo mostrarlo
+        // solo como fallback si PosProvider no pudo abrir la vista previa directamente.
+        if (posProvider.wasLastSaleDispatched &&
+            posProvider.lastSalePrinted &&
+            !posProvider.previewHandledInProvider) {
           final deliveryNote = posProvider.lastDeliveryNote;
-          final isDeliveredNow = deliveryNote?['status'] == 'delivered';
+          final isDeliveredNow =
+              (deliveryNote?['status'] ?? posProvider.currentFulfillmentStatus) ==
+                  'delivered';
 
           // SOLO mostramos el Remito (Split o Separado) si el remito se entrega AHORA.
           // Si quedó pendiente, el comprobante de venta simple ya se imprimió en processCheckout,
@@ -1734,33 +1739,59 @@ class _PosScreenState extends State<PosScreen> {
               (deliveryNote.containsKey('sale') ||
                   posProvider.lastSaleCart.isNotEmpty)) {
             try {
-              final sale =
-                  (deliveryNote['sale'] as Map<String, dynamic>?) ?? {};
+              final sale = Map<String, dynamic>.from(
+                (deliveryNote['sale'] as Map<String, dynamic>?) ?? {},
+              );
 
-              // Si el remito no trajo la venta hidratada, usamos el snapshot de seguridad del provider
-              if (sale.isEmpty || sale['items'] == null) {
-                sale['id'] = deliveryNote['sale_id'];
-                sale['total'] = posProvider.lastSaleTotal;
-                sale['shipping_cost'] = posProvider.lastSaleShippingCost;
-                sale['surcharge_amount'] = posProvider.lastSurchargeAmount;
+              // Enriquecemos siempre desde el snapshot del carrito y pagos de posProvider
+              // para garantizar que las ofertas, descuentos, precio de lista, IVA e importes de pago
+              // salgan idénticos al comprobante individual en la hoja partida (Comprobante + Remito).
+              sale['id'] ??= deliveryNote['sale_id'];
+              sale['total'] ??= posProvider.lastSaleTotal;
+              sale['shipping_cost'] ??= posProvider.lastSaleShippingCost;
+              sale['surcharge_amount'] ??= posProvider.lastSurchargeAmount;
+              if (posProvider.lastSalePayments.isNotEmpty) {
                 sale['payments'] = posProvider.lastSalePayments;
-                sale['tendered_amount'] = posProvider.lastTenderedAmount;
-                sale['change_amount'] = posProvider.lastChangeAmount;
+              }
+              sale['tendered_amount'] = posProvider.lastTenderedAmount;
+              sale['change_amount'] = posProvider.lastChangeAmount;
+              if (posProvider.lastSaleCart.isNotEmpty) {
+                final double cartSavings = posProvider.lastSaleCart.fold(
+                  0.0,
+                  (sum, it) => sum + it.discountSavings,
+                );
+                final double cartSubtotalList = posProvider.lastSaleCart.fold(
+                  0.0,
+                  (sum, it) => sum + it.regularSubtotal,
+                );
+                sale['subtotal_list'] = cartSubtotalList;
+                sale['discount_amount'] = cartSavings;
                 sale['items'] = posProvider.lastSaleCart
                     .map((item) => {
                           'product_id': item.product.id,
                           'quantity': item.quantity,
                           'product_name': item.product.name,
                           'unit_price': item.unitPrice,
+                          'regular_price': item.product.sellingPrice,
+                          'regular_subtotal': item.regularSubtotal,
+                          'discount_amount': item.discountSavings,
+                          'has_discount': item.hasDiscount,
+                          'discount_label': item.hasActiveOffer
+                              ? item.offerBadgeLabel
+                              : (item.promotionalLabel ?? ''),
                           'subtotal': item.subtotal,
                           'product': {
+                            'name': item.product.name,
+                            'internal_code': item.product.internalCode,
+                            'iva_rate': item.product.ivaRate,
                             'is_sold_by_weight': item.product.isSoldByWeight,
+                            'selling_price': item.product.sellingPrice,
                           }
                         })
                     .toList();
-                sale['customer'] = deliveryNote['customer'] ??
-                    deliveryNote['sale']?['customer'];
               }
+              sale['customer'] ??= deliveryNote['customer'] ??
+                  deliveryNote['sale']?['customer'];
 
               final authProvider =
                   Provider.of<AuthProvider>(context, listen: false);
@@ -1772,15 +1803,21 @@ class _PosScreenState extends State<PosScreen> {
               if (localFormat == 'a4_split' ||
                   localFormat == 'a4_normal' ||
                   localFormat == 'a4') {
-                // 1. A4 SMART (Split si <= 6 ítems, MultiPage si > 6 ítems)
+                // 1. A4 SMART (Split si <= 5 ítems, MultiPage si > 5 ítems)
                 final pdfBytes =
                     await A4SplitPdfService.generateA4SplitReceiptAndDispatch(
                   sale: sale,
                   deliveryNote: deliveryNote,
                   businessName: businessName,
                   businessAddress: settingsProvider.settings?.address,
+                  phone: settingsProvider.settings?.phone ?? '',
+                  cuit: settingsProvider.settings?.taxId ?? '',
+                  taxCondition: settingsProvider.settings?.taxCondition,
+                  iibb: settingsProvider.settings?.iibb,
+                  activityStartDate: settingsProvider.settings?.activityStartDate,
                   vendorName: vendorName,
                   paperSize: localTerminalProvider.pdfPaperSize,
+                  businessSettings: settingsProvider.settings,
                 );
 
                 if (mounted) {

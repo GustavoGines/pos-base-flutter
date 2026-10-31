@@ -166,6 +166,23 @@ void main() {
       expect(plainTexts.contains('PRECIO UNIT.'), isTrue);
       expect(plainTexts.contains('SUBTOTAL'), isTrue);
 
+      // RG 5614 / Ley 27.743 Transparencia Fiscal al Consumidor must be present on Factura B
+      expect(
+        plainTexts.any((t) => t.contains('Régimen de Transparencia Fiscal al Consumidor (Ley 27.743)')),
+        isTrue,
+        reason: 'Factura B must display RG 5614 / Ley 27.743 legend',
+      );
+      expect(
+        plainTexts.any((t) => t.contains('IVA Contenido:') && t.contains('Otros Impuestos Nacionales Indirectos:')),
+        isTrue,
+        reason: 'Factura B must display IVA Contenido and Otros Impuestos Nacionales Indirectos',
+      );
+      expect(
+        plainTexts.any((t) => t.startsWith(r'$ ')),
+        isTrue,
+        reason: r'Currency values must use leading $ symbol (e.g. $ 45.000,00)',
+      );
+
       final barcodeWidgets = AfipFiscalPdfService.findWidgets<pw.BarcodeWidget>(doc);
       expect(barcodeWidgets.length, equals(1));
       expect(barcodeWidgets.first.barcode.name, equals('QR-Code'));
@@ -228,6 +245,16 @@ void main() {
       expect(plainTexts.any((t) => t.contains('FACTURA C')), isTrue);
       expect(plainTexts.any((t) => t.contains('88776655443322')), isTrue);
       expect(plainTexts.any((t) => t.contains('25/10/2026')), isTrue);
+      expect(
+        plainTexts.any((t) => t.contains('Cond. frente al IVA: Responsable Monotributo')),
+        isTrue,
+        reason: 'Factura C must enforce coherent issuer condition Responsable Monotributo',
+      );
+      expect(
+        plainTexts.any((t) => t.contains('Régimen de Transparencia Fiscal al Consumidor')),
+        isFalse,
+        reason: 'Factura C (Monotributo) is exempt from RG 5614 IVA Contenido legend',
+      );
 
       final barcodeWidgets = AfipFiscalPdfService.findWidgets<pw.BarcodeWidget>(doc);
       expect(barcodeWidgets.length, equals(1));
@@ -414,6 +441,185 @@ void main() {
       expect(bytes.isNotEmpty, isTrue);
       expect(bytes.length, greaterThan(1000));
       expect(ascii.decode(bytes.sublist(0, 5)), equals('%PDF-'));
+    });
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Test 8: Factura B with Offers, Discounts & RG 5614 Precio s/imp - IVA Contenido
+    // ─────────────────────────────────────────────────────────────────────────
+    test('Factura B with offers & discounts: renders Precio s/imp - IVA Contenido, Subtotal Lista, Ahorro, and formatted CUIT', () async {
+      final sale = {
+        'id': 79,
+        'created_at': '2026-10-30T18:25:00Z',
+        'items': [
+          {
+            'product_name': 'CONSOLA PLAY STATION 5 PRO DIGITAL 2TB',
+            'quantity': 1,
+            'unit_price': 2155120.0,
+            'regular_price': 2693900.0,
+            'discount_amount': 538780.0,
+            'discount_label': 'Oferta Semanal',
+            'subtotal': 2155120.0,
+            'iva_rate': 21.0,
+          },
+        ],
+        'subtotal': 2155120.0,
+        'total': 2155120.0,
+        'discount_amount': 538780.0,
+        'payments': [
+          {'name': 'Efectivo', 'amount': 1155120.0},
+          {'name': 'Cuenta Corriente', 'amount': 1000000.0},
+        ],
+        'tendered_amount': 1200000.0,
+        'change_amount': 44880.0,
+      };
+
+      final electronicInvoice = {
+        'voucher_type': 6,
+        'voucher_letter': 'B',
+        'point_of_sale': 1,
+        'voucher_number': 2,
+        'formatted_number': '00001-00000002',
+        'cae': '86441036375060',
+        'cae_expiration': '2026-11-09',
+        'doc_type': 96,
+        'doc_number': '39606329',
+        'receiver_name': 'Gustavo Gines',
+        'receiver_tax_condition': 'Consumidor Final',
+        'net_amount': 1781090.91,
+        'iva_amount': 374029.09,
+        'total_amount': 2155120.0,
+      };
+
+      final doc = AfipFiscalPdfService.buildFiscalDocument(
+        sale: sale,
+        electronicInvoice: electronicInvoice,
+        businessSettings: {
+          'company_name': 'Dev4U',
+          'cuit': '20396063299',
+          'iibb': '20396063299',
+          'address': 'Jujuy 152',
+          'tax_condition': 'IVA Responsable Inscripto',
+        },
+        paperSize: 'a4',
+        compress: false,
+      );
+
+      final textNodes = AfipFiscalPdfService.findWidgets<pw.RichText>(doc);
+      final plainTexts = textNodes.map((w) => w.text.toPlainText()).toList();
+
+      expect(plainTexts.any((t) => t.contains('CUIT: 20-39606329-9')), isTrue);
+      expect(plainTexts.any((t) => t.contains('Ingresos Brutos: 20-39606329-9')), isTrue);
+      expect(plainTexts.any((t) => t.contains('(Oferta Semanal) Precio Lista: \$ 2.693.900,00 (-\$ 538.780,00)')), isTrue);
+      expect(plainTexts.any((t) => t.contains('Subtotal Lista: \$ 2.693.900,00')), isTrue);
+      expect(plainTexts.any((t) => t.contains('Ahorro / Descuento: -\$ 538.780,00')), isTrue);
+      expect(
+        plainTexts.any((t) => t.contains('Precio s/imp: \$ 1.781.090,91 - IVA Contenido: \$ 374.029,09')),
+        isTrue,
+      );
+      expect(plainTexts.any((t) => t.contains('Efectivo')), isTrue);
+      expect(plainTexts.any((t) => t.contains('Cuenta Corriente')), isTrue);
+    });
+
+    test('renders split Factura Fiscal ARCA + Remito on A4 and Letter when deliveryNote is provided ("Se lo lleva AHORA")', () async {
+      final sale = {
+        'id': 84,
+        'created_at': '2026-10-31T00:21:00',
+        'items': [
+          {
+            'product_name': 'CONSOLA PLAY STATION 5 PRO DIGITAL 2TB',
+            'quantity': 2,
+            'unit_price': 2155120.0,
+            'regular_price': 2693900.0,
+            'discount_amount': 1077560.0,
+            'discount_label': 'Oferta Semanal',
+            'subtotal': 4310240.0,
+            'iva_rate': 21.0,
+            'product': {
+              'name': 'CONSOLA PLAY STATION 5 PRO DIGITAL 2TB',
+              'internal_code': 'PS5-PRO',
+              'is_sold_by_weight': false,
+            },
+          },
+        ],
+        'subtotal': 4310240.0,
+        'shipping_cost': 10000.0,
+        'total': 4320240.0,
+        'discount_amount': 1077560.0,
+        'payments': [
+          {'name': 'Efectivo', 'amount': 4320240.0},
+        ],
+        'tendered_amount': 4320240.0,
+        'change_amount': 0.0,
+      };
+
+      final electronicInvoice = {
+        'voucher_type': 6,
+        'voucher_letter': 'B',
+        'point_of_sale': 1,
+        'voucher_number': 4,
+        'formatted_number': '00001-00000004',
+        'cae': '86441036399573',
+        'cae_expiration': '2026-11-09',
+        'doc_type': 96,
+        'doc_number': '38823149',
+        'receiver_name': 'Lorena Caballero',
+        'receiver_address': 'Yrigoyen Hipolito 201',
+        'receiver_tax_condition': 'Consumidor Final',
+        'net_amount': 3570446.28,
+        'iva_amount': 749793.72,
+        'total_amount': 4320240.0,
+      };
+
+      final deliveryNote = {
+        'id': 84,
+        'status': 'delivered',
+        'delivery_address': 'Yrigoyen Hipolito 201',
+        'items': sale['items'],
+      };
+
+      final docA4 = AfipFiscalPdfService.buildFiscalDocument(
+        sale: sale,
+        electronicInvoice: electronicInvoice,
+        deliveryNote: deliveryNote,
+        businessSettings: {
+          'company_name': 'Dev4U',
+          'cuit': '20396063299',
+          'iibb': '20396063299',
+          'address': 'Jujuy 152',
+          'tax_condition': 'IVA Responsable Inscripto',
+        },
+        paperSize: 'a4',
+        compress: false,
+      );
+
+      final bytesA4 = await docA4.save();
+      expect(bytesA4, isNotEmpty);
+
+      final bytesLetter = await AfipFiscalPdfService.generateFiscalInvoice(
+        sale: sale,
+        electronicInvoice: electronicInvoice,
+        deliveryNote: deliveryNote,
+        businessSettings: {
+          'company_name': 'Dev4U',
+          'cuit': '20396063299',
+          'iibb': '20396063299',
+          'address': 'Jujuy 152',
+          'tax_condition': 'IVA Responsable Inscripto',
+        },
+        paperSize: 'letter',
+        compress: false,
+      );
+      expect(bytesLetter, isNotEmpty);
+
+      final textNodes = AfipFiscalPdfService.findWidgets<pw.RichText>(docA4);
+      final plainTexts = textNodes.map((w) => w.text.toPlainText()).toList();
+
+      expect(plainTexts.any((t) => t.contains('FACTURA B')), isTrue);
+      expect(plainTexts.any((t) => t.contains('REMITO — ENTREGA INMEDIATA')), isTrue);
+      expect(plainTexts.any((t) => t.contains('COD. 091')), isTrue);
+      expect(plainTexts.any((t) => t.contains('Destinatario / Cliente: Lorena Caballero')), isTrue);
+      expect(plainTexts.any((t) => t.contains('ENTREGADO EN EL ACTO')), isTrue);
+      expect(plainTexts.any((t) => t.contains('RECIBÍ CONFORME')), isTrue);
     });
   });
 }

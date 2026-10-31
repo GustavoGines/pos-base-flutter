@@ -29,8 +29,8 @@ import 'package:mockito/src/dummies.dart' as _i5;
 // ignore_for_file: subtype_of_sealed_class
 // ignore_for_file: invalid_use_of_internal_member
 
-class _FakeFuture_0<T1> extends _i1.SmartFake implements _i2.Future<T1> {
-  _FakeFuture_0(
+class _FakeDuration_0 extends _i1.SmartFake implements Duration {
+  _FakeDuration_0(
     Object parent,
     Invocation parentInvocation,
   ) : super(
@@ -39,9 +39,19 @@ class _FakeFuture_0<T1> extends _i1.SmartFake implements _i2.Future<T1> {
         );
 }
 
-class _FakeStreamedResponse_1 extends _i1.SmartFake
+class _FakeFuture_1<T1> extends _i1.SmartFake implements _i2.Future<T1> {
+  _FakeFuture_1(
+    Object parent,
+    Invocation parentInvocation,
+  ) : super(
+          parent,
+          parentInvocation,
+        );
+}
+
+class _FakeStreamedResponse_2 extends _i1.SmartFake
     implements _i3.StreamedResponse {
-  _FakeStreamedResponse_1(
+  _FakeStreamedResponse_2(
     Object parent,
     Invocation parentInvocation,
   ) : super(
@@ -50,8 +60,8 @@ class _FakeStreamedResponse_1 extends _i1.SmartFake
         );
 }
 
-class _FakeResponse_2 extends _i1.SmartFake implements _i3.Response {
-  _FakeResponse_2(
+class _FakeResponse_3 extends _i1.SmartFake implements _i3.Response {
+  _FakeResponse_3(
     Object parent,
     Invocation parentInvocation,
   ) : super(
@@ -67,6 +77,21 @@ class MockApiClient extends _i1.Mock implements _i4.ApiClient {
   MockApiClient() {
     _i1.throwOnMissingStub(this);
   }
+
+  @override
+  Duration get fallbackStickyDuration => (super.noSuchMethod(
+        Invocation.getter(#fallbackStickyDuration),
+        returnValue: _FakeDuration_0(
+          this,
+          Invocation.getter(#fallbackStickyDuration),
+        ),
+      ) as Duration);
+
+  @override
+  bool get isUsingFallbackEndpoint => (super.noSuchMethod(
+        Invocation.getter(#isUsingFallbackEndpoint),
+        returnValue: false,
+      ) as bool);
 
   @override
   set sessionToken(String? value) => super.noSuchMethod(
@@ -92,6 +117,32 @@ class MockApiClient extends _i1.Mock implements _i4.ApiClient {
         Invocation.setter(
           #onPermissionDenied,
           value,
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  set fallbackStickyDuration(Duration? value) => super.noSuchMethod(
+        Invocation.setter(
+          #fallbackStickyDuration,
+          value,
+        ),
+        returnValueForMissingStub: null,
+      );
+
+  @override
+  void configureFailover({
+    String? primaryUrl,
+    String? fallbackUrl,
+  }) =>
+      super.noSuchMethod(
+        Invocation.method(
+          #configureFailover,
+          [],
+          {
+            #primaryUrl: primaryUrl,
+            #fallbackUrl: fallbackUrl,
+          },
         ),
         returnValueForMissingStub: null,
       );
@@ -138,7 +189,7 @@ class MockApiClient extends _i1.Mock implements _i4.ApiClient {
               ),
               (T v) => _i2.Future<T>.value(v),
             ) ??
-            _FakeFuture_0<T>(
+            _FakeFuture_1<T>(
               this,
               Invocation.method(
                 #withAdminPin,
@@ -167,7 +218,7 @@ class MockApiClient extends _i1.Mock implements _i4.ApiClient {
           [request],
         ),
         returnValue:
-            _i2.Future<_i3.StreamedResponse>.value(_FakeStreamedResponse_1(
+            _i2.Future<_i3.StreamedResponse>.value(_FakeStreamedResponse_2(
           this,
           Invocation.method(
             #send,
@@ -187,7 +238,7 @@ class MockApiClient extends _i1.Mock implements _i4.ApiClient {
           [url],
           {#headers: headers},
         ),
-        returnValue: _i2.Future<_i3.Response>.value(_FakeResponse_2(
+        returnValue: _i2.Future<_i3.Response>.value(_FakeResponse_3(
           this,
           Invocation.method(
             #head,
@@ -208,7 +259,7 @@ class MockApiClient extends _i1.Mock implements _i4.ApiClient {
           [url],
           {#headers: headers},
         ),
-        returnValue: _i2.Future<_i3.Response>.value(_FakeResponse_2(
+        returnValue: _i2.Future<_i3.Response>.value(_FakeResponse_3(
           this,
           Invocation.method(
             #get,
@@ -235,7 +286,7 @@ class MockApiClient extends _i1.Mock implements _i4.ApiClient {
             #encoding: encoding,
           },
         ),
-        returnValue: _i2.Future<_i3.Response>.value(_FakeResponse_2(
+        returnValue: _i2.Future<_i3.Response>.value(_FakeResponse_3(
           this,
           Invocation.method(
             #post,
@@ -266,7 +317,7 @@ class MockApiClient extends _i1.Mock implements _i4.ApiClient {
             #encoding: encoding,
           },
         ),
-        returnValue: _i2.Future<_i3.Response>.value(_FakeResponse_2(
+        returnValue: _i2.Future<_i3.Response>.value(_FakeResponse_3(
           this,
           Invocation.method(
             #put,
@@ -297,7 +348,7 @@ class MockApiClient extends _i1.Mock implements _i4.ApiClient {
             #encoding: encoding,
           },
         ),
-        returnValue: _i2.Future<_i3.Response>.value(_FakeResponse_2(
+        returnValue: _i2.Future<_i3.Response>.value(_FakeResponse_3(
           this,
           Invocation.method(
             #patch,
@@ -328,7 +379,7 @@ class MockApiClient extends _i1.Mock implements _i4.ApiClient {
             #encoding: encoding,
           },
         ),
-        returnValue: _i2.Future<_i3.Response>.value(_FakeResponse_2(
+        returnValue: _i2.Future<_i3.Response>.value(_FakeResponse_3(
           this,
           Invocation.method(
             #delete,

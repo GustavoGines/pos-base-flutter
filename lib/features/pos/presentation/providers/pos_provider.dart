@@ -19,6 +19,8 @@ import 'package:frontend_desktop/core/config/app_config.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:frontend_desktop/core/utils/a4_split_pdf_service.dart';
 import 'package:frontend_desktop/core/utils/afip_fiscal_pdf_service.dart';
+import 'package:frontend_desktop/core/presentation/widgets/ticket_preview_dialog.dart';
+import 'package:frontend_desktop/core/presentation/widgets/thermal_receipt_widget.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import 'package:frontend_desktop/features/customers/models/customer_model.dart';
 import 'package:frontend_desktop/features/auth/presentation/widgets/admin_pin_dialog.dart';
@@ -187,6 +189,9 @@ class PosProvider with ChangeNotifier {
 
   bool _lastSalePrinted = false;
   bool get lastSalePrinted => _lastSalePrinted;
+
+  bool _previewHandledInProvider = false;
+  bool get previewHandledInProvider => _previewHandledInProvider;
 
   Map<String, dynamic>? _lastDeliveryNote;
   Map<String, dynamic>? get lastDeliveryNote => _lastDeliveryNote;
@@ -1099,6 +1104,9 @@ class PosProvider with ChangeNotifier {
     final effectivePerceptionAmount = iibbPerceptionAmount ?? this.iibbPerceptionAmount;
     final effectivePerceptionRate = iibbPerceptionRate ?? (this.iibbPerceptionRate > 0 ? this.iibbPerceptionRate : null);
     final totalSnapshot = ((cartSubtotal + effectivePerceptionAmount + shippingCostSnapshot) * 100).roundToDouble() / 100.0;
+    final totalSavingsSnapshot = cartTotalSavings;
+    final grossSubtotalSnapshot = cartGrossSubtotal;
+    final discountLabelSnapshot = activeTierDiscountLabel;
 
     try {
       String? extractedSaleId;
@@ -1155,6 +1163,46 @@ class PosProvider with ChangeNotifier {
         // processSaleUseCase retorna entidad Sale
         extractedSaleId = result.id.toString();
         _lastDeliveryNote = result.deliveryNote;
+      }
+
+      if (requiresDispatch && _lastDeliveryNote == null) {
+        _lastDeliveryNote = {
+          'id': int.tryParse(extractedSaleId) ?? 0,
+          'sale_id': int.tryParse(extractedSaleId) ?? 0,
+          'status': fulfillmentStatus,
+          if (deliveryAddress != null && deliveryAddress.trim().isNotEmpty)
+            'delivery_address': deliveryAddress.trim(),
+          'customer': customerSnapshot != null
+              ? {
+                  'id': customerSnapshot.id,
+                  'name': customerSnapshot.name,
+                  'document_number': customerSnapshot.documentNumber,
+                  'tax_condition': customerSnapshot.taxCondition,
+                  'fiscal_address': customerSnapshot.fiscalAddress,
+                  'delivery_address': customerSnapshot.deliveryAddress,
+                  'phone': customerSnapshot.phone,
+                }
+              : {'name': 'Consumidor Final'},
+          'items': cartSnapshot
+              .map((item) => {
+                    'product_id': item.product.id,
+                    'product_name': item.product.name,
+                    'quantity': item.quantity,
+                    'quantity_purchased': item.quantity,
+                    'quantity_delivered':
+                        fulfillmentStatus == 'delivered' ? item.quantity : 0.0,
+                    'purchased_quantity': item.quantity,
+                    'delivered_quantity':
+                        fulfillmentStatus == 'delivered' ? item.quantity : 0.0,
+                    'product': {
+                      'id': item.product.id,
+                      'name': item.product.name,
+                      'internal_code': item.product.internalCode,
+                      'is_sold_by_weight': item.product.isSoldByWeight,
+                    },
+                  })
+              .toList(),
+        };
       }
 
       // Emisión de Factura Fiscal Electrónica ARCA/AFIP si fue requerida
@@ -1249,6 +1297,7 @@ class PosProvider with ChangeNotifier {
           resolvedPayments; // Guardamos la versión resuelta con nombres
       _wasLastSaleDispatched = requiresDispatch;
       _lastSalePrinted = settings != null;
+      _previewHandledInProvider = false;
 
       // Guardar snapshot del carrito ANTES de limpiarlo (lo necesita el dialog de Remito)
       _lastSaleCart = List<CartItem>.from(_cart);
@@ -1260,15 +1309,8 @@ class PosProvider with ChangeNotifier {
         try {
         if (localTerminal.printerFormat.startsWith('a4')) {
           final isDeliveredNow = fulfillmentStatus == 'delivered';
-          
-          // Si se entrega AHORA y es un formato A4, pos_screen intercepta para armar el PDF combinado.
-          // De lo contrario, usamos nuestro propio generador local de A4 para la venta simple.
-          final isA4FormatForDispatch = localTerminal.printerFormat == 'a4_split' || localTerminal.printerFormat == 'a4_normal' || localTerminal.printerFormat == 'a4';
-          
-          if (!(requiresDispatch && isDeliveredNow) || !isA4FormatForDispatch) {
+          {
             // settings no es null aquí (garantizado por el guard externo)
-            // Si requiere despacho pero NO es entrega inmediata, generamos el A4 normal de venta
-            // pero el remito se generará después desde Logística.
             final salePayload = {
               'id': extractedSaleId,
               'iibb_perception_amount': effectivePerceptionAmount,
@@ -1278,10 +1320,26 @@ class PosProvider with ChangeNotifier {
                 'quantity': i.quantity,
                 'unit_price': i.unitPrice,
                 'subtotal': i.subtotal,
+                'iva_rate': i.product.ivaRate,
+                'regular_price': i.product.sellingPrice,
+                'regular_subtotal': i.regularSubtotal,
+                'discount_amount': i.discountSavings,
+                'has_discount': i.hasDiscount,
+                'discount_label': i.hasActiveOffer
+                    ? i.offerBadgeLabel
+                    : (i.promotionalLabel ?? ''),
+                'surcharge_amount': i.surchargeAmount,
                 'product': {
+                  'name': i.product.name,
+                  'internal_code': i.product.internalCode,
                   'is_sold_by_weight': i.product.isSoldByWeight,
+                  'iva_rate': i.product.ivaRate,
+                  'selling_price': i.product.sellingPrice,
                 }
               }).toList(),
+              'subtotal_list': grossSubtotalSnapshot,
+              'discount_amount': totalSavingsSnapshot,
+              'discount_label': discountLabelSnapshot,
               'total': totalSnapshot,
               'shipping_cost': shippingCostSnapshot,
               'surcharge_amount': totalSurcharge,
@@ -1294,7 +1352,13 @@ class PosProvider with ChangeNotifier {
                   'document_number': customerSnapshot!.documentNumber,
                 if (customerSnapshot?.taxCondition != null)
                   'tax_condition': customerSnapshot!.taxCondition,
+                if (customerSnapshot?.fiscalAddress != null)
+                  'fiscal_address': customerSnapshot!.fiscalAddress,
+                if (customerSnapshot?.deliveryAddress != null)
+                  'delivery_address': customerSnapshot!.deliveryAddress,
               },
+              if (deliveryAddress != null && deliveryAddress.trim().isNotEmpty)
+                'delivery_address': deliveryAddress.trim(),
               'customer_name': customerSnapshot?.name ?? 'Consumidor Final',
               'electronic_invoice': _lastElectronicInvoice,
               'user': {'name': recalledUserSnapshot ?? userName},
@@ -1306,8 +1370,30 @@ class PosProvider with ChangeNotifier {
               pdfBytes = await AfipFiscalPdfService.generateFiscalInvoice(
                 sale: salePayload,
                 electronicInvoice: _lastElectronicInvoice!,
+                deliveryNote:
+                    (requiresDispatch && isDeliveredNow && _lastDeliveryNote != null)
+                        ? _lastDeliveryNote
+                        : null,
                 businessSettings: settings,
                 paperSize: localTerminal.pdfPaperSize,
+              );
+            } else if (requiresDispatch &&
+                isDeliveredNow &&
+                _lastDeliveryNote != null) {
+              pdfBytes =
+                  await A4SplitPdfService.generateA4SplitReceiptAndDispatch(
+                sale: salePayload,
+                deliveryNote: _lastDeliveryNote!,
+                businessName: settings.companyName ?? 'Mi Negocio',
+                businessAddress: settings.address,
+                phone: settings.phone ?? '',
+                cuit: settings.taxId ?? '',
+                taxCondition: settings.taxCondition,
+                iibb: settings.iibb,
+                activityStartDate: settings.activityStartDate,
+                vendorName: userName,
+                paperSize: localTerminal.pdfPaperSize,
+                businessSettings: settings,
               );
             } else {
               pdfBytes = await A4SplitPdfService.generateA4SingleReceipt(
@@ -1316,13 +1402,18 @@ class PosProvider with ChangeNotifier {
                 businessAddress: settings.address,
                 phone: settings.phone ?? '',
                 cuit: settings.taxId ?? '',
+                taxCondition: settings.taxCondition,
+                iibb: settings.iibb,
+                activityStartDate: settings.activityStartDate,
                 vendorName: userName,
                 paperSize: localTerminal.pdfPaperSize,
+                businessSettings: settings,
               );
             }
 
             final ctx = AppConfig.navigatorKey.currentContext;
             if (ctx != null && ctx.mounted) {
+              _previewHandledInProvider = true;
               if (showPreview) {
                 final result = await showDialog<String>(
                   context: ctx,
@@ -1460,55 +1551,143 @@ class PosProvider with ChangeNotifier {
           }
         } else {
           // Ruta Térmica: leer hardware 100% del LocalTerminalProvider
-          _activePrinter.electronicInvoice = _lastElectronicInvoice;
-          if (requiresDispatch && _lastDeliveryNote != null) {
-            // SPLIT TICKET: Venta + Orden de Retiro en el mismo rollo
-            await _activePrinter.printSplitTicket(
-              electronicInvoice: _lastElectronicInvoice,
-              items: cartSnapshot,
-              total: totalSnapshot,
-              shippingCost: shippingCostSnapshot,
-              settings: settings,
-              localTerminal: localTerminal,
-              deliveryNote: _lastDeliveryNote!,
-              paymentDetails: resolvedPayments,
-              receiptNumber: extractedSaleId,
-              deliveryNoteNumber: _lastDeliveryNote!['id']?.toString(),
-              userName: recalledUserSnapshot ?? userName,
-              cashierName: userName,
-              surchargeAmount: totalSurcharge,
-              tenderedAmount: tenderedAmount,
-              changeAmount: changeAmount,
-              customerName: _lastDeliveryNote!['sale']?['customer']?['name']
-                      ?.toString() ??
-                  _lastDeliveryNote!['sale']?['customer_name']?.toString() ??
-                  customerSnapshot?.name,
-              customerDoc: customerSnapshot?.documentNumber,
-              paperSizeOverride:
-                  localTerminal.printerFormat == 'thermal_58' ? '58mm' : '80mm',
-              iibbPerceptionAmount: effectivePerceptionAmount,
-            );
-          } else {
-            await _activePrinter.printSaleTicket(
-              electronicInvoice: _lastElectronicInvoice,
-              items: cartSnapshot,
-              total: totalSnapshot,
-              settings: settings,
-              localTerminal: localTerminal,
-              paperSizeOverride:
-                  localTerminal.printerFormat == 'thermal_58' ? '58mm' : '80mm',
-              paymentDetails: resolvedPayments,
-              receiptNumber: extractedSaleId,
-              userName: recalledUserSnapshot ?? userName,
-              cashierName: userName,
-              customerName: customerSnapshot?.name,
-              customerDoc: customerSnapshot?.documentNumber,
-              surchargeAmount: totalSurcharge,
-              tenderedAmount: tenderedAmount,
-              changeAmount: changeAmount,
-              shippingCost: shippingCostSnapshot,
-              iibbPerceptionAmount: effectivePerceptionAmount,
-            );
+          final isNarrow = localTerminal.printerFormat == 'thermal_58';
+          final paperWidth =
+              isNarrow ? ThermalPaperWidth.mm58 : ThermalPaperWidth.mm80;
+          bool confirmedToPrint = true;
+
+          // Mostrar Vista Previa Térmica DESPUÉS de que la venta y ARCA emitieron el comprobante real (igual que A4)
+          if (showPreview) {
+            final ctx = AppConfig.navigatorKey.currentContext;
+            if (ctx != null && ctx.mounted) {
+              confirmedToPrint = await TicketPreviewDialog.show(
+                ctx,
+                title:
+                    'Vista Previa — ${_lastElectronicInvoice != null ? "Ticket Fiscal ARCA" : "Ticket"} ${isNarrow ? "58mm" : "80mm"}',
+                paperWidth: paperWidth,
+                receiptWidget: ThermalReceiptWidget(
+                  paperWidth: paperWidth,
+                  businessSettings: settings,
+                  items: cartSnapshot,
+                  payments: resolvedPayments,
+                  total: totalSnapshot,
+                  surchargeAmount: totalSurcharge,
+                  discountAmount: totalSavingsSnapshot,
+                  discountLabel: discountLabelSnapshot,
+                  shippingCost: shippingCostSnapshot,
+                  tenderedAmount: tenderedAmount,
+                  changeAmount: changeAmount,
+                  iibbPerceptionAmount: effectivePerceptionAmount,
+                  iibbPerceptionRate: effectivePerceptionRate ?? 0.0,
+                  electronicInvoice: _lastElectronicInvoice,
+                  deliveryNote: (requiresDispatch &&
+                          fulfillmentStatus == 'delivered' &&
+                          _lastDeliveryNote != null)
+                      ? _lastDeliveryNote
+                      : null,
+                  saleNumber: extractedSaleId,
+                  cashierName: userName,
+                  customerName:
+                      _lastElectronicInvoice?['receiver_name']?.toString() ??
+                          customerSnapshot?.name,
+                  customerDoc:
+                      _lastElectronicInvoice?['doc_number']?.toString() ??
+                          customerSnapshot?.documentNumber,
+                  customerAddress:
+                      _lastElectronicInvoice?['receiver_address']?.toString() ??
+                          customerSnapshot?.fiscalAddress ??
+                          customerSnapshot?.deliveryAddress ??
+                          deliveryAddress,
+                ),
+              );
+            }
+          }
+
+          if (confirmedToPrint) {
+            _activePrinter.electronicInvoice = _lastElectronicInvoice;
+            if (requiresDispatch &&
+                fulfillmentStatus == 'delivered' &&
+                _lastDeliveryNote != null) {
+              // SPLIT TICKET: Venta + Remito en el mismo rollo (58mm y 80mm, Fiscal y No Fiscal)
+              await _activePrinter.printSplitTicket(
+                electronicInvoice: _lastElectronicInvoice,
+                items: cartSnapshot,
+                total: totalSnapshot,
+                shippingCost: shippingCostSnapshot,
+                settings: settings,
+                localTerminal: localTerminal,
+                deliveryNote: _lastDeliveryNote!,
+                paymentDetails: resolvedPayments,
+                receiptNumber: extractedSaleId,
+                deliveryNoteNumber: _lastDeliveryNote!['id']?.toString(),
+                userName: recalledUserSnapshot ?? userName,
+                cashierName: userName,
+                surchargeAmount: totalSurcharge,
+                discountAmount: totalSavingsSnapshot,
+                discountLabel: discountLabelSnapshot,
+                tenderedAmount: tenderedAmount,
+                changeAmount: changeAmount,
+                customerName:
+                    _lastElectronicInvoice?['receiver_name']?.toString() ??
+                        _lastDeliveryNote!['sale']?['customer']?['name']
+                            ?.toString() ??
+                        _lastDeliveryNote!['sale']?['customer_name']
+                            ?.toString() ??
+                        customerSnapshot?.name,
+                customerDoc:
+                    _lastElectronicInvoice?['doc_number']?.toString() ??
+                        customerSnapshot?.documentNumber,
+                customerAddress:
+                    _lastElectronicInvoice?['receiver_address']?.toString() ??
+                        customerSnapshot?.fiscalAddress ??
+                        customerSnapshot?.deliveryAddress ??
+                        deliveryAddress,
+                paperSizeOverride:
+                    localTerminal.printerFormat == 'thermal_58' ? '58mm' : '80mm',
+                iibbPerceptionAmount: effectivePerceptionAmount,
+              );
+            } else {
+              await _activePrinter.printSaleTicket(
+                electronicInvoice: _lastElectronicInvoice,
+                items: cartSnapshot,
+                total: totalSnapshot,
+                settings: settings,
+                localTerminal: localTerminal,
+                paperSizeOverride:
+                    localTerminal.printerFormat == 'thermal_58' ? '58mm' : '80mm',
+                paymentDetails: resolvedPayments,
+                receiptNumber: extractedSaleId,
+                userName: recalledUserSnapshot ?? userName,
+                cashierName: userName,
+                customerName:
+                    _lastElectronicInvoice?['receiver_name']?.toString() ??
+                        customerSnapshot?.name,
+                customerDoc:
+                    _lastElectronicInvoice?['doc_number']?.toString() ??
+                        customerSnapshot?.documentNumber,
+                customerAddress:
+                    _lastElectronicInvoice?['receiver_address']?.toString() ??
+                        customerSnapshot?.fiscalAddress ??
+                        customerSnapshot?.deliveryAddress ??
+                        deliveryAddress,
+                surchargeAmount: totalSurcharge,
+                discountAmount: totalSavingsSnapshot,
+                discountLabel: discountLabelSnapshot,
+                tenderedAmount: tenderedAmount,
+                changeAmount: changeAmount,
+                shippingCost: shippingCostSnapshot,
+                iibbPerceptionAmount: effectivePerceptionAmount,
+              );
+            }
+          } else if ((_hasCashInPayments(resolvedPayments) ||
+                  tenderedAmount > 0) &&
+              localTerminal.autoOpenCashDrawer) {
+            try {
+              await _activePrinter.openCashDrawer(localTerminal);
+            } catch (e) {
+              debugPrint(
+                  '=== Drawer Kick Aislado (preview cancelado) no bloqueante: $e ===');
+            }
           }
         }
       } catch (e) {
@@ -1736,15 +1915,27 @@ class PosProvider with ChangeNotifier {
         final rawItems = (pendingEntry['items'] as List?) ?? [];
         final ticketItems = rawItems.map<CartItem>((itemMap) {
           final prod = itemMap['product'] as Map<String, dynamic>? ?? {};
+          final ivaRateVal = double.tryParse(
+                  (itemMap['iva_rate'] ?? prod['iva_rate'] ?? '21')
+                      .toString()) ??
+              21.0;
+          final unitPriceVal =
+              double.tryParse(itemMap['unit_price'].toString()) ?? 0.0;
+          final regPriceVal = double.tryParse((itemMap['regular_price'] ??
+                      prod['selling_price'] ??
+                      unitPriceVal)
+                  .toString()) ??
+              unitPriceVal;
+          final hasSavings = regPriceVal > unitPriceVal + 0.01;
           final product = Product(
             id: (prod['id'] as num?)?.toInt() ?? 0,
             name: itemMap['product_name']?.toString() ??
                 prod['name']?.toString() ??
                 'Producto',
-            internalCode: '',
+            internalCode: prod['internal_code']?.toString() ?? '',
             costPrice: 0,
-            sellingPrice:
-                double.tryParse(itemMap['unit_price'].toString()) ?? 0.0,
+            sellingPrice: hasSavings ? regPriceVal : unitPriceVal,
+            ivaRate: ivaRateVal,
             stock: 0,
             active: true,
             isSoldByWeight: prod['is_sold_by_weight'] == true ||
@@ -1753,6 +1944,10 @@ class PosProvider with ChangeNotifier {
           return CartItem(
             product: product,
             quantity: double.tryParse(itemMap['quantity'].toString()) ?? 1.0,
+            promotionalPrice: hasSavings ? unitPriceVal : null,
+            promotionalLabel: hasSavings
+                ? (itemMap['discount_label']?.toString() ?? 'Descuento')
+                : null,
           );
         }).toList();
 
@@ -1789,11 +1984,131 @@ class PosProvider with ChangeNotifier {
                     if (aCash == bCash) return 0;
                     return aCash ? -1 : 1;
                   }))
-                .map((p) => {'name': p['name'], 'amount': p['amount']})
+                .map((p) => {
+                      'name': p['name'],
+                      'amount': p['amount'],
+                      'payment_method': {'name': p['name']},
+                    })
                 .toList();
 
+            final resolvedCustName =
+                (customerId != null && _selectedCustomer?.id == customerId)
+                    ? _selectedCustomer?.name
+                    : (pendingEntry['customer']?['name'] as String? ??
+                        pendingEntry['customer_name'] as String? ??
+                        _selectedCustomer?.name);
+            final resolvedCustDoc =
+                (customerId != null && _selectedCustomer?.id == customerId)
+                    ? _selectedCustomer?.documentNumber
+                    : (pendingEntry['customer']?['document_number'] as String? ??
+                        _selectedCustomer?.documentNumber);
+            final resolvedCustTaxCond =
+                (customerId != null && _selectedCustomer?.id == customerId)
+                    ? _selectedCustomer?.taxCondition
+                    : (pendingEntry['customer']?['tax_condition'] as String? ??
+                        _selectedCustomer?.taxCondition);
+            final resolvedCustAddress =
+                (customerId != null && _selectedCustomer?.id == customerId)
+                    ? (_selectedCustomer?.fiscalAddress ??
+                        _selectedCustomer?.deliveryAddress)
+                    : (pendingEntry['customer']?['fiscal_address'] as String? ??
+                        pendingEntry['customer']?['delivery_address'] as String? ??
+                        pendingEntry['delivery_address'] as String? ??
+                        _selectedCustomer?.fiscalAddress ??
+                        _selectedCustomer?.deliveryAddress);
+
+            // Descontar totalSurcharge si saleTotal ya venía como _grandTotal desde CheckoutDialog
+            final itemsSubtotal = ticketItems.fold<double>(
+                0.0, (sum, item) => sum + item.subtotal);
+            final itemsSavings = ticketItems.fold<double>(
+                0.0, (sum, item) => sum + item.discountSavings);
+            final itemsGross = ticketItems.fold<double>(
+                0.0, (sum, item) => sum + item.regularSubtotal);
+            final expectedBaseTotal = itemsSubtotal +
+                shippingCost +
+                (iibbPerceptionAmount ?? 0.0);
+            final baseSaleTotal = (totalSurcharge > 0 &&
+                    (saleTotal - expectedBaseTotal - totalSurcharge).abs() < 0.05)
+                ? expectedBaseTotal
+                : saleTotal;
+
             if (localTerminal.printerFormat.startsWith('a4')) {
-              final pdfBytes = await repository.downloadTicketPdf(saleId);
+              final salePayload = <String, dynamic>{
+                'id': saleId,
+                'iibb_perception_amount': iibbPerceptionAmount ?? 0.0,
+                'iibb_perception_rate': iibbPerceptionRate ?? 0.0,
+                'items': ticketItems
+                    .map((i) => {
+                          'product_name': i.product.name,
+                          'quantity': i.quantity,
+                          'unit_price': i.unitPrice,
+                          'subtotal': i.subtotal,
+                          'iva_rate': i.product.ivaRate,
+                          'regular_price': i.product.sellingPrice,
+                          'regular_subtotal': i.regularSubtotal,
+                          'discount_amount': i.discountSavings,
+                          'has_discount': i.hasDiscount,
+                          'discount_label': i.hasActiveOffer
+                              ? i.offerBadgeLabel
+                              : (i.promotionalLabel ?? ''),
+                          'surcharge_amount': i.surchargeAmount,
+                          'product': {
+                            'name': i.product.name,
+                            'internal_code': i.product.internalCode,
+                            'is_sold_by_weight': i.product.isSoldByWeight,
+                            'iva_rate': i.product.ivaRate,
+                            'selling_price': i.product.sellingPrice,
+                          }
+                        })
+                    .toList(),
+                'subtotal_list': itemsGross,
+                'discount_amount': itemsSavings,
+                'total': baseSaleTotal,
+                'shipping_cost': shippingCost,
+                'surcharge_amount': totalSurcharge,
+                'tendered_amount': tenderedAmount,
+                'change_amount': changeAmount,
+                'payments': resolvedPayments,
+                'customer': {
+                  'name': resolvedCustName ?? 'Consumidor Final',
+                  if (resolvedCustDoc != null)
+                    'document_number': resolvedCustDoc,
+                  if (resolvedCustTaxCond != null)
+                    'tax_condition': resolvedCustTaxCond,
+                  if (resolvedCustAddress != null)
+                    'fiscal_address': resolvedCustAddress,
+                },
+                'customer_name': resolvedCustName ?? 'Consumidor Final',
+                'electronic_invoice': _lastElectronicInvoice,
+                'user': {
+                  'name': pendingEntry['user']?['name'] as String? ?? userName
+                },
+                'cashier': {'name': userName},
+              };
+
+              final Uint8List pdfBytes;
+              if (_lastElectronicInvoice != null) {
+                pdfBytes = await AfipFiscalPdfService.generateFiscalInvoice(
+                  sale: salePayload,
+                  electronicInvoice: _lastElectronicInvoice!,
+                  businessSettings: safeSettings,
+                  paperSize: localTerminal.pdfPaperSize,
+                );
+              } else {
+                pdfBytes = await A4SplitPdfService.generateA4SingleReceipt(
+                  sale: salePayload,
+                  businessName: safeSettings.companyName ?? 'Mi Negocio',
+                  businessAddress: safeSettings.address,
+                  phone: safeSettings.phone ?? '',
+                  cuit: safeSettings.taxId ?? '',
+                  taxCondition: safeSettings.taxCondition,
+                  iibb: safeSettings.iibb,
+                  activityStartDate: safeSettings.activityStartDate,
+                  vendorName: userName,
+                  paperSize: localTerminal.pdfPaperSize,
+                  businessSettings: safeSettings,
+                );
+              }
               final ctx = AppConfig.navigatorKey.currentContext;
               if (ctx != null && ctx.mounted) {
                 if (showPreview) {
@@ -1941,35 +2256,75 @@ class PosProvider with ChangeNotifier {
                 }
               }
             } else {
-              _activePrinter.electronicInvoice = _lastElectronicInvoice;
-              final resolvedCustName = (customerId != null && _selectedCustomer?.id == customerId)
-                  ? _selectedCustomer?.name
-                  : (pendingEntry['customer']?['name'] as String? ??
-                      pendingEntry['customer_name'] as String? ??
-                      _selectedCustomer?.name);
-              final resolvedCustDoc = (customerId != null && _selectedCustomer?.id == customerId)
-                  ? _selectedCustomer?.documentNumber
-                  : (pendingEntry['customer']?['document_number'] as String? ??
-                      _selectedCustomer?.documentNumber);
-              await _activePrinter.printSaleTicket(
-                electronicInvoice: _lastElectronicInvoice,
-                items: ticketItems,
-                total: saleTotal,
-                settings: safeSettings,
-                localTerminal: localTerminal,
-                receiptNumber: saleId.toString(),
-                paymentDetails: resolvedPayments,
-                userName: pendingEntry['user']?['name'] as String? ?? userName,
-                cashierName: userName,
-                customerName: resolvedCustName,
-                customerDoc: resolvedCustDoc,
-                surchargeAmount: totalSurcharge,
-                tenderedAmount: tenderedAmount,
-                changeAmount: changeAmount,
-                shippingCost: shippingCost,
-                paperSizeOverride: localTerminal.printerFormat == 'thermal_58' ? '58mm' : '80mm',
-                iibbPerceptionAmount: iibbPerceptionAmount ?? 0.0,
-              );
+              final isNarrow = localTerminal.printerFormat == 'thermal_58';
+              final paperWidth =
+                  isNarrow ? ThermalPaperWidth.mm58 : ThermalPaperWidth.mm80;
+
+              bool confirmedToPrint = true;
+              if (showPreview) {
+                final ctx = AppConfig.navigatorKey.currentContext;
+                if (ctx != null && ctx.mounted) {
+                  confirmedToPrint = await TicketPreviewDialog.show(
+                    ctx,
+                    title:
+                        'Vista Previa — ${_lastElectronicInvoice != null ? "Ticket Fiscal ARCA" : "Ticket"} ${isNarrow ? "58mm" : "80mm"}',
+                    paperWidth: paperWidth,
+                    receiptWidget: ThermalReceiptWidget(
+                      paperWidth: paperWidth,
+                      businessSettings: safeSettings,
+                      items: ticketItems,
+                      payments: resolvedPayments,
+                      total: baseSaleTotal,
+                      surchargeAmount: totalSurcharge,
+                      discountAmount: itemsSavings,
+                      shippingCost: shippingCost,
+                      tenderedAmount: tenderedAmount,
+                      changeAmount: changeAmount,
+                      iibbPerceptionAmount: iibbPerceptionAmount ?? 0.0,
+                      iibbPerceptionRate: iibbPerceptionRate ?? 0.0,
+                      electronicInvoice: _lastElectronicInvoice,
+                      saleNumber: saleId.toString(),
+                      cashierName: userName,
+                      customerName: resolvedCustName,
+                      customerDoc: resolvedCustDoc,
+                      customerAddress: resolvedCustAddress,
+                    ),
+                  );
+                }
+              }
+
+              if (confirmedToPrint) {
+                _activePrinter.electronicInvoice = _lastElectronicInvoice;
+                await _activePrinter.printSaleTicket(
+                  electronicInvoice: _lastElectronicInvoice,
+                  items: ticketItems,
+                  total: baseSaleTotal,
+                  settings: safeSettings,
+                  localTerminal: localTerminal,
+                  receiptNumber: saleId.toString(),
+                  paymentDetails: resolvedPayments,
+                  userName: pendingEntry['user']?['name'] as String? ?? userName,
+                  cashierName: userName,
+                  customerName: resolvedCustName,
+                  customerDoc: resolvedCustDoc,
+                  customerAddress: resolvedCustAddress,
+                  surchargeAmount: totalSurcharge,
+                  discountAmount: itemsSavings,
+                  tenderedAmount: tenderedAmount,
+                  changeAmount: changeAmount,
+                  shippingCost: shippingCost,
+                  paperSizeOverride: localTerminal.printerFormat == 'thermal_58' ? '58mm' : '80mm',
+                  iibbPerceptionAmount: iibbPerceptionAmount ?? 0.0,
+                );
+              } else if ((_hasCashInPayments(payments) || tenderedAmount > 0) &&
+                  localTerminal.autoOpenCashDrawer) {
+                try {
+                  await _activePrinter.openCashDrawer(localTerminal);
+                } catch (e) {
+                  debugPrint(
+                      '=== Drawer Kick Aislado (pending preview cancelada) no bloqueante: $e ===');
+                }
+              }
             }
           } catch (e) {
             _printerWarning =

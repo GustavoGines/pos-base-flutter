@@ -183,14 +183,18 @@ class FakeFiscalPosProvider extends ChangeNotifier implements PosProvider {
 }
 
 class FakeSettingsProvider extends ChangeNotifier implements SettingsProvider {
+  final String? taxCondition;
+  FakeSettingsProvider({this.taxCondition});
+
   @override
   int get assignedRegisterId => 1;
-  final BusinessSettings _settings = const BusinessSettings(
+  late final BusinessSettings _settings = BusinessSettings(
     companyName: 'Comercio Fiscal Test',
     taxId: '30-50001091-2',
     address: 'Av. Libertador 1234, CABA',
+    taxCondition: taxCondition,
     afipEnabled: true,
-    features: FeatureFlags(fastPos: true, logistics: false),
+    features: const FeatureFlags(fastPos: true, logistics: false),
   );
 
   @override
@@ -267,6 +271,24 @@ class FakeCustomerProvider extends ChangeNotifier implements CustomerProvider {
   Future<void> fetchCustomers({String? search}) async {}
 
   @override
+  Future<Map<String, dynamic>?> lookupFiscalRecipient(String rawDocNumber) async {
+    final clean = rawDocNumber.replaceAll(RegExp(r'\D'), '');
+    if (clean == '23456789') {
+      return {
+        'found': true,
+        'source': 'arca_padron',
+        'doc_type': 96,
+        'doc_number': '23456789',
+        'cuit': '20234567896',
+        'name': 'Roberto Carlos Gómez',
+        'tax_condition': 'consumidor_final',
+        'address': 'Av. Libertador 900, Formosa',
+      };
+    }
+    return null;
+  }
+
+  @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
@@ -298,6 +320,7 @@ class FakeCatalogProvider extends ChangeNotifier implements CatalogProvider {
 Widget buildFiscalTestApp({
   required FakeFiscalPosProvider posProvider,
   FakeCustomerProvider? customerProvider,
+  String? issuerTaxCondition,
   double total = 1500.0,
 }) {
   final apiClient = ApiClient(
@@ -307,7 +330,9 @@ Widget buildFiscalTestApp({
   return MultiProvider(
     providers: [
       ChangeNotifierProvider<PosProvider>.value(value: posProvider),
-      ChangeNotifierProvider<SettingsProvider>(create: (_) => FakeSettingsProvider()),
+      ChangeNotifierProvider<SettingsProvider>(
+        create: (_) => FakeSettingsProvider(taxCondition: issuerTaxCondition),
+      ),
       ChangeNotifierProvider<LocalTerminalProvider>(create: (_) => FakeLocalTerminalProvider()),
       ChangeNotifierProvider<AuthProvider>(create: (_) => FakeAuthProvider()),
       ChangeNotifierProvider<CustomerProvider>(create: (_) => customerProvider ?? FakeCustomerProvider()),
@@ -355,6 +380,22 @@ void main() {
       expect(AfipModulo11.validateDni('12345'), isFalse); // < 7 dígitos
       expect(AfipModulo11.validateDni('999999999'), isFalse); // > 8 dígitos
       expect(AfipModulo11.validateDni(null), isFalse);
+    });
+
+    test('Smartly infers Tipo Doc (96 vs 80 vs 99) and cross-matches DNI <-> CUIT', () {
+      expect(AfipModulo11.inferDocType('', requiresIdentification: false), equals(99));
+      expect(AfipModulo11.inferDocType('', requiresIdentification: true), equals(96));
+      expect(AfipModulo11.inferDocType('35123456'), equals(96));
+      expect(AfipModulo11.inferDocType('20351234569'), equals(80));
+      expect(AfipModulo11.inferDocType('20351234569', currentDocType: 86), equals(86));
+
+      final customers = FakeCustomerProvider().customers;
+      // Match exact DNI
+      expect(AfipModulo11.findMatchingCustomer(customers, '35123456')?.name, equals('Juan Pérez'));
+      // Cross-match CUIT containing Juan Pérez's DNI (20-35123456-X)
+      expect(AfipModulo11.findMatchingCustomer(customers, '20351234569')?.name, equals('Juan Pérez'));
+      // Cross-match DNI extracted from Empresa SA's CUIT (30-50001091-2 -> 50001091)
+      expect(AfipModulo11.findMatchingCustomer(customers, '50001091')?.name, equals('Empresa SA'));
     });
   });
 
@@ -568,6 +609,121 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('Issuer IVA Responsable Inscripto disables Factura C segment', (tester) async {
+      final posProvider = FakeFiscalPosProvider();
+      await tester.pumpWidget(buildFiscalTestApp(
+        posProvider: posProvider,
+        issuerTaxCondition: 'IVA Responsable Inscripto',
+      ));
+      await tester.pumpAndSettle();
+
+      await tester.ensureVisible(find.text('Factura Fiscal ARCA'));
+      await tester.tap(find.text('Factura Fiscal ARCA'));
+      await tester.pumpAndSettle();
+
+      final segmentedBtn = tester.widget<SegmentedButton<int>>(
+        find.byKey(const Key('voucher_type_segmented_button')),
+      );
+      final segmentA = segmentedBtn.segments.firstWhere((s) => s.value == 1);
+      final segmentB = segmentedBtn.segments.firstWhere((s) => s.value == 6);
+      final segmentC = segmentedBtn.segments.firstWhere((s) => s.value == 11);
+
+      expect(segmentA.enabled, isTrue);
+      expect(segmentB.enabled, isTrue);
+      expect(segmentC.enabled, isFalse);
+      expect(segmentedBtn.selected, equals({6}));
+    });
+
+    testWidgets('Issuer Responsable Monotributo disables Factura A/B and forces Factura C', (tester) async {
+      final posProvider = FakeFiscalPosProvider();
+      await tester.pumpWidget(buildFiscalTestApp(
+        posProvider: posProvider,
+        issuerTaxCondition: 'Responsable Monotributo',
+      ));
+      await tester.pumpAndSettle();
+
+      await tester.ensureVisible(find.text('Factura Fiscal ARCA'));
+      await tester.tap(find.text('Factura Fiscal ARCA'));
+      await tester.pumpAndSettle();
+
+      final segmentedBtn = tester.widget<SegmentedButton<int>>(
+        find.byKey(const Key('voucher_type_segmented_button')),
+      );
+      final segmentA = segmentedBtn.segments.firstWhere((s) => s.value == 1);
+      final segmentB = segmentedBtn.segments.firstWhere((s) => s.value == 6);
+      final segmentC = segmentedBtn.segments.firstWhere((s) => s.value == 11);
+
+      expect(segmentA.enabled, isFalse);
+      expect(segmentB.enabled, isFalse);
+      expect(segmentC.enabled, isTrue);
+      expect(segmentedBtn.selected, equals({11}));
+    });
+
+    testWidgets('Proactively warns and requires DNI/CUIT when total >= 340000 and auto-fills matched customer', (tester) async {
+      final posProvider = FakeFiscalPosProvider();
+      await tester.pumpWidget(buildFiscalTestApp(
+        posProvider: posProvider,
+        total: 500000.0,
+      ));
+      await tester.pumpAndSettle();
+
+      await tester.ensureVisible(find.text('Factura Fiscal ARCA'));
+      await tester.tap(find.text('Factura Fiscal ARCA'));
+      await tester.pumpAndSettle();
+
+      // Banner de tope anónimo visible
+      expect(find.byKey(const Key('fiscal_anonymous_limit_banner')), findsOneWidget);
+
+      // El botón CONFIRMAR PAGO debe estar deshabilitado mientras no se ingrese DNI/CUIT
+      var submitBtn = tester.widget<ElevatedButton>(
+        find.widgetWithText(ElevatedButton, 'CONFIRMAR PAGO'),
+      );
+      expect(submitBtn.onPressed, isNull);
+
+      // Al tipear el DNI de Juan Pérez (35123456), se autocompleta su nombre, desaparece el cartel amarillo y se habilita el cobro
+      await tester.ensureVisible(find.byKey(const Key('fiscal_doc_number_field')));
+      await tester.enterText(find.byKey(const Key('fiscal_doc_number_field')), '35123456D');
+      await tester.pumpAndSettle();
+
+      // Verifica que el cartel de tope anónimo desapareció al haber un DNI válido y que la letra 'D' fue filtrada
+      expect(find.byKey(const Key('fiscal_anonymous_limit_banner')), findsNothing);
+      expect(find.text('✓ Cliente registrado: Juan Pérez'), findsOneWidget);
+      submitBtn = tester.widget<ElevatedButton>(
+        find.widgetWithText(ElevatedButton, 'CONFIRMAR PAGO'),
+      );
+      expect(submitBtn.onPressed, isNotNull);
+    });
+
+    testWidgets('Resolves unknown local DNI via remote ARCA Padron lookup and auto-fills name and address', (tester) async {
+      final posProvider = FakeFiscalPosProvider();
+      await tester.pumpWidget(buildFiscalTestApp(
+        posProvider: posProvider,
+        total: 500000.0,
+      ));
+      await tester.pumpAndSettle();
+
+      await tester.ensureVisible(find.text('Factura Fiscal ARCA'));
+      await tester.tap(find.text('Factura Fiscal ARCA'));
+      await tester.pumpAndSettle();
+
+      // Tipear un DNI que no está en la lista local sino en el Padrón ARCA (23456789)
+      await tester.ensureVisible(find.byKey(const Key('fiscal_doc_number_field')));
+      await tester.enterText(find.byKey(const Key('fiscal_doc_number_field')), '23456789');
+      await tester.pumpAndSettle();
+
+      expect(find.text('✓ Padrón ARCA: Roberto Carlos Gómez'), findsOneWidget);
+
+      await tester.tap(find.widgetWithText(ElevatedButton, 'CONFIRMAR PAGO'));
+      await tester.pumpAndSettle();
+
+      expect(posProvider.capturedFiscalInvoiceData, isNotNull);
+      final payload = posProvider.capturedFiscalInvoiceData!;
+      expect(payload['doc_type'], equals(96));
+      expect(payload['doc_number'], equals('23456789'));
+      expect(payload['receiver_name'], equals('Roberto Carlos Gómez'));
+      expect(payload['receiver_address'], equals('Av. Libertador 900, Formosa'));
     });
   });
 }

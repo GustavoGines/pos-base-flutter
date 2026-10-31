@@ -7,11 +7,12 @@ import '../../../../core/network/api_client.dart';
 class CustomerProvider extends ChangeNotifier {
   final String baseUrl;
   final ApiClient client;
-  
+
   bool _isLoading = false;
   List<Customer> _customers = [];
   String _searchQuery = '';
   List<Map<String, dynamic>> _pendingSales = [];
+  final Map<String, Map<String, dynamic>> _padronCache = {};
 
   bool get isLoading => _isLoading;
   List<Customer> get customers => _customers;
@@ -48,7 +49,7 @@ class CustomerProvider extends ChangeNotifier {
     }
     _isLoading = true;
     notifyListeners();
-    
+
     try {
       final queryParam = (search != null && search.isNotEmpty) ? '?search=$search' : '';
       final response = await client.get(Uri.parse('$baseUrl/customers$queryParam'), headers: {
@@ -71,6 +72,39 @@ class CustomerProvider extends ChangeNotifier {
     }
   }
 
+  /// Consulta datos fiscales por DNI (7-8 dígitos) o CUIT/CUIL (11 dígitos)
+  /// en el backend (Clientes locales -> Historial de facturas -> Padrón Oficial ARCA).
+  Future<Map<String, dynamic>?> lookupFiscalRecipient(String rawDocNumber) async {
+    final clean = rawDocNumber.replaceAll(RegExp(r'\D'), '');
+    if (clean.length < 7 || (clean.length > 8 && clean.length != 11)) {
+      return null;
+    }
+    if (clean.length == 11 && !AfipModulo11.validateCuit(clean)) {
+      return null;
+    }
+    if (_padronCache.containsKey(clean)) {
+      return _padronCache[clean];
+    }
+
+    try {
+      final response = await client.get(
+        Uri.parse('$baseUrl/electronic-invoices/lookup-recipient?doc_number=$clean'),
+        headers: {'Accept': 'application/json'},
+      );
+      if (response.statusCode == 200) {
+        final decoded = json.decode(response.body) as Map<String, dynamic>;
+        final data = decoded['data'] as Map<String, dynamic>?;
+        if (data != null && data['found'] == true) {
+          _padronCache[clean] = data;
+          return data;
+        }
+      }
+    } catch (_) {
+      // Silencioso: no bloquea el flujo de cobro si ARCA no está disponible
+    }
+    return null;
+  }
+
   Future<bool> createCustomer(Map<String, dynamic> data) async {
     if (_accessConfirmed && !_hasAccessToModule) {
       throw Exception('El módulo de Cuentas Corrientes requiere el Plan Premium o el módulo adicional habilitado.');
@@ -79,7 +113,7 @@ class CustomerProvider extends ChangeNotifier {
       if (!data.containsKey('balance') || data['balance'].toString().isEmpty) {
         data['balance'] = 0.00;
       }
-      
+
       final response = await client.post(
         Uri.parse('$baseUrl/customers'),
         headers: {
@@ -167,8 +201,8 @@ class CustomerProvider extends ChangeNotifier {
   }
 
   Future<bool> registerPayment({
-    required int customerId, 
-    double? amount, 
+    required int customerId,
+    double? amount,
     String? paymentMethod,
     List<Map<String, dynamic>>? payments,
     String description = '',
@@ -180,7 +214,7 @@ class CustomerProvider extends ChangeNotifier {
   }) async {
     try {
       final Map<String, dynamic> bodyPayload = {};
-      
+
       if (payments != null && payments.isNotEmpty) {
         bodyPayload['payments'] = payments;
       } else if (amount != null && paymentMethod != null) {
@@ -193,7 +227,7 @@ class CustomerProvider extends ChangeNotifier {
       if (description.isNotEmpty) {
         bodyPayload['description'] = description;
       }
-      
+
       if (saleIds.isNotEmpty) {
         bodyPayload['sale_ids'] = saleIds;
       }
@@ -253,7 +287,7 @@ class CustomerProvider extends ChangeNotifier {
       // Silencioso
     }
   }
-  
+
   void setSearchQuery(String query) {
     _searchQuery = query;
     fetchCustomers(search: query);

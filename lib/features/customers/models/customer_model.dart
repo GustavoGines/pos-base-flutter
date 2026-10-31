@@ -97,7 +97,7 @@ class Customer {
       iibbPerceptionRate: json['iibb_perception_rate'] != null
           ? double.tryParse(json['iibb_perception_rate'].toString().replaceAll(',', '.'))
           : null,
-      transactions: json['transactions'] != null 
+      transactions: json['transactions'] != null
           ? (json['transactions'] as List).map((t) => CustomerTransaction.fromJson(t)).toList()
           : [],
     );
@@ -210,5 +210,75 @@ class AfipModulo11 {
     if (num == null) return false;
     return num >= 1000000 && num <= 99999999;
   }
-}
 
+  /// Detecta inteligentemente el Tipo de Documento AFIP/ARCA (80=CUIT, 86=CUIL, 96=DNI, 99=S/D)
+  /// a medida que el usuario tipea los dígitos.
+  static int inferDocType(
+    String? rawInput, {
+    int currentDocType = 96,
+    bool isFacturaA = false,
+    bool requiresIdentification = false,
+  }) {
+    if (isFacturaA) return 80;
+    final digits = (rawInput ?? '').replaceAll(RegExp(r'\D'), '');
+    if (digits.isEmpty) {
+      return requiresIdentification ? 96 : 99;
+    }
+    if (digits.length <= 8) {
+      return 96; // DNI (mientras tipea hasta 8 dígitos)
+    }
+    // 9 a 11 dígitos -> CUIT (80) o CUIL (86)
+    final isCompanyPrefix = digits.startsWith('30') ||
+        digits.startsWith('33') ||
+        digits.startsWith('34');
+    if (isCompanyPrefix) return 80;
+    if (currentDocType == 86) return 86;
+    return 80;
+  }
+
+  /// Busca instantáneamente en el padrón local de clientes por coincidencia exacta
+  /// de DNI/CUIT o por cruce inteligente entre DNI (7-8 dígitos) y los 8 dígitos centrales del CUIT/CUIL (11 dígitos).
+  static Customer? findMatchingCustomer(
+    Iterable<Customer> customers,
+    String? rawInput,
+  ) {
+    final digits = (rawInput ?? '').replaceAll(RegExp(r'\D'), '');
+    if (digits.length < 7) return null;
+    if (digits.length > 8 && digits.length < 11) return null;
+
+    // 1. Coincidencia exacta de dígitos
+    for (final c in customers) {
+      final cDigits = c.documentNumber.replaceAll(RegExp(r'\D'), '');
+      if (cDigits.isNotEmpty && cDigits == digits) {
+        return c;
+      }
+    }
+
+    // 2. Cruce inteligente DNI (7-8 dígitos) <-> CUIT/CUIL (11 dígitos)
+    String? targetDni;
+    if (digits.length >= 7 && digits.length <= 8) {
+      targetDni = digits.replaceFirst(RegExp(r'^0+'), '');
+    } else if (digits.length == 11) {
+      targetDni = digits.substring(2, 10).replaceFirst(RegExp(r'^0+'), '');
+    }
+
+    if (targetDni != null && targetDni.length >= 7) {
+      for (final c in customers) {
+        final cDigits = c.documentNumber.replaceAll(RegExp(r'\D'), '');
+        if (cDigits.length >= 7 && cDigits.length <= 8) {
+          if (cDigits.replaceFirst(RegExp(r'^0+'), '') == targetDni) {
+            return c;
+          }
+        } else if (cDigits.length == 11) {
+          final cMiddleDni =
+              cDigits.substring(2, 10).replaceFirst(RegExp(r'^0+'), '');
+          if (cMiddleDni == targetDni) {
+            return c;
+          }
+        }
+      }
+    }
+
+    return null;
+  }
+}
