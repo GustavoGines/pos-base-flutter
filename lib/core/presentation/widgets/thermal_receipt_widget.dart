@@ -744,7 +744,7 @@ class ThermalReceiptWidget extends StatelessWidget {
 
       final qtyStr = isSoldByWeight
           ? '${quantity.toQty()} kg'
-          : (quantity % 1 == 0 ? '${quantity.toInt()}' : quantity.toQty());
+          : (quantity % 1 == 0 ? '${quantity.toInt()} un' : '${quantity.toQty()} un');
 
       final aliquotTag = showIvaAliquot
           ? ' (${ivaRate == ivaRate.roundToDouble() ? ivaRate.toInt() : ivaRate})'

@@ -599,6 +599,92 @@ class _PosScreenState extends State<PosScreen> {
   String _formatQuickLookStock(double qty, bool isByWeight) =>
       isByWeight ? '${qty.toStringAsFixed(3)} Kg' : '${qty.toInt()} u.';
 
+  void _showImageZoomDialog(BuildContext context, Product product) {
+    if (product.imageUrl == null || product.imageUrl!.isEmpty) return;
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        insetPadding: const EdgeInsets.all(24),
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 620, maxHeight: 620),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: const [
+              BoxShadow(
+                color: Colors.black45,
+                blurRadius: 24,
+                offset: Offset(0, 10),
+              ),
+            ],
+          ),
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
+                      product.name,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded),
+                    tooltip: 'Cerrar',
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ],
+              ),
+              const Divider(height: 16),
+              Flexible(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: InteractiveViewer(
+                    clipBehavior: Clip.none,
+                    minScale: 1.0,
+                    maxScale: 3.5,
+                    child: CachedNetworkImage(
+                      imageUrl: product.imageUrl!,
+                      fit: BoxFit.contain,
+                      placeholder: (context, url) => const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(40.0),
+                          child: CircularProgressIndicator(),
+                        ),
+                      ),
+                      errorWidget: (context, url, error) => const Center(
+                        child: Icon(Icons.broken_image_outlined,
+                            size: 64, color: Colors.grey),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Podés hacer zoom con la rueda del mouse o gestos táctiles',
+                style: TextStyle(
+                  fontSize: 11.5,
+                  color: Colors.grey.shade600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   void _showProductQuickLookDialog(Product product) {
     final localTerminal =
         Provider.of<LocalTerminalProvider>(context, listen: false);
@@ -641,89 +727,287 @@ class _PosScreenState extends State<PosScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // ── Header: foto + identidad ──
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      width: 64,
-                      height: 64,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: Colors.grey.shade300),
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(9),
-                        child: hasImage
-                            ? CachedNetworkImage(
-                                imageUrl: product.imageUrl!,
-                                fit: BoxFit.contain,
-                                errorWidget: (context, url, error) => Icon(
-                                  isByWeight
-                                      ? Icons.scale_rounded
-                                      : Icons.inventory_2_outlined,
-                                  color: accent,
-                                  size: 30,
-                                ),
-                              )
-                            : Icon(
-                                isByWeight
-                                    ? Icons.scale_rounded
-                                    : Icons.inventory_2_outlined,
-                                color: accent,
-                                size: 30,
-                              ),
-                      ),
+                // ── Header: Hero Media Showcase Enterprise o Fallback Compacto ──
+                if (hasImage) ...[
+                  // ── Hero Media Showcase Enterprise (175px) ──
+                  Container(
+                    width: double.infinity,
+                    height: 175,
+                    margin: const EdgeInsets.only(bottom: 14),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade50,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: Colors.grey.shade200),
                     ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(13),
+                      child: Stack(
+                        fit: StackFit.expand,
                         children: [
-                          if (product.category?.name != null)
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 7, vertical: 2),
-                              margin: const EdgeInsets.only(bottom: 4),
-                              decoration: BoxDecoration(
-                                color: accent.withValues(alpha: 0.12),
-                                borderRadius: BorderRadius.circular(20),
-                                border: Border.all(
-                                    color: accent.withValues(alpha: 0.35)),
-                              ),
-                              child: Text(
-                                product.category!.name,
-                                style: TextStyle(
-                                    fontSize: 10.5,
+                          Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              onTap: () =>
+                                  _showImageZoomDialog(context, product),
+                              borderRadius: BorderRadius.circular(13),
+                              child: Padding(
+                                padding: const EdgeInsets.all(12.0),
+                                child: CachedNetworkImage(
+                                  imageUrl: product.imageUrl!,
+                                  fit: BoxFit.contain,
+                                  placeholder: (context, url) => const Center(
+                                    child: SizedBox(
+                                      width: 24,
+                                      height: 24,
+                                      child: CircularProgressIndicator(
+                                          strokeWidth: 2),
+                                    ),
+                                  ),
+                                  errorWidget: (context, url, error) => Icon(
+                                    isByWeight
+                                        ? Icons.scale_rounded
+                                        : Icons.inventory_2_outlined,
                                     color: accent,
-                                    fontWeight: FontWeight.w700),
+                                    size: 48,
+                                  ),
+                                ),
                               ),
                             ),
-                          Text(
-                            product.name,
-                            style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 15,
-                                height: 1.2),
                           ),
-                          const SizedBox(height: 6),
-                          Wrap(
-                            spacing: 6,
-                            runSpacing: 4,
-                            children: [
-                              if (product.internalCode.isNotEmpty)
-                                _quickLookCodeChip('Int', product.internalCode),
-                              if (product.barcode != null &&
-                                  product.barcode!.isNotEmpty)
-                                _quickLookCodeChip('EAN', product.barcode!),
-                            ],
+                          // Badges flotantes superiores
+                          Positioned(
+                            top: 8,
+                            left: 8,
+                            right: 8,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                if (product.category?.name != null)
+                                  Flexible(
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 8, vertical: 3),
+                                      decoration: BoxDecoration(
+                                        color:
+                                            Colors.white.withValues(alpha: 0.92),
+                                        borderRadius: BorderRadius.circular(20),
+                                        border: Border.all(
+                                            color: accent.withValues(alpha: 0.35)),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: Colors.black
+                                                .withValues(alpha: 0.05),
+                                            blurRadius: 4,
+                                            offset: const Offset(0, 1),
+                                          ),
+                                        ],
+                                      ),
+                                      child: Text(
+                                        product.category!.name.toUpperCase(),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          color: accent,
+                                          fontWeight: FontWeight.w700,
+                                          letterSpacing: 0.3,
+                                        ),
+                                      ),
+                                    ),
+                                  )
+                                else
+                                  const SizedBox.shrink(),
+                                const SizedBox(width: 8),
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (hasPromo)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 7, vertical: 3),
+                                        margin:
+                                            const EdgeInsets.only(right: 6),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFF7B1FA2),
+                                          borderRadius:
+                                              BorderRadius.circular(12),
+                                        ),
+                                        child: const Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(
+                                                Icons
+                                                    .local_fire_department_rounded,
+                                                size: 11,
+                                                color: Colors.white),
+                                            SizedBox(width: 2),
+                                            Text(
+                                              'OFERTA',
+                                              style: TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 9.5,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    Material(
+                                      color:
+                                          Colors.white.withValues(alpha: 0.92),
+                                      shape: const CircleBorder(),
+                                      elevation: 1,
+                                      shadowColor: Colors.black26,
+                                      child: InkWell(
+                                        customBorder: const CircleBorder(),
+                                        onTap: () => _showImageZoomDialog(
+                                            context, product),
+                                        child: const Tooltip(
+                                          message: 'Ampliar imagen (HD)',
+                                          child: Padding(
+                                            padding: EdgeInsets.all(6.0),
+                                            child: Icon(
+                                              Icons.fullscreen_rounded,
+                                              size: 18,
+                                              color: Colors.black87,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                          // Hint inferior derecho sutil
+                          Positioned(
+                            bottom: 6,
+                            right: 8,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withValues(alpha: 0.06),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.zoom_in,
+                                      size: 12, color: Colors.grey.shade600),
+                                  const SizedBox(width: 3),
+                                  Text(
+                                    'Clic para ampliar',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: Colors.grey.shade600,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
                           ),
                         ],
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                  // Nombre e identidad del producto debajo del Hero
+                  Text(
+                    product.name,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                      height: 1.25,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    children: [
+                      if (product.internalCode.isNotEmpty)
+                        _quickLookCodeChip('Int', product.internalCode),
+                      if (product.barcode != null &&
+                          product.barcode!.isNotEmpty)
+                        _quickLookCodeChip('EAN', product.barcode!),
+                    ],
+                  ),
+                ] else ...[
+                  // ── Fallback Compacto para productos SIN imagen ──
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 60,
+                        height: 60,
+                        decoration: BoxDecoration(
+                          color: accent.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                              color: accent.withValues(alpha: 0.25)),
+                        ),
+                        child: Center(
+                          child: Icon(
+                            isByWeight
+                                ? Icons.scale_rounded
+                                : Icons.inventory_2_outlined,
+                            color: accent,
+                            size: 30,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (product.category?.name != null)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 7, vertical: 2),
+                                margin: const EdgeInsets.only(bottom: 4),
+                                decoration: BoxDecoration(
+                                  color: accent.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(
+                                      color: accent.withValues(alpha: 0.35)),
+                                ),
+                                child: Text(
+                                  product.category!.name,
+                                  style: TextStyle(
+                                      fontSize: 10.5,
+                                      color: accent,
+                                      fontWeight: FontWeight.w700),
+                                ),
+                              ),
+                            Text(
+                              product.name,
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 15,
+                                  height: 1.2),
+                            ),
+                            const SizedBox(height: 6),
+                            Wrap(
+                              spacing: 6,
+                              runSpacing: 4,
+                              children: [
+                                if (product.internalCode.isNotEmpty)
+                                  _quickLookCodeChip(
+                                      'Int', product.internalCode),
+                                if (product.barcode != null &&
+                                    product.barcode!.isNotEmpty)
+                                  _quickLookCodeChip('EAN', product.barcode!),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
                 const SizedBox(height: 14),
 
                 // ── KPIs: Stock + Ventas/Ticket ──
