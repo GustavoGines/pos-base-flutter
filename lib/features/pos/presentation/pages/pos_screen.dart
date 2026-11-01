@@ -3368,14 +3368,27 @@ class _PosScreenState extends State<PosScreen> {
             child: Stack(
               alignment: Alignment.center,
               children: [
-                const FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: PosWatermarkLogo(size: 260),
-                ),
+                if (pos.cart.isNotEmpty)
+                  const FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: PosWatermarkLogo(size: 260),
+                  ),
                 if (pos.cart.isEmpty)
                   const Center(
-                    child: Text('El carrito está vacío',
-                        style: TextStyle(color: Colors.grey)),
+                    child: SingleChildScrollView(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: PosWatermarkLogo(size: 220),
+                          ),
+                          SizedBox(height: 12),
+                          Text('El carrito está vacío',
+                              style: TextStyle(color: Colors.grey)),
+                        ],
+                      ),
+                    ),
                   )
                 else
                   ListView.separated(
@@ -4507,10 +4520,6 @@ class _PosScreenState extends State<PosScreen> {
             child: Stack(
               alignment: Alignment.center,
               children: [
-                const FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: PosWatermarkLogo(size: 360),
-                ),
                 Consumer<CatalogProvider>(
                   builder: (context, catalog, _) {
                     if (catalog.isLoading) {

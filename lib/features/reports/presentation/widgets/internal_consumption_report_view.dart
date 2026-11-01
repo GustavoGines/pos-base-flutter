@@ -234,7 +234,7 @@ class _InternalConsumptionReportViewState extends State<InternalConsumptionRepor
                                           width: double.infinity,
                                           child: DataTable(
                                             dataRowMinHeight: 40,
-                                            dataRowMaxHeight: 48,
+                                            dataRowMaxHeight: 64,
                                             headingRowHeight: 48,
                                             headingRowColor: WidgetStateProperty.all(Colors.grey.shade50),
                                             columns: const [
@@ -247,7 +247,7 @@ class _InternalConsumptionReportViewState extends State<InternalConsumptionRepor
                                               final cost = double.tryParse(item['total_cost'].toString()) ?? 0;
                                               return DataRow(
                                                 cells: [
-                                                  DataCell(Text(item['product_name'].toString(), style: const TextStyle(fontWeight: FontWeight.w500))),
+                                                  DataCell(Text(item['product_name'].toString(), maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w500))),
                                                   DataCell(Text(qty.toQty())),
                                                   DataCell(Text('\$${cost.toCurrency()}', style: TextStyle(color: Colors.orange.shade900, fontWeight: FontWeight.bold))),
                                                 ],

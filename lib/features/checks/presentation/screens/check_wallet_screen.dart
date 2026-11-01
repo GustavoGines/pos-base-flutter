@@ -479,6 +479,8 @@ class _CheckWalletScreenState extends State<CheckWalletScreen> {
                                                 constraints: BoxConstraints(
                                                     minWidth: constraints.maxWidth),
                                                 child: DataTable(
+                                              dataRowMinHeight: 48,
+                                              dataRowMaxHeight: 68,
                                               columns: const [
                                                 DataColumn(
                                                     label: Text('Banco',

@@ -529,17 +529,29 @@ class _SupplierCurrentAccountScreenState extends State<SupplierCurrentAccountScr
                       ),
                       title: Row(
                         children: [
-                          Text(actionLabel, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                          Flexible(
+                            child: Text(
+                              actionLabel,
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
                           if (item['invoice_number'] != null && item['invoice_number'].toString().isNotEmpty) ...[
                             const SizedBox(width: 8),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: Colors.blueGrey.shade50,
-                                borderRadius: BorderRadius.circular(4),
-                                border: Border.all(color: Colors.blueGrey.shade100),
+                            Flexible(
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: Colors.blueGrey.shade50,
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(color: Colors.blueGrey.shade100),
+                                ),
+                                child: Text(
+                                  'Nº ${item['invoice_number']}',
+                                  style: TextStyle(fontSize: 11, color: Colors.blueGrey.shade700, fontWeight: FontWeight.bold),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               ),
-                              child: Text('Nº ${item['invoice_number']}', style: TextStyle(fontSize: 11, color: Colors.blueGrey.shade700, fontWeight: FontWeight.bold)),
                             ),
                           ],
                         ],

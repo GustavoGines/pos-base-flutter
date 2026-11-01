@@ -666,16 +666,15 @@ class _CashMovementsScreenState extends State<CashMovementsScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 6,
+                                crossAxisAlignment: WrapCrossAlignment.center,
                                 children: [
-                                  Expanded(
-                                    child: Text(
-                                      subtitle,
-                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                                    ),
+                                  Text(
+                                    subtitle,
+                                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                                   ),
-                                  const SizedBox(width: 8),
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                     decoration: BoxDecoration(
@@ -688,14 +687,16 @@ class _CashMovementsScreenState extends State<CashMovementsScreen> {
                                       children: [
                                         Icon(Icons.point_of_sale, size: 12, color: Colors.indigo.shade700),
                                         const SizedBox(width: 4),
-                                        Text(
-                                          '${movement.cashRegisterName ?? 'Caja'} • Turno #${movement.cashShiftId}',
-                                          style: TextStyle(color: Colors.indigo.shade700, fontSize: 11, fontWeight: FontWeight.bold),
+                                        Flexible(
+                                          child: Text(
+                                            '${movement.cashRegisterName ?? 'Caja'} • Turno #${movement.cashShiftId}',
+                                            style: TextStyle(color: Colors.indigo.shade700, fontSize: 11, fontWeight: FontWeight.bold),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
                                         ),
                                       ],
                                     ),
                                   ),
-                                  const SizedBox(width: 6),
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                     decoration: BoxDecoration(

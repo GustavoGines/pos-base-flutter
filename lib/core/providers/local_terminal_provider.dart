@@ -14,6 +14,8 @@ class LocalTerminalProvider extends ChangeNotifier {
   static const String _lockedPriceTierLabelKey = 'local_locked_price_tier_label';
   static const String _catalogViewModeKey = 'local_catalog_view_mode';
   static const String _posSplitRatioKey = 'local_pos_split_ratio';
+  static const String _customersSplitRatioKey = 'local_customers_split_ratio';
+  static const String _salesHistorySplitRatioKey = 'local_sales_history_split_ratio';
   static const String _pinnedProductsKey = 'local_pinned_product_ids';
 
   // Opciones válidas: 'thermal_80', 'thermal_58', 'a4'
@@ -34,6 +36,8 @@ class LocalTerminalProvider extends ChangeNotifier {
   String _terminalId = 'caja-1'; // Default for scanner
   String _catalogViewMode = 'grid_large';
   double _posSplitRatio = 0.35;
+  double _customersSplitRatio = 0.30;
+  double _salesHistorySplitRatio = 0.28;
 
   Set<int> _pinnedProductIds = {};
 
@@ -51,6 +55,8 @@ class LocalTerminalProvider extends ChangeNotifier {
   String get terminalId => _terminalId;
   String get catalogViewMode => _catalogViewMode;
   double get posSplitRatio => _posSplitRatio;
+  double get customersSplitRatio => _customersSplitRatio;
+  double get salesHistorySplitRatio => _salesHistorySplitRatio;
   Set<int> get pinnedProductIds => _pinnedProductIds;
   bool get isInitialized => _isInitialized;
 
@@ -77,6 +83,8 @@ class LocalTerminalProvider extends ChangeNotifier {
     _lockedPriceTierLabel = prefs.getString(_lockedPriceTierLabelKey);
     _catalogViewMode = prefs.getString(_catalogViewModeKey) ?? 'grid_large';
     _posSplitRatio = prefs.getDouble(_posSplitRatioKey) ?? 0.35;
+    _customersSplitRatio = prefs.getDouble(_customersSplitRatioKey) ?? 0.30;
+    _salesHistorySplitRatio = prefs.getDouble(_salesHistorySplitRatioKey) ?? 0.28;
     _terminalId = prefs.getString('local_terminal_id') ?? 'caja-1';
 
     final pinnedIdsList = prefs.getStringList(_pinnedProductsKey);
@@ -108,6 +116,20 @@ class LocalTerminalProvider extends ChangeNotifier {
     _posSplitRatio = ratio;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble(_posSplitRatioKey, ratio);
+    notifyListeners();
+  }
+
+  Future<void> setCustomersSplitRatio(double ratio) async {
+    _customersSplitRatio = ratio;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(_customersSplitRatioKey, ratio);
+    notifyListeners();
+  }
+
+  Future<void> setSalesHistorySplitRatio(double ratio) async {
+    _salesHistorySplitRatio = ratio;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(_salesHistorySplitRatioKey, ratio);
     notifyListeners();
   }
 

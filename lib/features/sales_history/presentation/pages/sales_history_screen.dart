@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -155,16 +156,33 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
 
         return Scaffold(
           appBar: const GlobalAppBar(currentRoute: '/sales-history'),
-          body: Row(
-            children: [
-              // ── Panel Izquierdo: Filtros y Lista ───────────────────
-              Container(
-                width: 360,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  border: Border(right: BorderSide(color: Colors.grey.shade300)),
-                ),
-                child: Column(
+          body: LayoutBuilder(
+            builder: (context, constraints) {
+              double ratio = context.read<LocalTerminalProvider>().salesHistorySplitRatio;
+              return StatefulBuilder(
+                builder: (context, setSplitState) {
+                  final totalWidth = constraints.maxWidth;
+                  final availableWidth = (totalWidth - 16.0).clamp(0.0, double.infinity);
+                  final minLeftWidth = 320.0.clamp(0.0, availableWidth * 0.5);
+                  final maxAllowedLeft = (totalWidth - 560.0).clamp(
+                    minLeftWidth,
+                    totalWidth * 0.42 < minLeftWidth ? minLeftWidth : totalWidth * 0.42,
+                  );
+                  final maxLeftWidth = maxAllowedLeft < minLeftWidth ? minLeftWidth : maxAllowedLeft;
+
+                  final minLeftRatio = totalWidth > 0 ? (minLeftWidth / totalWidth) : 0.28;
+                  final computedMaxRatio = totalWidth > 0 ? (maxLeftWidth / totalWidth) : 0.28;
+
+                  return Row(
+                    children: [
+                      // ── Panel Izquierdo: Filtros y Lista ───────────────────
+                      Container(
+                        width: (totalWidth * ratio).clamp(minLeftWidth, maxLeftWidth),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          border: Border(right: BorderSide(color: Colors.grey.shade300)),
+                        ),
+                        child: Column(
                   children: [
                     _FiltersPanel(
                       provider: provider,
@@ -214,30 +232,79 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
                 ),
               ),
 
-              // ── Panel Derecho: Resumen Financiero y Detalle ──────────
-              Expanded(
-                child: Column(
-                  children: [
-                    // ── Panel Superior Derecho: Resumen Financiero ─────
-                    if (!provider.isLoading)
-                      _FinancialSummaryPanel(provider: provider),
-
-                    // ── Detalle del Ticket ─────────────────────────────
-                    Expanded(
-                      child: Container(
-                        color: Colors.grey.shade100,
-                        child: _selectedSale == null
-                            ? const _EmptyStateDetail()
-                            : _TicketDetailPanel(
-                                sale: _selectedSale!,
-                                provider: provider,
+                      // ── Divisor Arrastrable (Persistente) ──────────────
+                      Tooltip(
+                        message: 'Arrastrar para ajustar ancho · Doble clic para restablecer',
+                        waitDuration: const Duration(milliseconds: 600),
+                        child: MouseRegion(
+                          cursor: SystemMouseCursors.resizeColumn,
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.translucent,
+                            onPanUpdate: (details) {
+                              if (totalWidth <= 0) return;
+                              setSplitState(() {
+                                ratio += details.delta.dx / totalWidth;
+                                if (ratio < minLeftRatio) ratio = minLeftRatio;
+                                if (ratio > computedMaxRatio) ratio = computedMaxRatio;
+                              });
+                            },
+                            onPanEnd: (details) {
+                              context.read<LocalTerminalProvider>().setSalesHistorySplitRatio(ratio);
+                            },
+                            onDoubleTap: () {
+                              final resetRatio = 0.28.clamp(minLeftRatio, computedMaxRatio);
+                              setSplitState(() {
+                                ratio = resetRatio;
+                              });
+                              context.read<LocalTerminalProvider>().setSalesHistorySplitRatio(resetRatio);
+                              SnackBarService.info(context, 'Tamaño del listado restablecido al diseño ideal');
+                            },
+                            child: Container(
+                              width: 16,
+                              color: Colors.grey.shade100,
+                              child: Center(
+                                child: Container(
+                                  width: 4,
+                                  height: 40,
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey.shade400,
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                ),
                               ),
+                            ),
+                          ),
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+
+                      // ── Panel Derecho: Resumen Financiero y Detalle ──────────
+                      Expanded(
+                        child: Column(
+                          children: [
+                            // ── Panel Superior Derecho: Resumen Financiero ─────
+                            if (!provider.isLoading)
+                              _FinancialSummaryPanel(provider: provider),
+
+                            // ── Detalle del Ticket ─────────────────────────────
+                            Expanded(
+                              child: Container(
+                                color: Colors.grey.shade100,
+                                child: _selectedSale == null
+                                    ? const _EmptyStateDetail()
+                                    : _TicketDetailPanel(
+                                        sale: _selectedSale!,
+                                        provider: provider,
+                                      ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              );
+            },
           ),
         );
       },
@@ -282,16 +349,19 @@ class _FiltersPanel extends StatelessWidget {
             children: [
               Icon(Icons.receipt_long, color: Colors.blueGrey.shade700, size: 18),
               const SizedBox(width: 8),
-              Text(
-                'REGISTRO DE VENTAS',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.blueGrey.shade800,
-                  letterSpacing: 1.5,
+              Expanded(
+                child: Text(
+                  'REGISTRO DE VENTAS',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.blueGrey.shade800,
+                    letterSpacing: 1.5,
+                  ),
                 ),
               ),
-              const Spacer(),
               if (provider.isLoading)
                 const SizedBox(
                   width: 20,
@@ -517,9 +587,17 @@ class _FinancialSummaryPanel extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (byMethod.isNotEmpty) ...[
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
+            ScrollConfiguration(
+              behavior: ScrollConfiguration.of(context).copyWith(
+                dragDevices: {
+                  PointerDeviceKind.touch,
+                  PointerDeviceKind.mouse,
+                  PointerDeviceKind.trackpad,
+                },
+              ),
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
                 mainAxisAlignment: MainAxisAlignment.start,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -560,6 +638,7 @@ class _FinancialSummaryPanel extends StatelessWidget {
                     );
                   }),
                 ],
+              ),
               ),
             ),
           ],
@@ -1707,10 +1786,11 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
             border: Border(bottom: BorderSide(color: Colors.black12)),
           ),
           child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               // Ticket info
               Expanded(
+                flex: 4,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -1738,85 +1818,86 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
                       ],
                     ),
                     const SizedBox(height: 6),
-                    Wrap(
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      runSpacing: 6,
-                      children: [
-                        Icon(Icons.calendar_today_outlined,
-                            size: 16, color: Colors.grey.shade600),
-                        const SizedBox(width: 8),
-                        Text(dateStr,
-                            style: TextStyle(
-                                color: Colors.grey.shade600, fontSize: 16)),
-                        if (sale.userName != null) ...[
-                          const SizedBox(width: 24),
-                          Icon(Icons.person_outline,
-                              size: 16, color: Colors.blueGrey.shade600),
-                          const SizedBox(width: 6),
-                          Text(
-                            (sale.cashierName == null || sale.userName == sale.cashierName)
-                                ? 'Cajero: ${sale.userName}'
-                                : 'Generó: ${sale.userName} | Cobró: ${sale.cashierName}',
-                            style: TextStyle(
-                                color: Colors.blueGrey.shade800,
-                                fontWeight: FontWeight.w500,
-                                fontSize: 16),
-                          ),
-                        ]
-                      ],
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.calendar_today_outlined,
+                              size: 16, color: Colors.grey.shade600),
+                          const SizedBox(width: 8),
+                          Text(dateStr,
+                              style: TextStyle(
+                                  color: Colors.grey.shade600, fontSize: 16)),
+                          if (sale.userName != null) ...[
+                            const SizedBox(width: 20),
+                            Icon(Icons.person_outline,
+                                size: 16, color: Colors.blueGrey.shade600),
+                            const SizedBox(width: 6),
+                            Text(
+                              (sale.cashierName == null || sale.userName == sale.cashierName)
+                                  ? 'Cajero: ${sale.userName}'
+                                  : 'Generó: ${sale.userName} | Cobró: ${sale.cashierName}',
+                              style: TextStyle(
+                                  color: Colors.blueGrey.shade800,
+                                  fontWeight: FontWeight.w500,
+                                  fontSize: 16),
+                            ),
+                          ]
+                        ],
+                      ),
                     ),
                   ],
                 ),
               ),
+              const SizedBox(width: 16),
 
-              // Totales + métodos de pago
+              // Totales + métodos de pago (Siempre en 1 sola línea horizontal sin apilarse)
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Wrap(
-                      alignment: WrapAlignment.end,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      spacing: 16,
-                      runSpacing: 8,
-                      children: [
-                        // Desglose de pagos (Lado a lado)
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          alignment: WrapAlignment.end,
-                          children: sale.payments.map((p) => _PaymentBadge(payment: p)).toList(),
-                        ),
-                        // Total cobrado al cliente (prominente) y Neto
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
+                flex: 6,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerRight,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      for (int i = 0; i < sale.payments.length; i++) ...[
+                        if (i > 0) const SizedBox(width: 8),
+                        _PaymentBadge(payment: sale.payments[i]),
+                      ],
+                      const SizedBox(width: 16),
+                      // Total cobrado al cliente (prominente) y Neto
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            '\$${sale.grandTotal.toCurrency()}',
+                            style: TextStyle(
+                              fontSize: 28,
+                              fontWeight: FontWeight.bold,
+                              color: sale.isVoided
+                                  ? Colors.grey.shade500
+                                  : Colors.green.shade700,
+                              decoration:
+                                  sale.isVoided ? TextDecoration.lineThrough : null,
+                            ),
+                          ),
+                          // Desglose neto vs recargo bancario (Opción B)
+                          if (hasSurcharge)
                             Text(
-                              '\$${sale.grandTotal.toCurrency()}',
+                              'Neto: \$${sale.netTotal.toCurrency()}',
                               style: TextStyle(
-                                fontSize: 28,
-                                fontWeight: FontWeight.bold,
-                                color: sale.isVoided
-                                    ? Colors.grey.shade500
-                                    : Colors.green.shade700,
-                                decoration:
-                                    sale.isVoided ? TextDecoration.lineThrough : null,
+                                fontSize: 12,
+                                color: Colors.grey.shade500,
                               ),
                             ),
-                            // Desglose neto vs recargo bancario (Opción B)
-                            if (hasSurcharge)
-                              Text(
-                                'Neto: \$${sale.netTotal.toCurrency()}',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey.shade500,
-                                ),
-                              ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ],
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ],
@@ -1855,8 +1936,8 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
                         constraints: BoxConstraints(minWidth: availableTableWidth),
                         child: DataTable(
                           headingRowHeight: 40,
-                          dataRowMinHeight: 40,
-                          dataRowMaxHeight: 54,
+                          dataRowMinHeight: 44,
+                          dataRowMaxHeight: 78,
                           columnSpacing: 24,
                           headingRowColor:
                               WidgetStateProperty.all(Colors.grey.shade100),
@@ -1885,18 +1966,23 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
                                 ConstrainedBox(
                                   constraints: BoxConstraints(maxWidth: maxProductColWidth),
                                   child: Column(
+                                    mainAxisSize: MainAxisSize.min,
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
-                                      Text(
-                                        item.productName,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: textStyle.copyWith(fontWeight: FontWeight.w500),
+                                      Flexible(
+                                        child: Text(
+                                          item.productName,
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: textStyle.copyWith(fontWeight: FontWeight.w500),
+                                        ),
                                       ),
                                       if (item.hasDiscount && item.discountLabel != null)
                                         Text(
                                           '(${item.discountLabel}) Reg: \$${item.regularPrice.toCurrency()}',
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
                                           style: TextStyle(
                                             fontSize: 11,
                                             fontStyle: FontStyle.italic,
@@ -2060,14 +2146,17 @@ class _PaymentBadge extends StatelessWidget {
           const SizedBox(width: 8),
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
+            mainAxisSize: MainAxisSize.min,
             children: [
               Text(payment.methodName,
+                  maxLines: 1,
                   style: TextStyle(
                       fontSize: 13,
                       color: color,
                       fontWeight: FontWeight.w600)),
               Text(
                 '\$${payment.totalAmount.toCurrency()}',
+                maxLines: 1,
                 style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
@@ -2076,6 +2165,7 @@ class _PaymentBadge extends StatelessWidget {
               if (hasSurcharge)
                 Text(
                   'base \$${payment.baseAmount.toCurrency()} + recargo \$${payment.surchargeAmount.toCurrency()}',
+                  maxLines: 1,
                   style: TextStyle(
                       fontSize: 12,
                       color: Colors.orange.shade700,

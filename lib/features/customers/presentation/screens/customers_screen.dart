@@ -10,6 +10,8 @@ import '../widgets/payment_detail_dialog.dart';
 import '../../../../features/cash_register/presentation/providers/cash_register_provider.dart';
 import 'package:frontend_desktop/features/auth/presentation/widgets/admin_pin_dialog.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
+import 'package:frontend_desktop/core/providers/local_terminal_provider.dart';
+import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import 'package:frontend_desktop/features/sales_history/data/datasources/sales_history_remote_datasource.dart';
 
 class CustomersScreen extends StatefulWidget {
@@ -92,16 +94,33 @@ class _CustomersScreenState extends State<CustomersScreen> {
 
         return Scaffold(
           appBar: const GlobalAppBar(currentRoute: '/cuentas-corrientes'),
-          body: Row(
-            children: [
-              // ── Panel Izquierdo: Lista de Clientes ──
-              Container(
-                width: 380,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  border: Border(right: BorderSide(color: Colors.grey.shade300)),
-                ),
-                child: Column(
+          body: LayoutBuilder(
+            builder: (context, constraints) {
+              double ratio = context.read<LocalTerminalProvider>().customersSplitRatio;
+              return StatefulBuilder(
+                builder: (context, setSplitState) {
+                  final totalWidth = constraints.maxWidth;
+                  final availableWidth = (totalWidth - 16.0).clamp(0.0, double.infinity);
+                  final minLeftWidth = 320.0.clamp(0.0, availableWidth * 0.5);
+                  final maxAllowedLeft = (totalWidth - 540.0).clamp(
+                    minLeftWidth,
+                    totalWidth * 0.42 < minLeftWidth ? minLeftWidth : totalWidth * 0.42,
+                  );
+                  final maxLeftWidth = maxAllowedLeft < minLeftWidth ? minLeftWidth : maxAllowedLeft;
+
+                  final minLeftRatio = totalWidth > 0 ? (minLeftWidth / totalWidth) : 0.30;
+                  final computedMaxRatio = totalWidth > 0 ? (maxLeftWidth / totalWidth) : 0.30;
+
+                  return Row(
+                    children: [
+                      // ── Panel Izquierdo: Lista de Clientes ──
+                      Container(
+                        width: (totalWidth * ratio).clamp(minLeftWidth, maxLeftWidth),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          border: Border(right: BorderSide(color: Colors.grey.shade300)),
+                        ),
+                        child: Column(
                   children: [
                     // Buscador y Botón Nuevo
                     Container(
@@ -242,16 +261,16 @@ class _CustomersScreenState extends State<CustomersScreen> {
                                     child: Row(
                                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                       children: [
-                                        Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Text('DNI: ${customer.documentNumber}', style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
-                                            if (customer.phone != null && customer.phone!.isNotEmpty) ...[
-                                              const SizedBox(width: 8),
-                                              Text('· 📞 ${customer.phone}', style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
-                                            ]
-                                          ],
+                                        Expanded(
+                                          child: Text(
+                                            '${customer.documentType == 80 ? "CUIT" : (customer.documentType == 86 ? "CUIL" : "DNI")}: ${customer.documentNumber}'
+                                            '${customer.phone != null && customer.phone!.isNotEmpty ? " · 📞 ${customer.phone}" : ""}',
+                                            style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
                                         ),
+                                        const SizedBox(width: 4),
                                         Row(
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
@@ -276,16 +295,65 @@ class _CustomersScreenState extends State<CustomersScreen> {
                 ),
               ),
 
-              // ── Panel Derecho: Detalle del Cliente ──
-              Expanded(
-                child: Container(
-                  color: Colors.grey.shade100,
-                  child: _selectedCustomer == null
-                      ? const _EmptyStateDetail()
-                      : _CustomerDetailPanel(customer: _selectedCustomer!),
-                ),
-              ),
-            ],
+                      // ── Divisor Arrastrable (Persistente) ──
+                      Tooltip(
+                        message: 'Arrastrar para ajustar ancho · Doble clic para restablecer',
+                        waitDuration: const Duration(milliseconds: 600),
+                        child: MouseRegion(
+                          cursor: SystemMouseCursors.resizeColumn,
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.translucent,
+                            onPanUpdate: (details) {
+                              if (totalWidth <= 0) return;
+                              setSplitState(() {
+                                ratio += details.delta.dx / totalWidth;
+                                if (ratio < minLeftRatio) ratio = minLeftRatio;
+                                if (ratio > computedMaxRatio) ratio = computedMaxRatio;
+                              });
+                            },
+                            onPanEnd: (details) {
+                              context.read<LocalTerminalProvider>().setCustomersSplitRatio(ratio);
+                            },
+                            onDoubleTap: () {
+                              final resetRatio = 0.30.clamp(minLeftRatio, computedMaxRatio);
+                              setSplitState(() {
+                                ratio = resetRatio;
+                              });
+                              context.read<LocalTerminalProvider>().setCustomersSplitRatio(resetRatio);
+                              SnackBarService.info(context, 'Tamaño del directorio restablecido al diseño ideal');
+                            },
+                            child: Container(
+                              width: 16,
+                              color: Colors.grey.shade100,
+                              child: Center(
+                                child: Container(
+                                  width: 4,
+                                  height: 40,
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey.shade400,
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+
+                      // ── Panel Derecho: Detalle del Cliente ──
+                      Expanded(
+                        child: Container(
+                          color: Colors.grey.shade100,
+                          child: _selectedCustomer == null
+                              ? const _EmptyStateDetail()
+                              : _CustomerDetailPanel(customer: _selectedCustomer!),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              );
+            },
           ),
         );
       },
@@ -398,131 +466,166 @@ class _CustomerDetailPanel extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               // ── Nombre + datos del cliente ──
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      CircleAvatar(
-                        backgroundColor: avatarBg,
-                        foregroundColor: avatarFg,
-                        radius: 20,
-                        child: const Icon(Icons.person, size: 24),
-                      ),
-                      const SizedBox(width: 16),
-                      Text(customer.name,
-                          style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-                      const SizedBox(width: 12),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: Colors.blue.shade50,
-                          borderRadius: BorderRadius.circular(4),
-                          border: Border.all(color: Colors.blue.shade200),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        CircleAvatar(
+                          backgroundColor: avatarBg,
+                          foregroundColor: avatarFg,
+                          radius: 20,
+                          child: const Icon(Icons.person, size: 24),
                         ),
-                        child: Text(
-                          customer.taxCondition == 'consumidor_final' ? 'Consumidor Final' :
-                          customer.taxCondition == 'responsable_inscripto' ? 'Resp. Inscripto' :
-                          customer.taxCondition == 'monotributo' ? 'Monotributo' :
-                          customer.taxCondition == 'exento' ? 'IVA Exento' : 'IVA No Definido',
-                          style: TextStyle(fontSize: 12, color: Colors.blue.shade700, fontWeight: FontWeight.w600),
-                        ),
-                      ),
-                      if (customer.appliesIibbPerception) ...[
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: Colors.purple.shade50,
-                            borderRadius: BorderRadius.circular(4),
-                            border: Border.all(color: Colors.purple.shade200),
-                          ),
-                          child: Text(
-                            'Sujeto IIBB',
-                            style: TextStyle(fontSize: 12, color: Colors.purple.shade700, fontWeight: FontWeight.w600),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Wrap(
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            spacing: 8,
+                            runSpacing: 6,
+                            children: [
+                              Text(
+                                customer.name,
+                                style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: Colors.blue.shade50,
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(color: Colors.blue.shade200),
+                                ),
+                                child: Text(
+                                  customer.taxCondition == 'consumidor_final' ? 'Consumidor Final' :
+                                  customer.taxCondition == 'responsable_inscripto' ? 'Resp. Inscripto' :
+                                  customer.taxCondition == 'monotributo' ? 'Monotributo' :
+                                  customer.taxCondition == 'exento' ? 'IVA Exento' : 'IVA No Definido',
+                                  style: TextStyle(fontSize: 12, color: Colors.blue.shade700, fontWeight: FontWeight.w600),
+                                ),
+                              ),
+                              if (customer.appliesIibbPerception)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.purple.shade50,
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(color: Colors.purple.shade200),
+                                  ),
+                                  child: Text(
+                                    'Sujeto IIBB',
+                                    style: TextStyle(fontSize: 12, color: Colors.purple.shade700, fontWeight: FontWeight.w600),
+                                  ),
+                                ),
+                              if (customer.isInternalAccount)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.orange.shade50,
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(color: Colors.orange.shade200),
+                                  ),
+                                  child: Text(
+                                    'Consumo Interno',
+                                    style: TextStyle(fontSize: 12, color: Colors.orange.shade800, fontWeight: FontWeight.w600),
+                                  ),
+                                ),
+                            ],
                           ),
                         ),
                       ],
-                      if (customer.isInternalAccount) ...[
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: Colors.orange.shade50,
-                            borderRadius: BorderRadius.circular(4),
-                            border: Border.all(color: Colors.orange.shade200),
-                          ),
-                          child: Text(
-                            'Consumo Interno',
-                            style: TextStyle(fontSize: 12, color: Colors.orange.shade800, fontWeight: FontWeight.w600),
-                          ),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 16,
+                      runSpacing: 8,
+                      children: [
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.badge_outlined, size: 14, color: Colors.grey.shade600),
+                            const SizedBox(width: 6),
+                            Flexible(
+                              child: Text(
+                                '${customer.documentType == 80 ? "CUIT" : (customer.documentType == 86 ? "CUIL" : "DNI")}: ${customer.documentNumber}',
+                                style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    spacing: 16,
-                    runSpacing: 8,
-                    children: [
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.badge_outlined, size: 14, color: Colors.grey.shade600),
-                          const SizedBox(width: 6),
-                          Text('${customer.documentType == 80 ? "CUIT" : (customer.documentType == 86 ? "CUIL" : "DNI")}: ${customer.documentNumber}',
-                              style: TextStyle(color: Colors.grey.shade600, fontSize: 14)),
+                        if (customer.phone != null && customer.phone!.isNotEmpty) ...[
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.phone_outlined, size: 14, color: Colors.grey.shade600),
+                              const SizedBox(width: 4),
+                              Flexible(
+                                child: Text(
+                                  customer.phone!,
+                                  style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
                         ],
-                      ),
-                      if (customer.phone != null && customer.phone!.isNotEmpty) ...[
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.phone_outlined, size: 14, color: Colors.grey.shade600),
-                            const SizedBox(width: 4),
-                            Text(customer.phone!,
-                                style: TextStyle(color: Colors.grey.shade600, fontSize: 14)),
-                          ],
-                        ),
+                        if (customer.deliveryAddress != null && customer.deliveryAddress!.isNotEmpty) ...[
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.location_on_outlined, size: 14, color: Colors.grey.shade600),
+                              const SizedBox(width: 4),
+                              Flexible(
+                                child: Text(
+                                  customer.deliveryAddress!,
+                                  style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ] else if (customer.fiscalAddress != null && customer.fiscalAddress!.isNotEmpty) ...[
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.location_city_outlined, size: 14, color: Colors.grey.shade600),
+                              const SizedBox(width: 4),
+                              Flexible(
+                                child: Text(
+                                  customer.fiscalAddress!,
+                                  style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                        if (customer.creditLimit > 0) ...[
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.credit_score_outlined, size: 14, color: Colors.blueGrey.shade600),
+                              const SizedBox(width: 4),
+                              Flexible(
+                                child: Text(
+                                  'Límite: \$${customer.creditLimit.toCurrency()} (Disp: \$${(customer.creditLimit - customer.balance).clamp(0, double.infinity).toCurrency()})',
+                                  style: TextStyle(
+                                      color: Colors.blueGrey.shade800, fontWeight: FontWeight.w500),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ],
-                      if (customer.deliveryAddress != null && customer.deliveryAddress!.isNotEmpty) ...[
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.location_on_outlined, size: 14, color: Colors.grey.shade600),
-                            const SizedBox(width: 4),
-                            Text(customer.deliveryAddress!,
-                                style: TextStyle(color: Colors.grey.shade600, fontSize: 14)),
-                          ],
-                        ),
-                      ] else if (customer.fiscalAddress != null && customer.fiscalAddress!.isNotEmpty) ...[
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.location_city_outlined, size: 14, color: Colors.grey.shade600),
-                            const SizedBox(width: 4),
-                            Text(customer.fiscalAddress!,
-                                style: TextStyle(color: Colors.grey.shade600, fontSize: 14)),
-                          ],
-                        ),
-                      ],
-                      if (customer.creditLimit > 0) ...[
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.credit_score_outlined, size: 14, color: Colors.blueGrey.shade600),
-                            const SizedBox(width: 4),
-                            Text('Límite: \$${customer.creditLimit.toCurrency()} (Disp: \$${(customer.creditLimit - customer.balance).clamp(0, double.infinity).toCurrency()})',
-                                style: TextStyle(
-                                    color: Colors.blueGrey.shade800, fontWeight: FontWeight.w500)),
-                          ],
-                        ),
-                      ],
-                    ],
-                  ),
-                ],
+                    ),
+                  ],
+                ),
               ),
+              const SizedBox(width: 16),
 
               // ── Bloque de saldo 3 estados ──
               Column(

@@ -101,14 +101,16 @@ class _DeliveryNoteCardState extends State<DeliveryNoteCard> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Row(
+                  Wrap(
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 12,
+                    runSpacing: 4,
                     children: [
                       Text(
                         'Remito #${widget.note['id']}',
                         style: const TextStyle(
                             fontSize: 16, fontWeight: FontWeight.bold),
                       ),
-                      const SizedBox(width: 12),
                       Container(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 8, vertical: 2),
@@ -124,7 +126,6 @@ class _DeliveryNoteCardState extends State<DeliveryNoteCard> {
                               fontSize: 11),
                         ),
                       ),
-                      const SizedBox(width: 12),
                       Text('📅 $date',
                           style: TextStyle(
                               color: Colors.grey.shade600, fontSize: 12)),
@@ -133,6 +134,8 @@ class _DeliveryNoteCardState extends State<DeliveryNoteCard> {
                   const SizedBox(height: 2),
                   Text(
                     'Cliente: $customerName',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                         fontSize: 13, fontWeight: FontWeight.w500),
                   ),
