@@ -488,7 +488,7 @@ void main() {
       expect(find.textContaining('¡USTED AHORRÓ:'), findsOneWidget);
     });
 
-    testWidgets('R3.10: Item quantity displays "X x \$price" without "un" suffix for space optimization', (WidgetTester tester) async {
+    testWidgets('R3.10: Item quantity displays "X un x \$price" with unit suffix for clarity', (WidgetTester tester) async {
       await tester.pumpWidget(
         buildAppWrapper(
           child: ThermalReceiptWidget(
@@ -503,9 +503,9 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(tester.takeException(), isNull);
-      // Unit item (non-weight): should be "10 x $12.500", NOT "10 un x $12.500"
-      expect(find.textContaining('10 x \$12.500'), findsOneWidget);
-      expect(find.textContaining('un x'), findsNothing);
+      // Unit item (non-weight): should be "10 un x $12.500"
+      expect(find.textContaining('10 un x \$12.500'), findsOneWidget);
+
 
       // Weight item: should retain "kg" unit
       expect(find.textContaining('2.75 kg x \$22.450,50'), findsOneWidget);
