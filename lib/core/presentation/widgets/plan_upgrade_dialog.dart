@@ -29,7 +29,7 @@ class PlanUpgradeDialog extends StatelessWidget {
   // ───── Contacto de soporte ─────────────────────────────────────────────────
   static const _whatsappNumber = '543704787285'; // +54 370 478-7285 (Argentina)
   static const _whatsappPrefilledMsg =
-      '¡Hola! Necesito ampliar mi licencia del Sistema POS. '
+      '¡Hola! Necesito ampliar mi licencia de Caja4U. '
       'Quiero acceder a más funciones de mi plan actual.';
 
   // ───── API estática para mostrar el diálogo ────────────────────────────────

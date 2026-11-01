@@ -125,7 +125,7 @@ class MobileUpdateService {
       throw Exception(
           'No se pudo abrir el instalador: ${result.message}\n\n'
           'Verificá que "Instalar apps de fuentes desconocidas" esté '
-          'habilitado en Ajustes > Apps > POS Móvil.');
+          'habilitado en Ajustes > Apps > Caja4U Móvil.');
     }
   }
 }

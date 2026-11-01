@@ -170,9 +170,9 @@ class _LicenseLockScreenState extends State<LicenseLockScreen> {
                       children: [
                         Text(
                           widget.missingMobileAddon 
-                              ? 'Tu licencia actual no incluye el módulo "App Móvil".\nComunicate con GLabs para actualizar tu plan de Sistema POS y habilitar el acceso desde celulares.'
+                              ? 'Tu licencia actual no incluye el módulo "Caja4U Móvil".\nComunicate con Dev4U para actualizar tu plan de Caja4U y habilitar el acceso desde celulares.'
                               : widget.missingRemoteAddon
-                                  ? 'Tu licencia actual no incluye el módulo "Acceso Remoto".\nComunicate con GLabs para actualizar tu plan de Sistema POS y operar fuera del local.'
+                                  ? 'Tu licencia actual no incluye el módulo "Acceso Remoto".\nComunicate con Dev4U para actualizar tu plan de Caja4U y operar fuera del local.'
                                   : widget.securityStatus == LicenseSecurityStatus.clockTampered 
                                       ? 'Se detectó una anomalía en el reloj del sistema.\nPor seguridad, el acceso ha sido revocado. Contacte soporte.'
                                       : widget.securityStatus == LicenseSecurityStatus.offlineExpired

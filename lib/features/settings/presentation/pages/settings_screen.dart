@@ -1905,7 +1905,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       'predictive_alerts': '🧠 Alertas Inteligentes (Logística Predictiva)',
       'logistics': '🚚 Logística y Remitos',
       'checks': '💵 Gestión de Cheques',
-      'mobile_app': '📱 App Móvil (Inventario y Ventas)',
+      'mobile_app': '📱 Caja4U Móvil (Inventario y Ventas)',
       'remote_access': '🌐 Acceso Remoto (Cloudflare / Internet)',
       'suppliers': '📦 Gestión de Proveedores (B2B)',
       'expenses': '💸 Gestión de Gastos y Movimientos',
@@ -2150,7 +2150,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _buildCompactTabChip('Integraciones', Icons.hub_outlined,
                   SettingsSection.integrations, isBusy),
             if (Platform.isWindows)
-              _buildCompactTabChip('App Móvil', Icons.phone_android,
+              _buildCompactTabChip('Caja4U Móvil', Icons.phone_android,
                   SettingsSection.mobileApp, isBusy),
           ],
         ),
@@ -2268,7 +2268,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           if (Platform.isWindows)
             _buildSidebarItem(
               icon: Icons.phone_android,
-              title: 'App Móvil',
+              title: 'Caja4U Móvil',
               section: SettingsSection.mobileApp,
               isBusy: isBusy,
             ),
@@ -4799,7 +4799,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           if (mounted) {
             SnackBarService.error(
               context,
-              'El archivo "$fileName" no es una copia de seguridad válida del Sistema POS.',
+              'El archivo "$fileName" no es una copia de seguridad válida de Caja4U.',
             );
           }
           return;

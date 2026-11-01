@@ -1,11 +1,11 @@
 {
-    "name": "frontend_desktop",
-    "short_name": "frontend_desktop",
+    "name": "Caja4U",
+    "short_name": "Caja4U",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "Caja4U - Punto de Venta por Dev4U.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

@@ -797,7 +797,7 @@ class _MainAppState extends State<MainApp> {
                   const Icon(Icons.point_of_sale_rounded,
                       size: 72, color: Color(0xFF3B82F6)),
                   const SizedBox(height: 24),
-                  const Text('Sistema POS',
+                  const Text('Caja4U',
                       style: TextStyle(
                           fontSize: 26,
                           fontWeight: FontWeight.bold,
@@ -925,7 +925,7 @@ class _MainAppState extends State<MainApp> {
         );
       },
       debugShowCheckedModeBanner: false,
-      title: 'Sistema POS',
+      title: 'Caja4U',
       localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,
         GlobalWidgetsLocalizations.delegate,

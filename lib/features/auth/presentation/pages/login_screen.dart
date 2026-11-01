@@ -483,7 +483,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           children: [
                             const Icon(Icons.point_of_sale_rounded, size: 64, color: Color(0xFF3B82F6)),
                         const SizedBox(height: 16),
-                        const Text('Sistema POS',
+                        const Text('Caja4U',
                             style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.black87)),
                         const SizedBox(height: 8),
                         const Text('Ingreso al sistema',

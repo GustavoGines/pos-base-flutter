@@ -48,7 +48,7 @@ class _MobileMenuScreenState extends State<MobileMenuScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('POS Móvil'),
+        title: const Text('Caja4U Móvil'),
         backgroundColor: const Color(0xFF1E2D45),
         foregroundColor: Colors.white,
         actions: [

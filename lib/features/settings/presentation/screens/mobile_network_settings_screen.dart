@@ -150,7 +150,7 @@ class _MobileNetworkSettingsScreenState extends State<MobileNetworkSettingsScree
                   const SizedBox(height: 32),
                   TextField(controller: _localCtrl, decoration: InputDecoration(labelText: 'IP Local (WiFi del Negocio)', hintText: 'Solo números, ej: 192.168.1.50', prefixIcon: const Icon(Icons.wifi), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))), keyboardType: TextInputType.url),
                   const SizedBox(height: 20),
-                  TextField(controller: _remoteCtrl, decoration: InputDecoration(labelText: 'URL Remota (Cloudflare)', hintText: 'Dominio, ej: kiosco.sistema-pos.com', prefixIcon: const Icon(Icons.cloud_outlined), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))), keyboardType: TextInputType.url),
+                  TextField(controller: _remoteCtrl, decoration: InputDecoration(labelText: 'URL Remota (Cloudflare)', hintText: 'Dominio, ej: kiosco.caja4u.com', prefixIcon: const Icon(Icons.cloud_outlined), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))), keyboardType: TextInputType.url),
                   const SizedBox(height: 40),
                   SizedBox(width: double.infinity, height: 50, child: FilledButton.icon(icon: const Icon(Icons.save), label: const Text('Guardar Configuración'), onPressed: _saveSettings)),
                   const SizedBox(height: 32),

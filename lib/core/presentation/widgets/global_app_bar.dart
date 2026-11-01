@@ -31,7 +31,7 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
   const GlobalAppBar({
     super.key,
     required this.currentRoute,
-    this.title = 'Sistema POS',
+    this.title = 'Caja4U',
     this.extraAction,
     this.showBackButton = false,
     this.bottom,

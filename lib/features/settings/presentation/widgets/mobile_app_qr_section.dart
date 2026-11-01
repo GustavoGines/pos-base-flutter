@@ -117,7 +117,7 @@ class _MobileAppQrSectionState extends State<MobileAppQrSection> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'App Móvil (Terminal & Gestión)',
+                      'Caja4U Móvil (Terminal & Gestión)',
                       style: TextStyle(
                           fontSize: 17,
                           fontWeight: FontWeight.bold,
@@ -186,7 +186,7 @@ class _MobileAppQrSectionState extends State<MobileAppQrSection> {
                       _buildStep(
                         '2',
                         'Descargá el APK',
-                        'El navegador descargará el archivo POS Móvil automáticamente.',
+                        'El navegador descargará el archivo Caja4U Móvil automáticamente.',
                       ),
                       const SizedBox(height: 16),
                       _buildStep(

@@ -22,7 +22,7 @@ class _Logger {
     final sep = '=' * 60;
     final header = [
       sep,
-      'Sistema POS — Actualizador de OTA',
+      'Caja4U — Actualizador de OTA',
       'Sesión ID  : $_sessionId',
       'Fecha/Hora : ${DateTime.now()}',
       'Componente : $component',
