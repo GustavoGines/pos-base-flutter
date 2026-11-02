@@ -101,21 +101,34 @@ class GlobalAppBar extends StatelessWidget implements PreferredSizeWidget {
                                     width: 26,
                                     height: 26,
                                     fit: BoxFit.contain,
+                                    errorBuilder: (_, __, ___) => ClipRRect(
+                                      borderRadius: BorderRadius.circular(5),
+                                      child: Image.asset(
+                                        'assets/app_logo.png',
+                                        width: 26,
+                                        height: 26,
+                                        fit: BoxFit.cover,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              )
+                            else
+                              Padding(
+                                padding: const EdgeInsets.only(right: 8),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(5),
+                                  child: Image.asset(
+                                    'assets/app_logo.png',
+                                    width: 26,
+                                    height: 26,
+                                    fit: BoxFit.cover,
                                     errorBuilder: (_, __, ___) => const Icon(
                                       Icons.point_of_sale_rounded,
                                       color: Colors.blueAccent,
                                       size: 26,
                                     ),
                                   ),
-                                ),
-                              )
-                            else
-                              const Padding(
-                                padding: EdgeInsets.only(right: 8),
-                                child: Icon(
-                                  Icons.point_of_sale_rounded,
-                                  color: Colors.blueAccent,
-                                  size: 26,
                                 ),
                               ),
                             if (!hideCompanyName)

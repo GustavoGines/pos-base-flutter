@@ -48,7 +48,22 @@ class _MobileMenuScreenState extends State<MobileMenuScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Caja4U Móvil'),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: Image.asset(
+                'assets/app_logo.png',
+                width: 28,
+                height: 28,
+                fit: BoxFit.cover,
+              ),
+            ),
+            const SizedBox(width: 10),
+            const Text('Caja4U Móvil'),
+          ],
+        ),
         backgroundColor: const Color(0xFF1E2D45),
         foregroundColor: Colors.white,
         actions: [

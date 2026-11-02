@@ -481,11 +481,34 @@ class _LoginScreenState extends State<LoginScreen> {
                         Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(Icons.point_of_sale_rounded, size: 64, color: Color(0xFF3B82F6)),
-                        const SizedBox(height: 16),
-                        const Text('Caja4U',
-                            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.black87)),
-                        const SizedBox(height: 8),
+                            const SizedBox(height: 8),
+                            Container(
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(22),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: const Color(0xFF121A2D).withValues(alpha: 0.25),
+                                    blurRadius: 16,
+                                    offset: const Offset(0, 8),
+                                  ),
+                                ],
+                              ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(22),
+                                child: Image.asset(
+                                  'assets/caja4u_logo_full.png',
+                                  width: 184,
+                                  height: 156,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) => const Icon(
+                                    Icons.point_of_sale_rounded,
+                                    size: 64,
+                                    color: Color(0xFF3B82F6),
+                                  ),
+                                ),
+                              ),
+                            ),
+                        const SizedBox(height: 18),
                         const Text('Ingreso al sistema',
                             style: TextStyle(fontSize: 14, color: Colors.black54)),
                         const SizedBox(height: 32),
@@ -578,6 +601,16 @@ class _LoginScreenState extends State<LoginScreen> {
                           icon: const Icon(Icons.settings_ethernet, color: Colors.blueGrey, size: 28),
                           tooltip: 'Configurar Servidor',
                           onPressed: (_isSubmitting || _isNavigating) ? null : _showServerConfigDialog,
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'by Dev4U • Desarrollamos para vos',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.grey.shade400,
+                            letterSpacing: 0.3,
+                          ),
                         ),
                       ],
                     ), // Cierre de la Column

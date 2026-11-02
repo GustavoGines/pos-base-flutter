@@ -91,6 +91,10 @@ class OtaStartupChecker {
         } catch (_) {}
       }
 
+      if (success && Platform.isWindows) {
+        Process.run('ie4uinit.exe', ['-show']).ignore();
+      }
+
       return OtaStartupResult(
         success: success,
         component: component,

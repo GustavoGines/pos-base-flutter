@@ -162,6 +162,48 @@ class LicenseRefreshObserver extends NavigatorObserver {
   void didReplace({Route? newRoute, Route? oldRoute}) => _refresh(newRoute);
 }
 
+/// Actualiza silenciosamente en clientes de producción el acceso directo del Escritorio
+/// (ej. "Sistema POS.lnk" -> "Caja4U.lnk") manteniendo intacto el destino Sistema_POS.exe,
+/// y refresca la caché de íconos de Windows.
+void _migrateWindowsDesktopShortcutAndIconCache() {
+  try {
+    final exePath = Platform.resolvedExecutable;
+    final psScript = r'''
+Continue = 'SilentlyContinue'
+ = 
+ = New-Object -ComObject WScript.Shell
+ = @(
+  [Environment]::GetFolderPath('Desktop'),
+  [Environment]::GetFolderPath('CommonDesktopDirectory')
+) | Select-Object -Unique
+
+foreach ( in ) {
+  if (-not  -or -not (Test-Path )) { continue }
+  Get-ChildItem -Path  -Filter '*.lnk' | ForEach-Object {
+     = .CreateShortcut(.FullName)
+    if (.TargetPath -and (.TargetPath -ieq  -or .TargetPath -like '*\Sistema_POS.exe')) {
+      .Description = 'Caja4U - Punto de Venta'
+      if (Test-Path ) { .IconLocation = ",0" }
+      .Save()
+      if (.Name -ne 'Caja4U.lnk') {
+         = Join-Path  'Caja4U.lnk'
+        if (-not (Test-Path )) {
+          Rename-Item -Path .FullName -NewName 'Caja4U.lnk' -Force
+        }
+      }
+    }
+  }
+}
+ie4uinit.exe -show
+''';
+    Process.run(
+      'powershell',
+      ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-Command', psScript],
+      environment: {'CAJA4U_EXE_PATH': exePath},
+    ).ignore();
+  } catch (_) {}
+}
+
 void main() async {
   // CRÍTICO: Inicialización obligatoria para assets y plugins en desktop
   WidgetsFlutterBinding.ensureInitialized();
@@ -174,9 +216,11 @@ void main() async {
       size: Size(1280, 720),
       minimumSize: Size(1000, 700),
       center: true,
+      title: 'Caja4U  •  by Dev4U',
       titleBarStyle: TitleBarStyle.normal,
     );
     windowManager.waitUntilReadyToShow(windowOptions, () async {
+      await windowManager.setTitle('Caja4U  •  by Dev4U');
       await windowManager.show();
       await windowManager.focus();
       await windowManager.maximize();
@@ -191,6 +235,13 @@ void main() async {
 
   // Obtener URL de la API del almacenamiento local
   final prefs = await SharedPreferences.getInstance();
+  if (AppConfig.isDesktop && Platform.isWindows) {
+    final iconCacheRefreshed = prefs.getBool('caja4u_desktop_brand_v2_migrated') ?? false;
+    if (!iconCacheRefreshed) {
+      _migrateWindowsDesktopShortcutAndIconCache();
+      await prefs.setBool('caja4u_desktop_brand_v2_migrated', true);
+    }
+  }
   final String localUrl = prefs.getString('pos_api_local') ??
       prefs.getString('pos_api') ??
       AppConfig.kApiBaseUrl;
@@ -557,6 +608,13 @@ class _MainAppState extends State<MainApp> {
       success = true;
     } catch (e) {
       final prefs = await SharedPreferences.getInstance();
+  if (AppConfig.isDesktop && Platform.isWindows) {
+    final iconCacheRefreshed = prefs.getBool('caja4u_desktop_brand_v2_migrated') ?? false;
+    if (!iconCacheRefreshed) {
+      _migrateWindowsDesktopShortcutAndIconCache();
+      await prefs.setBool('caja4u_desktop_brand_v2_migrated', true);
+    }
+  }
       final currentUrl = prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
 
       // Auto-fix: Si estamos en localhost 8000 y falla, probar con Laragon (puerto 80) una vez
@@ -664,6 +722,13 @@ class _MainAppState extends State<MainApp> {
 
   Future<void> _showNetworkSettingsDialog(BuildContext context) async {
     final prefs = await SharedPreferences.getInstance();
+  if (AppConfig.isDesktop && Platform.isWindows) {
+    final iconCacheRefreshed = prefs.getBool('caja4u_desktop_brand_v2_migrated') ?? false;
+    if (!iconCacheRefreshed) {
+      _migrateWindowsDesktopShortcutAndIconCache();
+      await prefs.setBool('caja4u_desktop_brand_v2_migrated', true);
+    }
+  }
     final currentUrl = prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
 
     if (!context.mounted) return;
@@ -794,14 +859,20 @@ class _MainAppState extends State<MainApp> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.point_of_sale_rounded,
-                      size: 72, color: Color(0xFF3B82F6)),
-                  const SizedBox(height: 24),
-                  const Text('Caja4U',
-                      style: TextStyle(
-                          fontSize: 26,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white)),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(22),
+                    child: Image.asset(
+                      'assets/caja4u_logo_full.png',
+                      width: 200,
+                      height: 170,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => const Icon(
+                        Icons.point_of_sale_rounded,
+                        size: 72,
+                        color: Color(0xFF3B82F6),
+                      ),
+                    ),
+                  ),
                   const SizedBox(height: 8),
                   Text(
                       _initError != null
@@ -925,7 +996,7 @@ class _MainAppState extends State<MainApp> {
         );
       },
       debugShowCheckedModeBanner: false,
-      title: 'Caja4U',
+      title: 'Caja4U  •  by Dev4U',
       localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,
         GlobalWidgetsLocalizations.delegate,
