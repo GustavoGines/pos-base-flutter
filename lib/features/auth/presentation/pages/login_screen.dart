@@ -22,13 +22,17 @@ class LoginScreen extends StatefulWidget {
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
+class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStateMixin {
   String _pin = '';
   String? _errorDetail;
   static const int _pinLength = 4;
 
   // ── FocusNode dedicado al listener del teclado físico ────────────
   late final FocusNode _keyboardFocus;
+  late final AnimationController _bootTransitionCtrl;
+  late final Animation<double> _logoGlideAnim;
+  late final Animation<double> _cardExpandAnim;
+  late final Animation<double> _keypadRevealAnim;
   
   UpdateInfo? _frontendUpdate;
   UpdateInfo? _backendUpdate;
@@ -39,6 +43,23 @@ class _LoginScreenState extends State<LoginScreen> {
   void initState() {
     super.initState();
     _keyboardFocus = FocusNode(debugLabel: 'PinKeyboard');
+    _bootTransitionCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 820),
+    );
+    _logoGlideAnim = CurvedAnimation(
+      parent: _bootTransitionCtrl,
+      curve: const Interval(0.0, 0.72, curve: Curves.easeOutCubic),
+    );
+    _cardExpandAnim = CurvedAnimation(
+      parent: _bootTransitionCtrl,
+      curve: const Interval(0.08, 0.78, curve: Curves.easeOutCubic),
+    );
+    _keypadRevealAnim = CurvedAnimation(
+      parent: _bootTransitionCtrl,
+      curve: const Interval(0.28, 1.0, curve: Curves.easeOutCubic),
+    );
+    _bootTransitionCtrl.forward();
 
     // Bulletproof #2: Esperar que el primer frame esté completamente
     // renderizado antes de pedir el foco. En Windows, autofocus puede
@@ -132,6 +153,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   void dispose() {
+    _bootTransitionCtrl.dispose();
     _keyboardFocus.dispose();
     super.dispose();
   }
@@ -465,51 +487,82 @@ class _LoginScreenState extends State<LoginScreen> {
               SafeArea(
                 child: Center(
                   child: SingleChildScrollView(
-                    child: Container(
-                      width: 400,
-                    padding: const EdgeInsets.all(40),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(24),
-                      boxShadow: const [
-                        BoxShadow(color: Colors.black26, blurRadius: 20, offset: Offset(0, 10)),
-                      ],
-                    ),
-                    child: Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const SizedBox(height: 8),
-                            Container(
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(22),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: const Color(0xFF121A2D).withValues(alpha: 0.25),
-                                    blurRadius: 16,
-                                    offset: const Offset(0, 8),
-                                  ),
-                                ],
+                    child: AnimatedBuilder(
+                      animation: _bootTransitionCtrl,
+                      builder: (context, _) {
+                        final logoT = _logoGlideAnim.value;
+                        final cardT = _cardExpandAnim.value;
+                        final keyT = _keypadRevealAnim.value;
+
+                        return Container(
+                          width: 400,
+                          padding: const EdgeInsets.all(40),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: cardT),
+                            borderRadius: BorderRadius.circular(24),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.26 * cardT),
+                                blurRadius: 24 * cardT,
+                                offset: Offset(0, 10 * cardT),
                               ),
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(22),
-                                child: Image.asset(
-                                  'assets/caja4u_logo_full.png',
-                                  width: 184,
-                                  height: 156,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) => const Icon(
-                                    Icons.point_of_sale_rounded,
-                                    size: 64,
-                                    color: Color(0xFF3B82F6),
+                            ],
+                          ),
+                          child: Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const SizedBox(height: 8),
+                                  Transform.translate(
+                                    offset: Offset(0, 185 * (1.0 - logoT)),
+                                    child: Transform.scale(
+                                      scale: 1.08 - (0.08 * logoT),
+                                      child: Container(
+                                        decoration: BoxDecoration(
+                                          borderRadius: BorderRadius.circular(22),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: const Color(0xFF10B981)
+                                                  .withValues(alpha: 0.20 * (1.0 - logoT)),
+                                              blurRadius: 32 * (1.0 - logoT),
+                                              spreadRadius: 2 * (1.0 - logoT),
+                                            ),
+                                            BoxShadow(
+                                              color: const Color(0xFF121A2D)
+                                                  .withValues(alpha: 0.25),
+                                              blurRadius: 16,
+                                              offset: const Offset(0, 8),
+                                            ),
+                                          ],
+                                        ),
+                                        child: ClipRRect(
+                                          borderRadius: BorderRadius.circular(22),
+                                          child: Image.asset(
+                                            'assets/caja4u_logo_full.png',
+                                            width: 184,
+                                            height: 156,
+                                            fit: BoxFit.cover,
+                                            errorBuilder: (_, __, ___) => const Icon(
+                                              Icons.point_of_sale_rounded,
+                                              size: 64,
+                                              color: Color(0xFF3B82F6),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
                                   ),
-                                ),
-                              ),
-                            ),
-                        const SizedBox(height: 18),
-                        const Text('Ingreso al sistema',
+                                  Opacity(
+                                    opacity: keyT,
+                                    child: Transform.translate(
+                                      offset: Offset(0, 22 * (1.0 - keyT)),
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          const SizedBox(height: 18),
+                                          const Text('Ingreso al sistema',
                             style: TextStyle(fontSize: 14, color: Colors.black54)),
                         const SizedBox(height: 32),
 
@@ -612,6 +665,10 @@ class _LoginScreenState extends State<LoginScreen> {
                             letterSpacing: 0.3,
                           ),
                         ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
                       ],
                     ), // Cierre de la Column
                     if (_appVersion.isNotEmpty)
@@ -619,14 +676,16 @@ class _LoginScreenState extends State<LoginScreen> {
                         top: -30,
                         left: 0,
                         right: 0,
-                        child: Center(
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: Colors.grey.shade100,
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: Colors.grey.shade300),
-                            ),
+                        child: Opacity(
+                          opacity: keyT,
+                          child: Center(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade100,
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: Colors.grey.shade300),
+                              ),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
@@ -645,12 +704,15 @@ class _LoginScreenState extends State<LoginScreen> {
                                   ],
                                 ],
                               ),
+                            ),
                           ),
                         ),
                       ),
                   ],
                 ), // Cierre del Stack
-              ),
+              );
+            },
+          ),
                 ),
               ),
               ), // Cierre de SafeArea

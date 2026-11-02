@@ -112,10 +112,16 @@ class _StockAdjustmentDialogState extends State<StockAdjustmentDialog> {
     if (mounted) {
       Navigator.of(context).pop();
       if (ok) {
-        final newStock = widget.provider.products
-            .firstWhere((p) => p.id == widget.product.id,
-                orElse: () => widget.product as dynamic)
-            .stock;
+        final updatedFromProvider =
+            widget.provider.lastUpdatedProduct?.id == widget.product.id
+                ? widget.provider.lastUpdatedProduct
+                : widget.provider.products
+                    .where((p) => p.id == widget.product.id)
+                    .firstOrNull;
+        final double computedFallback = _selectedType == 'in'
+            ? widget.product.stock + (qty ?? 0)
+            : widget.product.stock - (qty ?? 0);
+        final newStock = updatedFromProvider?.stock ?? computedFallback;
 
         String snackMsg;
         if (qty != null && qty > 0) {

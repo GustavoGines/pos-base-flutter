@@ -34,13 +34,21 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
     _overlayController.toggle();
   }
 
-  void _handleAlertTap(BuildContext context, dynamic alert) {
+  Future<void> _handleAlertTap(BuildContext context, dynamic alert) async {
     _overlayController.hide();
     final catalogProvider = context.read<CatalogProvider>();
     try {
       final productId = int.parse(alert['product_id'].toString());
-      final product =
-          catalogProvider.products.firstWhere((p) => p.id == productId);
+      final product = await catalogProvider.resolveProductById(productId);
+      if (!context.mounted) return;
+      if (product == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text(
+                  'Producto no disponible en catálogo local. Recargue la App.')),
+        );
+        return;
+      }
       showDialog(
         context: context,
         builder: (ctx) => StockAdjustmentDialog(
@@ -54,10 +62,35 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
         }
       });
     } catch (e) {
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
             content: Text(
                 'Producto no disponible en catálogo local. Recargue la App.')),
+      );
+    }
+  }
+
+  Future<void> _handleViewProductTap(BuildContext context, dynamic alert) async {
+    _overlayController.hide();
+    final catalogProvider = context.read<CatalogProvider>();
+    try {
+      final productId = int.parse(alert['product_id'].toString());
+      final product = await catalogProvider.resolveProductById(productId);
+      if (!context.mounted) return;
+      if (product == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('Producto no disponible en catálogo local.')),
+        );
+        return;
+      }
+      Navigator.of(context).pushNamed('/catalog', arguments: product);
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('Producto no disponible en catálogo local.')),
       );
     }
   }
@@ -277,11 +310,14 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
   Widget _buildDynamicTile(BuildContext context, dynamic alert, String level) {
     final type = alert['alert_type']?.toString() ?? 'predictive';
     void onTap() => _handleAlertTap(context, alert);
+    void onVer() => _handleViewProductTap(context, alert);
 
     if (type == 'out_of_stock' || type == 'low_stock') {
-      return _ReactiveAlertTile(alert: alert, level: level, onReponer: onTap);
+      return _ReactiveAlertTile(
+          alert: alert, level: level, onReponer: onTap, onVer: onVer);
     }
-    return _PredictiveAlertTile(alert: alert, level: level, onTap: onTap);
+    return _PredictiveAlertTile(
+        alert: alert, level: level, onTap: onTap, onVer: onVer);
   }
 
   Widget _buildFooter() {
@@ -397,9 +433,14 @@ class _ReactiveAlertTile extends StatelessWidget {
   final dynamic alert;
   final String level;
   final VoidCallback onReponer;
+  final VoidCallback onVer;
 
-  const _ReactiveAlertTile(
-      {required this.alert, required this.level, required this.onReponer});
+  const _ReactiveAlertTile({
+    required this.alert,
+    required this.level,
+    required this.onReponer,
+    required this.onVer,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -512,24 +553,7 @@ class _ReactiveAlertTile extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
                 TextButton(
-                  onPressed: () {
-                    try {
-                      final productId =
-                          int.parse(alert['product_id'].toString());
-                      final product = context
-                          .read<CatalogProvider>()
-                          .products
-                          .firstWhere((p) => p.id == productId);
-                      Navigator.of(context)
-                          .pushNamed('/catalog', arguments: product);
-                    } catch (e) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                            content: Text(
-                                'Producto no disponible en catálogo local.')),
-                      );
-                    }
-                  },
+                  onPressed: onVer,
                   child: const Text('Ver', style: TextStyle(fontSize: 12)),
                 ),
                 const SizedBox(width: 8),
@@ -554,11 +578,13 @@ class _PredictiveAlertTile extends StatelessWidget {
   final dynamic alert;
   final String level;
   final VoidCallback onTap;
+  final VoidCallback onVer;
 
   const _PredictiveAlertTile({
     required this.alert,
     required this.level,
     required this.onTap,
+    required this.onVer,
   });
 
   @override
@@ -659,24 +685,7 @@ class _PredictiveAlertTile extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
                 TextButton(
-                  onPressed: () {
-                    try {
-                      final productId =
-                          int.parse(alert['product_id'].toString());
-                      final product = context
-                          .read<CatalogProvider>()
-                          .products
-                          .firstWhere((p) => p.id == productId);
-                      Navigator.of(context)
-                          .pushNamed('/catalog', arguments: product);
-                    } catch (e) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                            content: Text(
-                                'Producto no disponible en catálogo local.')),
-                      );
-                    }
-                  },
+                  onPressed: onVer,
                   child: const Text('Ver', style: TextStyle(fontSize: 12)),
                 ),
                 const SizedBox(width: 8),

@@ -277,6 +277,38 @@ class CatalogProvider with ChangeNotifier {
   /// Búsqueda remota para pickers (p. ej. Ofertas Rápidas): consulta todo el catálogo en el
   /// servidor (nombre, código de barras o código interno) en lugar de filtrar solo la página
   /// cargada en memoria. NO modifica `products` ni el estado de paginación/orden.
+  /// Resuelve un producto por su ID buscando primero en todas las listas en memoria (0 ms)
+  /// y, si no está cargado en la página actual ni en cachés secundarias, lo solicita
+  /// directamente al backend sin alterar el estado de paginación de la grilla.
+  Future<Product?> resolveProductById(int productId) async {
+    for (final p in _products) {
+      if (p.id == productId) return p;
+    }
+    for (final p in _pinnedExtraProducts) {
+      if (p.id == productId) return p;
+    }
+    for (final p in _weightOnlyProducts) {
+      if (p.id == productId) return p;
+    }
+    for (final extras in _categoryExtraProducts.values) {
+      for (final p in extras) {
+        if (p.id == productId) return p;
+      }
+    }
+    try {
+      final result = await getProductsUseCase(
+        page: 1,
+        perPage: 1,
+        ids: [productId],
+      );
+      final list = List<Product>.from(result['data'] as List);
+      if (list.isNotEmpty) return list.first;
+    } catch (e) {
+      debugPrint('Error en resolveProductById(): ');
+    }
+    return null;
+  }
+
   Future<List<Product>> searchProductsRemote(String query,
       {int perPage = 30}) async {
     final q = query.trim();
@@ -1005,18 +1037,40 @@ class CatalogProvider with ChangeNotifier {
         minStock: minStock,
         notes: notes,
       );
-      // Actualizamos el producto completo en la lista si el backend lo devuelve (mejor consistencia)
+      // Actualizamos el producto completo en la lista y en cachés secundarias si el backend lo devuelve
+      double? resolvedStock;
       if (result.containsKey('product')) {
         final updatedProduct =
             ProductModel.fromJson(result['product'] as Map<String, dynamic>);
+        _lastUpdatedProduct = updatedProduct;
+        resolvedStock = updatedProduct.stock;
         final idx = _products.indexWhere((p) => p.id == productId);
         if (idx != -1) _products[idx] = updatedProduct;
-      } else {
+      } else if (result.containsKey('new_stock')) {
         // Fallback al comportamiento anterior si el backend no envía el objeto completo
         final newStock = double.parse(result['new_stock'].toString());
+        resolvedStock = newStock;
         final idx = _products.indexWhere((p) => p.id == productId);
         if (idx != -1) {
           _products[idx] = _products[idx].copyWith(stock: newStock);
+          _lastUpdatedProduct = _products[idx];
+        }
+      }
+      if (resolvedStock != null) {
+        final stockMap = <int, double>{productId: resolvedStock};
+        if (_categoryExtraProducts.isNotEmpty) {
+          for (final key in _categoryExtraProducts.keys.toList()) {
+            _categoryExtraProducts[key] = applyStockUpdatesToProductList(
+                _categoryExtraProducts[key]!, stockMap);
+          }
+        }
+        if (_weightOnlyProducts.isNotEmpty) {
+          _weightOnlyProducts =
+              applyStockUpdatesToProductList(_weightOnlyProducts, stockMap);
+        }
+        if (_pinnedExtraProducts.isNotEmpty) {
+          _pinnedExtraProducts =
+              applyStockUpdatesToProductList(_pinnedExtraProducts, stockMap);
         }
       }
       return true;

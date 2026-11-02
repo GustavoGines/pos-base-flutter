@@ -859,40 +859,75 @@ class _MainAppState extends State<MainApp> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(22),
-                    child: Image.asset(
-                      'assets/caja4u_logo_full.png',
-                      width: 200,
-                      height: 170,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => const Icon(
-                        Icons.point_of_sale_rounded,
-                        size: 72,
-                        color: Color(0xFF3B82F6),
+                  Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(24),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF10B981).withValues(alpha: 0.18),
+                          blurRadius: 36,
+                          spreadRadius: 2,
+                        ),
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.35),
+                          blurRadius: 24,
+                          offset: const Offset(0, 10),
+                        ),
+                      ],
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(24),
+                      child: Image.asset(
+                        'assets/caja4u_logo_full.png',
+                        width: 200,
+                        height: 170,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => const Icon(
+                          Icons.point_of_sale_rounded,
+                          size: 72,
+                          color: Color(0xFF3B82F6),
+                        ),
                       ),
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 24),
+                  if (_initError == null) ...[
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: const SizedBox(
+                        width: 180,
+                        height: 4,
+                        child: LinearProgressIndicator(
+                          backgroundColor: Colors.white12,
+                          color: Color(0xFF10B981),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                  ],
                   Text(
-                      _initError != null
-                          ? 'ESTADO: $_initError'
-                          : 'Iniciando sistema...',
-                      textAlign: TextAlign.center,
-                      style:
-                          const TextStyle(fontSize: 14, color: Colors.white54)),
-                  const SizedBox(height: 32),
+                    _initError != null
+                        ? 'ESTADO: $_initError'
+                        : 'Iniciando servicios de Caja4U...',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: Colors.white60,
+                      letterSpacing: 0.4,
+                    ),
+                  ),
                   if (_initError != null) ...[
+                    const SizedBox(height: 28),
                     const Icon(Icons.error_outline_rounded,
                         color: Colors.redAccent, size: 48),
                     const SizedBox(height: 24),
                     ElevatedButton.icon(
-                        onPressed: () {
-                          _initializeApp();
-                        },
-                        icon: const Icon(Icons.refresh_rounded),
-                        label: const Text('Reintentar Conexión'),
-                        style: ElevatedButton.styleFrom(
+                      onPressed: () {
+                        _initializeApp();
+                      },
+                      icon: const Icon(Icons.refresh_rounded),
+                      label: const Text('Reintentar Conexión'),
+                      style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.blue,
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(
@@ -910,13 +945,7 @@ class _MainAppState extends State<MainApp> {
                       label: const Text('Configurar Servidor',
                           style: TextStyle(color: Colors.white70)),
                     ),
-                  ] else
-                    const SizedBox(
-                      width: 40,
-                      height: 40,
-                      child: CircularProgressIndicator(
-                          color: Color(0xFF3B82F6), strokeWidth: 3),
-                    ),
+                  ],
                 ],
               ),
             ),
