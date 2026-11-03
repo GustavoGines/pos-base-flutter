@@ -144,7 +144,7 @@ void main() {
       expect(find.text('Supermercado Central'), findsOneWidget);
     });
 
-    testWidgets('Renders fallback Icon(Icons.point_of_sale_rounded) when effectiveLogoUrl is null', (tester) async {
+    testWidgets('Renders fallback Image.asset(assets/app_logo.png) when effectiveLogoUrl is null', (tester) async {
       tester.view.physicalSize = const Size(1280, 800);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(() => tester.view.resetPhysicalSize());
@@ -160,15 +160,19 @@ void main() {
       await tester.pumpWidget(buildTestAppBar(settingsProv: settingsProv));
       await tester.pump();
 
-      // No Image.network is rendered
-      expect(find.byType(Image), findsNothing);
-
-      // Fallback icon is rendered in the header
-      expect(find.byIcon(Icons.point_of_sale_rounded), findsOneWidget);
+      // No Image.network is rendered; fallback asset logo is rendered in the header
+      expect(
+        find.byWidgetPredicate((w) => w is Image && w.image is NetworkImage),
+        findsNothing,
+      );
+      final assetLogoFinder = find.byWidgetPredicate(
+        (w) => w is Image && w.image is AssetImage && (w.image as AssetImage).assetName == 'assets/app_logo.png',
+      );
+      expect(assetLogoFinder, findsOneWidget);
       expect(find.text('Negocio Sin Logo'), findsOneWidget);
     });
 
-    testWidgets('Renders fallback icon when logoUrl is empty or malformed without host', (tester) async {
+    testWidgets('Renders fallback asset logo when logoUrl is empty or malformed without host', (tester) async {
       tester.view.physicalSize = const Size(1280, 800);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(() => tester.view.resetPhysicalSize());
@@ -183,13 +187,19 @@ void main() {
       await tester.pumpWidget(buildTestAppBar(settingsProv: settingsProv));
       await tester.pump();
 
-      // Does NOT crash with ArgumentError; renders fallback icon
+      // Does NOT crash with ArgumentError; renders fallback asset logo
       expect(tester.takeException(), isNull);
-      expect(find.byType(Image), findsNothing);
-      expect(find.byIcon(Icons.point_of_sale_rounded), findsOneWidget);
+      expect(
+        find.byWidgetPredicate((w) => w is Image && w.image is NetworkImage),
+        findsNothing,
+      );
+      final assetLogoFinder = find.byWidgetPredicate(
+        (w) => w is Image && w.image is AssetImage && (w.image as AssetImage).assetName == 'assets/app_logo.png',
+      );
+      expect(assetLogoFinder, findsOneWidget);
     });
 
-    testWidgets('Image.network errorBuilder renders fallback Icon(Icons.point_of_sale_rounded)', (tester) async {
+    testWidgets('Image.network errorBuilder renders fallback Image.asset(assets/app_logo.png)', (tester) async {
       tester.view.physicalSize = const Size(1280, 800);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(() => tester.view.resetPhysicalSize());
@@ -205,18 +215,24 @@ void main() {
       await tester.pumpWidget(buildTestAppBar(settingsProv: settingsProv));
       await tester.pump();
 
-      final imageFinder = find.byType(Image);
-      expect(imageFinder, findsOneWidget);
+      final networkImageFinder = find.byWidgetPredicate(
+        (w) => w is Image && w.image is NetworkImage && (w.image as NetworkImage).url == brokenLogoUrl,
+      );
+      expect(networkImageFinder, findsOneWidget);
 
-      final imageWidget = tester.widget<Image>(imageFinder);
+      final imageWidget = tester.widget<Image>(networkImageFinder);
       expect(imageWidget.errorBuilder, isNotNull);
 
-      // Exercise errorBuilder directly to verify fallback icon widget structure
-      final errorResult = imageWidget.errorBuilder!(tester.element(imageFinder), Exception('HTTP 404'), null);
-      expect(errorResult, isA<Icon>());
-      final iconResult = errorResult as Icon;
-      expect(iconResult.icon, Icons.point_of_sale_rounded);
-      expect(iconResult.size, 26.0);
+      // Exercise errorBuilder directly to verify fallback asset logo widget structure
+      final errorResult = imageWidget.errorBuilder!(tester.element(networkImageFinder), Exception('HTTP 404'), null);
+      expect(errorResult, isA<ClipRRect>());
+      final clipResult = errorResult as ClipRRect;
+      expect(clipResult.child, isA<Image>());
+      final fallbackImage = clipResult.child as Image;
+      expect(fallbackImage.image, isA<AssetImage>());
+      expect((fallbackImage.image as AssetImage).assetName, 'assets/app_logo.png');
+      expect(fallbackImage.width, 26.0);
+      expect(fallbackImage.height, 26.0);
     });
 
     testWidgets('Back button renders when showBackButton is true and triggers maybePop', (tester) async {

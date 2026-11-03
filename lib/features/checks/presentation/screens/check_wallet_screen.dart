@@ -181,7 +181,7 @@ class _CheckWalletScreenState extends State<CheckWalletScreen> {
     }
 
     return SizedBox(
-      width: 120,
+      width: 100,
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -479,8 +479,10 @@ class _CheckWalletScreenState extends State<CheckWalletScreen> {
                                                 constraints: BoxConstraints(
                                                     minWidth: constraints.maxWidth),
                                                 child: DataTable(
+                                              columnSpacing: 20,
+                                              horizontalMargin: 16,
                                               dataRowMinHeight: 48,
-                                              dataRowMaxHeight: 68,
+                                              dataRowMaxHeight: 64,
                                               columns: const [
                                                 DataColumn(
                                                     label: Text('Banco',
@@ -519,32 +521,26 @@ class _CheckWalletScreenState extends State<CheckWalletScreen> {
                                                                 FontWeight
                                                                     .bold))),
                                                 DataColumn(
-                                                    label: SizedBox(
-                                                        width: 100,
-                                                        child: Text('Importe',
-                                                            textAlign:
-                                                                TextAlign.right,
-                                                            style: TextStyle(
-                                                                fontWeight:
-                                                                    FontWeight
-                                                                        .bold))),
+                                                    label: Text('Importe',
+                                                        textAlign:
+                                                            TextAlign.right,
+                                                        style: TextStyle(
+                                                            fontWeight:
+                                                                FontWeight
+                                                                    .bold)),
                                                     numeric: true),
                                                 DataColumn(
-                                                    label: SizedBox(
-                                                        width: 120,
-                                                        child: Text('Estado',
-                                                            style: TextStyle(
-                                                                fontWeight:
-                                                                    FontWeight
-                                                                        .bold)))),
+                                                    label: Text('Estado',
+                                                        style: TextStyle(
+                                                            fontWeight:
+                                                                FontWeight
+                                                                    .bold))),
                                                 DataColumn(
-                                                    label: SizedBox(
-                                                        width: 140,
-                                                        child: Text('Acciones',
-                                                            style: TextStyle(
-                                                                fontWeight:
-                                                                    FontWeight
-                                                                        .bold)))),
+                                                    label: Text('Acciones',
+                                                        style: TextStyle(
+                                                            fontWeight:
+                                                                FontWeight
+                                                                    .bold))),
                                               ],
                                               rows: filteredChecks.map((c) {
                                                 // Consider ready to deposit if today >= paymentDate
@@ -572,16 +568,65 @@ class _CheckWalletScreenState extends State<CheckWalletScreen> {
                                                       FontWeight.normal;
                                                 }
 
+                                                final deliveredBy =
+                                                    c.customerName ??
+                                                        'Consumidor Final';
+
                                                 return DataRow(
                                                   cells: [
-                                                    DataCell(Text(c.bankName)),
+                                                    DataCell(
+                                                      ConstrainedBox(
+                                                        constraints:
+                                                            const BoxConstraints(
+                                                                maxWidth: 150),
+                                                        child: Tooltip(
+                                                          message: c.bankName,
+                                                          child: Text(
+                                                            c.bankName,
+                                                            maxLines: 2,
+                                                            overflow:
+                                                                TextOverflow
+                                                                    .ellipsis,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ),
                                                     DataCell(
                                                         Text(c.checkNumber)),
                                                     DataCell(
-                                                        Text(c.issuerName)),
-                                                    DataCell(Text(c
-                                                            .customerName ??
-                                                        'Consumidor Final')),
+                                                      ConstrainedBox(
+                                                        constraints:
+                                                            const BoxConstraints(
+                                                                maxWidth: 175),
+                                                        child: Tooltip(
+                                                          message: c.issuerName,
+                                                          child: Text(
+                                                            c.issuerName,
+                                                            maxLines: 2,
+                                                            overflow:
+                                                                TextOverflow
+                                                                    .ellipsis,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ),
+                                                    DataCell(
+                                                      ConstrainedBox(
+                                                        constraints:
+                                                            const BoxConstraints(
+                                                                maxWidth: 185),
+                                                        child: Tooltip(
+                                                          message: deliveredBy,
+                                                          child: Text(
+                                                            deliveredBy,
+                                                            maxLines: 2,
+                                                            overflow:
+                                                                TextOverflow
+                                                                    .ellipsis,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ),
                                                     DataCell(Text(DateFormat(
                                                             'dd/MM/yyyy')
                                                         .format(c.issueDate))),
@@ -615,86 +660,88 @@ class _CheckWalletScreenState extends State<CheckWalletScreen> {
                                                       ),
                                                     ),
                                                     DataCell(
-                                                      Padding(
-                                                        padding:
-                                                            const EdgeInsets
-                                                                .symmetric(
-                                                                horizontal: 16),
-                                                        child: Text(
-                                                            '\$${c.amount.toCurrency()}',
-                                                            style: const TextStyle(
-                                                                fontWeight:
-                                                                    FontWeight
-                                                                        .bold,
-                                                                fontSize: 15)),
-                                                      ),
+                                                      Text(
+                                                          '\$${c.amount.toCurrency()}',
+                                                          style: const TextStyle(
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .bold,
+                                                              fontSize: 15)),
                                                     ),
-                                                    DataCell(SizedBox(
-                                                        width: 120,
-                                                        child: _buildStatusBadge(
-                                                            c.status,
-                                                            c.endorsementNote))),
+                                                    DataCell(_buildStatusBadge(
+                                                        c.status,
+                                                        c.endorsementNote)),
                                                     DataCell(
-                                                      SizedBox(
-                                                        width: 140,
-                                                        child:
-                                                            c.status ==
-                                                                    'in_wallet'
-                                                                ? Row(
-                                                                    mainAxisSize:
-                                                                        MainAxisSize
-                                                                            .min,
-                                                                    children: [
-                                                                      IconButton(
-                                                                        tooltip:
-                                                                            'Depositar',
-                                                                        icon: const Icon(
-                                                                            Icons
-                                                                                .account_balance,
-                                                                            color:
-                                                                                Colors.green,
-                                                                            size: 24),
-                                                                        onPressed: () => _confirmAction(
-                                                                            context,
-                                                                            c.id,
-                                                                            'depósito',
-                                                                            'deposited',
-                                                                            confirmColor: Colors.green.shade700),
-                                                                      ),
-                                                                      IconButton(
-                                                                        tooltip:
-                                                                            'Endosar',
-                                                                        icon: const Icon(
-                                                                            Icons
-                                                                                .handshake,
-                                                                            color:
-                                                                                Colors.purple,
-                                                                            size: 24),
-                                                                        onPressed:
-                                                                            () =>
-                                                                                _showEndorseDialog(c.id),
-                                                                      ),
-                                                                      IconButton(
-                                                                        tooltip:
-                                                                            'Rechazar',
-                                                                        icon: const Icon(
-                                                                            Icons
-                                                                                .cancel,
-                                                                            color:
-                                                                                Colors.red,
-                                                                            size: 24),
-                                                                        onPressed: () => _confirmAction(
-                                                                            context,
-                                                                            c.id,
-                                                                            'rechazo',
-                                                                            'rejected',
-                                                                            confirmColor: Colors.red.shade700),
-                                                                      ),
-                                                                    ],
-                                                                  )
-                                                                : const SizedBox
-                                                                    .shrink(),
-                                                      ),
+                                                      c.status == 'in_wallet'
+                                                          ? Row(
+                                                              mainAxisSize:
+                                                                  MainAxisSize
+                                                                      .min,
+                                                              children: [
+                                                                IconButton(
+                                                                  visualDensity:
+                                                                      VisualDensity
+                                                                          .compact,
+                                                                  tooltip:
+                                                                      'Depositar',
+                                                                  icon: const Icon(
+                                                                      Icons
+                                                                          .account_balance,
+                                                                      color: Colors
+                                                                          .green,
+                                                                      size: 22),
+                                                                  onPressed: () => _confirmAction(
+                                                                      context,
+                                                                      c.id,
+                                                                      'depósito',
+                                                                      'deposited',
+                                                                      confirmColor:
+                                                                          Colors
+                                                                              .green
+                                                                              .shade700),
+                                                                ),
+                                                                IconButton(
+                                                                  visualDensity:
+                                                                      VisualDensity
+                                                                          .compact,
+                                                                  tooltip:
+                                                                      'Endosar',
+                                                                  icon: const Icon(
+                                                                      Icons
+                                                                          .handshake,
+                                                                      color: Colors
+                                                                          .purple,
+                                                                      size: 22),
+                                                                  onPressed: () =>
+                                                                      _showEndorseDialog(
+                                                                          c.id),
+                                                                ),
+                                                                IconButton(
+                                                                  visualDensity:
+                                                                      VisualDensity
+                                                                          .compact,
+                                                                  tooltip:
+                                                                      'Rechazar',
+                                                                  icon: const Icon(
+                                                                      Icons
+                                                                          .cancel,
+                                                                      color: Colors
+                                                                          .red,
+                                                                      size: 22),
+                                                                  onPressed: () => _confirmAction(
+                                                                      context,
+                                                                      c.id,
+                                                                      'rechazo',
+                                                                      'rejected',
+                                                                      confirmColor:
+                                                                          Colors
+                                                                              .red
+                                                                              .shade700),
+                                                                ),
+                                                              ],
+                                                            )
+                                                          : const SizedBox
+                                                              .shrink(),
                                                     ),
                                                   ],
                                                 );

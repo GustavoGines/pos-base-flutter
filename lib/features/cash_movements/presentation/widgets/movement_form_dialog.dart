@@ -708,22 +708,27 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                     children: [
                       Expanded(
                         child: DropdownButtonFormField<String>(
+                          isExpanded: true,
                           initialValue: _type,
                           decoration: const InputDecoration(
                               labelText: 'Tipo de Movimiento'),
                           items: const [
                             DropdownMenuItem(
                                 value: 'expense',
-                                child: Text('Gasto Operativo (Salida)')),
+                                child: Text('Gasto Operativo (Salida)',
+                                    overflow: TextOverflow.ellipsis)),
                             DropdownMenuItem(
                                 value: 'supplier_payment',
-                                child: Text('Pago a Proveedor (Salida)')),
+                                child: Text('Pago a Proveedor (Salida)',
+                                    overflow: TextOverflow.ellipsis)),
                             DropdownMenuItem(
                                 value: 'withdrawal',
-                                child: Text('Retiro de Dueño (Salida)')),
+                                child: Text('Retiro de Dueño (Salida)',
+                                    overflow: TextOverflow.ellipsis)),
                             DropdownMenuItem(
                                 value: 'deposit',
-                                child: Text('Ingreso Extra (Entrada)')),
+                                child: Text('Ingreso Extra (Entrada)',
+                                    overflow: TextOverflow.ellipsis)),
                           ],
                           onChanged: (val) => setState(() {
                             _type = val!;
@@ -764,22 +769,32 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                                         final hasOtros = activeCategories.any((c) => c.name.toLowerCase() == 'otros');
                                         
                                         return DropdownButtonFormField<int?>(
+                                          isExpanded: true,
                                           initialValue: _expenseCategoryId,
                                           decoration: const InputDecoration(
                                               labelText: 'Categoría de Gasto'),
                                           items: [
                                             const DropdownMenuItem<int?>(
                                               value: null,
-                                              child: Text('Seleccione una categoría'),
+                                              child: Text(
+                                                'Seleccione una categoría',
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
                                             ),
                                             ...activeCategories.map((c) => DropdownMenuItem<int?>(
                                                   value: c.id,
-                                                  child: Text(c.name),
+                                                  child: Text(
+                                                    c.name,
+                                                    overflow: TextOverflow.ellipsis,
+                                                  ),
                                                 )),
                                             if (!hasOtros)
                                               const DropdownMenuItem<int?>(
                                                 value: -1,
-                                                child: Text('Otros'),
+                                                child: Text(
+                                                  'Otros',
+                                                  overflow: TextOverflow.ellipsis,
+                                                ),
                                               ),
                                           ],
                                           onChanged: (val) => setState(() {
@@ -820,12 +835,15 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                               )
                             : DropdownButtonFormField<String>(
                                 key: ValueKey(_type),
+                                isExpanded: true,
                                 initialValue: _category,
                                 decoration: const InputDecoration(
                                     labelText: 'Categoría'),
                                 items: _currentCategories
                                     .map((c) => DropdownMenuItem(
-                                        value: c, child: Text(c)))
+                                        value: c,
+                                        child: Text(c,
+                                            overflow: TextOverflow.ellipsis)))
                                     .toList(),
                                 onChanged: (val) =>
                                     setState(() => _category = val!),
@@ -908,25 +926,29 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                       _category == 'Cobro de Saldo a Favor') ...[
                     supplierProv.suppliers.isEmpty
                         ? DropdownButtonFormField<int>(
+                            isExpanded: true,
                             initialValue: null,
                             decoration: const InputDecoration(
                                 labelText: 'Seleccionar Proveedor'),
                             items: const [
                               DropdownMenuItem(
                                   value: null,
-                                  child: Text('No hay proveedores registrados'))
+                                  child: Text('No hay proveedores registrados',
+                                      overflow: TextOverflow.ellipsis))
                             ],
                             onChanged: null,
                             validator: (val) => 'Registre proveedores primero',
                           )
                         : DropdownButtonFormField<int>(
+                            isExpanded: true,
                             initialValue: _selectedSupplierId,
                             decoration: const InputDecoration(
                                 labelText: 'Seleccionar Proveedor'),
                             items: supplierProv.suppliers
                                 .map((s) => DropdownMenuItem(
                                       value: s.id,
-                                      child: Text(s.name),
+                                      child: Text(s.name,
+                                          overflow: TextOverflow.ellipsis),
                                     ))
                                 .toList(),
                             onChanged: (val) => setState(() {
@@ -1253,18 +1275,24 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                               flex: 2,
                               child: DropdownButtonFormField<String>(
                                 key: ValueKey('payment_method_dropdown_$_type'),
+                                isExpanded: true,
                                 initialValue: _currentPaymentMethod,
                                 decoration: const InputDecoration(
                                     labelText: 'Método', isDense: true),
                                 items: [
                                   const DropdownMenuItem(
-                                      value: 'cash', child: Text('Efectivo')),
+                                      value: 'cash',
+                                      child: Text('Efectivo',
+                                          overflow: TextOverflow.ellipsis)),
                                   const DropdownMenuItem(
                                       value: 'transfer',
-                                      child: Text('Transf.')),
+                                      child: Text('Transf.',
+                                          overflow: TextOverflow.ellipsis)),
                                   if (_type == 'supplier_payment')
                                     const DropdownMenuItem(
-                                        value: 'check', child: Text('Cheque')),
+                                        value: 'check',
+                                        child: Text('Cheque',
+                                            overflow: TextOverflow.ellipsis)),
                                 ],
                                 onChanged: (val) => setState(() {
                                   final oldMethod = _currentPaymentMethod;
@@ -1305,6 +1333,7 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                           const SizedBox(height: 8),
                           availableChecks.isEmpty
                               ? DropdownButtonFormField<int>(
+                                  isExpanded: true,
                                   initialValue: null,
                                   decoration: const InputDecoration(
                                       labelText:
@@ -1313,13 +1342,15 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                                   items: const [
                                     DropdownMenuItem(
                                         value: null,
-                                        child:
-                                            Text('No hay cheques disponibles'))
+                                        child: Text(
+                                            'No hay cheques disponibles',
+                                            overflow: TextOverflow.ellipsis))
                                   ],
                                   onChanged: null,
                                 )
                               : DropdownButtonFormField<int>(
                                   key: ValueKey('check_dropdown_${selectedCheckIds.length}_$_currentCheckId'),
+                                  isExpanded: true,
                                   initialValue: availableChecks.any((c) => c.id == _currentCheckId)
                                       ? _currentCheckId
                                       : null,
@@ -1331,7 +1362,9 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                                       .map((c) => DropdownMenuItem(
                                             value: c.id,
                                             child: Text(
-                                                'Nº ${c.checkNumber} (\$ ${c.amount}) - ${c.bankName}'),
+                                                'Nº ${c.checkNumber} (\$ ${c.amount}) - ${c.bankName}',
+                                                overflow:
+                                                    TextOverflow.ellipsis),
                                           ))
                                       .toList(),
                                   onChanged: (val) {

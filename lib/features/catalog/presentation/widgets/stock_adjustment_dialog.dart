@@ -110,7 +110,11 @@ class _StockAdjustmentDialogState extends State<StockAdjustmentDialog> {
     );
 
     if (mounted) {
-      Navigator.of(context).pop();
+      InventoryAlertsProvider? alertsProv;
+      try {
+        alertsProv = Provider.of<InventoryAlertsProvider>(context, listen: false);
+      } catch (_) {}
+
       if (ok) {
         final updatedFromProvider =
             widget.provider.lastUpdatedProduct?.id == widget.product.id
@@ -134,15 +138,14 @@ class _StockAdjustmentDialogState extends State<StockAdjustmentDialog> {
         }
 
         SnackBarService.success(context, snackMsg);
+        Navigator.of(context).pop();
 
         // Disparar sincronización global silenciosa del Motor Cero Gravedad
-        try {
-          Provider.of<InventoryAlertsProvider>(context, listen: false)
-              .fetchAlerts();
-        } catch (_) {}
+        alertsProv?.fetchAlerts();
       } else {
         SnackBarService.error(
             context, widget.provider.errorMessage ?? 'Error al ajustar stock.');
+        Navigator.of(context).pop();
       }
     }
   }

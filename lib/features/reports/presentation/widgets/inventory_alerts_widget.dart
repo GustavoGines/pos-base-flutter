@@ -31,16 +31,22 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
   }
 
   void _toggleOverlay() {
+    final willShow = !_overlayController.isShowing;
     _overlayController.toggle();
+    if (willShow && mounted) {
+      context.read<InventoryAlertsProvider>().fetchAlerts();
+    }
   }
 
-  Future<void> _handleAlertTap(BuildContext context, dynamic alert) async {
+  Future<void> _handleAlertTap(dynamic alert) async {
     _overlayController.hide();
+    if (!mounted) return;
     final catalogProvider = context.read<CatalogProvider>();
+    final alertsProvider = context.read<InventoryAlertsProvider>();
     try {
       final productId = int.parse(alert['product_id'].toString());
-      final product = await catalogProvider.resolveProductById(productId);
-      if (!context.mounted) return;
+      var product = await catalogProvider.resolveProductById(productId);
+      if (!mounted) return;
       if (product == null) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -49,20 +55,22 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
         );
         return;
       }
-      showDialog(
+      final alertStock = double.tryParse(alert['current_stock']?.toString() ?? '');
+      if (alertStock != null && product.stock != alertStock) {
+        product = product.copyWith(stock: alertStock);
+      }
+      await showDialog(
         context: context,
         builder: (ctx) => StockAdjustmentDialog(
           provider: catalogProvider,
-          product: product,
+          product: product!,
         ),
-      ).then((_) {
-        // Al cerrar el ajuste, recargamos el reporte de alertas por si zafó
-        if (context.mounted) {
-          context.read<InventoryAlertsProvider>().fetchAlerts();
-        }
-      });
+      );
+      if (mounted) {
+        alertsProvider.fetchAlerts();
+      }
     } catch (e) {
-      if (!context.mounted) return;
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
             content: Text(
@@ -71,13 +79,15 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
     }
   }
 
-  Future<void> _handleViewProductTap(BuildContext context, dynamic alert) async {
+  Future<void> _handleViewProductTap(dynamic alert) async {
     _overlayController.hide();
+    if (!mounted) return;
     final catalogProvider = context.read<CatalogProvider>();
+    final alertsProvider = context.read<InventoryAlertsProvider>();
     try {
       final productId = int.parse(alert['product_id'].toString());
       final product = await catalogProvider.resolveProductById(productId);
-      if (!context.mounted) return;
+      if (!mounted) return;
       if (product == null) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -85,9 +95,12 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
         );
         return;
       }
-      Navigator.of(context).pushNamed('/catalog', arguments: product);
+      await Navigator.of(context).pushNamed('/catalog', arguments: product);
+      if (mounted) {
+        alertsProvider.fetchAlerts();
+      }
     } catch (e) {
-      if (!context.mounted) return;
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
             content: Text('Producto no disponible en catálogo local.')),
@@ -309,8 +322,8 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
 
   Widget _buildDynamicTile(BuildContext context, dynamic alert, String level) {
     final type = alert['alert_type']?.toString() ?? 'predictive';
-    void onTap() => _handleAlertTap(context, alert);
-    void onVer() => _handleViewProductTap(context, alert);
+    void onTap() => _handleAlertTap(alert);
+    void onVer() => _handleViewProductTap(alert);
 
     if (type == 'out_of_stock' || type == 'low_stock') {
       return _ReactiveAlertTile(

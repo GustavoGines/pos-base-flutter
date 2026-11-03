@@ -34,6 +34,7 @@ import 'package:frontend_desktop/core/utils/image_url_resolver.dart';
 import '../../../quotes/presentation/pages/quote_screen.dart';
 import '../../../quotes/presentation/providers/quote_provider.dart';
 import '../../../pos/presentation/providers/pos_provider.dart';
+import '../../../reports/presentation/providers/inventory_alerts_provider.dart';
 
 class CatalogScreen extends StatefulWidget {
   const CatalogScreen({super.key});
@@ -889,7 +890,11 @@ class _CatalogScreenState extends State<CatalogScreen> {
       context: ctx,
       barrierDismissible: true,
       builder: (_) => StockAdjustmentDialog(provider: provider, product: p),
-    );
+    ).then((_) {
+      if (mounted) {
+        context.read<InventoryAlertsProvider>().fetchAlerts();
+      }
+    });
   }
 
   void _showProductForm(BuildContext ctx, CatalogProvider provider, {Product? product}) {
@@ -900,7 +905,11 @@ class _CatalogScreenState extends State<CatalogScreen> {
         provider: provider,
         product: product,
       ),
-    );
+    ).then((_) {
+      if (mounted) {
+        context.read<InventoryAlertsProvider>().fetchAlerts();
+      }
+    });
   }
 
   void _showBulkUpdateDialog(BuildContext ctx, CatalogProvider provider) {
