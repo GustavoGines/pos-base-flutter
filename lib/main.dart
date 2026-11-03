@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui' show PlatformDispatcher;
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:provider/provider.dart';
@@ -150,7 +152,7 @@ class LicenseRefreshObserver extends NavigatorObserver {
         contextGetter().read<SettingsProvider>().refreshSettingsSilently();
       });
     } catch (_) {
-      // Context might be unmounted during startup í silently ignore.
+      // Context might be unmounted during startup í  silently ignore.
     }
   }
 
@@ -164,12 +166,50 @@ class LicenseRefreshObserver extends NavigatorObserver {
   void didReplace({Route? newRoute, Route? oldRoute}) => _refresh(newRoute);
 }
 
-/// Migra de forma síncrona las preferencias locales en Windows desde el directorio legado
-/// (`%APPDATA%\com.example\frontend_desktop\shared_preferences.json`) hacia el nuevo directorio
-/// de marca (`%APPDATA%\Dev4U\Caja4U\shared_preferences.json`) generado tras el cambio en Runner.rc.
-/// Garantiza que ningún cliente en producción pierda su IP de API, caja asignada, impresora o balanza al actualizar por OTA.
-void _migrateLegacyWindowsSharedPreferencesSync() {
-  if (!Platform.isWindows) return;
+/// Verifica si un archivo `shared_preferences.json` en disco es íntegro:
+/// - No está vacío.
+/// - No contiene bytes nulos (`0x00`, típicos de apagado forzado o suspensión abrupta en NTFS).
+/// - Es un JSON válido decodificable como `Map<String, dynamic>`.
+bool _isValidWindowsPreferencesFile(File file) {
+  try {
+    if (!file.existsSync()) return false;
+    final bytes = file.readAsBytesSync();
+    if (bytes.isEmpty || bytes.contains(0)) {
+      return false;
+    }
+    final content = utf8.decode(bytes, allowMalformed: false).trim();
+    if (content.isEmpty) return false;
+    final decoded = json.decode(content);
+    return decoded is Map<String, dynamic>;
+  } catch (_) {
+    return false;
+  }
+}
+
+/// Respalda un archivo de preferencias corrupto a `.bak` y escribe un JSON válido por defecto.
+void _backupAndResetPreferencesFileSync(File file, {Map<String, dynamic>? fallbackData}) {
+  try {
+    if (file.existsSync()) {
+      final bakFile = File('${file.path}.bak');
+      try {
+        file.copySync(bakFile.path);
+      } catch (_) {}
+    } else {
+      file.parent.createSync(recursive: true);
+    }
+    final defaultMap = fallbackData ?? <String, dynamic>{};
+    file.writeAsStringSync(json.encode(defaultMap), flush: true);
+  } catch (e) {
+    debugPrint('[Bootstrap] Error reparando archivo de preferencias ${file.path}: $e');
+  }
+}
+
+/// Sanitiza y auto-recupera `shared_preferences.json` en Windows antes de que
+/// `shared_preferences_windows` intente hacer `json.decode()`, previniendo
+/// la "Pantalla blanca de la muerte" por archivos truncados o llenos de bytes `0x00`.
+/// También migra claves desde `%APPDATA%\com.example\frontend_desktop` si están sanas.
+void _sanitizeAndMigrateWindowsSharedPreferencesSync({bool forceReset = false}) {
+  if (!AppConfig.isDesktop || !Platform.isWindows) return;
   try {
     final appData = Platform.environment['APPDATA'];
     if (appData == null || appData.isEmpty) return;
@@ -177,37 +217,100 @@ void _migrateLegacyWindowsSharedPreferencesSync() {
     final legacyFile = File(
       p.join(appData, 'com.example', 'frontend_desktop', 'shared_preferences.json'),
     );
-    if (!legacyFile.existsSync()) return;
-
     final newDir = Directory(p.join(appData, 'Dev4U', 'Caja4U'));
     final newFile = File(p.join(newDir.path, 'shared_preferences.json'));
 
-    if (!newFile.existsSync()) {
-      newDir.createSync(recursive: true);
-      legacyFile.copySync(newFile.path);
+    final bool legacyExists = legacyFile.existsSync();
+    final bool legacyValid = legacyExists && _isValidWindowsPreferencesFile(legacyFile);
+    if (legacyExists && !legacyValid) {
+      debugPrint('[Bootstrap] Detectado archivo legado corrupto (${legacyFile.path}). Reparando...');
+      _backupAndResetPreferencesFileSync(legacyFile);
+    }
+
+    if (forceReset) {
+      final defaultUrl = AppConfig.hasLocalLaragonServer()
+          ? AppConfig.kLocalhostLaragonUrl
+          : AppConfig.kApiBaseUrl;
+      _backupAndResetPreferencesFileSync(
+        newFile,
+        fallbackData: <String, dynamic>{
+          'flutter.pos_api': defaultUrl,
+          'flutter.pos_api_local': defaultUrl,
+        },
+      );
       return;
     }
 
-    // Si ambos existen, fusionar claves faltantes del archivo legado sin pisar las nuevas
-    final legacyRaw = legacyFile.readAsStringSync();
-    final newRaw = newFile.readAsStringSync();
-    final legacyMap = jsonDecode(legacyRaw);
-    final newMap = jsonDecode(newRaw);
+    final bool newExists = newFile.existsSync();
+    final bool newValid = newExists && _isValidWindowsPreferencesFile(newFile);
 
-    if (legacyMap is Map<String, dynamic> && newMap is Map<String, dynamic>) {
-      bool modified = false;
-      for (final entry in legacyMap.entries) {
-        if (!newMap.containsKey(entry.key)) {
-          newMap[entry.key] = entry.value;
-          modified = true;
-        }
+    if (newExists && !newValid) {
+      debugPrint(
+        '[Bootstrap] CRÍTICO: Detectado shared_preferences.json corrupto o con bytes 0x00 en ${newFile.path}. '
+        'Respaldando a .bak y auto-recuperando...',
+      );
+      Map<String, dynamic> recoveredData = <String, dynamic>{};
+      if (legacyValid) {
+        try {
+          recoveredData = Map<String, dynamic>.from(
+            json.decode(legacyFile.readAsStringSync()) as Map,
+          );
+        } catch (_) {}
       }
-      if (modified) {
-        newFile.writeAsStringSync(jsonEncode(newMap));
+      if (recoveredData.isEmpty && AppConfig.hasLocalLaragonServer()) {
+        recoveredData['flutter.pos_api'] = AppConfig.kLocalhostLaragonUrl;
+        recoveredData['flutter.pos_api_local'] = AppConfig.kLocalhostLaragonUrl;
+      }
+      _backupAndResetPreferencesFileSync(newFile, fallbackData: recoveredData);
+      return;
+    }
+
+    if (!newExists) {
+      if (legacyValid) {
+        newDir.createSync(recursive: true);
+        legacyFile.copySync(newFile.path);
+      }
+      return;
+    }
+
+    // Si ambos existen y son válidos, fusionar claves faltantes del archivo legado sin pisar las nuevas
+    if (legacyValid && newValid) {
+      final legacyMap = json.decode(legacyFile.readAsStringSync());
+      final newMap = json.decode(newFile.readAsStringSync());
+
+      if (legacyMap is Map<String, dynamic> && newMap is Map<String, dynamic>) {
+        bool modified = false;
+        for (final entry in legacyMap.entries) {
+          if (!newMap.containsKey(entry.key)) {
+            newMap[entry.key] = entry.value;
+            modified = true;
+          }
+        }
+        if (modified) {
+          newFile.writeAsStringSync(json.encode(newMap), flush: true);
+        }
       }
     }
   } catch (e) {
-    debugPrint('Advertencia migrando SharedPreferences legadas: $e');
+    debugPrint('Advertencia sanitizando/migrando SharedPreferences en Windows: $e');
+  }
+}
+
+/// Obtiene la instancia de `SharedPreferences` de forma blindada.
+/// Si el plugin lanza cualquier excepción (ej. FormatException residual),
+/// purga y regenera el archivo en disco y reintenta limpiamente.
+Future<SharedPreferences> _getSafeSharedPreferences() async {
+  if (AppConfig.isDesktop && Platform.isWindows) {
+    _sanitizeAndMigrateWindowsSharedPreferencesSync();
+  }
+  try {
+    return await SharedPreferences.getInstance();
+  } catch (e) {
+    debugPrint('[Bootstrap] Falló SharedPreferences.getInstance(): $e. Ejecutando auto-rescate...');
+    if (AppConfig.isDesktop && Platform.isWindows) {
+      _sanitizeAndMigrateWindowsSharedPreferencesSync(forceReset: true);
+    }
+    return await SharedPreferences.getInstance();
   }
 }
 
@@ -293,301 +396,570 @@ ie4uinit.exe -show
   } catch (_) {}
 }
 
+/// Notificador global para capturar errores fatales no controlados durante el arranque
+/// y mostrar una pantalla de recuperación en lugar de una ventana blanca vacía.
+final ValueNotifier<String?> _globalFatalErrorNotifier = ValueNotifier<String?>(null);
+
 void main() async {
   // CRÍTICO: Inicialización obligatoria para assets y plugins en desktop
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Migrar preferencias de Windows antes de inicializar SharedPreferences
-  // (evita perder configuración al pasar de com.example\frontend_desktop a Dev4U\Caja4U)
+  // 1. Sanitizar inmediatamente el archivo de preferencias en disco antes de que cualquier
+  // plugin o servicio lo lea.
   if (AppConfig.isDesktop && Platform.isWindows) {
-    _migrateLegacyWindowsSharedPreferencesSync();
+    _sanitizeAndMigrateWindowsSharedPreferencesSync();
   }
 
-  // Hacer que la app inicie en pantalla completa (maximizada) pero no Kiosk puro,
-  // permitiendo que el usuario la achique o minimice si lo requiere.
-  if (AppConfig.isDesktop) {
-    await windowManager.ensureInitialized();
-    WindowOptions windowOptions = const WindowOptions(
-      size: Size(1280, 720),
-      minimumSize: Size(1000, 700),
-      center: true,
-      title: 'Caja4U  •  by Dev4U',
-      titleBarStyle: TitleBarStyle.normal,
+  // 2. Manejadores globales de errores para evitar "Pantalla blanca de la muerte"
+  FlutterError.onError = (FlutterErrorDetails details) {
+    FlutterError.presentError(details);
+    debugPrint('[FlutterError Global] ${details.exceptionAsString()}');
+  };
+
+  PlatformDispatcher.instance.onError = (Object error, StackTrace stack) {
+    debugPrint('[PlatformDispatcher Global Error] $error\n$stack');
+    if (error is SocketException ||
+        error is TimeoutException ||
+        error is NetworkException ||
+        error is SessionExpiredException) {
+      return true;
+    }
+    if (error is FormatException && error.toString().contains('Unexpected character')) {
+      if (AppConfig.isDesktop && Platform.isWindows) {
+        _sanitizeAndMigrateWindowsSharedPreferencesSync(forceReset: true);
+      }
+      _globalFatalErrorNotifier.value =
+          'Se detectó un archivo de configuración local dañado por un apagado brusco.\n'
+          'Presione "Reiniciar Configuración" o "Reintentar" para continuar.';
+      return true;
+    }
+    return true;
+  };
+
+  ErrorWidget.builder = (FlutterErrorDetails details) {
+    return Material(
+      color: const Color(0xFF1E2D45),
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.warning_amber_rounded, color: Colors.amber, size: 48),
+              const SizedBox(height: 12),
+              const Text(
+                'Hubo un problema al mostrar este componente',
+                style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                details.exceptionAsString(),
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white70, fontSize: 12),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
-    windowManager.waitUntilReadyToShow(windowOptions, () async {
-      await windowManager.setTitle('Caja4U  •  by Dev4U');
-      await windowManager.show();
-      await windowManager.focus();
-      await windowManager.maximize();
+  };
+
+  // 3. Montar el árbol de widgets INMEDIATAMENTE para que nunca quede un lienzo blanco
+  runApp(const AppBootstrap());
+}
+
+/// Contenedor raíz de arranque seguro: monta de inmediato la ventana con estética Caja4U,
+/// ejecuta la inicialización asíncrona (WindowManager, Impresora, SharedPreferences, DI)
+/// protegida contra fallos y ofrece botones de auto-rescate ("Reiniciar Configuración" / "Reintentar").
+class AppBootstrap extends StatefulWidget {
+  const AppBootstrap({super.key});
+
+  @override
+  State<AppBootstrap> createState() => _AppBootstrapState();
+}
+
+class _AppBootstrapState extends State<AppBootstrap> {
+  Widget? _initializedApp;
+  String? _bootstrapError;
+  bool _isBootstrapping = true;
+  bool _windowInitialized = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _globalFatalErrorNotifier.addListener(_onGlobalFatalError);
+    _runBootstrap();
+  }
+
+  @override
+  void dispose() {
+    _globalFatalErrorNotifier.removeListener(_onGlobalFatalError);
+    super.dispose();
+  }
+
+  void _onGlobalFatalError() {
+    final err = _globalFatalErrorNotifier.value;
+    if (err != null && mounted && _initializedApp == null) {
+      setState(() {
+        _bootstrapError = err;
+        _isBootstrapping = false;
+      });
+    }
+  }
+
+  Future<void> _resetConfigurationAndRetry() async {
+    setState(() {
+      _isBootstrapping = true;
+      _bootstrapError = null;
+      _globalFatalErrorNotifier.value = null;
     });
-  }
-
-  // Pre-cargar perfil de impresora para evitar crashes de AssetManifest en Windows
-  // íaí️ SOLO en Desktop í en mobile no existe impresora conectada y puede colgarse
-  if (AppConfig.isDesktop) {
-    await ReceiptPrinterService.instance.initialize();
-  }
-
-  // Obtener URL de la API del almacenamiento local
-  final prefs = await SharedPreferences.getInstance();
-  if (AppConfig.isDesktop && Platform.isWindows) {
-    final iconCacheRefreshed =
-        prefs.getBool('caja4u_desktop_brand_v3_migrated') ?? false;
-    if (!iconCacheRefreshed) {
-      _migrateWindowsDesktopShortcutAndIconCache();
-      await prefs.setBool('caja4u_desktop_brand_v3_migrated', true);
-    }
-  }
-  final String localUrl = prefs.getString('pos_api_local') ??
-      prefs.getString('pos_api') ??
-      AppConfig.kApiBaseUrl;
-  final String remoteUrl = prefs.getString('pos_api_remote') ?? '';
-
-  String activeApiUrl = localUrl;
-
-  // íííí Smart Auto-Fallback Network (Mobile/Tablet) íííí
-  // Solo hacemos fallback si la URL remota parece válida
-  bool hasValidRemote =
-      remoteUrl.trim().length > 10 && remoteUrl.contains('http');
-
-  if (hasValidRemote && (AppConfig.isMobile)) {
     try {
-      // Ping rápido a la red local (2000ms) para ver si estamos en el negocio
-      final response = await http
-          .get(Uri.parse('$localUrl/settings'))
-          .timeout(const Duration(milliseconds: 2000));
-      if (response.statusCode >= 500) throw Exception('Local server error');
-      activeApiUrl = localUrl;
-      debugPrint('SmartNetwork: Conectado a LOCAL -> $activeApiUrl');
+      if (AppConfig.isDesktop && Platform.isWindows) {
+        _sanitizeAndMigrateWindowsSharedPreferencesSync(forceReset: true);
+      }
+      final prefs = await _getSafeSharedPreferences();
+      await prefs.clear();
+      final defaultUrl = AppConfig.hasLocalLaragonServer()
+          ? AppConfig.kLocalhostLaragonUrl
+          : AppConfig.kApiBaseUrl;
+      await prefs.setString('pos_api', defaultUrl);
+      await prefs.setString('pos_api_local', defaultUrl);
     } catch (e) {
-      // Si falla (timeout o red inaccesible), cambiamos a la nube
-      activeApiUrl = remoteUrl;
-      debugPrint(
-          'SmartNetwork: Red Local falló. Cambiando a REMOTO -> $activeApiUrl');
+      debugPrint('[Bootstrap] Error reiniciando configuración: $e');
     }
-  } else {
-    activeApiUrl = localUrl;
+    await _runBootstrap();
   }
 
-  // Guardamos la IP activa temporalmente para retrocompatibilidad
-  await prefs.setString('pos_api', activeApiUrl);
+  Future<void> _runBootstrap() async {
+    if (mounted) {
+      setState(() {
+        _isBootstrapping = true;
+        _bootstrapError = null;
+      });
+    }
 
-  final savedApiUrl = activeApiUrl;
+    try {
+      if (AppConfig.isDesktop && !_windowInitialized) {
+        _windowInitialized = true;
+        try {
+          await windowManager.ensureInitialized();
+          const WindowOptions windowOptions = WindowOptions(
+            size: Size(1280, 720),
+            minimumSize: Size(1000, 700),
+            center: true,
+            title: 'Caja4U  •  by Dev4U',
+            titleBarStyle: TitleBarStyle.normal,
+          );
+          windowManager.waitUntilReadyToShow(windowOptions, () async {
+            await windowManager.setTitle('Caja4U  •  by Dev4U');
+            await windowManager.show();
+            await windowManager.focus();
+            await windowManager.maximize();
+          });
+        } catch (e) {
+          debugPrint('[Bootstrap] Advertencia inicializando windowManager: $e');
+        }
+      }
 
-  // 🔁 RESCUE TRIGGER OTA 🔁
-  // Si la app detecta que acaba de ser actualizada, dispara un endpoint de
-  // rescate silencioso al backend para asegurar que la DB esté parcheada.
-  // SOLO en dispositivos móviles: el desktop tiene su propio mecanismo OTA y no necesita
-  // disparar migraciones al actualizarse.
-  if (AppConfig.isMobile) {
-    const currentAppVersion = '2.1.0';
-    // Token secreto que debe coincidir con RESCUE_MIGRATE_SECRET en el .env del backend.
-    // Protege el endpoint /system/rescue-migrate contra llamadas no autorizadas.
-    const rescueSecret = 'pos-rescue-2026-GGLabs';
-    final lastVersion = prefs.getString('app_version') ?? '1.0.0';
-    if (lastVersion != currentAppVersion) {
+      if (AppConfig.isDesktop) {
+        try {
+          await ReceiptPrinterService.instance
+              .initialize()
+              .timeout(const Duration(seconds: 4));
+        } catch (e) {
+          debugPrint('[Bootstrap] Advertencia inicializando impresora: $e');
+        }
+      }
+
+      final prefs = await _getSafeSharedPreferences();
+
+      if (AppConfig.isDesktop && Platform.isWindows) {
+        final iconCacheRefreshed =
+            prefs.getBool('caja4u_desktop_brand_v3_migrated') ?? false;
+        if (!iconCacheRefreshed) {
+          _migrateWindowsDesktopShortcutAndIconCache();
+          await prefs.setBool('caja4u_desktop_brand_v3_migrated', true);
+        }
+      }
+
+      final String localUrl = prefs.getString('pos_api_local') ??
+          prefs.getString('pos_api') ??
+          AppConfig.kApiBaseUrl;
+      final String remoteUrl = prefs.getString('pos_api_remote') ?? '';
+
+      String activeApiUrl = localUrl;
+
+      // ── Smart Auto-Fallback Network (Mobile/Tablet) ──
+      final bool hasValidRemote =
+          remoteUrl.trim().length > 10 && remoteUrl.contains('http');
+
+      if (hasValidRemote && AppConfig.isMobile) {
+        try {
+          final response = await http
+              .get(Uri.parse('$localUrl/settings'))
+              .timeout(const Duration(milliseconds: 2000));
+          if (response.statusCode >= 500) throw Exception('Local server error');
+          activeApiUrl = localUrl;
+          debugPrint('SmartNetwork: Conectado a LOCAL -> $activeApiUrl');
+        } catch (e) {
+          activeApiUrl = remoteUrl;
+          debugPrint(
+              'SmartNetwork: Red Local falló. Cambiando a REMOTO -> $activeApiUrl');
+        }
+      } else {
+        activeApiUrl = localUrl;
+      }
+
+      await prefs.setString('pos_api', activeApiUrl);
+      final savedApiUrl = activeApiUrl;
+
+      // 🔁 RESCUE TRIGGER OTA 🔁
+      if (AppConfig.isMobile) {
+        const currentAppVersion = '2.1.0';
+        const rescueSecret = 'pos-rescue-2026-GGLabs';
+        final lastVersion = prefs.getString('app_version') ?? '1.0.0';
+        if (lastVersion != currentAppVersion) {
+          try {
+            http.get(
+              Uri.parse('$savedApiUrl/system/rescue-migrate'),
+              headers: {'X-Rescue-Token': rescueSecret},
+            ).ignore();
+            await prefs.setString('app_version', currentAppVersion);
+            debugPrint(
+                'Rescue Trigger: Migración solicitada ($lastVersion -> $currentAppVersion)');
+          } catch (e) {
+            debugPrint('Rescue Trigger falló: $e');
+          }
+        }
+      }
+
+      // Inicialización de Dependencias Base (DI)
+      final String apiUrl = savedApiUrl;
+      final httpClient = ApiClient(http.Client());
+      if (hasValidRemote) {
+        httpClient.configureFailover(
+          primaryUrl: activeApiUrl,
+          fallbackUrl: activeApiUrl == localUrl ? remoteUrl : localUrl,
+        );
+      }
+
+      final authRepo = AuthRepository(
+          remoteDataSource:
+              AuthRemoteDataSource(baseUrl: apiUrl, client: httpClient));
+      final authProvider = AuthProvider(repository: authRepo)
+        ..apiClient = httpClient;
       try {
-        // Llamada silenciosa de rescate (fire and forget) con token de autenticación
-        http.get(
-          Uri.parse('$savedApiUrl/system/rescue-migrate'),
-          headers: {'X-Rescue-Token': rescueSecret},
-        ).ignore();
-        await prefs.setString('app_version', currentAppVersion);
-        debugPrint(
-            'Rescue Trigger: Migración solicitada ($lastVersion -> $currentAppVersion)');
+        await authProvider.restoreSessionFromPrefs();
       } catch (e) {
-        debugPrint('Rescue Trigger falló: $e');
+        debugPrint('[Bootstrap] Advertencia restaurando sesión local: $e');
+      }
+
+      final settingsRepo = SettingsRepositoryImpl(
+          remoteDataSource:
+              SettingsRemoteDataSourceImpl(baseUrl: apiUrl, client: httpClient));
+      final getSettingsUseCase = GetSettingsUseCase(settingsRepo);
+      final updateSettingsUseCase = UpdateSettingsUseCase(settingsRepo);
+
+      final catalogRepo = CatalogRepositoryImpl(
+          remoteDataSource:
+              CatalogRemoteDataSourceImpl(baseUrl: apiUrl, client: httpClient));
+      final getProductsUseCase = GetProductsUseCase(catalogRepo);
+
+      final cashRegisterRepo = CashRegisterRepositoryImpl(
+          remoteDataSource: CashRegisterRemoteDataSourceImpl(
+              baseUrl: apiUrl, client: httpClient));
+
+      final posRepo = PosRepositoryImpl(
+          remoteDataSource:
+              PosRemoteDataSourceImpl(baseUrl: apiUrl, client: httpClient));
+
+      final salesHistoryDataSource =
+          SalesHistoryRemoteDataSource(baseUrl: apiUrl, client: httpClient);
+
+      final reportsDataSource =
+          ReportsRemoteDataSource(baseUrl: apiUrl, client: httpClient);
+
+      final inventoryAlertsDataSource =
+          InventoryAlertsDataSource(baseUrl: apiUrl, client: httpClient);
+
+      final deliveryNoteRepo =
+          DeliveryNoteRepository(baseUrl: apiUrl, client: httpClient);
+
+      final usersRepo = UsersRepository(
+          dataSource: UsersRemoteDataSource(baseUrl: apiUrl, client: httpClient));
+
+      final checkRepo = CheckRepositoryImpl(
+          remoteDataSource:
+              CheckRemoteDataSourceImpl(baseUrl: apiUrl, client: httpClient));
+
+      final appWidget = MultiProvider(
+        providers: [
+          ChangeNotifierProvider(
+              create: (_) => LocalTerminalProvider(), lazy: false),
+          ChangeNotifierProvider.value(
+            value: authProvider,
+          ),
+          ChangeNotifierProvider(
+              create: (_) => SettingsProvider(
+                    getSettingsUseCase: getSettingsUseCase,
+                    updateSettingsUseCase: updateSettingsUseCase,
+                  ),
+              lazy: false),
+          ChangeNotifierProvider(
+              create: (_) =>
+                  SalesHistoryProvider(dataSource: salesHistoryDataSource),
+              lazy: false),
+          Provider<SalesHistoryRemoteDataSource>.value(
+              value: salesHistoryDataSource),
+          ChangeNotifierProvider(
+              create: (_) => CatalogProvider(
+                    getProductsUseCase: getProductsUseCase,
+                    repository: catalogRepo,
+                  ),
+              lazy: false),
+          ChangeNotifierProvider(
+              create: (_) => ReportsProvider(
+                  dataSource: reportsDataSource,
+                  balanceDataSource: inventoryAlertsDataSource),
+              lazy: false),
+          ChangeNotifierProvider(
+            create: (_) =>
+                InventoryAlertsProvider(dataSource: inventoryAlertsDataSource),
+            lazy: false,
+          ),
+          ChangeNotifierProvider(
+            create: (_) => CashRegisterProvider(
+              getCurrentShiftUseCase: GetCurrentShiftUseCase(cashRegisterRepo),
+              getAllShiftsUseCase: GetAllShiftsUseCase(cashRegisterRepo),
+              openShiftUseCase: OpenShiftUseCase(cashRegisterRepo),
+              closeShiftUseCase: CloseShiftUseCase(cashRegisterRepo),
+              getRegistersUseCase: GetRegistersUseCase(cashRegisterRepo),
+              printerService: ReceiptPrinterService.instance,
+            ),
+            lazy: false,
+          ),
+          ChangeNotifierProxyProvider<SettingsProvider, PosProvider>(
+            create: (_) => PosProvider(
+              processSaleUseCase: ProcessSaleUseCase(posRepo),
+              searchProductsUseCase: SearchProductsUseCase(posRepo),
+              repository: posRepo,
+            ),
+            update: (_, settings, pos) {
+              pos!.updateSettings(settings.settings);
+              return pos;
+            },
+            lazy: false,
+          ),
+          ChangeNotifierProvider(
+            create: (_) => UsersProvider(repository: usersRepo),
+            lazy: true,
+          ),
+          Provider.value(value: usersRepo),
+          Provider<ApiClient>.value(value: httpClient),
+          ChangeNotifierProxyProvider<SettingsProvider, CustomerProvider>(
+            create: (_) => CustomerProvider(baseUrl: apiUrl, client: httpClient),
+            update: (_, settingsProvider, customerProvider) {
+              customerProvider!
+                  .setAccess(settingsProvider.features.currentAccounts);
+              return customerProvider;
+            },
+            lazy: false,
+          ),
+          ChangeNotifierProvider(
+              create: (_) => TrashProvider(baseUrl: apiUrl, client: httpClient),
+              lazy: false),
+          ChangeNotifierProvider(
+            create: (_) => QuoteProvider(
+              repository: QuoteRepository(baseUrl: apiUrl, client: httpClient),
+            ),
+            lazy: true,
+          ),
+          ChangeNotifierProvider(
+            create: (_) => OfferProvider(
+              repository: OfferRepository(baseUrl: apiUrl, client: httpClient),
+            ),
+            lazy: false,
+          ),
+          ChangeNotifierProvider(
+            create: (_) => LogisticsProvider(repository: deliveryNoteRepo),
+            lazy: true,
+          ),
+          ChangeNotifierProvider(
+            create: (_) => CheckProvider(repository: checkRepo),
+            lazy: true,
+          ),
+          ChangeNotifierProvider(
+            create: (_) => SupplierProvider(baseUrl: apiUrl, client: httpClient),
+            lazy: true,
+          ),
+          ChangeNotifierProvider(
+            create: (_) => CashMovementProvider(baseUrl: apiUrl, client: httpClient),
+            lazy: true,
+          ),
+          ChangeNotifierProvider(
+            create: (_) => ExpenseCategoryProvider(baseUrl: apiUrl, client: httpClient),
+            lazy: true,
+          ),
+        ],
+        child: const MainApp(),
+      );
+
+      if (mounted) {
+        setState(() {
+          _initializedApp = appWidget;
+          _isBootstrapping = false;
+          _bootstrapError = null;
+        });
+      }
+    } catch (e, stack) {
+      debugPrint('[Bootstrap Fatal Error] $e\n$stack');
+      if (mounted) {
+        setState(() {
+          _isBootstrapping = false;
+          _bootstrapError = e.toString();
+        });
       }
     }
   }
 
-  // Inicialización de Dependencias Base (DI)
-  final String apiUrl = savedApiUrl;
-  final httpClient = ApiClient(http.Client());
-  if (hasValidRemote) {
-    httpClient.configureFailover(
-      primaryUrl: activeApiUrl,
-      fallbackUrl: activeApiUrl == localUrl ? remoteUrl : localUrl,
+  @override
+  Widget build(BuildContext context) {
+    if (_initializedApp != null && _bootstrapError == null) {
+      return _initializedApp!;
+    }
+
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      title: 'Caja4U  •  by Dev4U',
+      home: Scaffold(
+        backgroundColor: const Color(0xFF1E2D45),
+        body: Center(
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 440),
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(24),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF10B981).withValues(alpha: 0.18),
+                        blurRadius: 36,
+                        spreadRadius: 2,
+                      ),
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.35),
+                        blurRadius: 24,
+                        offset: const Offset(0, 10),
+                      ),
+                    ],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(24),
+                    child: Image.asset(
+                      'assets/caja4u_logo_full.png',
+                      width: 200,
+                      height: 170,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => const Icon(
+                        Icons.point_of_sale_rounded,
+                        size: 72,
+                        color: Color(0xFF3B82F6),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                if (_isBootstrapping && _bootstrapError == null) ...[
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: const SizedBox(
+                      width: 180,
+                      height: 4,
+                      child: LinearProgressIndicator(
+                        backgroundColor: Colors.white12,
+                        color: Color(0xFF10B981),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  const Text(
+                    'Preparando entorno de Caja4U...',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Colors.white60,
+                      letterSpacing: 0.4,
+                    ),
+                  ),
+                ] else ...[
+                  const Icon(Icons.error_outline_rounded,
+                      color: Colors.redAccent, size: 48),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Hubo un problema al iniciar el sistema',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _bootstrapError ?? 'Error inesperado en la configuración local.',
+                    textAlign: TextAlign.center,
+                    maxLines: 4,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: Colors.white70,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
+                    alignment: WrapAlignment.center,
+                    children: [
+                      ElevatedButton.icon(
+                        onPressed: _runBootstrap,
+                        icon: const Icon(Icons.refresh_rounded),
+                        label: const Text('Reintentar'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blue,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 20, vertical: 12),
+                        ),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: _resetConfigurationAndRetry,
+                        icon: const Icon(Icons.restore_rounded, color: Colors.amber),
+                        label: const Text(
+                          'Reiniciar Configuración',
+                          style: TextStyle(color: Colors.amber),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: Colors.amber),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 20, vertical: 12),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
-
-  // Auth í creado ANTES de runApp para poder restaurar el token de sesión
-  // antes del primer request HTTP (Crash Recovery de la Vulnerabilidad #3)
-  final authRepo = AuthRepository(
-      remoteDataSource:
-          AuthRemoteDataSource(baseUrl: apiUrl, client: httpClient));
-  final authProvider = AuthProvider(repository: authRepo)
-    ..apiClient = httpClient; // Inyección sin dependencia circular
-  await authProvider.restoreSessionFromPrefs();
-
-  // Settings
-  final settingsRepo = SettingsRepositoryImpl(
-      remoteDataSource:
-          SettingsRemoteDataSourceImpl(baseUrl: apiUrl, client: httpClient));
-  final getSettingsUseCase = GetSettingsUseCase(settingsRepo);
-  final updateSettingsUseCase = UpdateSettingsUseCase(settingsRepo);
-
-  // Catalog
-  final catalogRepo = CatalogRepositoryImpl(
-      remoteDataSource:
-          CatalogRemoteDataSourceImpl(baseUrl: apiUrl, client: httpClient));
-  final getProductsUseCase = GetProductsUseCase(catalogRepo);
-
-  // Cash Register
-  final cashRegisterRepo = CashRegisterRepositoryImpl(
-      remoteDataSource: CashRegisterRemoteDataSourceImpl(
-          baseUrl: apiUrl, client: httpClient));
-
-  // Pos
-  final posRepo = PosRepositoryImpl(
-      remoteDataSource:
-          PosRemoteDataSourceImpl(baseUrl: apiUrl, client: httpClient));
-
-  // Sales History
-  final salesHistoryDataSource =
-      SalesHistoryRemoteDataSource(baseUrl: apiUrl, client: httpClient);
-
-  // Reports
-  final reportsDataSource =
-      ReportsRemoteDataSource(baseUrl: apiUrl, client: httpClient);
-
-  // Inventory Alerts & Monthly Balance
-  final inventoryAlertsDataSource =
-      InventoryAlertsDataSource(baseUrl: apiUrl, client: httpClient);
-
-  // Logistics
-  final deliveryNoteRepo =
-      DeliveryNoteRepository(baseUrl: apiUrl, client: httpClient);
-
-  // Auth í ya instanciado antes de runApp (ver arriba con restoreSessionFromPrefs)
-
-  // Users
-  final usersRepo = UsersRepository(
-      dataSource: UsersRemoteDataSource(baseUrl: apiUrl, client: httpClient));
-
-  // Checks
-  final checkRepo = CheckRepositoryImpl(
-      remoteDataSource:
-          CheckRemoteDataSourceImpl(baseUrl: apiUrl, client: httpClient));
-
-  runApp(
-    MultiProvider(
-      providers: [
-        ChangeNotifierProvider(
-            create: (_) => LocalTerminalProvider(), lazy: false),
-        ChangeNotifierProvider.value(
-          value: authProvider, // Reusar la instancia creada antes de runApp
-        ),
-        ChangeNotifierProvider(
-            create: (_) => SettingsProvider(
-                  getSettingsUseCase: getSettingsUseCase,
-                  updateSettingsUseCase: updateSettingsUseCase,
-                ),
-            lazy: false),
-        ChangeNotifierProvider(
-            create: (_) =>
-                SalesHistoryProvider(dataSource: salesHistoryDataSource),
-            lazy: false),
-        Provider<SalesHistoryRemoteDataSource>.value(
-            value: salesHistoryDataSource),
-        ChangeNotifierProvider(
-            create: (_) => CatalogProvider(
-                  getProductsUseCase: getProductsUseCase,
-                  repository: catalogRepo,
-                ),
-            lazy: false),
-        ChangeNotifierProvider(
-            create: (_) => ReportsProvider(
-                dataSource: reportsDataSource,
-                balanceDataSource: inventoryAlertsDataSource),
-            lazy: false),
-        ChangeNotifierProvider(
-          create: (_) =>
-              InventoryAlertsProvider(dataSource: inventoryAlertsDataSource),
-          lazy: false,
-        ),
-        ChangeNotifierProvider(
-          create: (_) => CashRegisterProvider(
-            getCurrentShiftUseCase: GetCurrentShiftUseCase(cashRegisterRepo),
-            getAllShiftsUseCase: GetAllShiftsUseCase(cashRegisterRepo),
-            openShiftUseCase: OpenShiftUseCase(cashRegisterRepo),
-            closeShiftUseCase: CloseShiftUseCase(cashRegisterRepo),
-            getRegistersUseCase: GetRegistersUseCase(cashRegisterRepo),
-            printerService: ReceiptPrinterService.instance,
-          ),
-          lazy: false,
-        ),
-        ChangeNotifierProxyProvider<SettingsProvider, PosProvider>(
-            create: (_) => PosProvider(
-            processSaleUseCase: ProcessSaleUseCase(posRepo),
-            searchProductsUseCase: SearchProductsUseCase(posRepo),
-            repository: posRepo,
-          ),
-          update: (_, settings, pos) {
-            pos!.updateSettings(settings.settings);
-            return pos;
-          },
-          lazy: false,
-        ),
-        ChangeNotifierProvider(
-          create: (_) => UsersProvider(repository: usersRepo),
-          lazy: true, // Solo carga cuando se navega a Personal y Accesos
-        ),
-        // Expuesto directamente para que RescuePinChangeDialog pueda hacer
-        // context.read<UsersRepository>() sin pasar por UsersProvider.
-        Provider.value(value: usersRepo),
-        Provider<ApiClient>.value(value: httpClient),
-        ChangeNotifierProxyProvider<SettingsProvider, CustomerProvider>(
-          create: (_) => CustomerProvider(baseUrl: apiUrl, client: httpClient),
-          update: (_, settingsProvider, customerProvider) {
-            customerProvider!
-                .setAccess(settingsProvider.features.currentAccounts);
-            return customerProvider;
-          },
-          lazy: false,
-        ),
-        ChangeNotifierProvider(
-            create: (_) => TrashProvider(baseUrl: apiUrl, client: httpClient),
-            lazy: false),
-        // [hardware_store] Presupuestos
-        ChangeNotifierProvider(
-          create: (_) => QuoteProvider(
-            repository: QuoteRepository(baseUrl: apiUrl, client: httpClient),
-          ),
-          lazy: true,
-        ),
-        // [offers] Ofertas y Promociones
-        ChangeNotifierProvider(
-          create: (_) => OfferProvider(
-            repository: OfferRepository(baseUrl: apiUrl, client: httpClient),
-          ),
-          lazy: false,
-        ),
-        // [logistics] Dashboard
-        ChangeNotifierProvider(
-          create: (_) => LogisticsProvider(repository: deliveryNoteRepo),
-          lazy: true,
-        ),
-        ChangeNotifierProvider(
-          create: (_) => CheckProvider(repository: checkRepo),
-          lazy: true,
-        ),
-        ChangeNotifierProvider(
-          create: (_) => SupplierProvider(baseUrl: apiUrl, client: httpClient),
-          lazy: true,
-        ),
-        ChangeNotifierProvider(
-          create: (_) => CashMovementProvider(baseUrl: apiUrl, client: httpClient),
-          lazy: true,
-        ),
-        ChangeNotifierProvider(
-          create: (_) => ExpenseCategoryProvider(baseUrl: apiUrl, client: httpClient),
-          lazy: true,
-        ),
-      ],
-      child: const MainApp(),
-    ),
-  );
 }
 
 class MainApp extends StatefulWidget {
@@ -602,6 +974,9 @@ class _MainAppState extends State<MainApp> {
   String? _initError;
 
   bool _isShowingSessionDialog = false;
+  bool _isShowingNetworkDialog = false;
+  final GlobalKey<NavigatorState> _splashNavigatorKey =
+      GlobalKey<NavigatorState>();
 
   final ScrollController _hScroll = ScrollController();
   final ScrollController _vScroll = ScrollController();
@@ -619,7 +994,7 @@ class _MainAppState extends State<MainApp> {
     Future.microtask(() {
       _initializeApp();
 
-      // íííí GANCHOS DE SEGURIDAD GLOBAL (Single Active Session) íííí
+      // í íí í GANCHOS DE SEGURIDAD GLOBAL (Single Active Session) í íí í
       // Atrapa cualquier Error 401 (SESSION_EXPIRED) del ApiClient de manera centralizada.
       // Así se protege automáticamente toda la aplicación sin tocar pantalla por pantalla.
       final authProv = context.read<AuthProvider>();
@@ -684,52 +1059,135 @@ class _MainAppState extends State<MainApp> {
     _isShowingSessionDialog = false;
   }
 
+  Future<bool> _tryLocalhostFallback({
+    required SharedPreferences prefs,
+    required String previousUrl,
+    required SettingsProvider settingsProvider,
+    required ApiClient apiClient,
+  }) async {
+    final candidates = <String>[
+      AppConfig.kLocalhostLaragonUrl,
+      if (AppConfig.kApiBaseUrl != AppConfig.kLocalhostLaragonUrl)
+        AppConfig.kApiBaseUrl,
+      AppConfig.kLocalhostDirectUrl,
+    ];
+
+    for (final candidateUrl in candidates) {
+      try {
+        debugPrint(
+            '[NetFallback] Probando ping local contra $candidateUrl (timeout 3s)...');
+        final pingRes = await http
+            .get(
+              Uri.parse('$candidateUrl/settings'),
+              headers: const {'Accept': 'application/json'},
+            )
+            .timeout(const Duration(seconds: 3));
+
+        if (pingRes.statusCode < 500) {
+          await prefs.setString('pos_api', candidateUrl);
+          await prefs.setString('pos_api_local', candidateUrl);
+          apiClient.setBaseUrlOverride(
+            fromBaseUrl: previousUrl,
+            toBaseUrl: candidateUrl,
+          );
+          settingsProvider.updateBaseUrl(candidateUrl);
+
+          await settingsProvider
+              .loadSettings()
+              .timeout(const Duration(seconds: 4));
+          debugPrint(
+              '[NetFallback] Recuperación exitosa usando servidor local: $candidateUrl');
+          return true;
+        }
+      } catch (pingErr) {
+        debugPrint('[NetFallback] Sin respuesta en $candidateUrl: $pingErr');
+      }
+    }
+    return false;
+  }
+
   Future<void> _initializeApp() async {
     final settingsProvider =
         Provider.of<SettingsProvider>(context, listen: false);
+    final apiClient = Provider.of<ApiClient>(context, listen: false);
     setState(() {
       _isInitializing = true;
       _initError = null;
     });
 
     bool success = false;
-    // En mobile limitamos el tiempo total de espera para no colgar la pantalla de splash
     final bool isMobilePlatform = AppConfig.isMobile;
-    final Duration requestTimeout = isMobilePlatform
-        ? const Duration(seconds: 15) // Cloudflare tunnels en 4G pueden demorar 7-8 segs en despertar
-        : const Duration(seconds: 15);
+    final prefs = await _getSafeSharedPreferences();
+    final currentUrl = prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
+    final bool isLanIp =
+        !isMobilePlatform && AppConfig.isPrivateLanIpUrl(currentUrl);
+
+    // Si es una IP de red local en Desktop (ej. 192.168.1.200), usamos un timeout
+    // corto de 3 segundos para detectar rápidamente cambios de red Wi-Fi en notebooks.
+    final Duration initialTimeout = isMobilePlatform
+        ? const Duration(seconds: 15)
+        : (isLanIp ? const Duration(seconds: 3) : const Duration(seconds: 8));
 
     try {
-      await settingsProvider.loadSettings().timeout(requestTimeout);
+      await settingsProvider.loadSettings().timeout(initialTimeout);
       success = true;
     } catch (e) {
-      final prefs = await SharedPreferences.getInstance();
-      final currentUrl = prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
+      debugPrint('[Init] Error conectando a $currentUrl: $e');
 
-      // Auto-fix: Si estamos en localhost 8000 y falla, probar con Laragon (puerto 80) una vez
-      if (currentUrl.contains(':8000')) {
-        await prefs.setString('pos_api', AppConfig.kApiBaseUrl);
-        settingsProvider.updateBaseUrl(AppConfig.kApiBaseUrl);
-        try {
-          await settingsProvider.loadSettings().timeout(requestTimeout);
-          success = true;
-        } catch (_) {}
-      }
+      if (!isMobilePlatform) {
+        final bool isNetworkFailure = e is TimeoutException ||
+            e is SocketException ||
+            e is http.ClientException ||
+            e.toString().contains('TimeoutException') ||
+            e.toString().contains('SocketException') ||
+            e.toString().contains('Connection');
 
-      // Reintento Automático (1 vez después de 2 segundos) para dar tiempo a Laragon/Red a despertar
-      if (!success && !isMobilePlatform) {
-        await Future.delayed(const Duration(seconds: 2));
-        try {
-          await settingsProvider.loadSettings().timeout(requestTimeout);
-          success = true;
-        } catch (_) {}
+        // 1. Fallback Inteligente de Red:
+        // Si la URL guardada era una IP de red local (ej. 192.168.1.X) o puerto 8000
+        // y dio TimeoutException / SocketException en una máquina Servidor con Laragon local:
+        // probar ping automático contra http://127.0.0.1/Sistema_POS/pos-backend/public/api (3s).
+        if ((isLanIp && isNetworkFailure && AppConfig.hasLocalLaragonServer()) ||
+            currentUrl.contains(':8000')) {
+          success = await _tryLocalhostFallback(
+            prefs: prefs,
+            previousUrl: currentUrl,
+            settingsProvider: settingsProvider,
+            apiClient: apiClient,
+          );
+        }
+
+        // 2. Si ya apuntaba a localhost (127.0.0.1) y falló, dar un breve margen de 1s
+        // y reintentar con tope de 3 segundos por si Apache/MySQL estaban despertando.
+        if (!success && !isLanIp) {
+          await Future.delayed(const Duration(seconds: 1));
+          try {
+            await settingsProvider
+                .loadSettings()
+                .timeout(const Duration(seconds: 3));
+            success = true;
+          } catch (_) {}
+        }
       }
     }
 
     if (!success) {
+      if (!mounted) return;
       setState(() {
         _isInitializing = false;
-        _initError = 'No se pudo conectar al servidor';
+        _initError =
+            'No se pudo conectar al servidor ($currentUrl). Verifique la IP o su conexión de red.';
+      });
+
+      // Redirigir / abrir inmediatamente el diálogo de configuración de red/servidor
+      // para que el usuario pueda ingresar la IP correcta sin congelar la pantalla.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final dialogCtx = _splashNavigatorKey.currentContext;
+        if (mounted &&
+            dialogCtx != null &&
+            dialogCtx.mounted &&
+            !_isShowingNetworkDialog) {
+          _showNetworkSettingsDialog(dialogCtx);
+        }
       });
       return; // Abortar resto de la carga
     }
@@ -751,7 +1209,7 @@ class _MainAppState extends State<MainApp> {
         _initError = null;
       });
 
-      // íííí CHECK DE RESULTADO OTA (Smart Chaining) íííí
+      // í íí í CHECK DE RESULTADO OTA (Smart Chaining) í íí í
       // Si el updater corrió mientras la app estaba cerrada, mostrar el
       // resultado al usuario. Si fue una actualización exitosa del Frontend,
       // encadenar automáticamente la actualización del Backend (Auto-Resume).
@@ -809,134 +1267,182 @@ class _MainAppState extends State<MainApp> {
   final GlobalKey<NavigatorState> navigatorKey = AppConfig.navigatorKey;
   final ValueNotifier<String?> _currentRoute = ValueNotifier<String?>(null);
 
-  Future<void> _showNetworkSettingsDialog(BuildContext context) async {
-    final prefs = await SharedPreferences.getInstance();
+  Future<void> _resetConfigurationToDefault() async {
+    final prefs = await _getSafeSharedPreferences();
+    final oldUrl = prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
+    final defaultUrl = AppConfig.hasLocalLaragonServer()
+        ? AppConfig.kLocalhostLaragonUrl
+        : AppConfig.kApiBaseUrl;
+
+    await prefs.setString('pos_api', defaultUrl);
+    await prefs.setString('pos_api_local', defaultUrl);
+
+    if (!mounted) return;
+    final apiClient = Provider.of<ApiClient>(context, listen: false);
+    final settingsProvider =
+        Provider.of<SettingsProvider>(context, listen: false);
+
+    apiClient.setBaseUrlOverride(fromBaseUrl: oldUrl, toBaseUrl: defaultUrl);
+    settingsProvider.updateBaseUrl(defaultUrl);
+
+    await _initializeApp();
+  }
+
+  Future<void> _showNetworkSettingsDialog(BuildContext dialogContext) async {
+    if (_isShowingNetworkDialog) return;
+    _isShowingNetworkDialog = true;
+
+    final prefs = await _getSafeSharedPreferences();
     final currentUrl = prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
 
-    if (!context.mounted) return;
+    if (!dialogContext.mounted) {
+      _isShowingNetworkDialog = false;
+      return;
+    }
 
     final urlController = TextEditingController(text: currentUrl);
     try {
       await showDialog(
-        context: context,
+        context: dialogContext,
         barrierDismissible: false,
         builder: (dCtx) => AlertDialog(
           title: const Row(
-          children: [
-            Icon(Icons.dns_outlined, color: Colors.blueAccent),
-            SizedBox(width: 8),
-            Text('Configurar Servidor',
-                style: TextStyle(fontWeight: FontWeight.bold)),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Ingrese la IP o URL de la PC principal:',
-                style: TextStyle(color: Colors.blueGrey)),
-            const SizedBox(height: 16),
-            TextField(
-              controller: urlController,
-              decoration: InputDecoration(
-                hintText: 'Ej: http://192.168.1.50/api',
-                border:
-                    OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                prefixIcon: const Icon(Icons.link),
+            children: [
+              Icon(Icons.dns_outlined, color: Colors.blueAccent),
+              SizedBox(width: 8),
+              Text('Configurar Servidor',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'No hubo respuesta del servidor configurado tras 3 segundos.\n'
+                'Ingrese la IP local de la PC Servidor o use 127.0.0.1 si esta PC es el servidor:',
+                style: TextStyle(color: Colors.blueGrey, fontSize: 13),
               ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: urlController,
+                decoration: InputDecoration(
+                  hintText:
+                      'Ej: 192.168.1.50 o http://127.0.0.1/Sistema_POS/pos-backend/public/api',
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8)),
+                  prefixIcon: const Icon(Icons.link),
+                ),
+              ),
+              if (AppConfig.hasLocalLaragonServer()) ...[
+                const SizedBox(height: 10),
+                TextButton.icon(
+                  onPressed: () {
+                    urlController.text = AppConfig.kLocalhostLaragonUrl;
+                  },
+                  icon: const Icon(Icons.computer, size: 18),
+                  label: const Text('Usar Servidor Local (127.0.0.1)'),
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dCtx),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton.icon(
+              onPressed: () async {
+                String newUrl = urlController.text.trim();
+                if (newUrl.isNotEmpty) {
+                  // --- AUTO-FORMATO UX (Igual que en Ajustes) ---
+                  if (!newUrl.startsWith('http')) {
+                    if (!newUrl.contains('/')) {
+                      final isIp = RegExp(r'^([0-9]{1,3}\.){3}[0-9]{1,3}$')
+                              .hasMatch(newUrl) ||
+                          newUrl == 'localhost';
+                      if (isIp) {
+                        newUrl =
+                            'http://$newUrl/Sistema_POS/pos-backend/public/api';
+                      } else {
+                        newUrl =
+                            'https://$newUrl/Sistema_POS/pos-backend/public/api';
+                      }
+                    } else {
+                      newUrl = 'http://$newUrl';
+                    }
+                  }
+
+                  if (newUrl.endsWith('/')) {
+                    newUrl = newUrl.substring(0, newUrl.length - 1);
+                  }
+
+                  await prefs.setString('pos_api', newUrl);
+                  // IMPORTANTE: También guardamos pos_api_local para que no pise la configuración al reiniciar
+                  await prefs.setString('pos_api_local', newUrl);
+
+                  if (dCtx.mounted) {
+                    Navigator.pop(dCtx);
+                  }
+
+                  if (mounted) {
+                    final apiClient =
+                        Provider.of<ApiClient>(context, listen: false);
+                    final settingsProvider =
+                        Provider.of<SettingsProvider>(context, listen: false);
+
+                    apiClient.setBaseUrlOverride(
+                      fromBaseUrl: currentUrl,
+                      toBaseUrl: newUrl,
+                    );
+                    settingsProvider.updateBaseUrl(newUrl);
+
+                    setState(() {
+                      _isInitializing = true;
+                      _initError = null;
+                    });
+
+                    try {
+                      await settingsProvider
+                          .loadSettings()
+                          .timeout(const Duration(seconds: 5));
+                      await _initializeApp();
+                    } catch (e) {
+                      if (mounted) {
+                        setState(() {
+                          _isInitializing = false;
+                          _initError =
+                              'No se pudo conectar a la nueva dirección ($newUrl). Verifique la IP.';
+                        });
+                      }
+                    }
+                  }
+                }
+              },
+              icon: const Icon(Icons.save),
+              label: const Text('Guardar y Reintentar'),
+              style: FilledButton.styleFrom(
+                  backgroundColor: Colors.blue.shade800),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dCtx),
-            child: const Text('Cancelar'),
-          ),
-          FilledButton.icon(
-            onPressed: () async {
-              String newUrl = urlController.text.trim();
-              if (newUrl.isNotEmpty) {
-                // --- AUTO-FORMATO UX (Igual que en Ajustes) ---
-                if (!newUrl.startsWith('http')) {
-                  if (!newUrl.contains('/')) {
-                    // Si es solo una IP/dominio, asumimos la ruta por defecto
-                    final isIp = RegExp(r'^([0-9]{1,3}\.){3}[0-9]{1,3}$').hasMatch(newUrl) || newUrl == 'localhost';
-                    if (isIp) {
-                      newUrl = 'http://$newUrl/Sistema_POS/pos-backend/public/api';
-                    } else {
-                      newUrl = 'https://$newUrl/Sistema_POS/pos-backend/public/api';
-                    }
-                  } else {
-                    newUrl = 'http://$newUrl';
-                  }
-                }
-
-                if (newUrl.endsWith('/')) {
-                  newUrl = newUrl.substring(0, newUrl.length - 1);
-                }
-
-                await prefs.setString('pos_api', newUrl);
-                // IMPORTANTE: También guardamos pos_api_local para que no pise la configuración al reiniciar
-                await prefs.setString('pos_api_local', newUrl);
-
-                if (context.mounted) {
-                  final settingsProvider =
-                      Provider.of<SettingsProvider>(context, listen: false);
-                  settingsProvider.updateBaseUrl(newUrl);
-
-                  Navigator.pop(dCtx);
-
-                  // Intentar validar la nueva IP antes de reiniciar toda la app
-                  setState(() {
-                    _isInitializing = true;
-                    _initError = null;
-                  });
-
-                  try {
-                    await settingsProvider.loadSettings();
-
-                    if (AppConfig.isMobile) {
-                      // En celular no cerramos la app porque el OS no la vuelve a abrir sola.
-                      // Simplemente volvemos a llamar a la inicialización.
-                      _initializeApp();
-                    } else {
-                      // En Desktop sí podemos reiniciar el proceso
-                      Process.start(Platform.resolvedExecutable,
-                          Platform.executableArguments);
-                      exit(0);
-                    }
-                  } catch (e) {
-                    setState(() {
-                      _isInitializing = false;
-                      _initError =
-                          'No se pudo conectar a la nueva IP. Verifique la dirección.';
-                    });
-                  }
-                }
-              }
-            },
-            icon: const Icon(Icons.save),
-            label: const Text('Guardar y Reintentar'),
-            style:
-                FilledButton.styleFrom(backgroundColor: Colors.blue.shade800),
-          ),
-        ],
-      ),
-    );
+      );
     } finally {
+      _isShowingNetworkDialog = false;
       urlController.dispose();
     }
   }
 
   Widget _buildLoadingOrErrorScreen() {
     return MaterialApp(
+      navigatorKey: _splashNavigatorKey,
       debugShowCheckedModeBanner: false,
       home: Builder(
         builder: (innerContext) => Scaffold(
           backgroundColor: const Color(0xFF1E2D45),
           body: Center(
             child: Container(
-              constraints: const BoxConstraints(maxWidth: 400),
+              constraints: const BoxConstraints(maxWidth: 440),
               padding: const EdgeInsets.all(32),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -1003,18 +1509,39 @@ class _MainAppState extends State<MainApp> {
                     const Icon(Icons.error_outline_rounded,
                         color: Colors.redAccent, size: 48),
                     const SizedBox(height: 24),
-                    ElevatedButton.icon(
-                      onPressed: () {
-                        _initializeApp();
-                      },
-                      icon: const Icon(Icons.refresh_rounded),
-                      label: const Text('Reintentar Conexión'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blue,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 24, vertical: 12),
-                      ),
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 12,
+                      alignment: WrapAlignment.center,
+                      children: [
+                        ElevatedButton.icon(
+                          onPressed: () {
+                            _initializeApp();
+                          },
+                          icon: const Icon(Icons.refresh_rounded),
+                          label: const Text('Reintentar Conexión'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.blue,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 20, vertical: 12),
+                          ),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: () {
+                            _resetConfigurationToDefault();
+                          },
+                          icon: const Icon(Icons.restore_rounded,
+                              color: Colors.amberAccent),
+                          label: const Text('Reiniciar Configuración',
+                              style: TextStyle(color: Colors.amberAccent)),
+                          style: OutlinedButton.styleFrom(
+                            side: const BorderSide(color: Colors.amberAccent),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 18, vertical: 12),
+                          ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 12),
                     TextButton.icon(
@@ -1024,7 +1551,7 @@ class _MainAppState extends State<MainApp> {
                       },
                       icon: const Icon(Icons.settings_ethernet,
                           color: Colors.white70),
-                      label: const Text('Configurar Servidor',
+                      label: const Text('Configurar Servidor Manualmente',
                           style: TextStyle(color: Colors.white70)),
                     ),
                   ],
@@ -1163,7 +1690,7 @@ class _MainAppState extends State<MainApp> {
                           return;
                         }
 
-                        // Detectar error de límite de plan í  mostrar modal de upselling
+                        // Detectar error de límite de plan í   mostrar modal de upselling
                         final isPlanLimitError =
                             rawError.contains('Límite de cajas') ||
                                 rawError.contains('plan a PRO') ||

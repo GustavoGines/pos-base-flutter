@@ -228,14 +228,19 @@ class _CatalogScreenState extends State<CatalogScreen> {
                       ),
                     );
 
-                    final actionRow = Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      crossAxisAlignment: WrapCrossAlignment.center,
+                    final compactOutlinedStyle = OutlinedButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    );
+
+                    final actionRow = Row(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
                         IconButton(
                           icon: const Icon(Icons.refresh, color: Colors.blue),
                           tooltip: 'Recargar Catálogo',
+                          visualDensity: VisualDensity.compact,
                           onPressed: () {
                             provider.loadProducts(
                               page: 1,
@@ -243,8 +248,9 @@ class _CatalogScreenState extends State<CatalogScreen> {
                             );
                           },
                         ),
-                        const SizedBox(width: 8),
+                        const SizedBox(width: 6),
                         OutlinedButton.icon(
+                          style: compactOutlinedStyle,
                           icon: const Icon(Icons.category_rounded, size: 18),
                           label: const Text('Rubros'),
                           onPressed: () async {
@@ -261,8 +267,9 @@ class _CatalogScreenState extends State<CatalogScreen> {
                             if (auth && context.mounted) _openRubrosManager(context);
                           },
                         ),
-                        const SizedBox(width: 8),
+                        const SizedBox(width: 6),
                         OutlinedButton.icon(
+                          style: compactOutlinedStyle,
                           icon: const Icon(Icons.label_outline, size: 18),
                           label: const Text('Categorías'),
                           onPressed: () async {
@@ -270,8 +277,9 @@ class _CatalogScreenState extends State<CatalogScreen> {
                             if (auth && context.mounted) _openCategoriesManager(context);
                           },
                         ),
-                        const SizedBox(width: 8),
+                        const SizedBox(width: 6),
                         OutlinedButton.icon(
+                          style: compactOutlinedStyle,
                           icon: const Icon(Icons.branding_watermark_outlined, size: 18),
                           label: const Text('Marcas'),
                           onPressed: () async {
@@ -279,10 +287,11 @@ class _CatalogScreenState extends State<CatalogScreen> {
                             if (auth && context.mounted) _openBrandsManager(context);
                           },
                         ),
-                        const SizedBox(width: 8),
+                        const SizedBox(width: 4),
                         IconButton(
                           icon: const Icon(Icons.history, color: Colors.deepOrange),
                           tooltip: 'Historial de Aumentos',
+                          visualDensity: VisualDensity.compact,
                           onPressed: () => showDialog(
                             context: context,
                             builder: (_) => BulkPriceHistoryDialog(provider: provider),
@@ -292,7 +301,11 @@ class _CatalogScreenState extends State<CatalogScreen> {
                         OutlinedButton.icon(
                           icon: const Icon(Icons.trending_up, size: 18, color: Colors.deepOrange),
                           label: const Text('Aumento Masivo', style: TextStyle(color: Colors.deepOrange)),
-                          style: OutlinedButton.styleFrom(side: const BorderSide(color: Colors.deepOrange)),
+                          style: OutlinedButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                            side: const BorderSide(color: Colors.deepOrange),
+                          ),
                           onPressed: provider.isLoading
                               ? null
                               : () async {
@@ -300,6 +313,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                                   if (auth && context.mounted) _showBulkUpdateDialog(context, provider);
                                 },
                         ),
+                        const SizedBox(width: 6),
                         PopupMenuButton<String>(
                           tooltip: 'Opciones de Excel',
                           offset: const Offset(0, 40),
@@ -343,7 +357,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                             }
                           },
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                             decoration: BoxDecoration(
                               border: Border.all(color: Colors.green),
                               borderRadius: BorderRadius.circular(20),
@@ -352,16 +366,20 @@ class _CatalogScreenState extends State<CatalogScreen> {
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Icon(Icons.table_view, size: 18, color: Colors.green),
-                                SizedBox(width: 8),
+                                SizedBox(width: 6),
                                 Text('Excel', style: TextStyle(color: Colors.green, fontWeight: FontWeight.w500)),
-                                SizedBox(width: 4),
+                                SizedBox(width: 2),
                                 Icon(Icons.arrow_drop_down, size: 18, color: Colors.green),
                               ],
                             ),
                           ),
                         ),
-                        const SizedBox(width: 8),
+                        const SizedBox(width: 6),
                         FilledButton.icon(
+                          style: FilledButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          ),
                           icon: const Icon(Icons.add, size: 18),
                           label: const Text('Nuevo Producto'),
                           onPressed: () async {
@@ -372,32 +390,47 @@ class _CatalogScreenState extends State<CatalogScreen> {
                       ],
                     );
 
-                    if (constraints.maxWidth < 1250) {
+                    if (constraints.maxWidth < 750) {
                       return Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           searchWidget,
-                          const SizedBox(height: 12),
-                          if (constraints.maxWidth < 700)
-                            SingleChildScrollView(
-                              scrollDirection: Axis.horizontal,
+                          const SizedBox(height: 10),
+                          SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: actionRow,
+                          ),
+                        ],
+                      );
+                    }
+
+                    if (constraints.maxWidth < 1150) {
+                      return Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Expanded(
+                            flex: 3,
+                            child: searchWidget,
+                          ),
+                          const SizedBox(width: 10),
+                          Flexible(
+                            flex: 7,
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerRight,
                               child: actionRow,
-                            )
-                          else
-                            actionRow,
+                            ),
+                          ),
                         ],
                       );
                     }
 
                     return Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
                         Expanded(child: searchWidget),
                         const SizedBox(width: 12),
-                        Flexible(
-                          flex: 2,
-                          child: actionRow,
-                        ),
+                        actionRow,
                       ],
                     );
                   },

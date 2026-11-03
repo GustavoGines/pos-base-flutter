@@ -69,6 +69,23 @@ class ApiClient extends http.BaseClient {
   DateTime? _fallbackActivatedAt;
   Duration fallbackStickyDuration = const Duration(seconds: 60);
 
+  /// Override dinámico de Base URL cuando el sistema realiza auto-fallback
+  /// (por ejemplo, de una IP LAN antigua 192.168.1.X a 127.0.0.1 local en la PC Servidor)
+  /// o cuando el usuario cambia la IP en el diálogo de configuración sin reiniciar.
+  String? _initialConfiguredBaseUrl;
+  String? _overrideBaseUrl;
+
+  void setBaseUrlOverride({required String fromBaseUrl, required String toBaseUrl}) {
+    final cleanFrom = fromBaseUrl.trim().replaceAll(RegExp(r'/+$'), '');
+    final cleanTo = toBaseUrl.trim().replaceAll(RegExp(r'/+$'), '');
+    if (cleanFrom.isNotEmpty && cleanTo.isNotEmpty) {
+      _initialConfiguredBaseUrl ??= cleanFrom;
+      _overrideBaseUrl = cleanTo;
+    }
+  }
+
+  String? get overrideBaseUrl => _overrideBaseUrl;
+
   /// FINDING-RESIL-03: Timeout de 20s para operaciones estándar de red local,
   /// 90s para servicios externos sincrónicos (AFIP WSAA/WSFE, Licencias Render cold-start, Ecommerce)
   /// y 300s para tareas pesadas de base de datos o archivos (backups, restore, imports/exports).
@@ -318,6 +335,16 @@ class ApiClient extends http.BaseClient {
       }
 
       http.BaseRequest activeRequest = request;
+      if (_overrideBaseUrl != null &&
+          _initialConfiguredBaseUrl != null &&
+          _overrideBaseUrl != _initialConfiguredBaseUrl &&
+          request is http.Request) {
+        final overriddenUri = _tryRewriteUri(url, _initialConfiguredBaseUrl!, _overrideBaseUrl!);
+        if (overriddenUri != null) {
+          url = overriddenUri;
+          activeRequest = _buildClonedRequest(method, url, headers, bodyBytes, encoding);
+        }
+      }
       if (_useFallbackEndpoint &&
           _primaryBaseUrl != null &&
           _fallbackBaseUrl != null &&
