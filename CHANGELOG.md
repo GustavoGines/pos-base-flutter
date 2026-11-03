@@ -1,6 +1,21 @@
-# Changelog - Sistema POS (Frontend)
-Todos los cambios notables de la aplicación de caja (Flutter/Windows) están documentados aquí.
+# Changelog - Caja4U (Frontend)
+Todos los cambios notables de la aplicación de caja (Flutter/Windows/Android) están documentados aquí.
 
+
+## [2.1.0] - 2026-11-03
+### Identidad Visual y Rebranding (Caja4U • by Dev4U)
+- Nueva identidad corporativa **Caja4U • by Dev4U** en barra superior, pantalla de acceso, ventana de Windows, Android y actualizador OTA.
+- Nuevos íconos de alta resolución (`app_icon.ico`, `app_logo.png` y Adaptive Icons de Android).
+- Migración transparente y automática en OTA de preferencias locales (`SharedPreferences`) y accesos directos de Escritorio (`Sistema POS` -> `Caja4U`) sin pérdida de configuración en terminales en producción.
+### Facturación Electrónica ARCA / AFIP y Comprobantes
+- Emisión de Factura A con validación estricta de receptor (CUIT de 11 dígitos y Condición frente al IVA).
+- Generación de Comprobante PDF A4 con código QR oficial de ARCA/AFIP, desglose impositivo discriminado y CAE.
+- Asistente paso a paso para generación de CSR y vinculación de certificados digitales ARCA/AFIP.
+- Modo Entorno Demo (Homologación) con credenciales de prueba en 1 clic.
+### Mejoras de Usabilidad y Estabilidad
+- Rediseño del menú principal con botones más amplios y legibles en resoluciones estándar y táctiles.
+- Unificación de carga del logo del negocio y refresco automático de configuración en cambios de ruta.
+- Limpieza de textos corruptos (mojibake UTF-8) en todo el sistema.
 
 ## [2.0.1] - 2026-10-12
 ### Correcciones

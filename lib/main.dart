@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
 import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -162,51 +164,144 @@ class LicenseRefreshObserver extends NavigatorObserver {
   void didReplace({Route? newRoute, Route? oldRoute}) => _refresh(newRoute);
 }
 
+/// Migra de forma síncrona las preferencias locales en Windows desde el directorio legado
+/// (`%APPDATA%\com.example\frontend_desktop\shared_preferences.json`) hacia el nuevo directorio
+/// de marca (`%APPDATA%\Dev4U\Caja4U\shared_preferences.json`) generado tras el cambio en Runner.rc.
+/// Garantiza que ningún cliente en producción pierda su IP de API, caja asignada, impresora o balanza al actualizar por OTA.
+void _migrateLegacyWindowsSharedPreferencesSync() {
+  if (!Platform.isWindows) return;
+  try {
+    final appData = Platform.environment['APPDATA'];
+    if (appData == null || appData.isEmpty) return;
+
+    final legacyFile = File(
+      p.join(appData, 'com.example', 'frontend_desktop', 'shared_preferences.json'),
+    );
+    if (!legacyFile.existsSync()) return;
+
+    final newDir = Directory(p.join(appData, 'Dev4U', 'Caja4U'));
+    final newFile = File(p.join(newDir.path, 'shared_preferences.json'));
+
+    if (!newFile.existsSync()) {
+      newDir.createSync(recursive: true);
+      legacyFile.copySync(newFile.path);
+      return;
+    }
+
+    // Si ambos existen, fusionar claves faltantes del archivo legado sin pisar las nuevas
+    final legacyRaw = legacyFile.readAsStringSync();
+    final newRaw = newFile.readAsStringSync();
+    final legacyMap = jsonDecode(legacyRaw);
+    final newMap = jsonDecode(newRaw);
+
+    if (legacyMap is Map<String, dynamic> && newMap is Map<String, dynamic>) {
+      bool modified = false;
+      for (final entry in legacyMap.entries) {
+        if (!newMap.containsKey(entry.key)) {
+          newMap[entry.key] = entry.value;
+          modified = true;
+        }
+      }
+      if (modified) {
+        newFile.writeAsStringSync(jsonEncode(newMap));
+      }
+    }
+  } catch (e) {
+    debugPrint('Advertencia migrando SharedPreferences legadas: $e');
+  }
+}
+
 /// Actualiza silenciosamente en clientes de producción el acceso directo del Escritorio
 /// (ej. "Sistema POS.lnk" -> "Caja4U.lnk") manteniendo intacto el destino Sistema_POS.exe,
 /// y refresca la caché de íconos de Windows.
 void _migrateWindowsDesktopShortcutAndIconCache() {
+  if (!Platform.isWindows) return;
   try {
     final exePath = Platform.resolvedExecutable;
-    final psScript = r'''
-Continue = 'SilentlyContinue'
- = 
- = New-Object -ComObject WScript.Shell
- = @(
+    final exeDir = p.dirname(exePath);
+    final icoCandidate = p.join(exeDir, 'app_icon.ico');
+    final iconTarget = File(icoCandidate).existsSync() ? icoCandidate : exePath;
+
+    final psContent = r'''
+$ErrorActionPreference = 'SilentlyContinue'
+$exePath = $env:CAJA4U_EXE_PATH
+$iconPath = $env:CAJA4U_ICON_PATH
+$wsh = New-Object -ComObject WScript.Shell
+$folders = @(
   [Environment]::GetFolderPath('Desktop'),
-  [Environment]::GetFolderPath('CommonDesktopDirectory')
+  [Environment]::GetFolderPath('CommonDesktopDirectory'),
+  [Environment]::GetFolderPath('Programs'),
+  [Environment]::GetFolderPath('CommonPrograms')
 ) | Select-Object -Unique
 
-foreach ( in ) {
-  if (-not  -or -not (Test-Path )) { continue }
-  Get-ChildItem -Path  -Filter '*.lnk' | ForEach-Object {
-     = .CreateShortcut(.FullName)
-    if (.TargetPath -and (.TargetPath -ieq  -or .TargetPath -like '*\Sistema_POS.exe')) {
-      .Description = 'Caja4U - Punto de Venta'
-      if (Test-Path ) { .IconLocation = ",0" }
-      .Save()
-      if (.Name -ne 'Caja4U.lnk') {
-         = Join-Path  'Caja4U.lnk'
-        if (-not (Test-Path )) {
-          Rename-Item -Path .FullName -NewName 'Caja4U.lnk' -Force
+foreach ($dir in $folders) {
+  if (-not $dir -or -not (Test-Path -LiteralPath $dir)) { continue }
+  Get-ChildItem -LiteralPath $dir -Filter '*.lnk' -Recurse | ForEach-Object {
+    $lnk = $_
+    $sc = $wsh.CreateShortcut($lnk.FullName)
+    if ($sc.TargetPath -and ($sc.TargetPath -ieq $exePath -or $sc.TargetPath -like '*\Sistema_POS.exe')) {
+      $sc.Description = 'Caja4U - Punto de Venta'
+      if ($iconPath -and (Test-Path -LiteralPath $iconPath)) {
+        $sc.IconLocation = "$iconPath,0"
+      }
+      $sc.Save()
+      if ($lnk.Name -ieq 'Sistema POS.lnk') {
+        $newPath = Join-Path $lnk.DirectoryName 'Caja4U.lnk'
+        if (-not (Test-Path -LiteralPath $newPath)) {
+          Rename-Item -LiteralPath $lnk.FullName -NewName 'Caja4U.lnk' -Force
+        } else {
+          Remove-Item -LiteralPath $lnk.FullName -Force
         }
+      }
+    } elseif ($lnk.Name -ieq 'Servidor POS.lnk') {
+      $newSrvPath = Join-Path $lnk.DirectoryName 'Servidor Caja4U.lnk'
+      if (-not (Test-Path -LiteralPath $newSrvPath)) {
+        Rename-Item -LiteralPath $lnk.FullName -NewName 'Servidor Caja4U.lnk' -Force
       }
     }
   }
 }
 ie4uinit.exe -show
 ''';
+
+    final tempScript = File(
+      p.join(Directory.systemTemp.path, 'caja4u_brand_migrate.ps1'),
+    );
+    tempScript.writeAsStringSync(psContent, flush: true);
+
     Process.run(
       'powershell',
-      ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-Command', psScript],
-      environment: {'CAJA4U_EXE_PATH': exePath},
-    ).ignore();
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-WindowStyle',
+        'Hidden',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-File',
+        tempScript.path,
+      ],
+      environment: {
+        'CAJA4U_EXE_PATH': exePath,
+        'CAJA4U_ICON_PATH': iconTarget,
+      },
+    ).then((_) {
+      try {
+        if (tempScript.existsSync()) tempScript.deleteSync();
+      } catch (_) {}
+    }).ignore();
   } catch (_) {}
 }
 
 void main() async {
   // CRÍTICO: Inicialización obligatoria para assets y plugins en desktop
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Migrar preferencias de Windows antes de inicializar SharedPreferences
+  // (evita perder configuración al pasar de com.example\frontend_desktop a Dev4U\Caja4U)
+  if (AppConfig.isDesktop && Platform.isWindows) {
+    _migrateLegacyWindowsSharedPreferencesSync();
+  }
 
   // Hacer que la app inicie en pantalla completa (maximizada) pero no Kiosk puro,
   // permitiendo que el usuario la achique o minimice si lo requiere.
@@ -236,10 +331,11 @@ void main() async {
   // Obtener URL de la API del almacenamiento local
   final prefs = await SharedPreferences.getInstance();
   if (AppConfig.isDesktop && Platform.isWindows) {
-    final iconCacheRefreshed = prefs.getBool('caja4u_desktop_brand_v2_migrated') ?? false;
+    final iconCacheRefreshed =
+        prefs.getBool('caja4u_desktop_brand_v3_migrated') ?? false;
     if (!iconCacheRefreshed) {
       _migrateWindowsDesktopShortcutAndIconCache();
-      await prefs.setBool('caja4u_desktop_brand_v2_migrated', true);
+      await prefs.setBool('caja4u_desktop_brand_v3_migrated', true);
     }
   }
   final String localUrl = prefs.getString('pos_api_local') ??
@@ -284,7 +380,7 @@ void main() async {
   // SOLO en dispositivos móviles: el desktop tiene su propio mecanismo OTA y no necesita
   // disparar migraciones al actualizarse.
   if (AppConfig.isMobile) {
-    const currentAppVersion = '2.0.2';
+    const currentAppVersion = '2.1.0';
     // Token secreto que debe coincidir con RESCUE_MIGRATE_SECRET en el .env del backend.
     // Protege el endpoint /system/rescue-migrate contra llamadas no autorizadas.
     const rescueSecret = 'pos-rescue-2026-GGLabs';
@@ -608,13 +704,6 @@ class _MainAppState extends State<MainApp> {
       success = true;
     } catch (e) {
       final prefs = await SharedPreferences.getInstance();
-  if (AppConfig.isDesktop && Platform.isWindows) {
-    final iconCacheRefreshed = prefs.getBool('caja4u_desktop_brand_v2_migrated') ?? false;
-    if (!iconCacheRefreshed) {
-      _migrateWindowsDesktopShortcutAndIconCache();
-      await prefs.setBool('caja4u_desktop_brand_v2_migrated', true);
-    }
-  }
       final currentUrl = prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
 
       // Auto-fix: Si estamos en localhost 8000 y falla, probar con Laragon (puerto 80) una vez
@@ -722,13 +811,6 @@ class _MainAppState extends State<MainApp> {
 
   Future<void> _showNetworkSettingsDialog(BuildContext context) async {
     final prefs = await SharedPreferences.getInstance();
-  if (AppConfig.isDesktop && Platform.isWindows) {
-    final iconCacheRefreshed = prefs.getBool('caja4u_desktop_brand_v2_migrated') ?? false;
-    if (!iconCacheRefreshed) {
-      _migrateWindowsDesktopShortcutAndIconCache();
-      await prefs.setBool('caja4u_desktop_brand_v2_migrated', true);
-    }
-  }
     final currentUrl = prefs.getString('pos_api') ?? AppConfig.kApiBaseUrl;
 
     if (!context.mounted) return;

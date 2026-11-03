@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:archive/archive_io.dart';
 import 'package:path/path.dart' as p;
@@ -385,7 +386,10 @@ void main(List<String> args) async {
       log.log('Advertencia: No se pudo ejecutar Unblock-File: $e');
     }
 
-    // 2. Eliminar ZIP (ya en el dir de instalación, no en temp)
+    // 2. Migrar preferencias locales y accesos directos (con privilegios de Admin)
+    _migrateBrandingAndPrefs(targetDir, log);
+
+    // 3. Eliminar ZIP (ya en el dir de instalación, no en temp)
     try {
       zipFile.deleteSync();
       log.log('ZIP eliminado del directorio de instalación.');
@@ -393,11 +397,11 @@ void main(List<String> args) async {
       log.log('No se pudo eliminar el ZIP: $e');
     }
 
-    // 3. Escribir resultado ANTES de relanzar la app
+    // 4. Escribir resultado ANTES de relanzar la app
     log.writeResult(extractionOk);
     _writeOtaResult(targetDir, extractionOk, component: component, version: _extractVersion(zipPath));
 
-    // 4. Relanzar la app
+    // 5. Relanzar la app
     final exePath = p.join(targetDir, 'Sistema_POS.exe');
     if (File(exePath).existsSync()) {
       log.log('Relanzando Sistema_POS.exe...');
@@ -447,4 +451,160 @@ String _extractVersion(String zipPath) {
   if (match == null) return 'desconocida';
   // Quitar cualquier punto al final por si el regex fue demasiado greedy
   return match.group(1)!.replaceAll(RegExp(r'\.$'), '');
+}
+
+/// Migra las preferencias de usuario desde `com.example\frontend_desktop` hacia `Dev4U\Caja4U`
+/// en todos los perfiles de Windows (`C:\Users\*`), y actualiza los accesos directos del Escritorio
+/// Público y de Usuarios (`Sistema POS.lnk` -> `Caja4U.lnk`, `Servidor POS.lnk` -> `Servidor Caja4U.lnk`)
+/// aprovechando que `updater.exe` ya se ejecuta con privilegios de Administrador.
+void _migrateBrandingAndPrefs(String targetDir, _Logger log) {
+  log.log('Iniciando migración de preferencias y accesos directos Caja4U...');
+
+  // A) Migrar shared_preferences.json en todos los perfiles de usuario
+  try {
+    final usersDir = Directory(r'C:\Users');
+    if (usersDir.existsSync()) {
+      for (final entity in usersDir.listSync()) {
+        if (entity is! Directory) continue;
+        final legacyFile = File(p.join(
+          entity.path,
+          'AppData',
+          'Roaming',
+          'com.example',
+          'frontend_desktop',
+          'shared_preferences.json',
+        ));
+        if (!legacyFile.existsSync()) continue;
+
+        final newDir = Directory(p.join(
+          entity.path,
+          'AppData',
+          'Roaming',
+          'Dev4U',
+          'Caja4U',
+        ));
+        final newFile = File(p.join(newDir.path, 'shared_preferences.json'));
+
+        try {
+          if (!newFile.existsSync()) {
+            newDir.createSync(recursive: true);
+            legacyFile.copySync(newFile.path);
+            log.log('  ✓ Preferencias copiadas a ${newFile.path}');
+          } else {
+            final legacyMap = jsonDecode(legacyFile.readAsStringSync());
+            final newMap = jsonDecode(newFile.readAsStringSync());
+            if (legacyMap is Map<String, dynamic> && newMap is Map<String, dynamic>) {
+              bool changed = false;
+              for (final entry in legacyMap.entries) {
+                if (!newMap.containsKey(entry.key)) {
+                  newMap[entry.key] = entry.value;
+                  changed = true;
+                }
+              }
+              if (changed) {
+                newFile.writeAsStringSync(jsonEncode(newMap));
+                log.log('  ✓ Preferencias fusionadas en ${newFile.path}');
+              }
+            }
+          }
+        } catch (e) {
+          log.log('  Advertencia migrando preferencias en ${entity.path}: $e');
+        }
+      }
+    }
+  } catch (e) {
+    log.log('Advertencia escaneando perfiles de usuario: $e');
+  }
+
+  // B) Actualizar accesos directos (.lnk) en Escritorio Público, Menú Inicio y Perfiles
+  try {
+    final exePath = p.join(targetDir, 'Sistema_POS.exe');
+    final icoCandidate = p.join(targetDir, 'app_icon.ico');
+    final iconTarget = File(icoCandidate).existsSync() ? icoCandidate : exePath;
+
+    final psContent = r'''
+$ErrorActionPreference = 'SilentlyContinue'
+$exePath = $env:CAJA4U_EXE_PATH
+$iconPath = $env:CAJA4U_ICON_PATH
+$wsh = New-Object -ComObject WScript.Shell
+
+$folders = [System.Collections.Generic.List[string]]::new()
+@(
+  [Environment]::GetFolderPath('Desktop'),
+  [Environment]::GetFolderPath('CommonDesktopDirectory'),
+  [Environment]::GetFolderPath('Programs'),
+  [Environment]::GetFolderPath('CommonPrograms')
+) | ForEach-Object { if ($_) { $folders.Add($_) } }
+
+if (Test-Path -LiteralPath 'C:\Users') {
+  Get-ChildItem -LiteralPath 'C:\Users' -Directory | ForEach-Object {
+    $uDesk = Join-Path $_.FullName 'Desktop'
+    if (Test-Path -LiteralPath $uDesk) { $folders.Add($uDesk) }
+  }
+}
+
+$uniqueFolders = $folders | Select-Object -Unique
+
+foreach ($dir in $uniqueFolders) {
+  if (-not $dir -or -not (Test-Path -LiteralPath $dir)) { continue }
+  Get-ChildItem -LiteralPath $dir -Filter '*.lnk' -Recurse | ForEach-Object {
+    $lnk = $_
+    $sc = $wsh.CreateShortcut($lnk.FullName)
+    if ($sc.TargetPath -and ($sc.TargetPath -ieq $exePath -or $sc.TargetPath -like '*\Sistema_POS.exe')) {
+      $sc.Description = 'Caja4U - Punto de Venta'
+      if ($iconPath -and (Test-Path -LiteralPath $iconPath)) {
+        $sc.IconLocation = "$iconPath,0"
+      }
+      $sc.Save()
+      if ($lnk.Name -ieq 'Sistema POS.lnk') {
+        $newPath = Join-Path $lnk.DirectoryName 'Caja4U.lnk'
+        if (-not (Test-Path -LiteralPath $newPath)) {
+          Rename-Item -LiteralPath $lnk.FullName -NewName 'Caja4U.lnk' -Force
+        } else {
+          Remove-Item -LiteralPath $lnk.FullName -Force
+        }
+      }
+    } elseif ($lnk.Name -ieq 'Servidor POS.lnk') {
+      $newSrvPath = Join-Path $lnk.DirectoryName 'Servidor Caja4U.lnk'
+      if (-not (Test-Path -LiteralPath $newSrvPath)) {
+        Rename-Item -LiteralPath $lnk.FullName -NewName 'Servidor Caja4U.lnk' -Force
+      }
+    }
+  }
+}
+ie4uinit.exe -show
+''';
+
+    final tempScript = File(p.join(Directory.systemTemp.path, 'caja4u_ota_shortcuts.ps1'));
+    tempScript.writeAsStringSync(psContent, flush: true);
+
+    final psResult = Process.runSync(
+      'powershell',
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-WindowStyle',
+        'Hidden',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-File',
+        tempScript.path,
+      ],
+      environment: {
+        'CAJA4U_EXE_PATH': exePath,
+        'CAJA4U_ICON_PATH': iconTarget,
+      },
+    );
+    try {
+      if (tempScript.existsSync()) tempScript.deleteSync();
+    } catch (_) {}
+
+    if (psResult.exitCode == 0) {
+      log.log('  ✓ Accesos directos y caché de íconos actualizados a Caja4U.');
+    } else {
+      log.log('  Advertencia actualizando accesos directos (exitCode=${psResult.exitCode}).');
+    }
+  } catch (e) {
+    log.log('Advertencia en actualización de accesos directos: $e');
+  }
 }
