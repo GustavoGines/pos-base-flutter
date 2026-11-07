@@ -18,8 +18,8 @@ abstract class SettingsRepository {
     required String cuit,
     required List<int> certBytes,
     required String certFilename,
-    List<int>? keyBytes,
-    String? keyFilename,
+    required List<int> keyBytes,
+    required String keyFilename,
     String? keyPassphrase,
   });
   Future<Map<String, dynamic>> generateAfipCsr({

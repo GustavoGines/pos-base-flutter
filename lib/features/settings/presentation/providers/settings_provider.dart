@@ -318,8 +318,8 @@ class SettingsProvider with ChangeNotifier {
     required String cuit,
     required List<int> certBytes,
     required String certFilename,
-    List<int>? keyBytes,
-    String? keyFilename,
+    required List<int> keyBytes,
+    required String keyFilename,
     String? keyPassphrase,
   }) async {
     _isUploadingCertificates = true;

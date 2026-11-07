@@ -148,7 +148,7 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 16.0),
             child: LayoutBuilder(
               builder: (context, headerConstraints) {
-                final isNarrow = headerConstraints.maxWidth < 720;
+                final isNarrow = headerConstraints.maxWidth < 900;
                 final searchBar = SizedBox(
                   width: isNarrow ? headerConstraints.maxWidth : 460,
                   child: Row(
@@ -262,7 +262,8 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
                 return Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    searchBar,
+                    Flexible(child: searchBar),
+                    const SizedBox(width: 12),
                     actionButtons,
                   ],
                 );

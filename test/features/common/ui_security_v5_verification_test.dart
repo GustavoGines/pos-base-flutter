@@ -465,23 +465,23 @@ void main() {
       expect(find.text('Cajero Con Todos Los Permisos'), findsOneWidget);
       expect(find.text('CAJERO'), findsOneWidget);
 
-      // In collapsed state, exactly 3 permissions chips + 1 "+22 más" chip must be shown
-      expect(find.text('+22 más'), findsOneWidget);
+      // In collapsed state, exactly 3 permissions chips + 1 "+23 más" chip must be shown
+      expect(find.text('+23 más'), findsOneWidget);
       expect(find.text('Ver menos'), findsNothing);
 
-      // Tapping "+22 más" must expand the view
-      await tester.tap(find.text('+22 más'));
+      // Tapping "+23 más" must expand the view
+      await tester.tap(find.text('+23 más'));
       await tester.pumpAndSettle();
 
-      // In expanded state, 'Ver menos' must appear and '+22 más' must be gone
+      // In expanded state, 'Ver menos' must appear and '+23 más' must be gone
       expect(find.text('Ver menos'), findsOneWidget);
-      expect(find.text('+22 más'), findsNothing);
+      expect(find.text('+23 más'), findsNothing);
 
       // Tapping 'Ver menos' collapses the view back
       await tester.tap(find.text('Ver menos'));
       await tester.pumpAndSettle();
 
-      expect(find.text('+22 más'), findsOneWidget);
+      expect(find.text('+23 más'), findsOneWidget);
       expect(find.text('Ver menos'), findsNothing);
     });
 

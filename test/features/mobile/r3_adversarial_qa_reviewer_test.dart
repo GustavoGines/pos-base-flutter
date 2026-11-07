@@ -232,8 +232,10 @@ void main() {
       await tester.tap(find.byType(FloatingActionButton));
       await tester.pumpAndSettle();
 
-      // Tap pick image
+      // Tap pick image -> select gallery in bottom sheet
       await tester.tap(find.byKey(const Key('mobile_pick_image_button')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('mobile_pick_image_gallery_option')));
       await tester.pumpAndSettle();
 
       // Verify rejection error snackbar
@@ -267,6 +269,8 @@ void main() {
 
       await tester.tap(find.byKey(const Key('mobile_pick_image_button')));
       await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('mobile_pick_image_gallery_option')));
+      await tester.pumpAndSettle();
 
       expect(find.textContaining('supera los 2MB permitidos'), findsOneWidget);
       expect(find.text('Subir Foto'), findsOneWidget);
@@ -297,6 +301,8 @@ void main() {
 
       // Pick photo
       await tester.tap(find.byKey(const Key('mobile_pick_image_button')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('mobile_pick_image_gallery_option')));
       await tester.pumpAndSettle();
 
       expect(find.text('Cambiar Foto'), findsOneWidget);
@@ -347,6 +353,8 @@ void main() {
       await tester.pumpAndSettle();
 
       await tester.tap(find.byKey(const Key('mobile_pick_image_button')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('mobile_pick_image_gallery_option')));
       await tester.pumpAndSettle();
 
       await tester.enterText(find.widgetWithText(TextField, 'Nombre del producto'), 'Producto Error Foto');
@@ -410,6 +418,8 @@ void main() {
       ]);
       await tester.tap(find.byKey(const Key('mobile_pick_image_button')));
       await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('mobile_pick_image_gallery_option')));
+      await tester.pumpAndSettle();
 
       // Save
       await tester.tap(find.widgetWithText(FilledButton, 'Guardar'));
@@ -442,6 +452,8 @@ void main() {
       await tester.pumpAndSettle();
 
       await tester.tap(find.byKey(const Key('mobile_pick_image_button')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('mobile_pick_image_gallery_option')));
       await tester.pumpAndSettle();
 
       // State is completely intact
@@ -502,6 +514,8 @@ void main() {
         ),
       ]);
       await tester.tap(find.byKey(const Key('mobile_pick_image_button')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('mobile_pick_image_gallery_option')));
       await tester.pumpAndSettle();
 
       // Save

@@ -4,10 +4,10 @@ import 'package:frontend_desktop/features/users/presentation/widgets/employee_fo
 
 void main() {
   group('AppPermissions & Matrix Specifications', () {
-    test('AppPermissions.all contiene exactamente las 25 claves canónicas únicas', () {
-      expect(AppPermissions.all.length, 25);
+    test('AppPermissions.all contiene exactamente las 26 claves canónicas únicas', () {
+      expect(AppPermissions.all.length, 26);
       final set = AppPermissions.all.toSet();
-      expect(set.length, 25, reason: 'No deben existir claves duplicadas');
+      expect(set.length, 26, reason: 'No deben existir claves duplicadas');
 
       // 1. Configuración (4)
       expect(AppPermissions.all.contains(AppPermissions.manageSettings), true);
@@ -32,9 +32,10 @@ void main() {
       expect(AppPermissions.all.contains(AppPermissions.viewKardex), true);
       expect(AppPermissions.all.contains(AppPermissions.voidSales), true);
 
-      // 4. Proveedores (4)
+      // 4. Proveedores (5)
       expect(AppPermissions.all.contains(AppPermissions.viewSuppliers), true);
       expect(AppPermissions.all.contains(AppPermissions.createSupplierInvoice), true);
+      expect(AppPermissions.all.contains(AppPermissions.manageSupplierInvoices), true);
       expect(AppPermissions.all.contains(AppPermissions.paySuppliers), true);
       expect(AppPermissions.all.contains(AppPermissions.manageDeliveryNotes), true);
 
@@ -45,7 +46,7 @@ void main() {
       expect(AppPermissions.all.contains(AppPermissions.manageTrash), true);
     });
 
-    test('kCategorizedPermissions agrupa los 25 permisos en categorías granulares (> 5)', () {
+    test('kCategorizedPermissions agrupa los 26 permisos en categorías granulares (> 5)', () {
       // Reorganización hacia más de 5 categorías lógicas y altamente específicas
       expect(kCategorizedPermissions.length, greaterThan(5));
       expect(kCategorizedPermissions.length, 9);
@@ -54,14 +55,14 @@ void main() {
         0,
         (sum, cat) => sum + cat.items.length,
       );
-      expect(totalItems, 25);
+      expect(totalItems, 26);
 
       final allKeysInCategories = kCategorizedPermissions
           .expand((c) => c.items)
           .map((i) => i.key)
           .toSet();
 
-      expect(allKeysInCategories.length, 25);
+      expect(allKeysInCategories.length, 26);
       expect(allKeysInCategories, AppPermissions.all.toSet());
 
       // R1: 'Categoría de Gastos' debe estar reubicada en su bloque natural (Caja Chica y Gastos)
@@ -92,7 +93,7 @@ void main() {
     });
 
     test('kAllPermissions aplanada es compatible con vistas de empleados', () {
-      expect(kAllPermissions.length, 25);
+      expect(kAllPermissions.length, 26);
       for (final map in kAllPermissions) {
         expect(map.containsKey('key'), true);
         expect(map.containsKey('label'), true);

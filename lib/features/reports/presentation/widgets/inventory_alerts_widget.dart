@@ -110,6 +110,14 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
     }
   }
 
+  List<dynamic> _safeExpirationAlerts(InventoryAlertsProvider provider) {
+    try {
+      return provider.expirationAlerts;
+    } catch (_) {
+      return const [];
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return TapRegion(
@@ -122,11 +130,12 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
           child: Consumer2<InventoryAlertsProvider, SettingsProvider>(
             builder: (context, provider, settings, _) {
               final hasPredictive = settings.features.predictiveAlerts;
+              final expAlerts = _safeExpirationAlerts(provider);
               final count = hasPredictive
                   ? provider.totalAlertsCount
-                  : (provider.reactiveAlerts.length + provider.expirationAlerts.length);
+                  : (provider.reactiveAlerts.length + expAlerts.length);
               final hasCritical = provider.reactiveAlerts.isNotEmpty ||
-                  provider.expirationAlerts.any((a) => a['alert_level'] == 'critical') ||
+                  expAlerts.any((a) => a['alert_level'] == 'critical') ||
                   (hasPredictive &&
                       provider.predictiveCriticalAlerts.isNotEmpty);
 
@@ -249,6 +258,7 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
     return Consumer2<InventoryAlertsProvider, SettingsProvider>(
       builder: (context, provider, settings, _) {
         final hasPredictive = settings.features.predictiveAlerts;
+        final expAlerts = _safeExpirationAlerts(provider);
 
         if (provider.isLoading) {
           return const Padding(
@@ -260,7 +270,7 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
         if ((hasPredictive && provider.alerts.isEmpty) ||
             (!hasPredictive &&
                 provider.reactiveAlerts.isEmpty &&
-                provider.expirationAlerts.isEmpty)) {
+                expAlerts.isEmpty)) {
           return Padding(
             padding: const EdgeInsets.all(32),
             child: Column(
@@ -294,12 +304,12 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
         return ListView(
           shrinkWrap: true,
           children: [
-            if (provider.expirationAlerts.isNotEmpty) ...[
+            if (expAlerts.isNotEmpty) ...[
               _SectionHeader(
                   label: '⏰ ALERTAS DE VENCIMIENTO (CASCADA)',
                   color: Colors.purple.shade50,
                   textColor: Colors.purple.shade900),
-              ...provider.expirationAlerts
+              ...expAlerts
                   .map((a) => _buildExpirationTile(context, provider, a)),
             ],
             if (provider.reactiveAlerts.isNotEmpty) ...[

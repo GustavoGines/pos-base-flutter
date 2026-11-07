@@ -654,7 +654,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
   }
 
   Widget _buildProductsTable(List<Product> products, CatalogProvider provider) {
-    final canSeeSupplier = context.read<SettingsProvider>().features.suppliers;
+    final canSeeSupplier = context.read<SettingsProvider?>()?.features.suppliers ?? false;
 
     // Responsive flex values para que quepan en pantalla chica
     const int fCheck = 1;
@@ -1481,7 +1481,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     _supplierId = p?.supplier?.id;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final canSeeSupplier = context.read<SettingsProvider>().features.suppliers;
+      final canSeeSupplier = context.read<SettingsProvider?>()?.features.suppliers ?? false;
       if (canSeeSupplier) {
         context.read<SupplierProvider>().fetchSuppliers();
       }
@@ -3734,10 +3734,10 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      final canSeeSupplier = context.read<SettingsProvider>().features.suppliers;
+      final canSeeSupplier = context.read<SettingsProvider?>()?.features.suppliers ?? false;
       if (canSeeSupplier) {
-        final supplierProv = context.read<SupplierProvider>();
-        if (supplierProv.suppliers.isEmpty && !supplierProv.isLoading) {
+        final supplierProv = context.read<SupplierProvider?>();
+        if (supplierProv != null && supplierProv.suppliers.isEmpty && !supplierProv.isLoading) {
           supplierProv.fetchSuppliers();
         }
       }
@@ -3757,7 +3757,7 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
       return;
     }
 
-    final canSeeSupplier = context.read<SettingsProvider>().features.suppliers;
+    final canSeeSupplier = context.read<SettingsProvider?>()?.features.suppliers ?? false;
 
     // 1. Obtener la previsualización del backend
     final previewData = await widget.provider.bulkPricePreview(
@@ -3805,9 +3805,7 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
         if (brName != null) activeFilterLabels.add('Marca: $brName');
       }
       if (canSeeSupplier && _selectedSupplierId != null) {
-        final supName = context
-            .read<SupplierProvider>()
-            .suppliers
+        final supName = (context.read<SupplierProvider?>()?.suppliers ?? const [])
             .where((s) => s.id == _selectedSupplierId)
             .map((s) => s.name)
             .firstOrNull;
@@ -4012,7 +4010,8 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
   Widget build(BuildContext context) {
     final categories = widget.provider.categories;
     final brands = widget.provider.brands;
-    final canSeeSupplier = context.watch<SettingsProvider>().features.suppliers;
+    final supplierProv = context.watch<SupplierProvider?>();
+    final canSeeSupplier = (context.watch<SettingsProvider?>()?.features.suppliers ?? false) && supplierProv != null;
     return AlertDialog(
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       titlePadding: const EdgeInsets.fromLTRB(20, 16, 20, 0),

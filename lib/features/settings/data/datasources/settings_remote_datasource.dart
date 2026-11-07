@@ -23,8 +23,8 @@ abstract class SettingsRemoteDataSource {
     required String cuit,
     required List<int> certBytes,
     required String certFilename,
-    List<int>? keyBytes,
-    String? keyFilename,
+    required List<int> keyBytes,
+    required String keyFilename,
     String? keyPassphrase,
   });
   Future<Map<String, dynamic>> generateAfipCsr({
@@ -406,8 +406,8 @@ class SettingsRemoteDataSourceImpl implements SettingsRemoteDataSource {
     required String cuit,
     required List<int> certBytes,
     required String certFilename,
-    List<int>? keyBytes,
-    String? keyFilename,
+    required List<int> keyBytes,
+    required String keyFilename,
     String? keyPassphrase,
   }) async {
     try {
@@ -430,12 +430,12 @@ class SettingsRemoteDataSourceImpl implements SettingsRemoteDataSource {
         ),
       );
 
-      if (keyBytes != null && keyBytes.isNotEmpty) {
+      if (keyBytes.isNotEmpty) {
         request.files.add(
           http.MultipartFile.fromBytes(
             'key_file',
             keyBytes,
-            filename: keyFilename ?? 'cert.key',
+            filename: keyFilename,
           ),
         );
       }

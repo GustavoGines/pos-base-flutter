@@ -784,16 +784,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       return;
     }
 
-    if (_selectedCertBytes == null) {
+    if (_selectedCertBytes == null || (_selectedKeyBytes == null && !_afipHasKey)) {
       if (mounted) {
-        SnackBarService.warning(context, 'Debe seleccionar el certificado (.crt) emitido por ARCA/AFIP.');
-      }
-      return;
-    }
-
-    if (_selectedKeyBytes == null && !_afipHasKey) {
-      if (mounted) {
-        SnackBarService.warning(context, 'Debe seleccionar la clave privada (.key) o generarla primero con el botón "Generar Solicitud CSR".');
+        SnackBarService.warning(context, 'Debe seleccionar tanto el certificado (.crt) como la clave privada (.key).');
       }
       return;
     }
@@ -805,8 +798,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         cuit: cuit,
         certBytes: _selectedCertBytes!,
         certFilename: _selectedCertName ?? 'cert.crt',
-        keyBytes: _selectedKeyBytes,
-        keyFilename: _selectedKeyName,
+        keyBytes: _selectedKeyBytes ?? const <int>[],
+        keyFilename: _selectedKeyName ?? 'cert.key',
         keyPassphrase: _afipKeyPassphraseCtrl.text.trim().isNotEmpty
             ? _afipKeyPassphraseCtrl.text.trim()
             : null,
@@ -4109,31 +4102,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const Divider(height: 32),
 
             // Sección de Carga y Actualización de Certificados
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Carga de Certificados Digitales (X.509)',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.grey.shade700,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Genere la solicitud (.csr) para ARCA o seleccione su certificado emitido (.crt) y clave privada (.key).',
-                        style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                      ),
-                    ],
-                  ),
+            if (isNarrow) ...[
+              Text(
+                'Carga de Certificados Digitales (X.509)',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey.shade700,
                 ),
-                const SizedBox(width: 12),
-                OutlinedButton.icon(
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Genere la solicitud (.csr) para ARCA o seleccione su certificado emitido (.crt) y clave privada (.key).',
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
                   key: const ValueKey('btn_generate_afip_csr'),
                   onPressed: (_isGeneratingCsr || _isUploadingCertificates || _isSavingIntegrations)
                       ? null
@@ -4155,8 +4141,56 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   ),
                 ),
-              ],
-            ),
+              ),
+            ] else
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Carga de Certificados Digitales (X.509)',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.grey.shade700,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Genere la solicitud (.csr) para ARCA o seleccione su certificado emitido (.crt) y clave privada (.key).',
+                          style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  OutlinedButton.icon(
+                    key: const ValueKey('btn_generate_afip_csr'),
+                    onPressed: (_isGeneratingCsr || _isUploadingCertificates || _isSavingIntegrations)
+                        ? null
+                        : _generateAfipCsr,
+                    icon: _isGeneratingCsr
+                        ? const SizedBox(
+                            width: 15,
+                            height: 15,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.assignment_returned_outlined, size: 18),
+                    label: Text(_isGeneratingCsr
+                        ? 'Generando CSR...'
+                        : 'Generar Solicitud CSR (.csr)'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF1565C0),
+                      side: const BorderSide(color: Color(0xFF1565C0)),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                  ),
+                ],
+              ),
             const SizedBox(height: 16),
 
             // Selectores de archivo

@@ -302,6 +302,8 @@ void main() {
       // Tap "Cambiar Foto" in preview
       await tester.tap(find.byKey(const Key('preview_change_image_button')));
       await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('mobile_pick_image_gallery_option')));
+      await tester.pumpAndSettle();
 
       // Preview is dismissed, discard icon is available
       expect(find.byType(ProductImagePreviewDialog), findsNothing);
@@ -493,6 +495,8 @@ void main() {
 
       // Pick photo
       await tester.tap(find.byKey(const Key('mobile_product_image_picker')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('mobile_pick_image_gallery_option')));
       await tester.pumpAndSettle();
 
       // Open preview dialog and tap Quitar Foto
