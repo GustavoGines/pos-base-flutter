@@ -1156,11 +1156,15 @@ class AfipFiscalPdfService {
                     item['internal_code'] ??
                     '-')
                 .toString();
-            final pName = (item['product_name'] ??
-                    item['name'] ??
-                    item['product']?['name'] ??
-                    'Producto')
-                .toString();
+            final customDesc = item['custom_description']?.toString().trim() ?? '';
+            final pName = customDesc.isNotEmpty
+                ? customDesc
+                : (item['product_name'] ??
+                        item['name'] ??
+                        item['product']?['name'] ??
+                        'Producto')
+                    .toString();
+            final customDetails = item['custom_details']?.toString().trim() ?? '';
             final qty = double.tryParse((item['quantity'] ??
                         item['quantity_purchased'] ??
                         item['qty'] ??
@@ -1177,7 +1181,10 @@ class AfipFiscalPdfService {
                 _buildTableCell(pCode.trim().isEmpty ? '-' : pCode,
                     textAlign: pw.TextAlign.center),
                 _buildTableCell(qtyText, textAlign: pw.TextAlign.center),
-                _buildTableCell(pName.toUpperCase(),
+                _buildTableCell(
+                    customDetails.isNotEmpty
+                        ? '${pName.toUpperCase()} ($customDetails)'
+                        : pName.toUpperCase(),
                     textAlign: pw.TextAlign.left),
                 _buildTableCell(isDelivered ? 'ENTREGADO' : 'A RETIRAR',
                     textAlign: pw.TextAlign.center),
@@ -1585,11 +1592,15 @@ class AfipFiscalPdfService {
             ],
           ),
           ...items.map((item) {
-            final name = (item['product_name'] ??
-                    item['name'] ??
-                    item['product']?['name'] ??
-                    'Producto')
-                .toString();
+            final customDesc = item['custom_description']?.toString().trim() ?? '';
+            final name = customDesc.isNotEmpty
+                ? customDesc
+                : (item['product_name'] ??
+                        item['name'] ??
+                        item['product']?['name'] ??
+                        'Producto')
+                    .toString();
+            final customDetails = item['custom_details']?.toString().trim() ?? '';
             final qty = double.tryParse(
                     (item['quantity'] ?? item['qty'] ?? 1).toString()) ??
                 1.0;
@@ -1617,7 +1628,33 @@ class AfipFiscalPdfService {
             return pw.TableRow(
               children: [
                 _buildTableCell(qtyText, textAlign: pw.TextAlign.center),
-                _buildTableCell(name.toUpperCase(), textAlign: pw.TextAlign.left),
+                pw.Padding(
+                  padding: const pw.EdgeInsets.symmetric(
+                      vertical: 5.0, horizontal: 5),
+                  child: pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Text(
+                        name.toUpperCase(),
+                        textAlign: pw.TextAlign.left,
+                        style: const pw.TextStyle(
+                            fontSize: 8.0, color: PdfColors.black),
+                      ),
+                      if (customDetails.isNotEmpty)
+                        pw.Padding(
+                          padding: const pw.EdgeInsets.only(top: 1.0),
+                          child: pw.Text(
+                            customDetails,
+                            style: pw.TextStyle(
+                              fontSize: 6.8,
+                              fontStyle: pw.FontStyle.italic,
+                              color: PdfColors.grey700,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
                 _buildTableCell(formatCurrency(netUnitPrice),
                     textAlign: pw.TextAlign.right),
                 _buildTableCell('${ivaRate.toStringAsFixed(1)}%',
@@ -1650,11 +1687,15 @@ class AfipFiscalPdfService {
             ],
           ),
           ...items.map((item) {
-            final name = (item['product_name'] ??
-                    item['name'] ??
-                    item['product']?['name'] ??
-                    'Producto')
-                .toString();
+            final customDesc = item['custom_description']?.toString().trim() ?? '';
+            final name = customDesc.isNotEmpty
+                ? customDesc
+                : (item['product_name'] ??
+                        item['name'] ??
+                        item['product']?['name'] ??
+                        'Producto')
+                    .toString();
+            final customDetails = item['custom_details']?.toString().trim() ?? '';
             final qty = double.tryParse(
                     (item['quantity'] ?? item['qty'] ?? 1).toString()) ??
                 1.0;
@@ -1707,6 +1748,18 @@ class AfipFiscalPdfService {
                         style: const pw.TextStyle(
                             fontSize: 8.0, color: PdfColors.black),
                       ),
+                      if (customDetails.isNotEmpty)
+                        pw.Padding(
+                          padding: const pw.EdgeInsets.only(top: 1.0),
+                          child: pw.Text(
+                            customDetails,
+                            style: pw.TextStyle(
+                              fontSize: 6.8,
+                              fontStyle: pw.FontStyle.italic,
+                              color: PdfColors.grey700,
+                            ),
+                          ),
+                        ),
                       if (hasItemDiscount)
                         pw.Padding(
                           padding: const pw.EdgeInsets.only(top: 1.5),

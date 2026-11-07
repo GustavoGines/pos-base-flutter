@@ -15,7 +15,7 @@ class AppConfig {
   static const String kLocalhostLaragonUrl =
       'http://127.0.0.1/Sistema_POS/pos-backend/public/api';
   static const String kLocalhostDirectUrl =
-      'http://127.0.0.1/pos-backend/public/api';
+      'http://localhost/Sistema_POS/pos-backend/public/api';
 
   /// URL de la API del Servidor de Licencias Central (Render)
   /// Utilizado para consultar check-update (OTA) de manera directa.

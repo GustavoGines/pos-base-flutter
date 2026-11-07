@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/config/app_config.dart';
 import '../../../../core/utils/currency_formatter.dart';
+import '../../../../core/presentation/widgets/compact_date_range_picker_dialog.dart';
 import '../../../cash_register/presentation/providers/cash_register_provider.dart';
 
 class ExpenseAnalysisTab extends StatefulWidget {
@@ -183,17 +184,12 @@ class _ExpenseAnalysisTabState extends State<ExpenseAnalysisTab> {
   Future<void> _exportPdf() => _export('pdf');
 
   void _selectDateRange() async {
-    final picked = await showDateRangePicker(
+    final picked = await showCompactDateRangePicker(
       context: context,
       initialDateRange: DateTimeRange(start: _startDate, end: _endDate),
       firstDate: DateTime(2020),
       lastDate: DateTime.now().add(const Duration(days: 1)),
-      builder: (context, child) => Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 500, maxHeight: 600),
-          child: child,
-        ),
-      ),
+      helpText: 'Seleccionar Período de Gastos',
     );
     if (picked != null) {
       setState(() {

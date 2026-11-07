@@ -619,7 +619,8 @@ class ReceiptPrinterService {
       final double price = item.unitPrice;
       final double subtotal = item.subtotal;
 
-      final productName = _cleanText(item.product.name.toUpperCase());
+      final productName = _cleanText(item.effectiveDisplayName.toUpperCase());
+      final customDetailsText = item.customDetails?.trim();
       final ivaRateVal = item.product.ivaRate;
       final ivaRateFormatted = ivaRateVal.truncateToDouble() == ivaRateVal
           ? ivaRateVal.toInt().toString()
@@ -633,6 +634,12 @@ class ReceiptPrinterService {
         productName,
         styles: const PosStyles(bold: true),
       );
+      if (customDetailsText != null && customDetailsText.isNotEmpty) {
+        bytes += generator.text(
+          _cleanText('  * $customDetailsText'),
+          styles: const PosStyles(align: PosAlign.left),
+        );
+      }
       if (item.hasDiscount) {
         final tag = item.hasActiveOffer
             ? item.offerBadgeLabel
@@ -1086,7 +1093,14 @@ class ReceiptPrinterService {
           ? ivaRateVal.toInt().toString()
           : ivaRateVal.toStringAsFixed(1);
       final aliquotTag = splitShowIvaAliquot ? ' ($ivaRateFormatted)' : '';
-      bytes += generator.text(_cleanText(item.product.name.toUpperCase()), styles: const PosStyles(bold: true));
+      bytes += generator.text(_cleanText(item.effectiveDisplayName.toUpperCase()), styles: const PosStyles(bold: true));
+      final splitDetails = item.customDetails?.trim();
+      if (splitDetails != null && splitDetails.isNotEmpty) {
+        bytes += generator.text(
+          _cleanText('  * $splitDetails'),
+          styles: const PosStyles(align: PosAlign.left),
+        );
+      }
       if (item.hasDiscount) {
         final tag = item.hasActiveOffer
             ? item.offerBadgeLabel
@@ -1309,9 +1323,16 @@ class ReceiptPrinterService {
       final isWeight = item.product.isSoldByWeight;
       final qtyStr = isWeight ? '${item.quantity.toQty()} kg' : '${item.quantity.toInt()} un';
       bytes += generator.row([
-        PosColumn(text: _cleanText(item.product.name.toUpperCase()), width: 9, styles: const PosStyles(bold: true)),
+        PosColumn(text: _cleanText(item.effectiveDisplayName.toUpperCase()), width: 9, styles: const PosStyles(bold: true)),
         PosColumn(text: qtyStr, width: 3, styles: const PosStyles(align: PosAlign.right)),
       ]);
+      final remDetails = item.customDetails?.trim();
+      if (remDetails != null && remDetails.isNotEmpty) {
+        bytes += generator.text(
+          _cleanText('  * $remDetails'),
+          styles: const PosStyles(align: PosAlign.left),
+        );
+      }
     }
 
     bytes += generator.hr(ch: '=');
@@ -2101,6 +2122,15 @@ class ReceiptPrinterService {
       'Ventas Transf.:',
       '$currency${(shift.transferSales ?? 0.0).toCurrency()}',
     );
+    if (shift.transferByAlias != null && shift.transferByAlias!.isNotEmpty) {
+      for (final entry in shift.transferByAlias!.entries) {
+        bytes += _labelValue(
+          generator,
+          _cleanText('  > ${entry.key}:'),
+          '$currency${entry.value.toCurrency()}',
+        );
+      }
+    }
     if ((shift.mpSales ?? 0) > 0) {
       bytes += _labelValue(
         generator,

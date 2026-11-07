@@ -116,6 +116,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Uint8List? _selectedKeyBytes;
   String? _selectedKeyName;
   bool _isUploadingCertificates = false;
+  bool _isGeneratingCsr = false;
   String _afipEnvironment = 'testing';
   bool _afipEnabled = false;
   bool _afipHasCert = false;
@@ -783,9 +784,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
       return;
     }
 
-    if (_selectedCertBytes == null || _selectedKeyBytes == null) {
+    if (_selectedCertBytes == null) {
       if (mounted) {
-        SnackBarService.warning(context, 'Debe seleccionar tanto el certificado (.crt) como la clave privada (.key).');
+        SnackBarService.warning(context, 'Debe seleccionar el certificado (.crt) emitido por ARCA/AFIP.');
+      }
+      return;
+    }
+
+    if (_selectedKeyBytes == null && !_afipHasKey) {
+      if (mounted) {
+        SnackBarService.warning(context, 'Debe seleccionar la clave privada (.key) o generarla primero con el botón "Generar Solicitud CSR".');
       }
       return;
     }
@@ -797,8 +805,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         cuit: cuit,
         certBytes: _selectedCertBytes!,
         certFilename: _selectedCertName ?? 'cert.crt',
-        keyBytes: _selectedKeyBytes!,
-        keyFilename: _selectedKeyName ?? 'cert.key',
+        keyBytes: _selectedKeyBytes,
+        keyFilename: _selectedKeyName,
         keyPassphrase: _afipKeyPassphraseCtrl.text.trim().isNotEmpty
             ? _afipKeyPassphraseCtrl.text.trim()
             : null,
@@ -830,6 +838,88 @@ class _SettingsScreenState extends State<SettingsScreen> {
     } finally {
       if (mounted) {
         setState(() => _isUploadingCertificates = false);
+      }
+    }
+  }
+
+  Future<void> _generateAfipCsr() async {
+    if (_isGeneratingCsr || _isUploadingCertificates || _isSavingIntegrations) return;
+
+    final auth = context.read<AuthProvider?>();
+    final canManageSettings =
+        auth != null && (auth.isAdmin || auth.hasPermission(AppPermissions.manageSettings));
+    if (!canManageSettings) {
+      if (mounted) {
+        SnackBarService.error(context, 'No tienes permisos para generar solicitudes CSR de ARCA.');
+      }
+      return;
+    }
+
+    final cuit = _afipCuitCtrl.text.trim().replaceAll(RegExp(r'\D'), '');
+    if (cuit.length != 11) {
+      if (mounted) {
+        SnackBarService.warning(context, 'Ingrese los 11 dígitos del CUIT Comercial antes de generar la solicitud CSR.');
+      }
+      return;
+    }
+
+    setState(() => _isGeneratingCsr = true);
+    try {
+      final provider = context.read<SettingsProvider>();
+      final companyName = _companyNameCtrl.text.trim().isNotEmpty
+          ? _companyNameCtrl.text.trim()
+          : provider.settings?.companyName;
+
+      final result = await provider.generateAfipCsr(
+        cuit: cuit,
+        companyName: companyName,
+        forceNewKey: false,
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        _afipHasKey = true;
+      });
+
+      final csrContent = result['csr_content']?.toString() ?? '';
+      final csrFilename = result['csr_filename']?.toString() ?? 'solicitud_arca_$cuit.csr';
+
+      if (csrContent.isNotEmpty) {
+        final savePath = await FilePicker.platform.saveFile(
+          dialogTitle: 'Guardar Solicitud CSR (.csr) para ARCA / AFIP',
+          fileName: csrFilename,
+          type: FileType.custom,
+          allowedExtensions: ['csr'],
+        );
+
+        if (savePath != null && savePath.isNotEmpty) {
+          final outFile = File(savePath);
+          await outFile.writeAsString(csrContent, flush: true);
+          if (mounted) {
+            SnackBarService.success(
+              context,
+              'Archivo CSR guardado en: $savePath. Súbalo en "Administración de Certificados Digitales" de ARCA.',
+            );
+          }
+          return;
+        }
+      }
+
+      if (mounted) {
+        SnackBarService.success(
+          context,
+          result['message']?.toString() ?? 'Solicitud CSR (.csr) y Clave Privada (.key) generadas en el servidor.',
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        final msg = e.toString().replaceAll('Exception: ', '');
+        SnackBarService.error(context, msg.isNotEmpty ? msg : 'Error al generar solicitud CSR.');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isGeneratingCsr = false);
       }
     }
   }
@@ -4019,18 +4109,53 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const Divider(height: 32),
 
             // Sección de Carga y Actualización de Certificados
-            Text(
-              'Carga de Certificados Digitales (X.509)',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: Colors.grey.shade700,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Seleccione el certificado emitido por AFIP (.crt) y la clave privada generada (.key).',
-              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Carga de Certificados Digitales (X.509)',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.grey.shade700,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Genere la solicitud (.csr) para ARCA o seleccione su certificado emitido (.crt) y clave privada (.key).',
+                        style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                OutlinedButton.icon(
+                  key: const ValueKey('btn_generate_afip_csr'),
+                  onPressed: (_isGeneratingCsr || _isUploadingCertificates || _isSavingIntegrations)
+                      ? null
+                      : _generateAfipCsr,
+                  icon: _isGeneratingCsr
+                      ? const SizedBox(
+                          width: 15,
+                          height: 15,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.assignment_returned_outlined, size: 18),
+                  label: Text(_isGeneratingCsr
+                      ? 'Generando CSR...'
+                      : 'Generar Solicitud CSR (.csr)'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFF1565C0),
+                    side: const BorderSide(color: Color(0xFF1565C0)),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 16),
 

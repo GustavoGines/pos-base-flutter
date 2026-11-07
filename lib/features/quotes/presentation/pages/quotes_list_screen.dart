@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
+import 'package:frontend_desktop/core/presentation/widgets/compact_date_range_picker_dialog.dart';
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
@@ -70,6 +71,7 @@ class _QuotesListScreenState extends State<QuotesListScreen>
   // Multi-select
   final Set<int> _selected = {};
   bool _bulkLoading = false;
+  DateTimeRange? _dateRange;
 
   static const _tabs = [
     Tab(text: 'Todos'),
@@ -340,6 +342,46 @@ class _QuotesListScreenState extends State<QuotesListScreen>
                       ),
                     ),
 
+                    // Filtro por Rango de Fechas
+                    OutlinedButton.icon(
+                      icon: const Icon(Icons.date_range_rounded, size: 16),
+                      label: Text(
+                        _dateRange == null
+                            ? 'Rango Fechas'
+                            : '${DateFormat('dd/MM/yy').format(_dateRange!.start)} - ${DateFormat('dd/MM/yy').format(_dateRange!.end)}',
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        backgroundColor: _dateRange != null ? Colors.indigo.shade50 : Colors.white,
+                        foregroundColor: Colors.indigo.shade800,
+                        side: BorderSide(color: _dateRange != null ? Colors.indigo.shade300 : Colors.grey.shade300),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      onPressed: () async {
+                        final picked = await showCompactDateRangePicker(
+                          context: context,
+                          initialDateRange: _dateRange,
+                          firstDate: DateTime(2020),
+                          lastDate: DateTime.now().add(const Duration(days: 365)),
+                          helpText: 'Filtrar Presupuestos por Fecha',
+                        );
+                        if (picked != null) {
+                          setState(() => _dateRange = picked);
+                        }
+                      },
+                    ),
+                    if (_dateRange != null) ...[
+                      const SizedBox(width: 4),
+                      IconButton(
+                        tooltip: 'Quitar filtro de fecha',
+                        icon: const Icon(Icons.clear, size: 18, color: Colors.red),
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () => setState(() => _dateRange = null),
+                      ),
+                    ],
+                    const SizedBox(width: 6),
+
                     // Botón refresh
                     if (provider.isLoading)
                       const Padding(
@@ -416,7 +458,17 @@ class _QuotesListScreenState extends State<QuotesListScreen>
           );
         }
 
-        if (provider.quotes.isEmpty) {
+        final filteredQuotes = provider.quotes.where((q) {
+          if (_dateRange == null || q.createdAt == null) return true;
+          final parsed = DateTime.tryParse(q.createdAt!);
+          if (parsed == null) return true;
+          final local = parsed.toLocal();
+          final start = DateTime(_dateRange!.start.year, _dateRange!.start.month, _dateRange!.start.day);
+          final end = DateTime(_dateRange!.end.year, _dateRange!.end.month, _dateRange!.end.day, 23, 59, 59, 999);
+          return !local.isBefore(start) && !local.isAfter(end);
+        }).toList();
+
+        if (filteredQuotes.isEmpty) {
           return Center(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -449,15 +501,15 @@ class _QuotesListScreenState extends State<QuotesListScreen>
                     width: 32,
                     height: 32,
                     child: Checkbox(
-                      value: _selected.length == provider.quotes.length && provider.quotes.isNotEmpty,
-                      onChanged: (_) => _selectAll(provider.quotes),
+                      value: _selected.length == filteredQuotes.length && filteredQuotes.isNotEmpty,
+                      onChanged: (_) => _selectAll(filteredQuotes),
                       activeColor: Colors.indigo.shade700,
                       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     ),
                   ),
                   const SizedBox(width: 14),
                   InkWell(
-                    onTap: () => _selectAll(provider.quotes),
+                    onTap: () => _selectAll(filteredQuotes),
                     borderRadius: BorderRadius.circular(4),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
@@ -475,10 +527,10 @@ class _QuotesListScreenState extends State<QuotesListScreen>
                 onRefresh: _loadData,
                 child: ListView.separated(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  itemCount: provider.quotes.length,
+                  itemCount: filteredQuotes.length,
                   separatorBuilder: (_, __) => const SizedBox(height: 4),
                   itemBuilder: (ctx, i) {
-                    final q = provider.quotes[i];
+                    final q = filteredQuotes[i];
                     return _QuoteCard(
                       quote: q,
                       onRefresh: _loadData,
@@ -883,11 +935,12 @@ class _QuoteActionSheetState extends State<_QuoteActionSheet> {
                       ),
                       TextButton(
                         onPressed: () async {
-                          final picked = await showDatePicker(
+                          final picked = await showCompactDatePicker(
                             context: ctx,
                             initialDate: validUntil ?? DateTime.now().add(const Duration(days: 7)),
                             firstDate: DateTime.now(),
                             lastDate: DateTime.now().add(const Duration(days: 365)),
+                            helpText: 'Fecha de Validez del Presupuesto',
                           );
                           if (picked != null) {
                             setDialogState(() => validUntil = picked);

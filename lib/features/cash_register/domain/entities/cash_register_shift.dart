@@ -13,6 +13,8 @@ class CashRegisterShift {
   final double? cashSales;
   final double? cardSales;
   final double? transferSales;
+  final Map<String, double>? transferByAlias;
+  final List<Map<String, dynamic>>? transferDetails;
   final double? mpSales;
   final int? mpSalesCount;
   final double? totalSurcharge;
@@ -52,6 +54,8 @@ class CashRegisterShift {
     this.cashSales,
     this.cardSales,
     this.transferSales,
+    this.transferByAlias,
+    this.transferDetails,
     this.mpSales,
     this.mpSalesCount,
     this.totalSurcharge,

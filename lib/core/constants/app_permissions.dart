@@ -25,6 +25,7 @@ class AppPermissions {
   // 4. Proveedores y Logística
   static const String viewSuppliers = 'view_suppliers';
   static const String createSupplierInvoice = 'create_supplier_invoice';
+  static const String manageSupplierInvoices = 'manage_supplier_invoices';
   static const String paySuppliers = 'pay_suppliers';
   static const String manageDeliveryNotes = 'manage_delivery_notes';
 
@@ -34,7 +35,7 @@ class AppPermissions {
   static const String manageQuotes = 'manage_quotes';
   static const String manageTrash = 'manage_trash';
 
-  /// Lista exhaustiva de las 25 claves canónicas de permisos del sistema.
+  /// Lista exhaustiva de las 26 claves canónicas de permisos del sistema.
   static const List<String> all = [
     manageSettings,
     manageUsers,
@@ -55,6 +56,7 @@ class AppPermissions {
     voidSales,
     viewSuppliers,
     createSupplierInvoice,
+    manageSupplierInvoices,
     paySuppliers,
     manageDeliveryNotes,
     viewChecks,

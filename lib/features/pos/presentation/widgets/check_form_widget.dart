@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../../core/utils/currency_formatter.dart';
+import '../../../../core/presentation/widgets/compact_date_range_picker_dialog.dart';
 
 /// Formulario de captura de datos de un cheque de tercero.
 ///
@@ -103,12 +104,12 @@ class _CheckFormWidgetState extends State<CheckFormWidget> {
 
   Future<void> _pickDate(TextEditingController ctrl) async {
     final now = DateTime.now();
-    final picked = await showDatePicker(
+    final picked = await showCompactDatePicker(
       context: context,
       initialDate: now,
       firstDate: DateTime(now.year - 2),
       lastDate: DateTime(now.year + 5),
-      locale: const Locale('es', 'AR'),
+      helpText: 'Seleccionar Fecha del Cheque',
     );
     if (picked != null) {
       ctrl.text =

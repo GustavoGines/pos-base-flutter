@@ -318,8 +318,8 @@ class SettingsProvider with ChangeNotifier {
     required String cuit,
     required List<int> certBytes,
     required String certFilename,
-    required List<int> keyBytes,
-    required String keyFilename,
+    List<int>? keyBytes,
+    String? keyFilename,
     String? keyPassphrase,
   }) async {
     _isUploadingCertificates = true;
@@ -344,6 +344,33 @@ class SettingsProvider with ChangeNotifier {
       rethrow;
     } finally {
       _isUploadingCertificates = false;
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<Map<String, dynamic>> generateAfipCsr({
+    required String cuit,
+    String? companyName,
+    bool forceNewKey = false,
+  }) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      final repo = updateSettingsUseCase.repository;
+      final result = await repo.generateAfipCsr(
+        cuit: cuit,
+        companyName: companyName,
+        forceNewKey: forceNewKey,
+      );
+      await loadIntegrations(isSilent: true);
+      return result;
+    } catch (e) {
+      _errorMessage = e.toString().replaceAll('Exception: ', '');
+      rethrow;
+    } finally {
       _isLoading = false;
       notifyListeners();
     }

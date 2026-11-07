@@ -7,8 +7,8 @@ class ReportsRemoteDataSource {
 
   ReportsRemoteDataSource({required this.baseUrl, required this.client});
 
-  Future<Map<String, dynamic>> getProfitByCategory(String startDate, String endDate) async {
-    final uri = Uri.parse('$baseUrl/reports/sales-by-category?start_date=$startDate&end_date=$endDate');
+  Future<Map<String, dynamic>> getProfitByCategory(String startDate, String endDate, {String fiscalFilter = 'all'}) async {
+    final uri = Uri.parse('$baseUrl/reports/sales-by-category?start_date=$startDate&end_date=$endDate&fiscal_filter=$fiscalFilter');
     
     final response = await client.get(uri, headers: {
       'Accept': 'application/json',
@@ -21,8 +21,8 @@ class ReportsRemoteDataSource {
     }
   }
 
-  Future<Map<String, dynamic>> getProfitByBrand(String startDate, String endDate) async {
-    final uri = Uri.parse('$baseUrl/reports/sales-by-brand?start_date=$startDate&end_date=$endDate');
+  Future<Map<String, dynamic>> getProfitByBrand(String startDate, String endDate, {String fiscalFilter = 'all'}) async {
+    final uri = Uri.parse('$baseUrl/reports/sales-by-brand?start_date=$startDate&end_date=$endDate&fiscal_filter=$fiscalFilter');
     
     final response = await client.get(uri, headers: {
       'Accept': 'application/json',
@@ -35,7 +35,7 @@ class ReportsRemoteDataSource {
     }
   }
 
-  Future<Map<String, dynamic>> getProfitByRubro(String startDate, String endDate, {dynamic rubroFilter}) async {
+  Future<Map<String, dynamic>> getProfitByRubro(String startDate, String endDate, {dynamic rubroFilter, String fiscalFilter = 'all'}) async {
     String filterParam = '';
     if (rubroFilter != null) {
       if (rubroFilter is List) {
@@ -46,7 +46,7 @@ class ReportsRemoteDataSource {
         filterParam = '&rubro_id=$rubroFilter';
       }
     }
-    final uri = Uri.parse('$baseUrl/reports/sales-by-rubro?start_date=$startDate&end_date=$endDate$filterParam');
+    final uri = Uri.parse('$baseUrl/reports/sales-by-rubro?start_date=$startDate&end_date=$endDate$filterParam&fiscal_filter=$fiscalFilter');
     
     final response = await client.get(uri, headers: {
       'Accept': 'application/json',
@@ -74,9 +74,9 @@ class ReportsRemoteDataSource {
     }
   }
 
-  Future<List<int>> downloadExcel(String startDate, String endDate, {bool isBrand = false}) async {
+  Future<List<int>> downloadExcel(String startDate, String endDate, {bool isBrand = false, String fiscalFilter = 'all'}) async {
     final typeParam = isBrand ? '&type=brand' : '';
-    final uri = Uri.parse('$baseUrl/reports/sales-by-category/export?start_date=$startDate&end_date=$endDate$typeParam');
+    final uri = Uri.parse('$baseUrl/reports/sales-by-category/export?start_date=$startDate&end_date=$endDate$typeParam&fiscal_filter=$fiscalFilter');
     final response = await client.get(uri);
     if (response.statusCode == 200) {
       return response.bodyBytes;
@@ -85,9 +85,9 @@ class ReportsRemoteDataSource {
     }
   }
 
-  Future<List<int>> downloadPdf(String startDate, String endDate, {bool isBrand = false}) async {
+  Future<List<int>> downloadPdf(String startDate, String endDate, {bool isBrand = false, String fiscalFilter = 'all'}) async {
     final typeParam = isBrand ? '&type=brand' : '';
-    final uri = Uri.parse('$baseUrl/reports/sales-by-category/pdf?start_date=$startDate&end_date=$endDate$typeParam');
+    final uri = Uri.parse('$baseUrl/reports/sales-by-category/pdf?start_date=$startDate&end_date=$endDate$typeParam&fiscal_filter=$fiscalFilter');
     final response = await client.get(uri, headers: {
       'Accept': 'application/pdf',
     });
@@ -98,7 +98,7 @@ class ReportsRemoteDataSource {
     }
   }
 
-  Future<List<int>> downloadRubroExcel(String startDate, String endDate, {dynamic rubroFilter}) async {
+  Future<List<int>> downloadRubroExcel(String startDate, String endDate, {dynamic rubroFilter, String fiscalFilter = 'all'}) async {
     String filterParam = '';
     if (rubroFilter != null) {
       if (rubroFilter is List) {
@@ -109,7 +109,7 @@ class ReportsRemoteDataSource {
         filterParam = '&rubro_id=$rubroFilter';
       }
     }
-    final uri = Uri.parse('$baseUrl/reports/sales-by-rubro/export?start_date=$startDate&end_date=$endDate$filterParam');
+    final uri = Uri.parse('$baseUrl/reports/sales-by-rubro/export?start_date=$startDate&end_date=$endDate$filterParam&fiscal_filter=$fiscalFilter');
     final response = await client.get(uri);
     if (response.statusCode == 200) {
       return response.bodyBytes;
@@ -118,7 +118,7 @@ class ReportsRemoteDataSource {
     }
   }
 
-  Future<List<int>> downloadRubroPdf(String startDate, String endDate, {dynamic rubroFilter}) async {
+  Future<List<int>> downloadRubroPdf(String startDate, String endDate, {dynamic rubroFilter, String fiscalFilter = 'all'}) async {
     String filterParam = '';
     if (rubroFilter != null) {
       if (rubroFilter is List) {
@@ -129,7 +129,7 @@ class ReportsRemoteDataSource {
         filterParam = '&rubro_id=$rubroFilter';
       }
     }
-    final uri = Uri.parse('$baseUrl/reports/sales-by-rubro/pdf?start_date=$startDate&end_date=$endDate$filterParam');
+    final uri = Uri.parse('$baseUrl/reports/sales-by-rubro/pdf?start_date=$startDate&end_date=$endDate$filterParam&fiscal_filter=$fiscalFilter');
     final response = await client.get(uri, headers: {
       'Accept': 'application/pdf',
     });
@@ -140,8 +140,8 @@ class ReportsRemoteDataSource {
     }
   }
 
-  Future<List<int>> downloadMonthlyBalanceExcel(String startMonth, String endMonth) async {
-    final uri = Uri.parse('$baseUrl/reports/monthly-balance/export?start_month=$startMonth&end_month=$endMonth');
+  Future<List<int>> downloadMonthlyBalanceExcel(String startMonth, String endMonth, {String fiscalFilter = 'all'}) async {
+    final uri = Uri.parse('$baseUrl/reports/monthly-balance/export?start_month=$startMonth&end_month=$endMonth&fiscal_filter=$fiscalFilter');
     final response = await client.get(uri);
     if (response.statusCode == 200) {
       return response.bodyBytes;
@@ -150,8 +150,8 @@ class ReportsRemoteDataSource {
     }
   }
 
-  Future<List<int>> downloadMonthlyBalancePdf(String startMonth, String endMonth) async {
-    final uri = Uri.parse('$baseUrl/reports/monthly-balance/pdf?start_month=$startMonth&end_month=$endMonth');
+  Future<List<int>> downloadMonthlyBalancePdf(String startMonth, String endMonth, {String fiscalFilter = 'all'}) async {
+    final uri = Uri.parse('$baseUrl/reports/monthly-balance/pdf?start_month=$startMonth&end_month=$endMonth&fiscal_filter=$fiscalFilter');
     final response = await client.get(uri, headers: {
       'Accept': 'application/pdf',
     });

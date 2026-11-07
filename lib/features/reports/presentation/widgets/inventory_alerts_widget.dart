@@ -6,6 +6,8 @@ import 'package:frontend_desktop/features/catalog/presentation/widgets/stock_adj
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:frontend_desktop/core/utils/image_url_resolver.dart';
+import 'package:frontend_desktop/core/constants/app_permissions.dart';
+import 'package:frontend_desktop/features/auth/presentation/widgets/admin_pin_dialog.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 /// Widget autónomo de alertas semafóricas de stock.
@@ -122,8 +124,9 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
               final hasPredictive = settings.features.predictiveAlerts;
               final count = hasPredictive
                   ? provider.totalAlertsCount
-                  : provider.reactiveAlerts.length;
+                  : (provider.reactiveAlerts.length + provider.expirationAlerts.length);
               final hasCritical = provider.reactiveAlerts.isNotEmpty ||
+                  provider.expirationAlerts.any((a) => a['alert_level'] == 'critical') ||
                   (hasPredictive &&
                       provider.predictiveCriticalAlerts.isNotEmpty);
 
@@ -255,7 +258,9 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
         }
 
         if ((hasPredictive && provider.alerts.isEmpty) ||
-            (!hasPredictive && provider.reactiveAlerts.isEmpty)) {
+            (!hasPredictive &&
+                provider.reactiveAlerts.isEmpty &&
+                provider.expirationAlerts.isEmpty)) {
           return Padding(
             padding: const EdgeInsets.all(32),
             child: Column(
@@ -289,6 +294,14 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
         return ListView(
           shrinkWrap: true,
           children: [
+            if (provider.expirationAlerts.isNotEmpty) ...[
+              _SectionHeader(
+                  label: '⏰ ALERTAS DE VENCIMIENTO (CASCADA)',
+                  color: Colors.purple.shade50,
+                  textColor: Colors.purple.shade900),
+              ...provider.expirationAlerts
+                  .map((a) => _buildExpirationTile(context, provider, a)),
+            ],
             if (provider.reactiveAlerts.isNotEmpty) ...[
               _SectionHeader(
                   label: '🔴 QUIEBRE DE STOCK O DEBAJO DEL MÍNIMO',
@@ -331,6 +344,151 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
     }
     return _PredictiveAlertTile(
         alert: alert, level: level, onTap: onTap, onVer: onVer);
+  }
+
+  Widget _buildExpirationTile(
+    BuildContext context,
+    InventoryAlertsProvider provider,
+    dynamic alert,
+  ) {
+    final productId = (alert['product_id'] as num?)?.toInt() ?? 0;
+    final name = alert['name']?.toString() ?? 'Producto';
+    final daysRemaining = (alert['days_until_expiration'] as num?)?.toInt() ?? 0;
+    final stageLabel = alert['expiry_stage_label']?.toString() ?? 'Próximo a vencer';
+    final stock = double.tryParse((alert['current_stock'] ?? 0).toString()) ?? 0;
+    final expDate = alert['expiration_date']?.toString() ?? '';
+    final isExpired = daysRemaining <= 0;
+    final isCritical = daysRemaining <= 3;
+
+    final badgeColor = isExpired
+        ? Colors.red.shade700
+        : (isCritical ? Colors.deepOrange.shade700 : Colors.purple.shade700);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: BoxDecoration(
+        color: isExpired ? Colors.red.shade50.withValues(alpha: 0.4) : Colors.white,
+        border: Border(bottom: BorderSide(color: Colors.grey.shade100)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: badgeColor.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(
+              isExpired ? Icons.warning_amber_rounded : Icons.event_busy,
+              color: badgeColor,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 3),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: badgeColor,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        stageLabel,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      isExpired
+                          ? 'Venció ($expDate)'
+                          : 'Faltan $daysRemaining d ($expDate)',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: badgeColor,
+                      ),
+                    ),
+                    Text(
+                      '• Stock: ${stock % 1 == 0 ? stock.toInt() : stock.toStringAsFixed(2)}',
+                      style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          PopupMenuButton<String>(
+            tooltip: 'Posponer o gestionar alerta',
+            icon: Icon(Icons.snooze, size: 18, color: Colors.blueGrey.shade600),
+            onSelected: (action) async {
+              if (action == 'snooze_1') {
+                await provider.snoozeExpirationAlert(productId, action: 'snooze_days', days: 1);
+              } else if (action == 'snooze_3') {
+                await provider.snoozeExpirationAlert(productId, action: 'snooze_days', days: 3);
+              } else if (action == 'snooze_stage') {
+                await provider.snoozeExpirationAlert(productId, action: 'snooze_next_stage');
+              } else if (action == 'clear') {
+                _overlayController.hide();
+                if (!mounted) return;
+                await AdminPinDialog.protectAction(
+                  context,
+                  action: 'Quitar fecha de vencimiento del lote',
+                  permissionKey: AppPermissions.manageCatalog,
+                  onAuthorized: () async {
+                    await provider.snoozeExpirationAlert(productId, action: 'clear_expiration');
+                  },
+                );
+              } else if (action == 'view') {
+                await _handleViewProductTap(alert);
+              }
+            },
+            itemBuilder: (context) => const [
+              PopupMenuItem(
+                value: 'snooze_stage',
+                child: Text('Silenciar hasta próximo umbral (7d / 3d / Vto)',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+              ),
+              PopupMenuItem(
+                value: 'snooze_1',
+                child: Text('Posponer por 1 día', style: TextStyle(fontSize: 12)),
+              ),
+              PopupMenuItem(
+                value: 'snooze_3',
+                child: Text('Posponer por 3 días', style: TextStyle(fontSize: 12)),
+              ),
+              PopupMenuItem(
+                value: 'view',
+                child: Text('Editar producto / lote en Catálogo', style: TextStyle(fontSize: 12)),
+              ),
+              PopupMenuItem(
+                value: 'clear',
+                child: Text('Lote vendido / Quitar fecha vto.',
+                    style: TextStyle(fontSize: 12, color: Colors.red)),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildFooter() {

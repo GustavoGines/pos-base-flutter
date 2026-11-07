@@ -101,10 +101,15 @@ class SaleItemRecord {
       }
     }
 
+    final customDesc = json['custom_description']?.toString().trim();
+    final effectiveName = (customDesc != null && customDesc.isNotEmpty)
+        ? customDesc
+        : (json['product_name'] as String? ?? product?['name'] as String? ?? '');
+
     return SaleItemRecord(
       id: json['id'] is int ? json['id'] : (int.tryParse(json['id']?.toString() ?? '0') ?? 0),
       productId: json['product_id'] as int?,
-      productName: json['product_name'] as String? ?? product?['name'] as String? ?? '',
+      productName: effectiveName,
       internalCode: product?['internal_code'] as String? ?? '',
       quantity: double.tryParse(json['quantity']?.toString() ?? '0') ?? 0.0,
       unitPrice: unitPrice,
@@ -185,6 +190,14 @@ class SaleRecord {
       electronicInvoice != null &&
       (electronicInvoice!['cae'] != null &&
           electronicInvoice!['cae'].toString().trim().isNotEmpty);
+
+  /// Indica si la venta es Fiscal (emitida o en contingencia AFIP/ARCA)
+  bool get isFiscal =>
+      hasCae ||
+      electronicInvoice != null ||
+      invoiceStatus == 'invoiced' ||
+      invoiceStatus == 'authorized' ||
+      invoiceStatus == 'pending';
 
   /// Total de ahorro / descuentos acumulado en todos los items de la venta
   double get totalSavings =>

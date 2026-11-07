@@ -70,6 +70,23 @@ class ReportsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ─── Filtro Fiscal / No Fiscal ('all' | 'fiscal' | 'non_fiscal') ───────────
+  String _fiscalFilter = 'all';
+  String get fiscalFilter => _fiscalFilter;
+
+  void setFiscalFilter(String filter) {
+    if (_fiscalFilter == filter) return;
+    _fiscalFilter = filter;
+    notifyListeners();
+    fetchProfitByCategory();
+    if (_rubroReportData.isNotEmpty || _isLoadingRubro) {
+      fetchProfitByRubro();
+    }
+    if (_balanceMonths.isNotEmpty || _isLoadingBalance) {
+      fetchMonthlyBalance();
+    }
+  }
+
   List<dynamic> _dailyEvolution = [];
   List<dynamic> get dailyEvolution => _dailyEvolution;
 
@@ -223,9 +240,11 @@ class ReportsProvider extends ChangeNotifier {
     try {
       final df = DateFormat('yyyy-MM-dd');
       final result = await dataSource.getProfitByCategory(
-          df.format(_startDate), df.format(_endDate));
+          df.format(_startDate), df.format(_endDate),
+          fiscalFilter: _fiscalFilter);
       final brandResult = await dataSource.getProfitByBrand(
-          df.format(_startDate), df.format(_endDate));
+          df.format(_startDate), df.format(_endDate),
+          fiscalFilter: _fiscalFilter);
 
       _reportData = result['data'] ?? [];
       _brandReportData = brandResult['data'] ?? [];
@@ -258,6 +277,7 @@ class ReportsProvider extends ChangeNotifier {
         df.format(_startDate),
         df.format(_endDate),
         rubroFilter: _rubroFilter,
+        fiscalFilter: _fiscalFilter,
       );
 
       _rubroReportData = result['data'] ?? [];
@@ -300,6 +320,7 @@ class ReportsProvider extends ChangeNotifier {
       final result = await balanceDataSource!.getMonthlyBalance(
         mf.format(_balanceStartMonth),
         mf.format(_balanceEndMonth),
+        fiscalFilter: _fiscalFilter,
       );
       _balanceMonths = result['months'] ?? [];
       _balanceTotals = Map<String, dynamic>.from(result['totals'] ?? {});
@@ -320,7 +341,7 @@ class ReportsProvider extends ChangeNotifier {
       final df = DateFormat('yyyy-MM-dd');
       final bytes = await dataSource.downloadExcel(
           df.format(_startDate), df.format(_endDate),
-          isBrand: isBrand);
+          isBrand: isBrand, fiscalFilter: _fiscalFilter);
 
       final docsDir = await getApplicationDocumentsDirectory();
       final reportesDir = Directory(
@@ -369,7 +390,7 @@ class ReportsProvider extends ChangeNotifier {
       final df = DateFormat('yyyy-MM-dd');
       final bytes = await dataSource.downloadPdf(
           df.format(_startDate), df.format(_endDate),
-          isBrand: isBrand);
+          isBrand: isBrand, fiscalFilter: _fiscalFilter);
 
       final docsDir = await getApplicationDocumentsDirectory();
       final reportesDir = Directory(
@@ -422,6 +443,7 @@ class ReportsProvider extends ChangeNotifier {
         df.format(_startDate),
         df.format(_endDate),
         rubroFilter: activeFilter,
+        fiscalFilter: _fiscalFilter,
       );
 
       final docsDir = await getApplicationDocumentsDirectory();
@@ -475,6 +497,7 @@ class ReportsProvider extends ChangeNotifier {
         df.format(_startDate),
         df.format(_endDate),
         rubroFilter: activeFilter,
+        fiscalFilter: _fiscalFilter,
       );
 
       final docsDir = await getApplicationDocumentsDirectory();
@@ -523,7 +546,8 @@ class ReportsProvider extends ChangeNotifier {
     try {
       final df = DateFormat('yyyy-MM');
       final bytes = await dataSource.downloadMonthlyBalanceExcel(
-          df.format(_balanceStartMonth), df.format(_balanceEndMonth));
+          df.format(_balanceStartMonth), df.format(_balanceEndMonth),
+          fiscalFilter: _fiscalFilter);
 
       final docsDir = await getApplicationDocumentsDirectory();
       final reportesDir = Directory(
@@ -570,7 +594,8 @@ class ReportsProvider extends ChangeNotifier {
     try {
       final df = DateFormat('yyyy-MM');
       final bytes = await dataSource.downloadMonthlyBalancePdf(
-          df.format(_balanceStartMonth), df.format(_balanceEndMonth));
+          df.format(_balanceStartMonth), df.format(_balanceEndMonth),
+          fiscalFilter: _fiscalFilter);
 
       final docsDir = await getApplicationDocumentsDirectory();
       final reportesDir = Directory(

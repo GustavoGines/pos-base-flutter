@@ -37,6 +37,55 @@ class SalesHistoryProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  /// Filtro por condición fiscal ('all' | 'fiscal' | 'non_fiscal')
+  String _fiscalFilter = 'all';
+  String get fiscalFilter => _fiscalFilter;
+
+  void setFiscalFilter(String filter) {
+    if (_fiscalFilter == filter) return;
+    _fiscalFilter = filter;
+    notifyListeners();
+  }
+
+  /// Rango de fechas personalizado opcional (cuando se elige desde showCompactDateRangePicker)
+  DateTimeRange? _customDateRange;
+  DateTimeRange? get customDateRange => _customDateRange;
+
+  Future<void> setCustomDateRange(DateTimeRange? range) async {
+    _customDateRange = range;
+    if (range != null) {
+      final currentYear = DateTime.now().year;
+      final isWithinCurrentYear =
+          range.start.year == currentYear && range.end.year == currentYear;
+      final targetPeriod = isWithinCurrentYear ? 'year' : 'all';
+      if (_currentPeriod != 'all' &&
+          (_currentPeriod != 'year' || !isWithinCurrentYear)) {
+        await loadSales(period: targetPeriod);
+        return;
+      }
+    }
+    notifyListeners();
+  }
+
+  bool matchesCustomDateRange(SaleRecord sale) {
+    if (_customDateRange == null) return true;
+    final start = DateTime(
+      _customDateRange!.start.year,
+      _customDateRange!.start.month,
+      _customDateRange!.start.day,
+    );
+    final end = DateTime(
+      _customDateRange!.end.year,
+      _customDateRange!.end.month,
+      _customDateRange!.end.day,
+      23,
+      59,
+      59,
+      999,
+    );
+    return !sale.createdAt.isBefore(start) && !sale.createdAt.isAfter(end);
+  }
+
   void setSelectedUserId(int? id) {
     _selectedUserId = id;
     loadSales(shiftId: _currentShiftId);
@@ -103,8 +152,13 @@ class SalesHistoryProvider with ChangeNotifier {
 
   // ─── Totales globales (ventas activas) ──────────────────────────────────────
 
-  List<SaleRecord> get _activeSales =>
-      _sales.where((s) => s.status == 'completed').toList();
+  List<SaleRecord> get _activeSales => _sales.where((s) {
+        if (s.status != 'completed') return false;
+        if (_fiscalFilter == 'fiscal' && !s.isFiscal) return false;
+        if (_fiscalFilter == 'non_fiscal' && s.isFiscal) return false;
+        if (!matchesCustomDateRange(s)) return false;
+        return true;
+      }).toList();
 
   double get totalVentas =>
       _activeSales.fold(0.0, (sum, s) => sum + s.total);

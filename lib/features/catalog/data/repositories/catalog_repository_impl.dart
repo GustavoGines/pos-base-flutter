@@ -175,6 +175,7 @@ class CatalogRepositoryImpl implements CatalogRepository {
     List<int>? productIds,
     int? categoryId,
     int? brandId,
+    int? supplierId,
   }) async {
     return await remoteDataSource.bulkPriceUpdate(
       percentage: percentage,
@@ -183,6 +184,7 @@ class CatalogRepositoryImpl implements CatalogRepository {
       productIds: productIds,
       categoryId: categoryId,
       brandId: brandId,
+      supplierId: supplierId,
     );
   }
 
@@ -194,6 +196,7 @@ class CatalogRepositoryImpl implements CatalogRepository {
     List<int>? productIds,
     int? categoryId,
     int? brandId,
+    int? supplierId,
   }) async {
     return await remoteDataSource.bulkPricePreview(
       percentage: percentage,
@@ -202,6 +205,7 @@ class CatalogRepositoryImpl implements CatalogRepository {
       productIds: productIds,
       categoryId: categoryId,
       brandId: brandId,
+      supplierId: supplierId,
     );
   }
 

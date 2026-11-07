@@ -23,8 +23,11 @@ class ProductModel extends Product {
     super.priceTiers,
     super.salesCount,
     super.vencimientoDias,
+    super.expirationDate,
+    super.expiryAlertDays,
     super.unitType,
     super.ivaRate,
+    super.needsCatalogReview,
     super.imageUrl,
     CategoryModel? super.category,
     List<CategoryModel>? super.categories,
@@ -51,8 +54,11 @@ class ProductModel extends Product {
     List<Map<String, dynamic>>? priceTiers,
     int? salesCount,
     int? vencimientoDias,
+    String? expirationDate,
+    int? expiryAlertDays,
     String? unitType,
     double? ivaRate,
+    bool? needsCatalogReview,
     String? imageUrl,
     bool clearImageUrl = false,
     covariant CategoryModel? category,
@@ -81,8 +87,11 @@ class ProductModel extends Product {
       priceTiers: priceTiers ?? this.priceTiers,
       salesCount: salesCount ?? this.salesCount,
       vencimientoDias: vencimientoDias ?? this.vencimientoDias,
+      expirationDate: expirationDate ?? this.expirationDate,
+      expiryAlertDays: expiryAlertDays ?? this.expiryAlertDays,
       unitType: unitType ?? this.unitType,
       ivaRate: ivaRate ?? this.ivaRate,
+      needsCatalogReview: needsCatalogReview ?? this.needsCatalogReview,
       imageUrl: clearImageUrl ? null : (imageUrl ?? this.imageUrl),
       category: clearCategory ? null : (category ?? this.category as CategoryModel?),
       categories: categories ?? (this.categories as List<CategoryModel>?),
@@ -160,10 +169,22 @@ class ProductModel extends Product {
       vencimientoDias: json['vencimiento_dias'] != null
           ? int.tryParse(json['vencimiento_dias'].toString())
           : null,
+      expirationDate: json['expiration_date'] != null &&
+              json['expiration_date'].toString() != 'null' &&
+              json['expiration_date'].toString().trim().isNotEmpty
+          ? json['expiration_date'].toString().split('T').first
+          : null,
+      expiryAlertDays: json['expiry_alert_days'] != null
+          ? int.tryParse(json['expiry_alert_days'].toString())
+          : 15,
       unitType: json['unit_type']?.toString() ?? 'un',
       ivaRate: json['iva_rate'] != null
           ? (double.tryParse(json['iva_rate'].toString()) ?? 21.0)
           : 21.0,
+      needsCatalogReview: json['needs_catalog_review'] == 1 ||
+          json['needs_catalog_review'] == true ||
+          json['needs_catalog_review'] == '1' ||
+          json['needs_catalog_review'] == 'true',
       imageUrl: resolveImageUrl(json['image_url']?.toString()) ??
           resolveImageUrl(json['image_path']?.toString()),
       category: json['category'] != null && json['category'] is Map<String, dynamic>

@@ -203,12 +203,7 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
         if (priceList != null) 'price_list': priceList,
         // Bridge de Cheque: solo se incluye si el método es cheque y hay datos del cartón
         if (checkDetails != null) 'check_details': checkDetails,
-        'items': items.map((item) => {
-          'product_id': item.product.id,
-          'quantity': item.quantity,
-          'unit_price': item.unitPrice,
-          'subtotal': item.subtotal,
-        }).toList(),
+        'items': items.map((item) => item.toSalePayload()).toList(),
       };
 
       final response = await client.post(
@@ -308,12 +303,7 @@ class PosRemoteDataSourceImpl implements PosRemoteDataSource {
         'cash_shift_id': shiftId,
       };
       if (items != null) {
-        payload['items'] = items.map((item) => {
-          'product_id': item.product.id,
-          'quantity': item.quantity,
-          'unit_price': item.unitPrice,
-          'subtotal': item.subtotal,
-        }).toList();
+        payload['items'] = items.map((item) => item.toSalePayload()).toList();
       }
 
       final response = await client.put(

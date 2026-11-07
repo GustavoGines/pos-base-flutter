@@ -125,6 +125,7 @@ class _TrashScreenState extends State<TrashScreen> {
                     _buildNavTile(provider, 'Clientes', 'customers', Icons.people_outline),
                     _buildNavTile(provider, 'Productos', 'products', Icons.inventory_2_outlined),
                     _buildNavTile(provider, 'Proveedores', 'suppliers', Icons.local_shipping_outlined),
+                    _buildNavTile(provider, 'Facturas Prov.', 'supplier_invoices', Icons.receipt_long_outlined),
                     _buildNavTile(provider, 'Gastos / Movs', 'cash_movements', Icons.account_balance_wallet_outlined),
                   ],
                 ),
@@ -168,6 +169,7 @@ class _TrashScreenState extends State<TrashScreen> {
                                       provider.currentType == 'customers' ? Icons.person : 
                                       provider.currentType == 'products' ? Icons.inventory_2 :
                                       provider.currentType == 'suppliers' ? Icons.local_shipping :
+                                      provider.currentType == 'supplier_invoices' ? Icons.receipt_long :
                                       Icons.account_balance_wallet,
                                       color: Colors.red.shade300
                                     )
@@ -182,9 +184,9 @@ class _TrashScreenState extends State<TrashScreen> {
                                         message:
                                             'Por normas de auditoría contable, los movimientos de caja anulados no pueden restaurarse.',
                                         child: TextButton.icon(
-                                          icon: Icon(Icons.restore,
+                                          icon: const Icon(Icons.restore,
                                               color: Colors.grey),
-                                          label: Text('Restaurar',
+                                          label: const Text('Restaurar',
                                               style: TextStyle(
                                                   color: Colors.grey)),
                                           onPressed: null,

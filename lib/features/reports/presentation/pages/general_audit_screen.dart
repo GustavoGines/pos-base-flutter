@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'dart:convert';
 import 'dart:math' as math;
 import '../../../../core/presentation/widgets/global_app_bar.dart';
+import '../../../../core/presentation/widgets/compact_date_range_picker_dialog.dart';
 import '../../../../features/auth/presentation/providers/auth_provider.dart';
 import '../../../../features/cash_register/presentation/providers/cash_register_provider.dart';
 import '../../../../features/cash_register/domain/entities/cash_register_shift.dart';
@@ -58,6 +59,8 @@ class _ShiftAuditTab extends StatefulWidget {
 }
 
 class _ShiftAuditTabState extends State<_ShiftAuditTab> {
+  DateTimeRange? _dateRange;
+
   @override
   void initState() {
     super.initState();
@@ -94,46 +97,95 @@ class _ShiftAuditTabState extends State<_ShiftAuditTab> {
           );
         }
 
-        final shifts = provider.shiftsHistory;
-        if (shifts.isEmpty) {
+        final allShifts = provider.shiftsHistory;
+        if (allShifts.isEmpty) {
           return const Center(
             child: Text('No hay turnos registrados.',
                 style: TextStyle(color: Colors.grey, fontSize: 16)),
           );
         }
 
+        final shifts = allShifts.where((s) {
+          if (_dateRange == null) return true;
+          final local = s.openedAt.toLocal();
+          final start = DateTime(_dateRange!.start.year, _dateRange!.start.month, _dateRange!.start.day);
+          final end = DateTime(_dateRange!.end.year, _dateRange!.end.month, _dateRange!.end.day, 23, 59, 59, 999);
+          return !local.isBefore(start) && !local.isAfter(end);
+        }).toList();
+
         return SingleChildScrollView(
           padding: const EdgeInsets.all(24.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 12,
+                runSpacing: 8,
                 children: [
-                  const Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Historial Global de Turnos (Cierres Z)',
-                          style: TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.blueGrey),
+                  const Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Historial Global de Turnos (Cierres Z)',
+                        style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.blueGrey),
+                      ),
+                      SizedBox(height: 4),
+                      Text(
+                        'Registro completo auditado (Solo para administradores)',
+                        style: TextStyle(color: Colors.grey),
+                      ),
+                    ],
+                  ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      OutlinedButton.icon(
+                        icon: const Icon(Icons.date_range_rounded, size: 16),
+                        label: Text(
+                          _dateRange == null
+                              ? 'Filtrar por Fecha'
+                              : '${DateFormat('dd/MM/yy').format(_dateRange!.start)} - ${DateFormat('dd/MM/yy').format(_dateRange!.end)}',
+                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
                         ),
-                        SizedBox(height: 4),
-                        Text(
-                          'Registro completo auditado (Solo para administradores)',
-                          style: TextStyle(color: Colors.grey),
+                        style: OutlinedButton.styleFrom(
+                          backgroundColor: _dateRange != null ? Colors.indigo.shade50 : Colors.white,
+                          foregroundColor: Colors.indigo.shade800,
+                          side: BorderSide(color: _dateRange != null ? Colors.indigo.shade300 : Colors.blueGrey.shade200),
+                        ),
+                        onPressed: () async {
+                          final picked = await showCompactDateRangePicker(
+                            context: context,
+                            initialDateRange: _dateRange,
+                            firstDate: DateTime(2020),
+                            lastDate: DateTime.now().add(const Duration(days: 1)),
+                            helpText: 'Filtrar Turnos por Fecha',
+                          );
+                          if (!mounted) return;
+                          if (picked != null) {
+                            setState(() => _dateRange = picked);
+                          }
+                        },
+                      ),
+                      if (_dateRange != null) ...[
+                        const SizedBox(width: 4),
+                        IconButton(
+                          tooltip: 'Quitar filtro de fecha',
+                          icon: const Icon(Icons.clear, color: Colors.red, size: 18),
+                          onPressed: () => setState(() => _dateRange = null),
                         ),
                       ],
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  IconButton(
-                    icon: const Icon(Icons.refresh, color: Colors.blueGrey),
-                    onPressed: () => provider.loadAllShifts(),
-                    tooltip: 'Recargar Turnos',
+                      const SizedBox(width: 4),
+                      IconButton(
+                        icon: const Icon(Icons.refresh, color: Colors.blueGrey),
+                        onPressed: () => provider.loadAllShifts(),
+                        tooltip: 'Recargar Turnos',
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -690,6 +742,7 @@ class _StockMovementsTabState extends State<_StockMovementsTab> {
   bool _isLoading = true;
   List<dynamic> _movements = [];
   String? _errorMessage;
+  DateTimeRange? _dateRange;
 
   @override
   void initState() {
@@ -809,38 +862,87 @@ class _StockMovementsTabState extends State<_StockMovementsTab> {
       );
     }
 
+    final filteredMovements = _movements.where((mov) {
+      if (_dateRange == null) return true;
+      final parsedDate = DateTime.tryParse(mov['created_at']?.toString() ?? '')?.toLocal();
+      if (parsedDate == null) return true;
+      final start = DateTime(_dateRange!.start.year, _dateRange!.start.month, _dateRange!.start.day);
+      final end = DateTime(_dateRange!.end.year, _dateRange!.end.month, _dateRange!.end.day, 23, 59, 59, 999);
+      return !parsedDate.isBefore(start) && !parsedDate.isAfter(end);
+    }).toList();
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 12,
+            runSpacing: 8,
             children: [
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Movimientos de Stock',
-                      style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.blueGrey),
+              const Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Movimientos de Stock',
+                    style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blueGrey),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    'Auditoría de todos los ingresos y egresos de mercadería',
+                    style: TextStyle(color: Colors.grey),
+                  ),
+                ],
+              ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.date_range_rounded, size: 16),
+                    label: Text(
+                      _dateRange == null
+                          ? 'Filtrar por Fecha'
+                          : '${DateFormat('dd/MM/yy').format(_dateRange!.start)} - ${DateFormat('dd/MM/yy').format(_dateRange!.end)}',
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
                     ),
-                    SizedBox(height: 4),
-                    Text(
-                      'Auditoría de todos los ingresos y egresos de mercadería',
-                      style: TextStyle(color: Colors.grey),
+                    style: OutlinedButton.styleFrom(
+                      backgroundColor: _dateRange != null ? Colors.indigo.shade50 : Colors.white,
+                      foregroundColor: Colors.indigo.shade800,
+                      side: BorderSide(color: _dateRange != null ? Colors.indigo.shade300 : Colors.blueGrey.shade200),
+                    ),
+                    onPressed: () async {
+                      final picked = await showCompactDateRangePicker(
+                        context: context,
+                        initialDateRange: _dateRange,
+                        firstDate: DateTime(2020),
+                        lastDate: DateTime.now().add(const Duration(days: 1)),
+                        helpText: 'Filtrar Movimientos de Stock por Fecha',
+                      );
+                      if (picked != null) {
+                        setState(() => _dateRange = picked);
+                      }
+                    },
+                  ),
+                  if (_dateRange != null) ...[
+                    const SizedBox(width: 4),
+                    IconButton(
+                      tooltip: 'Quitar filtro de fecha',
+                      icon: const Icon(Icons.clear, color: Colors.red, size: 18),
+                      onPressed: () => setState(() => _dateRange = null),
                     ),
                   ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              IconButton(
-                icon: const Icon(Icons.refresh, color: Colors.blueGrey),
-                onPressed: _fetchStockMovements,
-                tooltip: 'Recargar Movimientos',
+                  const SizedBox(width: 4),
+                  IconButton(
+                    icon: const Icon(Icons.refresh, color: Colors.blueGrey),
+                    onPressed: _fetchStockMovements,
+                    tooltip: 'Recargar Movimientos',
+                  ),
+                ],
               ),
             ],
           ),
@@ -894,7 +996,7 @@ class _StockMovementsTabState extends State<_StockMovementsTab> {
                             label: Text('Motivo / Referencia',
                                 style: TextStyle(fontWeight: FontWeight.bold))),
                       ],
-                      rows: _movements.map<DataRow>((mov) {
+                      rows: filteredMovements.map<DataRow>((mov) {
                         final typeStr = mov['type'].toString().toLowerCase();
                         final isOut = typeStr == 'out' ||
                             typeStr == 'sale' ||

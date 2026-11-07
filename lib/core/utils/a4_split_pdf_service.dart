@@ -808,10 +808,14 @@ class A4SplitPdfService {
                     item['is_sold_by_weight'] == true;
             final qtyText = isWeight ? qty.toQty() : qty.toInt().toString();
 
-            final pName = (item['product_name'] ??
-                    item['product']?['name'] ??
-                    'Producto')
-                .toString();
+            final customDesc = item['custom_description']?.toString().trim() ?? '';
+            final pName = customDesc.isNotEmpty
+                ? customDesc
+                : (item['product_name'] ??
+                        item['product']?['name'] ??
+                        'Producto')
+                    .toString();
+            final customDetails = item['custom_details']?.toString().trim() ?? '';
             final pCode = (item['product']?['internal_code'] ??
                     item['internal_code'] ??
                     '-')
@@ -867,6 +871,17 @@ class A4SplitPdfService {
                           color: PdfColors.black,
                         ),
                       ),
+                      if (customDetails.isNotEmpty) ...[
+                        pw.SizedBox(height: 1),
+                        pw.Text(
+                          customDetails,
+                          style: pw.TextStyle(
+                            fontSize: isCompact ? 6.0 : 7.0,
+                            fontStyle: pw.FontStyle.italic,
+                            color: PdfColors.grey700,
+                          ),
+                        ),
+                      ],
                       if (hasItemDiscount) ...[
                         pw.SizedBox(height: 1),
                         pw.Text(
@@ -1545,10 +1560,14 @@ class A4SplitPdfService {
                     item['is_sold_by_weight'] == true;
             final qtyText =
                 isWeight ? '${qty.toQty()} kg' : '${qty.toInt()} un';
-            final pName = (item['product']?['name'] ??
-                    item['product_name'] ??
-                    'Producto')
-                .toString();
+            final customDesc = item['custom_description']?.toString().trim() ?? '';
+            final pName = customDesc.isNotEmpty
+                ? customDesc
+                : (item['product']?['name'] ??
+                        item['product_name'] ??
+                        'Producto')
+                    .toString();
+            final customDetails = item['custom_details']?.toString().trim() ?? '';
             final pCode = (item['product']?['internal_code'] ??
                     item['internal_code'] ??
                     '-')
@@ -1562,7 +1581,9 @@ class A4SplitPdfService {
                   isCompact: isCompact,
                 ),
                 _td(
-                  pName.toUpperCase(),
+                  customDetails.isNotEmpty
+                      ? '${pName.toUpperCase()} ($customDetails)'
+                      : pName.toUpperCase(),
                   align: pw.TextAlign.left,
                   bold: true,
                   isCompact: isCompact,

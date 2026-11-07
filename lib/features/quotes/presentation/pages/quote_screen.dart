@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
+import 'package:frontend_desktop/core/presentation/widgets/compact_date_range_picker_dialog.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
 import 'package:frontend_desktop/features/catalog/presentation/providers/catalog_provider.dart';
@@ -804,29 +805,12 @@ class _QuoteHeaderDialogState extends State<_QuoteHeaderDialog> {
                   const SizedBox(width: 8),
                   TextButton(
                     onPressed: () async {
-                      final picked = await showDatePicker(
+                      final picked = await showCompactDatePicker(
                         context: context,
                         initialDate: DateTime.now().add(const Duration(days: 7)),
                         firstDate: DateTime.now(),
                         lastDate: DateTime.now().add(const Duration(days: 365)),
-                        locale: const Locale('es', 'AR'),
-                        builder: (context, child) {
-                          return Theme(
-                            data: Theme.of(context).copyWith(
-                              colorScheme: ColorScheme.light(
-                                primary: Colors.indigo.shade700, // Header bg color
-                                onPrimary: Colors.white, // Header text color
-                                onSurface: Colors.indigo.shade900, // Body text color
-                              ),
-                              textButtonTheme: TextButtonThemeData(
-                                style: TextButton.styleFrom(
-                                  foregroundColor: Colors.indigo.shade700, // button text color
-                                ),
-                              ),
-                            ),
-                            child: child!,
-                          );
-                        },
+                        helpText: 'Fecha de Validez del Presupuesto',
                       );
                       if (picked != null) {
                         setState(() => _validUntil = picked);

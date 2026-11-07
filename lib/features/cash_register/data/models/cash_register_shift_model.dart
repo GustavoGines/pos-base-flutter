@@ -18,6 +18,8 @@ class CashRegisterShiftModel extends CashRegisterShift {
     super.cashSales,
     super.cardSales,
     super.transferSales,
+    super.transferByAlias,
+    super.transferDetails,
     super.mpSales,
     super.mpSalesCount,
     super.totalSurcharge,
@@ -52,6 +54,37 @@ class CashRegisterShiftModel extends CashRegisterShift {
     return null;
   }
 
+  static Map<String, double>? _parseTransferByAlias(dynamic raw) {
+    if (raw == null) return null;
+    if (raw is Map) {
+      final result = <String, double>{};
+      raw.forEach((k, v) {
+        final key = k.toString().trim();
+        if (key.isEmpty) return;
+        final amount = v is Map
+            ? (_parseDouble(v['total_amount'] ?? v['amount']) ?? 0.0)
+            : (_parseDouble(v) ?? 0.0);
+        result[key] = (result[key] ?? 0.0) + amount;
+      });
+      return result.isEmpty ? null : result;
+    }
+    if (raw is List) {
+      final result = <String, double>{};
+      for (final item in raw) {
+        if (item is Map) {
+          final alias = (item['alias'] ?? item['alias_label'] ?? 'Sin Alias / General')
+              .toString()
+              .trim();
+          final key = alias.isEmpty ? 'Sin Alias / General' : alias;
+          final amount = _parseDouble(item['total_amount'] ?? item['amount']) ?? 0.0;
+          result[key] = (result[key] ?? 0.0) + amount;
+        }
+      }
+      return result.isEmpty ? null : result;
+    }
+    return null;
+  }
+
   factory CashRegisterShiftModel.fromJson(Map<String, dynamic> json) {
     try {
       return CashRegisterShiftModel(
@@ -69,6 +102,14 @@ class CashRegisterShiftModel extends CashRegisterShift {
         cashSales: _parseDouble(json['cash_sales']),
         cardSales: _parseDouble(json['card_sales']),
         transferSales: _parseDouble(json['transfer_sales']),
+        transferByAlias: _parseTransferByAlias(json['transfer_by_alias']),
+        transferDetails: json['transfer_details'] is List
+            ? List<Map<String, dynamic>>.from(
+                (json['transfer_details'] as List)
+                    .whereType<Map>()
+                    .map((e) => Map<String, dynamic>.from(e)),
+              )
+            : null,
         mpSales: _parseDouble(json['mp_sales']),
         mpSalesCount: _parseInt(json['mp_sales_count']),
         totalSurcharge: _parseDouble(json['total_surcharge']),

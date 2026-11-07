@@ -7,6 +7,7 @@ import '../../../../core/presentation/widgets/global_app_bar.dart';
 import '../../../cash_register/presentation/providers/cash_register_provider.dart';
 import '../../../cash_movements/presentation/widgets/movement_form_dialog.dart';
 import '../widgets/supplier_invoice_form_dialog.dart';
+import '../widgets/supplier_document_detail_dialog.dart';
 import 'supplier_current_account_screen.dart';
 import '../../../../core/constants/app_permissions.dart';
 import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
@@ -204,19 +205,44 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
                   ),
                 );
 
-                final newSupplierButton = ElevatedButton.icon(
-                  onPressed: () => _openForm(),
-                  icon: const Icon(Icons.add),
-                  label: const Text('Nuevo Proveedor'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blue.shade700,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+                final actionButtons = Wrap(
+                  spacing: 10,
+                  runSpacing: 8,
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: () {
+                        showDialog(
+                          context: context,
+                          builder: (_) => const SupplierDocumentsHistoryDialog(),
+                        );
+                      },
+                      icon: const Icon(Icons.receipt_long, size: 18),
+                      label: const Text('Historial de Comprobantes'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.indigo.shade800,
+                        side: BorderSide(color: Colors.indigo.shade200),
+                        backgroundColor: Colors.indigo.shade50.withValues(alpha: 0.4),
+                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
                     ),
-                  ),
+                    ElevatedButton.icon(
+                      onPressed: () => _openForm(),
+                      icon: const Icon(Icons.add),
+                      label: const Text('Nuevo Proveedor'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blue.shade700,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ],
                 );
 
                 if (isNarrow) {
@@ -227,7 +253,7 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
                       const SizedBox(height: 12),
                       Align(
                         alignment: Alignment.centerLeft,
-                        child: newSupplierButton,
+                        child: actionButtons,
                       ),
                     ],
                   );
@@ -237,7 +263,7 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     searchBar,
-                    newSupplierButton,
+                    actionButtons,
                   ],
                 );
               },

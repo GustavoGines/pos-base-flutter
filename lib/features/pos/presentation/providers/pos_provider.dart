@@ -42,6 +42,8 @@ class CheckoutDraftLine {
   final String checkIssuerName;
   final String checkIssueDate;
   final String checkPaymentDate;
+  final String? transferAccountAlias;
+  final String transferSenderName;
 
   const CheckoutDraftLine({
     this.methodId,
@@ -59,6 +61,8 @@ class CheckoutDraftLine {
     this.checkIssuerName = '',
     this.checkIssueDate = '',
     this.checkPaymentDate = '',
+    this.transferAccountAlias,
+    this.transferSenderName = '',
   });
 }
 
@@ -653,7 +657,13 @@ class PosProvider with ChangeNotifier {
       ));
     } else {
       final index = _cart.indexWhere(
-        (item) => item.product.id == product.id && !item.product.isSoldByWeight,
+        (item) =>
+            product.id > 0 &&
+            item.product.id == product.id &&
+            !item.product.isSoldByWeight &&
+            !item.isTemporary &&
+            !item.saveToCatalog &&
+            !item.isRenamed,
       );
       if (index >= 0) {
         _cart[index].product = product; // Actualizar con el stock más reciente
@@ -681,6 +691,42 @@ class PosProvider with ChangeNotifier {
           promotionalLabel: resolvedPromoLabel,
           promotionalPeriodType: resolvedPromoPeriodType,
         ));
+      }
+    }
+    notifyListeners();
+  }
+
+  /// Agrega un Producto o Combo Rápido (temporal o con alta on-the-fly al catálogo) directamente al carrito
+  void addQuickOrTemporaryItem(CartItem item) {
+    _cart.add(item);
+    notifyListeners();
+  }
+
+  /// Actualiza el nombre temporal (alias de facturación/ticket) y notas de un ítem del carrito,
+  /// y opcionalmente el precio/cantidad si es un ítem rápido.
+  void updateCartItemCustomDescription(
+    CartItem item, {
+    String? customDescription,
+    String? customDetails,
+    double? newUnitPrice,
+    double? newQuantity,
+  }) {
+    final cleanDesc = customDescription?.trim();
+    final cleanDetails = customDetails?.trim();
+    item.customDescription = (cleanDesc != null && cleanDesc.isNotEmpty && cleanDesc != item.product.name)
+        ? cleanDesc
+        : null;
+    item.customDetails = (cleanDetails != null && cleanDetails.isNotEmpty)
+        ? cleanDetails
+        : null;
+    if (newQuantity != null && newQuantity > 0) {
+      item.quantity = newQuantity;
+    }
+    if (newUnitPrice != null && newUnitPrice > 0) {
+      if (item.isTemporary || item.saveToCatalog || item.product.id <= 0) {
+        item.product = item.product.copyWith(sellingPrice: newUnitPrice);
+      } else {
+        item.promotionalPrice = newUnitPrice;
       }
     }
     notifyListeners();
@@ -759,12 +805,12 @@ class PosProvider with ChangeNotifier {
   }) async {
     if (_cart.isEmpty) return null;
     final items = _cart.map((c) => QuoteItem(
-      productId: c.product.id,
-      productName: c.product.name,
+      productId: c.product.id > 0 ? c.product.id : null,
+      productName: c.effectiveDisplayName,
       unitPrice: c.unitPrice,
       quantity: c.quantity,
       subtotal: c.subtotal,
-      product: c.product,
+      product: c.product.id > 0 ? c.product : null,
       imageUrl: c.product.imageUrl,
     )).toList();
 
@@ -880,6 +926,10 @@ class PosProvider with ChangeNotifier {
         // Si el precio pactado en el presupuesto es menor al precio de lista actual,
         // congelamos ese precio usando promotionalPrice (sin label/periodType para no mostrarlo como "Oferta")
         final hasDiscountedPrice = item.unitPrice < prod.sellingPrice && item.unitPrice > 0;
+        final customDesc = (item.productName.trim().isNotEmpty &&
+                item.productName.trim() != prod.name.trim())
+            ? item.productName.trim()
+            : null;
         _cart.add(CartItem(
           product: prod,
           quantity: item.quantity,
@@ -891,6 +941,31 @@ class PosProvider with ChangeNotifier {
           promotionalPrice: hasDiscountedPrice ? item.unitPrice : null,
           promotionalLabel: null, // Sin label para no mostrar como "Oferta"
           promotionalPeriodType: null, // Sin periodType para no mostrar como "Oferta"
+          customDescription: customDesc,
+        ));
+      } else {
+        final tempName = item.productName.trim().isNotEmpty
+            ? item.productName.trim()
+            : 'Producto Rápido';
+        final tempProd = Product(
+          id: 0,
+          name: tempName,
+          internalCode: 'TEMP-POS',
+          costPrice: 0.0,
+          sellingPrice: item.unitPrice,
+          stock: 0.0,
+          active: true,
+          isSoldByWeight: false,
+        );
+        _cart.add(CartItem(
+          product: tempProd,
+          quantity: item.quantity,
+          activeTier: PriceTier.base,
+          wholesaleFactor: 1.0,
+          cardFactor: 1.0,
+          customFactor: 1.0,
+          isTemporary: true,
+          customDescription: tempName,
         ));
       }
     }
@@ -974,6 +1049,12 @@ class PosProvider with ChangeNotifier {
       // (sin label/periodType para no mostrar como "Oferta")
       final hasDiscountedPrice = unitPriceCharged < originalSellingPrice && unitPriceCharged > 0;
 
+      final isTempItem = itemMap['is_temporary'] == true ||
+          itemMap['is_temporary'] == 1 ||
+          prod['id'] == null;
+      final customDesc = itemMap['custom_description']?.toString();
+      final customDet = itemMap['custom_details']?.toString();
+
       return CartItem(
         product: product,
         quantity: double.tryParse(itemMap['quantity'].toString()) ?? 1.0,
@@ -985,6 +1066,9 @@ class PosProvider with ChangeNotifier {
         promotionalPrice: hasDiscountedPrice ? unitPriceCharged : null,
         promotionalLabel: null, // Sin label para no mostrar como "Oferta"
         promotionalPeriodType: null, // Sin periodType para no mostrar como "Oferta"
+        isTemporary: isTempItem,
+        customDescription: customDesc,
+        customDetails: customDet,
       );
     }).toList();
 
@@ -1186,7 +1270,10 @@ class PosProvider with ChangeNotifier {
           'items': cartSnapshot
               .map((item) => {
                     'product_id': item.product.id,
-                    'product_name': item.product.name,
+                    'product_name': item.effectiveDisplayName,
+                    'custom_description': item.customDescription,
+                    'custom_details': item.customDetails,
+                    'is_temporary': item.isTemporary,
                     'quantity': item.quantity,
                     'quantity_purchased': item.quantity,
                     'quantity_delivered':
@@ -1196,7 +1283,7 @@ class PosProvider with ChangeNotifier {
                         fulfillmentStatus == 'delivered' ? item.quantity : 0.0,
                     'product': {
                       'id': item.product.id,
-                      'name': item.product.name,
+                      'name': item.effectiveDisplayName,
                       'internal_code': item.product.internalCode,
                       'is_sold_by_weight': item.product.isSoldByWeight,
                     },
@@ -1270,13 +1357,21 @@ class PosProvider with ChangeNotifier {
         final amount = (p['total_amount'] as num?)?.toDouble() ??
             (p['base_amount'] as num?)?.toDouble() ??
             0.0;
+        final transferAlias = p['transfer_account_alias']?.toString().trim();
+        final transferSender = p['transfer_sender_name']?.toString().trim();
+        final displayName = (transferAlias != null && transferAlias.isNotEmpty)
+            ? '${method.name} ($transferAlias)'
+            : method.name;
 
         return {
-          'name': method.name, // Para la impresora térmica (pd['name'])
+          'name': displayName, // Para la impresora térmica (pd['name'])
           'payment_method': {
-            'name': method.name
+            'name': displayName,
+            'code': method.code,
           }, // Para el PDF A4 (p['payment_method']['name'])
           'amount': amount,
+          'transfer_account_alias': transferAlias,
+          'transfer_sender_name': transferSender,
           '_isCash': method.isCash,
         };
       }).toList()
@@ -1316,7 +1411,10 @@ class PosProvider with ChangeNotifier {
               'iibb_perception_amount': effectivePerceptionAmount,
               'iibb_perception_rate': effectivePerceptionRate,
               'items': cartSnapshot.map((i) => {
-                'product_name': i.product.name,
+                'product_name': i.effectiveDisplayName,
+                'custom_description': i.customDescription,
+                'custom_details': i.customDetails,
+                'is_temporary': i.isTemporary,
                 'quantity': i.quantity,
                 'unit_price': i.unitPrice,
                 'subtotal': i.subtotal,
@@ -1330,7 +1428,7 @@ class PosProvider with ChangeNotifier {
                     : (i.promotionalLabel ?? ''),
                 'surcharge_amount': i.surchargeAmount,
                 'product': {
-                  'name': i.product.name,
+                  'name': i.effectiveDisplayName,
                   'internal_code': i.product.internalCode,
                   'is_sold_by_weight': i.product.isSoldByWeight,
                   'iva_rate': i.product.ivaRate,
@@ -1948,6 +2046,11 @@ class PosProvider with ChangeNotifier {
             promotionalLabel: hasSavings
                 ? (itemMap['discount_label']?.toString() ?? 'Descuento')
                 : null,
+            isTemporary: itemMap['is_temporary'] == true ||
+                itemMap['is_temporary'] == 1 ||
+                prod['id'] == null,
+            customDescription: itemMap['custom_description']?.toString(),
+            customDetails: itemMap['custom_details']?.toString(),
           );
         }).toList();
 
@@ -1972,9 +2075,16 @@ class PosProvider with ChangeNotifier {
               final amount = (p['base_amount'] as num?)?.toDouble() ??
                   (p['total_amount'] as num?)?.toDouble() ??
                   0.0;
+              final transferAlias = p['transfer_account_alias']?.toString().trim();
+              final transferSender = p['transfer_sender_name']?.toString().trim();
+              final displayName = (transferAlias != null && transferAlias.isNotEmpty)
+                  ? '${method.name} ($transferAlias)'
+                  : method.name;
               return {
-                'name': method.name,
+                'name': displayName,
                 'amount': amount,
+                'transfer_account_alias': transferAlias,
+                'transfer_sender_name': transferSender,
                 '_isCash': method.isCash
               };
             }).toList()
@@ -1987,6 +2097,8 @@ class PosProvider with ChangeNotifier {
                 .map((p) => {
                       'name': p['name'],
                       'amount': p['amount'],
+                      'transfer_account_alias': p['transfer_account_alias'],
+                      'transfer_sender_name': p['transfer_sender_name'],
                       'payment_method': {'name': p['name']},
                     })
                 .toList();
@@ -2039,7 +2151,10 @@ class PosProvider with ChangeNotifier {
                 'iibb_perception_rate': iibbPerceptionRate ?? 0.0,
                 'items': ticketItems
                     .map((i) => {
-                          'product_name': i.product.name,
+                          'product_name': i.effectiveDisplayName,
+                          'custom_description': i.customDescription,
+                          'custom_details': i.customDetails,
+                          'is_temporary': i.isTemporary,
                           'quantity': i.quantity,
                           'unit_price': i.unitPrice,
                           'subtotal': i.subtotal,
@@ -2053,7 +2168,7 @@ class PosProvider with ChangeNotifier {
                               : (i.promotionalLabel ?? ''),
                           'surcharge_amount': i.surchargeAmount,
                           'product': {
-                            'name': i.product.name,
+                            'name': i.effectiveDisplayName,
                             'internal_code': i.product.internalCode,
                             'is_sold_by_weight': i.product.isSoldByWeight,
                             'iva_rate': i.product.ivaRate,

@@ -326,8 +326,18 @@ void main() {
 
       expect(find.text('Seleccionar Foto'), findsOneWidget);
 
-      // Pick image via mock FilePicker
+      // Pick image: tap 'Seleccionar Foto' -> shows 2 options (Camera & Gallery)
       await tester.tap(find.byKey(const Key('mobile_pick_image_button')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(find.byKey(const Key('mobile_pick_image_camera_option')), findsOneWidget);
+      expect(find.byKey(const Key('mobile_pick_image_gallery_option')), findsOneWidget);
+      expect(find.text('Usar la Cámara'), findsOneWidget);
+      expect(find.text('Seleccionar de Fotos / Galería'), findsOneWidget);
+
+      // Tap 'Seleccionar de Fotos / Galería' to pick via mock FilePicker
+      await tester.tap(find.byKey(const Key('mobile_pick_image_gallery_option')));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
 

@@ -13,6 +13,10 @@ class CartItem {
   double? promotionalPrice; // Ofertas / Promociones temporales
   String? promotionalLabel;
   String? promotionalPeriodType; // 'daily', 'weekly', 'monthly', 'custom'
+  bool isTemporary; // Ítem/Combo temporal creado en POS (sin descuento de stock)
+  bool saveToCatalog; // Si es true, el backend creará el producto en el catálogo con needs_catalog_review=true
+  String? customDescription; // Sobrescritura temporal del nombre para Factura/Ticket
+  String? customDetails; // Notas o desglose adicional para Factura/Ticket
   
   CartItem({
     required this.product,
@@ -25,7 +29,49 @@ class CartItem {
     this.promotionalPrice,
     this.promotionalLabel,
     this.promotionalPeriodType,
+    this.isTemporary = false,
+    this.saveToCatalog = false,
+    this.customDescription,
+    this.customDetails,
   });
+
+  /// Nombre efectivo a mostrar en el carrito, ticket térmico, PDF A4 y factura electrónica AFIP
+  String get effectiveDisplayName {
+    final cleanCustom = customDescription?.trim();
+    if (cleanCustom != null && cleanCustom.isNotEmpty) {
+      return cleanCustom;
+    }
+    return product.name;
+  }
+
+  /// Indica si el ítem tiene un alias/renombrado temporal distinto al nombre original del catálogo
+  bool get isRenamed {
+    final cleanCustom = customDescription?.trim();
+    return cleanCustom != null && cleanCustom.isNotEmpty && cleanCustom != product.name;
+  }
+
+  /// Serializa la línea del carrito al payload esperado por ProcessSaleRequest / PaySaleRequest
+  Map<String, dynamic> toSalePayload() {
+    final isUnregisteredProduct = product.id <= 0;
+    final cleanDesc = customDescription?.trim();
+    final cleanDetails = customDetails?.trim();
+    return {
+      'product_id': (isTemporary || isUnregisteredProduct) ? null : product.id,
+      'product_name': effectiveDisplayName,
+      'custom_description': (cleanDesc != null && cleanDesc.isNotEmpty) ? cleanDesc : null,
+      'custom_details': (cleanDetails != null && cleanDetails.isNotEmpty) ? cleanDetails : null,
+      'is_temporary': isTemporary && !saveToCatalog,
+      'save_to_catalog': saveToCatalog,
+      'cost_price': product.costPrice,
+      'iva_rate': product.ivaRate,
+      'is_combo': product.isCombo,
+      'is_sold_by_weight': product.isSoldByWeight,
+      'unit_type': product.unitType,
+      'quantity': quantity,
+      'unit_price': unitPrice,
+      'subtotal': subtotal,
+    };
+  }
 
   /// Motor de precio híbrido: prioriza precio de oferta → overrides fijos → multiplicadores globales/custom → precio base volumétrico
   double get unitPrice {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
+import 'package:frontend_desktop/core/presentation/widgets/compact_date_range_picker_dialog.dart';
 import '../../providers/supplier_provider.dart';
 import '../../../../core/presentation/widgets/global_app_bar.dart';
 import '../../../cash_movements/presentation/widgets/movement_form_dialog.dart';
@@ -11,6 +12,7 @@ import '../../../../core/presentation/widgets/print_format_selector.dart';
 import '../../../../core/providers/local_terminal_provider.dart';
 import '../../../cash_register/presentation/providers/cash_register_provider.dart';
 import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
+import '../widgets/supplier_document_detail_dialog.dart';
 
 class SupplierCurrentAccountScreen extends StatefulWidget {
   final int supplierId;
@@ -83,6 +85,8 @@ class _SupplierCurrentAccountScreenState extends State<SupplierCurrentAccountScr
     
     if (_filterType == 'invoices') {
       temp = temp.where((item) => item['type'] == 'invoice').toList();
+    } else if (_filterType == 'delivery_notes') {
+      temp = temp.where((item) => item['type'] == 'delivery_note').toList();
     } else if (_filterType == 'payments') {
       temp = temp.where((item) => item['type'] == 'supplier_payment' || item['type'] == 'payment').toList();
     } else if (_filterType == 'credit_notes') {
@@ -374,31 +378,12 @@ class _SupplierCurrentAccountScreenState extends State<SupplierCurrentAccountScr
                       side: BorderSide(color: Colors.blueGrey.shade200),
                     ),
                     onPressed: () async {
-                      final picked = await showDateRangePicker(
+                      final picked = await showCompactDateRangePicker(
                         context: context,
                         firstDate: DateTime(2020),
                         lastDate: DateTime(2100),
                         initialDateRange: _dateRange,
-                        builder: (context, child) {
-                          return Center(
-                            child: ConstrainedBox(
-                              constraints: const BoxConstraints(
-                                maxWidth: 500,
-                                maxHeight: 600,
-                              ),
-                              child: Theme(
-                                data: Theme.of(context).copyWith(
-                                  colorScheme: const ColorScheme.light(
-                                    primary: Colors.blue,
-                                    onPrimary: Colors.white,
-                                    onSurface: Colors.black,
-                                  ),
-                                ),
-                                child: child!,
-                              ),
-                            ),
-                          );
-                        },
+                        helpText: 'Filtrar Movimientos por Fecha',
                       );
                       if (picked != null) {
                         setState(() {
@@ -440,7 +425,8 @@ class _SupplierCurrentAccountScreenState extends State<SupplierCurrentAccountScr
                         icon: const Icon(Icons.keyboard_arrow_down, color: Colors.blueGrey),
                         items: const [
                           DropdownMenuItem(value: 'all', child: Text('Todos los movimientos')),
-                          DropdownMenuItem(value: 'invoices', child: Text('Solo Remitos/Facturas')),
+                          DropdownMenuItem(value: 'invoices', child: Text('Solo Facturas')),
+                          DropdownMenuItem(value: 'delivery_notes', child: Text('Solo Remitos')),
                           DropdownMenuItem(value: 'payments', child: Text('Solo Pagos')),
                           DropdownMenuItem(value: 'credit_notes', child: Text('Notas de Crédito')),
                         ],
@@ -484,17 +470,28 @@ class _SupplierCurrentAccountScreenState extends State<SupplierCurrentAccountScr
                   final date = DateTime.tryParse(item['date'].toString()) ?? DateTime.now();
                   final formattedDate = DateFormat('dd MMM yyyy, HH:mm').format(date);
                   
-                  final isIncrease = (item['source'] == 'invoice' && item['type'] == 'invoice') || 
-                                     (item['source'] == 'payment' && item['type'] == 'deposit');
+                  final isIncrease = (item['source'] == 'invoice' &&
+                          (item['type'] == 'invoice' || item['type'] == 'delivery_note')) ||
+                      (item['source'] == 'payment' && item['type'] == 'deposit');
 
                   String actionLabel = '';
                   Color actionColor = Colors.grey;
                   IconData iconData = Icons.receipt;
 
                   if (item['source'] == 'invoice') {
-                    actionLabel = item['type'] == 'invoice' ? 'Factura / Remito' : 'Nota de Crédito';
-                    actionColor = item['type'] == 'invoice' ? Colors.red.shade600 : Colors.green.shade600;
-                    iconData = item['type'] == 'invoice' ? Icons.receipt_long : Icons.assignment_return;
+                    if (item['type'] == 'delivery_note') {
+                      actionLabel = 'Remito de Mercadería';
+                      actionColor = Colors.indigo.shade700;
+                      iconData = Icons.inventory_2_outlined;
+                    } else if (item['type'] == 'credit_note') {
+                      actionLabel = 'Nota de Crédito';
+                      actionColor = Colors.green.shade600;
+                      iconData = Icons.assignment_return;
+                    } else {
+                      actionLabel = 'Factura de Compra';
+                      actionColor = Colors.red.shade600;
+                      iconData = Icons.receipt_long;
+                    }
                   } else {
                     actionLabel = item['type'] == 'deposit' ? 'Ajuste Saldo (Deuda)' : 'Pago Entregado';
                     actionColor = item['type'] == 'deposit' ? Colors.red.shade600 : Colors.green.shade600;
@@ -503,6 +500,7 @@ class _SupplierCurrentAccountScreenState extends State<SupplierCurrentAccountScr
 
                   final amount = double.tryParse(item['amount'].toString()) ?? 0;
                   final runningBalance = double.tryParse(item['running_balance'].toString()) ?? 0;
+                  final itemsCount = (item['items_count'] as num?)?.toInt() ?? 0;
 
                   return Container(
                     decoration: BoxDecoration(
@@ -518,6 +516,18 @@ class _SupplierCurrentAccountScreenState extends State<SupplierCurrentAccountScr
                       ],
                     ),
                     child: ListTile(
+                      onTap: item['source'] == 'invoice'
+                          ? () {
+                              showDialog(
+                                context: context,
+                                builder: (_) => SupplierDocumentDetailDialog(
+                                  document: Map<String, dynamic>.from(item),
+                                  supplierName: widget.supplierName,
+                                  onChanged: _loadData,
+                                ),
+                              );
+                            }
+                          : null,
                       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                       leading: Container(
                         padding: const EdgeInsets.all(10),
@@ -554,6 +564,44 @@ class _SupplierCurrentAccountScreenState extends State<SupplierCurrentAccountScr
                               ),
                             ),
                           ],
+                          if (item['source'] == 'invoice') ...[
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.indigo.shade50,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                '$itemsCount art. • Ver detalle',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.indigo.shade700,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            if (item['is_edited'] == true ||
+                                ((int.tryParse((item['edit_count'] ?? 0).toString()) ?? 0) > 0)) ...[
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: Colors.amber.shade100,
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(color: Colors.amber.shade600),
+                                ),
+                                child: Text(
+                                  'EDITADO (${item['edit_count'] ?? 1}x)',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: Colors.amber.shade900,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
                         ],
                       ),
                       subtitle: Padding(
@@ -563,6 +611,12 @@ class _SupplierCurrentAccountScreenState extends State<SupplierCurrentAccountScr
                             const Icon(Icons.access_time, size: 14, color: Colors.grey),
                             const SizedBox(width: 4),
                             Text(formattedDate, style: const TextStyle(color: Colors.grey, fontSize: 13)),
+                            if (item['user_name'] != null) ...[
+                              const SizedBox(width: 10),
+                              const Icon(Icons.person_outline, size: 14, color: Colors.grey),
+                              const SizedBox(width: 3),
+                              Text(item['user_name'].toString(), style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                            ],
                           ],
                         ),
                       ),

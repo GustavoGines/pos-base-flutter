@@ -5,6 +5,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
+import 'package:frontend_desktop/core/presentation/widgets/compact_date_range_picker_dialog.dart';
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
 import 'package:frontend_desktop/features/checks/presentation/providers/check_provider.dart';
 import 'package:frontend_desktop/features/catalog/presentation/providers/catalog_provider.dart';
@@ -78,56 +79,12 @@ class _ReportsScreenState extends State<ReportsScreen>
 
   Future<void> _selectDateRange(BuildContext context) async {
     final provider = context.read<ReportsProvider>();
-    final picked = await showDateRangePicker(
+    final picked = await showCompactDateRangePicker(
       context: context,
       initialDateRange: DateTimeRange(start: provider.startDate, end: provider.endDate),
       firstDate: DateTime(2020),
       lastDate: DateTime.now().add(const Duration(days: 1)),
-      helpText: 'SELECCIONÁ EL RANGO DE FECHAS',
-      cancelText: 'CANCELAR',
-      confirmText: 'APLICAR',
-      saveText: 'APLICAR',
-      // 🎨 Rediseño Premium: tema indigo alineado con el Dashboard
-      builder: (context, child) => Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 500, maxHeight: 600),
-          child: Theme(
-            data: ThemeData.light().copyWith(
-              colorScheme: ColorScheme.light(
-                primary: Colors.indigo.shade700,
-                onPrimary: Colors.white,
-                secondary: Colors.indigo.shade400,
-                onSecondary: Colors.white,
-                surface: Colors.white,
-                onSurface: Colors.blueGrey.shade900,
-                surfaceContainerHighest: Colors.indigo.shade50,
-              ),
-              textButtonTheme: TextButtonThemeData(
-                style: TextButton.styleFrom(
-                  foregroundColor: Colors.indigo.shade700,
-                  textStyle: const TextStyle(fontWeight: FontWeight.bold, letterSpacing: 0.5),
-                ),
-              ),
-              datePickerTheme: DatePickerThemeData(
-                backgroundColor: Colors.white,
-                headerBackgroundColor: Colors.indigo.shade700,
-                headerForegroundColor: Colors.white,
-                dayOverlayColor: WidgetStateProperty.all(Colors.indigo.withValues(alpha: 0.1)),
-                rangePickerBackgroundColor: Colors.white,
-                rangeSelectionBackgroundColor: Colors.indigo.shade50,
-                rangePickerHeaderBackgroundColor: Colors.indigo.shade700,
-                rangePickerHeaderForegroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              ),
-              dialogTheme: DialogThemeData(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                elevation: 8,
-              ),
-            ),
-            child: child!,
-          ),
-        ),
-      ),
+      helpText: 'Seleccionar Período del Reporte',
     );
     if (picked != null) {
       provider.setDateRange(picked.start, picked.end);
@@ -333,8 +290,12 @@ class _FiltersBar extends StatelessWidget {
               ),
             ),
             Wrap(
+              spacing: 8,
+              runSpacing: 8,
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
+                // Selector Fiscal / No Fiscal
+                _FiscalFilterSegment(provider: provider),
                 const Text(
                   'Período: ',
                   style: TextStyle(color: Colors.blueGrey, fontSize: 13, fontWeight: FontWeight.w500),
@@ -353,7 +314,6 @@ class _FiltersBar extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                   ),
                 ),
-                const SizedBox(width: 8),
                 OutlinedButton.icon(
                   onPressed: onDateTap,
                   icon: const Icon(Icons.calendar_today, size: 15),
@@ -367,7 +327,6 @@ class _FiltersBar extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                   ),
                 ),
-                const SizedBox(width: 8),
                 if (provider.generalViewMode != 'ranking') ...[
                   FilledButton.icon(
                     onPressed: provider.isExporting ? null : () => provider.exportToExcel(isBrand: isBrand),
@@ -380,7 +339,6 @@ class _FiltersBar extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                     ),
                   ),
-                  const SizedBox(width: 8),
                   FilledButton.icon(
                     onPressed: provider.isExportingPdf ? null : () => provider.exportToPdf(isBrand: isBrand),
                     icon: provider.isExportingPdf
@@ -392,7 +350,6 @@ class _FiltersBar extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                     ),
                   ),
-                  const SizedBox(width: 8),
                 ],
                 IconButton(
                   onPressed: onRefresh,
@@ -404,6 +361,86 @@ class _FiltersBar extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _FiscalFilterSegment extends StatelessWidget {
+  final ReportsProvider provider;
+  const _FiscalFilterSegment({required this.provider});
+
+  Widget _buildOption({
+    required String value,
+    required String label,
+    required IconData icon,
+    required Color activeColor,
+  }) {
+    final selected = provider.fiscalFilter == value;
+    return InkWell(
+      onTap: () => provider.setFiscalFilter(value),
+      borderRadius: BorderRadius.circular(7),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected ? activeColor : Colors.transparent,
+          borderRadius: BorderRadius.circular(7),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 14,
+              color: selected ? Colors.white : Colors.blueGrey.shade700,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: selected ? FontWeight.bold : FontWeight.w600,
+                color: selected ? Colors.white : Colors.blueGrey.shade700,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(2.5),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(9),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: Wrap(
+        spacing: 2,
+        children: [
+          _buildOption(
+            value: 'all',
+            label: 'Todas',
+            icon: Icons.all_inclusive,
+            activeColor: Colors.blueGrey.shade800,
+          ),
+          _buildOption(
+            value: 'fiscal',
+            label: 'Fiscales (AFIP)',
+            icon: Icons.verified_outlined,
+            activeColor: Colors.teal.shade700,
+          ),
+          _buildOption(
+            value: 'non_fiscal',
+            label: 'No Fiscales',
+            icon: Icons.receipt_long_outlined,
+            activeColor: Colors.deepOrange.shade700,
+          ),
+        ],
       ),
     );
   }
@@ -1195,54 +1232,25 @@ class _MonthlyBalanceTabState extends State<_MonthlyBalanceTab> {
     });
   }
 
-  Future<void> _pickMonth(BuildContext ctx, bool isStart) async {
+  Future<void> _pickBalanceRange(BuildContext ctx) async {
     final provider = widget.provider;
-    final initial = isStart ? provider.balanceStartMonth : provider.balanceEndMonth;
-    DateTime picked = initial;
+    final start = DateTime(provider.balanceStartMonth.year, provider.balanceStartMonth.month, 1);
+    final end = DateTime(provider.balanceEndMonth.year, provider.balanceEndMonth.month + 1, 0);
 
-    await showDialog(
+    final picked = await showCompactDateRangePicker(
       context: ctx,
-      builder: (dCtx) => AlertDialog(
-        title: Text(isStart ? 'Mes de inicio' : 'Mes de fin'),
-        content: SizedBox(
-          width: 320,
-          child: CalendarDatePicker(
-            initialDate: initial,
-            firstDate: DateTime(2023),
-            lastDate: DateTime.now(),
-            initialCalendarMode: DatePickerMode.year,
-            onDateChanged: (d) => picked = d,
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(dCtx), child: const Text('Cancelar')),
-          FilledButton(
-            onPressed: () => Navigator.pop(dCtx, true),
-            child: const Text('Aplicar'),
-          ),
-        ],
-      ),
+      initialDateRange: DateTimeRange(start: start, end: end),
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now().add(const Duration(days: 31)),
+      helpText: 'Seleccionar Período del Balance Mensual',
     );
 
-    if (!ctx.mounted) return;
+    if (picked == null || !ctx.mounted) return;
 
-    // BUG R-3 FIX: Validar que el rango no quede invertido antes de aplicarlo.
-    final pickedDate = DateTime(picked.year, picked.month);
-    if (isStart) {
-      if (pickedDate.isAfter(provider.balanceEndMonth)) {
-        SnackBarService.warning(
-            ctx, 'La fecha de inicio no puede ser posterior a la fecha de fin.');
-        return;
-      }
-      provider.setBalanceRange(pickedDate, provider.balanceEndMonth);
-    } else {
-      if (pickedDate.isBefore(provider.balanceStartMonth)) {
-        SnackBarService.warning(
-            ctx, 'La fecha de fin no puede ser anterior a la fecha de inicio.');
-        return;
-      }
-      provider.setBalanceRange(provider.balanceStartMonth, pickedDate);
-    }
+    provider.setBalanceRange(
+      DateTime(picked.start.year, picked.start.month),
+      DateTime(picked.end.year, picked.end.month),
+    );
     provider.fetchMonthlyBalance();
   }
 
@@ -1266,69 +1274,75 @@ class _MonthlyBalanceTabState extends State<_MonthlyBalanceTab> {
             ),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              child: Row(
+              child: Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  const Icon(Icons.calendar_month, color: Colors.indigo, size: 20),
-                  const SizedBox(width: 10),
-                  const Text('Período:',
-                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                  const SizedBox(width: 12),
-                  OutlinedButton.icon(
-                    onPressed: () => _pickMonth(context, true),
-                    icon: const Icon(Icons.arrow_drop_down, size: 16),
-                    label: Text('Desde: ${mf.format(provider.balanceStartMonth)}'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.indigo.shade800,
-                      side: BorderSide(color: Colors.indigo.shade200),
-                    ),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      const Icon(Icons.calendar_month, color: Colors.indigo, size: 20),
+                      const Text('Período:',
+                          style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                      OutlinedButton.icon(
+                        onPressed: () => _pickBalanceRange(context),
+                        icon: const Icon(Icons.date_range_rounded, size: 16),
+                        label: Text(
+                          '${mf.format(provider.balanceStartMonth)}  →  ${mf.format(provider.balanceEndMonth)}',
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.indigo.shade800,
+                          side: BorderSide(color: Colors.indigo.shade200),
+                        ),
+                      ),
+                      _FiscalFilterSegment(provider: provider),
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                  OutlinedButton.icon(
-                    onPressed: () => _pickMonth(context, false),
-                    icon: const Icon(Icons.arrow_drop_down, size: 16),
-                    label: Text('Hasta: ${mf.format(provider.balanceEndMonth)}'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.indigo.shade800,
-                      side: BorderSide(color: Colors.indigo.shade200),
-                    ),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      FilledButton.icon(
+                        onPressed: provider.isExportingBalanceExcel ? null : () => provider.exportMonthlyBalanceToExcel(),
+                        icon: provider.isExportingBalanceExcel
+                            ? const SizedBox(width: 15, height: 15, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                            : const Icon(Icons.file_download, size: 15),
+                        label: const Text('Exportar Excel'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: Colors.green.shade600,
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        ),
+                      ),
+                      FilledButton.icon(
+                        onPressed: provider.isExportingBalancePdf ? null : () => provider.exportMonthlyBalanceToPdf(),
+                        icon: provider.isExportingBalancePdf
+                            ? const SizedBox(width: 15, height: 15, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                            : const Icon(Icons.picture_as_pdf, size: 15),
+                        label: const Text('Generar PDF'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: Colors.red.shade600,
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        ),
+                      ),
+                      if (provider.isLoadingBalance)
+                        const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2))
+                      else
+                        IconButton(
+                          onPressed: () => provider.fetchMonthlyBalance(),
+                          icon: const Icon(Icons.refresh, size: 18),
+                          tooltip: 'Actualizar',
+                          color: Colors.blueGrey.shade600,
+                        ),
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                  FilledButton.icon(
-                    onPressed: provider.isExportingBalanceExcel ? null : () => provider.exportMonthlyBalanceToExcel(),
-                    icon: provider.isExportingBalanceExcel
-                        ? const SizedBox(width: 15, height: 15, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                        : const Icon(Icons.file_download, size: 15),
-                    label: const Text('Exportar Excel'),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: Colors.green.shade600,
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  FilledButton.icon(
-                    onPressed: provider.isExportingBalancePdf ? null : () => provider.exportMonthlyBalanceToPdf(),
-                    icon: provider.isExportingBalancePdf
-                        ? const SizedBox(width: 15, height: 15, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                        : const Icon(Icons.picture_as_pdf, size: 15),
-                    label: const Text('Generar PDF'),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: Colors.red.shade600,
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                    ),
-                  ),
-                  const Spacer(),
-                  if (provider.isLoadingBalance)
-                    const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2))
-                  else
-                    IconButton(
-                      onPressed: () => provider.fetchMonthlyBalance(),
-                      icon: const Icon(Icons.refresh, size: 18),
-                      tooltip: 'Actualizar',
-                      color: Colors.blueGrey.shade600,
-                    ),
                 ],
               ),
             ),

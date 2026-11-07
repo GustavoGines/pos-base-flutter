@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
+import 'package:frontend_desktop/core/presentation/widgets/compact_date_range_picker_dialog.dart';
 import '../providers/reports_provider.dart';
 import 'package:frontend_desktop/features/customers/providers/customer_provider.dart';
 
@@ -24,33 +25,12 @@ class _InternalConsumptionReportViewState extends State<InternalConsumptionRepor
 
   Future<void> _selectDateRange(BuildContext context) async {
     final provider = context.read<ReportsProvider>();
-    final picked = await showDateRangePicker(
+    final picked = await showCompactDateRangePicker(
       context: context,
       initialDateRange: DateTimeRange(start: provider.icStartDate, end: provider.icEndDate),
       firstDate: DateTime(2020),
       lastDate: DateTime.now().add(const Duration(days: 1)),
-      helpText: 'SELECCIONÁ EL RANGO DE FECHAS',
-      cancelText: 'CANCELAR',
-      confirmText: 'APLICAR',
-      saveText: 'APLICAR',
-      builder: (context, child) => Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 500, maxHeight: 600),
-          child: Theme(
-            data: ThemeData.light().copyWith(
-              colorScheme: ColorScheme.light(
-                primary: Colors.indigo.shade700,
-                onPrimary: Colors.white,
-                secondary: Colors.indigo.shade400,
-                onSecondary: Colors.white,
-                surface: Colors.white,
-                onSurface: Colors.blueGrey.shade900,
-              ),
-            ),
-            child: child!,
-          ),
-        ),
-      ),
+      helpText: 'Seleccionar Período de Consumo Interno',
     );
     if (picked != null) {
       provider.setIcDateRange(picked.start, picked.end);

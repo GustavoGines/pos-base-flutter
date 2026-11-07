@@ -67,6 +67,7 @@ abstract class CatalogRepository {
     List<int>? productIds,
     int? categoryId,
     int? brandId,
+    int? supplierId,
   });
 
   Future<Map<String, dynamic>> bulkPricePreview({
@@ -76,6 +77,7 @@ abstract class CatalogRepository {
     List<int>? productIds,
     int? categoryId,
     int? brandId,
+    int? supplierId,
   });
 
   Future<List<dynamic>> getBulkPriceHistory();

@@ -18,9 +18,14 @@ abstract class SettingsRepository {
     required String cuit,
     required List<int> certBytes,
     required String certFilename,
-    required List<int> keyBytes,
-    required String keyFilename,
+    List<int>? keyBytes,
+    String? keyFilename,
     String? keyPassphrase,
+  });
+  Future<Map<String, dynamic>> generateAfipCsr({
+    required String cuit,
+    String? companyName,
+    bool forceNewKey = false,
   });
   Future<List<EcommerceIntegration>> getEcommerceIntegrations();
   Future<EcommerceIntegration> createEcommerceIntegration(Map<String, dynamic> data);

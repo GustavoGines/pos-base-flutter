@@ -103,6 +103,7 @@ class BusinessSettings extends Equatable {
   final String posPopularityMetric;
   final bool posDemoteOutOfStock;
   final String? posPopularityResetAt;
+  final List<Map<String, dynamic>> bankTransferAccounts;
 
   /// @deprecated Use [features] instead for better type safety.
   bool hasFeature(String featureName) => licenseFeatures.contains(featureName);
@@ -182,6 +183,7 @@ class BusinessSettings extends Equatable {
     String? posPopularityMetric,
     bool? posDemoteOutOfStock,
     String? posPopularityResetAt,
+    List<Map<String, dynamic>>? bankTransferAccounts,
   }) {
     return BusinessSettings(
       companyName: companyName ?? this.companyName,
@@ -216,6 +218,7 @@ class BusinessSettings extends Equatable {
       posPopularityMetric: posPopularityMetric ?? this.posPopularityMetric,
       posDemoteOutOfStock: posDemoteOutOfStock ?? this.posDemoteOutOfStock,
       posPopularityResetAt: posPopularityResetAt ?? this.posPopularityResetAt,
+      bankTransferAccounts: bankTransferAccounts ?? this.bankTransferAccounts,
     );
   }
 
@@ -252,6 +255,7 @@ class BusinessSettings extends Equatable {
     this.posPopularityMetric = 'tickets',
     this.posDemoteOutOfStock = false,
     this.posPopularityResetAt,
+    this.bankTransferAccounts = const [],
   });
 
   @override
@@ -288,5 +292,6 @@ class BusinessSettings extends Equatable {
         posPopularityMetric,
         posDemoteOutOfStock,
         posPopularityResetAt,
+        bankTransferAccounts,
       ];
 }

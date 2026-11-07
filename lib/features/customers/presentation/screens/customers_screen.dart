@@ -1,6 +1,8 @@
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:frontend_desktop/core/presentation/widgets/compact_date_range_picker_dialog.dart';
 import '../../models/customer_model.dart';
 import '../../providers/customer_provider.dart';
 import '../widgets/customer_form_dialog.dart';
@@ -23,6 +25,7 @@ class CustomersScreen extends StatefulWidget {
 
 class _CustomersScreenState extends State<CustomersScreen> {
   Customer? _selectedCustomer;
+  DateTimeRange? _dateRange;
 
   @override
   void initState() {
@@ -33,6 +36,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
   void _onCustomerSelected(Customer customer) {
     setState(() {
       _selectedCustomer = customer;
+      _dateRange = null;
     });
     // Fetch individual customer details (including transactions)
     if (_selectedCustomer != null) {
@@ -346,7 +350,11 @@ class _CustomersScreenState extends State<CustomersScreen> {
                           color: Colors.grey.shade100,
                           child: _selectedCustomer == null
                               ? const _EmptyStateDetail()
-                              : _CustomerDetailPanel(customer: _selectedCustomer!),
+                              : _CustomerDetailPanel(
+                                  customer: _selectedCustomer!,
+                                  dateRange: _dateRange,
+                                  onDateRangeChanged: (r) => setState(() => _dateRange = r),
+                                ),
                         ),
                       ),
                     ],
@@ -421,11 +429,24 @@ class _EmptyStateDetail extends StatelessWidget {
 
 class _CustomerDetailPanel extends StatelessWidget {
   final Customer customer;
+  final DateTimeRange? dateRange;
+  final ValueChanged<DateTimeRange?> onDateRangeChanged;
 
-  const _CustomerDetailPanel({required this.customer});
+  const _CustomerDetailPanel({
+    required this.customer,
+    this.dateRange,
+    required this.onDateRangeChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final filteredTransactions = customer.transactions.where((trx) {
+      if (dateRange == null) return true;
+      final local = trx.createdAt.toLocal();
+      final start = DateTime(dateRange!.start.year, dateRange!.start.month, dateRange!.start.day);
+      final end = DateTime(dateRange!.end.year, dateRange!.end.month, dateRange!.end.day, 23, 59, 59, 999);
+      return !local.isBefore(start) && !local.isAfter(end);
+    }).toList();
     // ── 3 estados del saldo ──────────────────────────────────────────
     final balance    = customer.balance;
     final isDebtor   = balance > 0;   // Tiene deuda pendiente
@@ -679,7 +700,56 @@ class _CustomerDetailPanel extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Libro Mayor de Cuentas', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.blueGrey)),
+                Wrap(
+                  alignment: WrapAlignment.spaceBetween,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 12,
+                  runSpacing: 8,
+                  children: [
+                    const Text('Libro Mayor de Cuentas', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.blueGrey)),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        OutlinedButton.icon(
+                          icon: const Icon(Icons.date_range_rounded, size: 16),
+                          label: Text(
+                            dateRange == null
+                                ? 'Filtrar por Fecha'
+                                : '${DateFormat('dd/MM/yy').format(dateRange!.start)} - ${DateFormat('dd/MM/yy').format(dateRange!.end)}',
+                            style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            backgroundColor: dateRange != null ? Colors.indigo.shade50 : Colors.white,
+                            foregroundColor: Colors.indigo.shade800,
+                            side: BorderSide(color: dateRange != null ? Colors.indigo.shade300 : Colors.blueGrey.shade200),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                          onPressed: () async {
+                            final picked = await showCompactDateRangePicker(
+                              context: context,
+                              initialDateRange: dateRange,
+                              firstDate: DateTime(2020),
+                              lastDate: DateTime.now().add(const Duration(days: 1)),
+                              helpText: 'Filtrar Libro Mayor por Fecha',
+                            );
+                            if (picked != null) {
+                              onDateRangeChanged(picked);
+                            }
+                          },
+                        ),
+                        if (dateRange != null) ...[
+                          const SizedBox(width: 4),
+                          IconButton(
+                            tooltip: 'Quitar filtro de fecha',
+                            icon: const Icon(Icons.clear, size: 18, color: Colors.red),
+                            visualDensity: VisualDensity.compact,
+                            onPressed: () => onDateRangeChanged(null),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 16),
                 Expanded(
                   child: Container(
@@ -689,7 +759,7 @@ class _CustomerDetailPanel extends StatelessWidget {
                       boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 4))],
                       border: Border.all(color: Colors.black12),
                     ),
-                    child: customer.transactions.isEmpty
+                    child: filteredTransactions.isEmpty
                       ? Center(
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
@@ -704,10 +774,10 @@ class _CustomerDetailPanel extends StatelessWidget {
                           borderRadius: BorderRadius.circular(12),
                           child: ListView.separated(
                             padding: EdgeInsets.zero,
-                            itemCount: customer.transactions.length,
+                            itemCount: filteredTransactions.length,
                             separatorBuilder: (ctx, i) => const Divider(height: 1),
                             itemBuilder: (context, index) {
-                              final trx = customer.transactions[index];
+                              final trx = filteredTransactions[index];
                               final isPayment = trx.type == 'payment';
                               final isRefund = trx.type == 'refund';
                               final isCharge = trx.type == 'charge' || trx.type == 'sale';

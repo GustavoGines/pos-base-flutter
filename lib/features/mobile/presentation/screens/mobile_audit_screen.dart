@@ -1,7 +1,8 @@
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/config/app_config.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
@@ -389,7 +390,87 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
           builder: (context, setStateDialog) {
             final catalogProv = context.read<CatalogProvider>();
 
-            Future<void> pickProductImage() async {
+            Future<bool> ensureCameraPermission() async {
+              if (!Platform.isAndroid) return true;
+              try {
+                const channel = MethodChannel('ar.com.gglabs.posmobile/permissions');
+                final granted = await channel.invokeMethod<bool>('requestCameraPermission');
+                if (granted == false) {
+                  if (context.mounted) {
+                    SnackBarService.warning(
+                      context,
+                      'Se requiere permiso de Cámara para tomar la foto del producto.',
+                    );
+                  }
+                  return false;
+                }
+                return true;
+              } on MissingPluginException {
+                return true;
+              } catch (_) {
+                return true;
+              }
+            }
+
+            Future<void> pickFromCamera() async {
+              final hasPermission = await ensureCameraPermission();
+              if (!hasPermission) return;
+
+              try {
+                final picker = ImagePicker();
+                final XFile? photo = await picker.pickImage(
+                  source: ImageSource.camera,
+                  maxWidth: 1600,
+                  maxHeight: 1600,
+                  imageQuality: 85,
+                );
+                if (photo == null) return;
+
+                final ext = photo.name.contains('.')
+                    ? photo.name.split('.').last.toLowerCase()
+                    : 'jpg';
+                if (ext.isNotEmpty && !['jpg', 'jpeg', 'png', 'webp'].contains(ext)) {
+                  if (context.mounted) {
+                    SnackBarService.error(context, 'Formato no soportado ($ext). Usa JPG, PNG o WEBP.');
+                  }
+                  return;
+                }
+
+                final bytes = await photo.readAsBytes();
+                if (bytes.length > 2 * 1024 * 1024) {
+                  if (context.mounted) {
+                    SnackBarService.error(context, 'La imagen supera los 2MB permitidos (máx 2048 KB).');
+                  }
+                  return;
+                }
+
+                setStateDialog(() {
+                  selectedImagePath = photo.path;
+                  selectedImageBytes = bytes;
+                  selectedImageName = photo.name.isNotEmpty ? photo.name : 'camera_photo.jpg';
+                  deleteExistingImage = false;
+                });
+              } on PlatformException catch (e) {
+                debugPrint('Error de plataforma al usar cámara: $e');
+                if (context.mounted) {
+                  final isDenied = (e.code.toLowerCase().contains('denied') ||
+                      e.code.toLowerCase().contains('permission'));
+                  SnackBarService.error(
+                    context,
+                    isDenied
+                        ? 'Permiso de cámara denegado. Habilitalo en los ajustes de la app.'
+                        : 'No se pudo abrir la cámara: ${e.message ?? e.code}',
+                  );
+                }
+              } catch (e) {
+                debugPrint('Error capturando foto con cámara: $e');
+                if (context.mounted) {
+                  SnackBarService.error(context, 'Error al tomar foto: $e');
+                }
+              }
+            }
+
+            Future<void> pickFromGallery() async {
               try {
                 final result = await FilePicker.platform.pickFiles(
                   type: FileType.image,
@@ -441,6 +522,75 @@ class _MobileAuditScreenState extends State<MobileAuditScreen> {
                 if (context.mounted) {
                   SnackBarService.error(context, 'Error al seleccionar imagen: $e');
                 }
+              }
+            }
+
+            Future<void> pickProductImage() async {
+              final choice = await showModalBottomSheet<String>(
+                context: context,
+                shape: const RoundedRectangleBorder(
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+                ),
+                builder: (sheetCtx) {
+                  return SafeArea(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 40,
+                            height: 4,
+                            margin: const EdgeInsets.only(bottom: 12),
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade300,
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                          ),
+                          const Padding(
+                            padding: EdgeInsets.only(bottom: 8),
+                            child: Text(
+                              'Foto del Producto',
+                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                          ListTile(
+                            key: const Key('mobile_pick_image_camera_option'),
+                            leading: CircleAvatar(
+                              backgroundColor: Colors.deepPurple.shade50,
+                              child: const Icon(Icons.camera_alt_outlined, color: Color(0xFF673AB7)),
+                            ),
+                            title: const Text(
+                              'Usar la Cámara',
+                              style: TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                            subtitle: const Text('Tomar una foto ahora con la cámara'),
+                            onTap: () => Navigator.pop(sheetCtx, 'camera'),
+                          ),
+                          ListTile(
+                            key: const Key('mobile_pick_image_gallery_option'),
+                            leading: CircleAvatar(
+                              backgroundColor: Colors.blue.shade50,
+                              child: Icon(Icons.photo_library_outlined, color: Colors.blue.shade700),
+                            ),
+                            title: const Text(
+                              'Seleccionar de Fotos / Galería',
+                              style: TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                            subtitle: const Text('Elegir una imagen guardada en el dispositivo'),
+                            onTap: () => Navigator.pop(sheetCtx, 'gallery'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              );
+
+              if (choice == 'camera') {
+                await pickFromCamera();
+              } else if (choice == 'gallery') {
+                await pickFromGallery();
               }
             }
 

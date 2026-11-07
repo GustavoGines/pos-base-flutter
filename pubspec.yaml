@@ -71,6 +71,7 @@ dependencies:
   # QR code generation (Desktop Settings â†’ App Móvil section)
   qr_flutter: ^4.1.0
   file_picker: ^8.1.4
+  image_picker: ^1.2.1
   http_parser: ^4.1.2
   cached_network_image: ^4.0.3
   desktop_drop: ^0.8.4

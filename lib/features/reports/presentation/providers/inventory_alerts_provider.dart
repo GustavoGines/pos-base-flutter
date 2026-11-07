@@ -20,13 +20,41 @@ class InventoryAlertsProvider extends ChangeNotifier {
   List<dynamic> get predictiveCriticalAlerts =>
       _alerts.where((a) => a['alert_type'] == 'predictive' && a['alert_level'] == 'critical').toList();
 
+  List<dynamic> get expirationAlerts =>
+      _alerts.where((a) => a['alert_type'] == 'expiration').toList();
+
   int get totalAlertsCount => _alerts.length;
 
   /// Retorna el tipo de alerta visual para un producto específico en el POS.
   String? getAlertStatusForProduct(int productId) {
     if (reactiveAlerts.any((a) => (a['product_id'] as num?)?.toInt() == productId)) return 'out_of_stock';
+    if (expirationAlerts.any((a) => (a['product_id'] as num?)?.toInt() == productId && a['alert_level'] == 'critical')) {
+      return 'out_of_stock';
+    }
     if (predictiveCriticalAlerts.any((a) => (a['product_id'] as num?)?.toInt() == productId)) return 'predictive_critical';
     return null;
+  }
+
+  Future<bool> snoozeExpirationAlert(
+    int productId, {
+    required String action,
+    int? days,
+    String? expirationDate,
+  }) async {
+    try {
+      await dataSource.snoozeExpirationAlert(
+        productId,
+        action: action,
+        days: days,
+        expirationDate: expirationDate,
+      );
+      await fetchAlerts();
+      return true;
+    } catch (e) {
+      _error = e.toString();
+      notifyListeners();
+      return false;
+    }
   }
 
   Future<void> fetchAlerts({int threshold = 3}) async {
@@ -36,7 +64,16 @@ class InventoryAlertsProvider extends ChangeNotifier {
 
     try {
       final result = await dataSource.getInventoryAlerts(threshold: threshold);
-      _alerts = result['alerts'] ?? [];
+      final stockAlerts = (result['alerts'] as List?) ?? [];
+      final expAlerts = (result['expiration_alerts'] as List?) ?? [];
+      _alerts = [
+        ...stockAlerts,
+        ...expAlerts.where(
+          (e) => !stockAlerts.any(
+            (s) => s['alert_type'] == 'expiration' && s['product_id'] == e['product_id'],
+          ),
+        ),
+      ];
     } catch (e) {
       _error = e.toString();
       _alerts = [];

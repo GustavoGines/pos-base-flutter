@@ -191,6 +191,12 @@ const List<PermissionCategory> kCategorizedPermissions = [
         icon: Icons.receipt_outlined,
       ),
       PermissionItem(
+        key: AppPermissions.manageSupplierInvoices,
+        label: 'Editar y Anular Facturas de Proveedores',
+        description: 'Modificar o dar de baja comprobantes ya cargados recalculando stock y deuda.',
+        icon: Icons.edit_note_outlined,
+      ),
+      PermissionItem(
         key: AppPermissions.paySuppliers,
         label: 'Pagos a Proveedores',
         description: 'Emitir órdenes de pago desde caja chica o bancos.',
@@ -314,291 +320,426 @@ class _EmployeeFormDialogState extends State<EmployeeFormDialog> {
     return data;
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final isAdmin = _role == 'admin';
+  Widget _buildPermissionCategoryCard(BuildContext context, PermissionCategory category, bool isAdmin) {
+    final selectedCount = category.items.where((i) => _permissions.contains(i.key)).length;
+    final bool? isCategoryFullySelected = isAdmin
+        ? true
+        : (selectedCount == 0 ? false : (selectedCount == category.items.length ? true : null));
 
-    return Dialog(
-      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 480, maxHeight: 700),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Header
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.blue.shade800,
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey.shade200),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          key: PageStorageKey<String>('perm_cat_${category.title}'),
+          initiallyExpanded: true,
+          tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          childrenPadding: const EdgeInsets.only(bottom: 8),
+          title: Row(
+            children: [
+              Checkbox(
+                value: isCategoryFullySelected,
+                tristate: true,
+                activeColor: Colors.blue.shade900,
+                visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
+                onChanged: isAdmin
+                    ? null
+                    : (val) {
+                        setState(() {
+                          if (isCategoryFullySelected == true) {
+                            for (var item in category.items) {
+                              _permissions.remove(item.key);
+                            }
+                          } else {
+                            for (var item in category.items) {
+                              _permissions.add(item.key);
+                            }
+                          }
+                        });
+                      },
               ),
-              child: Row(
-                children: [
-                  const Icon(Icons.person_add_rounded, color: Colors.white, size: 28),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      _isEditing ? 'Editar Empleado' : 'Nuevo Empleado',
-                      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            // Body
-            Flexible(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(24),
-                child: Form(
-                  key: _formKey,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Nombre
-                      TextFormField(
-                        controller: _nameCtrl,
-                        decoration: const InputDecoration(
-                          labelText: 'Nombre del Empleado',
-                          border: OutlineInputBorder(),
-                          prefixIcon: Icon(Icons.badge_outlined),
-                        ),
-                        validator: (v) => (v == null || v.trim().isEmpty) ? 'El nombre es requerido' : null,
-                      ),
-                      const SizedBox(height: 16),
-                      // Rol
-                      DropdownButtonFormField<String>(
-                        initialValue: _role,
-                        isExpanded: true,
-                        decoration: const InputDecoration(
-                          labelText: 'Rol',
-                          border: OutlineInputBorder(),
-                          prefixIcon: Icon(Icons.shield_outlined),
-                        ),
-                        items: const [
-                          DropdownMenuItem(value: 'cashier', child: Text('Cajero')),
-                          DropdownMenuItem(value: 'admin', child: Text('Administrador')),
-                        ],
-                        onChanged: _onRoleChanged,
-                      ),
-                      const SizedBox(height: 16),
-                      // PIN
-                      TextFormField(
-                        controller: _pinCtrl,
-                        decoration: InputDecoration(
-                          labelText: _isEditing ? 'Nuevo PIN (opcional)' : 'PIN de Acceso (4 dígitos)',
-                          border: const OutlineInputBorder(),
-                          prefixIcon: const Icon(Icons.lock_outline),
-                          hintText: _isEditing ? 'Dejar vacío para no cambiar' : '****',
-                        ),
-                        obscureText: true,
-                        maxLength: 4,
-                        keyboardType: TextInputType.number,
-                        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                        validator: (v) {
-                          if (!_isEditing && (v == null || v.isEmpty)) return 'El PIN es requerido';
-                          if (v != null && v.isNotEmpty && v.length != 4) return 'El PIN debe tener 4 dígitos';
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 8),
-                      // Permisos
-                      Wrap(
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: [
-                          const Icon(Icons.key_rounded, size: 18, color: Colors.blueGrey),
-                          const SizedBox(width: 6),
-                          const Text('Permisos Específicos', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey)),
-                          if (isAdmin) ...[
-                            const SizedBox(width: 8),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: Colors.blue.shade100,
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: const Text('Acceso Total', style: TextStyle(fontSize: 11, color: Colors.blue, fontWeight: FontWeight.bold)),
-                            ),
-                          ]
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        isAdmin
-                            ? 'Los administradores poseen todos los permisos del sistema por defecto.'
-                            : 'Seleccione las operaciones que este cajero podrá ejecutar sin requerir PIN de supervisor.',
-                        style: const TextStyle(fontSize: 12, color: Colors.black54),
-                      ),
-                      const SizedBox(height: 12),
-                      if (!isAdmin)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 8.0),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.end,
-                            children: [
-                              TextButton.icon(
-                                onPressed: () {
-                                  setState(() {
-                                    _permissions.addAll(AppPermissions.all);
-                                  });
-                                },
-                                icon: const Icon(Icons.check_box_outlined, size: 18),
-                                label: const Text('Marcar Todos', style: TextStyle(fontSize: 12)),
-                                style: TextButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                  minimumSize: Size.zero,
-                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              TextButton.icon(
-                                onPressed: () {
-                                  setState(() {
-                                    _permissions.clear();
-                                  });
-                                },
-                                icon: const Icon(Icons.check_box_outline_blank, size: 18, color: Colors.redAccent),
-                                label: const Text('Desmarcar Todos', style: TextStyle(fontSize: 12, color: Colors.redAccent)),
-                                style: TextButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                  minimumSize: Size.zero,
-                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ...kCategorizedPermissions.map((category) {
-                        int selectedCount = category.items.where((i) => _permissions.contains(i.key)).length;
-                        bool? isCategoryFullySelected = isAdmin ? true : (selectedCount == 0 ? false : (selectedCount == category.items.length ? true : null));
-
-                        return Container(
-                          margin: const EdgeInsets.only(bottom: 12),
-                          decoration: BoxDecoration(
-                            border: Border.all(color: Colors.grey.shade200),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Theme(
-                            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-                            child: ExpansionTile(
-                              key: PageStorageKey<String>('perm_cat_${category.title}'),
-                              initiallyExpanded: true,
-                              tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                              childrenPadding: const EdgeInsets.only(bottom: 8),
-                              title: Row(
-                                children: [
-                                  Checkbox(
-                                    value: isCategoryFullySelected,
-                                    tristate: true,
-                                    activeColor: Colors.blue.shade900,
-                                    visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
-                                    onChanged: isAdmin ? null : (val) {
-                                      setState(() {
-                                        if (isCategoryFullySelected == true) {
-                                          for (var item in category.items) {
-                                            _permissions.remove(item.key);
-                                          }
-                                        } else {
-                                          for (var item in category.items) {
-                                            _permissions.add(item.key);
-                                          }
-                                        }
-                                      });
-                                    },
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      category.title,
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 13,
-                                        color: Colors.blue.shade900,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              children: category.items.map((item) {
-                                final checked = isAdmin || _permissions.contains(item.key);
-                                return Material(
-                                  color: Colors.transparent,
-                                  child: CheckboxListTile(
-                                    dense: true,
-                                    value: checked,
-                                    onChanged: isAdmin
-                                        ? null
-                                        : (val) {
-                                            setState(() {
-                                              if (val == true) {
-                                                _permissions.add(item.key);
-                                              } else {
-                                                _permissions.remove(item.key);
-                                              }
-                                            });
-                                          },
-                                    title: Text(
-                                      item.label,
-                                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-                                    ),
-                                    subtitle: Text(
-                                      item.description,
-                                      style: const TextStyle(fontSize: 11, color: Colors.black54),
-                                    ),
-                                    secondary: Icon(
-                                      item.icon,
-                                      color: checked ? Colors.blue.shade700 : Colors.grey,
-                                      size: 20,
-                                    ),
-                                    activeColor: Colors.blue.shade700,
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                    controlAffinity: ListTileControlAffinity.leading,
-                                  ),
-                                );
-                              }).toList(),
-                            ),
-                          ),
-                        );
-                      }),
-                    ],
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  category.title,
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                    color: Colors.blue.shade900,
                   ),
                 ),
               ),
-            ),
-            // Footer buttons
-            const Divider(height: 1),
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () => Navigator.of(context).pop(),
-                      child: const FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Text('Cancelar'),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: FilledButton.icon(
-                      onPressed: () {
-                        final data = _submit();
-                        if (data != null) Navigator.of(context).pop(data);
+            ],
+          ),
+          children: category.items.map((item) {
+            final checked = isAdmin || _permissions.contains(item.key);
+            return Material(
+              color: Colors.transparent,
+              child: CheckboxListTile(
+                dense: true,
+                value: checked,
+                onChanged: isAdmin
+                    ? null
+                    : (val) {
+                        setState(() {
+                          if (val == true) {
+                            _permissions.add(item.key);
+                          } else {
+                            _permissions.remove(item.key);
+                          }
+                        });
                       },
-                      icon: const Icon(Icons.save_rounded),
-                      label: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Text(_isEditing ? 'Guardar Cambios' : 'Crear Empleado'),
+                title: Text(
+                  item.label,
+                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                ),
+                subtitle: Text(
+                  item.description,
+                  style: const TextStyle(fontSize: 11, color: Colors.black54),
+                ),
+                secondary: Icon(
+                  item.icon,
+                  color: checked ? Colors.blue.shade700 : Colors.grey,
+                  size: 20,
+                ),
+                activeColor: Colors.blue.shade700,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                controlAffinity: ListTileControlAffinity.leading,
+              ),
+            );
+          }).toList(),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isAdmin = _role == 'admin';
+    final leftCategories = <PermissionCategory>[];
+    final rightCategories = <PermissionCategory>[];
+    int leftWeight = 0;
+    int rightWeight = 0;
+    for (final cat in kCategorizedPermissions) {
+      final weight = cat.items.length + 1;
+      if (leftWeight <= rightWeight) {
+        leftCategories.add(cat);
+        leftWeight += weight;
+      } else {
+        rightCategories.add(cat);
+        rightWeight += weight;
+      }
+    }
+
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 960, maxHeight: 780),
+        child: LayoutBuilder(
+          builder: (context, dialogConstraints) {
+            final isWide = dialogConstraints.maxWidth >= 680;
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Header
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade800,
+                    borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.person_add_rounded, color: Colors.white, size: 26),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          _isEditing ? 'Editar Empleado' : 'Nuevo Empleado',
+                          style: const TextStyle(fontSize: 19, fontWeight: FontWeight.bold, color: Colors.white),
+                        ),
                       ),
-                      style: FilledButton.styleFrom(backgroundColor: Colors.blue.shade800),
+                      IconButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        icon: const Icon(Icons.close, color: Colors.white),
+                        tooltip: 'Cerrar',
+                      ),
+                    ],
+                  ),
+                ),
+                // Body
+                Flexible(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
+                    child: Form(
+                      key: _formKey,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (isWide)
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  flex: 5,
+                                  child: TextFormField(
+                                    controller: _nameCtrl,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Nombre del Empleado',
+                                      border: OutlineInputBorder(),
+                                      prefixIcon: Icon(Icons.badge_outlined),
+                                      isDense: true,
+                                    ),
+                                    validator: (v) => (v == null || v.trim().isEmpty) ? 'El nombre es requerido' : null,
+                                  ),
+                                ),
+                                const SizedBox(width: 14),
+                                Expanded(
+                                  flex: 4,
+                                  child: DropdownButtonFormField<String>(
+                                    initialValue: _role,
+                                    isExpanded: true,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Rol',
+                                      border: OutlineInputBorder(),
+                                      prefixIcon: Icon(Icons.shield_outlined),
+                                      isDense: true,
+                                    ),
+                                    items: const [
+                                      DropdownMenuItem(value: 'cashier', child: Text('Cajero')),
+                                      DropdownMenuItem(value: 'admin', child: Text('Administrador')),
+                                    ],
+                                    onChanged: _onRoleChanged,
+                                  ),
+                                ),
+                                const SizedBox(width: 14),
+                                Expanded(
+                                  flex: 4,
+                                  child: TextFormField(
+                                    controller: _pinCtrl,
+                                    decoration: InputDecoration(
+                                      labelText: _isEditing ? 'Nuevo PIN (opcional)' : 'PIN de Acceso (4 dígitos)',
+                                      border: const OutlineInputBorder(),
+                                      prefixIcon: const Icon(Icons.lock_outline),
+                                      hintText: _isEditing ? 'Vacío = no cambiar' : '****',
+                                      isDense: true,
+                                    ),
+                                    obscureText: true,
+                                    maxLength: 4,
+                                    keyboardType: TextInputType.number,
+                                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                                    validator: (v) {
+                                      if (!_isEditing && (v == null || v.isEmpty)) return 'El PIN es requerido';
+                                      if (v != null && v.isNotEmpty && v.length != 4) return 'El PIN debe tener 4 dígitos';
+                                      return null;
+                                    },
+                                  ),
+                                ),
+                              ],
+                            )
+                          else ...[
+                            // Nombre
+                            TextFormField(
+                              controller: _nameCtrl,
+                              decoration: const InputDecoration(
+                                labelText: 'Nombre del Empleado',
+                                border: OutlineInputBorder(),
+                                prefixIcon: Icon(Icons.badge_outlined),
+                              ),
+                              validator: (v) => (v == null || v.trim().isEmpty) ? 'El nombre es requerido' : null,
+                            ),
+                            const SizedBox(height: 16),
+                            // Rol
+                            DropdownButtonFormField<String>(
+                              initialValue: _role,
+                              isExpanded: true,
+                              decoration: const InputDecoration(
+                                labelText: 'Rol',
+                                border: OutlineInputBorder(),
+                                prefixIcon: Icon(Icons.shield_outlined),
+                              ),
+                              items: const [
+                                DropdownMenuItem(value: 'cashier', child: Text('Cajero')),
+                                DropdownMenuItem(value: 'admin', child: Text('Administrador')),
+                              ],
+                              onChanged: _onRoleChanged,
+                            ),
+                            const SizedBox(height: 16),
+                            // PIN
+                            TextFormField(
+                              controller: _pinCtrl,
+                              decoration: InputDecoration(
+                                labelText: _isEditing ? 'Nuevo PIN (opcional)' : 'PIN de Acceso (4 dígitos)',
+                                border: const OutlineInputBorder(),
+                                prefixIcon: const Icon(Icons.lock_outline),
+                                hintText: _isEditing ? 'Dejar vacío para no cambiar' : '****',
+                              ),
+                              obscureText: true,
+                              maxLength: 4,
+                              keyboardType: TextInputType.number,
+                              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                              validator: (v) {
+                                if (!_isEditing && (v == null || v.isEmpty)) return 'El PIN es requerido';
+                                if (v != null && v.isNotEmpty && v.length != 4) return 'El PIN debe tener 4 dígitos';
+                                return null;
+                              },
+                            ),
+                          ],
+                          const SizedBox(height: 8),
+                          // Permisos Header + Botones
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Wrap(
+                                      crossAxisAlignment: WrapCrossAlignment.center,
+                                      children: [
+                                        const Icon(Icons.key_rounded, size: 18, color: Colors.blueGrey),
+                                        const SizedBox(width: 6),
+                                        const Text(
+                                          'Permisos Específicos',
+                                          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey),
+                                        ),
+                                        if (isAdmin) ...[
+                                          const SizedBox(width: 8),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: Colors.blue.shade100,
+                                              borderRadius: BorderRadius.circular(12),
+                                            ),
+                                            child: const Text(
+                                              'Acceso Total',
+                                              style: TextStyle(fontSize: 11, color: Colors.blue, fontWeight: FontWeight.bold),
+                                            ),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                    const SizedBox(height: 3),
+                                    Text(
+                                      isAdmin
+                                          ? 'Los administradores poseen todos los permisos del sistema por defecto.'
+                                          : 'Seleccione las operaciones que este cajero podrá ejecutar sin requerir PIN de supervisor.',
+                                      style: const TextStyle(fontSize: 12, color: Colors.black54),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              if (!isAdmin)
+                                Wrap(
+                                  spacing: 6,
+                                  children: [
+                                    TextButton.icon(
+                                      onPressed: () {
+                                        setState(() {
+                                          _permissions.addAll(AppPermissions.all);
+                                        });
+                                      },
+                                      icon: const Icon(Icons.check_box_outlined, size: 18),
+                                      label: const Text('Marcar Todos', style: TextStyle(fontSize: 12)),
+                                      style: TextButton.styleFrom(
+                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                        minimumSize: Size.zero,
+                                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                      ),
+                                    ),
+                                    TextButton.icon(
+                                      onPressed: () {
+                                        setState(() {
+                                          _permissions.clear();
+                                        });
+                                      },
+                                      icon: const Icon(Icons.check_box_outline_blank, size: 18, color: Colors.redAccent),
+                                      label: const Text('Desmarcar Todos', style: TextStyle(fontSize: 12, color: Colors.redAccent)),
+                                      style: TextButton.styleFrom(
+                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                        minimumSize: Size.zero,
+                                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          // Doble listado (2 columnas en pantallas anchas, 1 en angostas)
+                          if (isWide)
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    children: leftCategories
+                                        .map((cat) => _buildPermissionCategoryCard(context, cat, isAdmin))
+                                        .toList(),
+                                  ),
+                                ),
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  child: Column(
+                                    children: rightCategories
+                                        .map((cat) => _buildPermissionCategoryCard(context, cat, isAdmin))
+                                        .toList(),
+                                  ),
+                                ),
+                              ],
+                            )
+                          else
+                            ...kCategorizedPermissions.map(
+                              (category) => _buildPermissionCategoryCard(context, category, isAdmin),
+                            ),
+                        ],
+                      ),
                     ),
                   ),
-                ],
-              ),
-            ),
-          ],
+                ),
+                // Footer buttons
+                const Divider(height: 1),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      SizedBox(
+                        width: 150,
+                        child: OutlinedButton(
+                          onPressed: () => Navigator.of(context).pop(),
+                          child: const FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text('Cancelar'),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      SizedBox(
+                        width: 200,
+                        child: FilledButton.icon(
+                          onPressed: () {
+                            final data = _submit();
+                            if (data != null) Navigator.of(context).pop(data);
+                          },
+                          icon: const Icon(Icons.save_rounded),
+                          label: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(_isEditing ? 'Guardar Cambios' : 'Crear Empleado'),
+                          ),
+                          style: FilledButton.styleFrom(backgroundColor: Colors.blue.shade800),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            );
+          },
         ),
       ),
     );
@@ -614,4 +755,3 @@ final List<Map<String, String>> kAllPermissions = List.unmodifiable(
     'icon': 'security',
   }),
 );
-

@@ -945,7 +945,8 @@ class CatalogProvider with ChangeNotifier {
     notifyListeners();
     try {
       final message = await repository.revertBulkPrice(historyId);
-      await loadProducts(page: _currentPage);
+      invalidateQuickAccessExtraCaches();
+      await loadProducts(page: _currentPage, search: _searchQuery);
       await fetchPriceHistory();
       return message;
     } catch (e) {
@@ -964,6 +965,7 @@ class CatalogProvider with ChangeNotifier {
     List<int>? productIds,
     int? categoryId,
     int? brandId,
+    int? supplierId,
   }) async {
     _isLoading = true;
     _errorMessage = null;
@@ -976,9 +978,11 @@ class CatalogProvider with ChangeNotifier {
         productIds: productIds,
         categoryId: categoryId,
         brandId: brandId,
+        supplierId: supplierId,
       );
+      invalidateQuickAccessExtraCaches();
       // Reload current page to reflect new prices
-      await loadProducts(page: _currentPage);
+      await loadProducts(page: _currentPage, search: _searchQuery);
       return result['message'] as String;
     } catch (e) {
       _errorMessage = e.toString().replaceAll('Exception: ', '');
@@ -996,6 +1000,7 @@ class CatalogProvider with ChangeNotifier {
     List<int>? productIds,
     int? categoryId,
     int? brandId,
+    int? supplierId,
   }) async {
     _isLoading = true;
     _errorMessage = null;
@@ -1008,6 +1013,7 @@ class CatalogProvider with ChangeNotifier {
         productIds: productIds,
         categoryId: categoryId,
         brandId: brandId,
+        supplierId: supplierId,
       );
       return result;
     } catch (e) {

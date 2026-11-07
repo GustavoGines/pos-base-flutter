@@ -1,6 +1,7 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
+import 'package:frontend_desktop/core/presentation/widgets/compact_date_range_picker_dialog.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import 'package:frontend_desktop/features/catalog/presentation/providers/catalog_provider.dart';
 import 'package:frontend_desktop/features/reports/presentation/providers/reports_provider.dart';
@@ -78,54 +79,12 @@ class _RubroProfitReportViewState extends State<RubroProfitReportView> {
 
   Future<void> _selectDateRange(BuildContext context) async {
     final provider = context.read<ReportsProvider>();
-    final picked = await showDateRangePicker(
+    final picked = await showCompactDateRangePicker(
       context: context,
       initialDateRange: DateTimeRange(start: provider.startDate, end: provider.endDate),
       firstDate: DateTime(2020),
       lastDate: DateTime.now().add(const Duration(days: 1)),
-      helpText: 'SELECCIONÁ EL RANGO DE FECHAS',
-      cancelText: 'CANCELAR',
-      confirmText: 'APLICAR',
-      saveText: 'APLICAR',
-      builder: (context, child) => Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 500, maxHeight: 600),
-          child: Theme(
-            data: ThemeData.light().copyWith(
-              colorScheme: ColorScheme.light(
-                primary: Colors.indigo.shade700,
-                onPrimary: Colors.white,
-                secondary: Colors.indigo.shade400,
-                onSecondary: Colors.white,
-                surface: Colors.white,
-                onSurface: Colors.blueGrey.shade900,
-                surfaceContainerHighest: Colors.indigo.shade50,
-              ),
-              textButtonTheme: TextButtonThemeData(
-                style: TextButton.styleFrom(
-                  foregroundColor: Colors.indigo.shade700,
-                  textStyle: const TextStyle(fontWeight: FontWeight.bold, letterSpacing: 0.5),
-                ),
-              ),
-              datePickerTheme: DatePickerThemeData(
-                backgroundColor: Colors.white,
-                headerBackgroundColor: Colors.indigo.shade700,
-                headerForegroundColor: Colors.white,
-                rangePickerBackgroundColor: Colors.white,
-                rangeSelectionBackgroundColor: Colors.indigo.shade50,
-                rangePickerHeaderBackgroundColor: Colors.indigo.shade700,
-                rangePickerHeaderForegroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              ),
-              dialogTheme: DialogThemeData(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                elevation: 8,
-              ),
-            ),
-            child: child!,
-          ),
-        ),
-      ),
+      helpText: 'Seleccionar Período por Rubro',
     );
     if (picked != null) {
       _lastLoadedStartDate = picked.start;
@@ -448,6 +407,24 @@ class _RubroProfitReportViewState extends State<RubroProfitReportView> {
                     ),
                   ),
                 ),
+
+                // Selector Fiscal / No Fiscal
+                Container(
+                  padding: const EdgeInsets.all(2.5),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(9),
+                    border: Border.all(color: Colors.grey.shade300),
+                  ),
+                  child: Wrap(
+                    spacing: 2,
+                    children: [
+                      _buildFiscalPill(provider, 'all', 'Todas', Icons.all_inclusive, Colors.blueGrey.shade800),
+                      _buildFiscalPill(provider, 'fiscal', 'Fiscales (AFIP)', Icons.verified_outlined, Colors.teal.shade700),
+                      _buildFiscalPill(provider, 'non_fiscal', 'No Fiscales', Icons.receipt_long_outlined, Colors.deepOrange.shade700),
+                    ],
+                  ),
+                ),
                 
                 IconButton(
                   onPressed: () => provider.fetchProfitByRubro(rubroFilter: _selectedRubroIds.isEmpty ? null : _selectedRubroIds),
@@ -488,6 +465,47 @@ class _RubroProfitReportViewState extends State<RubroProfitReportView> {
                   ),
                 ),
               ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFiscalPill(
+    ReportsProvider provider,
+    String value,
+    String label,
+    IconData icon,
+    Color activeColor,
+  ) {
+    final selected = provider.fiscalFilter == value;
+    return InkWell(
+      onTap: () => provider.setFiscalFilter(value),
+      borderRadius: BorderRadius.circular(7),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected ? activeColor : Colors.transparent,
+          borderRadius: BorderRadius.circular(7),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 14,
+              color: selected ? Colors.white : Colors.blueGrey.shade700,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: selected ? FontWeight.bold : FontWeight.w600,
+                color: selected ? Colors.white : Colors.blueGrey.shade700,
+              ),
             ),
           ],
         ),

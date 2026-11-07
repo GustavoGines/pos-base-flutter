@@ -19,10 +19,13 @@ class Product {
   final List<Map<String, dynamic>>? comboIngredients;
   final List<Map<String, dynamic>>? priceTiers;
   final int? vencimientoDias;
+  final String? expirationDate;
+  final int? expiryAlertDays;
   final double? minStock;
   final int salesCount;
   final String unitType;
   final double ivaRate;
+  final bool needsCatalogReview;
   final String? imageUrl;
   final Category? category;
   final List<Category>? categories;
@@ -47,14 +50,18 @@ class Product {
     this.priceTiers,
     this.salesCount = 0,
     this.vencimientoDias,
+    this.expirationDate,
+    this.expiryAlertDays,
     this.unitType = 'un',
     this.ivaRate = 21.0,
+    this.needsCatalogReview = false,
     this.imageUrl,
     this.category,
     this.categories,
     this.brand,
     this.supplier,
   });
+
   Product copyWith({
     int? id,
     String? name,
@@ -73,8 +80,11 @@ class Product {
     List<Map<String, dynamic>>? priceTiers,
     int? salesCount,
     int? vencimientoDias,
+    String? expirationDate,
+    int? expiryAlertDays,
     String? unitType,
     double? ivaRate,
+    bool? needsCatalogReview,
     String? imageUrl,
     bool clearImageUrl = false,
     Category? category,
@@ -103,8 +113,11 @@ class Product {
       priceTiers: priceTiers ?? this.priceTiers,
       salesCount: salesCount ?? this.salesCount,
       vencimientoDias: vencimientoDias ?? this.vencimientoDias,
+      expirationDate: expirationDate ?? this.expirationDate,
+      expiryAlertDays: expiryAlertDays ?? this.expiryAlertDays,
       unitType: unitType ?? this.unitType,
       ivaRate: ivaRate ?? this.ivaRate,
+      needsCatalogReview: needsCatalogReview ?? this.needsCatalogReview,
       imageUrl: clearImageUrl ? null : (imageUrl ?? this.imageUrl),
       category: clearCategory ? null : (category ?? this.category),
       categories: categories ?? this.categories,

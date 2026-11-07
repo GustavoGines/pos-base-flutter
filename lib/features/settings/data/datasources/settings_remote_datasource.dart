@@ -23,9 +23,14 @@ abstract class SettingsRemoteDataSource {
     required String cuit,
     required List<int> certBytes,
     required String certFilename,
-    required List<int> keyBytes,
-    required String keyFilename,
+    List<int>? keyBytes,
+    String? keyFilename,
     String? keyPassphrase,
+  });
+  Future<Map<String, dynamic>> generateAfipCsr({
+    required String cuit,
+    String? companyName,
+    bool forceNewKey = false,
   });
   Future<List<EcommerceIntegrationModel>> fetchEcommerceIntegrations();
   Future<EcommerceIntegrationModel> createEcommerceIntegration(Map<String, dynamic> data);
@@ -401,8 +406,8 @@ class SettingsRemoteDataSourceImpl implements SettingsRemoteDataSource {
     required String cuit,
     required List<int> certBytes,
     required String certFilename,
-    required List<int> keyBytes,
-    required String keyFilename,
+    List<int>? keyBytes,
+    String? keyFilename,
     String? keyPassphrase,
   }) async {
     try {
@@ -425,13 +430,15 @@ class SettingsRemoteDataSourceImpl implements SettingsRemoteDataSource {
         ),
       );
 
-      request.files.add(
-        http.MultipartFile.fromBytes(
-          'key_file',
-          keyBytes,
-          filename: keyFilename,
-        ),
-      );
+      if (keyBytes != null && keyBytes.isNotEmpty) {
+        request.files.add(
+          http.MultipartFile.fromBytes(
+            'key_file',
+            keyBytes,
+            filename: keyFilename ?? 'cert.key',
+          ),
+        );
+      }
 
       final streamedResponse = await client.send(request);
       final response = await http.Response.fromStream(streamedResponse);
@@ -458,6 +465,37 @@ class SettingsRemoteDataSourceImpl implements SettingsRemoteDataSource {
           errStr.contains('ClientException')) {
         throw Exception('Error de conexión: No se encontró el servidor. Verifica la URL configurada.');
       }
+      rethrow;
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> generateAfipCsr({
+    required String cuit,
+    String? companyName,
+    bool forceNewKey = false,
+  }) async {
+    try {
+      final response = await client.post(
+        Uri.parse('$baseUrl/settings/afip/generate-csr'),
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: json.encode({
+          'cuit': cuit,
+          if (companyName != null && companyName.trim().isNotEmpty)
+            'company_name': companyName.trim(),
+          'force_new_key': forceNewKey,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body) as Map<String, dynamic>;
+      } else {
+        throw Exception(_parseApiError(response.body, 'Error al generar solicitud CSR (Status: ${response.statusCode})'));
+      }
+    } catch (e) {
       rethrow;
     }
   }

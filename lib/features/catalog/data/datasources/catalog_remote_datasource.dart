@@ -61,6 +61,7 @@ abstract class CatalogRemoteDataSource {
     List<int>? productIds,
     int? categoryId,
     int? brandId,
+    int? supplierId,
   });
   Future<Map<String, dynamic>> bulkPricePreview({
     required double percentage,
@@ -69,6 +70,7 @@ abstract class CatalogRemoteDataSource {
     List<int>? productIds,
     int? categoryId,
     int? brandId,
+    int? supplierId,
   });
   Future<List<dynamic>> getBulkPriceHistory();
   Future<String> revertBulkPrice(int historyId);
@@ -537,6 +539,7 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
     List<int>? productIds,
     int? categoryId,
     int? brandId,
+    int? supplierId,
   }) async {
     try {
       final body = <String, dynamic>{
@@ -547,6 +550,7 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
       if (productIds != null && productIds.isNotEmpty) body['product_ids'] = productIds;
       if (categoryId != null) body['category_id'] = categoryId;
       if (brandId != null) body['brand_id'] = brandId;
+      if (supplierId != null) body['supplier_id'] = supplierId;
 
       final response = await client.put(
         Uri.parse('$baseUrl/catalog/products/bulk-price-update'),
@@ -572,6 +576,7 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
     List<int>? productIds,
     int? categoryId,
     int? brandId,
+    int? supplierId,
   }) async {
     try {
       final body = <String, dynamic>{
@@ -582,6 +587,7 @@ class CatalogRemoteDataSourceImpl implements CatalogRemoteDataSource {
       if (productIds != null && productIds.isNotEmpty) body['product_ids'] = productIds;
       if (categoryId != null) body['category_id'] = categoryId;
       if (brandId != null) body['brand_id'] = brandId;
+      if (supplierId != null) body['supplier_id'] = supplierId;
 
       final response = await client.post(
         Uri.parse('$baseUrl/catalog/products/bulk-price-preview'),

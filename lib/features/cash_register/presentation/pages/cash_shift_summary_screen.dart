@@ -253,6 +253,44 @@ class _CashShiftSummaryScreenState extends State<CashShiftSummaryScreen> {
                               _buildRow('Ventas en Efectivo', '\$${(closedShift.cashSales ?? 0).toCurrency()}'),
                               _buildRow('Ventas con Tarjeta', '\$${(closedShift.cardSales ?? 0).toCurrency()}'),
                               _buildRow('Ventas por Transf.', '\$${(closedShift.transferSales ?? 0).toCurrency()}'),
+                              if (closedShift.transferByAlias != null &&
+                                  closedShift.transferByAlias!.isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(left: 12, bottom: 4),
+                                  child: Column(
+                                    children: closedShift.transferByAlias!.entries
+                                        .map(
+                                          (e) => Padding(
+                                            padding: const EdgeInsets.symmetric(vertical: 1.5),
+                                            child: Row(
+                                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                              children: [
+                                                Expanded(
+                                                  child: Text(
+                                                    '↳ ${e.key}',
+                                                    style: TextStyle(
+                                                      fontSize: 12,
+                                                      color: Colors.teal.shade800,
+                                                      fontWeight: FontWeight.w600,
+                                                    ),
+                                                    overflow: TextOverflow.ellipsis,
+                                                  ),
+                                                ),
+                                                Text(
+                                                  '\$${e.value.toCurrency()}',
+                                                  style: TextStyle(
+                                                    fontSize: 12,
+                                                    color: Colors.teal.shade900,
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        )
+                                        .toList(),
+                                  ),
+                                ),
                               if ((closedShift.mpSales ?? 0) > 0)
                                 _buildRow('Ventas Mercado Pago', '\$${(closedShift.mpSales ?? 0).toCurrency()}'),
                               _buildRow('Total Recargos (Tarj/Billeteras)', '\$${(closedShift.totalSurcharge ?? 0).toCurrency()}'),

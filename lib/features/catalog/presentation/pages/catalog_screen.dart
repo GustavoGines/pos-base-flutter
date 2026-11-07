@@ -13,6 +13,7 @@ import '../../domain/entities/category.dart';
 import '../widgets/catalog_import_dialog.dart';
 import '../../domain/entities/brand.dart';
 import 'package:frontend_desktop/core/presentation/widgets/plan_upgrade_dialog.dart';
+import 'package:frontend_desktop/core/presentation/widgets/compact_date_range_picker_dialog.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import '../widgets/categories_manager_dialog.dart';
 import '../widgets/brands_manager_dialog.dart';
@@ -200,7 +201,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
           appBar: GlobalAppBar(currentRoute: '/catalog'),
           body: Column(
             children: [
-              // â”€â”€ Toolbar: Search + Actions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+              // ── Toolbar: Search + Actions ─────────────────────────
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
                 child: LayoutBuilder(
@@ -436,7 +437,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                   },
                 ),
               ),
-              // â”€â”€ Loading bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+              // ── Loading bar ──────────────────────────────────────
               if (provider.isLoading) const LinearProgressIndicator(),
               if (provider.errorMessage != null)
                 Container(
@@ -444,9 +445,9 @@ class _CatalogScreenState extends State<CatalogScreen> {
                   padding: const EdgeInsets.all(8),
                   child: Text(provider.errorMessage!, style: TextStyle(color: Colors.red.shade700)),
                 ),
-              // â”€â”€ Barra de acciones en lote (encima del checkbox "seleccionar todos") â”€â”€
+              // ── Barra de acciones en lote (encima del checkbox "seleccionar todos") ──
               if (_selectedProducts.isNotEmpty) _buildBulkActionsBar(provider),
-              // â”€â”€ Product Table â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+              // ── Product Table ───────────────────────────────────────────────
               Expanded(
                 child: provider.products.isEmpty && !provider.isLoading
                     ? Center(
@@ -475,7 +476,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                         },
                       ),
               ),
-              // â”€â”€ Pagination Controls â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+              // ── Pagination Controls ───────────────────────────────
               if (!provider.isLoading && provider.lastPage > 1)
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -807,7 +808,38 @@ class _CatalogScreenState extends State<CatalogScreen> {
                 ),
               ),
               cell(fId, Text(p.id.toString(), style: TextStyle(color: Colors.grey.shade500, fontSize: 12), overflow: TextOverflow.ellipsis)),
-              cell(fNombre, Text(p.name, overflow: TextOverflow.ellipsis, maxLines: 1)),
+              cell(
+                fNombre,
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(p.name, overflow: TextOverflow.ellipsis, maxLines: 1),
+                    ),
+                    if (p.needsCatalogReview) ...[
+                      const SizedBox(width: 6),
+                      Tooltip(
+                        message: 'Producto creado al vuelo desde el POS. Abrilo y guardalo para completar su ficha.',
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                          decoration: BoxDecoration(
+                            color: Colors.amber.shade100,
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: Colors.amber.shade400),
+                          ),
+                          child: Text(
+                            '⚡ Revisar',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.amber.shade900,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
               cell(fBarcode, Text(p.barcode ?? '—', style: TextStyle(fontSize: 12, color: Colors.grey.shade700), overflow: TextOverflow.ellipsis)),
               cell(fInterno, Text(p.internalCode, style: TextStyle(fontFamily: 'monospace', fontSize: 12, color: Colors.grey.shade600), overflow: TextOverflow.ellipsis)),
               cell(fCat, Text(p.category?.name ?? '—', overflow: TextOverflow.ellipsis)),
@@ -829,27 +861,55 @@ class _CatalogScreenState extends State<CatalogScreen> {
               cell(fStock, Text(p.isSoldByWeight ? '${p.stock.toCurrency()} kg' : p.stock.toStringAsFixed(0), overflow: TextOverflow.ellipsis)),
               cell(fBal, Align(alignment: Alignment.centerLeft, child: Icon(p.isSoldByWeight ? Icons.scale : Icons.inventory_2, size: 18, color: p.isSoldByWeight ? Colors.deepPurple : Colors.blueGrey))),
               cell(fActivo, Align(alignment: Alignment.centerLeft, child: Icon(p.active ? Icons.check_circle : Icons.cancel, color: p.active ? Colors.green : Colors.red, size: 20))),
-              // Columna VTO: muestra los días o un dash si no aplica
+              // Columna VTO: muestra la fecha de vencimiento del lote o los días de vida útil
               cell(
                 fVto,
-                p.vencimientoDias != null
-                    ? Tooltip(
-                        message: 'Vence ${p.vencimientoDias} días después del envasado',
-                        child: Text(
-                          '${p.vencimientoDias} d',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: p.vencimientoDias! <= 30
-                                ? Colors.red.shade700
-                                : p.vencimientoDias! <= 90
-                                    ? Colors.orange.shade700
-                                    : Colors.green.shade700,
+                p.expirationDate != null && p.expirationDate!.isNotEmpty
+                    ? Builder(builder: (context) {
+                        final expDt = DateTime.tryParse(p.expirationDate!);
+                        final daysLeft = expDt != null
+                            ? expDt.difference(DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day)).inDays
+                            : 999;
+                        final label = expDt != null
+                            ? '${expDt.day.toString().padLeft(2, '0')}/${expDt.month.toString().padLeft(2, '0')}/${(expDt.year % 100).toString().padLeft(2, '0')}'
+                            : p.expirationDate!;
+                        return Tooltip(
+                          message: daysLeft <= 0
+                              ? '¡Vencido! ($label)'
+                              : 'Vence el $label (en $daysLeft días)',
+                          child: Text(
+                            label,
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.bold,
+                              color: daysLeft <= 3
+                                  ? Colors.red.shade700
+                                  : daysLeft <= 15
+                                      ? Colors.orange.shade700
+                                      : Colors.green.shade700,
+                            ),
+                            overflow: TextOverflow.ellipsis,
                           ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      )
-                    : Text('—', style: TextStyle(color: Colors.grey.shade400, fontSize: 13)),
+                        );
+                      })
+                    : (p.vencimientoDias != null
+                        ? Tooltip(
+                            message: 'Vence ${p.vencimientoDias} días después del envasado',
+                            child: Text(
+                              '${p.vencimientoDias} d',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: p.vencimientoDias! <= 30
+                                    ? Colors.red.shade700
+                                    : p.vencimientoDias! <= 90
+                                        ? Colors.orange.shade700
+                                        : Colors.green.shade700,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          )
+                        : Text('—', style: TextStyle(color: Colors.grey.shade400, fontSize: 13))),
               ),
               cell(fAcciones, Wrap(
                 spacing: 4,
@@ -1333,9 +1393,9 @@ class _CatalogScreenState extends State<CatalogScreen> {
   }
 }
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─────────────────────────────────────────────────────────────────────────────
 // FORMULARIO CREAR / EDITAR PRODUCTO
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─────────────────────────────────────────────────────────────────────────────
 class ProductFormDialog extends StatefulWidget {
   final CatalogProvider provider;
   final Product? product;
@@ -1357,6 +1417,9 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
   late TextEditingController _stockCtrl;
   late TextEditingController _minStockCtrl;
   bool _isAutoCalculating = false;
+  String? _priceAnchor; // 'cost' | 'selling' | null (detecta automáticamente qué precio ingresó primero el usuario)
+  bool _costIsAuto = false;
+  bool _priceIsAuto = false;
   bool _isSoldByWeight = false;
   bool _active = true;
   bool _isCombo = false;
@@ -1367,6 +1430,8 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
   int? _brandId;
   int? _supplierId;
   late TextEditingController _expiryCtrl;
+  late TextEditingController _expiryAlertDaysCtrl;
+  DateTime? _expirationDate;
 
   // Foto del producto
   String? _selectedImagePath;
@@ -1386,15 +1451,17 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     _nameCtrl = TextEditingController(text: p?.name ?? '');
     _barcodeCtrl = TextEditingController(text: p?.barcode ?? '');
     _internalCodeCtrl = TextEditingController(text: p?.internalCode ?? '');
-    _costCtrl = TextEditingController(text: p != null ? p.costPrice.toInputFormat() : '');
+    _costCtrl = TextEditingController(
+      text: (p != null && p.costPrice > 0) ? p.costPrice.toInputFormat() : '',
+    );
     _priceCtrl = TextEditingController(text: p != null ? p.sellingPrice.toInputFormat() : '');
     _marginCtrl = TextEditingController();
     _stockCtrl = TextEditingController(text: p != null ? p.stock.toStringAsFixed(p.isSoldByWeight ? 3 : 0) : '0');
     
     _loadSavedMargin();
     
-    _costCtrl.addListener(_onCostOrMarginChanged);
-    _marginCtrl.addListener(_onCostOrMarginChanged);
+    _costCtrl.addListener(_onCostChanged);
+    _marginCtrl.addListener(_onMarginChanged);
     _priceCtrl.addListener(_onPriceChanged);
     _minStockCtrl = TextEditingController(text: (p?.minStock != null) ? p!.minStock!.toStringAsFixed(0) : '');
     _isSoldByWeight = p?.isSoldByWeight ?? false;
@@ -1422,6 +1489,12 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     _expiryCtrl = TextEditingController(
       text: p?.vencimientoDias != null ? p!.vencimientoDias.toString() : '',
     );
+    _expiryAlertDaysCtrl = TextEditingController(
+      text: (p?.expiryAlertDays ?? 15).toString(),
+    );
+    if (p?.expirationDate != null && p!.expirationDate!.isNotEmpty) {
+      _expirationDate = DateTime.tryParse(p.expirationDate!);
+    }
     _initPusher();
   }
 
@@ -1485,8 +1558,8 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
   @override
   void dispose() {
     _pusher?.disconnect();
-    _costCtrl.removeListener(_onCostOrMarginChanged);
-    _marginCtrl.removeListener(_onCostOrMarginChanged);
+    _costCtrl.removeListener(_onCostChanged);
+    _marginCtrl.removeListener(_onMarginChanged);
     _priceCtrl.removeListener(_onPriceChanged);
     _nameCtrl.dispose();
     _barcodeCtrl.dispose();
@@ -1497,49 +1570,124 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     _stockCtrl.dispose();
     _minStockCtrl.dispose();
     _expiryCtrl.dispose();
+    _expiryAlertDaysCtrl.dispose();
     super.dispose();
   }
 
   Future<void> _loadSavedMargin() async {
     if (_isEditing) {
-       final cost = double.tryParse(_costCtrl.text.replaceAll(',', '.')) ?? 0.0;
-       final price = double.tryParse(_priceCtrl.text.replaceAll(',', '.')) ?? 0.0;
-       if (cost > 0) {
-         final margin = ((price - cost) / cost) * 100;
-         _isAutoCalculating = true;
-         _marginCtrl.text = margin.toStringAsFixed(2);
-         _isAutoCalculating = false;
-       }
-    } else {
-       final prefs = await SharedPreferences.getInstance();
-       final savedMargin = prefs.getDouble('last_profit_margin') ?? 0.0;
-       if (savedMargin > 0) {
-         _isAutoCalculating = true;
-         _marginCtrl.text = savedMargin.toStringAsFixed(2);
-         _isAutoCalculating = false;
-       }
+      final cost = double.tryParse(_costCtrl.text.replaceAll(',', '.')) ?? 0.0;
+      final price = double.tryParse(_priceCtrl.text.replaceAll(',', '.')) ?? 0.0;
+      if (cost > 0) {
+        _priceAnchor = 'cost';
+        final margin = ((price - cost) / cost) * 100;
+        _isAutoCalculating = true;
+        _marginCtrl.text = margin.toStringAsFixed(2);
+        _isAutoCalculating = false;
+      } else if (price > 0) {
+        _priceAnchor = 'selling';
+      }
     }
   }
 
-  void _onCostOrMarginChanged() {
+  void _onCostChanged() {
     if (_isAutoCalculating) return;
-    final costStr = _costCtrl.text.replaceAll(',', '.');
-    final marginStr = _marginCtrl.text.replaceAll(',', '.');
-    
+    final costStr = _costCtrl.text.replaceAll(',', '.').trim();
+    final marginStr = _marginCtrl.text.replaceAll(',', '.').trim();
+    final priceStr = _priceCtrl.text.replaceAll(',', '.').trim();
+
+    _costIsAuto = false;
+
     if (costStr.isEmpty) {
-       _isAutoCalculating = true;
-       _priceCtrl.text = '';
-       _isAutoCalculating = false;
-       return;
+      if (_priceIsAuto) {
+        _isAutoCalculating = true;
+        _priceCtrl.clear();
+        _priceIsAuto = false;
+        _isAutoCalculating = false;
+      }
+      if (_priceAnchor == 'cost') {
+        _priceAnchor = priceStr.isNotEmpty ? 'selling' : null;
+      }
+      return;
     }
 
     final cost = double.tryParse(costStr) ?? 0.0;
-    final margin = double.tryParse(marginStr) ?? 0.0;
-    
-    final newPrice = cost + (cost * (margin / 100));
-    _isAutoCalculating = true;
-    _priceCtrl.text = newPrice.toStringAsFixed(2);
-    _isAutoCalculating = false;
+    if (cost <= 0) return;
+
+    // Si Venta está vacía o fue autocalculada -> el ancla es Costo y calcula Venta si hay %
+    if (priceStr.isEmpty || _priceIsAuto) {
+      _priceAnchor = 'cost';
+      if (marginStr.isNotEmpty) {
+        final margin = double.tryParse(marginStr) ?? 0.0;
+        final newPrice = cost * (1 + (margin / 100));
+        _isAutoCalculating = true;
+        _priceCtrl.text = newPrice.toStringAsFixed(2);
+        _priceIsAuto = true;
+        _isAutoCalculating = false;
+      }
+      return;
+    }
+
+    // Si Venta fue escrita manualmente antes y ahora el usuario escribe Costo manualmente -> calcula % Utilidad
+    final price = double.tryParse(priceStr) ?? 0.0;
+    if (price > 0) {
+      final margin = ((price - cost) / cost) * 100;
+      _isAutoCalculating = true;
+      _marginCtrl.text = margin.toStringAsFixed(2);
+      _isAutoCalculating = false;
+    }
+    _priceAnchor = 'cost';
+  }
+
+  void _onMarginChanged() {
+    if (_isAutoCalculating) return;
+    final costStr = _costCtrl.text.replaceAll(',', '.').trim();
+    final marginStr = _marginCtrl.text.replaceAll(',', '.').trim();
+    final priceStr = _priceCtrl.text.replaceAll(',', '.').trim();
+
+    if (marginStr.isEmpty) {
+      if (_costIsAuto) {
+        _isAutoCalculating = true;
+        _costCtrl.clear();
+        _costIsAuto = false;
+        _isAutoCalculating = false;
+      }
+      if (_priceIsAuto) {
+        _isAutoCalculating = true;
+        _priceCtrl.clear();
+        _priceIsAuto = false;
+        _isAutoCalculating = false;
+      }
+      return;
+    }
+
+    final margin = double.tryParse(marginStr);
+    if (margin == null) return;
+
+    // Si el usuario escribió primero Precio Venta (o Costo está vacío / fue autocalculado) -> calcula Costo desde Venta + %
+    if ((_priceAnchor == 'selling' || costStr.isEmpty || _costIsAuto) &&
+        priceStr.isNotEmpty &&
+        !_priceIsAuto) {
+      final price = double.tryParse(priceStr) ?? 0.0;
+      if (price > 0 && margin > -100) {
+        final newCost = price / (1 + (margin / 100));
+        _isAutoCalculating = true;
+        _costCtrl.text = newCost.toStringAsFixed(2);
+        _costIsAuto = true;
+        _isAutoCalculating = false;
+      }
+      return;
+    }
+
+    // Si el usuario escribió primero Precio Costo -> calcula Precio Venta desde Costo + %
+    final cost = double.tryParse(costStr) ?? 0.0;
+    if (cost > 0) {
+      final newPrice = cost * (1 + (margin / 100));
+      _isAutoCalculating = true;
+      _priceCtrl.text = newPrice.toStringAsFixed(2);
+      _priceIsAuto = true;
+      _isAutoCalculating = false;
+    }
   }
 
   void _onPriceChanged() {
@@ -1548,25 +1696,53 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
       return;
     }
     if (_isAutoCalculating) return;
-    final costStr = _costCtrl.text.replaceAll(',', '.');
-    final priceStr = _priceCtrl.text.replaceAll(',', '.');
-    
-    if (costStr.isEmpty || priceStr.isEmpty) {
-       _isAutoCalculating = true;
-       _marginCtrl.text = '';
-       _isAutoCalculating = false;
-       return;
+    final costStr = _costCtrl.text.replaceAll(',', '.').trim();
+    final marginStr = _marginCtrl.text.replaceAll(',', '.').trim();
+    final priceStr = _priceCtrl.text.replaceAll(',', '.').trim();
+
+    _priceIsAuto = false;
+
+    if (priceStr.isEmpty) {
+      if (_costIsAuto) {
+        _isAutoCalculating = true;
+        _costCtrl.clear();
+        _costIsAuto = false;
+        _isAutoCalculating = false;
+      }
+      if (_priceAnchor == 'selling') {
+        _priceAnchor = costStr.isNotEmpty ? 'cost' : null;
+      }
+      return;
     }
 
-    final cost = double.tryParse(costStr) ?? 0.0;
     final price = double.tryParse(priceStr) ?? 0.0;
-    
+    if (price <= 0) return;
+
+    // Si Costo está vacío o fue autocalculado -> el ancla es Venta y calcula Costo si hay %
+    if (costStr.isEmpty || _costIsAuto) {
+      _priceAnchor = 'selling';
+      if (marginStr.isNotEmpty) {
+        final margin = double.tryParse(marginStr) ?? 0.0;
+        if (margin > -100) {
+          final newCost = price / (1 + (margin / 100));
+          _isAutoCalculating = true;
+          _costCtrl.text = newCost.toStringAsFixed(2);
+          _costIsAuto = true;
+          _isAutoCalculating = false;
+        }
+      }
+      return;
+    }
+
+    // Si Costo fue ingresado manualmente antes y ahora el usuario escribe Venta manualmente -> calcula % Utilidad
+    final cost = double.tryParse(costStr) ?? 0.0;
     if (cost > 0) {
       final margin = ((price - cost) / cost) * 100;
       _isAutoCalculating = true;
       _marginCtrl.text = margin.toStringAsFixed(2);
       _isAutoCalculating = false;
     }
+    _priceAnchor = 'selling';
   }
 
   Future<void> _pickProductImage() async {
@@ -1700,12 +1876,19 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
       if (_isEditing || _priceTiers.isNotEmpty) 'price_tiers': _priceTiers,
       'unit_type': _unitType,
       'active': _active,
+      'needs_catalog_review': false,
       'category_id': _categoryId,
       'brand_id': _brandId,
       'supplier_id': _supplierId,
       'vencimiento_dias': _expiryCtrl.text.trim().isNotEmpty
           ? int.tryParse(_expiryCtrl.text.trim())
           : null,
+      'expiration_date': _expirationDate != null
+          ? '${_expirationDate!.year.toString().padLeft(4, '0')}-${_expirationDate!.month.toString().padLeft(2, '0')}-${_expirationDate!.day.toString().padLeft(2, '0')}'
+          : null,
+      'expiry_alert_days': _expiryAlertDaysCtrl.text.trim().isNotEmpty
+          ? int.tryParse(_expiryAlertDaysCtrl.text.trim())
+          : 15,
     };
 
     bool ok = false;
@@ -2507,14 +2690,27 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                       if (!_isCombo) ...[
                         TextFormField(
                           controller: _costCtrl,
-                          decoration: const InputDecoration(labelText: 'Precio Costo', prefixText: '\$ '),
+                          decoration: const InputDecoration(
+                            labelText: 'Precio Costo (Opc.)',
+                            prefixText: '\$ ',
+                            helperText: 'Opcional (\$0.00) o calculado desde Venta + %',
+                          ),
                           keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                          validator: (v) => (v == null || double.tryParse(v.replaceAll(',', '.')) == null) ? 'Ingrese un monto válido' : null,
+                          validator: (v) {
+                            if (v == null || v.trim().isEmpty) return null;
+                            final parsed = double.tryParse(v.replaceAll(',', '.'));
+                            if (parsed == null || parsed < 0) return 'Ingrese un monto válido';
+                            return null;
+                          },
                         ),
                         const SizedBox(height: 12),
                         TextFormField(
                           controller: _marginCtrl,
-                          decoration: const InputDecoration(labelText: 'Utilidad', suffixText: '%', prefixIcon: Icon(Icons.percent, size: 16)),
+                          decoration: const InputDecoration(
+                            labelText: 'Utilidad (%)',
+                            suffixText: '%',
+                            prefixIcon: Icon(Icons.percent, size: 16),
+                          ),
                           keyboardType: const TextInputType.numberWithOptions(decimal: true),
                         ),
                         const SizedBox(height: 12),
@@ -2526,10 +2722,10 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                         validator: (v) {
                           if (v == null || double.tryParse(v.replaceAll(',', '.')) == null) return 'Ingrese un precio válido';
                           if (!_isCombo) {
-                            final costStr = _costCtrl.text.replaceAll(',', '.');
-                            final cost = double.tryParse(costStr) ?? 0;
+                            final costStr = _costCtrl.text.replaceAll(',', '.').trim();
+                            final cost = costStr.isEmpty ? 0.0 : (double.tryParse(costStr) ?? 0.0);
                             final price = double.parse(v.replaceAll(',', '.'));
-                            if (price < cost) return 'El precio de venta debe ser mayor o igual al costo';
+                            if (cost > 0 && price < cost) return 'El precio de venta debe ser mayor o igual al costo';
                           }
                           return null;
                         },
@@ -2538,22 +2734,36 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                   )
                 else
                   Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Precio Costo — oculto en Combos (el costo se deriva de sus componentes)
+                      // Precio Costo — opcional y oculto en Combos (el costo se deriva de sus componentes)
                       if (!_isCombo) ...[
                         Expanded(
                           child: TextFormField(
                             controller: _costCtrl,
-                            decoration: const InputDecoration(labelText: 'Precio Costo', prefixText: '\$ '),
+                            decoration: const InputDecoration(
+                              labelText: 'Precio Costo (Opc.)',
+                              prefixText: '\$ ',
+                              hintText: '0.00',
+                            ),
                             keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                            validator: (v) => (v == null || double.tryParse(v.replaceAll(',', '.')) == null) ? 'Ingrese un monto válido' : null,
+                            validator: (v) {
+                              if (v == null || v.trim().isEmpty) return null;
+                              final parsed = double.tryParse(v.replaceAll(',', '.'));
+                              if (parsed == null || parsed < 0) return 'Monto inválido';
+                              return null;
+                            },
                           ),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
                           child: TextFormField(
                             controller: _marginCtrl,
-                            decoration: const InputDecoration(labelText: 'Utilidad', suffixText: '%', prefixIcon: Icon(Icons.percent, size: 16)),
+                            decoration: const InputDecoration(
+                              labelText: 'Utilidad (%)',
+                              suffixText: '%',
+                              prefixIcon: Icon(Icons.percent, size: 16),
+                            ),
                             keyboardType: const TextInputType.numberWithOptions(decimal: true),
                           ),
                         ),
@@ -2566,12 +2776,12 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                           keyboardType: const TextInputType.numberWithOptions(decimal: true),
                           validator: (v) {
                             if (v == null || double.tryParse(v.replaceAll(',', '.')) == null) return 'Ingrese un precio válido';
-                            // Solo validar costo vs precio si no es un combo
+                            // Solo validar costo vs precio si no es un combo y cost > 0
                             if (!_isCombo) {
-                              final costStr = _costCtrl.text.replaceAll(',', '.');
-                              final cost = double.tryParse(costStr) ?? 0;
+                              final costStr = _costCtrl.text.replaceAll(',', '.').trim();
+                              final cost = costStr.isEmpty ? 0.0 : (double.tryParse(costStr) ?? 0.0);
                               final price = double.parse(v.replaceAll(',', '.'));
-                              if (price < cost) return 'El precio de venta debe ser mayor o igual al costo';
+                              if (cost > 0 && price < cost) return 'El precio de venta debe ser mayor o igual al costo';
                             }
                             return null;
                           },
@@ -2940,24 +3150,127 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                TextFormField(
-                  controller: _expiryCtrl,
-                  decoration: InputDecoration(
-                    labelText: 'Días de Vencimiento (opcional)',
-                    prefixIcon: const Icon(Icons.hourglass_bottom_outlined),
-                    helperText: 'Ej: 90 → VTO = hoy + 90 días. Dejar vacío si no vence.',
-                    suffixText: 'días',
-                    border: const OutlineInputBorder(),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.shade50.withValues(alpha: 0.5),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.orange.shade200),
                   ),
-                  keyboardType: TextInputType.number,
-                  validator: (v) {
-                    if (v == null || v.trim().isEmpty) return null;
-                    final n = int.tryParse(v.trim());
-                    if (n == null || n < 1 || n > 3650) {
-                      return 'Ingresá un número entre 1 y 3650';
-                    }
-                    return null;
-                  },
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.event_available_outlined, size: 18, color: Colors.orange.shade800),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              'Control de Vencimiento y Alertas en Cascada (Opcional)',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12.5,
+                                color: Colors.orange.shade900,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            flex: 4,
+                            child: InkWell(
+                              onTap: () async {
+                                final picked = await showCompactDatePicker(
+                                  context: context,
+                                  initialDate: _expirationDate ?? DateTime.now().add(const Duration(days: 30)),
+                                  firstDate: DateTime(2020),
+                                  lastDate: DateTime(2100),
+                                  helpText: 'Fecha de Vencimiento del Lote',
+                                );
+                                if (!mounted) return;
+                                if (picked != null) {
+                                  setState(() => _expirationDate = picked);
+                                }
+                              },
+                              child: InputDecorator(
+                                decoration: InputDecoration(
+                                  labelText: 'Fecha de Vencimiento (Lote)',
+                                  prefixIcon: const Icon(Icons.calendar_today_outlined, size: 18),
+                                  border: const OutlineInputBorder(),
+                                  isDense: true,
+                                  suffixIcon: _expirationDate != null
+                                      ? IconButton(
+                                          tooltip: 'Quitar fecha de vencimiento',
+                                          icon: const Icon(Icons.clear, size: 16),
+                                          onPressed: () => setState(() => _expirationDate = null),
+                                        )
+                                      : null,
+                                ),
+                                child: Text(
+                                  _expirationDate != null
+                                      ? '${_expirationDate!.day.toString().padLeft(2, '0')}/${_expirationDate!.month.toString().padLeft(2, '0')}/${_expirationDate!.year}'
+                                      : 'Sin fecha fija',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: _expirationDate != null ? FontWeight.bold : FontWeight.normal,
+                                    color: _expirationDate != null ? Colors.black87 : Colors.grey.shade600,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            flex: 3,
+                            child: TextFormField(
+                              controller: _expiryAlertDaysCtrl,
+                              decoration: const InputDecoration(
+                                labelText: 'Pre-Alerta (días antes)',
+                                suffixText: 'días',
+                                border: OutlineInputBorder(),
+                                isDense: true,
+                                helperText: 'Cascada: Pre -> 7d -> 3d -> Vto',
+                              ),
+                              keyboardType: TextInputType.number,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      TextFormField(
+                        controller: _expiryCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'Vida útil desde ingreso / envasado (opcional)',
+                          prefixIcon: Icon(Icons.hourglass_bottom_outlined, size: 18),
+                          helperText: 'Ej: 90 → Calcula VTO = hoy + 90 días al ingresar mercadería o imprimir etiquetas.',
+                          suffixText: 'días',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                        keyboardType: TextInputType.number,
+                        onChanged: (v) {
+                          final n = int.tryParse(v.trim());
+                          if (n != null && n > 0 && n <= 3650) {
+                            setState(() {
+                              _expirationDate = DateTime.now().add(Duration(days: n));
+                            });
+                          }
+                        },
+                        validator: (v) {
+                          if (v == null || v.trim().isEmpty) return null;
+                          final n = int.tryParse(v.trim());
+                          if (n == null || n < 1 || n > 3650) {
+                            return 'Ingresá un número entre 1 y 3650';
+                          }
+                          return null;
+                        },
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -3236,9 +3549,9 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
   }
 }
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─────────────────────────────────────────────────────────────────────────────
 // PICKER DE INGREDIENTES PARA COMBO — busca en el backend, no en memoria local
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─────────────────────────────────────────────────────────────────────────────
 class _ComboIngredientPickerDialog extends StatefulWidget {
   final CatalogProvider provider;
   final int? excludeProductId;       // El producto que se está editando (para excluirlo)
@@ -3394,9 +3707,9 @@ class _ComboIngredientPickerDialogState extends State<_ComboIngredientPickerDial
   }
 }
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─────────────────────────────────────────────────────────────────────────────
 // MODAL DE AUMENTO MASIVO DE PRECIOS
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─────────────────────────────────────────────────────────────────────────────
 class BulkPriceUpdateDialog extends StatefulWidget {
 
   final CatalogProvider provider;
@@ -3412,8 +3725,24 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
   final _percentCtrl = TextEditingController();
   int? _selectedCategoryId;
   int? _selectedBrandId;
+  int? _selectedSupplierId;
   String _roundingRule = 'none';
   String _targetField = 'selling_price';
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final canSeeSupplier = context.read<SettingsProvider>().features.suppliers;
+      if (canSeeSupplier) {
+        final supplierProv = context.read<SupplierProvider>();
+        if (supplierProv.suppliers.isEmpty && !supplierProv.isLoading) {
+          supplierProv.fetchSuppliers();
+        }
+      }
+    });
+  }
 
   @override
   void dispose() {
@@ -3428,6 +3757,8 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
       return;
     }
 
+    final canSeeSupplier = context.read<SettingsProvider>().features.suppliers;
+
     // 1. Obtener la previsualización del backend
     final previewData = await widget.provider.bulkPricePreview(
       percentage: pct,
@@ -3436,6 +3767,7 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
       productIds: widget.targetProductIds,
       categoryId: _selectedCategoryId,
       brandId: _selectedBrandId,
+      supplierId: canSeeSupplier ? _selectedSupplierId : null,
     );
 
     if (previewData == null) {
@@ -3453,7 +3785,40 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
 
     if (!mounted) return;
 
-    // 2. Mostrar diálogo de Confirmación con Previsualización
+    // Armar resumen visual de los filtros activos para el diálogo de confirmación
+    final activeFilterLabels = <String>[];
+    if (widget.targetProductIds != null && widget.targetProductIds!.isNotEmpty) {
+      activeFilterLabels.add('Selección manual (${widget.targetProductIds!.length} prod.)');
+    } else {
+      if (_selectedCategoryId != null) {
+        final catName = widget.provider.categories
+            .where((c) => c.id == _selectedCategoryId)
+            .map((c) => c.name)
+            .firstOrNull;
+        if (catName != null) activeFilterLabels.add('Categoría: $catName');
+      }
+      if (_selectedBrandId != null) {
+        final brName = widget.provider.brands
+            .where((b) => b.id == _selectedBrandId)
+            .map((b) => b.name)
+            .firstOrNull;
+        if (brName != null) activeFilterLabels.add('Marca: $brName');
+      }
+      if (canSeeSupplier && _selectedSupplierId != null) {
+        final supName = context
+            .read<SupplierProvider>()
+            .suppliers
+            .where((s) => s.id == _selectedSupplierId)
+            .map((s) => s.name)
+            .firstOrNull;
+        if (supName != null) activeFilterLabels.add('Proveedor: $supName');
+      }
+    }
+    final filterSummaryText = activeFilterLabels.isEmpty
+        ? 'Todo el catálogo'
+        : activeFilterLabels.join(' • ');
+
+    // 2. Mostrar diálogo de Confirmación con Previsualización (sin ListView dentro de IntrinsicWidth)
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -3470,8 +3835,8 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
             ),
           ],
         ),
-        content: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 450),
+        content: SizedBox(
+          width: 460,
           child: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -3498,42 +3863,88 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
                     ],
                   ),
                 ),
-                const SizedBox(height: 16),
-                const Text('Ejemplos de cómo quedarán:', style: TextStyle(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 8),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.blueGrey.shade50,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: Colors.blueGrey.shade200),
+                  ),
+                  child: Text(
+                    'Alcance: $filterSummaryText',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.blueGrey.shade800,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  _targetField == 'cost_price'
+                      ? 'Ejemplos de cómo quedará el Costo:'
+                      : 'Ejemplos de cómo quedará el Precio de Venta:',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
                 const SizedBox(height: 8),
                 Container(
                   decoration: BoxDecoration(
                     border: Border.all(color: Colors.grey.shade300),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: ListView.separated(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: examples.length,
-                    separatorBuilder: (_, __) => Divider(height: 1, color: Colors.grey.shade300),
-                    itemBuilder: (_, i) {
-                      final ex = examples[i];
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              flex: 2,
-                              child: Text(ex['name'], overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12)),
-                            ),
-                            Expanded(
-                              flex: 1,
-                              child: Text('\$${(num.tryParse(ex['old_price'].toString()) ?? 0).toStringAsFixed(2)}', style: const TextStyle(fontSize: 12, decoration: TextDecoration.lineThrough, color: Colors.grey)),
-                            ),
-                            const Icon(Icons.arrow_forward, size: 14, color: Colors.grey),
-                            Expanded(
-                              flex: 1,
-                              child: Text(' \$${(num.tryParse(ex['new_price'].toString()) ?? 0).toStringAsFixed(2)}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.green)),
-                            ),
-                          ],
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      for (int i = 0; i < examples.length; i++) ...[
+                        if (i > 0) Divider(height: 1, color: Colors.grey.shade300),
+                        Builder(
+                          builder: (_) {
+                            final ex = examples[i];
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    flex: 2,
+                                    child: Text(
+                                      ex['name']?.toString() ?? '',
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(fontSize: 12),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    flex: 1,
+                                    child: Text(
+                                      '\$${(num.tryParse(ex['old_price'].toString()) ?? 0).toStringAsFixed(2)}',
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        decoration: TextDecoration.lineThrough,
+                                        color: Colors.grey,
+                                      ),
+                                    ),
+                                  ),
+                                  const Icon(Icons.arrow_forward, size: 14, color: Colors.grey),
+                                  Expanded(
+                                    flex: 1,
+                                    child: Text(
+                                      ' \$${(num.tryParse(ex['new_price'].toString()) ?? 0).toStringAsFixed(2)}',
+                                      style: const TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.green,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
                         ),
-                      );
-                    },
+                      ],
+                    ],
                   ),
                 ),
                 if (examples.any((ex) => (num.tryParse(ex['old_price'].toString()) ?? 0) == 0)) ...[
@@ -3574,13 +3985,9 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
       ),
     );
 
-    if (confirmed != true) return;
+    if (confirmed != true || !mounted) return;
 
-    if (mounted) {
-      Navigator.of(context).pop();
-    }
-
-    // 3. Ejecutar actualización real
+    // 3. Ejecutar actualización real manteniendo el diálogo montado mientras procesa
     final message = await widget.provider.bulkPriceUpdate(
       percentage: pct,
       roundingRule: _roundingRule,
@@ -3588,14 +3995,16 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
       productIds: widget.targetProductIds,
       categoryId: _selectedCategoryId,
       brandId: _selectedBrandId,
+      supplierId: canSeeSupplier ? _selectedSupplierId : null,
     );
 
-    if (context.mounted) {
-      if (message != null) {
-        SnackBarService.success(context, '¡Precios actualizados! $message');
-      } else {
-        SnackBarService.error(context, widget.provider.errorMessage ?? 'Error al actualizar precios.');
-      }
+    if (!mounted) return;
+
+    if (message != null) {
+      SnackBarService.success(context, '¡Precios actualizados! $message');
+      Navigator.of(context).pop();
+    } else {
+      SnackBarService.error(context, widget.provider.errorMessage ?? 'Error al actualizar precios.');
     }
   }
 
@@ -3603,6 +4012,7 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
   Widget build(BuildContext context) {
     final categories = widget.provider.categories;
     final brands = widget.provider.brands;
+    final canSeeSupplier = context.watch<SettingsProvider>().features.suppliers;
     return AlertDialog(
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       titlePadding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
@@ -3617,8 +4027,8 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
           ),
         ],
       ),
-      content: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 400),
+      content: SizedBox(
+        width: 440,
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -3702,8 +4112,8 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
                     border: OutlineInputBorder(),
                   ),
                   items: [
-                    const DropdownMenuItem<int?>(value: null, child: Text('ðŸ“¦ Todas las categorías', overflow: TextOverflow.ellipsis)),
-                    ...categories.map((c) => DropdownMenuItem<int?>(value: c.id, child: Text('ðŸ“‚ ${c.name}', overflow: TextOverflow.ellipsis))),
+                    const DropdownMenuItem<int?>(value: null, child: Text('📦 Todas las categorías', overflow: TextOverflow.ellipsis)),
+                    ...categories.map((c) => DropdownMenuItem<int?>(value: c.id, child: Text('📂 ${c.name}', overflow: TextOverflow.ellipsis))),
                   ],
                   onChanged: (val) => setState(() => _selectedCategoryId = val),
                 ),
@@ -3717,11 +4127,41 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
                     border: OutlineInputBorder(),
                   ),
                   items: [
-                    const DropdownMenuItem<int?>(value: null, child: Text('ðŸ·ï¸ Todas las marcas', overflow: TextOverflow.ellipsis)),
-                    ...brands.map((b) => DropdownMenuItem<int?>(value: b.id, child: Text('ðŸ·ï¸ ${b.name}', overflow: TextOverflow.ellipsis))),
+                    const DropdownMenuItem<int?>(value: null, child: Text('🏷️ Todas las marcas', overflow: TextOverflow.ellipsis)),
+                    ...brands.map((b) => DropdownMenuItem<int?>(value: b.id, child: Text('🏷️ ${b.name}', overflow: TextOverflow.ellipsis))),
                   ],
                   onChanged: (val) => setState(() => _selectedBrandId = val),
                 ),
+                if (canSeeSupplier) ...[
+                  const SizedBox(height: 12),
+                  Consumer<SupplierProvider>(
+                    builder: (context, supplierProv, _) {
+                      final suppliers = supplierProv.suppliers;
+                      return DropdownButtonFormField<int?>(
+                        initialValue: _selectedSupplierId,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: 'Filtrar por Proveedor',
+                          prefixIcon: Icon(Icons.local_shipping_outlined),
+                          border: OutlineInputBorder(),
+                        ),
+                        items: [
+                          const DropdownMenuItem<int?>(
+                            value: null,
+                            child: Text('🚚 Todos los proveedores', overflow: TextOverflow.ellipsis),
+                          ),
+                          ...suppliers.map(
+                            (s) => DropdownMenuItem<int?>(
+                              value: s.id,
+                              child: Text('🏢 ${s.name}', overflow: TextOverflow.ellipsis),
+                            ),
+                          ),
+                        ],
+                        onChanged: (val) => setState(() => _selectedSupplierId = val),
+                      );
+                    },
+                  ),
+                ],
               ] else ...[
                 Container(
                   padding: const EdgeInsets.all(8),
@@ -3774,7 +4214,16 @@ class _BulkPriceHistoryDialogState extends State<BulkPriceHistoryDialog> {
   @override
   void initState() {
     super.initState();
-    Future.microtask(() => widget.provider.fetchPriceHistory());
+    Future.microtask(() {
+      if (!mounted) return;
+      widget.provider.fetchPriceHistory();
+      if (context.read<SettingsProvider>().features.suppliers) {
+        final supplierProv = context.read<SupplierProvider>();
+        if (supplierProv.suppliers.isEmpty && !supplierProv.isLoading) {
+          supplierProv.fetchSuppliers();
+        }
+      }
+    });
   }
 
   Future<void> _revert(int id) async {
@@ -3817,8 +4266,9 @@ class _BulkPriceHistoryDialogState extends State<BulkPriceHistoryDialog> {
           Expanded(child: Text('Historial de Aumentos')),
         ],
       ),
-      content: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 600, maxHeight: 400),
+      content: SizedBox(
+        width: 600,
+        height: 400,
         child: Consumer<CatalogProvider>(
           builder: (_, p, __) {
             if (p.isLoading && p.priceHistory.isEmpty) {
@@ -3848,6 +4298,28 @@ class _BulkPriceHistoryDialogState extends State<BulkPriceHistoryDialog> {
                     : (history['rounding_rule'] == 'nearest_50' ? 'Múltiplos de 50'
                     : (history['rounding_rule'] == 'nearest_100' ? 'A la centena'
                     : (history['rounding_rule'] == 'ends_99' ? 'Termina en .99' : history['rounding_rule']))));
+
+                final rawFilters = history['filters'];
+                final filterParts = <String>[];
+                if (rawFilters is Map) {
+                  final catId = int.tryParse(rawFilters['category_id']?.toString() ?? '');
+                  if (catId != null) {
+                    final catName = p.categories.where((c) => c.id == catId).map((c) => c.name).firstOrNull;
+                    filterParts.add('Cat: ${catName ?? '#$catId'}');
+                  }
+                  final brId = int.tryParse(rawFilters['brand_id']?.toString() ?? '');
+                  if (brId != null) {
+                    final brName = p.brands.where((b) => b.id == brId).map((b) => b.name).firstOrNull;
+                    filterParts.add('Marca: ${brName ?? '#$brId'}');
+                  }
+                  final supId = int.tryParse(rawFilters['supplier_id']?.toString() ?? '');
+                  if (supId != null) {
+                    final suppliers = ctx.read<SupplierProvider>().suppliers;
+                    final supName = suppliers.where((s) => s.id == supId).map((s) => s.name).firstOrNull;
+                    filterParts.add('Prov: ${supName ?? '#$supId'}');
+                  }
+                }
+                final filterText = filterParts.isEmpty ? 'Todo el catálogo' : filterParts.join(' • ');
                 
                 return ListTile(
                   leading: Icon(
@@ -3855,7 +4327,7 @@ class _BulkPriceHistoryDialogState extends State<BulkPriceHistoryDialog> {
                     color: isReverted ? Colors.grey : (pct >= 0 ? Colors.green : Colors.red),
                   ),
                   title: Text('Aumento: ${pct > 0 ? '+' : ''}${pct.toStringAsFixed(1)}% ($targetField)'),
-                  subtitle: Text('Fecha: $formattedDate | Afectados: ${history['affected_count']} \nRedondeo: $roundingRule'),
+                  subtitle: Text('Fecha: $formattedDate | Afectados: ${history['affected_count']} \nRedondeo: $roundingRule | Filtro: $filterText'),
                   isThreeLine: true,
                   trailing: isReverted
                       ? const Chip(label: Text('Revertido', style: TextStyle(fontSize: 10)), backgroundColor: Colors.grey)

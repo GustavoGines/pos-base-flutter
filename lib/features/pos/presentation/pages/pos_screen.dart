@@ -22,6 +22,8 @@ import '../widgets/pos_quick_access_view.dart';
 import '../widgets/pos_financial_summary.dart';
 import '../widgets/pos_quick_action_buttons.dart';
 import '../widgets/pos_quick_customer_dialog.dart';
+import '../widgets/pos_quick_item_dialog.dart';
+import '../widgets/pos_rename_cart_item_dialog.dart';
 import 'package:frontend_desktop/core/presentation/widgets/plan_upgrade_dialog.dart';
 import 'package:frontend_desktop/features/offers/presentation/providers/offer_provider.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
@@ -1422,6 +1424,10 @@ class _PosScreenState extends State<PosScreen> {
                 _shortcutSection(
                   '🛒 Carrito y Acceso Rápido',
                   [
+                    _shortcutRow(['F3'],
+                        'Crear Producto o Combo Rápido (Temporal o en Catálogo)'),
+                    _shortcutRow(['Ctrl', 'E'],
+                        'Renombrar último ítem para Factura / Ticket (Alias)'),
                     _shortcutRow(['Ctrl', '1..9'],
                         'Agrega el producto 1 al 9 de la grilla'),
                     _shortcutRow([
@@ -1438,7 +1444,7 @@ class _PosScreenState extends State<PosScreen> {
                 _shortcutSection(
                   '💳 Ventana de Cobro (Desglose de Pago)',
                   [
-                    _shortcutRow(['Ctrl', '1..7'], 'Métodos de pago (Efectivo, Point, QR, Tarjetas, Cta. Cte., Cheque)'),
+                    _shortcutRow(['Ctrl', '1..8'], 'Métodos de pago (Efectivo, Point, QR, Tarjetas, Transf., Cta. Cte., Cheque)'),
                     _shortcutRow(['F2'], 'Pago exacto auto-ajustable en efectivo'),
                     _shortcutRow(['F4'], 'Agregar otro medio de pago (Pago Mixto)'),
                     _shortcutRow(['F6'], 'Asociar / Buscar Cliente'),
@@ -2054,7 +2060,10 @@ class _PosScreenState extends State<PosScreen> {
                     .map((item) => {
                           'product_id': item.product.id,
                           'quantity': item.quantity,
-                          'product_name': item.product.name,
+                          'product_name': item.effectiveDisplayName,
+                          'custom_description': item.customDescription,
+                          'custom_details': item.customDetails,
+                          'is_temporary': item.isTemporary,
                           'unit_price': item.unitPrice,
                           'regular_price': item.product.sellingPrice,
                           'regular_subtotal': item.regularSubtotal,
@@ -2065,7 +2074,7 @@ class _PosScreenState extends State<PosScreen> {
                               : (item.promotionalLabel ?? ''),
                           'subtotal': item.subtotal,
                           'product': {
-                            'name': item.product.name,
+                            'name': item.effectiveDisplayName,
                             'internal_code': item.product.internalCode,
                             'iva_rate': item.product.ivaRate,
                             'is_sold_by_weight': item.product.isSoldByWeight,
@@ -3500,28 +3509,70 @@ class _PosScreenState extends State<PosScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              // Fila 1: Nombre del producto (100% ancho disponible) + Eliminar
+                              // Fila 1: Nombre del producto (100% ancho disponible) + Renombrar + Eliminar
                               Row(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Expanded(
                                     child: Tooltip(
-                                      message: item.product.name,
+                                      message: item.isRenamed
+                                          ? '${item.effectiveDisplayName}\n(Catálogo: ${item.product.name})'
+                                          : item.effectiveDisplayName,
                                       waitDuration:
                                           const Duration(milliseconds: 500),
-                                      child: Text(
-                                        item.product.name,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 13.5,
-                                          height: 1.2,
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            item.effectiveDisplayName,
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 13.5,
+                                              height: 1.2,
+                                            ),
+                                          ),
+                                          if (item.customDetails != null &&
+                                              item.customDetails!.trim().isNotEmpty)
+                                            Padding(
+                                              padding: const EdgeInsets.only(top: 2),
+                                              child: Text(
+                                                '📝 ${item.customDetails!.trim()}',
+                                                maxLines: 2,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: TextStyle(
+                                                  fontSize: 11,
+                                                  color: Colors.blueGrey.shade700,
+                                                  fontStyle: FontStyle.italic,
+                                                ),
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Tooltip(
+                                    message: 'Alias / Renombrar para Factura y Ticket (Ctrl+E)',
+                                    child: InkWell(
+                                      borderRadius: BorderRadius.circular(6),
+                                      onTap: () => _openRenameCartItemDialog(item),
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(2.0),
+                                        child: Icon(
+                                          Icons.edit_note_rounded,
+                                          size: 19,
+                                          color: item.isRenamed ||
+                                                  (item.customDetails != null &&
+                                                      item.customDetails!.trim().isNotEmpty)
+                                              ? Colors.indigo.shade700
+                                              : Colors.blueGrey.shade600,
                                         ),
                                       ),
                                     ),
                                   ),
-                                  const SizedBox(width: 6),
+                                  const SizedBox(width: 4),
                                   InkWell(
                                     borderRadius: BorderRadius.circular(6),
                                     onTap: () {
@@ -3675,7 +3726,69 @@ class _PosScreenState extends State<PosScreen> {
                                 ],
                               ),
 
-                              // Fila 3: Badges de Oferta / Lista y Alerta de Stock Crítico
+                              // Fila 3: Badges de Oferta / Lista / Ítem Rápido / Alias y Alerta de Stock Crítico
+                              if (item.isTemporary || item.saveToCatalog || item.isRenamed) ...[
+                                const SizedBox(height: 4),
+                                Wrap(
+                                  spacing: 4,
+                                  runSpacing: 4,
+                                  children: [
+                                    if (item.isTemporary && !item.saveToCatalog)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: Colors.amber.shade50,
+                                          border: Border.all(color: Colors.amber.shade300),
+                                          borderRadius: BorderRadius.circular(4),
+                                        ),
+                                        child: Text(
+                                          item.product.isCombo ? '⚡ Combo Temporal' : '⚡ Ítem Temporal',
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            color: Colors.amber.shade900,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ),
+                                    if (item.saveToCatalog)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: Colors.blue.shade50,
+                                          border: Border.all(color: Colors.blue.shade300),
+                                          borderRadius: BorderRadius.circular(4),
+                                        ),
+                                        child: Text(
+                                          '🆕 Se guardará en catálogo',
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            color: Colors.blue.shade900,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ),
+                                    if (item.isRenamed)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: Colors.indigo.shade50,
+                                          border: Border.all(color: Colors.indigo.shade200),
+                                          borderRadius: BorderRadius.circular(4),
+                                        ),
+                                        child: Text(
+                                          '✏️ Alias (Orig: ${item.product.name})',
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            color: Colors.indigo.shade800,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ],
                               if (priceBadge != null) ...[
                                 const SizedBox(height: 4),
                                 priceBadge,
@@ -4199,6 +4312,12 @@ class _PosScreenState extends State<PosScreen> {
       return true;
     }
 
+    // F3 → Crear Producto o Combo Rápido (Temporal o en Catálogo)
+    if (event.logicalKey == LogicalKeyboardKey.f3) {
+      _openQuickItemDialog();
+      return true;
+    }
+
     // F4 → Poner en Espera directo
     if (event.logicalKey == LogicalKeyboardKey.f4) {
       if (posProvider.cart.isNotEmpty && !posProvider.isLoading) {
@@ -4259,6 +4378,12 @@ class _PosScreenState extends State<PosScreen> {
 
       if (isControlPressed) {
         final key = event.logicalKey;
+        if (key == LogicalKeyboardKey.keyE) {
+          if (posProvider.cart.isNotEmpty) {
+            _openRenameCartItemDialog(posProvider.cart.last);
+          }
+          return true;
+        }
         int? index;
 
         if (key == LogicalKeyboardKey.digit1 || key == LogicalKeyboardKey.numpad1) {
@@ -4339,6 +4464,45 @@ class _PosScreenState extends State<PosScreen> {
     return false;
   }
 
+  Future<void> _openQuickItemDialog() async {
+    final posProvider = Provider.of<PosProvider>(context, listen: false);
+    final newItem = await PosQuickItemDialog.show(
+      context,
+      activeTier: posProvider.activeTier,
+      wholesaleFactor: posProvider.wholesaleFactor,
+      cardFactor: posProvider.cardFactor,
+      customFactor: posProvider.currentCustomFactor,
+      customTierLabel: posProvider.customTierLabel,
+    );
+    if (!mounted) return;
+    if (newItem != null) {
+      posProvider.addQuickOrTemporaryItem(newItem);
+      SnackBarService.success(
+        context,
+        newItem.saveToCatalog
+            ? '🆕 "${newItem.effectiveDisplayName}" agregado (se guardará en el catálogo al cobrar).'
+            : '⚡ "${newItem.effectiveDisplayName}" agregado como ítem temporal.',
+      );
+    }
+    _searchFocusNode.requestFocus();
+  }
+
+  Future<void> _openRenameCartItemDialog(CartItem item) async {
+    final posProvider = Provider.of<PosProvider>(context, listen: false);
+    final res = await PosRenameCartItemDialog.show(context, item: item);
+    if (!mounted) return;
+    if (res != null) {
+      posProvider.updateCartItemCustomDescription(
+        item,
+        customDescription: res.customDescription,
+        customDetails: res.customDetails,
+        newUnitPrice: res.newUnitPrice,
+        newQuantity: res.newQuantity,
+      );
+    }
+    _searchFocusNode.requestFocus();
+  }
+
   Widget _buildRightPanel() {
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -4348,58 +4512,88 @@ class _PosScreenState extends State<PosScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Barra de búsqueda con búsqueda server-side vía API
-              TextField(
-                controller: _searchController,
-                focusNode: _searchFocusNode,
-                inputFormatters: [
-                  FilteringTextInputFormatter.deny(
-                    RegExp(r'[\x00-\x1F\u263A\u263B\u2665\u2666\u2663\u2660\u2022\u25D8\u25CB]'),
+              // Barra de búsqueda con búsqueda server-side vía API + Botón Ítem/Combo Rápido (F3)
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _searchController,
+                      focusNode: _searchFocusNode,
+                      inputFormatters: [
+                        FilteringTextInputFormatter.deny(
+                          RegExp(r'[\x00-\x1F\u263A\u263B\u2665\u2666\u2663\u2660\u2022\u25D8\u25CB]'),
+                        ),
+                        TextInputFormatter.withFunction((oldValue, newValue) {
+                          if (oldValue.text.isEmpty &&
+                              (newValue.text == '+' || newValue.text == '-')) {
+                            final hasCart =
+                                Provider.of<PosProvider>(context, listen: false)
+                                    .cart
+                                    .isNotEmpty;
+                            if (hasCart) return oldValue;
+                          }
+                          return newValue;
+                        }),
+                      ],
+                      decoration: InputDecoration(
+                        hintText: isCompact
+                            ? 'Buscar o escanear código... (Enter: Cobrar)'
+                            : 'Escribir nombre o escanear código... (Enter: Cobrar · F3: Ítem Rápido · F1: Atajos)',
+                        prefixIcon: _isSearching
+                            ? const Padding(
+                                padding: EdgeInsets.all(12),
+                                child: SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(strokeWidth: 2)),
+                              )
+                            : const Icon(Icons.search),
+                        suffixIcon: _searchQuery.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.clear),
+                                onPressed: () {
+                                  _searchController.clear();
+                                  _onPosSearchChanged('');
+                                  _searchFocusNode.requestFocus();
+                                },
+                              )
+                            : null,
+                        border:
+                            OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        filled: true,
+                        fillColor: Colors.grey.shade100,
+                      ),
+                      // Búsqueda en tiempo real con debounce → API completa
+                      onChanged: _onPosSearchChanged,
+                      // Enter: para códigos de barras (API call + agregar al carrito)
+                      onSubmitted: _onProductScannedOrSearched,
+                    ),
                   ),
-                  TextInputFormatter.withFunction((oldValue, newValue) {
-                    if (oldValue.text.isEmpty &&
-                        (newValue.text == '+' || newValue.text == '-')) {
-                      final hasCart =
-                          Provider.of<PosProvider>(context, listen: false)
-                              .cart
-                              .isNotEmpty;
-                      if (hasCart) return oldValue;
-                    }
-                    return newValue;
-                  }),
+                  const SizedBox(width: 10),
+                  Tooltip(
+                    message: 'Crear Producto o Combo Rápido en mostrador (F3)',
+                    child: ElevatedButton.icon(
+                      onPressed: _openQuickItemDialog,
+                      icon: const Icon(Icons.flash_on_rounded, size: 18),
+                      label: Text(
+                        isCompact ? 'Rápido (F3)' : 'Ítem / Combo Rápido (F3)',
+                        style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.amber.shade700,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        padding: EdgeInsets.symmetric(
+                          horizontal: isCompact ? 12 : 16,
+                          vertical: 16,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                    ),
+                  ),
                 ],
-                decoration: InputDecoration(
-                  hintText: isCompact
-                      ? 'Buscar o escanear código... (Enter: Cobrar)'
-                      : 'Escribir nombre o escanear código... (Enter: Cobrar · F1: Atajos)',
-                  prefixIcon: _isSearching
-                      ? const Padding(
-                          padding: EdgeInsets.all(12),
-                          child: SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2)),
-                        )
-                      : const Icon(Icons.search),
-                  suffixIcon: _searchQuery.isNotEmpty
-                      ? IconButton(
-                          icon: const Icon(Icons.clear),
-                          onPressed: () {
-                            _searchController.clear();
-                            _onPosSearchChanged('');
-                            _searchFocusNode.requestFocus();
-                          },
-                        )
-                      : null,
-                  border:
-                      OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                  filled: true,
-                  fillColor: Colors.grey.shade100,
-                ),
-                // Búsqueda en tiempo real con debounce → API completa
-                onChanged: _onPosSearchChanged,
-                // Enter: para códigos de barras (API call + agregar al carrito)
-                onSubmitted: _onProductScannedOrSearched,
               ),
 
               const SizedBox(height: 16),
@@ -5593,6 +5787,10 @@ class _CartItemStockIndicator extends StatelessWidget {
     final cart = context.select<PosProvider, List<CartItem>>((p) => p.cart);
     final catalogProducts =
         context.select<CatalogProvider, List<Product>>((c) => c.products);
+
+    if (item.isTemporary || item.saveToCatalog || item.product.id <= 0) {
+      return const SizedBox.shrink();
+    }
 
     // Mapa rápido de productos del catálogo para consultar siempre el stock más fresco
     final productById = <int, Product>{

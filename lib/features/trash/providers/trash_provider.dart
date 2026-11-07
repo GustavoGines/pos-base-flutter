@@ -26,6 +26,16 @@ class TrashItem {
       subtitle = 'Cód: ${json['barcode'] ?? json['internal_code'] ?? '-'}';
     } else if (type == 'suppliers') {
       subtitle = 'CUIT: ${json['cuit'] ?? '-'}';
+    } else if (type == 'supplier_invoices') {
+      final supName = (json['supplier'] is Map ? json['supplier']['name'] : null) ?? 'Proveedor';
+      final invNum = (json['invoice_number'] != null && json['invoice_number'].toString().isNotEmpty)
+          ? '#${json['invoice_number']}'
+          : 'S/N';
+      title = '$supName ($invNum) - \$${json['amount'] ?? 0}';
+      final reason = json['deletion_reason']?.toString();
+      subtitle = (reason != null && reason.isNotEmpty)
+          ? 'Motivo: $reason'
+          : (json['description']?.toString() ?? 'Comprobante de proveedor');
     } else if (type == 'cash_movements') {
       title = '${json['category']} (\$${json['amount']})';
       subtitle = json['description'] ?? 'Movimiento de caja';

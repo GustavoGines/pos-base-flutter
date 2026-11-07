@@ -152,7 +152,7 @@ class LicenseRefreshObserver extends NavigatorObserver {
         contextGetter().read<SettingsProvider>().refreshSettingsSilently();
       });
     } catch (_) {
-      // Context might be unmounted during startup í  silently ignore.
+      // Context might be unmounted during startup - silently ignore.
     }
   }
 
@@ -584,9 +584,15 @@ class _AppBootstrapState extends State<AppBootstrap> {
         }
       }
 
-      final String localUrl = prefs.getString('pos_api_local') ??
+      String localUrl = prefs.getString('pos_api_local') ??
           prefs.getString('pos_api') ??
           AppConfig.kApiBaseUrl;
+      if (localUrl == 'http://127.0.0.1/pos-backend/public/api' ||
+          localUrl == 'http://localhost/pos-backend/public/api') {
+        localUrl = AppConfig.kLocalhostLaragonUrl;
+        await prefs.setString('pos_api_local', localUrl);
+        await prefs.setString('pos_api', localUrl);
+      }
       final String remoteUrl = prefs.getString('pos_api_remote') ?? '';
 
       String activeApiUrl = localUrl;
@@ -994,7 +1000,7 @@ class _MainAppState extends State<MainApp> {
     Future.microtask(() {
       _initializeApp();
 
-      // í íí í GANCHOS DE SEGURIDAD GLOBAL (Single Active Session) í íí í
+      // ── GANCHOS DE SEGURIDAD GLOBAL (Single Active Session) ──
       // Atrapa cualquier Error 401 (SESSION_EXPIRED) del ApiClient de manera centralizada.
       // Así se protege automáticamente toda la aplicación sin tocar pantalla por pantalla.
       final authProv = context.read<AuthProvider>();
@@ -1083,21 +1089,30 @@ class _MainAppState extends State<MainApp> {
             )
             .timeout(const Duration(seconds: 3));
 
-        if (pingRes.statusCode < 500) {
-          await prefs.setString('pos_api', candidateUrl);
-          await prefs.setString('pos_api_local', candidateUrl);
+        if (pingRes.statusCode == 200) {
           apiClient.setBaseUrlOverride(
             fromBaseUrl: previousUrl,
             toBaseUrl: candidateUrl,
           );
           settingsProvider.updateBaseUrl(candidateUrl);
 
-          await settingsProvider
-              .loadSettings()
-              .timeout(const Duration(seconds: 4));
-          debugPrint(
-              '[NetFallback] Recuperación exitosa usando servidor local: $candidateUrl');
-          return true;
+          try {
+            await settingsProvider
+                .loadSettings()
+                .timeout(const Duration(seconds: 4));
+            await prefs.setString('pos_api', candidateUrl);
+            await prefs.setString('pos_api_local', candidateUrl);
+            debugPrint(
+                '[NetFallback] Recuperación exitosa usando servidor local: $candidateUrl');
+            return true;
+          } catch (loadErr) {
+            apiClient.setBaseUrlOverride(
+              fromBaseUrl: candidateUrl,
+              toBaseUrl: previousUrl,
+            );
+            settingsProvider.updateBaseUrl(previousUrl);
+            rethrow;
+          }
         }
       } catch (pingErr) {
         debugPrint('[NetFallback] Sin respuesta en $candidateUrl: $pingErr');
@@ -1209,7 +1224,7 @@ class _MainAppState extends State<MainApp> {
         _initError = null;
       });
 
-      // í íí í CHECK DE RESULTADO OTA (Smart Chaining) í íí í
+      // ── CHECK DE RESULTADO OTA (Smart Chaining) ──
       // Si el updater corrió mientras la app estaba cerrada, mostrar el
       // resultado al usuario. Si fue una actualización exitosa del Frontend,
       // encadenar automáticamente la actualización del Backend (Auto-Resume).
@@ -1300,137 +1315,39 @@ class _MainAppState extends State<MainApp> {
       return;
     }
 
-    final urlController = TextEditingController(text: currentUrl);
+    String? newUrl;
     try {
-      await showDialog(
+      newUrl = await showDialog<String>(
         context: dialogContext,
         barrierDismissible: false,
-        builder: (dCtx) => AlertDialog(
-          title: const Row(
-            children: [
-              Icon(Icons.dns_outlined, color: Colors.blueAccent),
-              SizedBox(width: 8),
-              Text('Configurar Servidor',
-                  style: TextStyle(fontWeight: FontWeight.bold)),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'No hubo respuesta del servidor configurado tras 3 segundos.\n'
-                'Ingrese la IP local de la PC Servidor o use 127.0.0.1 si esta PC es el servidor:',
-                style: TextStyle(color: Colors.blueGrey, fontSize: 13),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: urlController,
-                decoration: InputDecoration(
-                  hintText:
-                      'Ej: 192.168.1.50 o http://127.0.0.1/Sistema_POS/pos-backend/public/api',
-                  border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8)),
-                  prefixIcon: const Icon(Icons.link),
-                ),
-              ),
-              if (AppConfig.hasLocalLaragonServer()) ...[
-                const SizedBox(height: 10),
-                TextButton.icon(
-                  onPressed: () {
-                    urlController.text = AppConfig.kLocalhostLaragonUrl;
-                  },
-                  icon: const Icon(Icons.computer, size: 18),
-                  label: const Text('Usar Servidor Local (127.0.0.1)'),
-                ),
-              ],
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dCtx),
-              child: const Text('Cancelar'),
-            ),
-            FilledButton.icon(
-              onPressed: () async {
-                String newUrl = urlController.text.trim();
-                if (newUrl.isNotEmpty) {
-                  // --- AUTO-FORMATO UX (Igual que en Ajustes) ---
-                  if (!newUrl.startsWith('http')) {
-                    if (!newUrl.contains('/')) {
-                      final isIp = RegExp(r'^([0-9]{1,3}\.){3}[0-9]{1,3}$')
-                              .hasMatch(newUrl) ||
-                          newUrl == 'localhost';
-                      if (isIp) {
-                        newUrl =
-                            'http://$newUrl/Sistema_POS/pos-backend/public/api';
-                      } else {
-                        newUrl =
-                            'https://$newUrl/Sistema_POS/pos-backend/public/api';
-                      }
-                    } else {
-                      newUrl = 'http://$newUrl';
-                    }
-                  }
-
-                  if (newUrl.endsWith('/')) {
-                    newUrl = newUrl.substring(0, newUrl.length - 1);
-                  }
-
-                  await prefs.setString('pos_api', newUrl);
-                  // IMPORTANTE: También guardamos pos_api_local para que no pise la configuración al reiniciar
-                  await prefs.setString('pos_api_local', newUrl);
-
-                  if (dCtx.mounted) {
-                    Navigator.pop(dCtx);
-                  }
-
-                  if (mounted) {
-                    final apiClient =
-                        Provider.of<ApiClient>(context, listen: false);
-                    final settingsProvider =
-                        Provider.of<SettingsProvider>(context, listen: false);
-
-                    apiClient.setBaseUrlOverride(
-                      fromBaseUrl: currentUrl,
-                      toBaseUrl: newUrl,
-                    );
-                    settingsProvider.updateBaseUrl(newUrl);
-
-                    setState(() {
-                      _isInitializing = true;
-                      _initError = null;
-                    });
-
-                    try {
-                      await settingsProvider
-                          .loadSettings()
-                          .timeout(const Duration(seconds: 5));
-                      await _initializeApp();
-                    } catch (e) {
-                      if (mounted) {
-                        setState(() {
-                          _isInitializing = false;
-                          _initError =
-                              'No se pudo conectar a la nueva dirección ($newUrl). Verifique la IP.';
-                        });
-                      }
-                    }
-                  }
-                }
-              },
-              icon: const Icon(Icons.save),
-              label: const Text('Guardar y Reintentar'),
-              style: FilledButton.styleFrom(
-                  backgroundColor: Colors.blue.shade800),
-            ),
-          ],
-        ),
+        builder: (_) => _NetworkSettingsDialog(initialUrl: currentUrl),
       );
     } finally {
       _isShowingNetworkDialog = false;
-      urlController.dispose();
     }
+
+    if (newUrl == null || newUrl.isEmpty || !mounted) return;
+
+    await prefs.setString('pos_api', newUrl);
+    // IMPORTANTE: También guardamos pos_api_local para que no pise la configuración al reiniciar
+    await prefs.setString('pos_api_local', newUrl);
+
+    if (!mounted) return;
+    final apiClient = Provider.of<ApiClient>(context, listen: false);
+    final settingsProvider =
+        Provider.of<SettingsProvider>(context, listen: false);
+
+    apiClient.setBaseUrlOverride(
+      fromBaseUrl: currentUrl,
+      toBaseUrl: newUrl,
+    );
+    settingsProvider.updateBaseUrl(newUrl);
+
+    // Esperar a que finalice la animación de cierre del diálogo antes de reconstruir el árbol raíz
+    await Future.delayed(const Duration(milliseconds: 250));
+    if (!mounted) return;
+
+    await _initializeApp();
   }
 
   Widget _buildLoadingOrErrorScreen() {
@@ -1690,7 +1607,7 @@ class _MainAppState extends State<MainApp> {
                           return;
                         }
 
-                        // Detectar error de límite de plan í   mostrar modal de upselling
+                        // Detectar error de límite de plan -> mostrar modal de upselling
                         final isPlanLimitError =
                             rawError.contains('Límite de cajas') ||
                                 rawError.contains('plan a PRO') ||
@@ -1816,6 +1733,117 @@ class _MainAppState extends State<MainApp> {
               child: MobileDashboardScreen(),
             ),
       },
+    );
+  }
+}
+
+class _NetworkSettingsDialog extends StatefulWidget {
+  final String initialUrl;
+
+  const _NetworkSettingsDialog({required this.initialUrl});
+
+  @override
+  State<_NetworkSettingsDialog> createState() => _NetworkSettingsDialogState();
+}
+
+class _NetworkSettingsDialogState extends State<_NetworkSettingsDialog> {
+  late final TextEditingController _urlController;
+
+  @override
+  void initState() {
+    super.initState();
+    _urlController = TextEditingController(text: widget.initialUrl);
+  }
+
+  @override
+  void dispose() {
+    _urlController.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    String newUrl = _urlController.text.trim();
+    if (newUrl.isEmpty) return;
+
+    // --- AUTO-FORMATO UX (Igual que en Ajustes) ---
+    if (!newUrl.startsWith('http')) {
+      if (!newUrl.contains('/')) {
+        final isIp =
+            RegExp(r'^([0-9]{1,3}\.){3}[0-9]{1,3}$').hasMatch(newUrl) ||
+                newUrl == 'localhost';
+        if (isIp) {
+          newUrl = 'http://$newUrl/Sistema_POS/pos-backend/public/api';
+        } else {
+          newUrl = 'https://$newUrl/Sistema_POS/pos-backend/public/api';
+        }
+      } else {
+        newUrl = 'http://$newUrl';
+      }
+    }
+
+    if (newUrl.endsWith('/')) {
+      newUrl = newUrl.substring(0, newUrl.length - 1);
+    }
+
+    Navigator.of(context).pop(newUrl);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Row(
+        children: [
+          Icon(Icons.dns_outlined, color: Colors.blueAccent),
+          SizedBox(width: 8),
+          Text('Configurar Servidor',
+              style: TextStyle(fontWeight: FontWeight.bold)),
+        ],
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'No hubo respuesta del servidor configurado tras 3 segundos.\n'
+            'Ingrese la IP local de la PC Servidor o use 127.0.0.1 si esta PC es el servidor:',
+            style: TextStyle(color: Colors.blueGrey, fontSize: 13),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _urlController,
+            onSubmitted: (_) => _submit(),
+            decoration: InputDecoration(
+              hintText:
+                  'Ej: 192.168.1.50 o http://127.0.0.1/Sistema_POS/pos-backend/public/api',
+              border:
+                  OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              prefixIcon: const Icon(Icons.link),
+            ),
+          ),
+          if (AppConfig.hasLocalLaragonServer()) ...[
+            const SizedBox(height: 10),
+            TextButton.icon(
+              onPressed: () {
+                _urlController.text = AppConfig.kLocalhostLaragonUrl;
+              },
+              icon: const Icon(Icons.computer, size: 18),
+              label: const Text('Usar Servidor Local (127.0.0.1)'),
+            ),
+          ],
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton.icon(
+          onPressed: _submit,
+          icon: const Icon(Icons.save),
+          label: const Text('Guardar y Reintentar'),
+          style: FilledButton.styleFrom(backgroundColor: Colors.blue.shade800),
+        ),
+      ],
     );
   }
 }

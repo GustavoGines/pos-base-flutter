@@ -244,6 +244,9 @@ class FakeInventoryAlertsProvider extends ChangeNotifier implements InventoryAle
   List<dynamic> get reactiveAlerts => [];
 
   @override
+  List<dynamic> get expirationAlerts => [];
+
+  @override
   List<dynamic> get predictiveCriticalAlerts => [];
 
   @override

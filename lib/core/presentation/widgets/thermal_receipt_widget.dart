@@ -688,6 +688,7 @@ class ThermalReceiptWidget extends StatelessWidget {
 
     for (final rawItem in items) {
       String name = 'PRODUCTO';
+      String? customDetails;
       double quantity = 1.0;
       double unitPrice = 0.0;
       double subtotal = 0.0;
@@ -696,11 +697,13 @@ class ThermalReceiptWidget extends StatelessWidget {
       String discountTag = '';
 
       if (rawItem is CartItem) {
-        name = rawItem.product.name;
+        name = rawItem.effectiveDisplayName;
+        customDetails = rawItem.customDetails?.trim();
         quantity = rawItem.quantity;
         unitPrice = rawItem.unitPrice;
         subtotal = rawItem.subtotal;
         isSoldByWeight = rawItem.product.isSoldByWeight;
+        ivaRate = rawItem.product.ivaRate;
         if (rawItem.hasDiscount) {
           discountTag = rawItem.hasActiveOffer
               ? rawItem.offerBadgeLabel
@@ -711,10 +714,14 @@ class ThermalReceiptWidget extends StatelessWidget {
         }
       } else if (rawItem is Map<String, dynamic>) {
         final prod = rawItem['product'] as Map<String, dynamic>? ?? {};
-        name = rawItem['product_name']?.toString() ??
-            prod['name']?.toString() ??
-            rawItem['name']?.toString() ??
-            'PRODUCTO';
+        final customDesc = rawItem['custom_description']?.toString().trim();
+        name = (customDesc != null && customDesc.isNotEmpty)
+            ? customDesc
+            : (rawItem['product_name']?.toString() ??
+                prod['name']?.toString() ??
+                rawItem['name']?.toString() ??
+                'PRODUCTO');
+        customDetails = rawItem['custom_details']?.toString().trim();
         quantity = double.tryParse(rawItem['quantity']?.toString() ?? '1') ?? 1.0;
         unitPrice = double.tryParse(
                 rawItem['unit_price']?.toString() ?? rawItem['price']?.toString() ?? '0') ??
@@ -767,6 +774,18 @@ class ThermalReceiptWidget extends StatelessWidget {
                   color: Colors.black,
                 ),
               ),
+              if (customDetails != null && customDetails.isNotEmpty) ...[
+                const SizedBox(height: 1),
+                Text(
+                  '* $customDetails',
+                  softWrap: true,
+                  style: TextStyle(
+                    fontFamily: 'monospace',
+                    fontSize: 9.2 * factor,
+                    color: Colors.black87,
+                  ),
+                ),
+              ],
               if (discountTag.isNotEmpty) ...[
                 const SizedBox(height: 1),
                 Text(
@@ -1063,15 +1082,18 @@ class ThermalReceiptWidget extends StatelessWidget {
     bool isSoldByWeight = false;
 
     if (rawItem is CartItem) {
-      name = rawItem.product.name;
+      name = rawItem.effectiveDisplayName;
       quantity = rawItem.quantity;
       isSoldByWeight = rawItem.product.isSoldByWeight;
     } else if (rawItem is Map<String, dynamic>) {
       final prod = rawItem['product'] as Map<String, dynamic>? ?? {};
-      name = rawItem['product_name']?.toString() ??
-          prod['name']?.toString() ??
-          rawItem['name']?.toString() ??
-          'PRODUCTO';
+      final customDesc = rawItem['custom_description']?.toString().trim();
+      name = (customDesc != null && customDesc.isNotEmpty)
+          ? customDesc
+          : (rawItem['product_name']?.toString() ??
+              prod['name']?.toString() ??
+              rawItem['name']?.toString() ??
+              'PRODUCTO');
       quantity = double.tryParse(rawItem['quantity']?.toString() ?? '1') ?? 1.0;
       isSoldByWeight = rawItem['is_sold_by_weight'] == true ||
           prod['is_sold_by_weight'] == true;

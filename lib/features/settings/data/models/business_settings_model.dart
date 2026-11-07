@@ -37,6 +37,7 @@ class BusinessSettingsModel extends BusinessSettings {
     super.posPopularityMetric,
     super.posDemoteOutOfStock,
     super.posPopularityResetAt,
+    super.bankTransferAccounts,
   });
 
   factory BusinessSettingsModel.fromJson(Map<String, dynamic> json) {
@@ -65,41 +66,61 @@ class BusinessSettingsModel extends BusinessSettings {
       featuresMap = json['features'];
     }
 
+    final rawPlan = (json['app_plan'] ?? json['plan_espanol'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
+    final isPremiumPlan = rawPlan == 'pro' || rawPlan == 'premium';
+
     final featureFlags = FeatureFlags(
       fastPos: featuresMap['fast_pos'] == true || featuresMap['fast_pos'] == 1,
       zReports:
           featuresMap['z_reports'] == true || featuresMap['z_reports'] == 1,
-      quotes: featuresMap['quotes'] == true || featuresMap['quotes'] == 1,
+      quotes: featuresMap['quotes'] == true ||
+          featuresMap['quotes'] == 1 ||
+          isPremiumPlan,
       currentAccounts: featuresMap['current_accounts'] == true ||
-          featuresMap['current_accounts'] == 1,
+          featuresMap['current_accounts'] == 1 ||
+          isPremiumPlan,
       multiplePrices: featuresMap['multiple_prices'] == true ||
-          featuresMap['multiple_prices'] == 1,
-      multiCaja:
-          featuresMap['multi_caja'] == true || featuresMap['multi_caja'] == 1,
+          featuresMap['multiple_prices'] == 1 ||
+          isPremiumPlan,
+      multiCaja: featuresMap['multi_caja'] == true ||
+          featuresMap['multi_caja'] == 1 ||
+          isPremiumPlan,
       advancedReports: featuresMap['advanced_reports'] == true ||
-          featuresMap['advanced_reports'] == 1,
+          featuresMap['advanced_reports'] == 1 ||
+          isPremiumPlan,
       predictiveAlerts: featuresMap['predictive_alerts'] == true ||
-          featuresMap['predictive_alerts'] == 1,
+          featuresMap['predictive_alerts'] == 1 ||
+          isPremiumPlan,
       logistics:
           featuresMap['logistics'] == true || featuresMap['logistics'] == 1,
       checks: featuresMap['cheques'] == true ||
           featuresMap['cheques'] == 1 ||
           featuresMap['checks'] == true ||
-          featuresMap['checks'] == 1,
+          featuresMap['checks'] == 1 ||
+          isPremiumPlan,
       mobileApp: featuresMap['mobile_app'] == true || featuresMap['mobile_app'] == 1,
       remoteAccess: featuresMap['remote_access'] == true || featuresMap['remote_access'] == 1,
-      suppliers: featuresMap['suppliers'] == true || featuresMap['suppliers'] == 1,
-      expenses: featuresMap['expenses'] == true || featuresMap['expenses'] == 1,
+      suppliers: featuresMap['suppliers'] == true ||
+          featuresMap['suppliers'] == 1 ||
+          isPremiumPlan,
+      expenses: featuresMap['expenses'] == true ||
+          featuresMap['expenses'] == 1 ||
+          isPremiumPlan,
       multiRubro: featuresMap['multi_rubro'] == true ||
           featuresMap['multi_rubro'] == 1 ||
           featuresMap['multi_rubros'] == true ||
-          featuresMap['multi_rubros'] == 1,
+          featuresMap['multi_rubros'] == 1 ||
+          isPremiumPlan,
       mercadopagoQr: featuresMap['mercadopago_qr'] == true ||
           featuresMap['mercadopago_qr'] == 1,
       arcaAfip: featuresMap['arca_afip'] == true ||
           featuresMap['arca_afip'] == 1,
       ecommerceSync: featuresMap['ecommerce_sync'] == true ||
-          featuresMap['ecommerce_sync'] == 1,
+          featuresMap['ecommerce_sync'] == 1 ||
+          isPremiumPlan,
     );
 
     return BusinessSettingsModel(
@@ -156,6 +177,7 @@ class BusinessSettingsModel extends BusinessSettings {
           json['pos_demote_out_of_stock'] == true ||
           json['pos_demote_out_of_stock'] == 1,
       posPopularityResetAt: json['pos_popularity_reset_at']?.toString(),
+      bankTransferAccounts: _parseCustomTiers(json['bank_transfer_accounts']),
     );
   }
 
@@ -214,6 +236,7 @@ class BusinessSettingsModel extends BusinessSettings {
       'pos_popularity_metric': posPopularityMetric,
       'pos_demote_out_of_stock': posDemoteOutOfStock ? '1' : '0',
       if (posPopularityResetAt != null) 'pos_popularity_reset_at': posPopularityResetAt,
+      'bank_transfer_accounts': bankTransferAccounts,
     };
   }
 }

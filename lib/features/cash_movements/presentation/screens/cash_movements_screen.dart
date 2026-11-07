@@ -4,6 +4,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
+import 'package:frontend_desktop/core/presentation/widgets/compact_date_range_picker_dialog.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/presentation/widgets/global_app_bar.dart';
 import '../../providers/cash_movement_provider.dart';
@@ -91,31 +92,12 @@ class _CashMovementsScreenState extends State<CashMovementsScreen> {
     final initialStart = provider.startDate ?? DateTime.now().subtract(const Duration(days: 30));
     final initialEnd = provider.endDate ?? DateTime.now();
 
-    final picked = await showDateRangePicker(
+    final picked = await showCompactDateRangePicker(
       context: context,
       initialDateRange: DateTimeRange(start: initialStart, end: initialEnd),
       firstDate: DateTime(2020),
       lastDate: DateTime.now().add(const Duration(days: 365)),
-      builder: (context, child) {
-        return Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(
-              maxWidth: 500,
-              maxHeight: 600,
-            ),
-            child: Theme(
-              data: Theme.of(context).copyWith(
-                colorScheme: const ColorScheme.light(
-                  primary: Colors.blue,
-                  onPrimary: Colors.white,
-                  onSurface: Colors.black,
-                ),
-              ),
-              child: child!,
-            ),
-          ),
-        );
-      },
+      helpText: 'Seleccionar Período de Movimientos',
     );
     if (picked != null) {
       provider.fetchMovements(

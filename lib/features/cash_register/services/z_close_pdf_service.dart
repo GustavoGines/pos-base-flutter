@@ -183,6 +183,29 @@ class ZClosePdfService {
 
               _buildRow('Ventas con Tarjeta (Deb/Cred):', currencyFmt.format(shift.cardSales ?? 0)),
               _buildRow('Ventas por Transferencia:', currencyFmt.format(shift.transferSales ?? 0)),
+              if (shift.transferByAlias != null && shift.transferByAlias!.isNotEmpty)
+                ...shift.transferByAlias!.entries.map(
+                  (e) => pw.Padding(
+                    padding: const pw.EdgeInsets.only(left: 14, top: 2, bottom: 2),
+                    child: pw.Row(
+                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                      children: [
+                        pw.Text(
+                          '• Cuenta / Alias: ${e.key}',
+                          style: const pw.TextStyle(fontSize: 10.5, color: _textGrey),
+                        ),
+                        pw.Text(
+                          currencyFmt.format(e.value),
+                          style: pw.TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: pw.FontWeight.bold,
+                            color: _textGrey,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               if ((shift.mpSales ?? 0) > 0)
                 _buildRow('Ventas Mercado Pago (QR/Point):', currencyFmt.format(shift.mpSales ?? 0)),
               if (isPremium || (shift.ccSales ?? 0) > 0)

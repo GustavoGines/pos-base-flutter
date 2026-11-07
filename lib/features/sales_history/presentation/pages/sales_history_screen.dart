@@ -12,6 +12,7 @@ import 'package:frontend_desktop/core/constants/app_permissions.dart';
 import '../../../users/presentation/providers/users_provider.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import 'package:frontend_desktop/core/presentation/widgets/global_app_bar.dart';
+import 'package:frontend_desktop/core/presentation/widgets/compact_date_range_picker_dialog.dart';
 import 'package:frontend_desktop/core/utils/receipt_printer_service.dart';
 import 'package:frontend_desktop/core/providers/local_terminal_provider.dart';
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
@@ -94,6 +95,8 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
       final provider = context.read<SalesHistoryProvider>();
       // Reseteamos filtros que hayan quedado sucios en el singleton de sesiones anteriores
       provider.setMethodFilter(null);
+      provider.setFiscalFilter('all');
+      provider.setCustomDateRange(null);
       provider.loadSales(period: 'shift', shiftId: shiftId);
       context.read<UsersProvider>().loadUsers();
     });
@@ -114,6 +117,11 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
       // Filtro de estado
       if (_statusFilter == 'Activas' && sale.isVoided) return false;
       if (_statusFilter == 'Anuladas' && !sale.isVoided) return false;
+
+      // Filtro Fiscal / No Fiscal
+      if (provider.fiscalFilter == 'fiscal' && !sale.isFiscal) return false;
+      if (provider.fiscalFilter == 'non_fiscal' && sale.isFiscal) return false;
+      if (!provider.matchesCustomDateRange(sale)) return false;
 
       // SH-1: Búsqueda multi-campo — ID y nombre de producto.
       // (customerName omitido: SaleRecord no tiene campo de cliente todavía —
@@ -195,6 +203,7 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
                       onSearchChanged: (v) => setState(() => _searchQuery = v.trim()),
                       onPeriodChanged: (period) {
                         provider.setMethodFilter(null);
+                        provider.setCustomDateRange(null);
                         _searchController.clear();
                         setState(() {
                           _searchQuery = '';
@@ -388,25 +397,92 @@ class _FiltersPanel extends StatelessWidget {
           const SizedBox(height: 6),
           Consumer<AuthProvider>(builder: (context, auth, _) {
             final canViewGlobal = auth.hasPermission('view_global_history');
-            return SegmentedButton<String>(
-              showSelectedIcon: false,
-              segments: [
-                const ButtonSegment(value: 'shift', label: Text('Turno')),
-                if (canViewGlobal) ...const [
-                  ButtonSegment(value: 'today', label: Text('Hoy')),
-                  ButtonSegment(value: 'month', label: Text('Mes')),
-                  ButtonSegment(value: 'year', label: Text('Año')),
+            final customRange = provider.customDateRange;
+            final df = DateFormat('dd/MM/yy');
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                SegmentedButton<String>(
+                  showSelectedIcon: false,
+                  emptySelectionAllowed: true,
+                  segments: [
+                    const ButtonSegment(value: 'shift', label: Text('Turno')),
+                    if (canViewGlobal) ...const [
+                      ButtonSegment(value: 'today', label: Text('Hoy')),
+                      ButtonSegment(value: 'month', label: Text('Mes')),
+                      ButtonSegment(value: 'year', label: Text('Año')),
+                    ],
+                  ],
+                  selected: customRange != null
+                      ? <String>{}
+                      : {canViewGlobal ? provider.currentPeriod : 'shift'},
+                  onSelectionChanged: (set) {
+                    if (set.isNotEmpty) {
+                      onPeriodChanged(set.first);
+                    }
+                  },
+                  style: SegmentedButton.styleFrom(
+                    selectedBackgroundColor: Colors.blue.shade100,
+                    textStyle: const TextStyle(fontSize: 11),
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                  ),
+                ),
+                if (canViewGlobal) ...[
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () async {
+                            final picked = await showCompactDateRangePicker(
+                              context: context,
+                              initialDateRange: customRange,
+                              firstDate: DateTime(2020),
+                              lastDate: DateTime.now().add(const Duration(days: 1)),
+                              helpText: 'Filtrar Ventas por Rango de Fechas',
+                            );
+                            if (picked != null) {
+                              onSaleDeselect();
+                              await provider.setCustomDateRange(picked);
+                            }
+                          },
+                          icon: const Icon(Icons.date_range_rounded, size: 15),
+                          label: Text(
+                            customRange != null
+                                ? '${df.format(customRange.start)} → ${df.format(customRange.end)}'
+                                : 'Rango de Fechas Personalizado',
+                            style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            backgroundColor:
+                                customRange != null ? Colors.indigo.shade50 : Colors.white,
+                            foregroundColor: Colors.indigo.shade800,
+                            side: BorderSide(
+                              color: customRange != null
+                                  ? Colors.indigo.shade400
+                                  : Colors.grey.shade300,
+                            ),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        ),
+                      ),
+                      if (customRange != null) ...[
+                        const SizedBox(width: 4),
+                        IconButton(
+                          tooltip: 'Quitar rango personalizado',
+                          icon: const Icon(Icons.clear, size: 16, color: Colors.red),
+                          visualDensity: VisualDensity.compact,
+                          onPressed: () {
+                            provider.setCustomDateRange(null);
+                            onPeriodChanged('today');
+                          },
+                        ),
+                      ],
+                    ],
+                  ),
                 ],
               ],
-              selected: {canViewGlobal ? provider.currentPeriod : 'shift'},
-              onSelectionChanged: (set) {
-                onPeriodChanged(set.first);
-              },
-              style: SegmentedButton.styleFrom(
-                selectedBackgroundColor: Colors.blue.shade100,
-                textStyle: const TextStyle(fontSize: 11),
-                padding: const EdgeInsets.symmetric(horizontal: 6),
-              ),
             );
           }),
 
@@ -554,6 +630,43 @@ class _FiltersPanel extends StatelessWidget {
                 showSelectedIcon: false,
               ),
             ],
+          ),
+          const SizedBox(height: 10),
+          // Selector Fiscal / No Fiscal
+          SegmentedButton<String>(
+            showSelectedIcon: false,
+            segments: const [
+              ButtonSegment(
+                value: 'all',
+                icon: Icon(Icons.all_inclusive, size: 14),
+                label: Text('Todas'),
+              ),
+              ButtonSegment(
+                value: 'fiscal',
+                icon: Icon(Icons.verified_outlined, size: 14),
+                label: Text('Fiscales (AFIP)'),
+              ),
+              ButtonSegment(
+                value: 'non_fiscal',
+                icon: Icon(Icons.receipt_long_outlined, size: 14),
+                label: Text('No Fiscales'),
+              ),
+            ],
+            selected: {provider.fiscalFilter},
+            onSelectionChanged: (set) {
+              provider.setFiscalFilter(set.first);
+              onSaleDeselect();
+            },
+            style: SegmentedButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+              selectedBackgroundColor: provider.fiscalFilter == 'fiscal'
+                  ? Colors.teal.shade100
+                  : provider.fiscalFilter == 'non_fiscal'
+                      ? Colors.orange.shade100
+                      : Colors.blue.shade100,
+              textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+              padding: const EdgeInsets.symmetric(horizontal: 6),
+            ),
           ),
         ],
       ),

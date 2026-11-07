@@ -42,6 +42,8 @@ class PaymentLine {
   TextEditingController checkIssuerNameController;
   TextEditingController checkIssueDateController;
   TextEditingController checkPaymentDateController;
+  TextEditingController transferAliasController;
+  TextEditingController transferSenderController;
 
   PaymentLine(
       {this.method,
@@ -64,7 +66,9 @@ class PaymentLine {
             text: DateTime.now()
                 .add(const Duration(days: 30))
                 .toString()
-                .split(' ')[0]) {
+                .split(' ')[0]),
+        transferAliasController = TextEditingController(),
+        transferSenderController = TextEditingController() {
     updateMethod(method,
         defaultCardSurcharge: defaultCardSurcharge,
         disableSurcharge: disableSurcharge);
@@ -125,6 +129,8 @@ class PaymentLine {
     checkIssuerNameController.dispose();
     checkIssueDateController.dispose();
     checkPaymentDateController.dispose();
+    transferAliasController.dispose();
+    transferSenderController.dispose();
   }
 }
 
@@ -162,8 +168,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         '${hex(bytes[10])}${hex(bytes[11])}${hex(bytes[12])}${hex(bytes[13])}${hex(bytes[14])}${hex(bytes[15])}';
   }
 
-  // Devuelve el orden de prioridad comercial (1 al 7) para cada método de pago:
-  // 1: Efectivo, 2: MP Point, 3: MP QR, 4: Débito, 5: Crédito, 6: Cta. Cte., 7: Cheque
+  // Devuelve el orden de prioridad comercial (1 al 8) para cada método de pago:
+  // 1: Efectivo, 2: MP Point, 3: MP QR, 4: Débito, 5: Crédito, 6: Transferencia, 7: Cta. Cte., 8: Cheque
   int _getMethodOrderNumber(String code) {
     final normalized = code.toLowerCase().trim();
     if (normalized == 'cash' ||
@@ -191,11 +197,14 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         normalized.contains('credito')) {
       return 5;
     }
-    if (normalized == 'cuenta_corriente') {
+    if (normalized.contains('transfer')) {
       return 6;
     }
-    if (normalized == 'cheque') {
+    if (normalized == 'cuenta_corriente') {
       return 7;
+    }
+    if (normalized == 'cheque') {
+      return 8;
     }
     return 99;
   }
@@ -203,15 +212,15 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   // Obtener badge de atajo para un método de pago
   String? _getShortcutBadge(PaymentMethod method) {
     final order = _getMethodOrderNumber(method.code);
-    if (order >= 1 && order <= 7) {
+    if (order >= 1 && order <= 8) {
       return 'Ctrl+$order';
     }
     return null;
   }
 
-  // Seleccionar método de pago por orden comercial (Ctrl+1..7)
+  // Seleccionar método de pago por orden comercial (Ctrl+1..8)
   void _selectPaymentMethodByOrderIndex(int orderNumber) {
-    if (orderNumber < 1 || orderNumber > 7) return;
+    if (orderNumber < 1 || orderNumber > 8) return;
     if (_lines.isEmpty || _isSubmitting) return;
 
     // Si el cajero tiene el cursor en una línea específica, cambia el método de esa línea;
@@ -225,9 +234,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     final provider = context.read<PosProvider>();
     final settings = context.read<SettingsProvider>().settings;
 
-    final availableMethods = provider.paymentMethods
-        .where((m) => !m.code.contains('transfer'))
-        .toList();
+    final availableMethods = provider.paymentMethods.toList();
 
     PaymentMethod? targetMethod;
     for (final m in availableMethods) {
@@ -347,6 +354,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   String? _remoteMatchedName;
   String? _remoteMatchedSource;
   bool _autoMatchedCustomerByDoc = false;
+  bool _isLookingUpPadron = false;
+  String? _lastPadronNotFoundDoc;
 
   // ── Facturación Fiscal ARCA / AFIP ──
   static const double _cfAnonymousLimit = 340000.0;
@@ -394,6 +403,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     } catch (_) {}
 
     setState(() {
+      _lastPadronNotFoundDoc = null;
       _fiscalDocType = AfipModulo11.inferDocType(
         digits,
         currentDocType: _fiscalDocType,
@@ -447,22 +457,42 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
 
   Future<void> _lookupRemoteFiscalRecipient(String digits) async {
     try {
+      if (mounted) {
+        setState(() => _isLookingUpPadron = true);
+      }
       final custProv = context.read<CustomerProvider>();
       final data = await custProv.lookupFiscalRecipient(digits);
       if (!mounted) return;
       final currentDigits =
           _fiscalDocNumberCtrl.text.replaceAll(RegExp(r'\D'), '');
-      if (currentDigits != digits) return;
-      if (data == null || data['found'] != true) return;
+      if (currentDigits != digits) {
+        setState(() => _isLookingUpPadron = false);
+        return;
+      }
+      if (data == null || data['found'] != true) {
+        setState(() {
+          _isLookingUpPadron = false;
+          _lastPadronNotFoundDoc = digits;
+        });
+        return;
+      }
 
       final name = (data['name'] ?? '').toString().trim();
       final address = (data['address'] ?? '').toString().trim();
       final taxCond = (data['tax_condition'] ?? 'consumidor_final').toString();
       final source = (data['source'] ?? 'arca_padron').toString();
 
-      if (name.isEmpty) return;
+      if (name.isEmpty) {
+        setState(() {
+          _isLookingUpPadron = false;
+          _lastPadronNotFoundDoc = digits;
+        });
+        return;
+      }
 
       setState(() {
+        _isLookingUpPadron = false;
+        _lastPadronNotFoundDoc = null;
         if (_fiscalReceiverNameCtrl.text.trim().isEmpty ||
             _autoMatchedCustomerByDoc) {
           _fiscalReceiverNameCtrl.text = name;
@@ -488,7 +518,11 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
           }
         }
       });
-    } catch (_) {}
+    } catch (_) {
+      if (mounted) {
+        setState(() => _isLookingUpPadron = false);
+      }
+    }
   }
 
   @visibleForTesting
@@ -666,6 +700,10 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
               checkIssuerName: l.checkIssuerNameController.text,
               checkIssueDate: l.checkIssueDateController.text,
               checkPaymentDate: l.checkPaymentDateController.text,
+              transferAccountAlias: l.transferAliasController.text.trim().isNotEmpty
+                  ? l.transferAliasController.text.trim()
+                  : null,
+              transferSenderName: l.transferSenderController.text.trim(),
             ))
         .toList();
 
@@ -866,6 +904,9 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       } else if (key == LogicalKeyboardKey.digit7 ||
           key == LogicalKeyboardKey.numpad7) {
         orderNum = 7;
+      } else if (key == LogicalKeyboardKey.digit8 ||
+          key == LogicalKeyboardKey.numpad8) {
+        orderNum = 8;
       }
 
       if (orderNum != null) {
@@ -1061,9 +1102,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     if (provider.paymentMethods.isEmpty) return;
 
     final defaultCash = provider.paymentMethods.firstWhere((p) => p.isCash,
-        orElse: () => provider.paymentMethods.firstWhere(
-            (m) => !m.code.contains('transfer'),
-            orElse: () => provider.paymentMethods.first));
+        orElse: () => provider.paymentMethods.first);
 
     final draft = widget.saleId == null ? _getCheckoutDraft(provider) : null;
 
@@ -1103,6 +1142,10 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         if (dLine.checkPaymentDate.isNotEmpty) {
           line.checkPaymentDateController.text = dLine.checkPaymentDate;
         }
+        if (dLine.transferAccountAlias != null) {
+          line.transferAliasController.text = dLine.transferAccountAlias!;
+        }
+        line.transferSenderController.text = dLine.transferSenderName;
         line.controller.addListener(_onAmountChanged);
         line.percentageController.addListener(_onAmountChanged);
         restoredLines.add(line);
@@ -1322,10 +1365,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     double left = _pendingBalance > 0 ? _pendingBalance : 0.0;
 
     final defaultMethod = provider.paymentMethods.firstWhere(
-      (m) => m.code != 'cuenta_corriente' && !m.code.contains('transfer'),
-      orElse: () => provider.paymentMethods.firstWhere(
-          (m) => !m.code.contains('transfer'),
-          orElse: () => provider.paymentMethods.first),
+      (m) => m.code != 'cuenta_corriente',
+      orElse: () => provider.paymentMethods.first,
     );
 
     final line = PaymentLine(
@@ -1731,6 +1772,14 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                 'base_amount': l.amount,
                 'surcharge_amount': l.surcharge,
                 'total_amount': l.total,
+                if (l.method!.code.toLowerCase().contains('transfer')) ...{
+                  if (l.transferAliasController.text.trim().isNotEmpty)
+                    'transfer_account_alias':
+                        l.transferAliasController.text.trim(),
+                  if (l.transferSenderController.text.trim().isNotEmpty)
+                    'transfer_sender_name':
+                        l.transferSenderController.text.trim(),
+                },
                 if (l.mpPaid) ...{
                   'mp_payment_id': l.mpPaymentId,
                   'mp_order_id': l.mpOrderId,
@@ -2625,6 +2674,17 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     final text = _fiscalDocNumberCtrl.text.trim();
     if (text.isEmpty) return null;
 
+    if (_isLookingUpPadron) {
+      return const Padding(
+        padding: EdgeInsets.all(10.0),
+        child: SizedBox(
+          width: 16,
+          height: 16,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      );
+    }
+
     if (_fiscalDocType == 80 || _fiscalDocType == 86) {
       final isValid = AfipModulo11.isValid(text);
       return Icon(
@@ -2645,6 +2705,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
 
   Widget _buildDocValidationFeedback() {
     final text = _fiscalDocNumberCtrl.text.trim();
+    final digits = text.replaceAll(RegExp(r'\D'), '');
     final List<Widget> feedbackItems = [];
 
     if (_fiscalDocType == 80 || _fiscalDocType == 86) {
@@ -2713,6 +2774,38 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       }
     }
 
+    if (_isLookingUpPadron) {
+      feedbackItems.add(
+        Padding(
+          padding: const EdgeInsets.only(top: 4, left: 4),
+          child: Text(
+            'Consultando Padrón ARCA...',
+            style: TextStyle(
+              color: Colors.indigo.shade700,
+              fontSize: 11,
+              fontStyle: FontStyle.italic,
+            ),
+          ),
+        ),
+      );
+    } else if (_lastPadronNotFoundDoc != null &&
+        _lastPadronNotFoundDoc == digits &&
+        _matchedFiscalCustomer == null &&
+        _remoteMatchedName == null) {
+      feedbackItems.add(
+        Padding(
+          padding: const EdgeInsets.only(top: 4, left: 4),
+          child: Text(
+            'Sin datos en Padrón ARCA (en Homologación solo figuran CUITs de prueba; en Producción consulta DNI reales).',
+            style: TextStyle(
+              color: Colors.blueGrey.shade600,
+              fontSize: 10.5,
+            ),
+          ),
+        ),
+      );
+    }
+
     if (feedbackItems.isEmpty) return const SizedBox.shrink();
     if (feedbackItems.length == 1) return feedbackItems.first;
     return Column(
@@ -2727,10 +2820,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     PosProvider provider,
     BusinessSettings? settings,
   ) {
-    // Ordenar métodos de pago según prioridad comercial (1..7)
-    final sortedMethods = List<PaymentMethod>.from(
-      provider.paymentMethods.where((m) => !m.code.contains('transfer')),
-    );
+    // Ordenar métodos de pago según prioridad comercial (1..8)
+    final sortedMethods = List<PaymentMethod>.from(provider.paymentMethods);
     sortedMethods.sort((a, b) {
       final aOrder = _getMethodOrderNumber(a.code);
       final bOrder = _getMethodOrderNumber(b.code);
@@ -3003,6 +3094,198 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                 color: Colors.orange.shade800,
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTransferFields(PaymentLine line, BusinessSettings? settings) {
+    final configuredAccounts = settings?.bankTransferAccounts ?? const [];
+    final currentAlias = line.transferAliasController.text.trim();
+
+    // Si hay cuentas configuradas y aún no se eligió ninguna, preseleccionar la primera
+    if (currentAlias.isEmpty && configuredAccounts.isNotEmpty) {
+      final firstAlias = configuredAccounts.first['alias']?.toString().trim() ??
+          configuredAccounts.first['name']?.toString().trim() ??
+          '';
+      if (firstAlias.isNotEmpty) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && line.transferAliasController.text.trim().isEmpty) {
+            setState(() {
+              line.transferAliasController.text = firstAlias;
+            });
+          }
+        });
+      }
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      margin: const EdgeInsets.only(top: 8),
+      decoration: BoxDecoration(
+        color: Colors.teal.shade50.withValues(alpha: 0.6),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.teal.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.account_balance_rounded,
+                  size: 16, color: Colors.teal.shade800),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'Datos de Transferencia / Alias Destino',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12.5,
+                    color: Colors.teal.shade900,
+                  ),
+                ),
+              ),
+              TextButton.icon(
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                ),
+                icon: Icon(Icons.add_circle_outline,
+                    size: 15, color: Colors.teal.shade800),
+                label: Text(
+                  'Guardar Alias frecuente',
+                  style: TextStyle(fontSize: 11, color: Colors.teal.shade800),
+                ),
+                onPressed: () async {
+                  final aliasText = line.transferAliasController.text.trim();
+                  if (aliasText.isEmpty) {
+                    SnackBarService.warning(
+                      context,
+                      'Escribe primero el Alias o Cuenta en el campo inferior para guardarlo como frecuente.',
+                    );
+                    return;
+                  }
+                  final settingsProv = context.read<SettingsProvider>();
+                  final currentSettings = settingsProv.settings;
+                  if (currentSettings == null) return;
+                  final existing = List<Map<String, dynamic>>.from(
+                    currentSettings.bankTransferAccounts,
+                  );
+                  final alreadyExists = existing.any(
+                    (a) =>
+                        (a['alias']?.toString().toLowerCase() ?? '') ==
+                        aliasText.toLowerCase(),
+                  );
+                  if (alreadyExists) {
+                    SnackBarService.info(
+                      context,
+                      'El alias "$aliasText" ya está en tus cuentas frecuentes.',
+                    );
+                    return;
+                  }
+                  existing.add({'alias': aliasText, 'label': aliasText});
+                  await settingsProv.saveSettings({
+                    'bank_transfer_accounts': existing,
+                  });
+                  if (mounted) {
+                    setState(() {});
+                    SnackBarService.success(
+                      context,
+                      'Alias "$aliasText" guardado para selección rápida.',
+                    );
+                  }
+                },
+              ),
+            ],
+          ),
+          if (configuredAccounts.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: configuredAccounts.map((acc) {
+                final alias = acc['alias']?.toString().trim() ??
+                    acc['name']?.toString().trim() ??
+                    '';
+                final label = acc['label']?.toString().trim() ?? alias;
+                if (alias.isEmpty) return const SizedBox.shrink();
+                final isSelected =
+                    currentAlias.toLowerCase() == alias.toLowerCase();
+                return InputChip(
+                  label: Text(
+                    label == alias ? alias : '$label ($alias)',
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight:
+                          isSelected ? FontWeight.bold : FontWeight.normal,
+                      color: isSelected
+                          ? Colors.teal.shade900
+                          : Colors.blueGrey.shade800,
+                    ),
+                  ),
+                  selected: isSelected,
+                  selectedColor: Colors.teal.shade100,
+                  backgroundColor: Colors.white,
+                  visualDensity: VisualDensity.compact,
+                  onSelected: (_) {
+                    setState(() {
+                      line.transferAliasController.text = alias;
+                    });
+                  },
+                  onDeleted: () async {
+                    final settingsProv = context.read<SettingsProvider>();
+                    final currentSettings = settingsProv.settings;
+                    if (currentSettings == null) return;
+                    final updated = currentSettings.bankTransferAccounts
+                        .where((a) =>
+                            (a['alias']?.toString().toLowerCase() ?? '') !=
+                            alias.toLowerCase())
+                        .toList();
+                    await settingsProv.saveSettings({
+                      'bank_transfer_accounts': updated,
+                    });
+                    if (mounted) setState(() {});
+                  },
+                  deleteButtonTooltipMessage: 'Quitar de frecuentes',
+                );
+              }).toList(),
+            ),
+          ],
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: line.transferAliasController,
+                  onChanged: (_) => setState(() {}),
+                  decoration: InputDecoration(
+                    labelText: 'Alias / Cuenta Destino (Ej: MP, Banco Galicia)',
+                    isDense: true,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    filled: true,
+                    fillColor: Colors.white,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextField(
+                  controller: line.transferSenderController,
+                  decoration: InputDecoration(
+                    labelText: 'Emisor / N° Operación (Opcional)',
+                    isDense: true,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    filled: true,
+                    fillColor: Colors.white,
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -3351,6 +3634,12 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                                             ],
                                           ),
                                         ],
+                                        // ── Formulario de Transferencia Bancaria / Alias ──
+                                        if (line.method != null &&
+                                            line.method!.code
+                                                .toLowerCase()
+                                                .contains('transfer'))
+                                          _buildTransferFields(line, settings),
                                         // ── Formulario de cheque (se despliega cuando code == 'cheque') ──
                                         if (line.method?.code == 'cheque')
                                           Container(
@@ -4465,7 +4754,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                                       spacing: 8,
                                       runSpacing: 4,
                                       children: [
-                                        _shortcutChip('Ctrl+1..7', 'Medios de pago'),
+                                        _shortcutChip('Ctrl+1..8', 'Medios de pago'),
                                         _shortcutChip('F2', 'Pago exacto'),
                                         _shortcutChip('F4', 'Pago mixto'),
                                         _shortcutChip('F6', 'Cliente'),

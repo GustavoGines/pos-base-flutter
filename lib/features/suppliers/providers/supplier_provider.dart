@@ -11,10 +11,12 @@ class SupplierProvider extends ChangeNotifier {
   bool _isLoading = false;
   List<Supplier> _suppliers = [];
   String _searchQuery = '';
+  String? _errorMessage;
 
   bool get isLoading => _isLoading;
   List<Supplier> get suppliers => _suppliers;
   String get searchQuery => _searchQuery;
+  String? get errorMessage => _errorMessage;
 
   SupplierProvider({required this.baseUrl, required this.client});
 
@@ -33,6 +35,7 @@ class SupplierProvider extends ChangeNotifier {
 
   Future<void> fetchSuppliers({String? search}) async {
     _isLoading = true;
+    _errorMessage = null;
     notifyListeners();
     
     try {
@@ -52,11 +55,11 @@ class SupplierProvider extends ChangeNotifier {
           }).toList();
         }
       } else {
-        throw Exception(_parseError(response));
+        _errorMessage = _parseError(response);
       }
     } catch (e) {
-      // No borramos la lista previa en caso de error de red
-      throw Exception(e.toString().replaceAll('Exception: ', ''));
+      // No borramos la lista previa en caso de error de red ni propagamos excepción no capturada a PlatformDispatcher
+      _errorMessage = e.toString().replaceAll('Exception: ', '');
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -150,6 +153,105 @@ class SupplierProvider extends ChangeNotifier {
       throw Exception(e.toString().replaceAll('Exception: ', ''));
     }
   }
+
+  Future<bool> updateInvoice(int invoiceId, Map<String, dynamic> data, {String? adminPin}) async {
+    try {
+      final headers = <String, String>{
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      };
+      if (adminPin != null && adminPin.isNotEmpty) {
+        headers['X-Admin-Pin'] = adminPin;
+      }
+      final response = await client.put(
+        Uri.parse('$baseUrl/supplier-invoices/$invoiceId'),
+        headers: headers,
+        body: json.encode(data),
+      );
+
+      if (response.statusCode == 200) {
+        await fetchSuppliers(search: _searchQuery);
+        return true;
+      } else {
+        throw Exception(_parseError(response));
+      }
+    } catch (e) {
+      throw Exception(e.toString().replaceAll('Exception: ', ''));
+    }
+  }
+
+  Future<bool> deleteInvoice(int invoiceId, {String? reason, String? adminPin}) async {
+    try {
+      final headers = <String, String>{
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      };
+      if (adminPin != null && adminPin.isNotEmpty) {
+        headers['X-Admin-Pin'] = adminPin;
+      }
+      final response = await client.delete(
+        Uri.parse('$baseUrl/supplier-invoices/$invoiceId'),
+        headers: headers,
+        body: json.encode({
+          if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
+        }),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 204) {
+        await fetchSuppliers(search: _searchQuery);
+        return true;
+      } else {
+        throw Exception(_parseError(response));
+      }
+    } catch (e) {
+      throw Exception(e.toString().replaceAll('Exception: ', ''));
+    }
+  }
+
+  Future<bool> restoreInvoice(int invoiceId, {String? adminPin}) async {
+    try {
+      final headers = <String, String>{
+        'Accept': 'application/json',
+      };
+      if (adminPin != null && adminPin.isNotEmpty) {
+        headers['X-Admin-Pin'] = adminPin;
+      }
+      final response = await client.post(
+        Uri.parse('$baseUrl/supplier-invoices/$invoiceId/restore'),
+        headers: headers,
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 204) {
+        await fetchSuppliers(search: _searchQuery);
+        return true;
+      } else {
+        throw Exception(_parseError(response));
+      }
+    } catch (e) {
+      throw Exception(e.toString().replaceAll('Exception: ', ''));
+    }
+  }
+
+  Future<Map<String, dynamic>> fetchSupplierInvoiceDetail(int invoiceId, {String? adminPin}) async {
+    try {
+      final headers = <String, String>{'Accept': 'application/json'};
+      if (adminPin != null && adminPin.isNotEmpty) {
+        headers['X-Admin-Pin'] = adminPin;
+      }
+      final response = await client.get(
+        Uri.parse('$baseUrl/supplier-invoices/$invoiceId'),
+        headers: headers,
+      );
+      if (response.statusCode == 200) {
+        return Map<String, dynamic>.from(json.decode(response.body) as Map);
+      } else {
+        throw Exception(_parseError(response));
+      }
+    } catch (e) {
+      throw Exception(e.toString().replaceAll('Exception: ', ''));
+    }
+  }
+
   Future<Map<String, dynamic>> fetchCurrentAccount(int supplierId, {String? adminPin}) async {
     try {
       final headers = <String, String>{'Accept': 'application/json'};
@@ -163,6 +265,52 @@ class SupplierProvider extends ChangeNotifier {
 
       if (response.statusCode == 200) {
         return json.decode(response.body);
+      } else {
+        throw Exception(_parseError(response));
+      }
+    } catch (e) {
+      throw Exception(e.toString().replaceAll('Exception: ', ''));
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> fetchSupplierInvoices({
+    int? supplierId,
+    String? type,
+    String? status,
+    String? auditFilter,
+    String? search,
+    DateTime? dateFrom,
+    DateTime? dateTo,
+    String? adminPin,
+  }) async {
+    try {
+      final headers = <String, String>{'Accept': 'application/json'};
+      if (adminPin != null && adminPin.isNotEmpty) {
+        headers['X-Admin-Pin'] = adminPin;
+      }
+      final queryParams = <String, String>{};
+      if (supplierId != null) queryParams['supplier_id'] = supplierId.toString();
+      if (type != null && type.isNotEmpty && type != 'all') queryParams['type'] = type;
+      if (status != null && status.isNotEmpty && status != 'all') queryParams['status'] = status;
+      if (auditFilter != null && auditFilter.isNotEmpty) queryParams['audit_filter'] = auditFilter;
+      if (search != null && search.trim().isNotEmpty) queryParams['search'] = search.trim();
+      if (dateFrom != null) {
+        queryParams['date_from'] =
+            '${dateFrom.year.toString().padLeft(4, '0')}-${dateFrom.month.toString().padLeft(2, '0')}-${dateFrom.day.toString().padLeft(2, '0')}';
+      }
+      if (dateTo != null) {
+        queryParams['date_to'] =
+            '${dateTo.year.toString().padLeft(4, '0')}-${dateTo.month.toString().padLeft(2, '0')}-${dateTo.day.toString().padLeft(2, '0')}';
+      }
+
+      final uri = Uri.parse('$baseUrl/supplier-invoices').replace(
+        queryParameters: queryParams.isEmpty ? null : queryParams,
+      );
+      final response = await client.get(uri, headers: headers);
+      if (response.statusCode == 200) {
+        final decoded = json.decode(response.body);
+        final list = (decoded is Map ? decoded['data'] : decoded) as List<dynamic>? ?? [];
+        return list.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
       } else {
         throw Exception(_parseError(response));
       }

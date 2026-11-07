@@ -61,8 +61,8 @@ class SettingsRepositoryImpl implements SettingsRepository {
     required String cuit,
     required List<int> certBytes,
     required String certFilename,
-    required List<int> keyBytes,
-    required String keyFilename,
+    List<int>? keyBytes,
+    String? keyFilename,
     String? keyPassphrase,
   }) async {
     return await remoteDataSource.uploadAfipCertificates(
@@ -72,6 +72,19 @@ class SettingsRepositoryImpl implements SettingsRepository {
       keyBytes: keyBytes,
       keyFilename: keyFilename,
       keyPassphrase: keyPassphrase,
+    );
+  }
+
+  @override
+  Future<Map<String, dynamic>> generateAfipCsr({
+    required String cuit,
+    String? companyName,
+    bool forceNewKey = false,
+  }) async {
+    return await remoteDataSource.generateAfipCsr(
+      cuit: cuit,
+      companyName: companyName,
+      forceNewKey: forceNewKey,
     );
   }
 
