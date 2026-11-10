@@ -731,6 +731,7 @@ class PosProvider with ChangeNotifier {
     double? newManualSubtotal,
     bool clearManualSubtotal = false,
     double? newQuantity,
+    double? newIvaRate,
     Product? updatedCatalogProduct,
   }) {
     if (updatedCatalogProduct != null) {
@@ -769,6 +770,9 @@ class PosProvider with ChangeNotifier {
         : null;
     if (newQuantity != null && newQuantity > 0) {
       item.quantity = newQuantity;
+    }
+    if (newIvaRate != null) {
+      item.product = item.product.copyWith(ivaRate: newIvaRate);
     }
 
     if (item.isTemporary || item.saveToCatalog || item.product.id <= 0) {

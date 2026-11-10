@@ -288,7 +288,7 @@ class _SupplierDocumentDetailDialogState extends State<SupplierDocumentDetailDia
     final desc = _doc['description']?.toString() ?? '-';
     final userName = _doc['user_name']?.toString() ??
         (_doc['user'] is Map ? _doc['user']['name']?.toString() : null) ??
-        'Sistema';
+        'Administrador';
     final supName = widget.supplierName ??
         _doc['supplier_name']?.toString() ??
         (_doc['supplier'] is Map ? _doc['supplier']['name']?.toString() : null) ??
@@ -507,7 +507,7 @@ class _SupplierDocumentDetailDialogState extends State<SupplierDocumentDetailDia
                   if (isDeleted) ...[
                     const SizedBox(height: 6),
                     Text(
-                      'Anulado por ${_doc['deleted_by_name'] ?? 'Usuario'} '
+                      'Anulado por ${_doc['deleted_by_name'] ?? 'Administrador'} '
                       '(${_formatDateTime(_doc['deleted_at']?.toString())})'
                       '${_doc['deletion_reason'] != null ? ' • Motivo: ${_doc['deletion_reason']}' : ''}',
                       style: TextStyle(
@@ -862,7 +862,7 @@ class _SupplierDocumentDetailDialogState extends State<SupplierDocumentDetailDia
         itemBuilder: (context, idx) {
           final audit = Map<String, dynamic>.from(rawAudits[idx] as Map);
           final action = audit['action']?.toString() ?? 'updated';
-          final userName = audit['user_name']?.toString() ?? 'Sistema';
+          final userName = audit['user_name']?.toString() ?? 'Administrador';
           final authAdminName = (audit['authorizer_name'] ?? audit['authorized_by_admin_name'])
               ?.toString();
           final reason = audit['reason']?.toString();
@@ -1656,7 +1656,7 @@ class _SupplierDocumentsHistoryDialogState extends State<SupplierDocumentsHistor
                                   '-';
                               final userName = doc['user_name']?.toString() ??
                                   (doc['user'] is Map ? doc['user']['name']?.toString() : null) ??
-                                  'Sistema';
+                                  'Administrador';
                               final items = (doc['items'] as List<dynamic>?) ?? [];
                               final rawDate = doc['issue_date']?.toString();
                               final parsedDate =
@@ -1691,7 +1691,7 @@ class _SupplierDocumentsHistoryDialogState extends State<SupplierDocumentsHistor
                                 if (isEdited && doc['last_edited_by_name'] != null)
                                   'Editó: ${doc['last_edited_by_name']}',
                                 if (isDeleted)
-                                  'Anuló: ${doc['deleted_by_name'] ?? 'Usuario'}'
+                                  'Anuló: ${doc['deleted_by_name'] ?? 'Administrador'}'
                                       '${doc['deletion_reason'] != null ? ' (${doc['deletion_reason']})' : ''}',
                               ];
 

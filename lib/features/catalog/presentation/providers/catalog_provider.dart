@@ -858,6 +858,7 @@ class CatalogProvider with ChangeNotifier {
     int id, {
     double? sellingPrice,
     double? costPrice,
+    double? ivaRate,
     String? barcode,
   }) async {
     _errorMessage = null;
@@ -865,6 +866,7 @@ class CatalogProvider with ChangeNotifier {
     final payload = <String, dynamic>{
       if (sellingPrice != null) 'selling_price': sellingPrice,
       if (costPrice != null) 'cost_price': costPrice,
+      if (ivaRate != null) 'iva_rate': ivaRate,
       if (cleanBarcode != null && cleanBarcode.isNotEmpty) 'barcode': cleanBarcode,
     };
     if (payload.isEmpty) return null;

@@ -1012,9 +1012,14 @@ class _StockMovementsTabState extends State<_StockMovementsTab> {
                           _ => typeStr.toUpperCase(),
                         };
 
-                        // Formatear usuario
-                        final userName =
-                            mov['user']?['name'] ?? 'Sistema (Auto)';
+                        // Formatear usuario (priorizando usuario ejecutor -> admin autorizante -> Administrador)
+                        final rawUserName = mov['user']?['name']?.toString();
+                        final rawAdminName =
+                            mov['authorized_by_admin']?['name']?.toString();
+                        final isEcommerce = typeStr == 'sale_ecommerce';
+                        final userName = rawUserName ??
+                            rawAdminName ??
+                            (isEcommerce ? 'Sistema (Online)' : 'Administrador');
                         final isSystem = userName.contains('Sistema');
                         final parsedDate = DateTime.tryParse(mov['created_at']?.toString() ?? '');
                         final dateStr = parsedDate != null

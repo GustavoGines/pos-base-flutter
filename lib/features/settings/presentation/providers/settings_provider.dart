@@ -52,6 +52,9 @@ class SettingsProvider with ChangeNotifier {
   bool get isIibbPerceptionAgent => _settings?.isIibbPerceptionAgent ?? false;
   double get defaultIibbPerceptionRate => _settings?.defaultIibbPerceptionRate ?? 0.0;
 
+  /// True cuando el comercio está configurado como Responsable Inscripto ante ARCA/AFIP.
+  bool get isResponsableInscripto => _settings?.isResponsableInscripto ?? false;
+
   bool _isLoading = false;
   bool get isLoading => _isLoading;
 

@@ -1426,6 +1426,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
   List<Map<String, dynamic>> _comboIngredients = [];
   List<Map<String, dynamic>> _priceTiers = [];
   String _unitType = 'un';
+  double _ivaRate = 21.0;
   int? _categoryId;
   int? _brandId;
   int? _supplierId;
@@ -1476,6 +1477,8 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
       _priceTiers = List<Map<String, dynamic>>.from(p!.priceTiers!);
     }
     _unitType = p?.unitType ?? 'un';
+    final rawIva = p?.ivaRate ?? 21.0;
+    _ivaRate = const [0.0, 10.5, 21.0, 27.0].contains(rawIva) ? rawIva : 21.0;
     _categoryId = p?.category?.id;
     _brandId = p?.brand?.id;
     _supplierId = p?.supplier?.id;
@@ -1868,6 +1871,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
       if (_internalCodeCtrl.text.isNotEmpty) 'internal_code': _internalCodeCtrl.text.trim(),
       'cost_price': ArsThousandsInputFormatter.parse(_costCtrl.text),
       'selling_price': ArsThousandsInputFormatter.parse(_priceCtrl.text),
+      'iva_rate': _ivaRate,
       if (stockModified) 'stock': parsedStock,
       'min_stock': _minStockCtrl.text.trim().isNotEmpty ? double.tryParse(_minStockCtrl.text.replaceAll(',', '.')) : null,
       'is_sold_by_weight': _isSoldByWeight,
@@ -2509,6 +2513,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     final supplierProv = context.watch<SupplierProvider>();
     final settingsProv = context.watch<SettingsProvider>();
     final canSeeSupplier = settingsProv.features.suppliers;
+    final isResponsableInscripto = settingsProv.settings?.isResponsableInscripto ?? false;
     final isNarrow = MediaQuery.of(context).size.width < 450;
     
     final categories = provider.categories;
@@ -2731,6 +2736,26 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                           return null;
                         },
                       ),
+                      if (isResponsableInscripto) ...[
+                        const SizedBox(height: 12),
+                        DropdownButtonFormField<double>(
+                          initialValue: _ivaRate,
+                          isExpanded: true,
+                          decoration: const InputDecoration(
+                            labelText: 'IVA AFIP',
+                            prefixIcon: Icon(Icons.account_balance_outlined, size: 18),
+                          ),
+                          items: const [
+                            DropdownMenuItem(value: 21.0, child: Text('21%')),
+                            DropdownMenuItem(value: 10.5, child: Text('10.5%')),
+                            DropdownMenuItem(value: 27.0, child: Text('27%')),
+                            DropdownMenuItem(value: 0.0, child: Text('0% Ex.')),
+                          ],
+                          onChanged: (v) {
+                            if (v != null) setState(() => _ivaRate = v);
+                          },
+                        ),
+                      ],
                     ],
                   )
                 else
@@ -2740,6 +2765,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                       // Precio Costo — opcional y oculto en Combos (el costo se deriva de sus componentes)
                       if (!_isCombo) ...[
                         Expanded(
+                          flex: 3,
                           child: TextFormField(
                             controller: _costCtrl,
                             decoration: const InputDecoration(
@@ -2759,6 +2785,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                         ),
                         const SizedBox(width: 12),
                         Expanded(
+                          flex: 2,
                           child: TextFormField(
                             controller: _marginCtrl,
                             decoration: const InputDecoration(
@@ -2772,6 +2799,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                         const SizedBox(width: 12),
                       ],
                       Expanded(
+                        flex: 3,
                         child: TextFormField(
                           controller: _priceCtrl,
                           decoration: const InputDecoration(labelText: 'Precio Venta *', prefixText: '\$ '),
@@ -2789,6 +2817,28 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                           },
                         ),
                       ),
+                      if (isResponsableInscripto) ...[
+                        const SizedBox(width: 12),
+                        Expanded(
+                          flex: 2,
+                          child: DropdownButtonFormField<double>(
+                            initialValue: _ivaRate,
+                            isExpanded: true,
+                            decoration: const InputDecoration(
+                              labelText: 'IVA AFIP',
+                            ),
+                            items: const [
+                              DropdownMenuItem(value: 21.0, child: Text('21%')),
+                              DropdownMenuItem(value: 10.5, child: Text('10.5%')),
+                              DropdownMenuItem(value: 27.0, child: Text('27%')),
+                              DropdownMenuItem(value: 0.0, child: Text('0% Ex.')),
+                            ],
+                            onChanged: (v) {
+                              if (v != null) setState(() => _ivaRate = v);
+                            },
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 const SizedBox(height: 12),

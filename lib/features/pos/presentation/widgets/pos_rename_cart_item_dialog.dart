@@ -7,6 +7,7 @@ import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'package:frontend_desktop/core/utils/scale_serial_service.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
 import 'package:frontend_desktop/features/pos/domain/entities/cart_item.dart';
+import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
 
 class PosRenameCartItemResult {
   final String? customDescription;
@@ -18,6 +19,8 @@ class PosRenameCartItemResult {
   final double? newManualSubtotal;
   final bool clearManualSubtotal;
   final double? newQuantity;
+  final double? newIvaRate;
+  final bool ivaRateChanged;
   final String? newBarcode;
   final bool barcodeChanged;
   final bool updateCatalogInDb;
@@ -34,6 +37,8 @@ class PosRenameCartItemResult {
     this.newManualSubtotal,
     this.clearManualSubtotal = false,
     this.newQuantity,
+    this.newIvaRate,
+    this.ivaRateChanged = false,
     this.newBarcode,
     this.barcodeChanged = false,
     this.updateCatalogInDb = false,
@@ -97,6 +102,7 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
   bool _showBarcodeEditor = false;
   bool _barcodeCapturedByScanner = false;
   double? _manualSubtotalOverride;
+  late double _ivaRate;
 
   bool get _isTempOrUnregistered =>
       widget.item.isTemporary ||
@@ -208,6 +214,8 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
     );
 
     _barcodeController = TextEditingController(text: _originalBarcode);
+    final rawIva = widget.item.product.ivaRate;
+    _ivaRate = const [0.0, 10.5, 21.0, 27.0].contains(rawIva) ? rawIva : 21.0;
 
     if (widget.item.manualUnitPrice != null) {
       _priceExplicitlyEdited = true;
@@ -573,6 +581,8 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
         : '';
     _discountPctController.clear();
     _manualSubtotalOverride = null;
+    final rawIva = widget.item.product.ivaRate;
+    _ivaRate = const [0.0, 10.5, 21.0, 27.0].contains(rawIva) ? rawIva : 21.0;
     _priceExplicitlyEdited = false;
     _costExplicitlyEdited = false;
     _updateCatalogInDb = false;
@@ -603,6 +613,14 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
     if (_isTempOrUnregistered || widget.item.product.isCombo) return false;
     final candidate = _barcodeController.text.trim();
     return candidate.isNotEmpty && candidate != _originalBarcode;
+  }
+
+  bool get _hasIvaRateChanged {
+    final origIva = const [0.0, 10.5, 21.0, 27.0]
+            .contains(widget.item.product.ivaRate)
+        ? widget.item.product.ivaRate
+        : 21.0;
+    return (_ivaRate - origIva).abs() >= 0.01;
   }
 
   double get _effectiveLineSubtotal {
@@ -675,12 +693,13 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
 
     final sellingChanged = _hasSellingPriceChanged;
     final costChanged = _hasCostPriceChanged;
+    final ivaChanged = _hasIvaRateChanged;
     final barcodeChanged = _hasBarcodeChanged;
     final cleanBarcode = _barcodeController.text.trim();
 
     final shouldUpdatePriceCostInDb = !_isTempOrUnregistered &&
         _updateCatalogInDb &&
-        (sellingChanged || costChanged);
+        (sellingChanged || costChanged || ivaChanged);
 
     Navigator.of(context).pop(
       PosRenameCartItemResult(
@@ -700,6 +719,8 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
         clearManualSubtotal:
             _manualSubtotalOverride == null || shouldUpdatePriceCostInDb,
         newQuantity: qtyChanged ? qty : null,
+        newIvaRate: ivaChanged ? _ivaRate : null,
+        ivaRateChanged: ivaChanged,
         newBarcode: barcodeChanged ? cleanBarcode : null,
         barcodeChanged: barcodeChanged,
         updateCatalogInDb: shouldUpdatePriceCostInDb,
@@ -733,10 +754,13 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final isResponsableInscripto =
+        context.watch<SettingsProvider?>()?.settings?.isResponsableInscripto ?? false;
     final originalName = widget.item.product.name;
     final showRestorePrices = !_isTempOrUnregistered &&
         (_hasSellingPriceChanged ||
             _hasCostPriceChanged ||
+            _hasIvaRateChanged ||
             widget.item.hasManualPriceOverride);
     final savings = _customerSavingsAmount;
     final refSub = _catalogDefaultCartPrice * _currentQty;
@@ -750,7 +774,7 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 590),
+          constraints: const BoxConstraints(maxWidth: 640),
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(20),
             child: Form(
@@ -1206,73 +1230,68 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
                           ],
                         ),
 
-                        // ── Punto 1: Barra de Descuento Rápido por Línea (% chips + input) ──
+                        // ── Punto 1: Barra de Descuento Rápido por Línea (% chips + input + IVA AFIP en 1 sola línea) ──
                         if (!_isTempOrUnregistered) ...[
                           const SizedBox(height: 10),
-                          Wrap(
-                            alignment: WrapAlignment.spaceBetween,
-                            crossAxisAlignment: WrapCrossAlignment.center,
-                            spacing: 6,
-                            runSpacing: 6,
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.center,
                             children: [
-                              Wrap(
-                                crossAxisAlignment: WrapCrossAlignment.center,
-                                spacing: 5,
-                                runSpacing: 5,
-                                children: [
-                                  const Icon(
-                                    Icons.local_offer_outlined,
-                                    size: 15,
-                                    color: Color(0xFF475569),
-                                  ),
-                                  const Text(
-                                    'Desc. rápido:',
-                                    style: TextStyle(
-                                      fontSize: 11.5,
-                                      fontWeight: FontWeight.w600,
-                                      color: Color(0xFF475569),
-                                    ),
-                                  ),
-                                  for (final pct in const [5.0, 10.0, 15.0, 20.0])
-                                    InkWell(
-                                      borderRadius: BorderRadius.circular(6),
-                                      onTap: () => _applyQuickDiscountChip(pct),
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 8, vertical: 4),
-                                        decoration: BoxDecoration(
-                                          color: (currentDiscInput - pct).abs() <
-                                                  0.05
-                                              ? const Color(0xFF059669)
-                                              : Colors.white,
-                                          borderRadius:
-                                              BorderRadius.circular(6),
-                                          border: Border.all(
-                                            color:
-                                                (currentDiscInput - pct).abs() <
-                                                        0.05
-                                                    ? const Color(0xFF059669)
-                                                    : const Color(0xFFCBD5E1),
-                                          ),
+                              const Icon(
+                                Icons.local_offer_outlined,
+                                size: 15,
+                                color: Color(0xFF475569),
+                              ),
+                              const SizedBox(width: 5),
+                              const Text(
+                                'Desc. rápido:',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF475569),
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              for (final pct in const [5.0, 10.0, 15.0, 20.0])
+                                Padding(
+                                  padding: const EdgeInsets.only(right: 5),
+                                  child: InkWell(
+                                    borderRadius: BorderRadius.circular(7),
+                                    onTap: () => _applyQuickDiscountChip(pct),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 9, vertical: 6),
+                                      decoration: BoxDecoration(
+                                        color: (currentDiscInput - pct).abs() <
+                                                0.05
+                                            ? const Color(0xFF059669)
+                                            : Colors.white,
+                                        borderRadius: BorderRadius.circular(7),
+                                        border: Border.all(
+                                          color:
+                                              (currentDiscInput - pct).abs() <
+                                                      0.05
+                                                  ? const Color(0xFF059669)
+                                                  : const Color(0xFFCBD5E1),
                                         ),
-                                        child: Text(
-                                          '-${pct.toInt()}%',
-                                          style: TextStyle(
-                                            fontSize: 11.5,
-                                            fontWeight: FontWeight.w700,
-                                            color:
-                                                (currentDiscInput - pct).abs() <
-                                                        0.05
-                                                    ? Colors.white
-                                                    : const Color(0xFF334155),
-                                          ),
+                                      ),
+                                      child: Text(
+                                        '-${pct.toInt()}%',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w700,
+                                          color:
+                                              (currentDiscInput - pct).abs() <
+                                                      0.05
+                                                  ? Colors.white
+                                                  : const Color(0xFF334155),
                                         ),
                                       ),
                                     ),
-                                ],
-                              ),
+                                  ),
+                                ),
+                              const Spacer(),
                               SizedBox(
-                                width: 106,
+                                width: 98,
                                 child: TextFormField(
                                   controller: _discountPctController,
                                   keyboardType:
@@ -1293,7 +1312,7 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
                                     filled: true,
                                     fillColor: Colors.white,
                                     contentPadding: const EdgeInsets.symmetric(
-                                        horizontal: 8, vertical: 7),
+                                        horizontal: 9, vertical: 8),
                                     border: OutlineInputBorder(
                                       borderRadius: BorderRadius.circular(8),
                                     ),
@@ -1301,6 +1320,44 @@ class _PosRenameCartItemDialogState extends State<PosRenameCartItemDialog> {
                                   ),
                                 ),
                               ),
+                              if (isResponsableInscripto) ...[
+                                const SizedBox(width: 8),
+                                SizedBox(
+                                  width: 110,
+                                  child: DropdownButtonFormField<double>(
+                                    initialValue: _ivaRate,
+                                    isExpanded: true,
+                                    style: const TextStyle(
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w700,
+                                      color: Color(0xFF1E293B),
+                                    ),
+                                    decoration: InputDecoration(
+                                      labelText: 'IVA AFIP',
+                                      labelStyle: const TextStyle(fontSize: 11.5),
+                                      filled: true,
+                                      fillColor: Colors.white,
+                                      contentPadding: const EdgeInsets.symmetric(
+                                          horizontal: 9, vertical: 7),
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      isDense: true,
+                                    ),
+                                    items: const [
+                                      DropdownMenuItem(value: 21.0, child: Text('21%')),
+                                      DropdownMenuItem(value: 10.5, child: Text('10.5%')),
+                                      DropdownMenuItem(value: 27.0, child: Text('27%')),
+                                      DropdownMenuItem(value: 0.0, child: Text('0% Ex.')),
+                                    ],
+                                    onChanged: (v) {
+                                      if (v != null) {
+                                        setState(() => _ivaRate = v);
+                                      }
+                                    },
+                                  ),
+                                ),
+                              ],
                             ],
                           ),
                         ],

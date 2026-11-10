@@ -4470,7 +4470,9 @@ class _PosScreenState extends State<PosScreen> {
 
     final needsDbUpdate = isCatalogItem &&
         ((res.updateCatalogInDb &&
-                (res.sellingPriceChanged || res.costPriceChanged)) ||
+                (res.sellingPriceChanged ||
+                    res.costPriceChanged ||
+                    res.ivaRateChanged)) ||
             res.barcodeChanged);
 
     // Si hay una rebaja temporal para esta venta (sin guardar el precio en BD), validar apply_discounts
@@ -4512,6 +4514,9 @@ class _PosScreenState extends State<PosScreen> {
                 : null,
             costPrice: (res.updateCatalogInDb && res.costPriceChanged)
                 ? res.newCostPrice
+                : null,
+            ivaRate: (res.updateCatalogInDb && res.ivaRateChanged)
+                ? res.newIvaRate
                 : null,
             barcode: res.barcodeChanged ? res.newBarcode : null,
           );
@@ -4560,6 +4565,7 @@ class _PosScreenState extends State<PosScreen> {
       newManualSubtotal: res.newManualSubtotal,
       clearManualSubtotal: res.clearManualSubtotal,
       newQuantity: res.newQuantity,
+      newIvaRate: res.updateCatalogInDb ? null : res.newIvaRate,
       updatedCatalogProduct: updatedProduct,
     );
 

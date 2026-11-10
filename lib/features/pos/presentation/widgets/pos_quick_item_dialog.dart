@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
 import 'package:frontend_desktop/features/pos/domain/entities/cart_item.dart';
+import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
 
 class PosQuickItemDialog extends StatefulWidget {
   final PriceTier activeTier;
@@ -292,6 +294,8 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final isResponsableInscripto =
+        context.watch<SettingsProvider?>()?.settings?.isResponsableInscripto ?? false;
     final qty = _parseDouble(_quantityController.text);
     final unitPrice = _parseArs(_priceController.text);
     final previewSubtotal = ((qty > 0 ? qty : 0.0) * (unitPrice > 0 ? unitPrice : 0.0));
@@ -497,30 +501,32 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
                           },
                         ),
                       ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        flex: 3,
-                        child: DropdownButtonFormField<double>(
-                          isExpanded: true,
-                          initialValue: _ivaRate,
-                          decoration: InputDecoration(
-                            labelText: 'IVA AFIP',
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(10),
+                      if (isResponsableInscripto) ...[
+                        const SizedBox(width: 10),
+                        Expanded(
+                          flex: 3,
+                          child: DropdownButtonFormField<double>(
+                            isExpanded: true,
+                            initialValue: _ivaRate,
+                            decoration: InputDecoration(
+                              labelText: 'IVA AFIP',
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              isDense: true,
                             ),
-                            isDense: true,
+                            items: const [
+                              DropdownMenuItem(value: 21.0, child: Text('21%', overflow: TextOverflow.ellipsis)),
+                              DropdownMenuItem(value: 10.5, child: Text('10.5%', overflow: TextOverflow.ellipsis)),
+                              DropdownMenuItem(value: 27.0, child: Text('27%', overflow: TextOverflow.ellipsis)),
+                              DropdownMenuItem(value: 0.0, child: Text('0% Ex.', overflow: TextOverflow.ellipsis)),
+                            ],
+                            onChanged: (v) {
+                              if (v != null) setState(() => _ivaRate = v);
+                            },
                           ),
-                          items: const [
-                            DropdownMenuItem(value: 21.0, child: Text('21%', overflow: TextOverflow.ellipsis)),
-                            DropdownMenuItem(value: 10.5, child: Text('10.5%', overflow: TextOverflow.ellipsis)),
-                            DropdownMenuItem(value: 27.0, child: Text('27%', overflow: TextOverflow.ellipsis)),
-                            DropdownMenuItem(value: 0.0, child: Text('0% Ex.', overflow: TextOverflow.ellipsis)),
-                          ],
-                          onChanged: (v) {
-                            if (v != null) setState(() => _ivaRate = v);
-                          },
                         ),
-                      ),
+                      ],
                     ],
                   ),
                   const SizedBox(height: 12),
@@ -563,13 +569,16 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
                           children: [
                             Expanded(
                               child: TextFormField(
-                                controller: _marginController,
-                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                onChanged: _onMarginChanged,
+                                controller: _costController,
+                                keyboardType: TextInputType.number,
+                                inputFormatters: const [
+                                  ArsThousandsInputFormatter(),
+                                ],
+                                onChanged: _onCostChanged,
                                 decoration: InputDecoration(
-                                  labelText: '% Ganancia s/Costo',
-                                  hintText: 'Ej: 30',
-                                  suffixText: '%',
+                                  labelText: 'Precio de Costo (Opcional)',
+                                  hintText: '0',
+                                  prefixText: '\$ ',
                                   border: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(8),
                                   ),
@@ -581,16 +590,13 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
                             const SizedBox(width: 10),
                             Expanded(
                               child: TextFormField(
-                                controller: _costController,
-                                keyboardType: TextInputType.number,
-                                inputFormatters: const [
-                                  ArsThousandsInputFormatter(),
-                                ],
-                                onChanged: _onCostChanged,
+                                controller: _marginController,
+                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                onChanged: _onMarginChanged,
                                 decoration: InputDecoration(
-                                  labelText: 'Precio de Costo (Opcional)',
-                                  hintText: '0',
-                                  prefixText: '\$ ',
+                                  labelText: '% Ganancia s/Costo',
+                                  hintText: 'Ej: 30',
+                                  suffixText: '%',
                                   border: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(8),
                                   ),

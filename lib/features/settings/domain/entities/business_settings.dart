@@ -135,6 +135,12 @@ class BusinessSettings extends Equatable {
   /// Alias legado — mantenido para retrocompatibilidad durante la transición.
   bool get isHardwareStore => businessType == 'hardware_store';
 
+  /// True cuando la Condición frente al IVA del comercio es Responsable Inscripto
+  /// (ej. 'responsable_inscripto' o 'IVA Responsable Inscripto').
+  bool get isResponsableInscripto =>
+      taxCondition != null &&
+      taxCondition!.trim().toLowerCase().contains('inscripto');
+
   final String? logoPath;
   final String? logoUrl;
 
