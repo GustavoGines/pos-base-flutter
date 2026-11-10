@@ -69,17 +69,6 @@ class _CashMovementsScreenState extends State<CashMovementsScreen> {
   }
 
   void _showFormDialog() {
-    final cashProv = context.read<CashRegisterProvider>();
-    if (cashProv.currentShift == null || !cashProv.currentShift!.isOpen) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Debe abrir un turno de caja para registrar movimientos (Gastos/Retiros/Pagos).'),
-          backgroundColor: Colors.red,
-        ),
-      );
-      return;
-    }
-
     showDialog(
       context: context,
       barrierDismissible: true,
@@ -128,7 +117,11 @@ class _CashMovementsScreenState extends State<CashMovementsScreen> {
     final isSupplierPayment = (movement.category == 'Pago a Proveedor' || movement.category == 'Cobro de Saldo a Favor') && movement.supplier != null;
     
     final List<Map<String, dynamic>> payments = [
-      {'payment_method': movement.paymentMethod, 'amount': movement.amount}
+      {
+        'payment_method': movement.paymentMethod,
+        'funding_source': movement.fundingSource,
+        'amount': movement.amount,
+      }
     ];
 
     try {
@@ -602,12 +595,19 @@ class _CashMovementsScreenState extends State<CashMovementsScreen> {
 
                   String methodLabel = movement.paymentMethod.toUpperCase();
                   IconData methodIcon = Icons.payments_outlined;
+                  final bool isOwnerFunds = movement.isOwnerFunds;
                   if (movement.paymentMethod == 'cash') {
-                    methodLabel = 'Efectivo';
-                    methodIcon = Icons.payments_outlined;
+                    methodLabel = isOwnerFunds ? 'Efectivo (Bolsillo)' : 'Efectivo (Caja)';
+                    methodIcon = isOwnerFunds ? Icons.account_balance_wallet_outlined : Icons.payments_outlined;
+                  } else if (movement.paymentMethod == 'owner_funds') {
+                    methodLabel = 'Efectivo (Bolsillo)';
+                    methodIcon = Icons.account_balance_wallet_outlined;
                   } else if (movement.paymentMethod == 'transfer') {
-                    methodLabel = 'Transferencia';
+                    methodLabel = isOwnerFunds ? 'Transferencia (Bolsillo)' : 'Transferencia';
                     methodIcon = Icons.account_balance_outlined;
+                  } else if (movement.paymentMethod == 'card') {
+                    methodLabel = isOwnerFunds ? 'Tarjeta (Bolsillo)' : 'Tarjeta';
+                    methodIcon = Icons.credit_card_outlined;
                   } else if (movement.paymentMethod == 'check') {
                     methodLabel = 'Cheque';
                     methodIcon = Icons.fact_check_outlined;
@@ -667,11 +667,17 @@ class _CashMovementsScreenState extends State<CashMovementsScreen> {
                                     child: Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        Icon(Icons.point_of_sale, size: 12, color: Colors.indigo.shade700),
+                                        Icon(
+                                          movement.cashShiftId > 0 ? Icons.point_of_sale : Icons.admin_panel_settings_outlined,
+                                          size: 12,
+                                          color: Colors.indigo.shade700,
+                                        ),
                                         const SizedBox(width: 4),
                                         Flexible(
                                           child: Text(
-                                            '${movement.cashRegisterName ?? 'Caja'} • Turno #${movement.cashShiftId}',
+                                            movement.cashShiftId > 0
+                                                ? '${movement.cashRegisterName ?? 'Caja'} • Turno #${movement.cashShiftId}'
+                                                : 'Fuera de Turno / Admin',
                                             style: TextStyle(color: Colors.indigo.shade700, fontSize: 11, fontWeight: FontWeight.bold),
                                             overflow: TextOverflow.ellipsis,
                                           ),
@@ -682,18 +688,28 @@ class _CashMovementsScreenState extends State<CashMovementsScreen> {
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                     decoration: BoxDecoration(
-                                      color: Colors.grey.shade100,
+                                      color: isOwnerFunds ? Colors.deepPurple.shade50 : Colors.grey.shade100,
                                       borderRadius: BorderRadius.circular(6),
-                                      border: Border.all(color: Colors.grey.shade300),
+                                      border: Border.all(
+                                        color: isOwnerFunds ? Colors.deepPurple.shade200 : Colors.grey.shade300,
+                                      ),
                                     ),
                                     child: Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        Icon(methodIcon, size: 12, color: Colors.grey.shade700),
+                                        Icon(
+                                          methodIcon,
+                                          size: 12,
+                                          color: isOwnerFunds ? Colors.deepPurple.shade800 : Colors.grey.shade700,
+                                        ),
                                         const SizedBox(width: 4),
                                         Text(
                                           methodLabel,
-                                          style: TextStyle(color: Colors.grey.shade700, fontSize: 12, fontWeight: FontWeight.bold),
+                                          style: TextStyle(
+                                            color: isOwnerFunds ? Colors.deepPurple.shade800 : Colors.grey.shade700,
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.bold,
+                                          ),
                                         ),
                                       ],
                                     ),

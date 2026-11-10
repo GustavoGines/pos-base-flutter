@@ -40,9 +40,11 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
 
   void _openPaymentForm(int supplierId, double balance) {
     final cashProv = context.read<CashRegisterProvider>();
-    if (cashProv.currentShift == null || !cashProv.currentShift!.isOpen) {
+    // Solo el cobro de saldo a favor en efectivo (deposit) exige turno de caja físico abierto.
+    // Los pagos a proveedores (balance > 0) pueden realizarse con Fondos Propios / Transferencia aunque la caja esté cerrada.
+    if (balance < 0 && (cashProv.currentShift == null || !cashProv.currentShift!.isOpen)) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Para registrar un pago, debes abrir un turno de caja en el POS.'), backgroundColor: Colors.orange),
+        const SnackBar(content: Text('Para ingresar un cobro de saldo a favor en caja, debes abrir un turno en el POS.'), backgroundColor: Colors.orange),
       );
       return;
     }

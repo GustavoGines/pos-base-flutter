@@ -1682,11 +1682,20 @@ class ReceiptPrinterService {
     }
 
     // ── Desglose de pagos ──
-    if (payments.length > 1) {
+    if (payments.length == 1) {
+      final methodName = _cleanText(_mapPaymentMethod(
+        payments.first['payment_method'] as String? ?? 'cash',
+        fundingSource: payments.first['funding_source'] as String?,
+      ));
+      bytes += _labelValue(generator, 'MEDIO DE PAGO:', methodName);
+    } else if (payments.length > 1) {
       bytes += generator.hr(ch: '-');
       bytes += generator.text('DESGLOSE DE PAGOS:', styles: const PosStyles(bold: true));
       for (final p in payments) {
-        final methodName = _cleanText(_mapPaymentMethod(p['payment_method'] as String? ?? 'cash'));
+        final methodName = _cleanText(_mapPaymentMethod(
+          p['payment_method'] as String? ?? 'cash',
+          fundingSource: p['funding_source'] as String?,
+        ));
         final amount = (p['amount'] as num?)?.toDouble() ?? 0.0;
         bytes += _labelValue(generator, methodName, '\$${_formatPrice(amount)}');
       }
@@ -1915,11 +1924,20 @@ class ReceiptPrinterService {
     }
 
     // ── Desglose de pagos ──
-    if (payments.length > 1) {
+    if (payments.length == 1) {
+      final methodName = _cleanText(_mapPaymentMethod(
+        payments.first['payment_method'] as String? ?? 'cash',
+        fundingSource: payments.first['funding_source'] as String?,
+      ));
+      bytes += _labelValue(generator, 'MEDIO DE PAGO:', methodName);
+    } else if (payments.length > 1) {
       bytes += generator.hr(ch: '-');
       bytes += generator.text('DESGLOSE DE PAGOS:', styles: const PosStyles(bold: true));
       for (final p in payments) {
-        final methodName = _cleanText(_mapPaymentMethod(p['payment_method'] as String? ?? 'cash'));
+        final methodName = _cleanText(_mapPaymentMethod(
+          p['payment_method'] as String? ?? 'cash',
+          fundingSource: p['funding_source'] as String?,
+        ));
         final amount = (p['amount'] as num?)?.toDouble() ?? 0.0;
         bytes += _labelValue(generator, methodName, '\$${_formatPrice(amount)}');
       }
@@ -1998,12 +2016,16 @@ class ReceiptPrinterService {
   }
 
   /// Mapea los valores internos del método de pago a texto legible en español.
-  String _mapPaymentMethod(String method) {
+  String _mapPaymentMethod(String method, {String? fundingSource}) {
+    final bool isOwner = fundingSource == 'owner_funds' || method.toLowerCase() == 'owner_funds';
     switch (method.toLowerCase()) {
       case 'cash':
-        return 'EFECTIVO';
+      case 'owner_funds':
+        return isOwner ? 'EFECTIVO (BOLSILLO)' : 'EFECTIVO (CAJA)';
       case 'transfer':
-        return 'TRANSFERENCIA';
+        return isOwner ? 'TRANSF. (BOLSILLO)' : 'TRANSFERENCIA';
+      case 'card':
+        return isOwner ? 'TARJETA (BOLSILLO)' : 'TARJETA';
       case 'check':
         return 'CHEQUE';
       default:

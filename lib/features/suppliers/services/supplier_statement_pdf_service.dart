@@ -217,7 +217,22 @@ class SupplierStatementPdfService {
                     if (item['source'] == 'invoice') {
                       actionLabel = item['type'] == 'invoice' ? 'Factura / Remito' : 'Nota de Crédito';
                     } else {
-                      actionLabel = item['type'] == 'deposit' ? 'Ajuste Saldo' : 'Pago Entregado';
+                      final pm = item['payment_method']?.toString();
+                      final fs = item['funding_source']?.toString() ?? (pm == 'owner_funds' ? 'owner_funds' : 'cash_register');
+                      final bool isOwner = fs == 'owner_funds' || pm == 'owner_funds';
+                      final String baseM = (pm == 'cash' || pm == 'owner_funds')
+                          ? 'Efectivo'
+                          : (pm == 'transfer'
+                              ? 'Transf.'
+                              : (pm == 'card'
+                                  ? 'Tarjeta'
+                                  : (pm == 'check' ? 'Cheque' : '')));
+                      final String pmText = baseM.isEmpty
+                          ? ''
+                          : (pm == 'check'
+                              ? ' (Cheque)'
+                              : (isOwner ? ' ($baseM Bolsillo)' : (pm == 'cash' ? ' (Efectivo Caja)' : ' ($baseM)')));
+                      actionLabel = item['type'] == 'deposit' ? 'Ajuste Saldo' : 'Pago Entregado$pmText';
                     }
 
                     final amount = double.tryParse(item['amount'].toString()) ?? 0;

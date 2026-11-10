@@ -11,7 +11,6 @@ import '../../providers/supplier_provider.dart';
 import '../../../pos/presentation/providers/pos_provider.dart';
 import '../../../catalog/domain/entities/product.dart';
 import '../../../cash_movements/presentation/widgets/movement_form_dialog.dart';
-import '../../../cash_register/presentation/providers/cash_register_provider.dart';
 import '../../../../core/constants/app_permissions.dart';
 import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
 
@@ -105,7 +104,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
   final List<_InvoiceItemModel> _items = [];
 
   bool _isLoading = false;
-  bool _payNow = false;
+  bool _payNow = true;
 
   DateTime? _issueDate = DateTime.now();
   DateTime? _dueDate;
@@ -125,6 +124,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
     super.initState();
     final inv = widget.initialInvoice;
     if (inv != null) {
+      _payNow = false;
       _type = inv['type']?.toString() ?? 'invoice';
       _invoiceNumberController.text = inv['invoice_number']?.toString() ?? '';
       _descriptionController.text = inv['description']?.toString() ?? 'Mercadería';
@@ -536,30 +536,17 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
               }
 
               if (amountToPay > 0) {
-                final cashProv = context.read<CashRegisterProvider>();
-                if (cashProv.currentShift != null && cashProv.currentShift!.isOpen) {
-                  showDialog(
-                    context: context,
-                    barrierDismissible: true,
-                    builder: (_) => MovementFormDialog(
-                      initialSupplierId: widget.supplierId,
-                      initialType: 'supplier_payment',
-                      initialAmount: amountToPay,
-                      initialCategory: 'Pago a Proveedor',
-                      helperText: helperText,
-                    ),
-                  );
-                } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text(
-                        'No se puede abonar ahora porque no hay turno de caja abierto.',
-                        style: TextStyle(color: Colors.white),
-                      ),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
-                }
+                showDialog(
+                  context: context,
+                  barrierDismissible: true,
+                  builder: (_) => MovementFormDialog(
+                    initialSupplierId: widget.supplierId,
+                    initialType: 'supplier_payment',
+                    initialAmount: amountToPay,
+                    initialCategory: 'Pago a Proveedor',
+                    helperText: helperText,
+                  ),
+                );
               } else {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
@@ -819,7 +806,11 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                             onChanged: (val) {
                               setState(() {
                                 _type = val!;
-                                if (_type == 'credit_note') _payNow = false;
+                                if (_type == 'credit_note') {
+                                  _payNow = false;
+                                } else if (!_isEditing) {
+                                  _payNow = true;
+                                }
                               });
                             },
                           ),

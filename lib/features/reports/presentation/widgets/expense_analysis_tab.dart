@@ -836,7 +836,9 @@ class _ExpenseAnalysisTabState extends State<ExpenseAnalysisTab> {
                   return const [
                     Align(alignment: Alignment.centerLeft, child: Text('Método: Todos', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13), overflow: TextOverflow.ellipsis, maxLines: 1)),
                     Align(alignment: Alignment.centerLeft, child: Text('Método: Efectivo', style: TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis, maxLines: 1)),
+                    Align(alignment: Alignment.centerLeft, child: Text('Método: Fondos Propios', style: TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis, maxLines: 1)),
                     Align(alignment: Alignment.centerLeft, child: Text('Método: Transferencia', style: TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis, maxLines: 1)),
+                    Align(alignment: Alignment.centerLeft, child: Text('Método: Tarjeta', style: TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis, maxLines: 1)),
                     Align(alignment: Alignment.centerLeft, child: Text('Método: Cheque', style: TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis, maxLines: 1)),
                   ];
                 },
@@ -850,8 +852,16 @@ class _ExpenseAnalysisTabState extends State<ExpenseAnalysisTab> {
                     child: Text('Efectivo'),
                   ),
                   DropdownMenuItem<String?>(
+                    value: 'owner_funds',
+                    child: Text('Fondos Propios / Bolsillo'),
+                  ),
+                  DropdownMenuItem<String?>(
                     value: 'transfer',
                     child: Text('Transferencia'),
+                  ),
+                  DropdownMenuItem<String?>(
+                    value: 'card',
+                    child: Text('Tarjeta'),
                   ),
                   DropdownMenuItem<String?>(
                     value: 'check',

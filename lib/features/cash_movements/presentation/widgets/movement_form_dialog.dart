@@ -26,12 +26,14 @@ import '../../services/cash_movement_pdf_service.dart';
 
 class PaymentItem {
   final String method;
+  final String fundingSource;
   final double amount;
   final int? checkId;
   final ThirdPartyCheck? checkObj;
 
   PaymentItem({
     required this.method,
+    this.fundingSource = 'cash_register',
     required this.amount,
     this.checkId,
     this.checkObj,
@@ -78,6 +80,7 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
   // Pagos mixtos
   final List<PaymentItem> _payments = [];
   String _currentPaymentMethod = 'cash';
+  String _currentFundingSource = 'cash_register';
   int? _currentCheckId;
   final _paymentAmountController = TextEditingController();
 
@@ -101,6 +104,7 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
   void initState() {
     super.initState();
     _type = widget.initialType ?? 'expense';
+    _currentFundingSource = _type == 'supplier_payment' ? 'owner_funds' : 'cash_register';
     _category = widget.initialCategory ?? 'Mercadería';
     if (!_currentCategories.contains(_category) && _currentCategories.isNotEmpty) {
       _category = _currentCategories.first;
@@ -108,7 +112,11 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
     _selectedSupplierId = widget.initialSupplierId;
 
     if (widget.initialAmount != null && widget.initialAmount! > 0) {
-      _payments.add(PaymentItem(method: 'cash', amount: widget.initialAmount!));
+      _payments.add(PaymentItem(
+        method: 'cash',
+        fundingSource: _currentFundingSource,
+        amount: widget.initialAmount!,
+      ));
     }
 
     _paymentAmountController.addListener(() {
@@ -118,6 +126,28 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      final cashProv = context.read<CashRegisterProvider>();
+      final hasOpenShift = cashProv.currentShift != null && cashProv.currentShift!.isOpen;
+      if (!hasOpenShift && mounted) {
+        setState(() {
+          if (_type == 'withdrawal' || _type == 'deposit') {
+            _type = 'expense';
+            _category = _currentCategories.first;
+          }
+          _currentFundingSource = 'owner_funds';
+          for (int i = 0; i < _payments.length; i++) {
+            if (_payments[i].method != 'check') {
+              _payments[i] = PaymentItem(
+                method: _payments[i].method,
+                fundingSource: 'owner_funds',
+                amount: _payments[i].amount,
+                checkId: _payments[i].checkId,
+                checkObj: _payments[i].checkObj,
+              );
+            }
+          }
+        });
+      }
       context.read<SupplierProvider>().fetchSuppliers();
       context.read<CheckProvider>().loadChecks();
       context.read<ExpenseCategoryProvider>().fetchCategories();
@@ -224,6 +254,7 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
     setState(() {
       _payments.add(PaymentItem(
         method: _currentPaymentMethod,
+        fundingSource: _currentPaymentMethod == 'check' ? 'cash_register' : _currentFundingSource,
         amount: finalAmount,
         checkId: _currentCheckId,
         checkObj: checkObj,
@@ -244,6 +275,7 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
     setState(() {
       _payments.removeAt(index);
       _currentPaymentMethod = p.method;
+      _currentFundingSource = p.fundingSource;
       _currentCheckId = p.checkId;
       _paymentAmountController.text = p.amount % 1 == 0
           ? p.amount.toInt().toString()
@@ -492,6 +524,7 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
             .map((p) => {
                   'amount': p.amount,
                   'payment_method': p.method,
+                  'funding_source': p.method == 'check' ? 'cash_register' : p.fundingSource,
                   'check_id': p.checkId,
                 })
             .toList()
@@ -521,7 +554,7 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
       }
       final bool isA4 = format.startsWith('a4');
       final bool shouldPrint = _printReceipt && format != 'none';
-      final bool hasCash = _payments.any((p) => p.method == 'cash');
+      final bool hasCash = _payments.any((p) => p.method == 'cash' && p.fundingSource == 'cash_register');
       final bool isSupplierPayment = (_type == 'supplier_payment' ||
               _category == 'Cobro de Saldo a Favor') &&
           _selectedSupplierId != null;
@@ -532,6 +565,7 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
           final paymentMaps = _payments
               .map((p) => <String, dynamic>{
                     'payment_method': p.method,
+                    'funding_source': p.method == 'check' ? 'cash_register' : p.fundingSource,
                     'amount': p.amount,
                   })
               .toList();
@@ -594,6 +628,7 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
           final paymentMaps = _payments
               .map((p) => <String, dynamic>{
                     'payment_method': p.method,
+                    'funding_source': p.method == 'check' ? 'cash_register' : p.fundingSource,
                     'amount': p.amount,
                   })
               .toList();
@@ -686,6 +721,20 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
         .where((c) => c.status == 'in_wallet' && !selectedCheckIds.contains(c.id))
         .toList();
 
+    final cashProv = context.watch<CashRegisterProvider>();
+    final bool hasOpenShift = cashProv.currentShift != null && cashProv.currentShift!.isOpen;
+    final bool allowsOwnerFunds = _type == 'supplier_payment' || _type == 'expense';
+    final String effectiveFundingSource = !allowsOwnerFunds
+        ? 'cash_register'
+        : (!hasOpenShift ? 'owner_funds' : _currentFundingSource);
+    final String effectivePaymentMethod = (_currentPaymentMethod == 'card' && !allowsOwnerFunds)
+        ? 'cash'
+        : ((_currentPaymentMethod == 'check' && _type != 'supplier_payment')
+            ? 'cash'
+            : ((!hasOpenShift && effectiveFundingSource == 'cash_register' && _currentPaymentMethod == 'cash')
+                ? 'transfer'
+                : _currentPaymentMethod));
+
     return PopScope(
       canPop: !_isLoading && !_isUploadingFile,
       child: AlertDialog(
@@ -702,6 +751,28 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (!hasOpenShift)
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 14),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: Colors.indigo.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.indigo.shade200),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.account_balance_wallet_outlined, color: Colors.indigo.shade700, size: 20),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              'Operando con caja cerrada: se habilitaron medios externos a la caja física (Fondos Propios / Transferencia / Cheque).',
+                              style: TextStyle(fontSize: 12.5, color: Colors.indigo.shade900, fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   // DATOS GENERALES
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -712,26 +783,35 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                           initialValue: _type,
                           decoration: const InputDecoration(
                               labelText: 'Tipo de Movimiento'),
-                          items: const [
-                            DropdownMenuItem(
+                          items: [
+                            const DropdownMenuItem(
                                 value: 'expense',
                                 child: Text('Gasto Operativo (Salida)',
                                     overflow: TextOverflow.ellipsis)),
-                            DropdownMenuItem(
+                            const DropdownMenuItem(
                                 value: 'supplier_payment',
                                 child: Text('Pago a Proveedor (Salida)',
                                     overflow: TextOverflow.ellipsis)),
-                            DropdownMenuItem(
-                                value: 'withdrawal',
-                                child: Text('Retiro de Dueño (Salida)',
-                                    overflow: TextOverflow.ellipsis)),
-                            DropdownMenuItem(
-                                value: 'deposit',
-                                child: Text('Ingreso Extra (Entrada)',
-                                    overflow: TextOverflow.ellipsis)),
+                            if (hasOpenShift)
+                              const DropdownMenuItem(
+                                  value: 'withdrawal',
+                                  child: Text('Retiro de Dueño (Salida)',
+                                      overflow: TextOverflow.ellipsis)),
+                            if (hasOpenShift)
+                              const DropdownMenuItem(
+                                  value: 'deposit',
+                                  child: Text('Ingreso Extra (Entrada)',
+                                      overflow: TextOverflow.ellipsis)),
                           ],
                           onChanged: (val) => setState(() {
                             _type = val!;
+                            if (_type == 'supplier_payment') {
+                              _currentFundingSource = 'owner_funds';
+                            } else if (_type == 'expense') {
+                              _currentFundingSource = hasOpenShift ? 'cash_register' : 'owner_funds';
+                            } else {
+                              _currentFundingSource = 'cash_register';
+                            }
                             if (_type != 'supplier_payment') {
                               _selectedSupplierId = null;
                               _payments.removeWhere((p) => p.method == 'check');
@@ -739,6 +819,21 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                                 _currentPaymentMethod = 'cash';
                                 _currentCheckId = null;
                                 _paymentAmountController.clear();
+                              }
+                            }
+                            if (_type != 'supplier_payment' && _type != 'expense') {
+                              _payments.removeWhere((p) => p.method == 'card');
+                              if (_currentPaymentMethod == 'card') {
+                                _currentPaymentMethod = 'cash';
+                              }
+                              for (int i = 0; i < _payments.length; i++) {
+                                if (_payments[i].fundingSource == 'owner_funds') {
+                                  _payments[i] = PaymentItem(
+                                    method: _payments[i].method,
+                                    fundingSource: 'cash_register',
+                                    amount: _payments[i].amount,
+                                  );
+                                }
                               }
                             }
                             if (_type != 'expense') {
@@ -1219,13 +1314,57 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                               ? 'EFECTIVO'
                               : (p.method == 'transfer'
                                   ? 'TRANSFERENCIA'
-                                  : (p.method == 'check'
-                                      ? 'CHEQUE'
-                                      : p.method.toUpperCase()));
+                                  : (p.method == 'card'
+                                      ? 'TARJETA'
+                                      : (p.method == 'check'
+                                          ? 'CHEQUE'
+                                          : p.method.toUpperCase())));
+                          final bool isFromPocket = p.fundingSource == 'owner_funds' && p.method != 'check';
+                          final String sourceBadgeText = p.method == 'check'
+                              ? 'Cartera de Cheques'
+                              : (isFromPocket ? 'Fondos Propios / Bolsillo' : 'Caja Registradora');
                           return ListTile(
                             dense: true,
                             onTap: () => _editPayment(index),
-                            title: Text(methodLabel),
+                            title: Wrap(
+                              spacing: 8,
+                              runSpacing: 4,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                Text(methodLabel, style: const TextStyle(fontWeight: FontWeight.w700)),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: isFromPocket ? Colors.deepPurple.shade50 : Colors.blueGrey.shade50,
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(
+                                      color: isFromPocket ? Colors.deepPurple.shade200 : Colors.blueGrey.shade200,
+                                    ),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        p.method == 'check'
+                                            ? Icons.fact_check_outlined
+                                            : (isFromPocket ? Icons.account_balance_wallet_outlined : Icons.point_of_sale),
+                                        size: 12,
+                                        color: isFromPocket ? Colors.deepPurple.shade700 : Colors.blueGrey.shade700,
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        sourceBadgeText,
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600,
+                                          color: isFromPocket ? Colors.deepPurple.shade800 : Colors.blueGrey.shade800,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
                             subtitle: p.checkObj != null
                                 ? Text(
                                     'Cheque Nº ${p.checkObj!.checkNumber} - ${p.checkObj!.bankName}')
@@ -1268,26 +1407,191 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        if (allowsOwnerFunds && effectivePaymentMethod != 'check') ...[
+                          Row(
+                            children: [
+                              Icon(Icons.swap_horiz_rounded, size: 15, color: Colors.blueGrey.shade700),
+                              const SizedBox(width: 6),
+                              Text(
+                                'Origen de los Fondos:',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.blueGrey.shade800,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: InkWell(
+                                  key: const Key('funding_source_owner_funds'),
+                                  borderRadius: BorderRadius.circular(8),
+                                  onTap: () => setState(() {
+                                    _currentFundingSource = 'owner_funds';
+                                    if (_payments.length == 1 &&
+                                        _paymentAmountController.text.trim().isEmpty &&
+                                        _payments.first.checkId == null) {
+                                      _payments[0] = PaymentItem(
+                                        method: _payments[0].method,
+                                        fundingSource: 'owner_funds',
+                                        amount: _payments[0].amount,
+                                      );
+                                    }
+                                  }),
+                                  child: AnimatedContainer(
+                                    duration: const Duration(milliseconds: 150),
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                    decoration: BoxDecoration(
+                                      color: effectiveFundingSource == 'owner_funds'
+                                          ? Colors.deepPurple.shade600
+                                          : Colors.white,
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: effectiveFundingSource == 'owner_funds'
+                                            ? Colors.deepPurple.shade700
+                                            : Colors.blueGrey.shade200,
+                                        width: effectiveFundingSource == 'owner_funds' ? 1.5 : 1,
+                                      ),
+                                    ),
+                                    child: Row(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Icon(
+                                          Icons.account_balance_wallet_outlined,
+                                          size: 16,
+                                          color: effectiveFundingSource == 'owner_funds'
+                                              ? Colors.white
+                                              : Colors.deepPurple.shade700,
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Flexible(
+                                          child: Text(
+                                            'De mi Bolsillo (Fondos Propios)',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.bold,
+                                              color: effectiveFundingSource == 'owner_funds'
+                                                  ? Colors.white
+                                                  : Colors.deepPurple.shade900,
+                                            ),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Tooltip(
+                                  message: hasOpenShift
+                                      ? 'Descuenta del efectivo esperado de la caja abierta'
+                                      : 'No disponible: la caja registradora se encuentra cerrada',
+                                  child: InkWell(
+                                    key: const Key('funding_source_cash_register'),
+                                    borderRadius: BorderRadius.circular(8),
+                                    onTap: !hasOpenShift
+                                        ? null
+                                        : () => setState(() {
+                                              _currentFundingSource = 'cash_register';
+                                              if (_payments.length == 1 &&
+                                                  _paymentAmountController.text.trim().isEmpty &&
+                                                  _payments.first.checkId == null) {
+                                                _payments[0] = PaymentItem(
+                                                  method: _payments[0].method,
+                                                  fundingSource: 'cash_register',
+                                                  amount: _payments[0].amount,
+                                                );
+                                              }
+                                            }),
+                                    child: AnimatedContainer(
+                                      duration: const Duration(milliseconds: 150),
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                      decoration: BoxDecoration(
+                                        color: !hasOpenShift
+                                            ? Colors.grey.shade200
+                                            : (effectiveFundingSource == 'cash_register'
+                                                ? Colors.teal.shade700
+                                                : Colors.white),
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(
+                                          color: !hasOpenShift
+                                              ? Colors.grey.shade300
+                                              : (effectiveFundingSource == 'cash_register'
+                                                  ? Colors.teal.shade800
+                                                  : Colors.blueGrey.shade200),
+                                          width: effectiveFundingSource == 'cash_register' ? 1.5 : 1,
+                                        ),
+                                      ),
+                                      child: Row(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          Icon(
+                                            Icons.point_of_sale,
+                                            size: 16,
+                                            color: !hasOpenShift
+                                                ? Colors.grey.shade500
+                                                : (effectiveFundingSource == 'cash_register'
+                                                    ? Colors.white
+                                                    : Colors.teal.shade700),
+                                          ),
+                                          const SizedBox(width: 6),
+                                          Flexible(
+                                            child: Text(
+                                              'De Caja Registradora',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.bold,
+                                                color: !hasOpenShift
+                                                    ? Colors.grey.shade500
+                                                    : (effectiveFundingSource == 'cash_register'
+                                                        ? Colors.white
+                                                        : Colors.teal.shade900),
+                                              ),
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                        ],
                         Row(
                           children: [
                             Expanded(
                               flex: 2,
                               child: DropdownButtonFormField<String>(
-                                key: ValueKey('payment_method_dropdown_$_type'),
+                                key: ValueKey('payment_method_dropdown_${_type}_${hasOpenShift}_$effectivePaymentMethod'),
                                 isExpanded: true,
-                                initialValue: _currentPaymentMethod,
+                                initialValue: effectivePaymentMethod,
                                 decoration: const InputDecoration(
                                     labelText: 'Método', isDense: true),
                                 items: [
-                                  const DropdownMenuItem(
-                                      value: 'cash',
-                                      child: Text('Efectivo',
-                                          overflow: TextOverflow.ellipsis)),
+                                  if (hasOpenShift || effectiveFundingSource == 'owner_funds')
+                                    const DropdownMenuItem(
+                                        value: 'cash',
+                                        child: Text('Efectivo',
+                                            overflow: TextOverflow.ellipsis)),
                                   const DropdownMenuItem(
                                       value: 'transfer',
                                       child: Text('Transf.',
                                           overflow: TextOverflow.ellipsis)),
+                                  if (allowsOwnerFunds)
+                                    const DropdownMenuItem(
+                                        value: 'card',
+                                        child: Text('Tarjeta',
+                                            overflow: TextOverflow.ellipsis)),
                                   if (_type == 'supplier_payment')
                                     const DropdownMenuItem(
                                         value: 'check',
@@ -1298,6 +1602,17 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                                   final oldMethod = _currentPaymentMethod;
                                   _currentPaymentMethod = val!;
                                   _currentCheckId = null;
+                                  // Si hay 1 único pago pre-cargado y el campo de monto está vacío, actualizar su método en vivo
+                                  if (_payments.length == 1 &&
+                                      _paymentAmountController.text.trim().isEmpty &&
+                                      val != 'check' &&
+                                      _payments.first.checkId == null) {
+                                    _payments[0] = PaymentItem(
+                                      method: val,
+                                      fundingSource: effectiveFundingSource,
+                                      amount: _payments[0].amount,
+                                    );
+                                  }
                                   // Solo limpiar el monto si cambiamos A cheque
                                   // (porque el cheque tiene valor nominal fijo)
                                   // o si venimos DE cheque (el valor era del cheque, no del usuario)

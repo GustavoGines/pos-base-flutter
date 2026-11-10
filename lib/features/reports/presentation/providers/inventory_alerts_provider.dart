@@ -57,7 +57,25 @@ class InventoryAlertsProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> fetchAlerts({int threshold = 3}) async {
+  Future<void>? _inFlightFetch;
+  int? _inFlightThreshold;
+
+  Future<void> fetchAlerts({int threshold = 3}) {
+    if (_inFlightFetch != null && _inFlightThreshold == threshold) {
+      return _inFlightFetch!;
+    }
+    _inFlightThreshold = threshold;
+    final future = _performFetchAlerts(threshold: threshold);
+    _inFlightFetch = future;
+    return future.whenComplete(() {
+      if (identical(_inFlightFetch, future)) {
+        _inFlightFetch = null;
+        _inFlightThreshold = null;
+      }
+    });
+  }
+
+  Future<void> _performFetchAlerts({required int threshold}) async {
     _isLoading = true;
     _error = null;
     notifyListeners();

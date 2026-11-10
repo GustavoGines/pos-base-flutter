@@ -368,7 +368,10 @@ class CashMovementPdfService {
           ),
           // Filas
           ...payments.map((p) {
-            final method = _mapPaymentMethod(p['payment_method'] as String? ?? 'cash');
+            final method = _mapPaymentMethod(
+              p['payment_method'] as String? ?? 'cash',
+              fundingSource: p['funding_source'] as String?,
+            );
             final amount = (p['amount'] as num).toDouble();
             return pw.Container(
               padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 6),
@@ -475,12 +478,16 @@ class CashMovementPdfService {
     );
   }
 
-  static String _mapPaymentMethod(String method) {
+  static String _mapPaymentMethod(String method, {String? fundingSource}) {
+    final bool isOwner = fundingSource == 'owner_funds' || method.toLowerCase() == 'owner_funds';
     switch (method.toLowerCase()) {
       case 'cash':
-        return 'EFECTIVO';
+      case 'owner_funds':
+        return isOwner ? 'EFECTIVO (FONDOS PROPIOS / BOLSILLO)' : 'EFECTIVO (CAJA)';
       case 'transfer':
-        return 'TRANSFERENCIA';
+        return isOwner ? 'TRANSFERENCIA (FONDOS PROPIOS / BOLSILLO)' : 'TRANSFERENCIA';
+      case 'card':
+        return isOwner ? 'TARJETA (FONDOS PROPIOS / BOLSILLO)' : 'TARJETA';
       case 'check':
         return 'CHEQUE';
       default:

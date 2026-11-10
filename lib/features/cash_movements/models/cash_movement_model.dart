@@ -7,6 +7,7 @@ class CashMovementModel {
   final int? checkId;
   final double amount;
   final String paymentMethod;
+  final String fundingSource;
   final String type;
   final String category;
   final String? description;
@@ -30,6 +31,7 @@ class CashMovementModel {
     this.checkId,
     required this.amount,
     required this.paymentMethod,
+    this.fundingSource = 'cash_register',
     required this.type,
     required this.category,
     this.description,
@@ -59,7 +61,13 @@ class CashMovementModel {
     return null;
   }
 
+  bool get isOwnerFunds =>
+      fundingSource == 'owner_funds' || paymentMethod == 'owner_funds';
+
   factory CashMovementModel.fromJson(Map<String, dynamic> json) {
+    final rawMethod = json['payment_method']?.toString() ?? 'cash';
+    final rawSource = json['funding_source']?.toString() ??
+        (rawMethod == 'owner_funds' ? 'owner_funds' : 'cash_register');
     return CashMovementModel(
       id: json['id'] is int ? json['id'] : (int.tryParse(json['id']?.toString() ?? '0') ?? 0),
       cashShiftId: json['cash_shift_id'] is int ? json['cash_shift_id'] : (int.tryParse(json['cash_shift_id']?.toString() ?? '0') ?? 0),
@@ -68,7 +76,8 @@ class CashMovementModel {
       supplierId: json['supplier_id'] != null ? (json['supplier_id'] is int ? json['supplier_id'] : int.tryParse(json['supplier_id'].toString())) : null,
       checkId: json['check_id'] != null ? (json['check_id'] is int ? json['check_id'] : int.tryParse(json['check_id'].toString())) : null,
       amount: double.tryParse(json['amount']?.toString() ?? '0') ?? 0.0,
-      paymentMethod: json['payment_method']?.toString() ?? 'cash',
+      paymentMethod: rawMethod,
+      fundingSource: rawSource,
       type: json['type']?.toString() ?? 'expense',
       category: json['category']?.toString() ?? 'Sin categoría',
       description: json['description'],

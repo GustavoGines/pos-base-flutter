@@ -569,5 +569,36 @@ void main() {
       expect(find.text('El monto ingresado en el campo es inválido. Corríjalo o bórrelo antes de procesar.'), findsOneWidget);
       expect(fakeCashMovementProvider.createMovementCallCount, 0);
     });
+
+    testWidgets('Owner Funds (Fondos Propios / Bolsillo): defaults to owner_funds for supplier_payment and submits funding_source + payment_method cleanly', (tester) async {
+      setDesktopSize(tester);
+      fakeCashRegisterProvider.setShift(null);
+
+      await tester.pumpWidget(
+        buildTestDialog(
+          initialType: 'supplier_payment',
+          initialSupplierId: 1,
+          initialAmount: 15000.0,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Banner de operación con caja cerrada visible y pago pre-cargado como EFECTIVO de Fondos Propios / Bolsillo
+      expect(find.textContaining('Operando con caja cerrada'), findsOneWidget);
+      expect(find.text('EFECTIVO'), findsOneWidget);
+      expect(find.text('Fondos Propios / Bolsillo'), findsOneWidget);
+
+      final submitBtn = find.text('Procesar Movimiento');
+      await tester.tap(submitBtn);
+      await tester.pumpAndSettle();
+
+      expect(fakeCashMovementProvider.createMovementCallCount, 1);
+      expect(fakeCashMovementProvider.lastSubmittedPayload?['cash_shift_id'], isNull);
+      final payments = fakeCashMovementProvider.lastSubmittedPayload?['payments'] as List?;
+      expect(payments, isNotNull);
+      expect(payments!.first['payment_method'], 'cash');
+      expect(payments.first['funding_source'], 'owner_funds');
+      expect(payments.first['amount'], 15000.0);
+    });
   });
 }

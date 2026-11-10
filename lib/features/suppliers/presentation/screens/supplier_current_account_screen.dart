@@ -294,10 +294,10 @@ class _SupplierCurrentAccountScreenState extends State<SupplierCurrentAccountScr
                             ),
                             onPressed: () async {
                               final cashProv = context.read<CashRegisterProvider>();
-                              if (cashProv.currentShift == null || !cashProv.currentShift!.isOpen) {
+                              if (!isDebt && (cashProv.currentShift == null || !cashProv.currentShift!.isOpen)) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
-                                    content: Text('Debe abrir un turno de caja para procesar pagos a proveedores.'),
+                                    content: Text('Debe abrir un turno de caja para ingresar un cobro de saldo a favor.'),
                                     backgroundColor: Colors.red,
                                   ),
                                 );
@@ -601,6 +601,43 @@ class _SupplierCurrentAccountScreenState extends State<SupplierCurrentAccountScr
                                 ),
                               ),
                             ],
+                          ] else if (item['source'] == 'payment' && item['payment_method'] != null) ...[
+                            const SizedBox(width: 8),
+                            Builder(builder: (context) {
+                              final pm = item['payment_method'].toString();
+                              final fs = item['funding_source']?.toString() ?? (pm == 'owner_funds' ? 'owner_funds' : 'cash_register');
+                              final bool isOwnerFunds = fs == 'owner_funds' || pm == 'owner_funds';
+                              final String baseMethod = pm == 'cash' || pm == 'owner_funds'
+                                  ? 'Efectivo'
+                                  : (pm == 'transfer'
+                                      ? 'Transferencia'
+                                      : (pm == 'card'
+                                          ? 'Tarjeta'
+                                          : (pm == 'check' ? 'Cheque' : pm.toUpperCase())));
+                              final String pmLabel = pm == 'check'
+                                  ? 'Cheque'
+                                  : (isOwnerFunds
+                                      ? '$baseMethod • Bolsillo'
+                                      : (pm == 'cash' ? 'Efectivo • Caja' : baseMethod));
+                              return Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: isOwnerFunds ? Colors.deepPurple.shade50 : Colors.teal.shade50,
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(
+                                    color: isOwnerFunds ? Colors.deepPurple.shade200 : Colors.teal.shade200,
+                                  ),
+                                ),
+                                child: Text(
+                                  pmLabel,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: isOwnerFunds ? Colors.deepPurple.shade800 : Colors.teal.shade800,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              );
+                            }),
                           ],
                         ],
                       ),
