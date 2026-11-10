@@ -19,6 +19,7 @@ class CartItem {
   String? customDetails; // Notas o desglose adicional para Factura/Ticket
   double? manualUnitPrice; // Precio de venta unitario sobrescrito manualmente para esta venta
   double? manualCostPrice; // Precio de costo unitario sobrescrito manualmente para esta venta
+  double? manualSubtotal; // Subtotal final pactado por lote (ej. "3 por $10.000") para evitar pérdida de centavos por división
   
   CartItem({
     required this.product,
@@ -37,6 +38,7 @@ class CartItem {
     this.customDetails,
     this.manualUnitPrice,
     this.manualCostPrice,
+    this.manualSubtotal,
   });
 
   /// Costo unitario efectivo en esta venta (respeta override manual si existe)
@@ -133,7 +135,17 @@ class CartItem {
     return defaultCalculatedUnitPrice;
   }
 
-  double get subtotal => ((unitPrice * quantity) * 100).roundToDouble() / 100.0;
+  double get subtotal {
+    final calculated = ((unitPrice * quantity) * 100).roundToDouble() / 100.0;
+    if (manualSubtotal != null && manualSubtotal! > 0) {
+      final roundedManual = (manualSubtotal! * 100).roundToDouble() / 100.0;
+      final maxRoundingTolerance = (0.02 * quantity.abs()) > 0.05 ? (0.02 * quantity.abs()) : 0.05;
+      if ((roundedManual - calculated).abs() <= maxRoundingTolerance + 0.001) {
+        return roundedManual;
+      }
+    }
+    return calculated;
+  }
 
   /// Precio unitario regular efectivo para el comprobante (si hubo suba manual para esta venta,
   /// se toma como el nuevo precio regular de ese ticket para no mostrar recargo ni tachado invertido).

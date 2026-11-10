@@ -683,6 +683,7 @@ class PosProvider with ChangeNotifier {
           existing.product = existing.product.copyWith(stock: product.stock);
         }
         existing.quantity += quantity;
+        existing.manualSubtotal = null;
         if (resolvedPromoPrice != null) {
           _cart[index].promotionalPrice = resolvedPromoPrice;
           _cart[index].promotionalLabel = resolvedPromoLabel;
@@ -718,7 +719,7 @@ class PosProvider with ChangeNotifier {
   }
 
   /// Actualiza el nombre temporal (alias de facturación/ticket), notas, precio de venta,
-  /// costo o producto de catálogo actualizado de un ítem del carrito.
+  /// costo, subtotal pactado o producto de catálogo actualizado de un ítem del carrito.
   void updateCartItemCustomDescription(
     CartItem item, {
     String? customDescription,
@@ -727,18 +728,29 @@ class PosProvider with ChangeNotifier {
     bool clearManualUnitPrice = false,
     double? newCostPrice,
     bool clearManualCostPrice = false,
+    double? newManualSubtotal,
+    bool clearManualSubtotal = false,
     double? newQuantity,
     Product? updatedCatalogProduct,
   }) {
     if (updatedCatalogProduct != null) {
       for (final cartIt in _cart) {
         if (cartIt.product.id == updatedCatalogProduct.id) {
+          final priceChangedInDb =
+              (cartIt.product.sellingPrice - updatedCatalogProduct.sellingPrice).abs() > 0.005;
+          final costChangedInDb =
+              (cartIt.product.costPrice - updatedCatalogProduct.costPrice).abs() > 0.005;
           cartIt.product = updatedCatalogProduct;
-          cartIt.manualUnitPrice = null;
-          cartIt.manualCostPrice = null;
-          if (cartIt.promotionalLabel == null &&
-              cartIt.promotionalPeriodType == null) {
-            cartIt.promotionalPrice = null;
+          if (priceChangedInDb) {
+            cartIt.manualUnitPrice = null;
+            cartIt.manualSubtotal = null;
+            if (cartIt.promotionalLabel == null &&
+                cartIt.promotionalPeriodType == null) {
+              cartIt.promotionalPrice = null;
+            }
+          }
+          if (costChangedInDb) {
+            cartIt.manualCostPrice = null;
           }
         }
       }
@@ -766,7 +778,7 @@ class PosProvider with ChangeNotifier {
       if (newCostPrice != null && newCostPrice >= 0) {
         item.product = item.product.copyWith(costPrice: newCostPrice);
       }
-    } else if (updatedCatalogProduct == null) {
+    } else {
       if (clearManualUnitPrice) {
         item.manualUnitPrice = null;
       } else if (newUnitPrice != null && newUnitPrice > 0) {
@@ -786,6 +798,19 @@ class PosProvider with ChangeNotifier {
           item.manualCostPrice = newCostPrice;
         }
       }
+    }
+
+    if (clearManualSubtotal) {
+      item.manualSubtotal = null;
+    } else if (newManualSubtotal != null && newManualSubtotal > 0) {
+      final calcSub = ((item.unitPrice * item.quantity) * 100).roundToDouble() / 100.0;
+      if ((newManualSubtotal - calcSub).abs() < 0.005) {
+        item.manualSubtotal = null;
+      } else {
+        item.manualSubtotal = newManualSubtotal;
+      }
+    } else if (newQuantity != null || newUnitPrice != null || clearManualUnitPrice) {
+      item.manualSubtotal = null;
     }
     notifyListeners();
   }
@@ -888,6 +913,7 @@ class PosProvider with ChangeNotifier {
     final index = _cart.indexOf(cartItem);
     if (index >= 0 && newQuantity > 0) {
       _cart[index].quantity = newQuantity;
+      _cart[index].manualSubtotal = null;
       notifyListeners();
     }
   }
@@ -1119,9 +1145,17 @@ class PosProvider with ChangeNotifier {
           itemUnitCost >= 0 &&
           (itemUnitCost - product.costPrice).abs() > 0.005;
 
+      final itemSubtotal = double.tryParse(itemMap['subtotal']?.toString() ?? '');
+      final itemQty = double.tryParse(itemMap['quantity'].toString()) ?? 1.0;
+      final calcSub = ((unitPriceCharged * itemQty) * 100).roundToDouble() / 100.0;
+      final hasLotRoundingSubtotal = itemSubtotal != null &&
+          itemSubtotal > 0 &&
+          (itemSubtotal - calcSub).abs() >= 0.005 &&
+          (itemSubtotal - calcSub).abs() <= ((0.02 * itemQty.abs()) > 0.05 ? (0.02 * itemQty.abs()) : 0.05) + 0.001;
+
       return CartItem(
         product: product,
-        quantity: double.tryParse(itemMap['quantity'].toString()) ?? 1.0,
+        quantity: itemQty,
         activeTier: _activeTier,
         wholesaleFactor: _currentWholesaleFactor,
         cardFactor: _currentCardFactor,
@@ -1134,6 +1168,7 @@ class PosProvider with ChangeNotifier {
         customDescription: customDesc,
         customDetails: customDet,
         manualCostPrice: hasCustomCostOverride ? itemUnitCost : null,
+        manualSubtotal: hasLotRoundingSubtotal ? itemSubtotal : null,
       );
     }).toList();
 

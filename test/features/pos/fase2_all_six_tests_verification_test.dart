@@ -349,18 +349,19 @@ void main() {
       expect(find.byIcon(Icons.remove_circle_outline), findsOneWidget);
       expect(find.byIcon(Icons.add_circle_outline), findsOneWidget);
 
-      // Tocamos el ícono de la balanza para abrir el modal "Editar Cantidad"
+      // Tocamos el ícono de la balanza para abrir el modal unificado con foco en Peso (KG)
       await tester.tap(scaleButtonFinder);
       await tester.pumpAndSettle();
 
-      // Debe abrirse el diálogo con el peso actual (0.45 / 0.450 kg formateado con toQty)
-      expect(find.text('Editar Cantidad - Queso Cremoso La Paulina'), findsOneWidget);
+      // Debe abrirse el diálogo unificado con el peso actual (0.45 / 0.450 kg formateado con toQty)
+      expect(find.text('Editar Línea en Carrito (Ctrl+E)'), findsOneWidget);
+      expect(find.textContaining('Queso Cremoso La Paulina'), findsWidgets);
       expect(find.text('0.45'), findsWidgets);
       expect(find.text('KG'), findsOneWidget);
-      expect(find.text('Actualizar'), findsOneWidget);
+      expect(find.text('Aplicar en Comprobante (Enter)'), findsOneWidget);
 
       // Cerramos el modal
-      await tester.tap(find.text('Cancelar'));
+      await tester.tap(find.text('Cancelar (Esc)'));
       await tester.pumpAndSettle();
     });
 
@@ -420,12 +421,13 @@ void main() {
       for (int i = 0; i < 3; i++) {
         await tester.tap(find.byTooltip('Editar peso'));
         await tester.pumpAndSettle();
-        expect(find.text('Editar Cantidad - Clavos por Kg'), findsOneWidget);
+        expect(find.text('Editar Línea en Carrito (Ctrl+E)'), findsOneWidget);
+        expect(find.textContaining('Clavos por Kg'), findsWidgets);
 
         // Cancelamos inmediatamente
-        await tester.tap(find.text('Cancelar'));
+        await tester.tap(find.text('Cancelar (Esc)'));
         await tester.pumpAndSettle();
-        expect(find.text('Editar Cantidad - Clavos por Kg'), findsNothing);
+        expect(find.text('Editar Línea en Carrito (Ctrl+E)'), findsNothing);
       }
 
       // Verificamos que la protección isDialogMounted() previene escribir en un controller disposed

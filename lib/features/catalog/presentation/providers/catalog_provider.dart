@@ -852,17 +852,20 @@ class CatalogProvider with ChangeNotifier {
     }
   }
 
-  /// Actualiza el precio de venta y/o costo de un producto directamente desde el carrito del POS,
+  /// Actualiza el precio de venta, costo y/o código de barras de un producto directamente desde el carrito del POS,
   /// preservando el orden visual de la grilla y sin activar el spinner global de carga.
   Future<Product?> updateProductPriceFromPos(
     int id, {
     double? sellingPrice,
     double? costPrice,
+    String? barcode,
   }) async {
     _errorMessage = null;
+    final cleanBarcode = barcode?.trim();
     final payload = <String, dynamic>{
       if (sellingPrice != null) 'selling_price': sellingPrice,
       if (costPrice != null) 'cost_price': costPrice,
+      if (cleanBarcode != null && cleanBarcode.isNotEmpty) 'barcode': cleanBarcode,
     };
     if (payload.isEmpty) return null;
 

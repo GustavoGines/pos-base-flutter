@@ -430,6 +430,9 @@ class _PosScreenState extends State<PosScreen> {
 
     if (results.isEmpty) {
       SnackBarService.error(context, 'Producto no encontrado: "$cleanQuery"');
+      if (RegExp(r'^\d{6,24}$').hasMatch(cleanQuery)) {
+        await _showUnrecognizedBarcodeDialog(cleanQuery);
+      }
     } else if (appliedScaleLogic) {
       final product = results.first;
       double calcWeight = 0.0;
@@ -1732,155 +1735,6 @@ class _PosScreenState extends State<PosScreen> {
     } else {
       SnackBarService.error(
           dialogContext, 'Por favor, ingrese un peso válido entre 0.001 y 999.999 Kg.');
-    }
-  }
-
-  void _showEditCartItemModal(CartItem cartItem, PosProvider provider) {
-    final initialText = cartItem.product.isSoldByWeight
-        ? cartItem.quantity.toQty()
-        : cartItem.quantity.toInt().toString();
-
-    showDialog(
-        context: context,
-        barrierDismissible: true,
-        builder: (context) {
-          return _ManagedControllerScope(
-            initialText: initialText,
-            builder: (context, qtyController, isDialogMounted) {
-              return ValueListenableBuilder<TextEditingValue>(
-                  valueListenable: qtyController,
-                  builder: (context, value, child) {
-                    final parsedVal =
-                        double.tryParse(value.text.trim().replaceAll(',', '.'));
-                    final minQty =
-                        cartItem.product.isSoldByWeight ? 0.001 : 1.0;
-                    final maxQty =
-                        cartItem.product.isSoldByWeight ? 1000.0 : 100000.0;
-                    final isValid = parsedVal != null &&
-                        parsedVal >= minQty &&
-                        parsedVal < maxQty;
-                    return AlertDialog(
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(20)),
-                      title: Text('Editar Cantidad - ${cartItem.product.name}',
-                          style: const TextStyle(
-                              fontWeight: FontWeight.bold, fontSize: 18)),
-                      content: Padding(
-                        padding: const EdgeInsets.only(top: 8.0),
-                        child: TextField(
-                          controller: qtyController,
-                          autofocus: true,
-                          keyboardType: cartItem.product.isSoldByWeight
-                              ? const TextInputType.numberWithOptions(decimal: true)
-                              : TextInputType.number,
-                          decoration: InputDecoration(
-                            labelText: cartItem.product.isSoldByWeight
-                                ? 'Peso Exacto (Ej: 1.500)'
-                                : 'Cantidad (Unidades)',
-                            hintText:
-                                cartItem.product.isSoldByWeight ? '0.000' : '1',
-                            border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12)),
-                            suffixText:
-                                cartItem.product.isSoldByWeight ? 'KG' : 'UN',
-                            helperText: cartItem.product.isSoldByWeight
-                                ? 'Ejemplo: 0.5 = 500 gramos'
-                                : null,
-                          ),
-                          onSubmitted: (val) {
-                            if (isValid) {
-                              _processCartItemEdit(
-                                  val, cartItem, provider, context);
-                            }
-                          },
-                        ),
-                      ),
-                      actionsPadding:
-                          const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                      actions: [
-                        if (cartItem.product.isSoldByWeight)
-                          Consumer<LocalTerminalProvider>(
-                            builder: (ctx, localTerminal, _) {
-                              final comPort = localTerminal.scaleComPort;
-                              final isConfigured = comPort.trim().isNotEmpty;
-                              return OutlinedButton.icon(
-                                onPressed: () {
-                                  if (!isConfigured) {
-                                    showTerminalPeripheralsDialog(context);
-                                    return;
-                                  }
-                                  _readWeightFromScale(
-                                      comPort, qtyController,
-                                      isDialogMounted: isDialogMounted);
-                                },
-                                icon: Icon(Icons.scale_rounded,
-                                    color: isConfigured ? Colors.blueGrey : Colors.grey),
-                                label: Text(
-                                  isConfigured ? 'Leer Balanza' : 'Configurar Balanza',
-                                  style: TextStyle(
-                                    color: isConfigured ? Colors.blueGrey : Colors.grey,
-                                  ),
-                                ),
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: isConfigured ? Colors.blueGrey : Colors.grey,
-                                  side: BorderSide(
-                                    color: isConfigured ? Colors.blueGrey : Colors.grey.shade400,
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(8)),
-                                ),
-                              );
-                            },
-                          ),
-                        TextButton(
-                          onPressed: () => Navigator.pop(context),
-                          child: const Text('Cancelar',
-                              style: TextStyle(color: Colors.grey)),
-                        ),
-                        FilledButton(
-                          onPressed: isValid
-                              ? () {
-                                  _processCartItemEdit(qtyController.text, cartItem,
-                                      provider, context);
-                                }
-                              : null,
-                          style: FilledButton.styleFrom(
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8)),
-                          ),
-                          child: const Text('Actualizar'),
-                        )
-                      ],
-                    );
-                  });
-            },
-          );
-        }).then((_) {
-      _searchFocusNode.requestFocus();
-    });
-  }
-
-  void _processCartItemEdit(String value, CartItem cartItem,
-      PosProvider provider, BuildContext dialogContext) {
-    String sanitizedValue = value.trim().replaceAll(',', '.');
-    final newQuantity = double.tryParse(sanitizedValue);
-    final minQty = cartItem.product.isSoldByWeight ? 0.001 : 1.0;
-    final maxQty = cartItem.product.isSoldByWeight ? 1000.0 : 100000.0;
-
-    if (newQuantity != null && newQuantity >= minQty && newQuantity < maxQty) {
-      // Si el producto NO es pesado, forzar entero por si acaso.
-      final finalQuantity = cartItem.product.isSoldByWeight
-          ? newQuantity
-          : newQuantity.toInt().toDouble();
-
-      provider.updateQuantity(cartItem, finalQuantity);
-      Navigator.pop(dialogContext);
-    } else {
-      SnackBarService.error(
-          dialogContext,
-          cartItem.product.isSoldByWeight
-              ? 'Por favor, ingrese un peso válido entre 0.001 y 999.999 Kg.'
-              : 'Por favor, ingrese una cantidad válida mayor a 0.');
     }
   }
 
@@ -3337,87 +3191,132 @@ class _PosScreenState extends State<PosScreen> {
                         style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
                   ],
                 ),
-                if (pos.cart.isNotEmpty)
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: Colors.blueAccent.withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          '${pos.cart.length} ${pos.cart.length == 1 ? 'ítem' : 'ítems'}',
-                          style: const TextStyle(
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.blueAccent,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      IconButton(
-                        icon: const Icon(Icons.delete_sweep, color: Colors.red),
-                        tooltip: 'Vaciar Carrito',
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
-                        onPressed: () async {
-                          final confirm = await showDialog<bool>(
-                            context: context,
-                            builder: (c) => AlertDialog(
-                              title: const Text('Vaciar Carrito'),
-                              content: const Text('¿Deseas quitar todos los productos y vaciar el carrito?'),
-                              actions: [
-                                TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancelar')),
-                                FilledButton(
-                                  style: FilledButton.styleFrom(backgroundColor: Colors.red),
-                                  onPressed: () => Navigator.pop(c, true),
-                                  child: const Text('Vaciar'),
-                                ),
-                              ],
-                            ),
-                          );
-                          if (confirm == true) {
-                            pos.clearCart();
-                            _searchFocusNode.requestFocus();
-                          }
-                        },
-                      ),
-                    ],
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 200),
+                  switchInCurve: Curves.easeOutCubic,
+                  switchOutCurve: Curves.easeInCubic,
+                  transitionBuilder: (child, animation) => FadeTransition(
+                    opacity: animation,
+                    child: ScaleTransition(
+                      scale: Tween<double>(begin: 0.92, end: 1.0)
+                          .animate(animation),
+                      child: child,
+                    ),
                   ),
+                  child: pos.cart.isNotEmpty
+                      ? Row(
+                          key: const ValueKey('cart_header_actions_visible'),
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color:
+                                    Colors.blueAccent.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                '${pos.cart.length} ${pos.cart.length == 1 ? 'ítem' : 'ítems'}',
+                                style: const TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.blueAccent,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            IconButton(
+                              icon: const Icon(Icons.delete_sweep,
+                                  color: Colors.red),
+                              tooltip: 'Vaciar Carrito',
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(),
+                              onPressed: () async {
+                                final confirm = await showDialog<bool>(
+                                  context: context,
+                                  builder: (c) => AlertDialog(
+                                    title: const Text('Vaciar Carrito'),
+                                    content: const Text(
+                                        '¿Deseas quitar todos los productos y vaciar el carrito?'),
+                                    actions: [
+                                      TextButton(
+                                          onPressed: () =>
+                                              Navigator.pop(c, false),
+                                          child: const Text('Cancelar')),
+                                      FilledButton(
+                                        style: FilledButton.styleFrom(
+                                            backgroundColor: Colors.red),
+                                        onPressed: () => Navigator.pop(c, true),
+                                        child: const Text('Vaciar'),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                                if (confirm == true) {
+                                  pos.clearCart();
+                                  _searchFocusNode.requestFocus();
+                                }
+                              },
+                            ),
+                          ],
+                        )
+                      : const SizedBox.shrink(
+                          key: ValueKey('cart_header_actions_empty'),
+                        ),
+                ),
               ],
             ),
           ),
 
-          // Lista de ítems
+          // Lista de ítems con marca de agua persistente y transiciones suaves
           Expanded(
             child: Stack(
               alignment: Alignment.center,
               children: [
-                if (pos.cart.isNotEmpty)
-                  const FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: PosWatermarkLogo(size: 260),
-                  ),
-                if (pos.cart.isEmpty)
-                  const Center(
+                IgnorePointer(
+                  child: Center(
                     child: SingleChildScrollView(
+                      physics: const NeverScrollableScrollPhysics(),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          FittedBox(
-                            fit: BoxFit.scaleDown,
-                            child: PosWatermarkLogo(size: 220),
+                          AnimatedScale(
+                            scale: pos.cart.isEmpty ? 1.0 : 0.86,
+                            duration: const Duration(milliseconds: 260),
+                            curve: Curves.easeOutCubic,
+                            child: AnimatedOpacity(
+                              opacity: pos.cart.isEmpty ? 0.90 : 0.45,
+                              duration: const Duration(milliseconds: 260),
+                              curve: Curves.easeOutCubic,
+                              child: const FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: PosWatermarkLogo(size: 205),
+                              ),
+                            ),
                           ),
-                          SizedBox(height: 12),
-                          Text('El carrito está vacío',
-                              style: TextStyle(color: Colors.grey)),
+                          AnimatedSize(
+                            duration: const Duration(milliseconds: 220),
+                            curve: Curves.easeOutCubic,
+                            child: pos.cart.isEmpty
+                                ? const Padding(
+                                    padding: EdgeInsets.only(top: 12),
+                                    child: Text(
+                                      'El carrito está vacío',
+                                      style: TextStyle(
+                                        color: Colors.grey,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  )
+                                : const SizedBox.shrink(),
+                          ),
                         ],
                       ),
                     ),
-                  )
-                else
+                  ),
+                ),
+                if (pos.cart.isNotEmpty)
                   ListView.separated(
                     itemCount: pos.cart.length,
                     separatorBuilder: (_, __) => const Divider(height: 1),
@@ -3519,63 +3418,72 @@ class _PosScreenState extends State<PosScreen> {
                         );
                       }
 
-                      return InkWell(
-                        onTap: () => _showEditCartItemModal(item, pos),
+                      final nameColumn = Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            item.effectiveDisplayName,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13.5,
+                              height: 1.2,
+                            ),
+                          ),
+                          if (item.customDetails != null &&
+                              item.customDetails!.trim().isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 2),
+                              child: Text(
+                                '📝 ${item.customDetails!.trim()}',
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.blueGrey.shade700,
+                                  fontStyle: FontStyle.italic,
+                                ),
+                              ),
+                            ),
+                        ],
+                      );
+
+                      return _AnimatedCartItemTile(
+                        key: ObjectKey(item),
+                        quantity: item.quantity,
+                        subtotal: item.subtotal,
+                        onTap: () => _openRenameCartItemDialog(item),
+                        onSecondaryTap: () => _openRenameCartItemDialog(item),
                         child: Padding(
                           padding: const EdgeInsets.symmetric(
                               horizontal: 12, vertical: 8),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              // Fila 1: Nombre del producto (100% ancho disponible) + Renombrar + Eliminar
+                              // Fila 1: Nombre del producto (100% ancho disponible) + Editar + Eliminar
                               Row(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Expanded(
-                                    child: Tooltip(
-                                      message: item.isRenamed
-                                          ? '${item.effectiveDisplayName}\n(Catálogo: ${item.product.name})'
-                                          : item.effectiveDisplayName,
-                                      waitDuration:
-                                          const Duration(milliseconds: 500),
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            item.effectiveDisplayName,
-                                            maxLines: 2,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 13.5,
-                                              height: 1.2,
-                                            ),
-                                          ),
-                                          if (item.customDetails != null &&
-                                              item.customDetails!.trim().isNotEmpty)
-                                            Padding(
-                                              padding: const EdgeInsets.only(top: 2),
-                                              child: Text(
-                                                '📝 ${item.customDetails!.trim()}',
-                                                maxLines: 2,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: TextStyle(
-                                                  fontSize: 11,
-                                                  color: Colors.blueGrey.shade700,
-                                                  fontStyle: FontStyle.italic,
-                                                ),
-                                              ),
-                                            ),
-                                        ],
-                                      ),
-                                    ),
+                                    child: item.isRenamed
+                                        ? Tooltip(
+                                            message:
+                                                '${item.effectiveDisplayName}\n(Catálogo: ${item.product.name})',
+                                            waitDuration: const Duration(
+                                                milliseconds: 500),
+                                            child: nameColumn,
+                                          )
+                                        : nameColumn,
                                   ),
                                   const SizedBox(width: 4),
                                   Tooltip(
-                                    message: 'Editar Precio / Costo / Alias para Factura y Ticket (Ctrl+E)',
+                                    message:
+                                        'Editar Línea en Carrito (Clic / Clic Der. / Ctrl+E)',
                                     child: InkWell(
                                       borderRadius: BorderRadius.circular(6),
-                                      onTap: () => _openRenameCartItemDialog(item),
+                                      onTap: () =>
+                                          _openRenameCartItemDialog(item),
                                       child: Padding(
                                         padding: const EdgeInsets.all(2.0),
                                         child: Icon(
@@ -3584,7 +3492,9 @@ class _PosScreenState extends State<PosScreen> {
                                           color: item.isRenamed ||
                                                   item.hasManualPriceOverride ||
                                                   (item.customDetails != null &&
-                                                      item.customDetails!.trim().isNotEmpty)
+                                                      item.customDetails!
+                                                          .trim()
+                                                          .isNotEmpty)
                                               ? Colors.indigo.shade700
                                               : Colors.blueGrey.shade600,
                                         ),
@@ -3678,8 +3588,10 @@ class _PosScreenState extends State<PosScreen> {
                                                   const BoxConstraints(),
                                               tooltip: 'Editar peso',
                                               onPressed: () {
-                                                _showEditCartItemModal(
-                                                    item, pos);
+                                                _openRenameCartItemDialog(
+                                                  item,
+                                                  focusQuantityInitially: true,
+                                                );
                                               },
                                             )
                                           else ...[
@@ -3703,15 +3615,25 @@ class _PosScreenState extends State<PosScreen> {
                                                     color: Colors.grey),
                                               ),
                                             ),
-                                            Padding(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                      horizontal: 6),
-                                              child: Text(
-                                                qtyDisplay,
-                                                style: const TextStyle(
-                                                  fontWeight: FontWeight.bold,
-                                                  fontSize: 13,
+                                            InkWell(
+                                              borderRadius:
+                                                  BorderRadius.circular(6),
+                                              onTap: () =>
+                                                  _openRenameCartItemDialog(
+                                                item,
+                                                focusQuantityInitially: true,
+                                              ),
+                                              child: Padding(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                        horizontal: 6,
+                                                        vertical: 2),
+                                                child: Text(
+                                                  qtyDisplay,
+                                                  style: const TextStyle(
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 13,
+                                                  ),
                                                 ),
                                               ),
                                             ),
@@ -4527,10 +4449,17 @@ class _PosScreenState extends State<PosScreen> {
     _searchFocusNode.requestFocus();
   }
 
-  Future<void> _openRenameCartItemDialog(CartItem item) async {
+  Future<void> _openRenameCartItemDialog(
+    CartItem item, {
+    bool focusQuantityInitially = false,
+  }) async {
     final posProvider = Provider.of<PosProvider>(context, listen: false);
     final catalogProvider = Provider.of<CatalogProvider>(context, listen: false);
-    final res = await PosRenameCartItemDialog.show(context, item: item);
+    final res = await PosRenameCartItemDialog.show(
+      context,
+      item: item,
+      focusQuantityInitially: focusQuantityInitially,
+    );
     if (!mounted || res == null) {
       if (mounted) _searchFocusNode.requestFocus();
       return;
@@ -4539,21 +4468,52 @@ class _PosScreenState extends State<PosScreen> {
     final isCatalogItem =
         !item.isTemporary && !item.saveToCatalog && item.product.id > 0;
 
-    // MODO B: Impacto permanente en Base de Datos + Carrito
-    if (isCatalogItem &&
-        res.updateCatalogInDb &&
-        (res.sellingPriceChanged || res.costPriceChanged)) {
-      Product? updatedProduct;
+    final needsDbUpdate = isCatalogItem &&
+        ((res.updateCatalogInDb &&
+                (res.sellingPriceChanged || res.costPriceChanged)) ||
+            res.barcodeChanged);
+
+    // Si hay una rebaja temporal para esta venta (sin guardar el precio en BD), validar apply_discounts
+    final hasTemporaryDiscountForThisSale = isCatalogItem &&
+        !res.updateCatalogInDb &&
+        res.newUnitPrice != null &&
+        res.newUnitPrice! < (item.defaultCalculatedUnitPrice - 0.01);
+
+    if (hasTemporaryDiscountForThisSale) {
+      final pinResult = await AdminPinDialog.verifyAndGetPin(
+        context,
+        action: 'Autorizar rebaja de precio en "${item.product.name}"',
+        permissionKey: AppPermissions.applyDiscounts,
+      );
+      if (!mounted) return;
+      if (pinResult == null) {
+        _searchFocusNode.requestFocus();
+        return;
+      }
+      if (pinResult != 'ALREADY_AUTHORIZED') {
+        posProvider.setAuthorizedDiscountPin(pinResult);
+      }
+    }
+
+    // Impacto permanente en Base de Datos (Precio/Costo y/o Código de Barras)
+    Product? updatedProduct;
+    if (needsDbUpdate) {
       final authorized = await AdminPinDialog.protectAction(
         context,
-        action:
-            'Actualizar Precio/Costo en Catálogo (${item.product.name})',
+        action: res.barcodeChanged && !res.updateCatalogInDb
+            ? 'Asociar Código de Barras en Catálogo (${item.product.name})'
+            : 'Actualizar Producto en Catálogo (${item.product.name})',
         permissionKey: AppPermissions.manageCatalog,
         onAuthorized: () async {
           updatedProduct = await catalogProvider.updateProductPriceFromPos(
             item.product.id,
-            sellingPrice: res.sellingPriceChanged ? res.newUnitPrice : null,
-            costPrice: res.costPriceChanged ? res.newCostPrice : null,
+            sellingPrice: (res.updateCatalogInDb && res.sellingPriceChanged)
+                ? res.newUnitPrice
+                : null,
+            costPrice: (res.updateCatalogInDb && res.costPriceChanged)
+                ? res.newCostPrice
+                : null,
+            barcode: res.barcodeChanged ? res.newBarcode : null,
           );
         },
       );
@@ -4577,7 +4537,8 @@ class _PosScreenState extends State<PosScreen> {
 
       // Actualizar también en resultados de búsqueda activos si existieran
       if (_searchResults.isNotEmpty) {
-        final idx = _searchResults.indexWhere((p) => p.id == updatedProduct!.id);
+        final idx =
+            _searchResults.indexWhere((p) => p.id == updatedProduct!.id);
         if (idx != -1) {
           setState(() {
             final copy = List<Product>.from(_searchResults);
@@ -4586,53 +4547,329 @@ class _PosScreenState extends State<PosScreen> {
           });
         }
       }
-
-      posProvider.updateCartItemCustomDescription(
-        item,
-        customDescription: res.customDescription,
-        customDetails: res.customDetails,
-        newQuantity: res.newQuantity,
-        updatedCatalogProduct: updatedProduct,
-      );
-
-      SnackBarService.success(
-        context,
-        '💾 Precio actualizado en esta venta y en la Base de Datos para "${item.product.name}".',
-      );
-      _searchFocusNode.requestFocus();
-      return;
-    }
-
-    // MODO A: Solo esta venta (verificar permiso apply_discounts si rebajó el precio de un producto de catálogo)
-    if (isCatalogItem &&
-        res.newUnitPrice != null &&
-        res.newUnitPrice! < (item.defaultCalculatedUnitPrice - 0.01)) {
-      final pinResult = await AdminPinDialog.verifyAndGetPin(
-        context,
-        action: 'Autorizar rebaja de precio en "${item.product.name}"',
-        permissionKey: AppPermissions.applyDiscounts,
-      );
-      if (!mounted) return;
-      if (pinResult == null) {
-        _searchFocusNode.requestFocus();
-        return;
-      }
-      if (pinResult != 'ALREADY_AUTHORIZED') {
-        posProvider.setAuthorizedDiscountPin(pinResult);
-      }
     }
 
     posProvider.updateCartItemCustomDescription(
       item,
       customDescription: res.customDescription,
       customDetails: res.customDetails,
-      newUnitPrice: res.newUnitPrice,
+      newUnitPrice: res.updateCatalogInDb ? null : res.newUnitPrice,
       clearManualUnitPrice: res.clearManualUnitPrice,
-      newCostPrice: res.newCostPrice,
+      newCostPrice: res.updateCatalogInDb ? null : res.newCostPrice,
       clearManualCostPrice: res.clearManualCostPrice,
+      newManualSubtotal: res.newManualSubtotal,
+      clearManualSubtotal: res.clearManualSubtotal,
       newQuantity: res.newQuantity,
+      updatedCatalogProduct: updatedProduct,
     );
+
+    if (updatedProduct != null) {
+      final msg = res.barcodeChanged && !res.updateCatalogInDb
+          ? '🔫 Código de barras (${res.newBarcode}) asociado en la Base de Datos a "${item.product.name}".'
+          : '💾 Cambios guardados en la Base de Datos para "${item.product.name}".';
+      SnackBarService.success(context, msg);
+    }
     _searchFocusNode.requestFocus();
+  }
+
+  /// Punto 2B: Cuando se escanea un código de barras desconocido en el mostrador,
+  /// permite asociarlo en 1 clic al último producto del carrito o buscar el producto por nombre.
+  Future<void> _showUnrecognizedBarcodeDialog(String scannedBarcode) async {
+    final posProvider = Provider.of<PosProvider>(context, listen: false);
+    final catalogProvider =
+        Provider.of<CatalogProvider>(context, listen: false);
+
+    CartItem? lastCatalogCartItem;
+    for (final it in posProvider.cart.reversed) {
+      if (!it.isTemporary &&
+          !it.saveToCatalog &&
+          it.product.id > 0 &&
+          !it.product.isCombo) {
+        lastCatalogCartItem = it;
+        break;
+      }
+    }
+
+    final searchCtrl = TextEditingController();
+    List<Product> candidateProducts = [];
+    bool isSearchingCatalog = false;
+
+    Future<void> assignBarcodeToProduct(
+      BuildContext dialogCtx,
+      Product targetProduct, {
+      required bool addToCartAfter,
+    }) async {
+      Product? updatedProduct;
+      final authorized = await AdminPinDialog.protectAction(
+        context,
+        action:
+            'Asociar código $scannedBarcode a "${targetProduct.name}" en Catálogo',
+        permissionKey: AppPermissions.manageCatalog,
+        onAuthorized: () async {
+          updatedProduct = await catalogProvider.updateProductPriceFromPos(
+            targetProduct.id,
+            barcode: scannedBarcode,
+          );
+        },
+      );
+
+      if (!mounted) return;
+      if (!authorized) return;
+
+      if (updatedProduct == null) {
+        SnackBarService.error(
+          context,
+          catalogProvider.errorMessage ??
+              'No se pudo asociar el código de barras.',
+        );
+        return;
+      }
+
+      if (dialogCtx.mounted) {
+        Navigator.of(dialogCtx).pop();
+      }
+
+      // Sincronizar en carrito si ya estaba presente
+      for (final cartIt in posProvider.cart) {
+        if (cartIt.product.id == updatedProduct!.id) {
+          posProvider.updateCartItemCustomDescription(
+            cartIt,
+            customDescription: cartIt.customDescription,
+            customDetails: cartIt.customDetails,
+            newUnitPrice: cartIt.manualUnitPrice,
+            newCostPrice: cartIt.manualCostPrice,
+            newManualSubtotal: cartIt.manualSubtotal,
+            updatedCatalogProduct: updatedProduct,
+          );
+          break;
+        }
+      }
+
+      if (addToCartAfter) {
+        _handleProductSelection(updatedProduct!);
+      }
+
+      SnackBarService.success(
+        context,
+        '🔫 Código $scannedBarcode asociado a "${updatedProduct!.name}" en la Base de Datos.',
+      );
+    }
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogCtx) {
+        return StatefulBuilder(
+          builder: (ctx, setModalState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              title: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.shade50,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(
+                      Icons.qr_code_scanner_rounded,
+                      color: Colors.amber.shade900,
+                      size: 22,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Código de Barras No Registrado',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        Text(
+                          'EAN escaneado: $scannedBarcode',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Color(0xFF64748B),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              content: SizedBox(
+                width: 480,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (lastCatalogCartItem != null) ...[
+                      InkWell(
+                        borderRadius: BorderRadius.circular(10),
+                        onTap: () => assignBarcodeToProduct(
+                          dialogCtx,
+                          lastCatalogCartItem!.product,
+                          addToCartAfter: false,
+                        ),
+                        child: Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFEFF6FF),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: const Color(0xFF93C5FD)),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.bolt_rounded,
+                                color: Color(0xFF1D4ED8),
+                                size: 22,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'Asociar en 1 clic al último ítem del carrito:',
+                                      style: TextStyle(
+                                        fontSize: 11.5,
+                                        color: Color(0xFF1E40AF),
+                                      ),
+                                    ),
+                                    Text(
+                                      lastCatalogCartItem.product.name,
+                                      style: const TextStyle(
+                                        fontSize: 13.5,
+                                        fontWeight: FontWeight.w800,
+                                        color: Color(0xFF1E3A8A),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const Icon(
+                                Icons.arrow_forward_ios_rounded,
+                                size: 15,
+                                color: Color(0xFF1D4ED8),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                    TextField(
+                      controller: searchCtrl,
+                      autofocus: lastCatalogCartItem == null,
+                      decoration: InputDecoration(
+                        labelText:
+                            'Buscar producto en catálogo para asociarle este código...',
+                        hintText: 'Escribí el nombre del producto...',
+                        prefixIcon: const Icon(Icons.search, size: 20),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        isDense: true,
+                      ),
+                      onChanged: (val) async {
+                        final q = val.trim();
+                        if (q.length < 2) {
+                          setModalState(() {
+                            candidateProducts = [];
+                            isSearchingCatalog = false;
+                          });
+                          return;
+                        }
+                        setModalState(() => isSearchingCatalog = true);
+                        final found = await posProvider.search(q);
+                        if (!ctx.mounted) return;
+                        setModalState(() {
+                          candidateProducts =
+                              found.where((p) => !p.isCombo).take(8).toList();
+                          isSearchingCatalog = false;
+                        });
+                      },
+                    ),
+                    if (isSearchingCatalog)
+                      const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: Center(
+                          child: SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        ),
+                      ),
+                    if (candidateProducts.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxHeight: 220),
+                        child: ListView.separated(
+                          shrinkWrap: true,
+                          itemCount: candidateProducts.length,
+                          separatorBuilder: (_, __) => const Divider(height: 1),
+                          itemBuilder: (_, idx) {
+                            final p = candidateProducts[idx];
+                            return ListTile(
+                              dense: true,
+                              contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 2),
+                              title: Text(
+                                p.name,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w700, fontSize: 13),
+                              ),
+                              subtitle: Text(
+                                '\$${p.sellingPrice.toCurrency()} · ${p.barcode != null && p.barcode!.isNotEmpty ? "EAN actual: ${p.barcode}" : "Sin EAN"}',
+                                style: const TextStyle(fontSize: 11.5),
+                              ),
+                              trailing: FilledButton.tonalIcon(
+                                onPressed: () => assignBarcodeToProduct(
+                                  dialogCtx,
+                                  p,
+                                  addToCartAfter: true,
+                                ),
+                                icon: const Icon(Icons.link_rounded, size: 16),
+                                label: const Text(
+                                  'Asociar y Agregar',
+                                  style: TextStyle(fontSize: 12),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton.icon(
+                  onPressed: () {
+                    Navigator.of(dialogCtx).pop();
+                    _openQuickItemDialog();
+                  },
+                  icon: const Icon(Icons.flash_on_rounded, size: 17),
+                  label: const Text('Crear Ítem Rápido (F3)'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.of(dialogCtx).pop(),
+                  child: const Text('Cerrar (Esc)'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+    searchCtrl.dispose();
   }
 
   Widget _buildRightPanel() {
@@ -6046,6 +6283,114 @@ class _CartItemStockIndicator extends StatelessWidget {
   }
 }
 
+/// Tile animado para cada línea del carrito POS:
+/// - Al agregarse un producto nuevo: entra con deslizamiento + aparición suave (`Slide` + `Fade`) y un destello sutil.
+/// - Al incrementarse cantidad o cambiar subtotal: ejecuta un pulso de color y micro-escala de confirmación.
+/// - Soporta tanto Clic Izquierdo como Clic Derecho para abrir el editor unificado de la línea.
+class _AnimatedCartItemTile extends StatefulWidget {
+  final double quantity;
+  final double subtotal;
+  final VoidCallback onTap;
+  final VoidCallback onSecondaryTap;
+  final Widget child;
+
+  const _AnimatedCartItemTile({
+    super.key,
+    required this.quantity,
+    required this.subtotal,
+    required this.onTap,
+    required this.onSecondaryTap,
+    required this.child,
+  });
+
+  @override
+  State<_AnimatedCartItemTile> createState() => _AnimatedCartItemTileState();
+}
+
+class _AnimatedCartItemTileState extends State<_AnimatedCartItemTile>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _fadeAnimation;
+  late final Animation<Offset> _slideAnimation;
+  Color _flashColor = const Color(0xFFEFF6FF);
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 220),
+    );
+    _fadeAnimation = CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeOutCubic,
+    );
+    _slideAnimation = Tween<Offset>(
+      begin: const Offset(-0.04, 0.06),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeOutCubic,
+    ));
+
+    _controller.forward();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        setState(() {
+          _flashColor = Colors.transparent;
+        });
+      }
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant _AnimatedCartItemTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if ((oldWidget.quantity - widget.quantity).abs() > 0.0005 ||
+        (oldWidget.subtotal - widget.subtotal).abs() > 0.005) {
+      setState(() {
+        _flashColor = const Color(0xFFE0F2FE);
+      });
+      Future.delayed(const Duration(milliseconds: 220), () {
+        if (mounted) {
+          setState(() {
+            _flashColor = Colors.transparent;
+          });
+        }
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: _fadeAnimation,
+      child: SlideTransition(
+        position: _slideAnimation,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 260),
+          curve: Curves.easeOutCubic,
+          color: _flashColor,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onSecondaryTap: widget.onSecondaryTap,
+            child: InkWell(
+              onTap: widget.onTap,
+              child: widget.child,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Marca de agua semi-transparente (10% opacidad) con el logo del negocio o ícono de tienda
 class PosWatermarkLogo extends StatelessWidget {
   final double size;
@@ -6061,23 +6406,26 @@ class PosWatermarkLogo extends StatelessWidget {
         opacity: 0.10,
         child: FittedBox(
           fit: BoxFit.scaleDown,
-          child: (logoUrl != null && logoUrl.isNotEmpty)
-              ? CachedNetworkImage(
-                  imageUrl: logoUrl,
-                  width: size,
-                  height: size,
-                  fit: BoxFit.contain,
-                  errorWidget: (_, __, ___) => Icon(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(24),
+            child: (logoUrl != null && logoUrl.isNotEmpty)
+                ? CachedNetworkImage(
+                    imageUrl: logoUrl,
+                    width: size,
+                    height: size,
+                    fit: BoxFit.contain,
+                    errorWidget: (_, __, ___) => Icon(
+                      Icons.storefront_rounded,
+                      size: size,
+                      color: Colors.grey.shade400,
+                    ),
+                  )
+                : Icon(
                     Icons.storefront_rounded,
                     size: size,
                     color: Colors.grey.shade400,
                   ),
-                )
-              : Icon(
-                  Icons.storefront_rounded,
-                  size: size,
-                  color: Colors.grey.shade400,
-                ),
+          ),
         ),
       ),
     );
@@ -6087,7 +6435,6 @@ class PosWatermarkLogo extends StatelessWidget {
 /// Scope con ciclo de vida propio para gestionar y liberar TextEditingController
 /// automáticamente al desmontarse la ruta del diálogo y proteger callbacks asíncronos.
 class _ManagedControllerScope extends StatefulWidget {
-  final String initialText;
   final Widget Function(
     BuildContext context,
     TextEditingController controller,
@@ -6095,7 +6442,6 @@ class _ManagedControllerScope extends StatefulWidget {
   ) builder;
 
   const _ManagedControllerScope({
-    this.initialText = '',
     required this.builder,
   });
 
@@ -6111,13 +6457,7 @@ class _ManagedControllerScopeState extends State<_ManagedControllerScope> {
   @override
   void initState() {
     super.initState();
-    _controller = TextEditingController(text: widget.initialText);
-    if (widget.initialText.isNotEmpty) {
-      _controller.selection = TextSelection(
-        baseOffset: 0,
-        extentOffset: widget.initialText.length,
-      );
-    }
+    _controller = TextEditingController();
   }
 
   @override

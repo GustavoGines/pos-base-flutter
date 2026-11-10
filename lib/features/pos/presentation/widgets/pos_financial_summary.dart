@@ -27,8 +27,10 @@ class PosFinancialSummary extends StatelessWidget {
 
         final grandTotal = pos.cartTotal;
 
+        Widget content;
         if (pos.cart.isEmpty) {
-          return Container(
+          content = Container(
+            key: const ValueKey('financial_summary_empty'),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
               color: Colors.grey.shade50,
@@ -47,7 +49,7 @@ class PosFinancialSummary extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  '\$0,00',
+                  '\$0',
                   style: TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.bold,
@@ -57,154 +59,162 @@ class PosFinancialSummary extends StatelessWidget {
               ],
             ),
           );
-        }
-
-        return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: Colors.blueGrey.shade100),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.03),
-                blurRadius: 6,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Encabezado con contador de ítems
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'RESUMEN DEL TICKET',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.8,
-                      color: Colors.blueGrey.shade600,
-                    ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Colors.blue.shade50,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text(
-                      '$itemCount art. (${totalUnits % 1 == 0 ? totalUnits.toInt() : totalUnits.toStringAsFixed(2)} un.)',
+        } else {
+          content = Container(
+            key: const ValueKey('financial_summary_populated'),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.blueGrey.shade100),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.03),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Encabezado con contador de ítems
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'RESUMEN DEL TICKET',
                       style: TextStyle(
                         fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.blue.shade800,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.8,
+                        color: Colors.blueGrey.shade600,
                       ),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              const Divider(height: 1, thickness: 0.8),
-              const SizedBox(height: 4),
-
-              // Subtotal Regular de Lista
-              _buildRow(
-                label: 'Subtotal Lista:',
-                value: '\$${grossSubtotal.toCurrency()}',
-                color: Colors.blueGrey.shade800,
-                fontSize: 12.5,
-              ),
-
-              // Descuentos y Ofertas Aplicadas (si aplica)
-              if (hasSavings) ...[
-                const SizedBox(height: 2),
-                _buildRow(
-                  label: pos.activeTierDiscountLabel,
-                  value: '-\$${savings.toCurrency()}',
-                  color: Colors.green.shade700,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 12.5,
-                ),
-              ],
-
-              // Recargo por Lista de Precios (ej: Lista Tarjeta o Custom con incremento)
-              if (hasSurcharge) ...[
-                const SizedBox(height: 2),
-                _buildRow(
-                  label: pos.activeTierSurchargeLabel,
-                  value: '+\$${surcharge.toCurrency()}',
-                  color: Colors.orange.shade800,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 12.5,
-                ),
-              ],
-
-              // Percepción IIBB (si aplica al cliente)
-              if (appliesIibb && iibbAmount > 0) ...[
-                const SizedBox(height: 2),
-                _buildRow(
-                  label: 'Percepción IIBB (${iibbRate.toStringAsFixed(1)}%):',
-                  value: '+\$${iibbAmount.toCurrency()}',
-                  color: Colors.orange.shade800,
-                  fontSize: 12,
-                ),
-              ],
-
-              // Flete logístico (si aplica)
-              if (applyShipping) ...[
-                const SizedBox(height: 2),
-                _buildRow(
-                  label: '🚚 Envío a Domicilio:',
-                  value: '+\$${shippingCost.toCurrency()}',
-                  color: Colors.blueGrey.shade700,
-                  fontSize: 12,
-                ),
-              ],
-
-              const SizedBox(height: 4),
-              const Divider(height: 1, thickness: 1.2),
-              const SizedBox(height: 4),
-
-              // Fila destacada de TOTAL
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                crossAxisAlignment: CrossAxisAlignment.baseline,
-                textBaseline: TextBaseline.alphabetic,
-                children: [
-                  const Text(
-                    'TOTAL:',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 0.5,
-                      color: Colors.black87,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      alignment: Alignment.centerRight,
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.shade50,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
                       child: Text(
-                        '\$${grandTotal.toCurrency()}',
-                        style: const TextStyle(
-                          fontSize: 25,
-                          fontWeight: FontWeight.w900,
-                          color: Color(0xFF2E7D32), // Verde esmeralda moderno
-                          letterSpacing: -0.5,
+                        '$itemCount art. (${totalUnits % 1 == 0 ? totalUnits.toInt() : totalUnits.toStringAsFixed(2)} un.)',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.blue.shade800,
                         ),
-                        textAlign: TextAlign.right,
-                        maxLines: 1,
                       ),
                     ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                const Divider(height: 1, thickness: 0.8),
+                const SizedBox(height: 4),
+
+                // Subtotal Regular de Lista
+                _buildRow(
+                  label: 'Subtotal Lista:',
+                  value: '\$${grossSubtotal.toCurrency()}',
+                  color: Colors.blueGrey.shade800,
+                  fontSize: 12.5,
+                ),
+
+                // Descuentos y Ofertas Aplicadas (si aplica)
+                if (hasSavings) ...[
+                  const SizedBox(height: 2),
+                  _buildRow(
+                    label: pos.activeTierDiscountLabel,
+                    value: '-\$${savings.toCurrency()}',
+                    color: Colors.green.shade700,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12.5,
                   ),
                 ],
-              ),
-            ],
-          ),
+
+                // Recargo por Lista de Precios (ej: Lista Tarjeta o Custom con incremento)
+                if (hasSurcharge) ...[
+                  const SizedBox(height: 2),
+                  _buildRow(
+                    label: pos.activeTierSurchargeLabel,
+                    value: '+\$${surcharge.toCurrency()}',
+                    color: Colors.orange.shade800,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12.5,
+                  ),
+                ],
+
+                // Percepción IIBB (si aplica al cliente)
+                if (appliesIibb && iibbAmount > 0) ...[
+                  const SizedBox(height: 2),
+                  _buildRow(
+                    label: 'Percepción IIBB (${iibbRate.toStringAsFixed(1)}%):',
+                    value: '+\$${iibbAmount.toCurrency()}',
+                    color: Colors.orange.shade800,
+                    fontSize: 12,
+                  ),
+                ],
+
+                // Flete logístico (si aplica)
+                if (applyShipping) ...[
+                  const SizedBox(height: 2),
+                  _buildRow(
+                    label: '🚚 Envío a Domicilio:',
+                    value: '+\$${shippingCost.toCurrency()}',
+                    color: Colors.blueGrey.shade700,
+                    fontSize: 12,
+                  ),
+                ],
+
+                const SizedBox(height: 4),
+                const Divider(height: 1, thickness: 1.2),
+                const SizedBox(height: 4),
+
+                // Fila destacada de TOTAL
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.baseline,
+                  textBaseline: TextBaseline.alphabetic,
+                  children: [
+                    const Text(
+                      'TOTAL:',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0.5,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerRight,
+                        child: Text(
+                          '\$${grandTotal.toCurrency()}',
+                          style: const TextStyle(
+                            fontSize: 25,
+                            fontWeight: FontWeight.w900,
+                            color: Color(0xFF2E7D32), // Verde esmeralda moderno
+                            letterSpacing: -0.5,
+                          ),
+                          textAlign: TextAlign.right,
+                          maxLines: 1,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          );
+        }
+
+        return AnimatedSize(
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+          alignment: Alignment.bottomCenter,
+          child: content,
         );
       },
     );
