@@ -3,10 +3,10 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
-import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/presentation/widgets/print_format_selector.dart';
+import '../../../../core/utils/currency_formatter.dart';
 import '../../providers/cash_movement_provider.dart';
 import '../../providers/expense_category_provider.dart';
 import 'expense_category_form_dialog.dart';
@@ -184,19 +184,7 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
   }
 
   double? _sanitizeAndParse(String text) {
-    var clean = text.trim();
-    if (clean.contains('.') && clean.contains(',')) {
-      if (clean.lastIndexOf(',') > clean.lastIndexOf('.')) {
-        // Formato latinoamericano/europeo: 1.234,56 -> 1234.56
-        clean = clean.replaceAll('.', '').replaceAll(',', '.');
-      } else {
-        // Formato anglosajón: 1,234.56 -> 1234.56
-        clean = clean.replaceAll(',', '');
-      }
-    } else {
-      clean = clean.replaceAll(',', '.');
-    }
-    final val = double.tryParse(clean);
+    final val = ArsThousandsInputFormatter.tryParse(text);
     if (val == null || val <= 0 || val.isNaN || val.isInfinite) return null;
     return double.parse(val.toStringAsFixed(2));
   }
@@ -277,9 +265,7 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
       _currentPaymentMethod = p.method;
       _currentFundingSource = p.fundingSource;
       _currentCheckId = p.checkId;
-      _paymentAmountController.text = p.amount % 1 == 0
-          ? p.amount.toInt().toString()
-          : p.amount.toStringAsFixed(2);
+      _paymentAmountController.text = p.amount.toArsInput();
     });
   }
 
@@ -431,7 +417,7 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('La suma de pagos (\$${totalPaid.toStringAsFixed(2)}) supera la deuda actual (\$${debt.toStringAsFixed(2)}).'),
+                  Text('La suma de pagos (\$${totalPaid.toCurrency()}) supera la deuda actual (\$${debt.toCurrency()}).'),
                   const SizedBox(height: 10),
                   Container(
                     padding: const EdgeInsets.all(12),
@@ -444,7 +430,7 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         const Text('Vuelto a ingresar a caja:', style: TextStyle(fontWeight: FontWeight.bold)),
-                        Text('\$${changeAmount.toStringAsFixed(2)}',
+                        Text('\$${changeAmount.toCurrency()}',
                             style: TextStyle(fontWeight: FontWeight.w900, color: Colors.green.shade800, fontSize: 16)),
                       ],
                     ),
@@ -1113,8 +1099,7 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                               Row(
                                 children: [
                                   Text(
-                                    NumberFormat.currency(symbol: '\$')
-                                        .format(supplier.balance.abs()),
+                                    '\$${supplier.balance.abs().toCurrency()}',
                                     style: TextStyle(
                                         fontSize: 18,
                                         fontWeight: FontWeight.w900,
@@ -1153,8 +1138,7 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                                             );
                                             return;
                                           }
-                                          _paymentAmountController.text = 
-                                              (remaining % 1 == 0 ? remaining.toInt().toString() : remaining.toStringAsFixed(2));
+                                          _paymentAmountController.text = remaining.toArsInput();
                                         });
                                       },
                                       child: Text(
@@ -1375,8 +1359,7 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Text(
-                                    NumberFormat.currency(symbol: '\$')
-                                        .format(p.amount),
+                                    '\$${p.amount.toCurrency()}',
                                     style: const TextStyle(
                                         fontWeight: FontWeight.bold,
                                         fontSize: 16)),
@@ -1631,9 +1614,8 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                                     labelText: 'Monto',
                                     prefixText: '\$',
                                     isDense: true),
-                                keyboardType:
-                                    const TextInputType.numberWithOptions(
-                                        decimal: true),
+                                keyboardType: TextInputType.number,
+                                inputFormatters: [ArsThousandsInputFormatter()],
                                 enabled: _currentPaymentMethod != 'check',
                               ),
                             ),
@@ -1677,7 +1659,7 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                                       .map((c) => DropdownMenuItem(
                                             value: c.id,
                                             child: Text(
-                                                'Nº ${c.checkNumber} (\$ ${c.amount}) - ${c.bankName}',
+                                                'Nº ${c.checkNumber} (\$ ${c.amount.toCurrency()}) - ${c.bankName}',
                                                 overflow:
                                                     TextOverflow.ellipsis),
                                           ))
@@ -1689,7 +1671,7 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                                         final check = availableChecks
                                             .firstWhere((c) => c.id == val);
                                         _paymentAmountController.text =
-                                            check.amount.toString();
+                                            check.amount.toArsInput();
                                       }
                                     });
                                   },
@@ -1767,8 +1749,7 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                                   : Colors.grey.shade600),
                         ),
                         Text(
-                          NumberFormat.currency(symbol: '\$')
-                              .format(_totalAmount),
+                          '\$${_totalAmount.toCurrency()}',
                           style: TextStyle(
                               fontSize: 28,
                               fontWeight: FontWeight.w900,

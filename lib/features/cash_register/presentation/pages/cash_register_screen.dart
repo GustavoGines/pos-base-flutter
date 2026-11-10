@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import '../providers/cash_register_provider.dart';
 import '../../../settings/presentation/providers/settings_provider.dart';
 import 'package:frontend_desktop/features/auth/presentation/providers/auth_provider.dart';
@@ -79,7 +80,7 @@ class _CashRegisterScreenState extends State<CashRegisterScreen> {
   }
 
   void _submit() {
-    final amount = double.tryParse(_amountController.text);
+    final amount = ArsThousandsInputFormatter.tryParse(_amountController.text);
     if (amount != null && amount >= 0) {
       widget.onOpenShift(amount, _selectedRegisterId);
     } else {
@@ -241,6 +242,7 @@ class _CashRegisterScreenState extends State<CashRegisterScreen> {
                   TextField(
                     controller: _amountController,
                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    inputFormatters: [ArsThousandsInputFormatter()],
                     textInputAction: TextInputAction.done,
                     onSubmitted: (_) => _submit(),
                     decoration: const InputDecoration(

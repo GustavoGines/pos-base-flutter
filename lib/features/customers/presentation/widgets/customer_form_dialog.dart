@@ -6,6 +6,7 @@ import '../../providers/customer_provider.dart';
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
 import 'package:frontend_desktop/features/auth/presentation/widgets/admin_pin_dialog.dart';
 import 'package:frontend_desktop/core/constants/app_permissions.dart';
+import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 
 class CustomerFormDialog extends StatefulWidget {
   final Customer? customer; // Null = Nuevo, No-null = Editar
@@ -48,7 +49,9 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
         TextEditingController(text: widget.customer?.phone ?? '');
     _creditLimitController = TextEditingController(
         text: widget.customer != null
-            ? widget.customer!.creditLimit.toString()
+            ? (widget.customer!.creditLimit > 0
+                ? widget.customer!.creditLimit.toArsInput()
+                : '0')
             : '');
     _deliveryAddressController =
         TextEditingController(text: widget.customer?.deliveryAddress ?? '');
@@ -94,7 +97,7 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
                 : _fiscalAddressController.text.trim(),
             'phone': _phoneController.text.trim(),
             'credit_limit':
-                double.tryParse(_creditLimitController.text.trim()) ?? 0.0,
+                ArsThousandsInputFormatter.parse(_creditLimitController.text),
             'delivery_address': _deliveryAddressController.text.trim(),
             'is_internal_account': _isInternalAccount,
             'applies_iibb_perception': _appliesIibbPerception,
@@ -442,8 +445,10 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
               TextFormField(
                 controller: _creditLimitController,
                 keyboardType: TextInputType.number,
+                inputFormatters: [ArsThousandsInputFormatter()],
                 decoration: const InputDecoration(
                     labelText: 'Límite de Crédito (\$) (Opcional)',
+                    prefixText: '\$ ',
                     border: OutlineInputBorder()),
               ),
               const SizedBox(height: 16),

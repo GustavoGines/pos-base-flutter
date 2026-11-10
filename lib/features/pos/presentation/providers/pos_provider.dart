@@ -331,6 +331,12 @@ class PosProvider with ChangeNotifier {
     _pendingFiscalInvoiceData = data;
   }
 
+  String? _authorizedDiscountPin;
+  String? get authorizedDiscountPin => _authorizedDiscountPin;
+  void setAuthorizedDiscountPin(String? pin) {
+    _authorizedDiscountPin = pin;
+  }
+
   PosProvider({
     required this.processSaleUseCase,
     required this.searchProductsUseCase,
@@ -666,8 +672,17 @@ class PosProvider with ChangeNotifier {
             !item.isRenamed,
       );
       if (index >= 0) {
-        _cart[index].product = product; // Actualizar con el stock más reciente
-        _cart[index].quantity += quantity;
+        final existing = _cart[index];
+        // No pisar el producto con una instancia cacheada vieja si el ítem ya fue actualizado
+        // o si tiene un precio/costo manual aplicado en esta venta
+        if (!existing.hasManualPriceOverride &&
+            existing.product.sellingPrice == product.sellingPrice &&
+            existing.product.costPrice == product.costPrice) {
+          existing.product = product; // Actualizar con el stock más reciente
+        } else {
+          existing.product = existing.product.copyWith(stock: product.stock);
+        }
+        existing.quantity += quantity;
         if (resolvedPromoPrice != null) {
           _cart[index].promotionalPrice = resolvedPromoPrice;
           _cart[index].promotionalLabel = resolvedPromoLabel;
@@ -702,15 +717,36 @@ class PosProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  /// Actualiza el nombre temporal (alias de facturación/ticket) y notas de un ítem del carrito,
-  /// y opcionalmente el precio/cantidad si es un ítem rápido.
+  /// Actualiza el nombre temporal (alias de facturación/ticket), notas, precio de venta,
+  /// costo o producto de catálogo actualizado de un ítem del carrito.
   void updateCartItemCustomDescription(
     CartItem item, {
     String? customDescription,
     String? customDetails,
     double? newUnitPrice,
+    bool clearManualUnitPrice = false,
+    double? newCostPrice,
+    bool clearManualCostPrice = false,
     double? newQuantity,
+    Product? updatedCatalogProduct,
   }) {
+    if (updatedCatalogProduct != null) {
+      for (final cartIt in _cart) {
+        if (cartIt.product.id == updatedCatalogProduct.id) {
+          cartIt.product = updatedCatalogProduct;
+          cartIt.manualUnitPrice = null;
+          cartIt.manualCostPrice = null;
+          if (cartIt.promotionalLabel == null &&
+              cartIt.promotionalPeriodType == null) {
+            cartIt.promotionalPrice = null;
+          }
+        }
+      }
+      if (_cachedActiveOffers.isNotEmpty) {
+        syncActiveOffers(_cachedActiveOffers);
+      }
+    }
+
     final cleanDesc = customDescription?.trim();
     final cleanDetails = customDetails?.trim();
     item.customDescription = (cleanDesc != null && cleanDesc.isNotEmpty && cleanDesc != item.product.name)
@@ -722,11 +758,33 @@ class PosProvider with ChangeNotifier {
     if (newQuantity != null && newQuantity > 0) {
       item.quantity = newQuantity;
     }
-    if (newUnitPrice != null && newUnitPrice > 0) {
-      if (item.isTemporary || item.saveToCatalog || item.product.id <= 0) {
+
+    if (item.isTemporary || item.saveToCatalog || item.product.id <= 0) {
+      if (newUnitPrice != null && newUnitPrice > 0) {
         item.product = item.product.copyWith(sellingPrice: newUnitPrice);
-      } else {
-        item.promotionalPrice = newUnitPrice;
+      }
+      if (newCostPrice != null && newCostPrice >= 0) {
+        item.product = item.product.copyWith(costPrice: newCostPrice);
+      }
+    } else if (updatedCatalogProduct == null) {
+      if (clearManualUnitPrice) {
+        item.manualUnitPrice = null;
+      } else if (newUnitPrice != null && newUnitPrice > 0) {
+        if ((newUnitPrice - item.defaultCalculatedUnitPrice).abs() < 0.005) {
+          item.manualUnitPrice = null;
+        } else {
+          item.manualUnitPrice = newUnitPrice;
+        }
+      }
+
+      if (clearManualCostPrice) {
+        item.manualCostPrice = null;
+      } else if (newCostPrice != null && newCostPrice >= 0) {
+        if ((newCostPrice - item.product.costPrice).abs() < 0.005) {
+          item.manualCostPrice = null;
+        } else {
+          item.manualCostPrice = newCostPrice;
+        }
       }
     }
     notifyListeners();
@@ -861,6 +919,7 @@ class PosProvider with ChangeNotifier {
     _errorMessage = null;
     _isShiftClosed = false;
     _pendingFiscalInvoiceData = null;
+    _authorizedDiscountPin = null;
     // No reseteamos estas variables aquí porque la UI las necesita
     // inmediatamente después de la venta para mostrar el PDF Split.
     // _wasLastSaleDispatched = false;
@@ -1054,6 +1113,11 @@ class PosProvider with ChangeNotifier {
           prod['id'] == null;
       final customDesc = itemMap['custom_description']?.toString();
       final customDet = itemMap['custom_details']?.toString();
+      final itemUnitCost = double.tryParse(itemMap['unit_cost_price']?.toString() ?? '');
+      final hasCustomCostOverride = !isTempItem &&
+          itemUnitCost != null &&
+          itemUnitCost >= 0 &&
+          (itemUnitCost - product.costPrice).abs() > 0.005;
 
       return CartItem(
         product: product,
@@ -1069,6 +1133,7 @@ class PosProvider with ChangeNotifier {
         isTemporary: isTempItem,
         customDescription: customDesc,
         customDetails: customDet,
+        manualCostPrice: hasCustomCostOverride ? itemUnitCost : null,
       );
     }).toList();
 
@@ -1419,7 +1484,7 @@ class PosProvider with ChangeNotifier {
                 'unit_price': i.unitPrice,
                 'subtotal': i.subtotal,
                 'iva_rate': i.product.ivaRate,
-                'regular_price': i.product.sellingPrice,
+                'regular_price': i.effectiveRegularUnitPrice,
                 'regular_subtotal': i.regularSubtotal,
                 'discount_amount': i.discountSavings,
                 'has_discount': i.hasDiscount,
@@ -1432,7 +1497,7 @@ class PosProvider with ChangeNotifier {
                   'internal_code': i.product.internalCode,
                   'is_sold_by_weight': i.product.isSoldByWeight,
                   'iva_rate': i.product.ivaRate,
-                  'selling_price': i.product.sellingPrice,
+                  'selling_price': i.effectiveRegularUnitPrice,
                 }
               }).toList(),
               'subtotal_list': grossSubtotalSnapshot,
@@ -2159,7 +2224,7 @@ class PosProvider with ChangeNotifier {
                           'unit_price': i.unitPrice,
                           'subtotal': i.subtotal,
                           'iva_rate': i.product.ivaRate,
-                          'regular_price': i.product.sellingPrice,
+                          'regular_price': i.effectiveRegularUnitPrice,
                           'regular_subtotal': i.regularSubtotal,
                           'discount_amount': i.discountSavings,
                           'has_discount': i.hasDiscount,
@@ -2172,7 +2237,7 @@ class PosProvider with ChangeNotifier {
                             'internal_code': i.product.internalCode,
                             'is_sold_by_weight': i.product.isSoldByWeight,
                             'iva_rate': i.product.ivaRate,
-                            'selling_price': i.product.sellingPrice,
+                            'selling_price': i.effectiveRegularUnitPrice,
                           }
                         })
                     .toList(),

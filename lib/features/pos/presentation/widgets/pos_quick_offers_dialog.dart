@@ -124,9 +124,17 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
     );
   }
 
-  String _formatDiscountInputValue(double? value, {required String fallback}) {
+  String _formatDiscountInputValue(double? value, {required String fallback, bool isFixedPrice = false}) {
     if (value == null || value <= 0) return fallback;
+    if (isFixedPrice) return value.toArsInput();
     return value == value.roundToDouble() ? value.toInt().toString() : value.toString();
+  }
+
+  double _parseDiscountInput() {
+    if (_offerType == 'fixed_price') {
+      return ArsThousandsInputFormatter.parse(_discountCtrl.text);
+    }
+    return double.tryParse(_discountCtrl.text.trim().replaceAll(',', '.')) ?? 0.0;
   }
 
   void _startEditOffer(OfferModel offer) {
@@ -135,7 +143,7 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
       _offerNameCtrl.text = offer.name;
       _offerType = offer.type == 'fixed_price' ? 'fixed_price' : 'percentage';
       _discountCtrl.text = _offerType == 'fixed_price'
-          ? _formatDiscountInputValue(offer.discountAmount, fallback: '1000')
+          ? _formatDiscountInputValue(offer.discountAmount, fallback: '1.000', isFixedPrice: true)
           : _formatDiscountInputValue(offer.discountPercentage, fallback: '10');
       _periodType = offer.periodType;
       _selectedDaysOfWeek
@@ -171,7 +179,7 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
       _offerNameCtrl.text = '${offer.name} (Copia)';
       _offerType = offer.type == 'fixed_price' ? 'fixed_price' : 'percentage';
       _discountCtrl.text = _offerType == 'fixed_price'
-          ? _formatDiscountInputValue(offer.discountAmount, fallback: '1000')
+          ? _formatDiscountInputValue(offer.discountAmount, fallback: '1.000', isFixedPrice: true)
           : _formatDiscountInputValue(offer.discountPercentage, fallback: '10');
       _periodType = offer.periodType;
       _selectedDaysOfWeek
@@ -410,7 +418,7 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
         }
       }
       if (_offerNameCtrl.text.trim().isEmpty) {
-        final rawVal = double.tryParse(_discountCtrl.text.trim().replaceAll(',', '.')) ?? 0;
+        final rawVal = _parseDiscountInput();
         if (_offerType == 'fixed_price') {
           final amtStr = rawVal > 0 ? '\$${rawVal.toCurrency()}' : '\$1.000';
           _offerNameCtrl.text = 'Promo ${selectedGroup.name} $amtStr OFF';
@@ -441,7 +449,7 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
       return;
     }
 
-    final discount = double.tryParse(_discountCtrl.text.replaceAll(',', '.')) ?? 0;
+    final discount = _parseDiscountInput();
     if (_offerType == 'percentage') {
       if (discount <= 0 || discount > 100) {
         SnackBarService.warning(context, 'El porcentaje de descuento debe estar entre 1% y 100%.');
@@ -1405,12 +1413,20 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
       onTap: () {
         if (_offerType == typeValue) return;
         setState(() {
+          final currentNum = _parseDiscountInput();
           _offerType = typeValue;
-          final currentNum = double.tryParse(_discountCtrl.text.replaceAll(',', '.')) ?? 0;
-          if (typeValue == 'fixed_price' && (currentNum <= 0 || currentNum <= 100)) {
-            _discountCtrl.text = '1000';
-          } else if (typeValue == 'percentage' && (currentNum <= 0 || currentNum > 100)) {
-            _discountCtrl.text = '10';
+          if (typeValue == 'fixed_price') {
+            if (currentNum <= 0 || currentNum <= 100) {
+              _discountCtrl.text = '1.000';
+            } else {
+              _discountCtrl.text = currentNum.toArsInput();
+            }
+          } else if (typeValue == 'percentage') {
+            if (currentNum <= 0 || currentNum > 100) {
+              _discountCtrl.text = '10';
+            } else {
+              _discountCtrl.text = _formatDiscountInputValue(currentNum, fallback: '10');
+            }
           }
         });
       },
@@ -1445,7 +1461,7 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
   }
 
   Widget _buildCreateOfferTab() {
-    final currentVal = double.tryParse(_discountCtrl.text.replaceAll(',', '.')) ?? 0.0;
+    final currentVal = _parseDiscountInput();
     final isValidInput = _offerType == 'fixed_price'
         ? currentVal > 0
         : (currentVal > 0 && currentVal <= 100);
@@ -1648,6 +1664,7 @@ class _PosQuickOffersDialogState extends State<PosQuickOffersDialog> with Single
                   controller: _discountCtrl,
                   onChanged: (_) => setState(() {}),
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  inputFormatters: _offerType == 'fixed_price' ? [ArsThousandsInputFormatter()] : null,
                   decoration: InputDecoration(
                     labelText: _offerType == 'fixed_price'
                         ? 'Monto a descontar'

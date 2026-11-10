@@ -10,6 +10,7 @@ import '../widgets/supplier_invoice_form_dialog.dart';
 import '../widgets/supplier_document_detail_dialog.dart';
 import 'supplier_current_account_screen.dart';
 import '../../../../core/constants/app_permissions.dart';
+import '../../../../core/utils/currency_formatter.dart';
 import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
 
 class SuppliersScreen extends StatefulWidget {
@@ -428,7 +429,7 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
                                         children: [
                                           Text('Saldo actual: ', style: TextStyle(color: supplier.balance > 0 ? Colors.red.shade900 : (supplier.balance < 0 ? Colors.green.shade900 : Colors.black87), fontSize: 13)),
                                           Text(
-                                            '\$${supplier.balance.toStringAsFixed(2)}',
+                                            '\$${supplier.balance.toCurrency()}',
                                             style: TextStyle(
                                               color: supplier.balance > 0 ? Colors.red.shade700 : (supplier.balance < 0 ? Colors.green.shade700 : Colors.black87),
                                               fontWeight: FontWeight.bold,

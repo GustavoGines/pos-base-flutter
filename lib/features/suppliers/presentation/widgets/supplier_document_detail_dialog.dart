@@ -282,7 +282,7 @@ class _SupplierDocumentDetailDialogState extends State<SupplierDocumentDetailDia
 
   @override
   Widget build(BuildContext context) {
-    final currency = NumberFormat.currency(locale: 'es_AR', symbol: '\$');
+    final currency = NumberFormat.currency(locale: 'es_AR', symbol: '\$', decimalDigits: 0);
     final type = _doc['type']?.toString() ?? 'invoice';
     final invNumber = _doc['invoice_number']?.toString();
     final desc = _doc['description']?.toString() ?? '-';
@@ -1391,7 +1391,7 @@ class _SupplierDocumentsHistoryDialogState extends State<SupplierDocumentsHistor
   @override
   Widget build(BuildContext context) {
     final suppliers = context.watch<SupplierProvider>().suppliers;
-    final currency = NumberFormat.currency(locale: 'es_AR', symbol: '\$');
+    final currency = NumberFormat.currency(locale: 'es_AR', symbol: '\$', decimalDigits: 0);
     final screenSize = MediaQuery.of(context).size;
 
     return Dialog(

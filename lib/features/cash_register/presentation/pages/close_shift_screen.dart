@@ -27,7 +27,7 @@ class _CloseShiftScreenState extends State<CloseShiftScreen> {
   }
 
   Future<void> _handleCloseShift() async {
-    final countedCash = double.tryParse(_countedCashController.text.replaceAll(',', '.'));
+    final countedCash = ArsThousandsInputFormatter.tryParse(_countedCashController.text);
     if (countedCash == null || countedCash < 0) {
       SnackBarService.error(context, 'Ingrese un monto de efectivo contado válido.');
       return;
@@ -311,6 +311,7 @@ class _CloseShiftScreenState extends State<CloseShiftScreen> {
                         TextField(
                           controller: _countedCashController,
                           keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          inputFormatters: [ArsThousandsInputFormatter()],
                           textInputAction: TextInputAction.done,
                           onSubmitted: (_) => _handleCloseShift(),
                           decoration: const InputDecoration(

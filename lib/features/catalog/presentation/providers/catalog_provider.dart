@@ -852,6 +852,60 @@ class CatalogProvider with ChangeNotifier {
     }
   }
 
+  /// Actualiza el precio de venta y/o costo de un producto directamente desde el carrito del POS,
+  /// preservando el orden visual de la grilla y sin activar el spinner global de carga.
+  Future<Product?> updateProductPriceFromPos(
+    int id, {
+    double? sellingPrice,
+    double? costPrice,
+  }) async {
+    _errorMessage = null;
+    final payload = <String, dynamic>{
+      if (sellingPrice != null) 'selling_price': sellingPrice,
+      if (costPrice != null) 'cost_price': costPrice,
+    };
+    if (payload.isEmpty) return null;
+
+    try {
+      Product updated = await repository.updateProduct(id, payload);
+
+      List<Product> replaceInList(List<Product> list) {
+        final idx = list.indexWhere((p) => p.id == id);
+        if (idx == -1) return list;
+        final copy = List<Product>.from(list);
+        final existing = copy[idx];
+        final merged = (updated.imageUrl == null && existing.imageUrl != null)
+            ? updated.copyWith(imageUrl: existing.imageUrl)
+            : updated;
+        updated = merged;
+        copy[idx] = merged;
+        return copy;
+      }
+
+      _products = replaceInList(_products);
+      if (_categoryExtraProducts.isNotEmpty) {
+        for (final key in _categoryExtraProducts.keys.toList()) {
+          _categoryExtraProducts[key] =
+              replaceInList(_categoryExtraProducts[key]!);
+        }
+      }
+      if (_weightOnlyProducts.isNotEmpty) {
+        _weightOnlyProducts = replaceInList(_weightOnlyProducts);
+      }
+      if (_pinnedExtraProducts.isNotEmpty) {
+        _pinnedExtraProducts = replaceInList(_pinnedExtraProducts);
+      }
+
+      _lastUpdatedProduct = updated;
+      notifyListeners();
+      return updated;
+    } catch (e) {
+      _errorMessage = e.toString().replaceFirst('Exception: ', '');
+      notifyListeners();
+      return null;
+    }
+  }
+
   Future<bool> deleteProduct(int id) async {
     _isLoading = true;
     _errorMessage = null;

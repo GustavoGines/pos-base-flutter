@@ -18,6 +18,7 @@ import '../../../settings/presentation/providers/settings_provider.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
 import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
 import '../../../../core/constants/app_permissions.dart';
+import '../../../../core/utils/currency_formatter.dart';
 import '../widgets/expense_categories_dialog.dart';
 
 class CashMovementsScreen extends StatefulWidget {
@@ -205,7 +206,7 @@ class _CashMovementsScreenState extends State<CashMovementsScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Confirmar Anulación'),
-        content: Text('¿Está seguro de anular este movimiento de \$${movement.amount}?\n\nEsta acción revertirá los saldos y enviará el registro a la papelera.'),
+        content: Text('¿Está seguro de anular este movimiento de \$${(movement.amount as num).toCurrency()}?\n\nEsta acción revertirá los saldos y enviará el registro a la papelera.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -755,7 +756,7 @@ class _CashMovementsScreenState extends State<CashMovementsScreen> {
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
                             Text(
-                              '$amountPrefix ${NumberFormat.currency(symbol: '\$').format(movement.amount)}',
+                              '$amountPrefix \$${movement.amount.toCurrency()}',
                               style: TextStyle(
                                 color: amountColor,
                                 fontWeight: FontWeight.w900,
@@ -848,7 +849,7 @@ class _CashMovementsScreenState extends State<CashMovementsScreen> {
                   fit: BoxFit.scaleDown,
                   alignment: Alignment.centerLeft,
                   child: Text(
-                    NumberFormat.currency(symbol: '\$').format(value),
+                    '\$${value.toCurrency()}',
                     style: TextStyle(color: color.shade700, fontSize: 24, fontWeight: FontWeight.bold),
                   ),
                 ),

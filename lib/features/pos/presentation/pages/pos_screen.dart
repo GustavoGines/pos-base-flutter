@@ -36,6 +36,7 @@ import 'package:frontend_desktop/features/reports/presentation/providers/invento
 import 'package:frontend_desktop/core/providers/local_terminal_provider.dart';
 import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
 import '../../../../core/constants/app_permissions.dart';
+import 'package:frontend_desktop/core/network/api_client.dart';
 import 'package:frontend_desktop/core/utils/a4_split_pdf_service.dart';
 import 'package:printing/printing.dart';
 import 'package:frontend_desktop/features/logistics/presentation/providers/logistics_provider.dart';
@@ -2484,10 +2485,27 @@ class _PosScreenState extends State<PosScreen> {
       return;
     }
 
-    final success = await posProvider.holdOrder(
-      shiftId: currentShift.id,
-      userId: currentUser?['id'] as int?,
-    );
+    Future<bool> executeHoldCall() {
+      return posProvider.holdOrder(
+        shiftId: currentShift.id,
+        userId: currentUser?['id'] as int?,
+      );
+    }
+
+    ApiClient? apiClient;
+    try {
+      apiClient = context.read<ApiClient>();
+    } catch (_) {}
+
+    final bool success;
+    if (posProvider.authorizedDiscountPin != null && apiClient != null) {
+      success = await apiClient.withAdminPin(
+        posProvider.authorizedDiscountPin!,
+        executeHoldCall,
+      );
+    } else {
+      success = await executeHoldCall();
+    }
 
     if (success && mounted) {
       SnackBarService.success(context, '📋 Orden guardada en espera.');
@@ -3554,7 +3572,7 @@ class _PosScreenState extends State<PosScreen> {
                                   ),
                                   const SizedBox(width: 4),
                                   Tooltip(
-                                    message: 'Alias / Renombrar para Factura y Ticket (Ctrl+E)',
+                                    message: 'Editar Precio / Costo / Alias para Factura y Ticket (Ctrl+E)',
                                     child: InkWell(
                                       borderRadius: BorderRadius.circular(6),
                                       onTap: () => _openRenameCartItemDialog(item),
@@ -3564,6 +3582,7 @@ class _PosScreenState extends State<PosScreen> {
                                           Icons.edit_note_rounded,
                                           size: 19,
                                           color: item.isRenamed ||
+                                                  item.hasManualPriceOverride ||
                                                   (item.customDetails != null &&
                                                       item.customDetails!.trim().isNotEmpty)
                                               ? Colors.indigo.shade700
@@ -3605,9 +3624,9 @@ class _PosScreenState extends State<PosScreen> {
                                           WrapCrossAlignment.center,
                                       children: [
                                         if (item.unitPrice !=
-                                            item.product.sellingPrice)
+                                            item.effectiveRegularUnitPrice)
                                           Text(
-                                            '\$${item.product.sellingPrice.toCurrency()}',
+                                            '\$${item.effectiveRegularUnitPrice.toCurrency()}',
                                             style: const TextStyle(
                                               decoration:
                                                   TextDecoration.lineThrough,
@@ -3619,18 +3638,20 @@ class _PosScreenState extends State<PosScreen> {
                                           '$qtyDisplay x \$${item.unitPrice.toCurrency()}',
                                           style: TextStyle(
                                             fontSize: 12,
-                                            fontWeight: item.unitPrice !=
-                                                    item.product.sellingPrice
+                                            fontWeight: (item.unitPrice !=
+                                                        item.effectiveRegularUnitPrice ||
+                                                    item.hasManualPriceOverride)
                                                 ? FontWeight.bold
                                                 : FontWeight.w500,
                                             color: item.unitPrice >
-                                                    item.product.sellingPrice
+                                                    item.effectiveRegularUnitPrice
                                                 ? Colors.red.shade700
                                                 : (item.unitPrice <
-                                                        item.product
-                                                            .sellingPrice
+                                                        item.effectiveRegularUnitPrice
                                                     ? Colors.green.shade700
-                                                    : Colors.black87),
+                                                    : (item.hasManualPriceOverride
+                                                        ? Colors.teal.shade800
+                                                        : Colors.black87)),
                                           ),
                                         ),
                                       ],
@@ -3727,7 +3748,7 @@ class _PosScreenState extends State<PosScreen> {
                               ),
 
                               // Fila 3: Badges de Oferta / Lista / Ítem Rápido / Alias y Alerta de Stock Crítico
-                              if (item.isTemporary || item.saveToCatalog || item.isRenamed) ...[
+                              if (item.isTemporary || item.saveToCatalog || item.isRenamed || item.hasManualPriceOverride) ...[
                                 const SizedBox(height: 4),
                                 Wrap(
                                   spacing: 4,
@@ -3782,6 +3803,25 @@ class _PosScreenState extends State<PosScreen> {
                                           style: TextStyle(
                                             fontSize: 10,
                                             color: Colors.indigo.shade800,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ),
+                                    if (item.hasManualPriceOverride)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: Colors.teal.shade50,
+                                          border: Border.all(color: Colors.teal.shade200),
+                                          borderRadius: BorderRadius.circular(4),
+                                        ),
+                                        child: Text(
+                                          '💲 Precio/Costo ajustado (Solo esta venta)',
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            color: Colors.teal.shade900,
                                             fontWeight: FontWeight.bold,
                                           ),
                                         ),
@@ -4489,17 +4529,109 @@ class _PosScreenState extends State<PosScreen> {
 
   Future<void> _openRenameCartItemDialog(CartItem item) async {
     final posProvider = Provider.of<PosProvider>(context, listen: false);
+    final catalogProvider = Provider.of<CatalogProvider>(context, listen: false);
     final res = await PosRenameCartItemDialog.show(context, item: item);
-    if (!mounted) return;
-    if (res != null) {
+    if (!mounted || res == null) {
+      if (mounted) _searchFocusNode.requestFocus();
+      return;
+    }
+
+    final isCatalogItem =
+        !item.isTemporary && !item.saveToCatalog && item.product.id > 0;
+
+    // MODO B: Impacto permanente en Base de Datos + Carrito
+    if (isCatalogItem &&
+        res.updateCatalogInDb &&
+        (res.sellingPriceChanged || res.costPriceChanged)) {
+      Product? updatedProduct;
+      final authorized = await AdminPinDialog.protectAction(
+        context,
+        action:
+            'Actualizar Precio/Costo en Catálogo (${item.product.name})',
+        permissionKey: AppPermissions.manageCatalog,
+        onAuthorized: () async {
+          updatedProduct = await catalogProvider.updateProductPriceFromPos(
+            item.product.id,
+            sellingPrice: res.sellingPriceChanged ? res.newUnitPrice : null,
+            costPrice: res.costPriceChanged ? res.newCostPrice : null,
+          );
+        },
+      );
+
+      if (!mounted) return;
+
+      if (!authorized) {
+        _searchFocusNode.requestFocus();
+        return;
+      }
+
+      if (updatedProduct == null) {
+        SnackBarService.error(
+          context,
+          catalogProvider.errorMessage ??
+              'No se pudo actualizar el producto en la Base de Datos.',
+        );
+        _searchFocusNode.requestFocus();
+        return;
+      }
+
+      // Actualizar también en resultados de búsqueda activos si existieran
+      if (_searchResults.isNotEmpty) {
+        final idx = _searchResults.indexWhere((p) => p.id == updatedProduct!.id);
+        if (idx != -1) {
+          setState(() {
+            final copy = List<Product>.from(_searchResults);
+            copy[idx] = updatedProduct!;
+            _searchResults = copy;
+          });
+        }
+      }
+
       posProvider.updateCartItemCustomDescription(
         item,
         customDescription: res.customDescription,
         customDetails: res.customDetails,
-        newUnitPrice: res.newUnitPrice,
         newQuantity: res.newQuantity,
+        updatedCatalogProduct: updatedProduct,
       );
+
+      SnackBarService.success(
+        context,
+        '💾 Precio actualizado en esta venta y en la Base de Datos para "${item.product.name}".',
+      );
+      _searchFocusNode.requestFocus();
+      return;
     }
+
+    // MODO A: Solo esta venta (verificar permiso apply_discounts si rebajó el precio de un producto de catálogo)
+    if (isCatalogItem &&
+        res.newUnitPrice != null &&
+        res.newUnitPrice! < (item.defaultCalculatedUnitPrice - 0.01)) {
+      final pinResult = await AdminPinDialog.verifyAndGetPin(
+        context,
+        action: 'Autorizar rebaja de precio en "${item.product.name}"',
+        permissionKey: AppPermissions.applyDiscounts,
+      );
+      if (!mounted) return;
+      if (pinResult == null) {
+        _searchFocusNode.requestFocus();
+        return;
+      }
+      if (pinResult != 'ALREADY_AUTHORIZED') {
+        posProvider.setAuthorizedDiscountPin(pinResult);
+      }
+    }
+
+    posProvider.updateCartItemCustomDescription(
+      item,
+      customDescription: res.customDescription,
+      customDetails: res.customDetails,
+      newUnitPrice: res.newUnitPrice,
+      clearManualUnitPrice: res.clearManualUnitPrice,
+      newCostPrice: res.newCostPrice,
+      clearManualCostPrice: res.clearManualCostPrice,
+      newQuantity: res.newQuantity,
+    );
     _searchFocusNode.requestFocus();
   }
 

@@ -52,7 +52,7 @@ class PaymentLine {
       bool disableSurcharge = false,
       this.isAutoCalculated = false})
       : controller = TextEditingController(
-            text: initialAmount > 0 ? initialAmount.toInputFormat() : ''),
+            text: initialAmount > 0 ? initialAmount.toArsInput() : ''),
         amountFocus = FocusNode(),
         percentageController = TextEditingController(),
         percentageFocus = FocusNode(),
@@ -74,8 +74,7 @@ class PaymentLine {
         disableSurcharge: disableSurcharge);
   }
 
-  double get amount =>
-      double.tryParse(controller.text.replaceAll(',', '.')) ?? 0.0;
+  double get amount => ArsThousandsInputFormatter.parse(controller.text);
   double get currentPercentage =>
       double.tryParse(percentageController.text.replaceAll(',', '.')) ?? 0.0;
 
@@ -673,6 +672,14 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     } catch (_) {}
   }
 
+  String? _getAuthorizedDiscountPinSafe(PosProvider posProvider) {
+    try {
+      return posProvider.authorizedDiscountPin;
+    } catch (_) {
+      return null;
+    }
+  }
+
   void _saveDraftToProvider() {
     final posProvider = _posProviderRef;
     if (_saleCompleted ||
@@ -711,7 +718,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       customer: _selectedCustomer,
     );
     final currentShipping = (_requiresDispatch && _fulfillmentStatus == 'pending')
-        ? (double.tryParse(_shippingCostCtrl.text.replaceAll(',', '.')) ?? 0.0)
+        ? ArsThousandsInputFormatter.parse(_shippingCostCtrl.text)
         : 0.0;
 
     try {
@@ -837,7 +844,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
           : posProvider.lastUsedShippingCost;
 
       _shippingCostCtrl = TextEditingController(
-          text: initialShipping > 0 ? initialShipping.toInputFormat() : '');
+          text: initialShipping > 0 ? initialShipping.toArsInput() : '');
     }
 
     // Sincronizar la memoria local del diálogo con el último flete usado
@@ -1195,7 +1202,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
               (currentTargetTotal - otherSum).clamp(0.0, double.infinity);
           _lines.last.controller.removeListener(_onAmountChanged);
           _lines.last.controller.text =
-              rem > 0.009 ? rem.toInputFormat() : '0';
+              rem > 0.009 ? rem.toArsInput() : '0';
           _lines.last.controller.addListener(_onAmountChanged);
         }
         _syncCashField(autoFocus: false);
@@ -1271,7 +1278,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         final targetTotal = _baseTotal + _shippingCostToApply;
         final remaining =
             (targetTotal - otherLinesSum).clamp(0.0, double.infinity);
-        final newText = remaining > 0.009 ? remaining.toInputFormat() : '0';
+        final newText = remaining > 0.009 ? remaining.toArsInput() : '0';
         if (lastLine.controller.text != newText) {
           lastLine.controller.removeListener(_onAmountChanged);
           lastLine.controller.text = newText;
@@ -1299,8 +1306,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     // SOLO sobreescribir si forceExact es true, si no hay efectivo requerido (req <= 0),
     // si el campo está vacío o si el monto entregado es inferior al requerido
     final currentText = _cashTenderedCtrl.text.trim();
-    final currentAmount = double.tryParse(currentText.replaceAll(',', '.')) ?? 0.0;
-    final newText = req > 0 ? req.toInputFormat() : '';
+    final currentAmount = ArsThousandsInputFormatter.parse(currentText);
+    final newText = req > 0 ? req.toArsInput() : '';
 
     if (forceExact || req <= 0 || currentText.isEmpty || currentAmount < req) {
       if (currentText != newText) {
@@ -1342,7 +1349,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     if (line.mpPaid) return; // No sobrescribir monto de un pago electrónico ya acreditado
     final newTotal = _baseTotal + _shippingCostToApply;
     // Actualizar el amount de la línea
-    final newText = newTotal.toInputFormat();
+    final newText = newTotal.toArsInput();
     if (line.controller.text != newText) {
       line.controller.text = newText;
       line.controller.selection = TextSelection.fromPosition(
@@ -1432,8 +1439,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
 
   double get _shippingCostToApply {
     if (_requiresDispatch && _fulfillmentStatus == 'pending') {
-      return double.tryParse(_shippingCostCtrl.text.replaceAll(',', '.')) ??
-          0.0;
+      return ArsThousandsInputFormatter.parse(_shippingCostCtrl.text);
     }
     return 0.0;
   }
@@ -1471,9 +1477,9 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
 
   double get _actualTendered {
     if (_cashRequired == 0) return 0.0;
-    final text = _cashTenderedCtrl.text.trim().replaceAll(',', '.');
+    final text = _cashTenderedCtrl.text.trim();
     if (text.isEmpty) return _cashRequired; // Campo vacío = pago exacto
-    return double.tryParse(text) ?? 0.0;
+    return ArsThousandsInputFormatter.parse(text);
   }
 
   double get _change {
@@ -1794,7 +1800,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
           Provider.of<LocalTerminalProvider>(context, listen: false);
 
       context.read<PosProvider>().setShippingCost(
-          double.tryParse(_shippingCostCtrl.text.replaceAll(',', '.')) ?? 0.0);
+          ArsThousandsInputFormatter.parse(_shippingCostCtrl.text));
 
       bool success;
 
@@ -1902,9 +1908,11 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         apiClient = context.read<ApiClient>();
       } catch (_) {}
 
-      if (creditLimitAdminPin != null && apiClient != null) {
+      final effectiveAdminPin =
+          creditLimitAdminPin ?? _getAuthorizedDiscountPinSafe(posProvider);
+      if (effectiveAdminPin != null && apiClient != null) {
         success = await apiClient.withAdminPin(
-          creditLimitAdminPin,
+          effectiveAdminPin,
           executeCheckoutCall,
         );
       } else {
@@ -3000,7 +3008,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         }
       },
       inputFormatters: [
-        FilteringTextInputFormatter.allow(RegExp(r'^\d*[\.,]?\d*')),
+        ArsThousandsInputFormatter(),
       ],
       decoration: InputDecoration(
         labelText: 'Monto a Cubrir',
@@ -3970,7 +3978,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                                   Text(
                                     _pendingBalance.abs() > 0.01
                                         ? '\$${_pendingBalance.abs().toCurrency()}'
-                                        : '\$0.00',
+                                        : '\$0',
                                     style: TextStyle(
                                         fontSize: 20,
                                         fontWeight: FontWeight.bold,
@@ -3994,7 +4002,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                                         keyboardType: const TextInputType
                                             .numberWithOptions(decimal: true),
                                         inputFormatters: [
-                                          FilteringTextInputFormatter.allow(RegExp(r'^\d*[\.,]?\d*')),
+                                          ArsThousandsInputFormatter(),
                                         ],
                                         textInputAction: TextInputAction.done,
                                         onTap: () {
@@ -4013,7 +4021,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                                         },
                                         decoration: InputDecoration(
                                           labelText: 'Efectivo Recibido',
-                                          hintText: 'Ej: 1000.00',
+                                          hintText: 'Ej: 10.000',
                                           prefixText: '\$ ',
                                           filled: true,
                                           fillColor: Colors.green.shade50,
@@ -4308,6 +4316,9 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                                                             const TextInputType
                                                                 .numberWithOptions(
                                                                 decimal: true),
+                                                        inputFormatters: [
+                                                          ArsThousandsInputFormatter(),
+                                                        ],
                                                         textAlign: TextAlign.right,
                                                         decoration:
                                                             const InputDecoration(

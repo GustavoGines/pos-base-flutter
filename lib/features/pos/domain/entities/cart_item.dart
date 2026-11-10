@@ -17,6 +17,8 @@ class CartItem {
   bool saveToCatalog; // Si es true, el backend creará el producto en el catálogo con needs_catalog_review=true
   String? customDescription; // Sobrescritura temporal del nombre para Factura/Ticket
   String? customDetails; // Notas o desglose adicional para Factura/Ticket
+  double? manualUnitPrice; // Precio de venta unitario sobrescrito manualmente para esta venta
+  double? manualCostPrice; // Precio de costo unitario sobrescrito manualmente para esta venta
   
   CartItem({
     required this.product,
@@ -33,7 +35,17 @@ class CartItem {
     this.saveToCatalog = false,
     this.customDescription,
     this.customDetails,
+    this.manualUnitPrice,
+    this.manualCostPrice,
   });
+
+  /// Costo unitario efectivo en esta venta (respeta override manual si existe)
+  double get effectiveCostPrice => manualCostPrice ?? product.costPrice;
+
+  /// Indica si tiene un precio de venta o costo ajustado manualmente solo para esta venta
+  bool get hasManualPriceOverride =>
+      (manualUnitPrice != null && manualUnitPrice! > 0) ||
+      (manualCostPrice != null && manualCostPrice! >= 0);
 
   /// Nombre efectivo a mostrar en el carrito, ticket térmico, PDF A4 y factura electrónica AFIP
   String get effectiveDisplayName {
@@ -62,7 +74,9 @@ class CartItem {
       'custom_details': (cleanDetails != null && cleanDetails.isNotEmpty) ? cleanDetails : null,
       'is_temporary': isTemporary && !saveToCatalog,
       'save_to_catalog': saveToCatalog,
-      'cost_price': product.costPrice,
+      'cost_price': effectiveCostPrice,
+      if (manualCostPrice != null && !isTemporary && !isUnregisteredProduct)
+        'custom_cost_price': manualCostPrice,
       'iva_rate': product.ivaRate,
       'is_combo': product.isCombo,
       'is_sold_by_weight': product.isSoldByWeight,
@@ -73,8 +87,8 @@ class CartItem {
     };
   }
 
-  /// Motor de precio híbrido: prioriza precio de oferta → overrides fijos → multiplicadores globales/custom → precio base volumétrico
-  double get unitPrice {
+  /// Precio unitario calculado automáticamente por lista/oferta (sin override manual)
+  double get defaultCalculatedUnitPrice {
     final baseVolumetric = product.getBestPrice(quantity);
     double calculated;
     switch (activeTier) {
@@ -111,10 +125,25 @@ class CartItem {
     return (calculated * 100).roundToDouble() / 100.0;
   }
 
+  /// Motor de precio híbrido: prioriza override manual de mostrador → precio de oferta → overrides fijos → multiplicadores globales/custom → precio base volumétrico
+  double get unitPrice {
+    if (manualUnitPrice != null && manualUnitPrice! > 0) {
+      return (manualUnitPrice! * 100).roundToDouble() / 100.0;
+    }
+    return defaultCalculatedUnitPrice;
+  }
+
   double get subtotal => ((unitPrice * quantity) * 100).roundToDouble() / 100.0;
 
+  /// Precio unitario regular efectivo para el comprobante (si hubo suba manual para esta venta,
+  /// se toma como el nuevo precio regular de ese ticket para no mostrar recargo ni tachado invertido).
+  double get effectiveRegularUnitPrice =>
+      (manualUnitPrice != null && manualUnitPrice! > product.sellingPrice)
+          ? manualUnitPrice!
+          : product.sellingPrice;
+
   /// Subtotal de lista regular (sin descuentos ni listas especiales)
-  double get regularSubtotal => product.sellingPrice * quantity;
+  double get regularSubtotal => effectiveRegularUnitPrice * quantity;
 
   /// Monto de descuento ahorrado en este ítem
   double get discountSavings => (regularSubtotal - subtotal).clamp(0.0, double.infinity);

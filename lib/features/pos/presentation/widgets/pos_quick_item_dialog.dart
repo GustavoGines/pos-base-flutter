@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
 import 'package:frontend_desktop/features/pos/domain/entities/cart_item.dart';
 
@@ -92,6 +93,8 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
     super.dispose();
   }
 
+  double _parseArs(String text) => ArsThousandsInputFormatter.parse(text);
+
   double _parseDouble(String text) {
     final normalized = text.trim().replaceAll(',', '.');
     return double.tryParse(normalized) ?? 0.0;
@@ -101,11 +104,11 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
     if (_isUpdatingCalc) return;
     _isUpdatingCalc = true;
     _priceIsAuto = false;
-    final price = _parseDouble(val);
+    final price = _parseArs(val);
     final marginStr = _marginController.text.trim();
     final costStr = _costController.text.trim();
     final margin = _parseDouble(marginStr);
-    final cost = _parseDouble(costStr);
+    final cost = _parseArs(costStr);
 
     if (val.trim().isEmpty) {
       if (_costIsAuto) {
@@ -120,12 +123,12 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
         _priceAnchor = 'selling';
         if (marginStr.isNotEmpty && margin > -100) {
           final calcCost = price / (1.0 + (margin / 100.0));
-          _costController.text = calcCost.toStringAsFixed(2);
+          _costController.text = calcCost.toArsInput();
           _costIsAuto = true;
         }
       } else if (cost > 0) {
         final calcMargin = ((price - cost) / cost) * 100.0;
-        _marginController.text = calcMargin.toStringAsFixed(1);
+        _marginController.text = calcMargin.toCleanMargin();
         _priceAnchor = 'selling';
       }
     }
@@ -155,19 +158,19 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
     }
 
     final margin = _parseDouble(marginStr);
-    final price = _parseDouble(priceStr);
-    final cost = _parseDouble(costStr);
+    final price = _parseArs(priceStr);
+    final cost = _parseArs(costStr);
 
     if ((_priceAnchor == 'selling' || costStr.isEmpty || _costIsAuto) &&
         price > 0 &&
         !_priceIsAuto &&
         margin > -100) {
       final calcCost = price / (1.0 + (margin / 100.0));
-      _costController.text = calcCost.toStringAsFixed(2);
+      _costController.text = calcCost.toArsInput();
       _costIsAuto = true;
     } else if (cost > 0) {
       final calcPrice = cost * (1.0 + (margin / 100.0));
-      _priceController.text = calcPrice.toStringAsFixed(2);
+      _priceController.text = calcPrice.toArsInput();
       _priceIsAuto = true;
     }
     _isUpdatingCalc = false;
@@ -181,8 +184,8 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
     final costStr = val.trim();
     final priceStr = _priceController.text.trim();
     final marginStr = _marginController.text.trim();
-    final cost = _parseDouble(costStr);
-    final price = _parseDouble(priceStr);
+    final cost = _parseArs(costStr);
+    final price = _parseArs(priceStr);
     final margin = _parseDouble(marginStr);
 
     if (costStr.isEmpty) {
@@ -198,12 +201,12 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
         _priceAnchor = 'cost';
         if (marginStr.isNotEmpty) {
           final calcPrice = cost * (1.0 + (margin / 100.0));
-          _priceController.text = calcPrice.toStringAsFixed(2);
+          _priceController.text = calcPrice.toArsInput();
           _priceIsAuto = true;
         }
       } else if (price > 0) {
         final calcMargin = ((price - cost) / cost) * 100.0;
-        _marginController.text = calcMargin.toStringAsFixed(1);
+        _marginController.text = calcMargin.toCleanMargin();
         _priceAnchor = 'cost';
       }
     }
@@ -253,8 +256,8 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
     final name = _nameController.text.trim();
     final details = _detailsController.text.trim();
     final qty = _parseDouble(_quantityController.text);
-    final sellingPrice = _parseDouble(_priceController.text);
-    final costPrice = _parseDouble(_costController.text);
+    final sellingPrice = _parseArs(_priceController.text);
+    final costPrice = _parseArs(_costController.text);
 
     final product = Product(
       id: 0, // ID 0 identifica producto temporal o alta on-the-fly pendiente de persistir
@@ -290,7 +293,7 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
   @override
   Widget build(BuildContext context) {
     final qty = _parseDouble(_quantityController.text);
-    final unitPrice = _parseDouble(_priceController.text);
+    final unitPrice = _parseArs(_priceController.text);
     final previewSubtotal = ((qty > 0 ? qty : 0.0) * (unitPrice > 0 ? unitPrice : 0.0));
 
     return Focus(
@@ -444,7 +447,10 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
                         child: TextFormField(
                           controller: _priceController,
                           focusNode: _priceFocus,
-                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          keyboardType: TextInputType.number,
+                          inputFormatters: const [
+                            ArsThousandsInputFormatter(),
+                          ],
                           textInputAction: TextInputAction.next,
                           onChanged: _onSellingPriceChanged,
                           onFieldSubmitted: (_) => _submit(),
@@ -458,7 +464,7 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
                             isDense: true,
                           ),
                           validator: (val) {
-                            final p = _parseDouble(val ?? '');
+                            final p = _parseArs(val ?? '');
                             if (p <= 0) {
                               return 'Ingresa un precio > 0';
                             }
@@ -576,11 +582,14 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
                             Expanded(
                               child: TextFormField(
                                 controller: _costController,
-                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                keyboardType: TextInputType.number,
+                                inputFormatters: const [
+                                  ArsThousandsInputFormatter(),
+                                ],
                                 onChanged: _onCostChanged,
                                 decoration: InputDecoration(
                                   labelText: 'Precio de Costo (Opcional)',
-                                  hintText: '0.00',
+                                  hintText: '0',
                                   prefixText: '\$ ',
                                   border: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(8),
@@ -660,7 +669,7 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
                             ),
                           ),
                           Text(
-                            '\$${previewSubtotal.toStringAsFixed(2)}',
+                            '\$${previewSubtotal.toArsInput()}',
                             style: const TextStyle(
                               fontSize: 20,
                               fontWeight: FontWeight.w900,

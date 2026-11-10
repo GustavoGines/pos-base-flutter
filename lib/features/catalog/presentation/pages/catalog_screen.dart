@@ -1452,9 +1452,9 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     _barcodeCtrl = TextEditingController(text: p?.barcode ?? '');
     _internalCodeCtrl = TextEditingController(text: p?.internalCode ?? '');
     _costCtrl = TextEditingController(
-      text: (p != null && p.costPrice > 0) ? p.costPrice.toInputFormat() : '',
+      text: (p != null && p.costPrice > 0) ? p.costPrice.toArsInput() : '',
     );
-    _priceCtrl = TextEditingController(text: p != null ? p.sellingPrice.toInputFormat() : '');
+    _priceCtrl = TextEditingController(text: p != null ? p.sellingPrice.toArsInput() : '');
     _marginCtrl = TextEditingController();
     _stockCtrl = TextEditingController(text: p != null ? p.stock.toStringAsFixed(p.isSoldByWeight ? 3 : 0) : '0');
     
@@ -1576,13 +1576,13 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
 
   Future<void> _loadSavedMargin() async {
     if (_isEditing) {
-      final cost = double.tryParse(_costCtrl.text.replaceAll(',', '.')) ?? 0.0;
-      final price = double.tryParse(_priceCtrl.text.replaceAll(',', '.')) ?? 0.0;
+      final cost = ArsThousandsInputFormatter.parse(_costCtrl.text);
+      final price = ArsThousandsInputFormatter.parse(_priceCtrl.text);
       if (cost > 0) {
         _priceAnchor = 'cost';
         final margin = ((price - cost) / cost) * 100;
         _isAutoCalculating = true;
-        _marginCtrl.text = margin.toStringAsFixed(2);
+        _marginCtrl.text = margin.toCleanMargin();
         _isAutoCalculating = false;
       } else if (price > 0) {
         _priceAnchor = 'selling';
@@ -1592,9 +1592,9 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
 
   void _onCostChanged() {
     if (_isAutoCalculating) return;
-    final costStr = _costCtrl.text.replaceAll(',', '.').trim();
+    final costStr = _costCtrl.text.trim();
     final marginStr = _marginCtrl.text.replaceAll(',', '.').trim();
-    final priceStr = _priceCtrl.text.replaceAll(',', '.').trim();
+    final priceStr = _priceCtrl.text.trim();
 
     _costIsAuto = false;
 
@@ -1611,7 +1611,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
       return;
     }
 
-    final cost = double.tryParse(costStr) ?? 0.0;
+    final cost = ArsThousandsInputFormatter.parse(costStr);
     if (cost <= 0) return;
 
     // Si Venta está vacía o fue autocalculada -> el ancla es Costo y calcula Venta si hay %
@@ -1621,7 +1621,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
         final margin = double.tryParse(marginStr) ?? 0.0;
         final newPrice = cost * (1 + (margin / 100));
         _isAutoCalculating = true;
-        _priceCtrl.text = newPrice.toStringAsFixed(2);
+        _priceCtrl.text = newPrice.toArsInput();
         _priceIsAuto = true;
         _isAutoCalculating = false;
       }
@@ -1629,11 +1629,11 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     }
 
     // Si Venta fue escrita manualmente antes y ahora el usuario escribe Costo manualmente -> calcula % Utilidad
-    final price = double.tryParse(priceStr) ?? 0.0;
+    final price = ArsThousandsInputFormatter.parse(priceStr);
     if (price > 0) {
       final margin = ((price - cost) / cost) * 100;
       _isAutoCalculating = true;
-      _marginCtrl.text = margin.toStringAsFixed(2);
+      _marginCtrl.text = margin.toCleanMargin();
       _isAutoCalculating = false;
     }
     _priceAnchor = 'cost';
@@ -1641,9 +1641,9 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
 
   void _onMarginChanged() {
     if (_isAutoCalculating) return;
-    final costStr = _costCtrl.text.replaceAll(',', '.').trim();
+    final costStr = _costCtrl.text.trim();
     final marginStr = _marginCtrl.text.replaceAll(',', '.').trim();
-    final priceStr = _priceCtrl.text.replaceAll(',', '.').trim();
+    final priceStr = _priceCtrl.text.trim();
 
     if (marginStr.isEmpty) {
       if (_costIsAuto) {
@@ -1664,27 +1664,27 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     final margin = double.tryParse(marginStr);
     if (margin == null) return;
 
-    // Si el usuario escribió primero Precio Venta (o Costo está vacío / fue autocalculado) -> calcula Costo desde Venta + %
-    if ((_priceAnchor == 'selling' || costStr.isEmpty || _costIsAuto) &&
+    // Si Costo está vacío o fue autocalculado y el usuario escribió Precio Venta -> calcula Costo desde Venta + %
+    if ((costStr.isEmpty || _costIsAuto) &&
         priceStr.isNotEmpty &&
         !_priceIsAuto) {
-      final price = double.tryParse(priceStr) ?? 0.0;
+      final price = ArsThousandsInputFormatter.parse(priceStr);
       if (price > 0 && margin > -100) {
         final newCost = price / (1 + (margin / 100));
         _isAutoCalculating = true;
-        _costCtrl.text = newCost.toStringAsFixed(2);
+        _costCtrl.text = newCost.toArsInput();
         _costIsAuto = true;
         _isAutoCalculating = false;
       }
       return;
     }
 
-    // Si el usuario escribió primero Precio Costo -> calcula Precio Venta desde Costo + %
-    final cost = double.tryParse(costStr) ?? 0.0;
+    // Regla "Costo como Ancla": si hay Costo firme (> 0), siempre calcula Precio Venta desde Costo + %
+    final cost = ArsThousandsInputFormatter.parse(costStr);
     if (cost > 0) {
       final newPrice = cost * (1 + (margin / 100));
       _isAutoCalculating = true;
-      _priceCtrl.text = newPrice.toStringAsFixed(2);
+      _priceCtrl.text = newPrice.toArsInput();
       _priceIsAuto = true;
       _isAutoCalculating = false;
     }
@@ -1696,9 +1696,9 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
       return;
     }
     if (_isAutoCalculating) return;
-    final costStr = _costCtrl.text.replaceAll(',', '.').trim();
+    final costStr = _costCtrl.text.trim();
     final marginStr = _marginCtrl.text.replaceAll(',', '.').trim();
-    final priceStr = _priceCtrl.text.replaceAll(',', '.').trim();
+    final priceStr = _priceCtrl.text.trim();
 
     _priceIsAuto = false;
 
@@ -1715,7 +1715,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
       return;
     }
 
-    final price = double.tryParse(priceStr) ?? 0.0;
+    final price = ArsThousandsInputFormatter.parse(priceStr);
     if (price <= 0) return;
 
     // Si Costo está vacío o fue autocalculado -> el ancla es Venta y calcula Costo si hay %
@@ -1726,7 +1726,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
         if (margin > -100) {
           final newCost = price / (1 + (margin / 100));
           _isAutoCalculating = true;
-          _costCtrl.text = newCost.toStringAsFixed(2);
+          _costCtrl.text = newCost.toArsInput();
           _costIsAuto = true;
           _isAutoCalculating = false;
         }
@@ -1734,15 +1734,15 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
       return;
     }
 
-    // Si Costo fue ingresado manualmente antes y ahora el usuario escribe Venta manualmente -> calcula % Utilidad
-    final cost = double.tryParse(costStr) ?? 0.0;
+    // Regla "Costo como Ancla": si Costo fue ingresado manualmente antes y el usuario edita Venta -> Costo no se toca y recalcula % Utilidad
+    final cost = ArsThousandsInputFormatter.parse(costStr);
     if (cost > 0) {
       final margin = ((price - cost) / cost) * 100;
       _isAutoCalculating = true;
-      _marginCtrl.text = margin.toStringAsFixed(2);
+      _marginCtrl.text = margin.toCleanMargin();
       _isAutoCalculating = false;
     }
-    _priceAnchor = 'selling';
+    _priceAnchor = 'cost';
   }
 
   Future<void> _pickProductImage() async {
@@ -1866,8 +1866,8 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
       'name': _nameCtrl.text.trim(),
       'barcode': _barcodeCtrl.text.trim(),
       if (_internalCodeCtrl.text.isNotEmpty) 'internal_code': _internalCodeCtrl.text.trim(),
-      'cost_price': double.tryParse(_costCtrl.text.replaceAll(',', '.')) ?? 0.0,
-      'selling_price': double.tryParse(_priceCtrl.text.replaceAll(',', '.')) ?? 0.0,
+      'cost_price': ArsThousandsInputFormatter.parse(_costCtrl.text),
+      'selling_price': ArsThousandsInputFormatter.parse(_priceCtrl.text),
       if (stockModified) 'stock': parsedStock,
       'min_stock': _minStockCtrl.text.trim().isNotEmpty ? double.tryParse(_minStockCtrl.text.replaceAll(',', '.')) : null,
       'is_sold_by_weight': _isSoldByWeight,
@@ -2693,12 +2693,13 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                           decoration: const InputDecoration(
                             labelText: 'Precio Costo (Opc.)',
                             prefixText: '\$ ',
-                            helperText: 'Opcional (\$0.00) o calculado desde Venta + %',
+                            helperText: 'Opcional (\$0) o calculado desde Venta + %',
                           ),
                           keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          inputFormatters: [ArsThousandsInputFormatter()],
                           validator: (v) {
                             if (v == null || v.trim().isEmpty) return null;
-                            final parsed = double.tryParse(v.replaceAll(',', '.'));
+                            final parsed = ArsThousandsInputFormatter.tryParse(v);
                             if (parsed == null || parsed < 0) return 'Ingrese un monto válido';
                             return null;
                           },
@@ -2719,12 +2720,12 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                         controller: _priceCtrl,
                         decoration: const InputDecoration(labelText: 'Precio Venta *', prefixText: '\$ '),
                         keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        inputFormatters: [ArsThousandsInputFormatter()],
                         validator: (v) {
-                          if (v == null || double.tryParse(v.replaceAll(',', '.')) == null) return 'Ingrese un precio válido';
+                          final price = ArsThousandsInputFormatter.tryParse(v);
+                          if (price == null) return 'Ingrese un precio válido';
                           if (!_isCombo) {
-                            final costStr = _costCtrl.text.replaceAll(',', '.').trim();
-                            final cost = costStr.isEmpty ? 0.0 : (double.tryParse(costStr) ?? 0.0);
-                            final price = double.parse(v.replaceAll(',', '.'));
+                            final cost = ArsThousandsInputFormatter.parse(_costCtrl.text);
                             if (cost > 0 && price < cost) return 'El precio de venta debe ser mayor o igual al costo';
                           }
                           return null;
@@ -2744,12 +2745,13 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                             decoration: const InputDecoration(
                               labelText: 'Precio Costo (Opc.)',
                               prefixText: '\$ ',
-                              hintText: '0.00',
+                              hintText: '0',
                             ),
                             keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            inputFormatters: [ArsThousandsInputFormatter()],
                             validator: (v) {
                               if (v == null || v.trim().isEmpty) return null;
-                              final parsed = double.tryParse(v.replaceAll(',', '.'));
+                              final parsed = ArsThousandsInputFormatter.tryParse(v);
                               if (parsed == null || parsed < 0) return 'Monto inválido';
                               return null;
                             },
@@ -2774,13 +2776,13 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                           controller: _priceCtrl,
                           decoration: const InputDecoration(labelText: 'Precio Venta *', prefixText: '\$ '),
                           keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          inputFormatters: [ArsThousandsInputFormatter()],
                           validator: (v) {
-                            if (v == null || double.tryParse(v.replaceAll(',', '.')) == null) return 'Ingrese un precio válido';
+                            final price = ArsThousandsInputFormatter.tryParse(v);
+                            if (price == null) return 'Ingrese un precio válido';
                             // Solo validar costo vs precio si no es un combo y cost > 0
                             if (!_isCombo) {
-                              final costStr = _costCtrl.text.replaceAll(',', '.').trim();
-                              final cost = costStr.isEmpty ? 0.0 : (double.tryParse(costStr) ?? 0.0);
-                              final price = double.parse(v.replaceAll(',', '.'));
+                              final cost = ArsThousandsInputFormatter.parse(_costCtrl.text);
                               if (cost > 0 && price < cost) return 'El precio de venta debe ser mayor o igual al costo';
                             }
                             return null;
@@ -3329,7 +3331,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                     _priceTiers.add({
                       // Sugerimos x10 para agilizar
                       'min_quantity': 10,
-                      'unit_price': double.tryParse(_priceCtrl.text.replaceAll(',', '.')) ?? 0.0,
+                      'unit_price': ArsThousandsInputFormatter.parse(_priceCtrl.text),
                     });
                   });
                 },
@@ -3369,13 +3371,14 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                     Expanded(
                       flex: 4,
                       child: TextFormField(
-                        initialValue: (tier['unit_price'] as num).toInputFormat(),
+                        initialValue: (tier['unit_price'] as num).toArsInput(),
                         decoration: const InputDecoration(labelText: 'Precio Unitario (\$)', isDense: true, prefixText: '\$ ', border: OutlineInputBorder()),
                         keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                        onChanged: (v) => _priceTiers[idx]['unit_price'] = double.tryParse(v.replaceAll(',', '.')) ?? 0.0,
+                        inputFormatters: [ArsThousandsInputFormatter()],
+                        onChanged: (v) => _priceTiers[idx]['unit_price'] = ArsThousandsInputFormatter.parse(v),
                         validator: (v) {
                           if (v == null || v.isEmpty) return 'Requerido';
-                          if (double.tryParse(v.replaceAll(',', '.')) == null) return 'Precio inválido';
+                          if (ArsThousandsInputFormatter.tryParse(v) == null) return 'Precio inválido';
                           return null;
                         },
                       ),
@@ -3428,7 +3431,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
       }
     }
 
-    final comboPrice = double.tryParse(_priceCtrl.text.replaceAll(',', '.')) ?? 0.0;
+    final comboPrice = ArsThousandsInputFormatter.parse(_priceCtrl.text);
     final profit = comboPrice - totalCost;
     final savings = totalIndividualSelling - comboPrice;
     final discountPct = totalIndividualSelling > 0 ? (savings / totalIndividualSelling) * 100 : 0.0;
@@ -3494,7 +3497,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                 InkWell(
                   onTap: () {
                     setState(() {
-                      _priceCtrl.text = totalIndividualSelling.toInputFormat();
+                      _priceCtrl.text = totalIndividualSelling.toArsInput();
                     });
                   },
                   child: Text(
@@ -3916,7 +3919,7 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
                                   Expanded(
                                     flex: 1,
                                     child: Text(
-                                      '\$${(num.tryParse(ex['old_price'].toString()) ?? 0).toStringAsFixed(2)}',
+                                      '\$${(num.tryParse(ex['old_price'].toString()) ?? 0).toCurrency()}',
                                       style: const TextStyle(
                                         fontSize: 12,
                                         decoration: TextDecoration.lineThrough,
@@ -3928,7 +3931,7 @@ class _BulkPriceUpdateDialogState extends State<BulkPriceUpdateDialog> {
                                   Expanded(
                                     flex: 1,
                                     child: Text(
-                                      ' \$${(num.tryParse(ex['new_price'].toString()) ?? 0).toStringAsFixed(2)}',
+                                      ' \$${(num.tryParse(ex['new_price'].toString()) ?? 0).toCurrency()}',
                                       style: const TextStyle(
                                         fontSize: 13,
                                         fontWeight: FontWeight.bold,

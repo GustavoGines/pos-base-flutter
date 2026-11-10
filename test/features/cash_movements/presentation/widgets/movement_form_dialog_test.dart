@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 
 import 'package:frontend_desktop/features/cash_movements/presentation/widgets/movement_form_dialog.dart';
 import 'package:frontend_desktop/features/cash_movements/providers/cash_movement_provider.dart';
@@ -289,7 +289,7 @@ void main() {
 
       // Verify that Cash payment row is auto-created in _payments list
       expect(find.text('EFECTIVO'), findsOneWidget);
-      final formattedAmount = NumberFormat.currency(symbol: '\$').format(20000.0);
+      final formattedAmount = '\$${20000.0.toCurrency()}';
       expect(find.text(formattedAmount), findsWidgets);
 
       // Verify trash icon can remove it
@@ -340,8 +340,8 @@ void main() {
       await tester.tap(checkItemFinder);
       await tester.pumpAndSettle();
 
-      // Controller text was populated with 50000.0
-      expect(find.text('50000.0'), findsOneWidget);
+      // Controller text was populated with 50.000
+      expect(find.text('50.000'), findsOneWidget);
 
       // Tap "Pagar Total" / "Pagar Restante" button
       final pagarTotalFinder = find.widgetWithText(TextButton, 'Pagar Total');
@@ -351,16 +351,16 @@ void main() {
 
       // Remediated: Warning SnackBar appears, controller text is NOT overwritten to debt amount!
       expect(find.text('El monto de un cheque no puede modificarse.'), findsOneWidget);
-      expect(find.text('50000.0'), findsOneWidget);
+      expect(find.text('50.000'), findsOneWidget);
 
       // Tap "Agregar"
       final agregarBtnFinder = find.widgetWithText(ElevatedButton, 'Agregar');
       await tester.tap(agregarBtnFinder);
       await tester.pumpAndSettle();
 
-      // Remediated: Check is added with its nominal face value $50,000!
+      // Remediated: Check is added with its nominal face value $50.000!
       expect(find.text('CHEQUE'), findsOneWidget);
-      final formattedFaceValue = NumberFormat.currency(symbol: '\$').format(50000.0);
+      final formattedFaceValue = '\$${50000.0.toCurrency()}';
       expect(find.text(formattedFaceValue), findsWidgets);
     });
 
@@ -388,9 +388,9 @@ void main() {
       await tester.tap(agregarBtnFinder);
       await tester.pumpAndSettle();
 
-      // Remediated: Payment of $150.50 is successfully added to payments list!
+      // Remediated: Payment of $150,50 is successfully added to payments list!
       expect(find.text('EFECTIVO'), findsOneWidget);
-      final formattedAmount = NumberFormat.currency(symbol: '\$').format(150.50);
+      final formattedAmount = '\$${150.50.toCurrency()}';
       expect(find.text(formattedAmount), findsWidgets);
       expect(find.text('Ingrese un monto válido.'), findsNothing);
     });
@@ -417,7 +417,7 @@ void main() {
 
       // Payment is added for Supplier 1
       expect(find.text('EFECTIVO'), findsOneWidget);
-      final formattedFiveThousand = NumberFormat.currency(symbol: '\$').format(5000.0);
+      final formattedFiveThousand = '\$${5000.0.toCurrency()}';
       expect(find.text(formattedFiveThousand), findsWidgets);
 
       // Change supplier dropdown to Supplier 2
@@ -472,9 +472,9 @@ void main() {
       await tester.pumpAndSettle();
 
       // Check #102 is present in the dropdown items:
-      expect(find.widgetWithText(DropdownMenuItem<int>, 'Nº 8877002 (\$ 25000.0) - Banco Galicia'), findsWidgets);
+      expect(find.widgetWithText(DropdownMenuItem<int>, 'Nº 8877002 (\$ 25.000) - Banco Galicia'), findsWidgets);
       // But Check #101 is NOT present in any DropdownMenuItem:
-      expect(find.widgetWithText(DropdownMenuItem<int>, 'Nº 8877001 (\$ 50000.0) - Banco Santander'), findsNothing);
+      expect(find.widgetWithText(DropdownMenuItem<int>, 'Nº 8877001 (\$ 50.000) - Banco Santander'), findsNothing);
 
       // Close dropdown by selecting Check #102
       await tester.tap(find.textContaining('8877002').last);
@@ -522,7 +522,7 @@ void main() {
       // Remediated V-03: Confirmation dialog appears with vuelto amount
       expect(find.text('Vuelto de Proveedor por Cheque'), findsOneWidget);
       expect(find.textContaining('supera la deuda actual'), findsOneWidget);
-      expect(find.text('\$35000.00'), findsOneWidget);
+      expect(find.text('\$35.000'), findsOneWidget);
 
       // Confirm dialog
       final confirmBtn = find.widgetWithText(ElevatedButton, 'Confirmar e Ingresar Vuelto');
@@ -556,8 +556,8 @@ void main() {
 
       expect(find.text('EFECTIVO'), findsOneWidget);
 
-      // Now enter invalid amount in text field without clicking Agregar
-      await tester.enterText(montoFieldFinder, 'invalid_amount');
+      // Now enter invalid amount (0) in text field without clicking Agregar
+      await tester.enterText(montoFieldFinder, '0');
       await tester.pump();
 
       // Click "Procesar Movimiento"

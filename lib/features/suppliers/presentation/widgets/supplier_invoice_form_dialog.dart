@@ -6,6 +6,7 @@ import 'package:file_picker/file_picker.dart' as fp;
 import 'package:http/http.dart' as http;
 import '../../../../core/network/api_client.dart';
 import '../../../../core/presentation/widgets/compact_date_range_picker_dialog.dart';
+import '../../../../core/utils/currency_formatter.dart';
 
 import '../../providers/supplier_provider.dart';
 import '../../../pos/presentation/providers/pos_provider.dart';
@@ -44,16 +45,16 @@ class _InvoiceItemModel {
         : (quantity % 1 == 0 ? quantity.toInt().toString() : quantity.toStringAsFixed(2));
     qtyCtrl = TextEditingController(text: qtyStr);
     costCtrl = TextEditingController(
-      text: newCost > 0 ? newCost.toStringAsFixed(2) : '',
+      text: newCost > 0 ? newCost.toArsInput() : '',
     );
     pvpCtrl = TextEditingController(
-      text: manualPrice > 0 ? manualPrice.toStringAsFixed(2) : '',
+      text: manualPrice > 0 ? manualPrice.toArsInput() : '',
     );
     final initialMargin = (newCost > 0 && manualPrice > 0)
         ? (((manualPrice - newCost) / newCost) * 100)
         : 0.0;
     marginCtrl = TextEditingController(
-      text: initialMargin > 0 ? initialMargin.toStringAsFixed(1) : '',
+      text: initialMargin > 0 ? initialMargin.toCleanMargin() : '',
     );
   }
 
@@ -140,9 +141,9 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
       _freightAmount = double.tryParse((inv['freight_amount'] ?? 0).toString()) ?? 0.0;
       _discountAmount = double.tryParse((inv['discount_amount'] ?? 0).toString()) ?? 0.0;
 
-      _freightCtrl.text = _freightAmount > 0 ? _freightAmount.toStringAsFixed(2) : '';
-      _taxCtrl.text = _taxAmount > 0 ? _taxAmount.toStringAsFixed(2) : '';
-      _discountCtrl.text = _discountAmount > 0 ? _discountAmount.toStringAsFixed(2) : '';
+      _freightCtrl.text = _freightAmount > 0 ? _freightAmount.toArsInput() : '';
+      _taxCtrl.text = _taxAmount > 0 ? _taxAmount.toArsInput() : '';
+      _discountCtrl.text = _discountAmount > 0 ? _discountAmount.toArsInput() : '';
       _attachmentUrl = inv['receipt_file_url']?.toString();
 
       final rawItems = inv['items'] as List<dynamic>? ?? [];
@@ -291,31 +292,30 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
   }
 
   void _handleCostChange(_InvoiceItemModel item, String val) {
-    final clean = val.replaceAll(',', '.').trim();
-    final parsed = clean.isEmpty ? 0.0 : (double.tryParse(clean) ?? 0.0);
+    final parsed = ArsThousandsInputFormatter.parse(val);
 
     setState(() {
       item.newCost = parsed;
       item.priceAnchor = parsed > 0 ? 'cost' : 'selling';
       final margin = double.tryParse(item.marginCtrl.text.replaceAll(',', '.').trim());
       if (parsed > 0 && margin != null && margin > 0) {
-        final calcPvp = parsed * (1 + (margin / 100));
+        final calcPvp = double.parse((parsed * (1 + (margin / 100))).toStringAsFixed(2));
         item.manualPrice = calcPvp;
-        item.pvpCtrl.text = calcPvp.toStringAsFixed(2);
+        item.pvpCtrl.text = calcPvp.toArsInput();
         item.updatePrice = true;
       } else if (item.newCost > item.product.costPrice &&
           item.product.costPrice > 0 &&
           item.product.sellingPrice > item.product.costPrice) {
         final histMargin =
             (item.product.sellingPrice - item.product.costPrice) / item.product.costPrice;
-        item.suggestedPrice = item.newCost * (1 + histMargin);
+        item.suggestedPrice = double.parse((item.newCost * (1 + histMargin)).toStringAsFixed(2));
         item.manualPrice = item.suggestedPrice!;
-        item.pvpCtrl.text = item.manualPrice.toStringAsFixed(2);
-        item.marginCtrl.text = (histMargin * 100).toStringAsFixed(1);
+        item.pvpCtrl.text = item.manualPrice.toArsInput();
+        item.marginCtrl.text = (histMargin * 100).toCleanMargin();
         item.updatePrice = true;
       } else if (parsed > 0 && item.manualPrice > 0) {
         final effMargin = ((item.manualPrice - parsed) / parsed) * 100;
-        item.marginCtrl.text = effMargin.toStringAsFixed(1);
+        item.marginCtrl.text = effMargin.toCleanMargin();
       }
     });
   }
@@ -332,34 +332,38 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
           margin > -100) {
         final calcCost = item.manualPrice / (1 + (margin / 100));
         item.newCost = double.parse(calcCost.toStringAsFixed(2));
-        item.costCtrl.text = item.newCost.toStringAsFixed(2);
+        item.costCtrl.text = item.newCost.toArsInput();
       } else if (item.newCost > 0) {
         final calcPvp = item.newCost * (1 + (margin / 100));
         item.manualPrice = double.parse(calcPvp.toStringAsFixed(2));
-        item.pvpCtrl.text = item.manualPrice.toStringAsFixed(2);
+        item.pvpCtrl.text = item.manualPrice.toArsInput();
         item.updatePrice = true;
       }
     });
   }
 
   void _handlePvpChange(_InvoiceItemModel item, String val) {
-    final clean = val.replaceAll(',', '.').trim();
-    final pvp = double.tryParse(clean);
+    final pvp = ArsThousandsInputFormatter.tryParse(val);
     if (pvp == null || pvp <= 0) return;
 
     setState(() {
       item.manualPrice = pvp;
       item.updatePrice = true;
-      item.priceAnchor = 'selling';
       final margin = double.tryParse(item.marginCtrl.text.replaceAll(',', '.').trim());
       final costEmpty = item.costCtrl.text.trim().isEmpty || item.newCost <= 0;
       if (costEmpty && margin != null && margin > 0) {
+        item.priceAnchor = 'selling';
         final calcCost = pvp / (1 + (margin / 100));
         item.newCost = double.parse(calcCost.toStringAsFixed(2));
-        item.costCtrl.text = item.newCost.toStringAsFixed(2);
+        item.costCtrl.text = item.newCost.toArsInput();
       } else if (item.newCost > 0) {
+        // Regla Costo como Ancla: si el producto ya tiene costo, editar el PVP
+        // solo recalcula la utilidad (%) y mantiene el costo firme como ancla.
+        item.priceAnchor = 'cost';
         final effMargin = ((pvp - item.newCost) / item.newCost) * 100;
-        item.marginCtrl.text = effMargin.toStringAsFixed(1);
+        item.marginCtrl.text = effMargin.toCleanMargin();
+      } else {
+        item.priceAnchor = 'selling';
       }
     });
   }
@@ -529,7 +533,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
               String? helperText;
               if (discount > 0 && amountToPay > 0) {
                 helperText =
-                    '💡 Se han descontado \$${discount.toStringAsFixed(2).replaceAll('.00', '')} que tenías a favor.';
+                    '💡 Se han descontado \$${discount.toCurrency()} que tenías a favor.';
               } else {
                 helperText =
                     '💡 Este importe corresponde únicamente a la mercadería que acabas de cargar hoy. (Para saldar la deuda total, usa el botón rojo "Pagar Total" de arriba).';
@@ -737,7 +741,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                                                     ),
                                                   ),
                                                   subtitle: Text(
-                                                    'Costo actual: \$${p.costPrice.toStringAsFixed(2)} | Stock: ${p.stock}',
+                                                    'Costo actual: \$${p.costPrice.toCurrency()} | Stock: ${p.stock}',
                                                   ),
                                                   trailing: const Icon(
                                                     Icons.add_shopping_cart,
@@ -998,11 +1002,10 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                                     labelText: 'Flete (\$)',
                                     isDense: true,
                                   ),
-                                  keyboardType:
-                                      const TextInputType.numberWithOptions(decimal: true),
+                                  keyboardType: TextInputType.number,
+                                  inputFormatters: [ArsThousandsInputFormatter()],
                                   onChanged: (v) {
-                                    final p = double.tryParse(v.replaceAll(',', '.'));
-                                    setState(() => _freightAmount = p ?? 0);
+                                    setState(() => _freightAmount = ArsThousandsInputFormatter.parse(v));
                                   },
                                 ),
                               ),
@@ -1014,11 +1017,10 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                                     labelText: 'Impuestos (\$)',
                                     isDense: true,
                                   ),
-                                  keyboardType:
-                                      const TextInputType.numberWithOptions(decimal: true),
+                                  keyboardType: TextInputType.number,
+                                  inputFormatters: [ArsThousandsInputFormatter()],
                                   onChanged: (v) {
-                                    final p = double.tryParse(v.replaceAll(',', '.'));
-                                    setState(() => _taxAmount = p ?? 0);
+                                    setState(() => _taxAmount = ArsThousandsInputFormatter.parse(v));
                                   },
                                 ),
                               ),
@@ -1030,11 +1032,10 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                                     labelText: 'Descuento (\$)',
                                     isDense: true,
                                   ),
-                                  keyboardType:
-                                      const TextInputType.numberWithOptions(decimal: true),
+                                  keyboardType: TextInputType.number,
+                                  inputFormatters: [ArsThousandsInputFormatter()],
                                   onChanged: (v) {
-                                    final p = double.tryParse(v.replaceAll(',', '.'));
-                                    setState(() => _discountAmount = p ?? 0);
+                                    setState(() => _discountAmount = ArsThousandsInputFormatter.parse(v));
                                   },
                                 ),
                               ),
@@ -1059,7 +1060,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                                   ),
                                 ),
                                 Text(
-                                  NumberFormat.currency(symbol: '\$').format(_totalAmount),
+                                  '\$${_totalAmount.toCurrency()}',
                                   style: const TextStyle(
                                     color: Colors.white,
                                     fontSize: 32,
@@ -1175,7 +1176,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                       overflow: TextOverflow.ellipsis,
                     ),
                     Text(
-                      'Costo Ant: \$${item.product.costPrice.toStringAsFixed(2)} | PVP Actual: \$${item.product.sellingPrice.toStringAsFixed(2)}',
+                      'Costo Ant: \$${item.product.costPrice.toCurrency()} | PVP Actual: \$${item.product.sellingPrice.toCurrency()}',
                       style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -1184,7 +1185,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
               ),
               const SizedBox(width: 12),
               Text(
-                NumberFormat.currency(symbol: '\$').format(item.subtotal),
+                '\$${item.subtotal.toCurrency()}',
                 style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
               ),
               IconButton(
@@ -1225,7 +1226,8 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                     prefixText: '\$',
                     isDense: true,
                   ),
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [ArsThousandsInputFormatter()],
                   onChanged: (val) => _handleCostChange(item, val),
                 ),
               ),
@@ -1261,7 +1263,8 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                       ),
                     ),
                   ),
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [ArsThousandsInputFormatter()],
                   onChanged: (val) => _handlePvpChange(item, val),
                 ),
               ),
@@ -1271,7 +1274,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
             Padding(
               padding: const EdgeInsets.only(top: 4.0),
               child: Text(
-                '✓ Se actualizará el Precio de Venta a \$${item.manualPrice.toStringAsFixed(2)}',
+                '✓ Se actualizará el Precio de Venta a \$${item.manualPrice.toCurrency()}',
                 style: TextStyle(
                   fontSize: 11,
                   color: Colors.green.shade800,

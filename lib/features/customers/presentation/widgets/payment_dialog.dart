@@ -83,7 +83,7 @@ class _PaymentDialogState extends State<PaymentDialog> {
   void _addLine({double initialAmount = 0.0}) {
     final line = _PaymentLine(method: 'cash');
     if (initialAmount > 0) {
-      line.amountCtrl.text = initialAmount.toStringAsFixed(2);
+      line.amountCtrl.text = initialAmount.toArsInput();
     }
     line.amountCtrl.addListener(_onAmountChanged);
     _lines.add(line);
@@ -124,19 +124,14 @@ class _PaymentDialogState extends State<PaymentDialog> {
     setState(() {
       _targetAmount = total;
       if (_lines.length == 1) {
-        _lines[0].amountCtrl.text = total > 0 ? total.toStringAsFixed(2) : '';
+        _lines[0].amountCtrl.text = total > 0 ? total.toArsInput() : '';
       }
     });
   }
 
   double get _totalEntered {
     return _lines.fold(0.0, (sum, line) {
-      final clean = line.amountCtrl.text
-          .replaceAll(r'$', '')
-          .replaceAll(' ', '')
-          .replaceAll(',', '.') // Convert comma to dot for parsing
-          .trim();
-      return sum + (double.tryParse(clean) ?? 0.0);
+      return sum + ArsThousandsInputFormatter.parse(line.amountCtrl.text);
     });
   }
 
@@ -156,12 +151,7 @@ class _PaymentDialogState extends State<PaymentDialog> {
     double totalPaid = 0.0;
 
     for (var line in _lines) {
-      final cleanAmount = line.amountCtrl.text
-          .replaceAll(r'$', '')
-          .replaceAll(' ', '')
-          .replaceAll(',', '.') // Convert comma to dot for parsing
-          .trim();
-      final amount = double.tryParse(cleanAmount) ?? 0.0;
+      final amount = ArsThousandsInputFormatter.parse(line.amountCtrl.text);
       if (amount <= 0) continue;
 
       dynamic checkDetailsPayload;
@@ -344,7 +334,7 @@ class _PaymentDialogState extends State<PaymentDialog> {
                           _targetAmount = widget.customer.balance.abs();
                           if (_lines.length == 1) {
                             _lines[0].amountCtrl.text = _targetAmount > 0
-                                ? _targetAmount.toStringAsFixed(2)
+                                ? _targetAmount.toArsInput()
                                 : '';
                           }
                         }
@@ -476,6 +466,7 @@ class _PaymentDialogState extends State<PaymentDialog> {
                               child: TextFormField(
                                 controller: line.amountCtrl,
                                 keyboardType: TextInputType.number,
+                                inputFormatters: [ArsThousandsInputFormatter()],
                                 decoration: InputDecoration(
                                     labelText: 'Monto',
                                     prefixText: '\$ ',

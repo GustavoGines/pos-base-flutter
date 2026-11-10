@@ -13,6 +13,7 @@ import '../../../../core/providers/local_terminal_provider.dart';
 import '../../../cash_register/presentation/providers/cash_register_provider.dart';
 import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
 import '../widgets/supplier_document_detail_dialog.dart';
+import '../../../../core/utils/currency_formatter.dart';
 
 class SupplierCurrentAccountScreen extends StatefulWidget {
   final int supplierId;
@@ -349,7 +350,7 @@ class _SupplierCurrentAccountScreenState extends State<SupplierCurrentAccountScr
                       fit: BoxFit.scaleDown,
                       alignment: Alignment.centerRight,
                       child: Text(
-                        NumberFormat.currency(symbol: '\$').format(_currentBalance.abs()),
+                        '\$${_currentBalance.abs().toCurrency()}',
                         style: TextStyle(fontWeight: FontWeight.w900, fontSize: 36, color: balanceColor),
                       ),
                     ),
@@ -662,12 +663,12 @@ class _SupplierCurrentAccountScreenState extends State<SupplierCurrentAccountScr
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
                           Text(
-                            '${isIncrease ? '+' : '-'}\$${amount.toStringAsFixed(2)}',
+                            '${isIncrease ? '+' : '-'}\$${amount.toCurrency()}',
                             style: TextStyle(fontWeight: FontWeight.w900, color: actionColor, fontSize: 16),
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            'Saldo: \$${runningBalance.toStringAsFixed(2)}',
+                            'Saldo: \$${runningBalance.toCurrency()}',
                             style: TextStyle(color: Colors.grey.shade500, fontSize: 12, fontWeight: FontWeight.w600),
                           ),
                         ],
