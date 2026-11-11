@@ -189,4 +189,39 @@ class ReportsRemoteDataSource {
       throw Exception('Error al recalibrar el Acceso Rápido POS (${response.statusCode})');
     }
   }
+
+  Future<Map<String, dynamic>> getVatSales(String startDate, String endDate) async {
+    final uri = Uri.parse('$baseUrl/reports/vat-sales?start_date=$startDate&end_date=$endDate');
+    final response = await client.get(uri, headers: {
+      'Accept': 'application/json',
+    });
+
+    if (response.statusCode == 200) {
+      return json.decode(response.body) as Map<String, dynamic>;
+    } else {
+      throw Exception('Error al obtener Libro IVA Ventas (${response.statusCode})');
+    }
+  }
+
+  Future<List<int>> downloadVatSalesExcel(String startDate, String endDate) async {
+    final uri = Uri.parse('$baseUrl/reports/vat-sales/export?start_date=$startDate&end_date=$endDate');
+    final response = await client.get(uri);
+    if (response.statusCode == 200) {
+      return response.bodyBytes;
+    } else {
+      throw Exception('Error al descargar Excel de Libro IVA Ventas (${response.statusCode})');
+    }
+  }
+
+  Future<List<int>> downloadVatSalesPdf(String startDate, String endDate) async {
+    final uri = Uri.parse('$baseUrl/reports/vat-sales/pdf?start_date=$startDate&end_date=$endDate');
+    final response = await client.get(uri, headers: {
+      'Accept': 'application/pdf',
+    });
+    if (response.statusCode == 200) {
+      return response.bodyBytes;
+    } else {
+      throw Exception('Error al descargar PDF de Libro IVA Ventas (${response.statusCode})');
+    }
+  }
 }

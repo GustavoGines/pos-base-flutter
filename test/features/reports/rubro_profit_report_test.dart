@@ -803,6 +803,70 @@ void main() {
       expect(find.text('Por Marcas'), findsOneWidget);
       expect(find.text('Ranking y Acceso Rápido POS'), findsOneWidget);
       expect(find.text('Por Rubro'), findsOneWidget);
+      expect(find.text('Libro IVA Ventas'), findsNothing);
+    });
+
+    testWidgets('ReportsScreen tab bar displays Libro IVA Ventas on Basic Plan when taxCondition is Responsable Inscripto', (tester) async {
+      tester.view.physicalSize = const Size(1200, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      final riBasicSettings = const BusinessSettings(
+        licensePlanType: 'basic',
+        taxCondition: 'IVA Responsable Inscripto',
+        features: FeatureFlags(multiRubro: false, advancedReports: false),
+      );
+      final riSettingsProv = FakeSettingsProvider(settings: riBasicSettings);
+
+      final mockClient = MockClient((request) async {
+        if (request.url.path.contains('/reports/vat-sales')) {
+          return http.Response(
+            jsonEncode({
+              'summary': {
+                'total_net': 20000,
+                'total_iva': 3150,
+                'net_21': 10000,
+                'iva_21': 2100,
+                'net_105': 10000,
+                'iva_105': 1050,
+                'net_fiscal_total': 23150,
+                'total_invoiced': 23150,
+                'total_credit_notes': 0,
+              },
+              'vouchers': [],
+            }),
+            200,
+            headers: {'content-type': 'application/json'},
+          );
+        }
+        return http.Response(jsonEncode({'data': [], 'previous_period': {}, 'daily_evolution': []}), 200, headers: {'content-type': 'application/json'});
+      });
+      final dataSource = ReportsRemoteDataSource(baseUrl: 'http://localhost/api', client: mockClient);
+      final reportsProv = ReportsProvider(dataSource: dataSource);
+
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<SettingsProvider>.value(value: riSettingsProv),
+            ChangeNotifierProvider<ReportsProvider>.value(value: reportsProv),
+            ChangeNotifierProvider<CheckProvider>.value(value: FakeCheckProvider()),
+            ChangeNotifierProvider<InventoryAlertsProvider>.value(value: FakeInventoryAlertsProvider()),
+            ChangeNotifierProvider<LocalTerminalProvider>.value(value: FakeLocalTerminalProvider()),
+            ChangeNotifierProvider<AuthProvider>.value(value: FakeAuthProvider()),
+          ],
+          child: const MaterialApp(
+            home: ReportsScreen(),
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      expect(find.text('Reportes Generales'), findsOneWidget);
+      expect(find.text('Libro IVA Ventas'), findsOneWidget);
     });
   });
 }

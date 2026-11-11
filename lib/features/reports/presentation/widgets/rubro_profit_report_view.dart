@@ -10,7 +10,12 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 class RubroProfitReportView extends StatefulWidget {
-  const RubroProfitReportView({super.key});
+  final bool embeddedInGeneralTab;
+
+  const RubroProfitReportView({
+    super.key,
+    this.embeddedInGeneralTab = false,
+  });
 
   @override
   State<RubroProfitReportView> createState() => _RubroProfitReportViewState();
@@ -352,6 +357,57 @@ class _RubroProfitReportViewState extends State<RubroProfitReportView> {
         .map((e) => {'id': e.key, 'name': e.value})
         .toList()
       ..sort((a, b) => (a['name'] as String).compareTo(b['name'] as String));
+
+    if (widget.embeddedInGeneralTab) {
+      return Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 10,
+            runSpacing: 8,
+            children: [
+              Icon(Icons.account_tree_rounded, size: 18, color: Colors.indigo.shade700),
+              Text(
+                'Análisis Comparativo por Rubros Principales',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.blueGrey.shade900,
+                ),
+              ),
+              OutlinedButton.icon(
+                onPressed: () => _openMultiSelect(context, provider, rubrosList),
+                icon: const Icon(Icons.filter_list, size: 16),
+                label: Text(
+                  _selectedRubroIds.isEmpty
+                      ? 'Todos los Rubros'
+                      : '${_selectedRubroIds.length} Rubros seleccionados',
+                  style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
+                ),
+                style: OutlinedButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: Colors.indigo.shade800,
+                  side: BorderSide(color: Colors.indigo.shade200),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
+              if (_selectedRubroIds.isNotEmpty)
+                TextButton.icon(
+                  onPressed: () {
+                    setState(() => _selectedRubroIds.clear());
+                    provider.setRubroFilter(null);
+                    provider.fetchProfitByRubro(rubroFilter: null);
+                  },
+                  icon: const Icon(Icons.clear, size: 15),
+                  label: const Text('Limpiar filtro', style: TextStyle(fontSize: 12)),
+                ),
+            ],
+          ),
+        ],
+      );
+    }
 
     return Card(
       elevation: 0,

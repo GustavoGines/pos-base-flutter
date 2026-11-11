@@ -15,6 +15,7 @@ import '../providers/reports_provider.dart';
 import '../widgets/internal_consumption_report_view.dart';
 import '../widgets/rubro_profit_report_view.dart';
 import '../widgets/expense_analysis_tab.dart';
+import '../widgets/vat_sales_report_view.dart';
 
 class ReportsScreen extends StatefulWidget {
   const ReportsScreen({super.key});
@@ -31,8 +32,13 @@ class _ReportsScreenState extends State<ReportsScreen>
   @override
   void initState() {
     super.initState();
-    final features = context.read<SettingsProvider>().features;
-    _currentTabCount = _calculateTabCount(features);
+    final settingsProv = context.read<SettingsProvider>();
+    final features = settingsProv.features;
+    final isResponsableInscripto = settingsProv.settings?.isResponsableInscripto ?? false;
+    _currentTabCount = _calculateTabCount(
+      features,
+      isResponsableInscripto: isResponsableInscripto,
+    );
 
     _tabController = TabController(length: _currentTabCount, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -46,23 +52,32 @@ class _ReportsScreenState extends State<ReportsScreen>
   }
 
 
-  int _calculateTabCount(dynamic features) {
-    // 1 base: Reportes Generales (unifica Categoría, Marcas y Ranking POS)
+  int _calculateTabCount(
+    dynamic features, {
+    required bool isResponsableInscripto,
+  }) {
+    // 1 base: Reportes Generales (unifica Categoría, Marcas, Rubros y Ranking POS)
     int count = 1;
-    if (features.multiRubro) count += 1;
     if (features.advancedReports) {
       count += 1; // Balance Mensual
       if (features.expenses) count += 1; // Análisis de Gastos
       if (features.currentAccounts) count += 1; // Consumo Interno
     }
+    // Libro IVA Ventas: habilitado tanto en Plan Básico como PRO si el comercio es Responsable Inscripto
+    if (isResponsableInscripto) count += 1;
     return count;
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final features = context.watch<SettingsProvider>().features;
-    final newCount = _calculateTabCount(features);
+    final settingsProv = context.watch<SettingsProvider>();
+    final features = settingsProv.features;
+    final isResponsableInscripto = settingsProv.settings?.isResponsableInscripto ?? false;
+    final newCount = _calculateTabCount(
+      features,
+      isResponsableInscripto: isResponsableInscripto,
+    );
     if (newCount != _currentTabCount) {
       _currentTabCount = newCount;
       final old = _tabController;
@@ -89,21 +104,27 @@ class _ReportsScreenState extends State<ReportsScreen>
     if (picked != null) {
       provider.setDateRange(picked.start, picked.end);
       provider.fetchProfitByCategory();
+      if (provider.generalViewMode == 'rubro' || provider.rubroReportData.isNotEmpty) {
+        provider.fetchProfitByRubro();
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final features = context.watch<SettingsProvider>().features;
+    final settingsProv = context.watch<SettingsProvider>();
+    final features = settingsProv.features;
+    final isResponsableInscripto = settingsProv.settings?.isResponsableInscripto ?? false;
     final hasAdvancedReports = features.advancedReports;
     final hasCurrentAccounts = features.currentAccounts;
-      final hasMultiRubro = features.multiRubro;
+    final hasMultiRubro = features.multiRubro;
 
     return Scaffold(
       appBar: const GlobalAppBar(currentRoute: '/reports'),
       backgroundColor: Colors.grey.shade100,
       body: Consumer<ReportsProvider>(
         builder: (context, provider, _) {
+          final isRubroSubView = hasMultiRubro && provider.generalViewMode == 'rubro';
           return Column(
             children: [
               // ── Tab Bar ─────────────────────────────────────────────────────
@@ -120,17 +141,19 @@ class _ReportsScreenState extends State<ReportsScreen>
                       indicatorWeight: 3,
                       labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                       tabs: [
+                        // 1° Operativo y Catálogo (Por Categoría, Por Marcas, Por Rubro y Ranking POS)
                         const Tab(icon: Icon(Icons.analytics_outlined, size: 18), text: 'Reportes Generales'),
-                        if (hasMultiRubro)
-                          const Tab(icon: Icon(Icons.account_tree_outlined, size: 18), text: 'Por Rubro'),
-                        // 🔒 CANDADO 3: Balance Mensual y Consumo Interno solo para plan con advanced_reports
+                        // 2°, 3°, 4° Gestión Financiera Mensual (Plan PRO / Reportes Avanzados)
                         if (hasAdvancedReports) ...[
                           const Tab(icon: Icon(Icons.calendar_month, size: 18), text: 'Balance Mensual'),
                           if (features.expenses)
                             const Tab(icon: Icon(Icons.pie_chart, size: 18), text: 'Análisis de Gastos'),
                           if (hasCurrentAccounts)
                             const Tab(icon: Icon(Icons.inventory_2, size: 18), text: 'Consumo Interno'),
-                        ]
+                        ],
+                        // Cierre Fiscal / Contable ARCA-AFIP (Plan Básico y PRO cuando es Responsable Inscripto)
+                        if (isResponsableInscripto)
+                          const Tab(icon: Icon(Icons.account_balance_outlined, size: 18), text: 'Libro IVA Ventas'),
                       ],
                     ),
                     // Filtros y selector de sub-vista en la pestaña Reportes Generales (índice 0)
@@ -141,8 +164,15 @@ class _ReportsScreenState extends State<ReportsScreen>
                           return _FiltersBar(
                             provider: provider,
                             isBrand: provider.generalViewMode == 'brand',
+                            hasMultiRubro: hasMultiRubro,
                             onDateTap: () => _selectDateRange(context),
-                            onRefresh: () => provider.fetchProfitByCategory(),
+                            onRefresh: () {
+                              if (isRubroSubView) {
+                                provider.fetchProfitByRubro();
+                              } else {
+                                provider.fetchProfitByCategory();
+                              }
+                            },
                           );
                         }
                         return const SizedBox.shrink();
@@ -156,25 +186,26 @@ class _ReportsScreenState extends State<ReportsScreen>
                 child: TabBarView(
                   controller: _tabController,
                   children: [
-                    // Tab Reportes Generales (índice 0 - siempre visible)
-                    provider.isLoading
-                        ? const Center(child: CircularProgressIndicator())
-                        : provider.error != null
-                            ? _ErrorState(message: provider.error!)
-                            : _DashboardContent(
-                                provider: provider,
-                                isBrand: provider.generalViewMode == 'brand',
-                              ),
-                    // Tab Por Rubro (índice 1 - solo con multi_rubro)
-                    if (hasMultiRubro) const RubroProfitReportView(),
-                    // Tab Balance Mensual (solo con advanced_reports)
+                    // Tab 1: Reportes Generales (Categoría | Marcas | Por Rubro | Ranking POS)
+                    isRubroSubView
+                        ? const RubroProfitReportView(embeddedInGeneralTab: true)
+                        : (provider.isLoading
+                            ? const Center(child: CircularProgressIndicator())
+                            : provider.error != null
+                                ? _ErrorState(message: provider.error!)
+                                : _DashboardContent(
+                                    provider: provider,
+                                    isBrand: provider.generalViewMode == 'brand',
+                                  )),
+                    // Tabs Financieras PRO (Balance Mensual, Análisis de Gastos, Consumo Interno)
                     if (hasAdvancedReports)
                       _MonthlyBalanceTab(provider: provider),
                     if (hasAdvancedReports && features.expenses)
                       const ExpenseAnalysisTab(),
-                    // Tab Consumo Interno (solo con advanced_reports Y currentAccounts)
                     if (hasAdvancedReports && hasCurrentAccounts)
                       const InternalConsumptionReportView(),
+                    // Tab Contable Fiscal (Libro IVA Ventas - Plan Básico y PRO para Responsable Inscripto)
+                    if (isResponsableInscripto) const VatSalesReportView(),
                   ],
                 ),
               ),
@@ -191,12 +222,14 @@ class _ReportsScreenState extends State<ReportsScreen>
 class _FiltersBar extends StatelessWidget {
   final ReportsProvider provider;
   final bool isBrand;
+  final bool hasMultiRubro;
   final VoidCallback onDateTap;
   final VoidCallback onRefresh;
 
   const _FiltersBar({
     required this.provider,
     this.isBrand = false,
+    this.hasMultiRubro = false,
     required this.onDateTap,
     required this.onRefresh,
   });
@@ -244,6 +277,7 @@ class _FiltersBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final df = DateFormat('dd/MM/yyyy');
+    final isRubroMode = hasMultiRubro && provider.generalViewMode == 'rubro';
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
       decoration: BoxDecoration(
@@ -257,7 +291,7 @@ class _FiltersBar extends StatelessWidget {
           crossAxisAlignment: WrapCrossAlignment.center,
           runSpacing: 10,
           children: [
-            // Selector segmentado de sub-vista
+            // Selector segmentado de sub-vista (Orden lógico: Categoría -> Marcas -> Rubro -> Ranking POS)
             Container(
               padding: const EdgeInsets.all(3),
               decoration: BoxDecoration(
@@ -280,6 +314,13 @@ class _FiltersBar extends StatelessWidget {
                     label: 'Por Marcas',
                     activeColor: Colors.indigo.shade700,
                   ),
+                  if (hasMultiRubro)
+                    _buildModeSegment(
+                      mode: 'rubro',
+                      icon: Icons.account_tree_outlined,
+                      label: 'Por Rubro',
+                      activeColor: Colors.indigo.shade700,
+                    ),
                   _buildModeSegment(
                     mode: 'ranking',
                     icon: Icons.local_fire_department_rounded,
@@ -329,7 +370,11 @@ class _FiltersBar extends StatelessWidget {
                 ),
                 if (provider.generalViewMode != 'ranking') ...[
                   FilledButton.icon(
-                    onPressed: provider.isExporting ? null : () => provider.exportToExcel(isBrand: isBrand),
+                    onPressed: provider.isExporting
+                        ? null
+                        : () => isRubroMode
+                            ? provider.exportRubroToExcel()
+                            : provider.exportToExcel(isBrand: isBrand),
                     icon: provider.isExporting
                         ? const SizedBox(width: 15, height: 15, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                         : const Icon(Icons.file_download, size: 15),
@@ -340,7 +385,11 @@ class _FiltersBar extends StatelessWidget {
                     ),
                   ),
                   FilledButton.icon(
-                    onPressed: provider.isExportingPdf ? null : () => provider.exportToPdf(isBrand: isBrand),
+                    onPressed: provider.isExportingPdf
+                        ? null
+                        : () => isRubroMode
+                            ? provider.exportRubroToPdf()
+                            : provider.exportToPdf(isBrand: isBrand),
                     icon: provider.isExportingPdf
                         ? const SizedBox(width: 15, height: 15, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                         : const Icon(Icons.picture_as_pdf, size: 15),
