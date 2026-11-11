@@ -224,4 +224,54 @@ class ReportsRemoteDataSource {
       throw Exception('Error al descargar PDF de Libro IVA Ventas (${response.statusCode})');
     }
   }
+
+  // ─── Libro IVA Compras & Posición Mensual (ARCA / AFIP) ─────────────────────
+  Future<Map<String, dynamic>> getVatPurchases(String startDate, String endDate, {String voucherType = 'all'}) async {
+    final voucherParam = voucherType.isNotEmpty && voucherType != 'all' ? '&voucher_type=$voucherType' : '';
+    final uri = Uri.parse('$baseUrl/reports/vat-purchases?start_date=$startDate&end_date=$endDate$voucherParam');
+    final response = await client.get(uri, headers: {
+      'Accept': 'application/json',
+    });
+
+    if (response.statusCode == 200) {
+      return json.decode(response.body) as Map<String, dynamic>;
+    } else {
+      throw Exception('Error al obtener Libro IVA Compras (${response.statusCode})');
+    }
+  }
+
+  Future<List<int>> downloadVatPurchasesExcel(String startDate, String endDate) async {
+    final uri = Uri.parse('$baseUrl/reports/vat-purchases/export?start_date=$startDate&end_date=$endDate');
+    final response = await client.get(uri);
+    if (response.statusCode == 200) {
+      return response.bodyBytes;
+    } else {
+      throw Exception('Error al descargar Excel de Libro IVA Compras (${response.statusCode})');
+    }
+  }
+
+  Future<List<int>> downloadVatPurchasesPdf(String startDate, String endDate) async {
+    final uri = Uri.parse('$baseUrl/reports/vat-purchases/pdf?start_date=$startDate&end_date=$endDate');
+    final response = await client.get(uri, headers: {
+      'Accept': 'application/pdf',
+    });
+    if (response.statusCode == 200) {
+      return response.bodyBytes;
+    } else {
+      throw Exception('Error al descargar PDF de Libro IVA Compras (${response.statusCode})');
+    }
+  }
+
+  Future<Map<String, dynamic>> getVatPosition(int year, int month) async {
+    final uri = Uri.parse('$baseUrl/reports/vat-position?year=$year&month=$month');
+    final response = await client.get(uri, headers: {
+      'Accept': 'application/json',
+    });
+
+    if (response.statusCode == 200) {
+      return json.decode(response.body) as Map<String, dynamic>;
+    } else {
+      throw Exception('Error al obtener Posición Mensual de IVA (${response.statusCode})');
+    }
+  }
 }

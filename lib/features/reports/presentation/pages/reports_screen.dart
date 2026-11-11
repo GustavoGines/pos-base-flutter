@@ -15,7 +15,7 @@ import '../providers/reports_provider.dart';
 import '../widgets/internal_consumption_report_view.dart';
 import '../widgets/rubro_profit_report_view.dart';
 import '../widgets/expense_analysis_tab.dart';
-import '../widgets/vat_sales_report_view.dart';
+import '../widgets/vat_management_tab.dart';
 
 class ReportsScreen extends StatefulWidget {
   const ReportsScreen({super.key});
@@ -153,7 +153,7 @@ class _ReportsScreenState extends State<ReportsScreen>
                         ],
                         // Cierre Fiscal / Contable ARCA-AFIP (Plan Básico y PRO cuando es Responsable Inscripto)
                         if (isResponsableInscripto)
-                          const Tab(icon: Icon(Icons.account_balance_outlined, size: 18), text: 'Libro IVA Ventas'),
+                          const Tab(icon: Icon(Icons.account_balance_outlined, size: 18), text: '🏛️ IVA / Impositivo'),
                       ],
                     ),
                     // Filtros y selector de sub-vista en la pestaña Reportes Generales (índice 0)
@@ -204,8 +204,8 @@ class _ReportsScreenState extends State<ReportsScreen>
                       const ExpenseAnalysisTab(),
                     if (hasAdvancedReports && hasCurrentAccounts)
                       const InternalConsumptionReportView(),
-                    // Tab Contable Fiscal (Libro IVA Ventas - Plan Básico y PRO para Responsable Inscripto)
-                    if (isResponsableInscripto) const VatSalesReportView(),
+                    // Tab Contable Fiscal (Plan Básico y PRO para Responsable Inscripto: Posición Mensual, Libro IVA Ventas y Compras)
+                    if (isResponsableInscripto) const VatManagementTab(),
                   ],
                 ),
               ),

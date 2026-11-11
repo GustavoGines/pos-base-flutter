@@ -953,4 +953,218 @@ class ReportsProvider extends ChangeNotifier {
       notifyListeners();
     }
   }
+
+  // ─── Libro IVA Compras (ARCA / AFIP - Responsable Inscripto) ───────────────
+  DateTime _vatPurchasesStartDate = DateTime(DateTime.now().year, DateTime.now().month, 1);
+  DateTime _vatPurchasesEndDate = DateTime.now();
+
+  DateTime get vatPurchasesStartDate => _vatPurchasesStartDate;
+  DateTime get vatPurchasesEndDate => _vatPurchasesEndDate;
+
+  bool _isLoadingVatPurchases = false;
+  bool get isLoadingVatPurchases => _isLoadingVatPurchases;
+
+  String? _vatPurchasesError;
+  String? get vatPurchasesError => _vatPurchasesError;
+
+  Map<String, dynamic> _vatPurchasesSummary = {};
+  Map<String, dynamic> get vatPurchasesSummary => _vatPurchasesSummary;
+
+  List<dynamic> _vatPurchasesVouchers = [];
+  List<dynamic> get vatPurchasesVouchers => _vatPurchasesVouchers;
+
+  bool _isExportingVatPurchasesExcel = false;
+  bool get isExportingVatPurchasesExcel => _isExportingVatPurchasesExcel;
+
+  bool _isExportingVatPurchasesPdf = false;
+  bool get isExportingVatPurchasesPdf => _isExportingVatPurchasesPdf;
+
+  String _vatPurchasesFilter = 'ALL'; // 'ALL' | 'A' | 'B_C' | 'NC'
+  String get vatPurchasesFilter => _vatPurchasesFilter;
+
+  String _vatPurchasesSearchQuery = '';
+  String get vatPurchasesSearchQuery => _vatPurchasesSearchQuery;
+
+  void setVatPurchasesFilter(String filter) {
+    if (_vatPurchasesFilter == filter) return;
+    _vatPurchasesFilter = filter;
+    notifyListeners();
+  }
+
+  void setVatPurchasesSearchQuery(String query) {
+    _vatPurchasesSearchQuery = query;
+    notifyListeners();
+  }
+
+  void setVatPurchasesDateRange(DateTime start, DateTime end) {
+    _vatPurchasesStartDate = start;
+    _vatPurchasesEndDate = end;
+    notifyListeners();
+    fetchVatPurchases();
+  }
+
+  Future<void> fetchVatPurchases({bool silent = false}) async {
+    if (!silent) {
+      _isLoadingVatPurchases = true;
+    }
+    _vatPurchasesError = null;
+    if (!silent) {
+      notifyListeners();
+    }
+
+    try {
+      final df = DateFormat('yyyy-MM-dd');
+      final result = await dataSource.getVatPurchases(
+        df.format(_vatPurchasesStartDate),
+        df.format(_vatPurchasesEndDate),
+      );
+      _vatPurchasesSummary = Map<String, dynamic>.from(result['summary'] as Map? ?? {});
+      _vatPurchasesVouchers = List<dynamic>.from(result['vouchers'] as List? ?? const []);
+    } catch (e) {
+      _vatPurchasesError = e.toString();
+    } finally {
+      _isLoadingVatPurchases = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> exportVatPurchasesToExcel() async {
+    _isExportingVatPurchasesExcel = true;
+    _vatPurchasesError = null;
+    notifyListeners();
+
+    try {
+      final df = DateFormat('yyyy-MM-dd');
+      final bytes = await dataSource.downloadVatPurchasesExcel(
+        df.format(_vatPurchasesStartDate),
+        df.format(_vatPurchasesEndDate),
+      );
+
+      final docsDir = await getApplicationDocumentsDirectory();
+      final reportesDir = Directory(
+          '${docsDir.path}${Platform.pathSeparator}Sistema_POS${Platform.pathSeparator}Reportes');
+
+      if (!await reportesDir.exists()) {
+        await reportesDir.create(recursive: true);
+      }
+
+      final cleanStart = DateFormat('dd-MM-yyyy').format(_vatPurchasesStartDate);
+      final cleanEnd = DateFormat('dd-MM-yyyy').format(_vatPurchasesEndDate);
+      final filename = 'Libro_IVA_Compras_${cleanStart}_al_$cleanEnd.xlsx';
+      final file = File('${reportesDir.path}${Platform.pathSeparator}$filename');
+
+      await file.writeAsBytes(bytes);
+
+      if (Platform.isWindows) {
+        try {
+          await Process.run('explorer.exe', ['/select,', file.path]);
+        } catch (e) {
+          debugPrint('Error abriendo explorer: $e');
+        }
+      } else {
+        final folderUri =
+            Uri.parse('file:///${reportesDir.path.replaceAll('\\', '/')}');
+        if (await canLaunchUrl(folderUri)) {
+          await launchUrl(folderUri);
+        }
+      }
+    } catch (e) {
+      _vatPurchasesError = 'Error al exportar Libro IVA Compras Excel: $e';
+    } finally {
+      _isExportingVatPurchasesExcel = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> exportVatPurchasesToPdf() async {
+    _isExportingVatPurchasesPdf = true;
+    _vatPurchasesError = null;
+    notifyListeners();
+
+    try {
+      final df = DateFormat('yyyy-MM-dd');
+      final bytes = await dataSource.downloadVatPurchasesPdf(
+        df.format(_vatPurchasesStartDate),
+        df.format(_vatPurchasesEndDate),
+      );
+
+      final docsDir = await getApplicationDocumentsDirectory();
+      final reportesDir = Directory(
+          '${docsDir.path}${Platform.pathSeparator}Sistema_POS${Platform.pathSeparator}Reportes');
+
+      if (!await reportesDir.exists()) {
+        await reportesDir.create(recursive: true);
+      }
+
+      final cleanStart = DateFormat('dd-MM-yyyy').format(_vatPurchasesStartDate);
+      final cleanEnd = DateFormat('dd-MM-yyyy').format(_vatPurchasesEndDate);
+      final filename = 'Libro_IVA_Compras_${cleanStart}_al_$cleanEnd.pdf';
+      final file = File('${reportesDir.path}${Platform.pathSeparator}$filename');
+
+      await file.writeAsBytes(bytes);
+
+      if (Platform.isWindows) {
+        try {
+          await Process.run('explorer.exe', ['/select,', file.path]);
+        } catch (e) {
+          debugPrint('Error abriendo explorer: $e');
+        }
+      } else {
+        final folderUri =
+            Uri.parse('file:///${reportesDir.path.replaceAll('\\', '/')}');
+        if (await canLaunchUrl(folderUri)) {
+          await launchUrl(folderUri);
+        }
+      }
+    } catch (e) {
+      _vatPurchasesError = 'Error al exportar Libro IVA Compras PDF: $e';
+    } finally {
+      _isExportingVatPurchasesPdf = false;
+      notifyListeners();
+    }
+  }
+
+  // ─── Posición Mensual de IVA (ARCA / AFIP) ─────────────────────────────────
+  int _vatPositionYear = DateTime.now().year;
+  int _vatPositionMonth = DateTime.now().month;
+
+  int get vatPositionYear => _vatPositionYear;
+  int get vatPositionMonth => _vatPositionMonth;
+
+  bool _isLoadingVatPosition = false;
+  bool get isLoadingVatPosition => _isLoadingVatPosition;
+
+  String? _vatPositionError;
+  String? get vatPositionError => _vatPositionError;
+
+  Map<String, dynamic> _vatPositionData = {};
+  Map<String, dynamic> get vatPositionData => _vatPositionData;
+
+  void setVatPositionPeriod(int year, int month) {
+    if (_vatPositionYear == year && _vatPositionMonth == month) return;
+    _vatPositionYear = year;
+    _vatPositionMonth = month;
+    notifyListeners();
+    fetchVatPosition();
+  }
+
+  Future<void> fetchVatPosition({bool silent = false}) async {
+    if (!silent) {
+      _isLoadingVatPosition = true;
+    }
+    _vatPositionError = null;
+    if (!silent) {
+      notifyListeners();
+    }
+
+    try {
+      final result = await dataSource.getVatPosition(_vatPositionYear, _vatPositionMonth);
+      _vatPositionData = Map<String, dynamic>.from(result);
+    } catch (e) {
+      _vatPositionError = e.toString();
+    } finally {
+      _isLoadingVatPosition = false;
+      notifyListeners();
+    }
+  }
 }

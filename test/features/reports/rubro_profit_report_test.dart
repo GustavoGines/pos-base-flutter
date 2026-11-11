@@ -803,10 +803,10 @@ void main() {
       expect(find.text('Por Marcas'), findsOneWidget);
       expect(find.text('Ranking y Acceso Rápido POS'), findsOneWidget);
       expect(find.text('Por Rubro'), findsOneWidget);
-      expect(find.text('Libro IVA Ventas'), findsNothing);
+      expect(find.text('🏛️ IVA / Impositivo'), findsNothing);
     });
 
-    testWidgets('ReportsScreen tab bar displays Libro IVA Ventas on Basic Plan when taxCondition is Responsable Inscripto', (tester) async {
+    testWidgets('ReportsScreen tab bar displays 🏛️ IVA / Impositivo on Basic Plan when taxCondition is Responsable Inscripto', (tester) async {
       tester.view.physicalSize = const Size(1200, 900);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(() {
@@ -866,7 +866,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Reportes Generales'), findsOneWidget);
-      expect(find.text('Libro IVA Ventas'), findsOneWidget);
+      expect(find.text('🏛️ IVA / Impositivo'), findsOneWidget);
     });
   });
 }

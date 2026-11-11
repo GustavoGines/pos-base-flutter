@@ -527,6 +527,7 @@ class MockReceiptPrinterService extends _i1.Mock
     required _i13.BusinessSettings? settings,
     required _i11.LocalTerminalProvider? localTerminal,
     required String? vendorName,
+    dynamic paperSizeOverride,
   }) =>
       (super.noSuchMethod(
         Invocation.method(
@@ -537,6 +538,7 @@ class MockReceiptPrinterService extends _i1.Mock
             #settings: settings,
             #localTerminal: localTerminal,
             #vendorName: vendorName,
+            #paperSizeOverride: paperSizeOverride,
           },
         ),
         returnValue: _i6.Future<void>.value(),
