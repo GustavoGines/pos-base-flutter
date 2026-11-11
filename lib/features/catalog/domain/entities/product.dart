@@ -16,6 +16,7 @@ class Product {
   final bool active;
   final bool isSoldByWeight;
   final bool isCombo;
+  final bool isService;
   final List<Map<String, dynamic>>? comboIngredients;
   final List<Map<String, dynamic>>? priceTiers;
   final int? vencimientoDias;
@@ -46,6 +47,7 @@ class Product {
     required this.active,
     required this.isSoldByWeight,
     this.isCombo = false,
+    this.isService = false,
     this.comboIngredients,
     this.priceTiers,
     this.salesCount = 0,
@@ -76,6 +78,7 @@ class Product {
     bool? active,
     bool? isSoldByWeight,
     bool? isCombo,
+    bool? isService,
     List<Map<String, dynamic>>? comboIngredients,
     List<Map<String, dynamic>>? priceTiers,
     int? salesCount,
@@ -109,6 +112,7 @@ class Product {
       active: active ?? this.active,
       isSoldByWeight: isSoldByWeight ?? this.isSoldByWeight,
       isCombo: isCombo ?? this.isCombo,
+      isService: isService ?? this.isService,
       comboIngredients: comboIngredients ?? this.comboIngredients,
       priceTiers: priceTiers ?? this.priceTiers,
       salesCount: salesCount ?? this.salesCount,

@@ -658,6 +658,42 @@ class AfipFiscalPdfService {
           );
 
     // ── 8. Construcción de Secciones Visuales ──────────────────────────────────
+    int resolvedConcepto = int.tryParse((electronicInvoice['concepto'] ??
+                electronicInvoice['afip_request']?['concepto'] ??
+                sale['concepto'] ??
+                0)
+            .toString()) ??
+        0;
+    if (![1, 2, 3].contains(resolvedConcepto) && items.isNotEmpty) {
+      bool hasServices = false;
+      bool hasGoods = false;
+      for (final item in items) {
+        if (item is Map) {
+          final isSrv = item['is_service'] == true ||
+              item['is_service'] == 1 ||
+              item['product']?['is_service'] == true ||
+              item['product']?['is_service'] == 1;
+          if (isSrv) {
+            hasServices = true;
+          } else {
+            hasGoods = true;
+          }
+        }
+      }
+      if (hasServices && !hasGoods) {
+        resolvedConcepto = 2;
+      } else if (hasServices && hasGoods) {
+        resolvedConcepto = 3;
+      } else {
+        resolvedConcepto = 1;
+      }
+    }
+    final conceptoLabel = switch (resolvedConcepto) {
+      2 => '2 - Servicios',
+      3 => '3 - Productos y Servicios',
+      _ => '1 - Productos',
+    };
+
     final headerWidget = _buildAfipHeader(
       voucherTitle: voucherTitle,
       voucherLetter: voucherLetter,
@@ -675,6 +711,7 @@ class AfipFiscalPdfService {
       issueDate: issueDate,
       issueTime: issueTime,
       cashierName: cashierName,
+      conceptoLabel: conceptoLabel,
     );
 
     final receiverWidget = _buildReceiverSection(
@@ -713,6 +750,7 @@ class AfipFiscalPdfService {
       discountsOrSurcharges: discountsOrSurcharges,
       totalAmount: totalAmount,
       ivaBreakdown: electronicInvoice['iva_breakdown'] as List<dynamic>?,
+      items: items,
       iibbPerceptionAmount: iibbPerceptionAmount,
       iibbPerceptionRate: iibbPerceptionRate,
     );
@@ -1271,17 +1309,27 @@ class AfipFiscalPdfService {
   static double _calculateContainedIvaFromItems(List<dynamic> items, double fallbackSubtotal) {
     if (items.isNotEmpty) {
       double totalIva = 0.0;
+      bool hasValidSubtotals = false;
       for (final item in items) {
         if (item is Map) {
           final sub = double.tryParse((item['subtotal'] ?? item['total'] ?? 0).toString()) ?? 0.0;
-          final rate = double.tryParse((item['iva_rate'] ?? item['tax_rate'] ?? item['aliquot'] ?? 21).toString()) ?? 21.0;
-          if (rate > 0 && sub > 0) {
-            final net = sub / (1 + (rate / 100));
-            totalIva += (sub - net);
+          final rate = double.tryParse((item['iva_rate'] ??
+                      item['product']?['iva_rate'] ??
+                      item['tax_rate'] ??
+                      item['aliquot'] ??
+                      21)
+                  .toString()) ??
+              21.0;
+          if (sub > 0) {
+            hasValidSubtotals = true;
+            if (rate > 0) {
+              final net = sub / (1 + (rate / 100));
+              totalIva += (sub - net);
+            }
           }
         }
       }
-      if (totalIva > 0) {
+      if (hasValidSubtotals) {
         return totalIva;
       }
     }
@@ -1311,6 +1359,7 @@ class AfipFiscalPdfService {
     required String issueDate,
     required String issueTime,
     required String cashierName,
+    String conceptoLabel = '1 - Productos',
   }) {
     return pw.Stack(
       alignment: pw.Alignment.topCenter,
@@ -1421,7 +1470,7 @@ class AfipFiscalPdfService {
                           style: const pw.TextStyle(fontSize: 8.5)),
                       pw.Text('Cajero: ${cashierName.toUpperCase()}',
                           style: const pw.TextStyle(fontSize: 8.5)),
-                      pw.Text('Concepto: 1 - Productos',
+                      pw.Text('Concepto: $conceptoLabel',
                           style: const pw.TextStyle(fontSize: 8.5)),
                       pw.Text('Período Facturado: $issueDate al $issueDate',
                           style: const pw.TextStyle(fontSize: 8)),
@@ -1612,6 +1661,7 @@ class AfipFiscalPdfService {
                     (item['subtotal'] ?? item['total'] ?? 0).toString()) ??
                 0.0;
             final ivaRate = double.tryParse((item['iva_rate'] ??
+                        item['product']?['iva_rate'] ??
                         item['tax_rate'] ??
                         item['aliquot'] ??
                         21)
@@ -1624,6 +1674,9 @@ class AfipFiscalPdfService {
                 : (subtotal / (1 + ivaRate / 100));
             final netUnitPrice =
                 qty > 0 ? (netSubtotal / qty) : (subtotal / (1 + ivaRate / 100));
+            final formattedIvaRate = ivaRate % 1 == 0
+                ? '${ivaRate.toInt()}%'
+                : '${ivaRate.toStringAsFixed(1)}%';
 
             return pw.TableRow(
               children: [
@@ -1657,7 +1710,7 @@ class AfipFiscalPdfService {
                 ),
                 _buildTableCell(formatCurrency(netUnitPrice),
                     textAlign: pw.TextAlign.right),
-                _buildTableCell('${ivaRate.toStringAsFixed(1)}%',
+                _buildTableCell(formattedIvaRate,
                     textAlign: pw.TextAlign.center),
                 _buildTableCell(formatCurrency(netSubtotal),
                     textAlign: pw.TextAlign.right),
@@ -1832,32 +1885,34 @@ class AfipFiscalPdfService {
     required double discountsOrSurcharges,
     required double totalAmount,
     List<dynamic>? ivaBreakdown,
+    List<dynamic>? items,
     double iibbPerceptionAmount = 0.0,
     double iibbPerceptionRate = 0.0,
   }) {
     if (isFacturaA) {
       double iva21 = 0.0;
       double iva105 = 0.0;
+      double iva27 = 0.0;
       final otherIvas = <pw.Widget>[];
 
       if (ivaBreakdown != null && ivaBreakdown.isNotEmpty) {
         for (final item in ivaBreakdown) {
           if (item is Map) {
-            final id = item['id'] ?? item['iva_id'];
+            final rawId = item['Id'] ?? item['id'] ?? item['iva_id'];
+            final id = rawId is int ? rawId : int.tryParse(rawId?.toString() ?? '0') ?? 0;
             final imp = double.tryParse(
-                    (item['importe'] ?? item['amount'] ?? 0).toString()) ??
+                    (item['Importe'] ?? item['importe'] ?? item['amount'] ?? 0).toString()) ??
                 0.0;
             if (id == 5) {
               iva21 += imp;
             } else if (id == 4) {
               iva105 += imp;
             } else if (id == 6) {
-              otherIvas.add(pw.Text('IVA 27%: ${formatCurrency(imp)}',
-                  style: const pw.TextStyle(fontSize: 8)));
-            } else if (id == 8) {
+              iva27 += imp;
+            } else if (id == 8 && imp > 0) {
               otherIvas.add(pw.Text('IVA 5%: ${formatCurrency(imp)}',
                   style: const pw.TextStyle(fontSize: 8)));
-            } else if (id == 9) {
+            } else if (id == 9 && imp > 0) {
               otherIvas.add(pw.Text('IVA 2.5%: ${formatCurrency(imp)}',
                   style: const pw.TextStyle(fontSize: 8)));
             }
@@ -1865,7 +1920,32 @@ class AfipFiscalPdfService {
         }
       }
 
-      if (iva21 == 0.0 && iva105 == 0.0 && otherIvas.isEmpty && ivaAmount > 0) {
+      if (iva21 == 0.0 && iva105 == 0.0 && iva27 == 0.0 && otherIvas.isEmpty && items != null && items.isNotEmpty) {
+        for (final item in items) {
+          if (item is Map) {
+            final sub = double.tryParse((item['subtotal'] ?? item['total'] ?? 0).toString()) ?? 0.0;
+            final rate = double.tryParse((item['iva_rate'] ??
+                        item['product']?['iva_rate'] ??
+                        item['tax_rate'] ??
+                        item['aliquot'] ??
+                        21)
+                    .toString()) ??
+                21.0;
+            if (sub > 0 && rate > 0) {
+              final itemIva = sub - (sub / (1 + (rate / 100)));
+              if ((rate - 10.5).abs() < 0.1) {
+                iva105 += itemIva;
+              } else if ((rate - 27.0).abs() < 0.1) {
+                iva27 += itemIva;
+              } else {
+                iva21 += itemIva;
+              }
+            }
+          }
+        }
+      }
+
+      if (iva21 == 0.0 && iva105 == 0.0 && iva27 == 0.0 && otherIvas.isEmpty && ivaAmount > 0) {
         iva21 = ivaAmount;
       }
 
@@ -1895,10 +1975,14 @@ class AfipFiscalPdfService {
                       'Incluye Flete / Envío (Neto s/IVA): ${formatCurrency(shippingCost / 1.21)}',
                       style: const pw.TextStyle(fontSize: 7.5),
                     ),
-                  pw.Text('IVA 21%: ${formatCurrency(iva21)}',
-                       style: const pw.TextStyle(fontSize: 8)),
+                  if (iva21 > 0 || (iva105 == 0 && iva27 == 0 && otherIvas.isEmpty))
+                    pw.Text('IVA 21%: ${formatCurrency(iva21)}',
+                        style: const pw.TextStyle(fontSize: 8)),
                   if (iva105 > 0)
                     pw.Text('IVA 10.5%: ${formatCurrency(iva105)}',
+                        style: const pw.TextStyle(fontSize: 8)),
+                  if (iva27 > 0)
+                    pw.Text('IVA 27%: ${formatCurrency(iva27)}',
                         style: const pw.TextStyle(fontSize: 8)),
                   ...otherIvas,
                   if (exemptAmount > 0)

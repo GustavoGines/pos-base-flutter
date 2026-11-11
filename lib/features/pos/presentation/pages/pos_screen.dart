@@ -6163,7 +6163,10 @@ class _CartItemStockIndicator extends StatelessWidget {
     final catalogProducts =
         context.select<CatalogProvider, List<Product>>((c) => c.products);
 
-    if (item.isTemporary || item.saveToCatalog || item.product.id <= 0) {
+    if (item.isTemporary ||
+        item.saveToCatalog ||
+        item.product.id <= 0 ||
+        item.product.isService) {
       return const SizedBox.shrink();
     }
 
@@ -6171,6 +6174,11 @@ class _CartItemStockIndicator extends StatelessWidget {
     final productById = <int, Product>{
       for (final p in catalogProducts) p.id: p,
     };
+
+    final currentProduct = productById[item.product.id] ?? item.product;
+    if (currentProduct.isService) {
+      return const SizedBox.shrink();
+    }
 
     // Acumular el consumo real de cada producto/ingrediente en todo el carrito actual
     // (contemplando tanto productos sueltos como ingredientes dentro de Combos).
@@ -6195,7 +6203,6 @@ class _CartItemStockIndicator extends StatelessWidget {
     }
 
     // 1. Verificación en tiempo real (Proyección Local simple y cruzada con Combos)
-    final currentProduct = productById[item.product.id] ?? item.product;
     double projectedStock;
 
     if (currentProduct.isCombo &&

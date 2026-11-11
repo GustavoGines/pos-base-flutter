@@ -718,6 +718,39 @@ class PosProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  /// Sincroniza en el carrito un producto que acaba de ser editado en el Catálogo
+  void syncUpdatedCatalogProduct(Product updatedCatalogProduct) {
+    bool changed = false;
+    for (final cartIt in _cart) {
+      if (cartIt.product.id == updatedCatalogProduct.id) {
+        final priceChangedInDb =
+            (cartIt.product.sellingPrice - updatedCatalogProduct.sellingPrice).abs() > 0.005;
+        final costChangedInDb =
+            (cartIt.product.costPrice - updatedCatalogProduct.costPrice).abs() > 0.005;
+        cartIt.product = updatedCatalogProduct;
+        cartIt.hasManualIvaOverride = false;
+        if (priceChangedInDb) {
+          cartIt.manualUnitPrice = null;
+          cartIt.manualSubtotal = null;
+          if (cartIt.promotionalLabel == null &&
+              cartIt.promotionalPeriodType == null) {
+            cartIt.promotionalPrice = null;
+          }
+        }
+        if (costChangedInDb) {
+          cartIt.manualCostPrice = null;
+        }
+        changed = true;
+      }
+    }
+    if (changed) {
+      if (_cachedActiveOffers.isNotEmpty) {
+        syncActiveOffers(_cachedActiveOffers);
+      }
+      notifyListeners();
+    }
+  }
+
   /// Actualiza el nombre temporal (alias de facturación/ticket), notas, precio de venta,
   /// costo, subtotal pactado o producto de catálogo actualizado de un ítem del carrito.
   void updateCartItemCustomDescription(
@@ -742,6 +775,7 @@ class PosProvider with ChangeNotifier {
           final costChangedInDb =
               (cartIt.product.costPrice - updatedCatalogProduct.costPrice).abs() > 0.005;
           cartIt.product = updatedCatalogProduct;
+          cartIt.hasManualIvaOverride = false;
           if (priceChangedInDb) {
             cartIt.manualUnitPrice = null;
             cartIt.manualSubtotal = null;
@@ -772,6 +806,9 @@ class PosProvider with ChangeNotifier {
       item.quantity = newQuantity;
     }
     if (newIvaRate != null) {
+      if ((newIvaRate - item.product.ivaRate).abs() > 0.01) {
+        item.hasManualIvaOverride = true;
+      }
       item.product = item.product.copyWith(ivaRate: newIvaRate);
     }
 
@@ -1111,6 +1148,13 @@ class PosProvider with ChangeNotifier {
       final prod = itemMap['product'] as Map<String, dynamic>? ?? {};
       final unitPriceCharged = double.tryParse(itemMap['unit_price'].toString()) ?? 0.0;
       final originalSellingPrice = double.tryParse(prod['selling_price']?.toString() ?? '') ?? unitPriceCharged;
+      final resolvedIvaRate = double.tryParse(itemMap['iva_rate']?.toString() ?? '') ??
+          double.tryParse(prod['iva_rate']?.toString() ?? '') ??
+          21.0;
+      final resolvedIsService = itemMap['is_service'] == true ||
+          itemMap['is_service'] == 1 ||
+          prod['is_service'] == true ||
+          prod['is_service'] == 1;
       final product = Product(
         id: (prod['id'] as num?)?.toInt() ?? 0,
         name: itemMap['product_name']?.toString() ??
@@ -1119,12 +1163,14 @@ class PosProvider with ChangeNotifier {
         internalCode: prod['internal_code']?.toString() ?? '',
         costPrice: double.tryParse(prod['cost_price']?.toString() ?? '0') ?? 0,
         sellingPrice: originalSellingPrice,
+        ivaRate: resolvedIvaRate,
         priceWholesale: double.tryParse(prod['price_wholesale']?.toString() ?? ''),
         priceCard: double.tryParse(prod['price_card']?.toString() ?? ''),
         stock: double.tryParse(prod['stock']?.toString() ?? '0') ?? 0.0,
         active: true,
         isSoldByWeight:
             prod['is_sold_by_weight'] == true || prod['is_sold_by_weight'] == 1,
+        isService: resolvedIsService,
       );
 
       // Calcular el factor real si el precio pactado difiere del de lista (descuento o recargo)
@@ -1523,6 +1569,7 @@ class PosProvider with ChangeNotifier {
                 'unit_price': i.unitPrice,
                 'subtotal': i.subtotal,
                 'iva_rate': i.product.ivaRate,
+                'is_service': i.product.isService,
                 'regular_price': i.effectiveRegularUnitPrice,
                 'regular_subtotal': i.regularSubtotal,
                 'discount_amount': i.discountSavings,
@@ -1535,6 +1582,7 @@ class PosProvider with ChangeNotifier {
                   'name': i.effectiveDisplayName,
                   'internal_code': i.product.internalCode,
                   'is_sold_by_weight': i.product.isSoldByWeight,
+                  'is_service': i.product.isService,
                   'iva_rate': i.product.ivaRate,
                   'selling_price': i.effectiveRegularUnitPrice,
                 }
@@ -2263,6 +2311,7 @@ class PosProvider with ChangeNotifier {
                           'unit_price': i.unitPrice,
                           'subtotal': i.subtotal,
                           'iva_rate': i.product.ivaRate,
+                          'is_service': i.product.isService,
                           'regular_price': i.effectiveRegularUnitPrice,
                           'regular_subtotal': i.regularSubtotal,
                           'discount_amount': i.discountSavings,
@@ -2275,6 +2324,7 @@ class PosProvider with ChangeNotifier {
                             'name': i.effectiveDisplayName,
                             'internal_code': i.product.internalCode,
                             'is_sold_by_weight': i.product.isSoldByWeight,
+                            'is_service': i.product.isService,
                             'iva_rate': i.product.ivaRate,
                             'selling_price': i.effectiveRegularUnitPrice,
                           }

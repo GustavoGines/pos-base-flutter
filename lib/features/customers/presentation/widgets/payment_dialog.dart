@@ -343,65 +343,75 @@ class _PaymentDialogState extends State<PaymentDialog> {
                   },
                 ),
                 const SizedBox(height: 16),
-                if (isSpecific) ...[
-                  const Text('Tickets Pendientes',
-                      style: TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 8),
-                  Container(
-                    height: 180,
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey.shade300),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: provider.pendingSales.isEmpty
-                        ? const Center(child: Text('No hay tickets pendientes'))
-                        : ListView.builder(
-                            itemCount: provider.pendingSales.length,
-                            itemBuilder: (context, index) {
-                              final sale = provider.pendingSales[index];
-                              final saleId = sale['id'] as int;
-                              final amountDue = double.tryParse(
-                                      sale['amount_due'].toString()) ??
-                                  0.0;
-                              final dateStr =
-                                  sale['created_at']?.toString() ?? '';
-                              final date = dateStr.isNotEmpty
-                                  ? DateTime.parse(dateStr)
-                                      .toLocal()
-                                      .toString()
-                                      .split(' ')[0]
-                                  : '';
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 220),
+                  curve: Curves.easeOutCubic,
+                  alignment: Alignment.topCenter,
+                  child: isSpecific
+                      ? Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Tickets Pendientes',
+                                style: TextStyle(fontWeight: FontWeight.bold)),
+                            const SizedBox(height: 8),
+                            Container(
+                              height: 180,
+                              decoration: BoxDecoration(
+                                border: Border.all(color: Colors.grey.shade300),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: provider.pendingSales.isEmpty
+                                  ? const Center(child: Text('No hay tickets pendientes'))
+                                  : ListView.builder(
+                                      itemCount: provider.pendingSales.length,
+                                      itemBuilder: (context, index) {
+                                        final sale = provider.pendingSales[index];
+                                        final saleId = sale['id'] as int;
+                                        final amountDue = double.tryParse(
+                                                sale['amount_due'].toString()) ??
+                                            0.0;
+                                        final dateStr =
+                                            sale['created_at']?.toString() ?? '';
+                                        final date = dateStr.isNotEmpty
+                                            ? DateTime.parse(dateStr)
+                                                .toLocal()
+                                                .toString()
+                                                .split(' ')[0]
+                                            : '';
 
-                              final isSelected =
-                                  _selectedSaleIds.contains(saleId);
+                                        final isSelected =
+                                            _selectedSaleIds.contains(saleId);
 
-                              return CheckboxListTile(
-                                title: Text('Ticket #$saleId'),
-                                subtitle: Text('Fecha: $date'),
-                                secondary: Text('\$${amountDue.toCurrency()}',
-                                    style: const TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        color: Colors.redAccent)),
-                                value: isSelected,
-                                onChanged: (bool? val) {
-                                  Future.microtask(() {
-                                    if (!mounted) return;
-                                    setState(() {
-                                      if (val == true) {
-                                        _selectedSaleIds.add(saleId);
-                                      } else {
-                                        _selectedSaleIds.remove(saleId);
-                                      }
-                                      _calculateSelectedAmount();
-                                    });
-                                  });
-                                },
-                              );
-                            },
-                          ),
-                  ),
-                  const SizedBox(height: 16),
-                ],
+                                        return CheckboxListTile(
+                                          title: Text('Ticket #$saleId'),
+                                          subtitle: Text('Fecha: $date'),
+                                          secondary: Text('\$${amountDue.toCurrency()}',
+                                              style: const TextStyle(
+                                                  fontWeight: FontWeight.bold,
+                                                  color: Colors.redAccent)),
+                                          value: isSelected,
+                                          onChanged: (bool? val) {
+                                            Future.microtask(() {
+                                              if (!mounted) return;
+                                              setState(() {
+                                                if (val == true) {
+                                                  _selectedSaleIds.add(saleId);
+                                                } else {
+                                                  _selectedSaleIds.remove(saleId);
+                                                }
+                                                _calculateSelectedAmount();
+                                              });
+                                            });
+                                          },
+                                        );
+                                      },
+                                    ),
+                            ),
+                            const SizedBox(height: 16),
+                          ],
+                        )
+                      : const SizedBox.shrink(),
+                ),
                 ],
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -488,88 +498,94 @@ class _PaymentDialogState extends State<PaymentDialog> {
                               const SizedBox(width: 48), // Padding para alinear
                           ],
                         ),
-                        if (line.method == 'cheque')
-                          Container(
-                            padding: const EdgeInsets.all(12),
-                            margin: const EdgeInsets.only(top: 8),
-                            decoration: BoxDecoration(
-                              color: Colors.blue.shade50,
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: Colors.blue.shade200),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text('Detalles del Cheque',
-                                    style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 12,
-                                        color: Colors.blue)),
-                                const SizedBox(height: 8),
-                                Row(
-                                  children: [
-                                    Expanded(
-                                        child: TextField(
-                                            controller: line.checkBankCtrl,
-                                            decoration: InputDecoration(
-                                                labelText: 'Banco',
-                                                isDense: true,
-                                                border: OutlineInputBorder(
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                            8)),
-                                                filled: true,
-                                                fillColor: Colors.white))),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                        child: TextField(
-                                            controller: line.checkNumberCtrl,
-                                            decoration: InputDecoration(
-                                                labelText: 'Nro Cheque',
-                                                isDense: true,
-                                                border: OutlineInputBorder(
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                            8)),
-                                                filled: true,
-                                                fillColor: Colors.white))),
-                                  ],
-                                ),
-                                const SizedBox(height: 8),
-                                Row(
-                                  children: [
-                                    Expanded(
-                                        child: TextField(
-                                            controller:
-                                                line.checkIssuerCuitCtrl,
-                                            decoration: InputDecoration(
-                                                labelText: 'CUIT Firmante',
-                                                isDense: true,
-                                                border: OutlineInputBorder(
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                            8)),
-                                                filled: true,
-                                                fillColor: Colors.white))),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                        child: TextField(
-                                            controller:
-                                                line.checkIssuerNameCtrl,
-                                            decoration: InputDecoration(
-                                                labelText: 'Nombre Firmante',
-                                                isDense: true,
-                                                border: OutlineInputBorder(
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                            8)),
-                                                filled: true,
-                                                fillColor: Colors.white))),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
+                        AnimatedSize(
+                          duration: const Duration(milliseconds: 220),
+                          curve: Curves.easeOutCubic,
+                          alignment: Alignment.topCenter,
+                          child: line.method == 'cheque'
+                              ? Container(
+                                  padding: const EdgeInsets.all(12),
+                                  margin: const EdgeInsets.only(top: 8),
+                                  decoration: BoxDecoration(
+                                    color: Colors.blue.shade50,
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(color: Colors.blue.shade200),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Text('Detalles del Cheque',
+                                          style: TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 12,
+                                              color: Colors.blue)),
+                                      const SizedBox(height: 8),
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                              child: TextField(
+                                                  controller: line.checkBankCtrl,
+                                                  decoration: InputDecoration(
+                                                      labelText: 'Banco',
+                                                      isDense: true,
+                                                      border: OutlineInputBorder(
+                                                          borderRadius:
+                                                              BorderRadius.circular(
+                                                                  8)),
+                                                      filled: true,
+                                                      fillColor: Colors.white))),
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                              child: TextField(
+                                                  controller: line.checkNumberCtrl,
+                                                  decoration: InputDecoration(
+                                                      labelText: 'Nro Cheque',
+                                                      isDense: true,
+                                                      border: OutlineInputBorder(
+                                                          borderRadius:
+                                                              BorderRadius.circular(
+                                                                  8)),
+                                                      filled: true,
+                                                      fillColor: Colors.white))),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                              child: TextField(
+                                                  controller:
+                                                      line.checkIssuerCuitCtrl,
+                                                  decoration: InputDecoration(
+                                                      labelText: 'CUIT Firmante',
+                                                      isDense: true,
+                                                      border: OutlineInputBorder(
+                                                          borderRadius:
+                                                              BorderRadius.circular(
+                                                                  8)),
+                                                      filled: true,
+                                                      fillColor: Colors.white))),
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                              child: TextField(
+                                                  controller:
+                                                      line.checkIssuerNameCtrl,
+                                                  decoration: InputDecoration(
+                                                      labelText: 'Nombre Firmante',
+                                                      isDense: true,
+                                                      border: OutlineInputBorder(
+                                                          borderRadius:
+                                                              BorderRadius.circular(
+                                                                  8)),
+                                                      filled: true,
+                                                      fillColor: Colors.white))),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                )
+                              : const SizedBox.shrink(),
+                        ),
                       ],
                     ),
                   );

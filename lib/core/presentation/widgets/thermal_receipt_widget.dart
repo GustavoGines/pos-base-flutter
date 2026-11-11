@@ -449,12 +449,13 @@ class ThermalReceiptWidget extends StatelessWidget {
     }
 
     double sumIva = 0.0;
+    bool hasValidSubtotals = false;
     for (final rawItem in items) {
       double sub = 0.0;
       double rate = 21.0;
       if (rawItem is CartItem) {
         sub = rawItem.subtotal;
-        rate = rawItem.product.ivaRate > 0 ? rawItem.product.ivaRate : 21.0;
+        rate = rawItem.product.ivaRate;
       } else if (rawItem is Map<String, dynamic>) {
         final q = double.tryParse(rawItem['quantity']?.toString() ?? '1') ?? 1.0;
         final up = double.tryParse(
@@ -462,16 +463,23 @@ class ThermalReceiptWidget extends StatelessWidget {
             0.0;
         sub = double.tryParse(rawItem['subtotal']?.toString() ?? '') ?? (q * up);
         rate = double.tryParse(
-                (rawItem['iva_rate'] ?? rawItem['tax_rate'] ?? rawItem['aliquot'] ?? 21)
+                (rawItem['iva_rate'] ??
+                        rawItem['product']?['iva_rate'] ??
+                        rawItem['tax_rate'] ??
+                        rawItem['aliquot'] ??
+                        21)
                     .toString()) ??
             21.0;
       }
-      if (sub > 0 && rate > 0) {
-        final net = sub / (1 + (rate / 100.0));
-        sumIva += (sub - net);
+      if (sub > 0) {
+        hasValidSubtotals = true;
+        if (rate > 0) {
+          final net = sub / (1 + (rate / 100.0));
+          sumIva += (sub - net);
+        }
       }
     }
-    if (sumIva > 0) return sumIva;
+    if (hasValidSubtotals) return sumIva;
 
     final baseTotal = total - shippingCost - iibbPerceptionAmount;
     if (baseTotal > 0) {
@@ -521,6 +529,51 @@ class ThermalReceiptWidget extends StatelessWidget {
     final caeVto = _formatCaeExpiration(invoice['cae_expiration']);
     final qrData = invoice['qr_data']?.toString();
 
+    double iva21 = 0.0;
+    double iva105 = 0.0;
+    double iva27 = 0.0;
+    final rawBreakdown = invoice['iva_breakdown'];
+    if (isFacturaA && rawBreakdown is List && rawBreakdown.isNotEmpty) {
+      for (final b in rawBreakdown) {
+        if (b is Map) {
+          final rawId = b['Id'] ?? b['id'] ?? b['iva_id'];
+          final id = rawId is int ? rawId : int.tryParse(rawId?.toString() ?? '0') ?? 0;
+          final imp = double.tryParse((b['Importe'] ?? b['importe'] ?? b['amount'] ?? 0).toString()) ?? 0.0;
+          if (id == 4) {
+            iva105 += imp;
+          } else if (id == 5) {
+            iva21 += imp;
+          } else if (id == 6) {
+            iva27 += imp;
+          }
+        }
+      }
+    } else if (isFacturaA && items.isNotEmpty) {
+      for (final rawItem in items) {
+        double sub = 0.0;
+        double rate = 21.0;
+        if (rawItem is CartItem) {
+          sub = rawItem.subtotal;
+          rate = rawItem.product.ivaRate;
+        } else if (rawItem is Map<String, dynamic>) {
+          final q = double.tryParse(rawItem['quantity']?.toString() ?? '1') ?? 1.0;
+          final up = double.tryParse(rawItem['unit_price']?.toString() ?? rawItem['price']?.toString() ?? '0') ?? 0.0;
+          sub = double.tryParse(rawItem['subtotal']?.toString() ?? '') ?? (q * up);
+          rate = double.tryParse((rawItem['iva_rate'] ?? rawItem['product']?['iva_rate'] ?? rawItem['tax_rate'] ?? 21).toString()) ?? 21.0;
+        }
+        if (sub > 0 && rate > 0) {
+          final itemIva = sub - (sub / (1 + (rate / 100.0)));
+          if ((rate - 10.5).abs() < 0.1) {
+            iva105 += itemIva;
+          } else if ((rate - 27.0).abs() < 0.1) {
+            iva27 += itemIva;
+          } else {
+            iva21 += itemIva;
+          }
+        }
+      }
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -534,12 +587,35 @@ class ThermalReceiptWidget extends StatelessWidget {
             factor: factor,
             isBold: true,
           ),
-          _buildKeyValueRow(
-            'IVA:',
-            '\$${_formatPrice(double.tryParse(ivaAmount.toString()) ?? 0.0)}',
-            factor: factor,
-            isBold: true,
-          ),
+          if (iva105 > 0 || iva27 > 0) ...[
+            if (iva21 > 0)
+              _buildKeyValueRow(
+                'IVA 21%:',
+                '\$${_formatPrice(iva21)}',
+                factor: factor,
+                isBold: true,
+              ),
+            if (iva105 > 0)
+              _buildKeyValueRow(
+                'IVA 10.5%:',
+                '\$${_formatPrice(iva105)}',
+                factor: factor,
+                isBold: true,
+              ),
+            if (iva27 > 0)
+              _buildKeyValueRow(
+                'IVA 27%:',
+                '\$${_formatPrice(iva27)}',
+                factor: factor,
+                isBold: true,
+              ),
+          ] else
+            _buildKeyValueRow(
+              'IVA:',
+              '\$${_formatPrice(double.tryParse(ivaAmount.toString()) ?? 0.0)}',
+              factor: factor,
+              isBold: true,
+            ),
         ],
 
         // Régimen de Transparencia Fiscal al Consumidor (Ley 27.743 / RG 5614) para Factura B
@@ -731,7 +807,11 @@ class ThermalReceiptWidget extends StatelessWidget {
         isSoldByWeight = rawItem['is_sold_by_weight'] == true ||
             prod['is_sold_by_weight'] == true;
         ivaRate = double.tryParse(
-                (rawItem['iva_rate'] ?? rawItem['tax_rate'] ?? rawItem['aliquot'] ?? 21)
+                (rawItem['iva_rate'] ??
+                        prod['iva_rate'] ??
+                        rawItem['tax_rate'] ??
+                        rawItem['aliquot'] ??
+                        21)
                     .toString()) ??
             21.0;
         final dAmt =

@@ -20,6 +20,7 @@ class CartItem {
   double? manualUnitPrice; // Precio de venta unitario sobrescrito manualmente para esta venta
   double? manualCostPrice; // Precio de costo unitario sobrescrito manualmente para esta venta
   double? manualSubtotal; // Subtotal final pactado por lote (ej. "3 por $10.000") para evitar pérdida de centavos por división
+  bool hasManualIvaOverride; // Alícuota IVA modificada manualmente en el carrito para esta venta
   
   CartItem({
     required this.product,
@@ -39,6 +40,7 @@ class CartItem {
     this.manualUnitPrice,
     this.manualCostPrice,
     this.manualSubtotal,
+    this.hasManualIvaOverride = false,
   });
 
   /// Costo unitario efectivo en esta venta (respeta override manual si existe)
@@ -79,8 +81,10 @@ class CartItem {
       'cost_price': effectiveCostPrice,
       if (manualCostPrice != null && !isTemporary && !isUnregisteredProduct)
         'custom_cost_price': manualCostPrice,
-      'iva_rate': product.ivaRate,
+      if (isTemporary || isUnregisteredProduct || saveToCatalog || hasManualIvaOverride)
+        'iva_rate': product.ivaRate,
       'is_combo': product.isCombo,
+      'is_service': product.isService,
       'is_sold_by_weight': product.isSoldByWeight,
       'unit_type': product.unitType,
       'quantity': quantity,

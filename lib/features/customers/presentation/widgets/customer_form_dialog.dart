@@ -496,34 +496,41 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
                   });
                 },
               ),
-              if (_appliesIibbPerception) ...[
-                const SizedBox(height: 12),
-                TextFormField(
-                  key: const ValueKey('field_iibb_perception_rate'),
-                  controller: _iibbRateController,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  inputFormatters: [
-                    FilteringTextInputFormatter.allow(RegExp(r'^\d*[\.,]?\d{0,2}')),
-                  ],
-                  decoration: const InputDecoration(
-                    labelText: 'Alícuota IIBB (%) *',
-                    hintText: 'Ej: 3.0',
-                    prefixIcon: Icon(Icons.percent),
-                    border: OutlineInputBorder(),
-                  ),
-                  validator: (val) {
-                    if (!_appliesIibbPerception) return null;
-                    if (val == null || val.trim().isEmpty) {
-                      return 'La alícuota es requerida si aplica percepción';
-                    }
-                    final n = double.tryParse(val.trim().replaceAll(',', '.'));
-                    if (n == null || n < 0 || n > 100) {
-                      return 'Ingrese un porcentaje válido (0 - 100)';
-                    }
-                    return null;
-                  },
-                ),
-              ],
+              AnimatedSize(
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeOutCubic,
+                alignment: Alignment.topCenter,
+                child: _appliesIibbPerception
+                    ? Padding(
+                        padding: const EdgeInsets.only(top: 12),
+                        child: TextFormField(
+                          key: const ValueKey('field_iibb_perception_rate'),
+                          controller: _iibbRateController,
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          inputFormatters: [
+                            FilteringTextInputFormatter.allow(RegExp(r'^\d*[\.,]?\d{0,2}')),
+                          ],
+                          decoration: const InputDecoration(
+                            labelText: 'Alícuota IIBB (%) *',
+                            hintText: 'Ej: 3.0',
+                            prefixIcon: Icon(Icons.percent),
+                            border: OutlineInputBorder(),
+                          ),
+                          validator: (val) {
+                            if (!_appliesIibbPerception) return null;
+                            if (val == null || val.trim().isEmpty) {
+                              return 'La alícuota es requerida si aplica percepción';
+                            }
+                            final n = double.tryParse(val.trim().replaceAll(',', '.'));
+                            if (n == null || n < 0 || n > 100) {
+                              return 'Ingrese un porcentaje válido (0 - 100)';
+                            }
+                            return null;
+                          },
+                        ),
+                      )
+                    : const SizedBox.shrink(),
+              ),
             ],
           ),
         ),

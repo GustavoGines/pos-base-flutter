@@ -219,8 +219,10 @@ class _UsersManagerScreenState extends State<UsersManagerScreen> {
         borderRadius: BorderRadius.circular(12),
         boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, 2))],
       ),
-      child: ListTile(
-        contentPadding: EdgeInsets.symmetric(horizontal: isCompact ? 12 : 20, vertical: 8),
+      child: Material(
+        color: Colors.transparent,
+        child: ListTile(
+          contentPadding: EdgeInsets.symmetric(horizontal: isCompact ? 12 : 20, vertical: 8),
         leading: CircleAvatar(
           backgroundColor: color.withValues(alpha: 0.1),
           radius: 26,
@@ -278,6 +280,7 @@ class _UsersManagerScreenState extends State<UsersManagerScreen> {
           ],
         ),
         isThreeLine: true,
+        ),
       ),
     );
   }

@@ -8,6 +8,9 @@ class CustomerTransaction {
   final double balanceAfter;
   final String? description;
   final String? paymentMethod; // 'efectivo', 'transferencia', 'cheque', etc.
+  final bool isFiscal;
+  final String? fiscalVoucherLabel;
+  final List<CustomerTopProduct> itemsBreakdown;
   final DateTime createdAt;
 
   CustomerTransaction({
@@ -20,21 +23,55 @@ class CustomerTransaction {
     required this.balanceAfter,
     this.description,
     this.paymentMethod,
+    this.isFiscal = false,
+    this.fiscalVoucherLabel,
+    this.itemsBreakdown = const [],
     required this.createdAt,
   });
 
   factory CustomerTransaction.fromJson(Map<String, dynamic> json) {
     return CustomerTransaction(
-      id: json['id'],
-      customerId: json['customer_id'],
-      userId: json['user_id'],
+      id: json['id'] ?? 0,
+      customerId: json['customer_id'] ?? 0,
+      userId: json['user_id'] ?? 1,
       saleId: json['sale_id'],
-      type: json['type'],
+      type: json['type']?.toString() ?? 'charge',
       amount: double.tryParse(json['amount'].toString()) ?? 0.0,
       balanceAfter: double.tryParse(json['balance_after'].toString()) ?? 0.0,
       description: json['description'],
       paymentMethod: json['payment_method'],
+      isFiscal: json['is_fiscal'] == true || json['is_fiscal'] == 1,
+      fiscalVoucherLabel: json['fiscal_voucher_label']?.toString(),
+      itemsBreakdown: json['items_breakdown'] is List
+          ? (json['items_breakdown'] as List)
+              .whereType<Map>()
+              .map((e) => CustomerTopProduct.fromJson(Map<String, dynamic>.from(e)))
+              .toList()
+          : const [],
       createdAt: DateTime.parse(json['created_at']),
+    );
+  }
+}
+
+class CustomerTopProduct {
+  final String name;
+  final double totalQuantity;
+  final double totalAmount;
+  final int ordersCount;
+
+  const CustomerTopProduct({
+    required this.name,
+    required this.totalQuantity,
+    required this.totalAmount,
+    required this.ordersCount,
+  });
+
+  factory CustomerTopProduct.fromJson(Map<String, dynamic> json) {
+    return CustomerTopProduct(
+      name: json['name']?.toString() ?? 'Producto',
+      totalQuantity: double.tryParse(json['total_quantity']?.toString() ?? '0') ?? 0.0,
+      totalAmount: double.tryParse(json['total_amount']?.toString() ?? '0') ?? 0.0,
+      ordersCount: int.tryParse(json['orders_count']?.toString() ?? '0') ?? 0,
     );
   }
 }
@@ -56,6 +93,8 @@ class Customer {
   final bool appliesIibbPerception;
   final double? iibbPerceptionRate;
   final List<CustomerTransaction> transactions;
+  final List<CustomerTransaction> directSales;
+  final List<CustomerTopProduct> topProducts;
 
   Customer({
     required this.id,
@@ -74,6 +113,8 @@ class Customer {
     this.appliesIibbPerception = false,
     this.iibbPerceptionRate,
     this.transactions = const [],
+    this.directSales = const [],
+    this.topProducts = const [],
   });
 
   factory Customer.fromJson(Map<String, dynamic> json) {
@@ -100,6 +141,12 @@ class Customer {
       transactions: json['transactions'] != null
           ? (json['transactions'] as List).map((t) => CustomerTransaction.fromJson(t)).toList()
           : [],
+      directSales: json['direct_sales'] != null
+          ? (json['direct_sales'] as List).map((t) => CustomerTransaction.fromJson(t)).toList()
+          : [],
+      topProducts: json['top_products'] != null
+          ? (json['top_products'] as List).map((t) => CustomerTopProduct.fromJson(t)).toList()
+          : [],
     );
   }
 
@@ -110,6 +157,7 @@ class Customer {
       'phone': phone,
       'document_number': documentNumber,
       'document_type': documentType,
+      'taxCondition': taxCondition,
       'tax_condition': taxCondition,
       'fiscal_address': fiscalAddress,
       'credit_limit': creditLimit,
@@ -141,6 +189,8 @@ class Customer {
     bool? appliesIibbPerception,
     double? iibbPerceptionRate,
     List<CustomerTransaction>? transactions,
+    List<CustomerTransaction>? directSales,
+    List<CustomerTopProduct>? topProducts,
   }) {
     return Customer(
       id: id ?? this.id,
@@ -161,6 +211,8 @@ class Customer {
           ? null
           : (iibbPerceptionRate ?? this.iibbPerceptionRate),
       transactions: transactions ?? this.transactions,
+      directSales: directSales ?? this.directSales,
+      topProducts: topProducts ?? this.topProducts,
     );
   }
 }

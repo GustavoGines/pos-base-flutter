@@ -516,8 +516,10 @@ class _SupplierCurrentAccountScreenState extends State<SupplierCurrentAccountScr
                         )
                       ],
                     ),
-                    child: ListTile(
-                      onTap: item['source'] == 'invoice'
+                    child: Material(
+                      color: Colors.transparent,
+                      child: ListTile(
+                        onTap: item['source'] == 'invoice'
                           ? () {
                               showDialog(
                                 context: context,
@@ -672,6 +674,7 @@ class _SupplierCurrentAccountScreenState extends State<SupplierCurrentAccountScr
                             style: TextStyle(color: Colors.grey.shade500, fontSize: 12, fontWeight: FontWeight.w600),
                           ),
                         ],
+                      ),
                       ),
                     ),
                   );

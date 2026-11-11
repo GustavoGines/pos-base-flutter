@@ -386,10 +386,11 @@ class _CategoriesManagerDialogState extends State<CategoriesManagerDialog> {
 
   Widget _buildCategoryTile(CatalogProvider provider, Category cat, bool isPremium) {
     final isEditing = _editingId == cat.id;
-    final rubroName = cat.rubro?.name ??
-        (cat.rubroId != null
-            ? provider.rubros.where((r) => r.id == cat.rubroId).firstOrNull?.name
-            : null);
+    final resolvedRubroId = cat.rubroId ?? cat.rubro?.id;
+    final rubroName = (resolvedRubroId != null
+            ? provider.rubros.where((r) => r.id == resolvedRubroId).firstOrNull?.name
+            : null) ??
+        cat.rubro?.name;
 
     return ListTile(
       visualDensity: VisualDensity.compact,

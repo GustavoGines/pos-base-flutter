@@ -697,24 +697,27 @@ class _PrintLabelsDialogState extends State<PrintLabelsDialog> {
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(color: Colors.grey.shade200),
                   ),
-                  child: CheckboxListTile(
-                    title: const Text('Imprimir ENV y VTO',
-                        style: TextStyle(
-                            fontSize: 12, fontWeight: FontWeight.bold)),
-                    subtitle: const Text(
-                        'Útil para códigos de góndola o deteriorados.',
-                        style: TextStyle(fontSize: 10)),
-                    value: _printDates,
-                    activeColor: Colors.deepPurple,
-                    contentPadding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
-                    visualDensity: VisualDensity.compact,
-                    onChanged: (val) {
-                      if (val != null) {
-                        setState(() => _printDates = val);
-                        _schedulePreviewRebuild();
-                      }
-                    },
+                  child: Material(
+                    color: Colors.transparent,
+                    child: CheckboxListTile(
+                      title: const Text('Imprimir ENV y VTO',
+                          style: TextStyle(
+                              fontSize: 12, fontWeight: FontWeight.bold)),
+                      subtitle: const Text(
+                          'Útil para códigos de góndola o deteriorados.',
+                          style: TextStyle(fontSize: 10)),
+                      value: _printDates,
+                      activeColor: Colors.deepPurple,
+                      contentPadding:
+                          const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+                      visualDensity: VisualDensity.compact,
+                      onChanged: (val) {
+                        if (val != null) {
+                          setState(() => _printDates = val);
+                          _schedulePreviewRebuild();
+                        }
+                      },
+                    ),
                   ),
                 ),
               ],

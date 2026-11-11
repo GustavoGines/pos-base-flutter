@@ -1193,6 +1193,14 @@ class CatalogProvider with ChangeNotifier {
         newList[idx] = updated;
         _rubros = newList;
       }
+      if (_categories.isNotEmpty) {
+        _categories = _categories.map((cat) {
+          if (cat.rubroId == id || cat.rubro?.id == id) {
+            return cat.copyWith(rubro: updated);
+          }
+          return cat;
+        }).toList();
+      }
       return true;
     } catch (e) {
       _errorMessage = e.toString().replaceFirst('Exception: ', '');

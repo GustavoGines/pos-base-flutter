@@ -733,7 +733,11 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
           child: SingleChildScrollView(
             child: Form(
               key: _formKey,
-              child: Column(
+              child: AnimatedSize(
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeOutCubic,
+                alignment: Alignment.topCenter,
+                child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -1763,6 +1767,7 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                     ),
                   ),
                 ],
+              ),
               ),
             ),
           ),

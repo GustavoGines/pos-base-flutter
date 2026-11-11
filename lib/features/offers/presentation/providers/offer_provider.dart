@@ -237,6 +237,32 @@ class OfferProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  /// Sincroniza un producto editado en el Catálogo dentro de [_offerOnlyProducts] y ofertas en memoria.
+  void syncUpdatedProduct(Product updated) {
+    bool changed = false;
+    final idx = _offerOnlyProducts.indexWhere((p) => p.id == updated.id);
+    if (idx >= 0) {
+      _offerOnlyProducts[idx] = updated;
+      changed = true;
+    }
+    for (final offer in _activeOffers) {
+      for (final p in offer.products) {
+        if (_extractProductId(p) == updated.id) {
+          p['name'] = updated.name;
+          p['selling_price'] = updated.sellingPrice;
+          p['cost_price'] = updated.costPrice;
+          p['iva_rate'] = updated.ivaRate;
+          p['is_service'] = updated.isService;
+          p['is_sold_by_weight'] = updated.isSoldByWeight;
+          changed = true;
+        }
+      }
+    }
+    if (changed) {
+      notifyListeners();
+    }
+  }
+
   /// Retorna el precio unitario con oferta si aplica hoy, o null si no hay oferta.
   double? getDiscountedPrice(Product product) {
     final offer = getActiveOfferForProduct(product.id, basePrice: product.sellingPrice);

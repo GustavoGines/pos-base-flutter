@@ -1565,6 +1565,56 @@ class _MainAppState extends State<MainApp> {
       theme: ThemeData(
         primarySwatch: Colors.blue,
         useMaterial3: true,
+        scaffoldBackgroundColor: const Color(0xFFF8FAFC),
+        canvasColor: Colors.white,
+        cardColor: Colors.white,
+        colorScheme: ThemeData(
+          primarySwatch: Colors.blue,
+          useMaterial3: true,
+        ).colorScheme.copyWith(
+              surface: Colors.white,
+              surfaceTint: Colors.transparent,
+              surfaceContainerLowest: Colors.white,
+              surfaceContainerLow: Colors.white,
+              surfaceContainer: Colors.white,
+              surfaceContainerHigh: Colors.white,
+              surfaceContainerHighest: const Color(0xFFF1F5F9),
+            ),
+        cardTheme: const CardThemeData(
+          color: Colors.white,
+          surfaceTintColor: Colors.transparent,
+        ),
+        dialogTheme: const DialogThemeData(
+          backgroundColor: Colors.white,
+          surfaceTintColor: Colors.transparent,
+        ),
+        popupMenuTheme: const PopupMenuThemeData(
+          color: Colors.white,
+          surfaceTintColor: Colors.transparent,
+        ),
+        menuTheme: const MenuThemeData(
+          style: MenuStyle(
+            backgroundColor: WidgetStatePropertyAll(Colors.white),
+            surfaceTintColor: WidgetStatePropertyAll(Colors.transparent),
+          ),
+        ),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Colors.white,
+          surfaceTintColor: Colors.transparent,
+          scrolledUnderElevation: 0,
+        ),
+        bottomSheetTheme: const BottomSheetThemeData(
+          backgroundColor: Colors.white,
+          surfaceTintColor: Colors.transparent,
+        ),
+        drawerTheme: const DrawerThemeData(
+          backgroundColor: Colors.white,
+          surfaceTintColor: Colors.transparent,
+        ),
+        datePickerTheme: const DatePickerThemeData(
+          backgroundColor: Colors.white,
+          surfaceTintColor: Colors.transparent,
+        ),
         pageTransitionsTheme: const PageTransitionsTheme(
           builders: <TargetPlatform, PageTransitionsBuilder>{
             TargetPlatform.windows: FadePageRouteTransitionsBuilder(),

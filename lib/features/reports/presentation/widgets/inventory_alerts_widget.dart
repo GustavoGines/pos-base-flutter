@@ -23,6 +23,9 @@ class InventoryAlertsWidget extends StatefulWidget {
 class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
   final _overlayController = OverlayPortalController();
   final _link = LayerLink();
+  final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
+  String _searchQuery = '';
 
   @override
   void initState() {
@@ -32,16 +35,72 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
     });
   }
 
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _searchFocusNode.dispose();
+    super.dispose();
+  }
+
+  void _clearSearch() {
+    if (_searchController.text.isNotEmpty || _searchQuery.isNotEmpty) {
+      _searchController.clear();
+      setState(() {
+        _searchQuery = '';
+      });
+    }
+  }
+
+  void _hideOverlay() {
+    _clearSearch();
+    _overlayController.hide();
+  }
+
   void _toggleOverlay() {
     final willShow = !_overlayController.isShowing;
+    if (!willShow) {
+      _clearSearch();
+    }
     _overlayController.toggle();
     if (willShow && mounted) {
       context.read<InventoryAlertsProvider>().fetchAlerts();
     }
   }
 
+  static String _normalizeForSearch(String input) {
+    return input
+        .toLowerCase()
+        .replaceAll('á', 'a')
+        .replaceAll('é', 'e')
+        .replaceAll('í', 'i')
+        .replaceAll('ó', 'o')
+        .replaceAll('ú', 'u')
+        .replaceAll('ü', 'u');
+  }
+
+  bool _matchesSearch(dynamic alert, List<String> queryTokens, CatalogProvider? catalogProvider) {
+    if (queryTokens.isEmpty) return true;
+    final name = (alert['product_name'] ?? alert['name'] ?? '').toString();
+    final code = (alert['internal_code'] ?? '').toString();
+    String barcode = (alert['barcode'] ?? '').toString();
+    final category = (alert['category'] ?? '').toString();
+
+    if (barcode.isEmpty && catalogProvider != null) {
+      final pid = int.tryParse(alert['product_id']?.toString() ?? '');
+      if (pid != null) {
+        final match = catalogProvider.products.where((p) => p.id == pid).firstOrNull;
+        if (match?.barcode != null) {
+          barcode = match!.barcode!;
+        }
+      }
+    }
+
+    final haystack = _normalizeForSearch('$name $code $barcode $category');
+    return queryTokens.every((token) => haystack.contains(token));
+  }
+
   Future<void> _handleAlertTap(dynamic alert) async {
-    _overlayController.hide();
+    _hideOverlay();
     if (!mounted) return;
     final catalogProvider = context.read<CatalogProvider>();
     final alertsProvider = context.read<InventoryAlertsProvider>();
@@ -82,7 +141,7 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
   }
 
   Future<void> _handleViewProductTap(dynamic alert) async {
-    _overlayController.hide();
+    _hideOverlay();
     if (!mounted) return;
     final catalogProvider = context.read<CatalogProvider>();
     final alertsProvider = context.read<InventoryAlertsProvider>();
@@ -182,7 +241,7 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
   Widget _buildOverlayContent(BuildContext context) {
     return TapRegion(
       groupId: 'inventory_alerts_overlay',
-      onTapOutside: (_) => _overlayController.hide(),
+      onTapOutside: (_) => _hideOverlay(),
       child: CompositedTransformFollower(
         link: _link,
         showWhenUnlinked: false,
@@ -192,7 +251,7 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
         child: Align(
           alignment: Alignment.topRight,
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 400, maxHeight: 500),
+            constraints: const BoxConstraints(maxWidth: 400, maxHeight: 540),
             child: Material(
               elevation: 16,
               borderRadius: BorderRadius.circular(20),
@@ -207,6 +266,7 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     _buildHeader(context),
+                    _buildSearchBar(context),
                     const Divider(height: 1),
                     Flexible(child: _buildBody()),
                     const Divider(height: 1),
@@ -223,7 +283,7 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
 
   Widget _buildHeader(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.fromLTRB(20, 16, 16, 10),
       child: Row(
         children: [
           Container(
@@ -247,10 +307,93 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
           IconButton(
             icon: const Icon(Icons.close, size: 20),
             tooltip: null,
-            onPressed: () => _overlayController.hide(),
+            onPressed: _hideOverlay,
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildSearchBar(BuildContext context) {
+    return Consumer2<InventoryAlertsProvider, SettingsProvider>(
+      builder: (context, provider, settings, _) {
+        final hasPredictive = settings.features.predictiveAlerts;
+        final expAlerts = _safeExpirationAlerts(provider);
+        final hasAnyAlerts = hasPredictive
+            ? provider.alerts.isNotEmpty
+            : (provider.reactiveAlerts.isNotEmpty || expAlerts.isNotEmpty);
+
+        if (provider.isLoading || !hasAnyAlerts) {
+          return const SizedBox.shrink();
+        }
+
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          child: SizedBox(
+            height: 36,
+            child: TextField(
+              controller: _searchController,
+              focusNode: _searchFocusNode,
+              onChanged: (val) {
+                setState(() {
+                  _searchQuery = val;
+                });
+              },
+              style: const TextStyle(fontSize: 12.5),
+              decoration: InputDecoration(
+                hintText: 'Buscar producto, código o categoría...',
+                hintStyle: TextStyle(fontSize: 12, color: Colors.grey.shade400),
+                prefixIcon: Icon(
+                  Icons.search_rounded,
+                  size: 18,
+                  color: Colors.blueGrey.shade400,
+                ),
+                prefixIconConstraints: const BoxConstraints(
+                  minWidth: 34,
+                  minHeight: 36,
+                ),
+                suffixIcon: _searchQuery.isNotEmpty
+                    ? IconButton(
+                        icon: Icon(
+                          Icons.close_rounded,
+                          size: 16,
+                          color: Colors.grey.shade600,
+                        ),
+                        padding: EdgeInsets.zero,
+                        tooltip: 'Limpiar búsqueda',
+                        onPressed: () {
+                          _clearSearch();
+                          _searchFocusNode.requestFocus();
+                        },
+                      )
+                    : null,
+                suffixIconConstraints: const BoxConstraints(
+                  minWidth: 32,
+                  minHeight: 36,
+                ),
+                filled: true,
+                fillColor: Colors.grey.shade50,
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide(color: Colors.grey.shade300),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide(
+                    color: Colors.orange.shade600,
+                    width: 1.3,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -301,43 +444,123 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
           );
         }
 
-        return ListView(
-          shrinkWrap: true,
-          children: [
-            if (expAlerts.isNotEmpty) ...[
-              _SectionHeader(
-                  label: '⏰ ALERTAS DE VENCIMIENTO (CASCADA)',
-                  color: Colors.purple.shade50,
-                  textColor: Colors.purple.shade900),
-              ...expAlerts
-                  .map((a) => _buildExpirationTile(context, provider, a)),
-            ],
-            if (provider.reactiveAlerts.isNotEmpty) ...[
-              _SectionHeader(
-                  label: '🔴 QUIEBRE DE STOCK O DEBAJO DEL MÍNIMO',
-                  color: Colors.red.shade50,
-                  textColor: Colors.red.shade800),
-              ...provider.reactiveAlerts
-                  .map((a) => _buildDynamicTile(context, a, 'critical')),
-            ],
-            if (hasPredictive &&
-                provider.predictiveCriticalAlerts.isNotEmpty) ...[
-              _SectionHeader(
-                  label: '🟠 ALERTA DE VELOCIDAD — <= 3 días',
-                  color: Colors.orange.shade50,
-                  textColor: Colors.orange.shade800),
-              ...provider.predictiveCriticalAlerts
-                  .map((a) => _buildDynamicTile(context, a, 'critical')),
-            ],
-            if (!hasPredictive) ...[
-              const SizedBox(height: 12),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: _buildProBanner(context),
-              ),
-              const SizedBox(height: 12),
-            ],
+        CatalogProvider? catalogProvider;
+        try {
+          catalogProvider = context.read<CatalogProvider>();
+        } catch (_) {}
+
+        final queryTokens = _normalizeForSearch(_searchQuery.trim())
+            .split(RegExp(r'\s+'))
+            .where((t) => t.isNotEmpty)
+            .toList();
+
+        final filteredExpAlerts = expAlerts
+            .where((a) => _matchesSearch(a, queryTokens, catalogProvider))
+            .toList();
+        final filteredReactiveAlerts = provider.reactiveAlerts
+            .where((a) => _matchesSearch(a, queryTokens, catalogProvider))
+            .toList();
+        final filteredPredictiveAlerts = hasPredictive
+            ? provider.predictiveCriticalAlerts
+                .where((a) => _matchesSearch(a, queryTokens, catalogProvider))
+                .toList()
+            : const <dynamic>[];
+
+        if (queryTokens.isNotEmpty &&
+            filteredExpAlerts.isEmpty &&
+            filteredReactiveAlerts.isEmpty &&
+            filteredPredictiveAlerts.isEmpty) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.search_off_rounded,
+                  size: 42,
+                  color: Colors.blueGrey.shade300,
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'Sin resultados para "${_searchQuery.trim()}"',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.blueGrey.shade700,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Probá buscando por otro nombre, código interno o categoría.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                ),
+                const SizedBox(height: 12),
+                TextButton.icon(
+                  onPressed: () {
+                    _clearSearch();
+                    _searchFocusNode.requestFocus();
+                  },
+                  icon: const Icon(Icons.clear_all_rounded, size: 16),
+                  label: const Text(
+                    'Ver todas las alertas',
+                    style: TextStyle(fontSize: 12),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        final entries = <Widget>[
+          if (filteredExpAlerts.isNotEmpty) ...[
+            _SectionHeader(
+              label: queryTokens.isEmpty
+                  ? '⏰ ALERTAS DE VENCIMIENTO (${filteredExpAlerts.length})'
+                  : '⏰ ALERTAS DE VENCIMIENTO (${filteredExpAlerts.length}/${expAlerts.length})',
+              color: Colors.purple.shade50,
+              textColor: Colors.purple.shade900,
+            ),
+            ...filteredExpAlerts
+                .map((a) => _buildExpirationTile(context, provider, a)),
           ],
+          if (filteredReactiveAlerts.isNotEmpty) ...[
+            _SectionHeader(
+              label: queryTokens.isEmpty
+                  ? '🔴 QUIEBRE DE STOCK O DEBAJO DEL MÍNIMO (${filteredReactiveAlerts.length})'
+                  : '🔴 QUIEBRE DE STOCK O DEBAJO DEL MÍNIMO (${filteredReactiveAlerts.length}/${provider.reactiveAlerts.length})',
+              color: Colors.red.shade50,
+              textColor: Colors.red.shade800,
+            ),
+            ...filteredReactiveAlerts
+                .map((a) => _buildDynamicTile(context, a, 'critical')),
+          ],
+          if (hasPredictive && filteredPredictiveAlerts.isNotEmpty) ...[
+            _SectionHeader(
+              label: queryTokens.isEmpty
+                  ? '🟠 ALERTA DE VELOCIDAD — <= 3 días (${filteredPredictiveAlerts.length})'
+                  : '🟠 ALERTA DE VELOCIDAD — <= 3 días (${filteredPredictiveAlerts.length}/${provider.predictiveCriticalAlerts.length})',
+              color: Colors.orange.shade50,
+              textColor: Colors.orange.shade800,
+            ),
+            ...filteredPredictiveAlerts
+                .map((a) => _buildDynamicTile(context, a, 'critical')),
+          ],
+          if (!hasPredictive && queryTokens.isEmpty) ...[
+            const SizedBox(height: 12),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: _buildProBanner(context),
+            ),
+            const SizedBox(height: 12),
+          ],
+        ];
+
+        return ListView.builder(
+          shrinkWrap: true,
+          itemCount: entries.length,
+          itemBuilder: (context, index) => entries[index],
         );
       },
     );
@@ -362,8 +585,8 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
     dynamic alert,
   ) {
     final productId = (alert['product_id'] as num?)?.toInt() ?? 0;
-    final name = alert['name']?.toString() ?? 'Producto';
-    final daysRemaining = (alert['days_until_expiration'] as num?)?.toInt() ?? 0;
+    final name = (alert['product_name'] ?? alert['name'])?.toString() ?? 'Producto';
+    final daysRemaining = ((alert['days_until_expiry'] ?? alert['days_until_expiration']) as num?)?.toInt() ?? 0;
     final stageLabel = alert['expiry_stage_label']?.toString() ?? 'Próximo a vencer';
     final stock = double.tryParse((alert['current_stock'] ?? 0).toString()) ?? 0;
     final expDate = alert['expiration_date']?.toString() ?? '';
@@ -457,7 +680,7 @@ class _InventoryAlertsWidgetState extends State<InventoryAlertsWidget> {
               } else if (action == 'snooze_stage') {
                 await provider.snoozeExpirationAlert(productId, action: 'snooze_next_stage');
               } else if (action == 'clear') {
-                _overlayController.hide();
+                _hideOverlay();
                 if (!mounted) return;
                 await AdminPinDialog.protectAction(
                   context,

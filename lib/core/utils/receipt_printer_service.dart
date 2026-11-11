@@ -818,23 +818,89 @@ class ReceiptPrinterService {
       if (isFacturaA && netAmount != null && ivaAmount != null) {
         final net = double.tryParse(netAmount.toString()) ?? 0.0;
         final iva = double.tryParse(ivaAmount.toString()) ?? 0.0;
+        double iva21 = 0.0;
+        double iva105 = 0.0;
+        double iva27 = 0.0;
+        final rawBreakdown = invoice['iva_breakdown'];
+        if (rawBreakdown is List && rawBreakdown.isNotEmpty) {
+          for (final b in rawBreakdown) {
+            if (b is Map) {
+              final rawId = b['Id'] ?? b['id'] ?? b['iva_id'];
+              final id = rawId is int ? rawId : int.tryParse(rawId?.toString() ?? '0') ?? 0;
+              final imp = double.tryParse((b['Importe'] ?? b['importe'] ?? b['amount'] ?? 0).toString()) ?? 0.0;
+              if (id == 4) {
+                iva105 += imp;
+              } else if (id == 5) {
+                iva21 += imp;
+              } else if (id == 6) {
+                iva27 += imp;
+              }
+            }
+          }
+        } else if (items.isNotEmpty) {
+          for (final it in items) {
+            final sub = it.subtotal;
+            final rate = it.product.ivaRate;
+            if (sub > 0 && rate > 0) {
+              final itemIva = sub - (sub / (1 + (rate / 100.0)));
+              if ((rate - 10.5).abs() < 0.1) {
+                iva105 += itemIva;
+              } else if ((rate - 27.0).abs() < 0.1) {
+                iva27 += itemIva;
+              } else {
+                iva21 += itemIva;
+              }
+            }
+          }
+        }
         bytes += generator.hr(ch: '-');
         bytes += generator.row([
           PosColumn(text: 'Neto Gravado:', width: 6, styles: const PosStyles(bold: true)),
           PosColumn(text: '\$${net.toStringAsFixed(2)}', width: 6, styles: const PosStyles(align: PosAlign.right)),
         ]);
-        bytes += generator.row([
-          PosColumn(text: 'IVA:', width: 6, styles: const PosStyles(bold: true)),
-          PosColumn(text: '\$${iva.toStringAsFixed(2)}', width: 6, styles: const PosStyles(align: PosAlign.right)),
-        ]);
+        if (iva105 > 0 || iva27 > 0) {
+          if (iva21 > 0) {
+            bytes += generator.row([
+              PosColumn(text: 'IVA 21%:', width: 6, styles: const PosStyles(bold: true)),
+              PosColumn(text: '\$${iva21.toStringAsFixed(2)}', width: 6, styles: const PosStyles(align: PosAlign.right)),
+            ]);
+          }
+          if (iva105 > 0) {
+            bytes += generator.row([
+              PosColumn(text: 'IVA 10.5%:', width: 6, styles: const PosStyles(bold: true)),
+              PosColumn(text: '\$${iva105.toStringAsFixed(2)}', width: 6, styles: const PosStyles(align: PosAlign.right)),
+            ]);
+          }
+          if (iva27 > 0) {
+            bytes += generator.row([
+              PosColumn(text: 'IVA 27%:', width: 6, styles: const PosStyles(bold: true)),
+              PosColumn(text: '\$${iva27.toStringAsFixed(2)}', width: 6, styles: const PosStyles(align: PosAlign.right)),
+            ]);
+          }
+        } else {
+          bytes += generator.row([
+            PosColumn(text: 'IVA:', width: 6, styles: const PosStyles(bold: true)),
+            PosColumn(text: '\$${iva.toStringAsFixed(2)}', width: 6, styles: const PosStyles(align: PosAlign.right)),
+          ]);
+        }
         bytes += generator.hr(ch: '-');
       } else if (isFacturaB) {
         final explicitNet = double.tryParse(netAmount?.toString() ?? '') ?? 0.0;
         final explicitIva = double.tryParse(ivaAmount?.toString() ?? '') ?? 0.0;
         final baseTotal = total - shippingCost - iibbPerceptionAmount;
+        double itemsIva = 0.0;
+        bool hasItemsSub = false;
+        for (final it in items) {
+          if (it.subtotal > 0) {
+            hasItemsSub = true;
+            if (it.product.ivaRate > 0) {
+              itemsIva += it.subtotal - (it.subtotal / (1 + (it.product.ivaRate / 100.0)));
+            }
+          }
+        }
         final containedIva = explicitIva > 0
             ? explicitIva
-            : (baseTotal > 0 ? (baseTotal - (baseTotal / 1.21)) : 0.0);
+            : (hasItemsSub ? itemsIva : (baseTotal > 0 ? (baseTotal - (baseTotal / 1.21)) : 0.0));
         final containedNet = explicitNet > 0
             ? explicitNet
             : (baseTotal - containedIva).clamp(0.0, double.infinity);
@@ -1173,23 +1239,89 @@ class ReceiptPrinterService {
       if (isFacturaA && netAmount != null && ivaAmount != null) {
         final net = double.tryParse(netAmount.toString()) ?? 0.0;
         final iva = double.tryParse(ivaAmount.toString()) ?? 0.0;
+        double iva21 = 0.0;
+        double iva105 = 0.0;
+        double iva27 = 0.0;
+        final rawBreakdown = invoice['iva_breakdown'];
+        if (rawBreakdown is List && rawBreakdown.isNotEmpty) {
+          for (final b in rawBreakdown) {
+            if (b is Map) {
+              final rawId = b['Id'] ?? b['id'] ?? b['iva_id'];
+              final id = rawId is int ? rawId : int.tryParse(rawId?.toString() ?? '0') ?? 0;
+              final imp = double.tryParse((b['Importe'] ?? b['importe'] ?? b['amount'] ?? 0).toString()) ?? 0.0;
+              if (id == 4) {
+                iva105 += imp;
+              } else if (id == 5) {
+                iva21 += imp;
+              } else if (id == 6) {
+                iva27 += imp;
+              }
+            }
+          }
+        } else if (items.isNotEmpty) {
+          for (final it in items) {
+            final sub = it.subtotal;
+            final rate = it.product.ivaRate;
+            if (sub > 0 && rate > 0) {
+              final itemIva = sub - (sub / (1 + (rate / 100.0)));
+              if ((rate - 10.5).abs() < 0.1) {
+                iva105 += itemIva;
+              } else if ((rate - 27.0).abs() < 0.1) {
+                iva27 += itemIva;
+              } else {
+                iva21 += itemIva;
+              }
+            }
+          }
+        }
         bytes += generator.hr(ch: '-');
         bytes += generator.row([
           PosColumn(text: 'Neto Gravado:', width: 6, styles: const PosStyles(bold: true)),
           PosColumn(text: '\$${net.toStringAsFixed(2)}', width: 6, styles: const PosStyles(align: PosAlign.right)),
         ]);
-        bytes += generator.row([
-          PosColumn(text: 'IVA:', width: 6, styles: const PosStyles(bold: true)),
-          PosColumn(text: '\$${iva.toStringAsFixed(2)}', width: 6, styles: const PosStyles(align: PosAlign.right)),
-        ]);
+        if (iva105 > 0 || iva27 > 0) {
+          if (iva21 > 0) {
+            bytes += generator.row([
+              PosColumn(text: 'IVA 21%:', width: 6, styles: const PosStyles(bold: true)),
+              PosColumn(text: '\$${iva21.toStringAsFixed(2)}', width: 6, styles: const PosStyles(align: PosAlign.right)),
+            ]);
+          }
+          if (iva105 > 0) {
+            bytes += generator.row([
+              PosColumn(text: 'IVA 10.5%:', width: 6, styles: const PosStyles(bold: true)),
+              PosColumn(text: '\$${iva105.toStringAsFixed(2)}', width: 6, styles: const PosStyles(align: PosAlign.right)),
+            ]);
+          }
+          if (iva27 > 0) {
+            bytes += generator.row([
+              PosColumn(text: 'IVA 27%:', width: 6, styles: const PosStyles(bold: true)),
+              PosColumn(text: '\$${iva27.toStringAsFixed(2)}', width: 6, styles: const PosStyles(align: PosAlign.right)),
+            ]);
+          }
+        } else {
+          bytes += generator.row([
+            PosColumn(text: 'IVA:', width: 6, styles: const PosStyles(bold: true)),
+            PosColumn(text: '\$${iva.toStringAsFixed(2)}', width: 6, styles: const PosStyles(align: PosAlign.right)),
+          ]);
+        }
         bytes += generator.hr(ch: '-');
       } else if (isFacturaB) {
         final explicitNet = double.tryParse(netAmount?.toString() ?? '') ?? 0.0;
         final explicitIva = double.tryParse(ivaAmount?.toString() ?? '') ?? 0.0;
         final baseTotal = total - shippingCost - iibbPerceptionAmount;
+        double itemsIva = 0.0;
+        bool hasItemsSub = false;
+        for (final it in items) {
+          if (it.subtotal > 0) {
+            hasItemsSub = true;
+            if (it.product.ivaRate > 0) {
+              itemsIva += it.subtotal - (it.subtotal / (1 + (it.product.ivaRate / 100.0)));
+            }
+          }
+        }
         final containedIva = explicitIva > 0
             ? explicitIva
-            : (baseTotal > 0 ? (baseTotal - (baseTotal / 1.21)) : 0.0);
+            : (hasItemsSub ? itemsIva : (baseTotal > 0 ? (baseTotal - (baseTotal / 1.21)) : 0.0));
         final containedNet = explicitNet > 0
             ? explicitNet
             : (baseTotal - containedIva).clamp(0.0, double.infinity);

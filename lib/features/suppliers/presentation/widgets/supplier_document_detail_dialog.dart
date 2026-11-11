@@ -1695,8 +1695,8 @@ class _SupplierDocumentsHistoryDialogState extends State<SupplierDocumentsHistor
                                       '${doc['deletion_reason'] != null ? ' (${doc['deletion_reason']})' : ''}',
                               ];
 
-                              return Container(
-                                color: isDeleted ? Colors.red.shade50.withValues(alpha: 0.4) : null,
+                              return Material(
+                                color: isDeleted ? Colors.red.shade50.withValues(alpha: 0.4) : Colors.transparent,
                                 child: ListTile(
                                   onTap: () {
                                     showDialog(
