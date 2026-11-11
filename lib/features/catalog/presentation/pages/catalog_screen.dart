@@ -2681,7 +2681,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     return PopScope(
       canPop: !isBusy,
       child: AlertDialog(
-      alignment: Alignment.topCenter,
+      alignment: Alignment.center,
       insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
       backgroundColor: Colors.white,
       surfaceTintColor: Colors.transparent,

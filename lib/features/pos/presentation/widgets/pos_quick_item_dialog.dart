@@ -349,11 +349,11 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
     return Focus(
       autofocus: false,
       child: Dialog(
-        alignment: Alignment.topCenter,
+        alignment: Alignment.center,
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 620),
           child: SizedBox(
@@ -931,12 +931,18 @@ class _PosQuickItemDialogState extends State<PosQuickItemDialog> {
                                         ),
                                       ),
                                       const SizedBox(height: 10),
-                                      Text(
-                                        'No descuenta inventario ni requiere costo de reposición. En Facturas A, B y C informa automáticamente el período facturado reglamentario ante ARCA/AFIP.',
-                                        style: TextStyle(
-                                          fontSize: 11.8,
-                                          height: 1.35,
-                                          color: Colors.teal.shade900,
+                                      ConstrainedBox(
+                                        constraints: const BoxConstraints(minHeight: 42),
+                                        child: Align(
+                                          alignment: Alignment.centerLeft,
+                                          child: Text(
+                                            'No descuenta inventario ni requiere costo de reposición. En Facturas A, B y C informa automáticamente el período facturado reglamentario ante ARCA/AFIP.',
+                                            style: TextStyle(
+                                              fontSize: 11.8,
+                                              height: 1.35,
+                                              color: Colors.teal.shade900,
+                                            ),
+                                          ),
                                         ),
                                       ),
                                     ],
