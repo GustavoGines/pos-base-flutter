@@ -275,90 +275,319 @@ class ReceiptPrinterService {
   // API PÚBLICA
   // ─────────────────────────────────────────────────────────────────────────────
 
-  /// Imprime el ticket de un presupuesto (NO VÁLIDO COMO FACTURA).
-  Future<void> printQuoteTicket({
+  /// Genera los bytes ESC/POS de un presupuesto para impresora térmica (58mm u 80mm)
+  /// con diseño unificado estilo ARCA / Comprobante Comercial (Letra X - No Fiscal).
+  Future<Uint8List> buildQuoteTicketBytes({
     required Quote quote,
-    required BusinessSettings settings, // Solo para header/footer
-    required LocalTerminalProvider localTerminal,
+    required BusinessSettings settings,
     required String vendorName,
+    PaperSize? paperSizeOverride,
   }) async {
-    if (localTerminal.printerConnection.toLowerCase() == 'none') return;
-    if (config.connectionType == PrinterConnectionType.usb && (config.comPort == null || config.comPort!.trim().isEmpty)) return;
-
     final profile = await _getProfile();
-    final generator = Generator(config.paperSize, profile);
+    final targetPaperSize = paperSizeOverride ?? config.paperSize;
+    final is58mm = targetPaperSize == PaperSize.mm58;
+    final generator = Generator(targetPaperSize, profile);
     List<int> bytes = [];
 
+    // ── Encabezado Comercial / Fiscal del Emisor ──────────────────────────
     bytes += generator.reset();
     bytes += generator.text(
       _cleanText(settings.companyName?.toUpperCase() ?? 'MI NEGOCIO'),
-      styles: const PosStyles(bold: true, align: PosAlign.center, height: PosTextSize.size2, width: PosTextSize.size2),
+      styles: const PosStyles(
+        bold: true,
+        align: PosAlign.center,
+        height: PosTextSize.size2,
+        width: PosTextSize.size2,
+      ),
     );
     bytes += generator.feed(1);
 
-    bytes += generator.text('*** NO VALIDO COMO FACTURA ***', styles: const PosStyles(align: PosAlign.center, bold: true));
+    if (settings.address != null && settings.address!.trim().isNotEmpty) {
+      bytes += generator.text(
+        _cleanText(settings.address!.trim()),
+        styles: const PosStyles(align: PosAlign.center),
+      );
+    }
+    if (settings.taxId != null && settings.taxId!.trim().isNotEmpty) {
+      bytes += generator.text(
+        'CUIT: ${_formatCuit(settings.taxId!)}',
+        styles: const PosStyles(align: PosAlign.center, bold: true),
+      );
+    }
+    if (settings.iibb != null && settings.iibb!.trim().isNotEmpty) {
+      bytes += generator.text(
+        _cleanText('Ing. Brutos: ${_formatCuit(settings.iibb!)}'),
+        styles: const PosStyles(align: PosAlign.center),
+      );
+    }
+    if (settings.activityStartDate != null &&
+        settings.activityStartDate!.trim().isNotEmpty) {
+      bytes += generator.text(
+        _cleanText('Inicio Act.: ${settings.activityStartDate!.trim()}'),
+        styles: const PosStyles(align: PosAlign.center),
+      );
+    }
+    if (settings.phone != null && settings.phone!.trim().isNotEmpty) {
+      bytes += generator.text(
+        'Tel: ${_cleanText(settings.phone!.trim())}',
+        styles: const PosStyles(align: PosAlign.center),
+      );
+    }
+    if (settings.taxCondition != null &&
+        settings.taxCondition!.trim().isNotEmpty) {
+      bytes += generator.text(
+        _resolveIssuerTaxCondition(settings, 'X'),
+        styles: const PosStyles(align: PosAlign.center, bold: true),
+      );
+    }
     bytes += generator.hr(ch: '=');
 
-    bytes += generator.text('PRESUPUESTO', styles: const PosStyles(align: PosAlign.center, bold: true, height: PosTextSize.size2));
-    bytes += generator.text(quote.quoteNumber, styles: const PosStyles(align: PosAlign.center));
+    // ── Bloque Central Tipo de Comprobante (Letra X - Presupuesto) ────────
+    bytes += generator.text(
+      'PRESUPUESTO (X)',
+      styles: const PosStyles(
+        align: PosAlign.center,
+        bold: true,
+        height: PosTextSize.size2,
+        width: PosTextSize.size1,
+      ),
+    );
+    bytes += generator.text(
+      'Nro: ${_cleanText(quote.quoteNumber)}',
+      styles: const PosStyles(align: PosAlign.center, bold: true),
+    );
+    bytes += generator.text(
+      '*** NO VALIDO COMO FACTURA ***',
+      styles: const PosStyles(align: PosAlign.center, bold: true),
+    );
     bytes += generator.hr(ch: '-');
 
-    bytes += generator.text('FECHA: ${_formatDate(DateTime.parse(quote.createdAt ?? DateTime.now().toIso8601String()))}', styles: const PosStyles(bold: true));
-    if (quote.validUntil != null) {
-      final v = DateTime.parse(quote.validUntil!);
-      bytes += generator.text('VALIDO HASTA: ${v.day.toString().padLeft(2, '0')}/${v.month.toString().padLeft(2, '0')}/${v.year}');
+    // ── Datos de Emisión, Validez, Vendedor y Cliente ─────────────────────
+    final emissionDate = quote.createdAt != null
+        ? (DateTime.tryParse(quote.createdAt!)?.toLocal() ?? DateTime.now())
+        : DateTime.now();
+    bytes += _labelValue(generator, 'FECHA:', _formatDate(emissionDate));
+
+    String validUntilFormatted = '7 DIAS';
+    if (quote.validUntil != null && quote.validUntil!.trim().isNotEmpty) {
+      final parsedValid = DateTime.tryParse(quote.validUntil!.trim());
+      validUntilFormatted = parsedValid != null
+          ? '${parsedValid.day.toString().padLeft(2, '0')}/${parsedValid.month.toString().padLeft(2, '0')}/${parsedValid.year}'
+          : _cleanText(quote.validUntil!.trim());
     }
-    bytes += generator.text('VENDEDOR: ${_cleanText(vendorName).toUpperCase()}');
-    
-    if (quote.customerName != null && quote.customerName!.isNotEmpty) {
-      bytes += generator.text('CLIENTE: ${_cleanText(quote.customerName!).toUpperCase()}');
+    bytes += _labelValue(generator, 'VALIDO HASTA:', validUntilFormatted);
+    bytes += _labelValue(
+      generator,
+      'VENDEDOR:',
+      _cleanText(vendorName).toUpperCase(),
+    );
+
+    final resolvedCust =
+        (quote.customerName != null && quote.customerName!.trim().isNotEmpty)
+            ? _cleanText(quote.customerName!.trim()).toUpperCase()
+            : 'CONSUMIDOR FINAL';
+    if (is58mm || resolvedCust.length > 16) {
+      bytes += generator.text(
+        'CLIENTE: $resolvedCust',
+        styles: PosStyles(
+          align: PosAlign.left,
+          bold: resolvedCust != 'CONSUMIDOR FINAL',
+        ),
+      );
+    } else {
+      bytes += _labelValue(generator, 'CLIENTE:', resolvedCust);
     }
-    if (quote.priceList != 'base') {
-      bytes += generator.text('COND. VENTA: ${_cleanText(quote.priceListLabel).toUpperCase()}', styles: const PosStyles(bold: true));
+
+    if (quote.customerPhone != null &&
+        quote.customerPhone!.trim().isNotEmpty) {
+      bytes += _labelValue(
+        generator,
+        'TEL CLIENTE:',
+        _cleanText(quote.customerPhone!.trim()),
+      );
     }
-    
+
+    final condVenta = _cleanText(quote.priceListLabel).toUpperCase();
+    if (is58mm && condVenta.length > 14) {
+      bytes += generator.text(
+        'COND. VENTA: $condVenta',
+        styles: const PosStyles(align: PosAlign.left, bold: true),
+      );
+    } else {
+      bytes += _labelValue(generator, 'COND. VENTA:', condVenta);
+    }
+
     bytes += generator.hr(ch: '-');
 
-    // Ítems
+    // ── Detalle de Artículos (Formato 2 líneas POS unificado) ─────────────
+    int totalItemsQty = 0;
     for (final item in quote.items) {
-      final isWeight = item.product?.isSoldByWeight ?? (item.quantity % 1 != 0);
+      final isWeight =
+          item.product?.isSoldByWeight ?? (item.quantity % 1 != 0);
       final cantStr = isWeight
           ? '${item.quantity.toQty()} kg'
-          : (item.quantity % 1 == 0 ? '${item.quantity.toInt()}' : item.quantity.toQty());
+          : (item.quantity % 1 == 0
+              ? '${item.quantity.toInt()}'
+              : item.quantity.toQty());
 
-      final productName = _cleanText(item.productName.toUpperCase());
+      if (!isWeight) {
+        totalItemsQty += item.quantity.toInt();
+      } else {
+        totalItemsQty += 1;
+      }
+
+      final rawCode = item.product?.internalCode.trim() ?? '';
+      final codePrefix = rawCode.isNotEmpty ? '[$rawCode] ' : '';
+      final productName =
+          _cleanText('$codePrefix${item.productName}'.toUpperCase());
+
+      // Línea 1: Código + Nombre del producto en negrita
+      bytes += generator.text(
+        productName,
+        styles: const PosStyles(bold: true),
+      );
+
+      // Línea 2: [CANT x $PRECIO_UNIT] a la izquierda y [$SUBTOTAL] a la derecha
       bytes += generator.row([
-        PosColumn(text: '$cantStr x \$${_formatPrice(item.unitPrice)}', width: 8, styles: const PosStyles(align: PosAlign.left)),
-        PosColumn(text: '\$${_formatPrice(item.subtotal)}', width: 4, styles: const PosStyles(align: PosAlign.right, bold: true)),
+        PosColumn(
+          text: '$cantStr x \$${_formatPrice(item.unitPrice)}',
+          width: 8,
+          styles: const PosStyles(align: PosAlign.left),
+        ),
+        PosColumn(
+          text: '\$${_formatPrice(item.subtotal)}',
+          width: 4,
+          styles: const PosStyles(align: PosAlign.right, bold: true),
+        ),
       ]);
-      bytes += generator.text(productName, styles: const PosStyles(bold: true));
     }
-    
+
     bytes += generator.hr(ch: '=');
-    
-    bytes += _labelValue(generator, 'SUBTOTAL:', '\$${_formatPrice(quote.subtotal)}');
+
+    // ── Totales y Resumen de Unidades ─────────────────────────────────────
+    bytes += _labelValue(
+      generator,
+      'SUBTOTAL:',
+      '\$${_formatPrice(quote.subtotal)}',
+    );
     bytes += generator.hr(ch: '-');
-    bytes += _labelValue(generator, 'TOTAL PRESUPUESTO:', '\$${_formatPrice(quote.total)}');
-    
+    bytes += _labelValue(
+      generator,
+      is58mm ? 'TOTAL:' : 'TOTAL PRESUPUESTO:',
+      '\$${_formatPrice(quote.total)}',
+    );
     bytes += generator.feed(1);
-    bytes += generator.text('*** NO VALIDO COMO FACTURA ***', styles: const PosStyles(align: PosAlign.center, bold: true));
-    bytes += generator.feed(1);
-    
-    // Nro presup en barcode Code 39
-    final cleanStringForBarcode = quote.quoteNumber.replaceAll(RegExp(r'[^A-Z0-9\-\.\ \$\/\+\%]'), '');
+
+    bytes += generator.row([
+      PosColumn(
+        text: is58mm ? 'UNIDADES:' : 'UNIDADES COTIZADAS:',
+        width: 9,
+        styles: const PosStyles(bold: true),
+      ),
+      PosColumn(
+        text: '$totalItemsQty',
+        width: 3,
+        styles: const PosStyles(align: PosAlign.right, bold: true),
+      ),
+    ]);
+    bytes += generator.hr(ch: '-');
+
+    // ── Observaciones / Notas (si existen) ────────────────────────────────
+    final sanitizedNotes = quote.notes
+        ?.replaceAll(
+          RegExp(
+            r'\s*-\s*V[aá]lido\s+\d+\s+d[ií]as\s+con\s+precio\s+congelado\.?',
+            caseSensitive: false,
+          ),
+          '',
+        )
+        .replaceAll(
+          RegExp(r'\s*con\s+precio\s+congelado\.?', caseSensitive: false),
+          '',
+        )
+        .replaceAll(
+          RegExp(r'\s*precio\s+congelado\.?', caseSensitive: false),
+          '',
+        )
+        .trim();
+
+    if (sanitizedNotes != null && sanitizedNotes.isNotEmpty) {
+      bytes += generator.text(
+        'OBSERVACIONES:',
+        styles: const PosStyles(align: PosAlign.left, bold: true),
+      );
+      bytes += generator.text(
+        _cleanText(sanitizedNotes),
+        styles: const PosStyles(align: PosAlign.left),
+      );
+      bytes += generator.hr(ch: '-');
+    }
+
+    // ── Código de Barras del Presupuesto (Code 39 para lector de caja) ───
+    final cleanStringForBarcode = quote.quoteNumber
+        .toUpperCase()
+        .replaceAll(RegExp(r'[^A-Z0-9\-\.\ \$\/\+\%]'), '');
     if (cleanStringForBarcode.isNotEmpty) {
       try {
-        bytes += generator.barcode(Barcode.code39(cleanStringForBarcode.split('')), width: 2, height: 60, textPos: BarcodeText.none);
-        bytes += generator.text(cleanStringForBarcode, styles: const PosStyles(align: PosAlign.center));
+        bytes += generator.barcode(
+          Barcode.code39(cleanStringForBarcode.split('')),
+          width: 2,
+          height: 60,
+          textPos: BarcodeText.none,
+        );
+        bytes += generator.text(
+          cleanStringForBarcode,
+          styles: const PosStyles(align: PosAlign.center, bold: true),
+        );
       } catch (e) {
-        debugPrint("Error generando barcode para Quote: $e");
+        debugPrint('Error generando barcode para Quote: $e');
       }
+      bytes += generator.feed(1);
     }
-    
+
+    // ── Leyenda de Validez y Pie Legal ────────────────────────────────────
+    bytes += generator.text(
+      'Precios sujetos a variacion sin previo aviso.',
+      styles: const PosStyles(align: PosAlign.center),
+    );
+    bytes += generator.text(
+      '*** NO VALIDO COMO FACTURA ***',
+      styles: const PosStyles(align: PosAlign.center, bold: true),
+    );
+
     bytes += generator.feed(4);
     bytes += generator.cut();
 
-    await _send(Uint8List.fromList(bytes));
+    return Uint8List.fromList(bytes);
+  }
+
+  /// Imprime el ticket de un presupuesto (NO VÁLIDO COMO FACTURA) en 58mm u 80mm.
+  Future<void> printQuoteTicket({
+    required Quote quote,
+    required BusinessSettings settings,
+    required LocalTerminalProvider localTerminal,
+    required String vendorName,
+    PaperSize? paperSizeOverride,
+  }) async {
+    await reconfigure(localTerminal);
+    if (localTerminal.printerConnection.toLowerCase() == 'none') return;
+    if (config.connectionType == PrinterConnectionType.usb &&
+        (config.comPort == null || config.comPort!.trim().isEmpty)) {
+      return;
+    }
+    if (config.connectionType == PrinterConnectionType.tcp &&
+        (config.tcpHost == null || config.tcpHost!.trim().isEmpty)) {
+      return;
+    }
+
+    final ticketBytes = await buildQuoteTicketBytes(
+      quote: quote,
+      settings: settings,
+      vendorName: vendorName,
+      paperSizeOverride: paperSizeOverride ?? config.paperSize,
+    );
+
+    await _send(ticketBytes);
   }
 
 

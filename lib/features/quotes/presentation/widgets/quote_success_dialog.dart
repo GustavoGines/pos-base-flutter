@@ -5,8 +5,9 @@ import 'package:frontend_desktop/features/quotes/data/quote_repository.dart';
 import 'package:frontend_desktop/features/quotes/services/quote_pdf_service.dart';
 import 'package:frontend_desktop/features/settings/presentation/providers/settings_provider.dart';
 import 'package:frontend_desktop/core/providers/local_terminal_provider.dart';
-import 'package:frontend_desktop/core/utils/receipt_printer_service.dart';
+import 'package:frontend_desktop/core/presentation/widgets/thermal_receipt_widget.dart';
 import 'package:frontend_desktop/core/utils/snack_bar_service.dart';
+import 'quote_thermal_preview_dialog.dart';
 
 /// Diálogo modal post-generación de presupuesto que ofrece:
 /// 1. Imprimir Ticket térmico directamente.
@@ -42,15 +43,22 @@ class _QuoteSuccessDialogState extends State<QuoteSuccessDialog> {
   Future<void> _printTicket() async {
     try {
       final settings = context.read<SettingsProvider>().settings;
-      if (settings != null) {
-        await ReceiptPrinterService.instance.printQuoteTicket(
-          quote: widget.quote,
-          settings: settings,
-          localTerminal: context.read<LocalTerminalProvider>(),
-          vendorName: widget.vendorName,
-        );
+      final localTerminal = context.read<LocalTerminalProvider>();
+      final initialWidth = localTerminal.printerFormat == 'thermal_58'
+          ? ThermalPaperWidth.mm58
+          : ThermalPaperWidth.mm80;
+
+      final printed = await QuoteThermalPreviewDialog.show(
+        context,
+        quote: widget.quote,
+        settings: settings,
+        vendorName: widget.vendorName,
+        initialPaperWidth: initialWidth,
+      );
+
+      if (printed && mounted) {
+        Navigator.pop(context); // Cierra el modal exitosamente al confirmar la impresión
       }
-      if (mounted) Navigator.pop(context); // Cierra el modal exitosamente al imprimir el ticket
     } catch (e) {
       if (mounted) SnackBarService.error(context, e.toString());
     }
@@ -59,14 +67,18 @@ class _QuoteSuccessDialogState extends State<QuoteSuccessDialog> {
   Future<void> _generateAndSave() async {
     setState(() => _generatingPdf = true);
     try {
-      final logoUrl = context.read<SettingsProvider>().settings?.effectiveLogoUrl;
+      final settings = context.read<SettingsProvider>().settings;
+      final paperSize = context.read<LocalTerminalProvider>().pdfPaperSize;
+      final logoUrl = settings?.effectiveLogoUrl;
       final path = await QuotePdfService.generateAndShare(
         quote: widget.quote,
         businessName: widget.businessName,
         businessAddress: widget.businessAddress,
         businessPhone: widget.businessPhone,
+        businessSettings: settings,
         vendorName: widget.vendorName,
         logoUrl: logoUrl,
+        paperSize: paperSize,
       );
       if (mounted) setState(() { _generatingPdf = false; _savedPath = path; });
     } catch (e) {
@@ -78,15 +90,19 @@ class _QuoteSuccessDialogState extends State<QuoteSuccessDialog> {
   }
 
   Future<void> _preview() async {
-    final logoUrl = context.read<SettingsProvider>().settings?.effectiveLogoUrl;
+    final settings = context.read<SettingsProvider>().settings;
+    final paperSize = context.read<LocalTerminalProvider>().pdfPaperSize;
+    final logoUrl = settings?.effectiveLogoUrl;
     await QuotePdfService.preview(
       context: context,
       quote: widget.quote,
       businessName: widget.businessName,
       businessAddress: widget.businessAddress,
       businessPhone: widget.businessPhone,
+      businessSettings: settings,
       vendorName: widget.vendorName,
       logoUrl: logoUrl,
+      paperSize: paperSize,
     );
   }
 

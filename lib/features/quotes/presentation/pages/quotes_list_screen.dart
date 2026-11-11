@@ -14,10 +14,11 @@ import '../../data/quote_repository.dart';
 import '../../services/quote_pdf_service.dart';
 import 'quote_screen.dart';
 import 'package:frontend_desktop/core/presentation/widgets/print_format_selector.dart';
-import 'package:frontend_desktop/core/utils/receipt_printer_service.dart';
+import 'package:frontend_desktop/core/presentation/widgets/thermal_receipt_widget.dart';
 import 'package:frontend_desktop/core/providers/local_terminal_provider.dart';
 import 'package:frontend_desktop/core/constants/app_permissions.dart';
 import 'package:frontend_desktop/features/auth/presentation/widgets/admin_pin_dialog.dart';
+import '../widgets/quote_thermal_preview_dialog.dart';
 
 // ─── Utilidades de estado ────────────────────────────────────────────────────
 
@@ -795,6 +796,7 @@ class _QuoteActionSheetState extends State<_QuoteActionSheet> {
     if (!mounted) return;
 
     final settings = context.read<SettingsProvider>().settings;
+    final localTerminal = context.read<LocalTerminalProvider>();
     final vendorName = context.read<AuthProvider>().currentUser?['name'] ?? 'VENDEDOR';
 
     if (format == 'a4') {
@@ -804,22 +806,23 @@ class _QuoteActionSheetState extends State<_QuoteActionSheet> {
         businessName: settings?.companyName ?? 'Mi Negocio',
         businessAddress: settings?.address,
         businessPhone: settings?.phone,
+        businessSettings: settings,
         vendorName: vendorName,
         logoUrl: settings?.effectiveLogoUrl,
+        paperSize: localTerminal.pdfPaperSize,
       );
     } else if (format == 'thermal') {
-      if (settings != null) {
-        try {
-          await ReceiptPrinterService.instance.printQuoteTicket(
-            quote: widget.quote,
-            settings: settings,
-            localTerminal: context.read<LocalTerminalProvider>(),
-            vendorName: vendorName,
-          );
-        } catch (e) {
-          if (mounted) SnackBarService.error(context, e.toString());
-        }
-      }
+      final initialWidth = localTerminal.printerFormat == 'thermal_58'
+          ? ThermalPaperWidth.mm58
+          : ThermalPaperWidth.mm80;
+
+      await QuoteThermalPreviewDialog.show(
+        context,
+        quote: widget.quote,
+        settings: settings,
+        vendorName: vendorName,
+        initialPaperWidth: initialWidth,
+      );
     }
   }
 
@@ -828,6 +831,8 @@ class _QuoteActionSheetState extends State<_QuoteActionSheet> {
     setState(() => _loadingWhatsApp = true);
 
     final settings = context.read<SettingsProvider>().settings;
+    final paperSize = context.read<LocalTerminalProvider>().pdfPaperSize;
+    final vendorName = context.read<AuthProvider>().currentUser?['name'] ?? 'VENDEDOR';
     final businessName = settings?.companyName ?? 'Mi Negocio';
 
     try {
@@ -836,8 +841,10 @@ class _QuoteActionSheetState extends State<_QuoteActionSheet> {
         businessName: businessName,
         businessAddress: settings?.address,
         businessPhone: settings?.phone,
-        vendorName: null,
+        businessSettings: settings,
+        vendorName: vendorName,
         logoUrl: settings?.effectiveLogoUrl,
+        paperSize: paperSize,
       );
 
       if (!mounted) return;

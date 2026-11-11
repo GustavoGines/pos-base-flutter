@@ -1,12 +1,15 @@
 import 'dart:convert';
 import 'dart:typed_data';
+import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
+import 'package:frontend_desktop/core/utils/receipt_printer_service.dart';
 import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
 import 'package:frontend_desktop/features/quotes/data/quote_repository.dart';
 import 'package:frontend_desktop/features/quotes/services/quote_pdf_service.dart';
+import 'package:frontend_desktop/features/settings/domain/entities/business_settings.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -458,6 +461,147 @@ void main() {
       expect(pdfBytes, isNotNull);
       expect(pdfBytes.isNotEmpty, isTrue);
       expect(ascii.decode(pdfBytes.sublist(0, 5)), equals('%PDF-'));
+    });
+
+    test('generateQuotePdf supports both A4 and Letter paper sizes with ARCA commercial header metadata', () async {
+      final quote = Quote(
+        id: 300,
+        quoteNumber: 'PRES-0300',
+        status: 'pending',
+        subtotal: 45000,
+        total: 45000,
+        customerName: 'Corralón del Sur S.R.L.',
+        customerPhone: '11-5555-9999',
+        notes: 'Retiro por depósito central.',
+        validUntil: '2026-12-01',
+        priceList: 'wholesale',
+        items: [
+          QuoteItem(
+            productId: 50,
+            productName: 'Bolsa de Cemento 50kg',
+            unitPrice: 9000,
+            quantity: 5,
+            subtotal: 45000,
+            product: Product(
+              id: 50,
+              name: 'Bolsa de Cemento 50kg',
+              internalCode: 'CEM-50',
+              costPrice: 6000,
+              sellingPrice: 9000,
+              stock: 100,
+              active: true,
+              isSoldByWeight: false,
+            ),
+          ),
+        ],
+      );
+
+      final a4Bytes = await QuotePdfService.generateQuotePdf(
+        quote: quote,
+        businessName: 'Ferretería Industrial',
+        businessAddress: 'Av. Rivadavia 5000',
+        businessPhone: '011-4000-1111',
+        businessCuit: '30712345678',
+        businessTaxCondition: 'responsable_inscripto',
+        businessIibb: '30712345678',
+        businessActivityStartDate: '01/03/2020',
+        vendorName: 'Martín',
+        paperSize: 'a4',
+      );
+
+      final letterBytes = await QuotePdfService.generateQuotePdf(
+        quote: quote,
+        businessName: 'Ferretería Industrial',
+        businessAddress: 'Av. Rivadavia 5000',
+        businessPhone: '011-4000-1111',
+        businessCuit: '30712345678',
+        businessTaxCondition: 'responsable_inscripto',
+        businessIibb: '30712345678',
+        businessActivityStartDate: '01/03/2020',
+        vendorName: 'Martín',
+        paperSize: 'letter',
+      );
+
+      final a4Str = latin1.decode(a4Bytes);
+      final letterStr = latin1.decode(letterBytes);
+
+      // A4 MediaBox is 595.28 x 841.89, Letter MediaBox is 612 x 792
+      expect(a4Str.contains('595.27') || a4Str.contains('595.28'), isTrue);
+      expect(letterStr.contains('612') && letterStr.contains('792'), isTrue);
+    });
+
+    test('ReceiptPrinterService.buildQuoteTicketBytes generates unified ESC/POS bytes for 58mm and 80mm', () async {
+      const settings = BusinessSettings(
+        companyName: 'Ferretería El Tornillo',
+        taxId: '30712345678',
+        address: 'San Martín 450',
+        phone: '11-4444-5555',
+        taxCondition: 'responsable_inscripto',
+        iibb: '30712345678',
+        activityStartDate: '01/01/2022',
+      );
+
+      final quote = Quote(
+        id: 301,
+        quoteNumber: 'PRES-0301',
+        status: 'pending',
+        subtotal: 15000,
+        total: 15000,
+        customerName: 'Juan Carlos Gómez',
+        customerPhone: '11-2222-3333',
+        notes: 'Precios sujetos a stock.',
+        validUntil: '2026-11-20',
+        priceList: 'wholesale',
+        items: [
+          QuoteItem(
+            productId: 10,
+            productName: 'Amoladora Angular 850W',
+            unitPrice: 15000,
+            quantity: 1,
+            subtotal: 15000,
+            product: Product(
+              id: 10,
+              name: 'Amoladora Angular 850W',
+              internalCode: 'AMO-850',
+              costPrice: 10000,
+              sellingPrice: 15000,
+              stock: 5,
+              active: true,
+              isSoldByWeight: false,
+            ),
+          ),
+        ],
+      );
+
+      final bytes58 = await ReceiptPrinterService.instance.buildQuoteTicketBytes(
+        quote: quote,
+        settings: settings,
+        vendorName: 'Lucas',
+        paperSizeOverride: PaperSize.mm58,
+      );
+
+      final bytes80 = await ReceiptPrinterService.instance.buildQuoteTicketBytes(
+        quote: quote,
+        settings: settings,
+        vendorName: 'Lucas',
+        paperSizeOverride: PaperSize.mm80,
+      );
+
+      final text58 = latin1.decode(bytes58);
+      final text80 = latin1.decode(bytes80);
+
+      expect(text58, contains('FERRETERIA EL TORNILLO'));
+      expect(text58, contains('CUIT: 30-71234567-8'));
+      expect(text58, contains('PRESUPUESTO (X)'));
+      expect(text58, contains('NO VALIDO COMO FACTURA'));
+      expect(text58, contains('[AMO-850] AMOLADORA ANGULAR 850W'));
+      expect(text58, contains('PRES-0301'));
+
+      expect(text80, contains('FERRETERIA EL TORNILLO'));
+      expect(text80, contains('IVA RESPONSABLE INSCRIPTO'));
+      expect(text80, contains('TOTAL PRESUPUESTO:'));
+      expect(text80, contains('UNIDADES COTIZADAS:'));
+      expect(text80, contains('OBSERVACIONES:'));
     });
   });
 }

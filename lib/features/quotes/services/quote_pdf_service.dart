@@ -1,6 +1,7 @@
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 import 'package:frontend_desktop/core/utils/image_url_resolver.dart';
 import 'package:frontend_desktop/core/config/app_config.dart';
+import 'package:frontend_desktop/features/settings/domain/entities/business_settings.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io';
 import 'dart:typed_data';
@@ -14,18 +15,62 @@ import 'package:printing/printing.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../data/quote_repository.dart';
 
-/// Servicio que genera el PDF del presupuesto y abre WhatsApp.
-/// No depende de Flutter widgets — puede llamarse desde cualquier contexto.
+/// Servicio que genera el PDF del presupuesto (A4 y Letter) con diseño técnico
+/// reglamentario estilo ARCA / Facturación Comercial Argentina (Letra X - No Fiscal)
+/// y permite compartirlo por WhatsApp o imprimirlo.
 class QuotePdfService {
-  static final _currencyFmt = NumberFormat.currency(locale: 'es_AR', symbol: '\$', decimalDigits: 0);
+  static final _currencyFmt =
+      NumberFormat.currency(locale: 'es_AR', symbol: '\$', decimalDigits: 0);
+  static final _numberFmt = NumberFormat('#,##0.00', 'es_AR');
   static final _dateFmt = DateFormat('dd/MM/yyyy');
+  static final _dateTimeFmt = DateFormat('dd/MM/yyyy HH:mm');
 
-  /// Cache en memoria de imágenes de productos para evitar peticiones redundantes.
+  /// Cache en memoria de imágenes de productos y logos para evitar peticiones redundantes.
   static final Map<String, pw.MemoryImage?> _thumbnailCache = {};
 
   /// Limpia la caché de miniaturas (útil para tests).
   static void clearThumbnailCache() {
     _thumbnailCache.clear();
+  }
+
+  /// Formatea importes en pesos argentinos estilo contable ARCA ($ 1.234,56).
+  static String formatCurrency(num amount) {
+    if (amount < 0) {
+      return '-\$ ${_numberFmt.format(amount.abs())}';
+    }
+    return '\$ ${_numberFmt.format(amount)}';
+  }
+
+  /// Formatea un CUIT/CUIL de 11 dígitos con guiones (XX-XXXXXXXX-X).
+  static String _formatCuit(String? raw) {
+    if (raw == null || raw.trim().isEmpty) return '';
+    final digits = raw.replaceAll(RegExp(r'[^0-9]'), '');
+    if (digits.length == 11) {
+      return '${digits.substring(0, 2)}-${digits.substring(2, 10)}-${digits.substring(10)}';
+    }
+    return raw.trim();
+  }
+
+  /// Convierte valores de condición frente al IVA a etiquetas legibles estilo ARCA.
+  static String _formatTaxCondition(String? raw) {
+    if (raw == null || raw.trim().isEmpty) return '';
+    final clean = raw.trim();
+    switch (clean.toLowerCase()) {
+      case 'consumidor_final':
+      case 'consumidor final':
+        return 'Consumidor Final';
+      case 'responsable_inscripto':
+      case 'iva responsable inscripto':
+        return 'IVA Responsable Inscripto';
+      case 'monotributo':
+      case 'responsable monotributo':
+        return 'Responsable Monotributo';
+      case 'exento':
+      case 'iva sujeto exento':
+        return 'IVA Sujeto Exento';
+      default:
+        return clean.replaceAll('_', ' ');
+    }
   }
 
   static Future<String?> _resolveEffectiveBaseUrl(String? baseUrl) async {
@@ -111,7 +156,8 @@ class QuotePdfService {
 
     // 2. Resolver con baseUrl dinámica
     final effectiveBase = await _resolveEffectiveBaseUrl(baseUrl);
-    final resolvedUrl = resolveImageUrl(trimmed, baseUrl: effectiveBase) ?? trimmed;
+    final resolvedUrl =
+        resolveImageUrl(trimmed, baseUrl: effectiveBase) ?? trimmed;
 
     if (_thumbnailCache.containsKey(resolvedUrl)) {
       return _thumbnailCache[resolvedUrl];
@@ -121,7 +167,8 @@ class QuotePdfService {
     try {
       final uri = Uri.tryParse(resolvedUrl);
       if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) {
-        final response = await client.get(uri).timeout(const Duration(seconds: 4));
+        final response =
+            await client.get(uri).timeout(const Duration(seconds: 4));
         if (response.statusCode == 200 && response.bodyBytes.isNotEmpty) {
           final memImg = pw.MemoryImage(response.bodyBytes);
           _thumbnailCache[trimmed] = memImg;
@@ -197,7 +244,8 @@ class QuotePdfService {
         }
 
         // 2. Resolver con dynamic baseUrl
-        final url = resolveImageUrl(trimmedRaw, baseUrl: effectiveBase) ?? trimmedRaw;
+        final url =
+            resolveImageUrl(trimmedRaw, baseUrl: effectiveBase) ?? trimmedRaw;
 
         if (_thumbnailCache.containsKey(url)) {
           final cached = _thumbnailCache[url];
@@ -210,7 +258,8 @@ class QuotePdfService {
         try {
           final uri = Uri.tryParse(url);
           if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) {
-            final response = await client.get(uri).timeout(const Duration(seconds: 4));
+            final response =
+                await client.get(uri).timeout(const Duration(seconds: 4));
             if (response.statusCode == 200 && response.bodyBytes.isNotEmpty) {
               final memImg = pw.MemoryImage(response.bodyBytes);
               _thumbnailCache[trimmedRaw] = memImg;
@@ -253,72 +302,94 @@ class QuotePdfService {
     return imageMap;
   }
 
-  /// Genera el PDF, lo guarda en el directorio de descargas, lo muestra al
-  /// usuario (preview) y luego abre WhatsApp con un mensaje prearmado.
+  /// Genera el PDF y lo guarda en Documentos/Sistema_POS/Presupuestos.
   static Future<String?> generateAndShare({
     required Quote quote,
     required String businessName,
     String? businessAddress,
     String? businessPhone,
+    String? businessCuit,
+    String? businessTaxCondition,
+    String? businessIibb,
+    String? businessActivityStartDate,
+    dynamic businessSettings,
     String? vendorName,
     String? logoUrl,
     Uint8List? logoBytes,
     String? baseUrl,
+    String paperSize = 'a4',
   }) async {
     final pdfBytes = await _buildPdf(
       quote: quote,
       businessName: businessName,
       businessAddress: businessAddress,
       businessPhone: businessPhone,
+      businessCuit: businessCuit,
+      businessTaxCondition: businessTaxCondition,
+      businessIibb: businessIibb,
+      businessActivityStartDate: businessActivityStartDate,
+      businessSettings: businessSettings,
       vendorName: vendorName,
       logoUrl: logoUrl,
       logoBytes: logoBytes,
       baseUrl: baseUrl,
+      paperSize: paperSize,
     );
 
     // ── Guardar archivo ──────────────────────────────────────────────────
     final docsDir = await getApplicationDocumentsDirectory();
-    final presupuestosDir = Directory('${docsDir.path}${Platform.pathSeparator}Sistema_POS${Platform.pathSeparator}Presupuestos');
-    
+    final presupuestosDir = Directory(
+      '${docsDir.path}${Platform.pathSeparator}Sistema_POS${Platform.pathSeparator}Presupuestos',
+    );
+
     if (!await presupuestosDir.exists()) {
       await presupuestosDir.create(recursive: true);
     }
-    
+
     final filename = '${quote.quoteNumber}.pdf';
-    final file = File('${presupuestosDir.path}${Platform.pathSeparator}$filename');
-    
+    final file =
+        File('${presupuestosDir.path}${Platform.pathSeparator}$filename');
+
     try {
       await file.writeAsBytes(pdfBytes);
     } catch (e) {
-      throw Exception('Permiso denegado o error de disco al guardar: \$e');
+      throw Exception('Permiso denegado o error de disco al guardar: $e');
     }
 
     return file.path;
   }
 
+  /// Muestra el visor interactivo del presupuesto PDF en formato A4 o Carta (Letter).
   static Future<void> preview({
     required BuildContext context,
     required Quote quote,
     required String businessName,
     String? businessAddress,
     String? businessPhone,
+    String? businessCuit,
+    String? businessTaxCondition,
+    String? businessIibb,
+    String? businessActivityStartDate,
+    dynamic businessSettings,
     String? vendorName,
     String? logoUrl,
     Uint8List? logoBytes,
     String? baseUrl,
+    String paperSize = 'a4',
   }) async {
-    showGeneralDialog(
+    final paperLabel = paperSize.toLowerCase() == 'letter' ? 'Carta' : 'A4';
+    await showGeneralDialog(
       context: context,
       barrierDismissible: true,
       barrierLabel: 'Cerrar',
-      pageBuilder: (context, _, __) {
+      pageBuilder: (ctx, _, __) {
         return Material(
-          color: Colors.black45,
+          color: Colors.black54,
           child: Center(
             child: Container(
-              width: 850,
-              height: MediaQuery.of(context).size.height * 0.9,
-              margin: const EdgeInsets.all(32),
+              width: 880,
+              height: MediaQuery.of(ctx).size.height * 0.92,
+              margin: const EdgeInsets.all(24),
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(12),
@@ -326,23 +397,37 @@ class QuotePdfService {
               clipBehavior: Clip.antiAlias,
               child: Column(
                 children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Padding(
-                        padding: EdgeInsets.all(16.0),
-                        child: Text(
-                          'Vista Previa del Presupuesto', 
-                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)
+                  Container(
+                    color: Colors.grey.shade900,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 12,
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.request_quote_rounded,
+                          color: Colors.white,
+                          size: 22,
                         ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.close, color: Colors.grey),
-                        onPressed: () => Navigator.pop(context),
-                      )
-                    ],
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'Presupuesto N° ${quote.quoteNumber} — Vista Previa $paperLabel',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close, color: Colors.white70),
+                          onPressed: () => Navigator.pop(ctx),
+                        ),
+                      ],
+                    ),
                   ),
-                  const Divider(height: 1),
                   Expanded(
                     child: PdfPreview(
                       allowPrinting: true,
@@ -350,15 +435,21 @@ class QuotePdfService {
                       canChangeOrientation: false,
                       canChangePageFormat: false,
                       pdfFileName: '${quote.quoteNumber}.pdf',
-                      build: (format) async => _buildPdf(
+                      build: (_) async => _buildPdf(
                         quote: quote,
                         businessName: businessName,
                         businessAddress: businessAddress,
                         businessPhone: businessPhone,
+                        businessCuit: businessCuit,
+                        businessTaxCondition: businessTaxCondition,
+                        businessIibb: businessIibb,
+                        businessActivityStartDate: businessActivityStartDate,
+                        businessSettings: businessSettings,
                         vendorName: vendorName,
                         logoUrl: logoUrl,
                         logoBytes: logoBytes,
                         baseUrl: baseUrl,
+                        paperSize: paperSize,
                       ),
                     ),
                   ),
@@ -371,7 +462,7 @@ class QuotePdfService {
     );
   }
 
-  /// Abre WhatsApp con mensaje prearmado.
+  /// Abre WhatsApp con mensaje prearmado y resalta el PDF en el explorador.
   static Future<void> openWhatsApp({
     required Quote quote,
     required String businessName,
@@ -380,7 +471,6 @@ class QuotePdfService {
   }) async {
     if (savedPdfPath != null && Platform.isWindows) {
       try {
-        // Abre el explorador de Windows y resalta exactamente el archivo que se guardó
         await Process.run('explorer.exe', ['/select,', savedPdfPath]);
       } catch (e) {
         debugPrint('Error abriendo directorio nativo: $e');
@@ -397,16 +487,15 @@ class QuotePdfService {
       }
     }
     final total = _currencyFmt.format(quote.total);
+    final sanitizedNotes = _sanitizeNotes(quote.notes);
     final msg = Uri.encodeComponent(
       '¡Hola! Te enviamos el presupuesto *${quote.quoteNumber}* de $businessName.\n\n'
       'Total: $total\n'
       'Adjuntamos el documento PDF con el detalle de los artículos y condiciones.'
-      '${quote.notes != null && quote.notes!.isNotEmpty ? "\n\nNotas adicionales: ${quote.notes}" : ""}'
+      '${sanitizedNotes != null && sanitizedNotes.isNotEmpty ? "\n\nNotas adicionales: $sanitizedNotes" : ""}'
       '\n\n¡Quedamos a tu entera disposición por cualquier consulta!',
     );
 
-    // Si se conoce el teléfono del cliente, enviamos al contacto directo.
-    // Si no, abre el selector de chat de WhatsApp Desktop/Web.
     final rawPhone = (phone ?? '').replaceAll(RegExp(r'[^\d]'), '');
     final waUrl = rawPhone.isNotEmpty
         ? 'https://wa.me/$rawPhone?text=$msg'
@@ -418,42 +507,139 @@ class QuotePdfService {
     }
   }
 
-  // ── PDF Builder ──────────────────────────────────────────────────────────
+  // ── PDF Builder Reglamentario Estilo ARCA / Comercial (Letra X) ──────────
+
+  /// Sanea las notas del presupuesto eliminando leyendas obsoletas de "precio congelado".
+  static String? _sanitizeNotes(String? raw) {
+    return raw
+        ?.replaceAll(
+          RegExp(
+            r'\s*-\s*V[aá]lido\s+\d+\s+d[ií]as\s+con\s+precio\s+congelado\.?',
+            caseSensitive: false,
+          ),
+          '',
+        )
+        .replaceAll(
+          RegExp(r'\s*con\s+precio\s+congelado\.?', caseSensitive: false),
+          '',
+        )
+        .replaceAll(
+          RegExp(r'\s*precio\s+congelado\.?', caseSensitive: false),
+          '',
+        )
+        .trim();
+  }
 
   static Future<Uint8List> generateQuotePdf({
     required Quote quote,
     required String businessName,
     String? businessAddress,
     String? businessPhone,
+    String? businessCuit,
+    String? businessTaxCondition,
+    String? businessIibb,
+    String? businessActivityStartDate,
+    dynamic businessSettings,
     String? vendorName,
     String? logoUrl,
     Uint8List? logoBytes,
     http.Client? httpClient,
     String? baseUrl,
+    String paperSize = 'a4',
   }) async {
+    // Extraer datos adicionales desde businessSettings si fue provisto
+    String? effectiveAddress = businessAddress;
+    String? effectivePhone = businessPhone;
+    String? effectiveCuit = businessCuit;
+    String? effectiveTaxCondition = businessTaxCondition;
+    String? effectiveIibb = businessIibb;
+    String? effectiveActivityStart = businessActivityStartDate;
+    String? effectiveLogoUrl = logoUrl;
+
+    if (businessSettings is BusinessSettings) {
+      effectiveAddress ??= businessSettings.address;
+      effectivePhone ??= businessSettings.phone;
+      effectiveCuit ??= businessSettings.taxId;
+      effectiveTaxCondition ??= businessSettings.taxCondition;
+      effectiveIibb ??= businessSettings.iibb;
+      effectiveActivityStart ??= businessSettings.activityStartDate;
+      effectiveLogoUrl ??= businessSettings.effectiveLogoUrl;
+    } else if (businessSettings is Map) {
+      effectiveAddress ??= businessSettings['address']?.toString();
+      effectivePhone ??= businessSettings['phone']?.toString();
+      effectiveCuit ??= businessSettings['tax_id']?.toString() ??
+          businessSettings['cuit']?.toString();
+      effectiveTaxCondition ??= businessSettings['tax_condition']?.toString();
+      effectiveIibb ??= businessSettings['iibb']?.toString();
+      effectiveActivityStart ??=
+          businessSettings['activity_start_date']?.toString();
+      effectiveLogoUrl ??= businessSettings['logo_url']?.toString() ??
+          businessSettings['effective_logo_url']?.toString();
+    }
+
     // 1. Precarga asíncrona de miniaturas y logotipo antes del renderizado sincrónico de MultiPage
     final results = await Future.wait([
       preloadThumbnails(quote, httpClient: httpClient, baseUrl: baseUrl),
-      preloadLogo(logoUrl: logoUrl, logoBytes: logoBytes, httpClient: httpClient, baseUrl: baseUrl),
+      preloadLogo(
+        logoUrl: effectiveLogoUrl,
+        logoBytes: logoBytes,
+        httpClient: httpClient,
+        baseUrl: baseUrl,
+      ),
     ]);
     final itemThumbnails = results[0] as Map<int, pw.MemoryImage>;
     final logoImage = results[1] as pw.MemoryImage?;
 
     final doc = pw.Document();
+    final pageFormat = paperSize.toLowerCase() == 'letter'
+        ? PdfPageFormat.letter
+        : PdfPageFormat.a4;
 
-    // Paleta de colores
-    const primary = PdfColor.fromInt(0xFF1A4B8C);    // azul corporativo
-    const accent = PdfColor.fromInt(0xFF2E7D32);     // verde para totales
-    const bgLight = PdfColor.fromInt(0xFFF5F7FA);
-    const textGrey = PdfColor.fromInt(0xFF6B7280);
+    final DateTime emissionDate = quote.createdAt != null
+        ? (DateTime.tryParse(quote.createdAt!)?.toLocal() ?? DateTime.now())
+        : DateTime.now();
+    final String emissionDateStr = _dateTimeFmt.format(emissionDate);
 
-    final currFmt = NumberFormat.currency(locale: 'es_AR', symbol: '\$', decimalDigits: 0);
+    final String validUntilStr = (quote.validUntil != null &&
+            quote.validUntil!.trim().isNotEmpty)
+        ? (() {
+            final parsed = DateTime.tryParse(quote.validUntil!.trim());
+            return parsed != null
+                ? _dateFmt.format(parsed)
+                : quote.validUntil!.trim();
+          })()
+        : '${_dateFmt.format(emissionDate.add(const Duration(days: 7)))} (7 días)';
+
+    final formattedEmitterCuit = _formatCuit(effectiveCuit);
+    final formattedEmitterIibb = _formatCuit(effectiveIibb);
+    final formattedEmitterTaxCond = _formatTaxCondition(effectiveTaxCondition);
+
+    final receiverName =
+        (quote.customerName != null && quote.customerName!.trim().isNotEmpty)
+            ? quote.customerName!.trim()
+            : 'Consumidor Final';
+    final receiverPhone =
+        (quote.customerPhone != null && quote.customerPhone!.trim().isNotEmpty)
+            ? quote.customerPhone!.trim()
+            : '---';
+
+    final cleanBarcodeData = quote.quoteNumber.trim().isNotEmpty
+        ? quote.quoteNumber.trim()
+        : 'PRES-${quote.id.toString().padLeft(4, '0')}';
+
+    final String? sanitizedNotes = _sanitizeNotes(quote.notes);
+
+    final int totalUnits = quote.items.fold<int>(0, (sum, item) {
+      final isWeight =
+          item.product?.isSoldByWeight ?? (item.quantity % 1 != 0);
+      return sum + (isWeight ? 1 : item.quantity.toInt());
+    });
 
     doc.addPage(
       pw.MultiPage(
         pageTheme: pw.PageTheme(
-          pageFormat: PdfPageFormat.a4,
-          margin: const pw.EdgeInsets.all(32),
+          pageFormat: pageFormat,
+          margin: const pw.EdgeInsets.all(24),
           buildForeground: (pw.Context context) {
             if (logoImage == null) return pw.SizedBox();
             return pw.FullPage(
@@ -463,8 +649,8 @@ class QuotePdfService {
                   opacity: 0.10,
                   child: pw.Image(
                     logoImage,
-                    width: 340,
-                    height: 340,
+                    width: 280,
+                    height: 280,
                     fit: pw.BoxFit.contain,
                   ),
                 ),
@@ -476,31 +662,26 @@ class QuotePdfService {
           return pw.Column(
             mainAxisSize: pw.MainAxisSize.min,
             children: [
-              pw.SizedBox(height: 10),
-              pw.Center(
-                child: pw.Text(
-                  quote.validUntil != null
-                    ? 'Validez del presupuesto: hasta el ${_dateFmt.format(DateTime.parse(quote.validUntil!))}. Los precios pueden variar sin previo aviso.'
-                    : 'Validez del presupuesto: 7 días. Los precios pueden variar sin previo aviso.',
-                  style: pw.TextStyle(
-                    fontSize: 9,
-                    color: primary,
-                    fontWeight: pw.FontWeight.bold,
-                  ),
-                ),
-              ),
-              pw.SizedBox(height: 8),
-              pw.Divider(color: PdfColors.grey300),
+              pw.SizedBox(height: 6),
+              pw.Divider(color: PdfColors.grey500, thickness: 0.6),
               pw.Row(
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                 children: [
                   pw.Text(
-                    'Presupuesto generado por Caja4U · Dev4U · ${_dateFmt.format(DateTime.now())}',
-                    style: const pw.TextStyle(fontSize: 8, color: textGrey),
+                    'PRESUPUESTO COMERCIAL - DOCUMENTO NO VÁLIDO COMO FACTURA - $businessName',
+                    style: pw.TextStyle(
+                      fontSize: 7.5,
+                      color: PdfColors.grey800,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
                   ),
                   pw.Text(
                     'Página ${ctx.pageNumber} de ${ctx.pagesCount}',
-                    style: pw.TextStyle(fontSize: 8, color: textGrey, fontWeight: pw.FontWeight.bold),
+                    style: pw.TextStyle(
+                      fontSize: 7.5,
+                      color: PdfColors.grey800,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
                   ),
                 ],
               ),
@@ -509,276 +690,517 @@ class QuotePdfService {
         },
         build: (pw.Context ctx) {
           return [
-            // ── HEADER ──────────────────────────────────────────────────
+            // ── 1. BARRA SUPERIOR REGLAMENTARIA (ORIGINAL / NO FISCAL) ──────
             pw.Container(
-              decoration: const pw.BoxDecoration(
-                color: primary,
-                borderRadius: pw.BorderRadius.all(pw.Radius.circular(8)),
+              width: double.infinity,
+              padding:
+                  const pw.EdgeInsets.symmetric(vertical: 3, horizontal: 8),
+              decoration: pw.BoxDecoration(
+                color: PdfColors.grey200,
+                border: pw.Border.all(color: PdfColors.black, width: 1.0),
               ),
-              padding: const pw.EdgeInsets.symmetric(horizontal: 24, vertical: 16),
               child: pw.Row(
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                crossAxisAlignment: pw.CrossAxisAlignment.center,
                 children: [
-                  pw.Expanded(
-                    child: pw.Row(
-                      crossAxisAlignment: pw.CrossAxisAlignment.center,
+                  pw.Text(
+                    'ORIGINAL',
+                    style: pw.TextStyle(
+                      fontSize: 9,
+                      fontWeight: pw.FontWeight.bold,
+                      letterSpacing: 1.2,
+                    ),
+                  ),
+                  pw.Text(
+                    'DOCUMENTO NO VÁLIDO COMO FACTURA',
+                    style: pw.TextStyle(
+                      fontSize: 8.5,
+                      fontWeight: pw.FontWeight.bold,
+                      color: PdfColors.grey800,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // ── 2. ENCABEZADO PARTIDO ESTILO ARCA CON RECUADRO CENTRAL X ────
+            pw.Stack(
+              alignment: pw.Alignment.topCenter,
+              children: [
+                pw.Table(
+                  border: const pw.TableBorder(
+                    left: pw.BorderSide(color: PdfColors.black, width: 1.0),
+                    right: pw.BorderSide(color: PdfColors.black, width: 1.0),
+                    bottom: pw.BorderSide(color: PdfColors.black, width: 1.0),
+                    verticalInside:
+                        pw.BorderSide(color: PdfColors.black, width: 1.0),
+                  ),
+                  columnWidths: const {
+                    0: pw.FlexColumnWidth(1),
+                    1: pw.FlexColumnWidth(1),
+                  },
+                  children: [
+                    pw.TableRow(
                       children: [
-                        if (logoImage != null)
-                          pw.Container(
-                            width: 68,
-                            height: 68,
-                            margin: const pw.EdgeInsets.only(right: 14),
-                            child: pw.Center(
-                              child: pw.Image(logoImage, fit: pw.BoxFit.contain),
-                            ),
+                        // COLUMNA IZQUIERDA: DATOS DE LA EMPRESA / EMISOR
+                        pw.Padding(
+                          padding: const pw.EdgeInsets.fromLTRB(8, 8, 26, 8),
+                          child: pw.Row(
+                            crossAxisAlignment: pw.CrossAxisAlignment.center,
+                            children: [
+                              if (logoImage != null) ...[
+                                pw.Container(
+                                  width: 52,
+                                  height: 52,
+                                  child: pw.Image(
+                                    logoImage,
+                                    fit: pw.BoxFit.contain,
+                                  ),
+                                ),
+                                pw.SizedBox(width: 8),
+                              ],
+                              pw.Expanded(
+                                child: pw.Column(
+                                  crossAxisAlignment:
+                                      pw.CrossAxisAlignment.start,
+                                  children: [
+                                    pw.Text(
+                                      businessName.toUpperCase(),
+                                      style: pw.TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: pw.FontWeight.bold,
+                                        color: PdfColors.black,
+                                      ),
+                                    ),
+                                    pw.SizedBox(height: 3),
+                                    if (effectiveAddress != null &&
+                                        effectiveAddress.trim().isNotEmpty)
+                                      pw.Text(
+                                        'Domicilio Comercial: ${effectiveAddress.trim()}',
+                                        style:
+                                            const pw.TextStyle(fontSize: 7.5),
+                                      ),
+                                    if (effectivePhone != null &&
+                                        effectivePhone.trim().isNotEmpty)
+                                      pw.Text(
+                                        'Teléfono: ${effectivePhone.trim()}',
+                                        style:
+                                            const pw.TextStyle(fontSize: 7.5),
+                                      ),
+                                    if (formattedEmitterCuit.isNotEmpty)
+                                      pw.Text(
+                                        'CUIT: $formattedEmitterCuit',
+                                        style: pw.TextStyle(
+                                          fontSize: 7.5,
+                                          fontWeight: pw.FontWeight.bold,
+                                        ),
+                                      ),
+                                    if (formattedEmitterIibb.isNotEmpty)
+                                      pw.Text(
+                                        'Ingresos Brutos: $formattedEmitterIibb',
+                                        style:
+                                            const pw.TextStyle(fontSize: 7.5),
+                                      ),
+                                    if (effectiveActivityStart != null &&
+                                        effectiveActivityStart.trim().isNotEmpty)
+                                      pw.Text(
+                                        'Inicio de Actividades: ${effectiveActivityStart.trim()}',
+                                        style:
+                                            const pw.TextStyle(fontSize: 7.5),
+                                      ),
+                                    if (formattedEmitterTaxCond.isNotEmpty)
+                                      pw.Text(
+                                        'Cond. frente al IVA: $formattedEmitterTaxCond',
+                                        style: pw.TextStyle(
+                                          fontSize: 7.5,
+                                          fontWeight: pw.FontWeight.bold,
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ),
-                        pw.Expanded(
+                        ),
+
+                        // COLUMNA DERECHA: DATOS DEL PRESUPUESTO + CÓDIGO DE BARRAS
+                        pw.Padding(
+                          padding: const pw.EdgeInsets.fromLTRB(26, 8, 8, 8),
                           child: pw.Column(
                             crossAxisAlignment: pw.CrossAxisAlignment.start,
                             children: [
-                              pw.Text(businessName,
-                                  style: pw.TextStyle(
-                                    color: PdfColors.white,
-                                    fontSize: 18,
-                                    fontWeight: pw.FontWeight.bold,
-                                  )),
-                              if (businessAddress != null)
-                                pw.Text(businessAddress,
-                                    style: const pw.TextStyle(color: PdfColors.grey300, fontSize: 10)),
-                              if (businessPhone != null)
-                                pw.Text('Tel: $businessPhone',
-                                    style: const pw.TextStyle(color: PdfColors.grey300, fontSize: 10)),
+                              pw.Text(
+                                'PRESUPUESTO',
+                                style: pw.TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: pw.FontWeight.bold,
+                                  color: PdfColors.black,
+                                ),
+                              ),
+                              pw.SizedBox(height: 2),
+                              pw.Text(
+                                'Comp. Nro: ${quote.quoteNumber}',
+                                style: pw.TextStyle(
+                                  fontSize: 9.5,
+                                  fontWeight: pw.FontWeight.bold,
+                                ),
+                              ),
+                              pw.Text(
+                                'Fecha de Emisión: $emissionDateStr',
+                                style: const pw.TextStyle(fontSize: 8),
+                              ),
+                              pw.Text(
+                                'Válido hasta: $validUntilStr',
+                                style: pw.TextStyle(
+                                  fontSize: 8,
+                                  fontWeight: pw.FontWeight.bold,
+                                ),
+                              ),
+                              if (vendorName != null &&
+                                  vendorName.trim().isNotEmpty)
+                                pw.Text(
+                                  'Cajero / Vendedor: ${vendorName.trim().toUpperCase()}',
+                                  style: const pw.TextStyle(fontSize: 7.5),
+                                ),
+                              pw.SizedBox(height: 6),
+                              pw.BarcodeWidget(
+                                barcode: pw.Barcode.code128(),
+                                data: cleanBarcodeData,
+                                width: 140,
+                                height: 22,
+                                drawText: false,
+                                color: PdfColors.black,
+                              ),
+                              pw.SizedBox(height: 1.5),
+                              pw.Text(
+                                cleanBarcodeData,
+                                style: pw.TextStyle(
+                                  fontSize: 6.5,
+                                  fontWeight: pw.FontWeight.bold,
+                                ),
+                              ),
                             ],
                           ),
                         ),
                       ],
                     ),
-                  ),
-                  pw.SizedBox(width: 16),
-                  pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.end,
-                    children: [
-                      pw.Text('PRESUPUESTO',
-                          style: pw.TextStyle(
-                            color: PdfColors.white,
-                            fontSize: 36, // Tamaño aumentado drásticamente
-                            fontWeight: pw.FontWeight.bold,
-                            letterSpacing: 1.2,
-                          )),
-                      pw.Text(quote.quoteNumber,
-                          style: const pw.TextStyle(color: PdfColors.grey300, fontSize: 13)),
-                      pw.SizedBox(height: 6),
-                      pw.Container(
-                        color: PdfColors.white,
-                        padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        height: 35,
-                        width: 130,
-                        child: pw.BarcodeWidget(
-                          barcode: pw.Barcode.code128(),
-                          data: quote.quoteNumber,
-                          drawText: false,
-                          color: PdfColors.black,
-                        ),
-                      ),
-                      pw.SizedBox(height: 6),
-                      pw.Text(
-                          'Fecha: ${_dateFmt.format(DateTime.now())}',
-                        style: const pw.TextStyle(color: PdfColors.grey300, fontSize: 10),
-                      ),
-                      if (quote.validUntil != null)
+                  ],
+                ),
+
+                // RECUADRO CENTRAL DE LETRA (X - NO FISCAL)
+                pw.Positioned(
+                  top: 0,
+                  child: pw.Container(
+                    width: 42,
+                    height: 42,
+                    decoration: pw.BoxDecoration(
+                      color: PdfColors.white,
+                      border: pw.Border.all(color: PdfColors.black, width: 1.5),
+                    ),
+                    child: pw.Column(
+                      mainAxisAlignment: pw.MainAxisAlignment.center,
+                      children: [
                         pw.Text(
-                         'Válido hasta: ${_dateFmt.format(DateTime.parse(quote.validUntil!))}',
-                          style: const pw.TextStyle(color: PdfColors.grey300, fontSize: 10),
-                        ),
-                      // ── Condición de venta (badge en el header) ──
-                      pw.SizedBox(height: 4),
-                      pw.Container(
-                        padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                        decoration: pw.BoxDecoration(
-                          color: PdfColor.fromInt(0xFF2E7D32), // verde
-                          borderRadius: pw.BorderRadius.all(pw.Radius.circular(4)),
-                        ),
-                        child: pw.Text(
-                          'Cond. de Venta: ${quote.priceListLabel}',
+                          'X',
                           style: pw.TextStyle(
-                            color: PdfColors.white,
-                            fontSize: 9,
+                            fontSize: 20,
+                            fontWeight: pw.FontWeight.bold,
+                            color: PdfColors.black,
+                          ),
+                        ),
+                        pw.Text(
+                          'NO FISCAL',
+                          style: pw.TextStyle(
+                            fontSize: 5.5,
+                            fontWeight: pw.FontWeight.bold,
+                            color: PdfColors.black,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+
+            pw.SizedBox(height: 6),
+
+            // ── 3. CASILLERO DE RECEPTOR / CLIENTE ──────────────────────────
+            pw.Container(
+              decoration: pw.BoxDecoration(
+                border: pw.Border.all(color: PdfColors.black, width: 1.0),
+              ),
+              padding: const pw.EdgeInsets.symmetric(
+                horizontal: 8,
+                vertical: 6,
+              ),
+              child: pw.Row(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Expanded(
+                    flex: 5,
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text(
+                          'Apellido y Nombre / Razón Social: ${receiverName.toUpperCase()}',
+                          style: pw.TextStyle(
+                            fontSize: 8.5,
                             fontWeight: pw.FontWeight.bold,
                           ),
                         ),
-                      ),
-                    ],
+                        pw.SizedBox(height: 2),
+                        pw.Text(
+                          'Teléfono / Contacto: $receiverPhone',
+                          style: const pw.TextStyle(fontSize: 8),
+                        ),
+                      ],
+                    ),
+                  ),
+                  pw.SizedBox(width: 8),
+                  pw.Expanded(
+                    flex: 4,
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text(
+                          'Condición de Venta: ${quote.priceListLabel.toUpperCase()}',
+                          style: pw.TextStyle(
+                            fontSize: 8,
+                            fontWeight: pw.FontWeight.bold,
+                          ),
+                        ),
+                        pw.SizedBox(height: 2),
+                        pw.Text(
+                          'Cond. IVA / Doc: Consumidor Final',
+                          style: const pw.TextStyle(fontSize: 8),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
             ),
-            pw.SizedBox(height: 20),
 
-            // ── DATOS CLIENTE ────────────────────────────────────────────
-            if (quote.customerName != null || quote.customerPhone != null) ...[
-              pw.Container(
-                decoration: const pw.BoxDecoration(
-                  color: bgLight,
-                  borderRadius: pw.BorderRadius.all(pw.Radius.circular(6)),
-                ),
-                padding: const pw.EdgeInsets.all(12),
-                child: pw.Row(
-                  children: [
-                    pw.Expanded(
-                      child: pw.Column(
-                        crossAxisAlignment: pw.CrossAxisAlignment.start,
-                        children: [
-                          pw.Text('CLIENTE', style: pw.TextStyle(fontSize: 9, color: textGrey, fontWeight: pw.FontWeight.bold)),
-                          pw.SizedBox(height: 4),
-                          if (quote.customerName != null)
-                            pw.Text(quote.customerName!, style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold)),
-                          if (quote.customerPhone != null)
-                            pw.Text('Tel: ${quote.customerPhone}', style: const pw.TextStyle(fontSize: 11)),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              pw.SizedBox(height: 16),
-            ],
-            
-            if (vendorName != null) ...[
-              pw.Container(
-                decoration: const pw.BoxDecoration(
-                  color: bgLight,
-                  borderRadius: pw.BorderRadius.all(pw.Radius.circular(6)),
-                ),
-                padding: const pw.EdgeInsets.all(12),
-                child: pw.Row(
-                  children: [
-                    pw.Expanded(
-                      child: pw.Column(
-                        crossAxisAlignment: pw.CrossAxisAlignment.start,
-                        children: [
-                          pw.Text('VENDEDOR', style: pw.TextStyle(fontSize: 9, color: textGrey, fontWeight: pw.FontWeight.bold)),
-                          pw.SizedBox(height: 4),
-                          pw.Text(vendorName.toUpperCase(), style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold)),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              pw.SizedBox(height: 16),
-            ],
+            pw.SizedBox(height: 6),
 
-            // ── CONDICIÓN DE VENTA (bloque propio si hay lista activa) ────────
-            if (quote.priceList != 'base') ...[
-              pw.Container(
-                decoration: pw.BoxDecoration(
-                  color: PdfColor.fromInt(0xFFE8F5E9),
-                  borderRadius: pw.BorderRadius.all(pw.Radius.circular(6)),
-                  border: pw.Border.all(color: PdfColor.fromInt(0xFF2E7D32), width: 0.5),
-                ),
-                padding: const pw.EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                child: pw.Row(
-                  children: [
-                    pw.Text('Condición de Venta: ',
-                        style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold,
-                            color: PdfColor.fromInt(0xFF1B5E20))),
-                    pw.Text(quote.priceListLabel,
-                        style: pw.TextStyle(fontSize: 10,
-                            color: PdfColor.fromInt(0xFF2E7D32), fontWeight: pw.FontWeight.bold)),
-                  ],
-                ),
-              ),
-              pw.SizedBox(height: 12),
-            ],
-
-            // ── TABLA DE ÍTEMS ───────────────────────────────────────────
+            // ── 4. TABLA TÉCNICA DE ARTÍCULOS ───────────────────────────────
             pw.Table(
-              border: pw.TableBorder(
-                bottom: const pw.BorderSide(color: PdfColors.grey300, width: 0.5),
-                horizontalInside: const pw.BorderSide(color: PdfColors.grey200, width: 0.5),
-              ),
-              columnWidths: {
-                0: const pw.FixedColumnWidth(36), // FOTO / Miniatura
-                1: const pw.FlexColumnWidth(5),   // DESCRIPCIÓN
-                2: const pw.FlexColumnWidth(1.4), // CANT.
-                3: const pw.FlexColumnWidth(1.8), // PRECIO UNIT.
-                4: const pw.FlexColumnWidth(1.8), // SUBTOTAL
+              border: pw.TableBorder.all(color: PdfColors.black, width: 0.5),
+              columnWidths: const {
+                0: pw.FlexColumnWidth(1.3), // CÓDIGO
+                1: pw.FlexColumnWidth(1.2), // CANT.
+                2: pw.FlexColumnWidth(5.1), // DESCRIPCIÓN
+                3: pw.FlexColumnWidth(2.0), // PRECIO UNIT.
+                4: pw.FlexColumnWidth(2.0), // SUBTOTAL
               },
               children: [
-                // Header row
                 pw.TableRow(
-                  decoration: const pw.BoxDecoration(color: primary),
-                  repeat: true, // Repite la cabecera de la tabla si salta de hoja
+                  decoration: const pw.BoxDecoration(color: PdfColors.grey200),
+                  repeat: true,
                   children: [
-                    _th('', align: pw.TextAlign.center),
-                    _th('DESCRIPCIÓN'),
+                    _th('CÓDIGO', align: pw.TextAlign.center),
                     _th('CANT.', align: pw.TextAlign.center),
+                    _th('DESCRIPCIÓN', align: pw.TextAlign.left),
                     _th('PRECIO UNIT.', align: pw.TextAlign.right),
                     _th('SUBTOTAL', align: pw.TextAlign.right),
                   ],
                 ),
-                // Items
-                ...quote.items.asMap().entries.map((e) {
-                  final i = e.key;
-                  final item = e.value;
-                  final isEven = i % 2 == 0;
+                ...quote.items.asMap().entries.map((entry) {
+                  final i = entry.key;
+                  final item = entry.value;
                   final memImg = itemThumbnails[i];
+
+                  final isWeight = item.product?.isSoldByWeight ??
+                      (item.quantity % 1 != 0);
+                  final qtyText = isWeight
+                      ? '${item.quantity.toQty()} kg'
+                      : (item.quantity % 1 == 0
+                          ? item.quantity.toInt().toString()
+                          : item.quantity.toQty());
+
+                  final rawCode = item.product?.internalCode.trim() ?? '';
+                  final codeText = rawCode.isNotEmpty
+                      ? rawCode
+                      : (item.productId != null ? '#${item.productId}' : '-');
+
                   return pw.TableRow(
-                    decoration: pw.BoxDecoration(color: isEven ? PdfColors.white : bgLight),
                     children: [
-                      _thumbnailCell(memImg),
-                      _td(item.productName),
-                      _td(
-                        item.quantity % 1 == 0
-                            ? item.quantity.toInt().toString()
-                            : item.quantity.toQty(),
-                        align: pw.TextAlign.center,
+                      _td(codeText, align: pw.TextAlign.center),
+                      _td(qtyText, align: pw.TextAlign.center),
+                      pw.Padding(
+                        padding: const pw.EdgeInsets.symmetric(
+                          horizontal: 5,
+                          vertical: 4.5,
+                        ),
+                        child: pw.Row(
+                          crossAxisAlignment: pw.CrossAxisAlignment.center,
+                          children: [
+                            if (memImg != null) ...[
+                              pw.Container(
+                                width: 22,
+                                height: 22,
+                                margin: const pw.EdgeInsets.only(right: 6),
+                                decoration: pw.BoxDecoration(
+                                  border: pw.Border.all(
+                                    color: PdfColors.grey400,
+                                    width: 0.5,
+                                  ),
+                                ),
+                                child: pw.Image(
+                                  memImg,
+                                  fit: pw.BoxFit.cover,
+                                ),
+                              ),
+                            ],
+                            pw.Expanded(
+                              child: pw.Text(
+                                item.productName.toUpperCase(),
+                                style: pw.TextStyle(
+                                  fontSize: 8.5,
+                                  fontWeight: pw.FontWeight.bold,
+                                  color: PdfColors.black,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                      _td(currFmt.format(item.unitPrice), align: pw.TextAlign.right),
-                      _td(currFmt.format(item.subtotal), align: pw.TextAlign.right),
+                      _td(
+                        formatCurrency(item.unitPrice),
+                        align: pw.TextAlign.right,
+                      ),
+                      _td(
+                        formatCurrency(item.subtotal),
+                        align: pw.TextAlign.right,
+                        bold: true,
+                      ),
                     ],
                   );
                 }),
               ],
             ),
 
-            pw.SizedBox(height: 16),
+            pw.SizedBox(height: 8),
 
-            // ── TOTALES ──────────────────────────────────────────────────
-            pw.Align(
-              alignment: pw.Alignment.centerRight,
-              child: pw.Container(
-                width: 240,
-                decoration: const pw.BoxDecoration(
-                  color: bgLight,
-                  borderRadius: pw.BorderRadius.all(pw.Radius.circular(6)),
-                ),
-                padding: const pw.EdgeInsets.all(12),
-                child: pw.Column(
-                  children: [
-                    _totalRow('Subtotal', currFmt.format(quote.subtotal)),
-                    pw.Divider(color: PdfColors.grey300, thickness: 0.5),
-                    _totalRow(
-                      'TOTAL',
-                      currFmt.format(quote.total),
-                      bold: true,
-                      valueColor: accent,
-                      labelColor: primary,
+            // ── 5. BLOQUE INFERIOR DE OBSERVACIONES Y TOTALES REGLAMENTARIO ─
+            pw.Container(
+              decoration: pw.BoxDecoration(
+                border: pw.Border.all(color: PdfColors.black, width: 1.0),
+              ),
+              padding: const pw.EdgeInsets.all(8),
+              child: pw.Row(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  // OBSERVACIONES Y CONDICIONES (IZQUIERDA)
+                  pw.Expanded(
+                    flex: 5,
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text(
+                          'OBSERVACIONES Y CONDICIONES COMERCIALES',
+                          style: pw.TextStyle(
+                            fontSize: 8.5,
+                            fontWeight: pw.FontWeight.bold,
+                          ),
+                        ),
+                        pw.SizedBox(height: 3),
+                        if (sanitizedNotes != null &&
+                            sanitizedNotes.isNotEmpty) ...[
+                          pw.Text(
+                            sanitizedNotes,
+                            style: const pw.TextStyle(fontSize: 8),
+                          ),
+                          pw.SizedBox(height: 4),
+                        ],
+                        pw.Text(
+                          '- Documento de cotizacion no vinculante emitido a titulo informativo.',
+                          style: const pw.TextStyle(
+                            fontSize: 7.2,
+                            color: PdfColors.grey800,
+                          ),
+                        ),
+                        pw.Text(
+                          '- Los precios y la disponibilidad de stock quedan sujetos a confirmacion y/o modificacion al momento de concretar la operacion.',
+                          style: const pw.TextStyle(
+                            fontSize: 7.2,
+                            color: PdfColors.grey800,
+                          ),
+                        ),
+                        pw.SizedBox(height: 3),
+                        pw.Text(
+                          'Total de articulos cotizados: $totalUnits unidades',
+                          style: pw.TextStyle(
+                            fontSize: 7.5,
+                            fontWeight: pw.FontWeight.bold,
+                            color: PdfColors.black,
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+
+                  pw.SizedBox(width: 14),
+
+                  // TOTALES (DERECHA)
+                  pw.Expanded(
+                    flex: 5,
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.end,
+                      children: [
+                        if ((quote.subtotal - quote.total).abs() > 0.01) ...[
+                          _summaryRow(
+                            'Subtotal Artículos:',
+                            formatCurrency(quote.subtotal),
+                          ),
+                          _summaryRow(
+                            'Descuento / Bonificación:',
+                            '- ${formatCurrency(quote.subtotal - quote.total)}',
+                          ),
+                        ],
+                        pw.Container(
+                          margin: const pw.EdgeInsets.only(top: 2),
+                          padding: const pw.EdgeInsets.symmetric(
+                            vertical: 6,
+                            horizontal: 8,
+                          ),
+                          decoration: const pw.BoxDecoration(
+                            color: PdfColors.grey200,
+                            border: pw.Border(
+                              top: pw.BorderSide(
+                                color: PdfColors.black,
+                                width: 1.0,
+                              ),
+                            ),
+                          ),
+                          child: pw.Row(
+                            mainAxisAlignment:
+                                pw.MainAxisAlignment.spaceBetween,
+                            children: [
+                              pw.Text(
+                                'TOTAL PRESUPUESTO:',
+                                style: pw.TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: pw.FontWeight.bold,
+                                ),
+                              ),
+                              pw.SizedBox(width: 8),
+                              pw.Text(
+                                formatCurrency(quote.total),
+                                style: pw.TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: pw.FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ),
-
-            // ── NOTAS ────────────────────────────────────────────────────
-            if (quote.notes != null && quote.notes!.isNotEmpty) ...[
-              pw.SizedBox(height: 20),
-              pw.Text('Condiciones y Observaciones',
-                  style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: textGrey)),
-              pw.SizedBox(height: 4),
-              pw.Text(quote.notes!, style: const pw.TextStyle(fontSize: 10)),
-            ],
           ];
         },
       ),
@@ -792,102 +1214,95 @@ class QuotePdfService {
     required String businessName,
     String? businessAddress,
     String? businessPhone,
+    String? businessCuit,
+    String? businessTaxCondition,
+    String? businessIibb,
+    String? businessActivityStartDate,
+    dynamic businessSettings,
     String? vendorName,
     String? logoUrl,
     Uint8List? logoBytes,
     http.Client? httpClient,
     String? baseUrl,
+    String paperSize = 'a4',
   }) async {
     return generateQuotePdf(
       quote: quote,
       businessName: businessName,
       businessAddress: businessAddress,
       businessPhone: businessPhone,
+      businessCuit: businessCuit,
+      businessTaxCondition: businessTaxCondition,
+      businessIibb: businessIibb,
+      businessActivityStartDate: businessActivityStartDate,
+      businessSettings: businessSettings,
       vendorName: vendorName,
       logoUrl: logoUrl,
       logoBytes: logoBytes,
       httpClient: httpClient,
       baseUrl: baseUrl,
+      paperSize: paperSize,
     );
   }
 
-  static pw.Widget _thumbnailCell(pw.MemoryImage? memoryImage) {
+  static pw.Widget _th(
+    String text, {
+    pw.TextAlign align = pw.TextAlign.left,
+  }) =>
+      pw.Padding(
+        padding: const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 5),
+        child: pw.Text(
+          text,
+          style: pw.TextStyle(
+            color: PdfColors.black,
+            fontSize: 8,
+            fontWeight: pw.FontWeight.bold,
+          ),
+          textAlign: align,
+        ),
+      );
+
+  static pw.Widget _td(
+    String text, {
+    pw.TextAlign align = pw.TextAlign.left,
+    bool bold = false,
+  }) =>
+      pw.Padding(
+        padding: const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 4.5),
+        child: pw.Text(
+          text,
+          style: pw.TextStyle(
+            fontSize: 8.5,
+            fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
+            color: PdfColors.black,
+          ),
+          textAlign: align,
+        ),
+      );
+
+  static pw.Widget _summaryRow(String label, String value) {
     return pw.Padding(
-      padding: const pw.EdgeInsets.symmetric(horizontal: 2, vertical: 3),
-      child: pw.Center(
-        child: memoryImage != null
-            ? pw.Container(
-                width: 32,
-                height: 32,
-                decoration: pw.BoxDecoration(
-                  borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
-                  border: pw.Border.all(color: PdfColors.grey300, width: 0.5),
-                ),
-                child: pw.ClipRRect(
-                  horizontalRadius: 4,
-                  verticalRadius: 4,
-                  child: pw.Image(
-                    memoryImage,
-                    fit: pw.BoxFit.cover,
-                  ),
-                ),
-              )
-            : pw.Container(
-                width: 32,
-                height: 32,
-                decoration: const pw.BoxDecoration(
-                  color: PdfColors.grey100,
-                  borderRadius: pw.BorderRadius.all(pw.Radius.circular(4)),
-                ),
-                child: pw.Center(
-                  child: pw.Text(
-                    '-',
-                    style: const pw.TextStyle(color: PdfColors.grey400, fontSize: 10),
-                  ),
-                ),
-              ),
+      padding: const pw.EdgeInsets.only(bottom: 2.5),
+      child: pw.Row(
+        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+        children: [
+          pw.Text(
+            label,
+            style: const pw.TextStyle(
+              fontSize: 8.5,
+              color: PdfColors.grey900,
+            ),
+          ),
+          pw.Text(
+            value,
+            style: pw.TextStyle(
+              fontSize: 8.5,
+              fontWeight: pw.FontWeight.bold,
+              color: PdfColors.black,
+            ),
+          ),
+        ],
       ),
     );
   }
-
-  static pw.Widget _th(String text, {pw.TextAlign align = pw.TextAlign.left}) =>
-      pw.Padding(
-        padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-        child: pw.Text(text,
-            style: pw.TextStyle(
-              color: PdfColors.white,
-              fontSize: 9,
-              fontWeight: pw.FontWeight.bold,
-            ),
-            textAlign: align),
-      );
-
-  static pw.Widget _td(String text, {pw.TextAlign align = pw.TextAlign.left}) =>
-      pw.Padding(
-        padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-        child: pw.Text(text, style: const pw.TextStyle(fontSize: 10), textAlign: align),
-      );
-
-  static pw.Widget _totalRow(String label, String value,
-      {bool bold = false, PdfColor? valueColor, PdfColor? labelColor}) {
-    const grey = PdfColor.fromInt(0xFF6B7280);
-    return pw.Row(
-      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-      children: [
-        pw.Text(label,
-            style: pw.TextStyle(
-              fontSize: 11,
-              fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
-              color: labelColor ?? grey,
-            )),
-        pw.Text(value,
-            style: pw.TextStyle(
-              fontSize: bold ? 14 : 11,
-              fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
-              color: valueColor,
-            )),
-      ],
-    );
-  }
 }
-
