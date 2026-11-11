@@ -426,6 +426,85 @@ void main() {
 
       expect(find.text('S/D (Sin Desglose / Hist.)'), findsOneWidget);
       expect(find.text('Neto 21% (\$)'), findsNothing);
+      final convertBtn = find.text('Convertir a Factura A y Calcular IVA 21%');
+      expect(convertBtn, findsOneWidget);
+
+      await tester.ensureVisible(convertBtn);
+      await tester.pumpAndSettle();
+      await tester.tap(convertBtn);
+      await tester.pumpAndSettle();
+
+      expect(find.text('A (Discrimina IVA)'), findsOneWidget);
+      expect(find.text('Neto 21% (\$)'), findsOneWidget);
+      expect(find.textContaining('Suma fiscal coincide'), findsOneWidget);
+
+      // Verify per-product IVA badge is visible and switching to 10.5% recalculates Neto 10.5% and IVA 10.5%
+      expect(find.text('IVA 21%'), findsOneWidget);
+      await tester.tap(find.text('IVA 21%'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('IVA 10.5% (Reducido)'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('IVA 10.5%'), findsOneWidget);
+      expect(find.textContaining('Suma fiscal coincide'), findsOneWidget);
+    });
+
+    testWidgets('Resistencia -> Formosa Factura A Mayorista: Costos Netos (+IVA) + Percepción IIBB Rentas 2% s/Sub+IVA',
+        (tester) async {
+      tester.view.physicalSize = const Size(1280, 860);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      final resistInvoice = {
+        'id': 88,
+        'type': 'invoice',
+        'voucher_letter': 'A',
+        'affects_vat_book': true,
+        'total_amount': 230159.02,
+        'items': [
+          {
+            'product_id': 1,
+            'product_name': 'Mercadería Mayorista Resistencia',
+            'quantity': 1,
+            'unit_cost': 230159.02,
+            'price': 320000.0,
+          }
+        ],
+      };
+
+      await tester.pumpWidget(buildTestDialog(initialInvoice: resistInvoice));
+      await tester.pumpAndSettle();
+
+      // Switch to 'Costos Netos (+IVA)'
+      final netModeBtn = find.text('Costos Netos (+IVA)');
+      expect(netModeBtn, findsOneWidget);
+      await tester.ensureVisible(netModeBtn);
+      await tester.pumpAndSettle();
+      await tester.tap(netModeBtn);
+      await tester.pumpAndSettle();
+
+      // Verify Net 21% is 230.159,02 and IVA 21% is 48.333,39
+      expect(find.text('230.159,02'), findsWidgets);
+      expect(find.text('48.333,39'), findsWidgets);
+
+      // Open the % IIBB Rentas calculator menu and select '2% s/ Subtotal+IVA (2,42% s/Neto - Ej. Resistencia)'
+      final iibbRateBtn = find.text('% ▾');
+      expect(iibbRateBtn, findsOneWidget);
+      await tester.ensureVisible(iibbRateBtn);
+      await tester.pumpAndSettle();
+      await tester.tap(iibbRateBtn);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('2% s/ Subtotal+IVA (2,42% s/Neto - Ej. Resistencia)'));
+      await tester.pumpAndSettle();
+
+      // Verify Percepción IIBB Formosa = 5.569,85, badge shows '2% c/IVA ▾', and Suma fiscal coincide
+      expect(find.text('5.569,85'), findsOneWidget);
+      expect(find.text('2% c/IVA ▾'), findsOneWidget);
+      expect(find.textContaining('Suma fiscal coincide'), findsOneWidget);
     });
   });
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/supplier_provider.dart';
+import '../../../settings/presentation/providers/settings_provider.dart';
 
 class SupplierFormDialog extends StatefulWidget {
   final int? supplierId;
@@ -110,6 +111,10 @@ class _SupplierFormDialogState extends State<SupplierFormDialog> {
   @override
   Widget build(BuildContext context) {
     final isEditing = widget.supplierId != null;
+    bool isRI = false;
+    try {
+      isRI = context.watch<SettingsProvider>().isResponsableInscripto;
+    } catch (_) {}
 
     return AlertDialog(
       title: Text(isEditing ? 'Editar Proveedor' : 'Nuevo Proveedor', style: const TextStyle(fontWeight: FontWeight.bold)),
@@ -146,23 +151,25 @@ class _SupplierFormDialogState extends State<SupplierFormDialog> {
                         ),
                       ),
                     ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      flex: 3,
-                      child: DropdownButtonFormField<String>(
-                        // ignore: deprecated_member_use
-                        value: _taxCategory,
-                        decoration: const InputDecoration(
-                          labelText: 'Condición IVA',
-                          border: OutlineInputBorder(),
-                          isDense: true,
+                    if (isRI) ...[
+                      const SizedBox(width: 16),
+                      Expanded(
+                        flex: 3,
+                        child: DropdownButtonFormField<String>(
+                          // ignore: deprecated_member_use
+                          value: _taxCategory,
+                          decoration: const InputDecoration(
+                            labelText: 'Condición IVA',
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                          items: _taxCategories.map((cat) => DropdownMenuItem(value: cat, child: Text(cat, overflow: TextOverflow.ellipsis))).toList(),
+                          onChanged: (val) {
+                            if (val != null) setState(() => _taxCategory = val);
+                          },
                         ),
-                        items: _taxCategories.map((cat) => DropdownMenuItem(value: cat, child: Text(cat, overflow: TextOverflow.ellipsis))).toList(),
-                        onChanged: (val) {
-                          if (val != null) setState(() => _taxCategory = val);
-                        },
                       ),
-                    ),
+                    ],
                   ],
                 ),
                 const SizedBox(height: 16),

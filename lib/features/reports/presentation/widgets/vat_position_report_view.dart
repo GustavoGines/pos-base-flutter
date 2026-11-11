@@ -344,7 +344,16 @@ class _VatPositionReportViewState extends State<VatPositionReportView> {
                         },
                       ),
 
-                      const SizedBox(height: 24),
+                      const SizedBox(height: 18),
+
+                      // ── 3.5. Resumen Provincial: Percepciones IIBB (Rentas / ATP) ──
+                      _buildProvincialIibbCard(
+                        iibbPerceptions: iibbPerceptions,
+                        monthName: _months[currentMonth - 1],
+                        year: currentYear,
+                      ),
+
+                      const SizedBox(height: 18),
 
                       // ── 4. Disclaimer Legal Contable Obligatorio ──
                       Container(
@@ -683,13 +692,87 @@ class _VatPositionReportViewState extends State<VatPositionReportView> {
           _buildDetailItem('IVA Crédito 10.5%', '\$${credit105.toCurrency()}'),
           if (credit27 != 0) _buildDetailItem('IVA Crédito 27%', '\$${credit27.toCurrency()}'),
           _buildDetailItem('Percepciones IVA Sufridas', '\$${ivaPerceptions.toCurrency()}'),
-          _buildDetailItem('Percepciones IIBB Sufridas', '\$${iibbPerceptions.toCurrency()}'),
+          _buildDetailItem(
+            'Percepciones IIBB Sufridas (Rentas)',
+            '\$${iibbPerceptions.toCurrency()}',
+            isHighlight: iibbPerceptions > 0,
+            color: iibbPerceptions > 0 ? Colors.deepPurple.shade800 : null,
+          ),
           const Divider(height: 12),
           _buildDetailItem('Total Neto Gravado Compras', '\$${purchasesNet.toCurrency()}'),
           _buildDetailItem('Total Compras Facturadas', '\$${totalPurchasesAmount.toCurrency()}'),
           _buildDetailItem('Comprobantes Recibidos', '$purchasesCount fac. · $purchasesNcCount NC'),
           const Divider(height: 12),
           _buildDetailItem('TOTAL CRÉDITO FISCAL', '\$${fiscalCredit.toCurrency()}', isHighlight: true, color: Colors.teal.shade800),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProvincialIibbCard({
+    required double iibbPerceptions,
+    required String monthName,
+    required int year,
+  }) {
+    final hasIibb = iibbPerceptions > 0;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+      decoration: BoxDecoration(
+        color: hasIibb ? Colors.deepPurple.shade50.withValues(alpha: 0.65) : Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: hasIibb ? Colors.deepPurple.shade200 : Colors.grey.shade300,
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: hasIibb ? Colors.deepPurple.shade100 : Colors.grey.shade200,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(
+              Icons.account_balance_wallet_outlined,
+              size: 22,
+              color: hasIibb ? Colors.deepPurple.shade800 : Colors.blueGrey.shade600,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'CRÉDITO PROVINCIAL POR PERCEPCIONES IIBB (RENTAS / ATP) — $monthName $year',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.4,
+                    color: hasIibb ? Colors.deepPurple.shade900 : Colors.blueGrey.shade700,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  'Pago a cuenta provincial sufrido en facturas de proveedores. No se resta del IVA Nacional (ARCA), sino que se descuenta directamente en la Declaración Jurada mensual de Ingresos Brutos (Rentas / ATP Formosa).',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    color: hasIibb ? Colors.deepPurple.shade800 : Colors.blueGrey.shade600,
+                    height: 1.3,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 16),
+          Text(
+            '\$${iibbPerceptions.toCurrency()}',
+            style: TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w900,
+              color: hasIibb ? Colors.deepPurple.shade900 : Colors.blueGrey.shade500,
+            ),
+          ),
         ],
       ),
     );

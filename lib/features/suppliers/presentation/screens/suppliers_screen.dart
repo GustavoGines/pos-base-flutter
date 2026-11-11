@@ -12,6 +12,7 @@ import 'supplier_current_account_screen.dart';
 import '../../../../core/constants/app_permissions.dart';
 import '../../../../core/utils/currency_formatter.dart';
 import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
+import '../../../settings/presentation/providers/settings_provider.dart';
 
 class SuppliersScreen extends StatefulWidget {
   const SuppliersScreen({super.key});
@@ -140,6 +141,11 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
 
   @override
   Widget build(BuildContext context) {
+    bool isRI = false;
+    try {
+      isRI = context.watch<SettingsProvider>().isResponsableInscripto;
+    } catch (_) {}
+
     return Scaffold(
       appBar: const GlobalAppBar(
         currentRoute: '/suppliers',
@@ -348,12 +354,52 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
                                         ),
-                                        if (supplier.cuit != null && supplier.cuit!.isNotEmpty)
-                                          Text(
-                                            'CUIT: ${supplier.cuit}',
-                                            style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
+                                        if ((supplier.cuit != null && supplier.cuit!.isNotEmpty) ||
+                                            (isRI && supplier.taxCategory != null && supplier.taxCategory!.isNotEmpty))
+                                          Row(
+                                            children: [
+                                              if (supplier.cuit != null && supplier.cuit!.isNotEmpty)
+                                                Flexible(
+                                                  child: Text(
+                                                    'CUIT: ${supplier.cuit}',
+                                                    style: TextStyle(color: Colors.grey.shade600, fontSize: 12.5),
+                                                    maxLines: 1,
+                                                    overflow: TextOverflow.ellipsis,
+                                                  ),
+                                                ),
+                                              if (isRI && supplier.taxCategory != null && supplier.taxCategory!.isNotEmpty) ...[
+                                                if (supplier.cuit != null && supplier.cuit!.isNotEmpty)
+                                                  const SizedBox(width: 6),
+                                                Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                                  decoration: BoxDecoration(
+                                                    color: supplier.taxCategory == 'Responsable Inscripto'
+                                                        ? Colors.indigo.shade50
+                                                        : Colors.blueGrey.shade50,
+                                                    borderRadius: BorderRadius.circular(4),
+                                                    border: Border.all(
+                                                      color: supplier.taxCategory == 'Responsable Inscripto'
+                                                          ? Colors.indigo.shade200
+                                                          : Colors.blueGrey.shade200,
+                                                    ),
+                                                  ),
+                                                  child: Text(
+                                                    supplier.taxCategory == 'Responsable Inscripto'
+                                                        ? 'RI'
+                                                        : (supplier.taxCategory == 'Monotributista'
+                                                            ? 'Monotributo'
+                                                            : supplier.taxCategory!),
+                                                    style: TextStyle(
+                                                      fontSize: 10,
+                                                      fontWeight: FontWeight.bold,
+                                                      color: supplier.taxCategory == 'Responsable Inscripto'
+                                                          ? Colors.indigo.shade800
+                                                          : Colors.blueGrey.shade700,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ],
                                           ),
                                       ],
                                     ),

@@ -6,6 +6,7 @@ import 'package:frontend_desktop/core/presentation/widgets/compact_date_range_pi
 import '../../../../core/constants/app_permissions.dart';
 import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
 import '../../../catalog/presentation/providers/catalog_provider.dart';
+import '../../../settings/presentation/providers/settings_provider.dart';
 import '../../providers/supplier_provider.dart';
 import 'supplier_invoice_form_dialog.dart';
 
@@ -315,6 +316,38 @@ class _SupplierDocumentDetailDialogState extends State<SupplierDocumentDetailDia
     final rawItems = _doc['items'] as List<dynamic>? ?? [];
     final rawAudits = _doc['audits'] as List<dynamic>? ?? [];
 
+    bool isRI = false;
+    try {
+      isRI = context.watch<SettingsProvider>().isResponsableInscripto;
+    } catch (_) {}
+
+    final rawLetter = _doc['voucher_letter']?.toString().toUpperCase();
+    final net21 = double.tryParse((_doc['net_21'] ?? 0).toString()) ?? 0.0;
+    final iva21 = double.tryParse((_doc['iva_21'] ?? 0).toString()) ?? 0.0;
+    final net105 = double.tryParse((_doc['net_105'] ?? 0).toString()) ?? 0.0;
+    final iva105 = double.tryParse((_doc['iva_105'] ?? 0).toString()) ?? 0.0;
+    final net27 = double.tryParse((_doc['net_27'] ?? 0).toString()) ?? 0.0;
+    final iva27 = double.tryParse((_doc['iva_27'] ?? 0).toString()) ?? 0.0;
+    final ivaPerc = double.tryParse((_doc['iva_perception'] ?? 0).toString()) ?? 0.0;
+    final iibbPerc = double.tryParse((_doc['iibb_perception'] ?? 0).toString()) ?? 0.0;
+    final nonTaxed = double.tryParse((_doc['non_taxed_amount'] ?? 0).toString()) ?? 0.0;
+    final exempt = double.tryParse((_doc['exempt_amount'] ?? 0).toString()) ?? 0.0;
+    final intTaxes = double.tryParse((_doc['internal_taxes'] ?? 0).toString()) ?? 0.0;
+    final totalNetFiscal = net21 + net105 + net27;
+    final totalIvaFiscal = iva21 + iva105 + iva27;
+    final totalPercFiscal = ivaPerc + iibbPerc + intTaxes;
+    final totalNonTaxedExFiscal = nonTaxed + exempt;
+    final hasAnyFiscal =
+        (totalNetFiscal + totalIvaFiscal + totalPercFiscal + totalNonTaxedExFiscal) > 0;
+    final affectsVatBook = _doc['affects_vat_book'] == null ||
+        _doc['affects_vat_book'] == 1 ||
+        _doc['affects_vat_book'] == true ||
+        _doc['affects_vat_book'].toString() == 'true';
+    final effectiveLetter = (rawLetter != null && rawLetter.isNotEmpty)
+        ? rawLetter
+        : (hasAnyFiscal ? 'A' : 'S/D');
+    final showFiscalInfo = isRI && type != 'delivery_note';
+
     final screenSize = MediaQuery.of(context).size;
 
     return Dialog(
@@ -355,6 +388,33 @@ class _SupplierDocumentDetailDialogState extends State<SupplierDocumentDetailDia
                           ),
                         ),
                       ),
+                      if (showFiscalInfo)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: effectiveLetter == 'S/D'
+                                ? Colors.blueGrey.shade50
+                                : Colors.indigo.shade50,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: effectiveLetter == 'S/D'
+                                  ? Colors.blueGrey.shade300
+                                  : Colors.indigo.shade300,
+                            ),
+                          ),
+                          child: Text(
+                            effectiveLetter == 'S/D'
+                                ? 'COMP. S/D'
+                                : '${type == 'credit_note' ? 'NC' : 'FAC'} $effectiveLetter',
+                            style: TextStyle(
+                              color: effectiveLetter == 'S/D'
+                                  ? Colors.blueGrey.shade800
+                                  : Colors.indigo.shade800,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 11.5,
+                            ),
+                          ),
+                        ),
                       Text(
                         invNumber != null && invNumber.isNotEmpty
                             ? 'Comprobante #$invNumber'
@@ -492,6 +552,79 @@ class _SupplierDocumentDetailDialogState extends State<SupplierDocumentDetailDia
                       _metaItem(Icons.notes_outlined, 'Concepto', desc),
                     ],
                   ),
+                  if (showFiscalInfo) ...[
+                    const SizedBox(height: 8),
+                    const Divider(height: 1),
+                    const SizedBox(height: 8),
+                    if (hasAnyFiscal)
+                      Wrap(
+                        spacing: 20,
+                        runSpacing: 6,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.account_balance_rounded, size: 15, color: Colors.indigo.shade700),
+                              const SizedBox(width: 5),
+                              Text(
+                                'Desglose Fiscal (${affectsVatBook ? 'Libro IVA: Computa' : 'Libro IVA: Excluido'}):',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.indigo.shade900,
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (totalNetFiscal > 0)
+                            Text(
+                              'Neto Grav.: ${currency.format(totalNetFiscal)}',
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                            ),
+                          if (totalIvaFiscal > 0)
+                            Text(
+                              'IVA Créd. Fiscal: ${currency.format(totalIvaFiscal)}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.green.shade800,
+                              ),
+                            ),
+                          if (totalPercFiscal > 0)
+                            Text(
+                              'Percep./Imp. Int.: ${currency.format(totalPercFiscal)}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.deepPurple.shade700,
+                              ),
+                            ),
+                          if (totalNonTaxedExFiscal > 0)
+                            Text(
+                              'No Grav./Exento: ${currency.format(totalNonTaxedExFiscal)}',
+                              style: TextStyle(fontSize: 12, color: Colors.blueGrey.shade700),
+                            ),
+                        ],
+                      )
+                    else
+                      Row(
+                        children: [
+                          Icon(Icons.info_outline, size: 15, color: Colors.blueGrey.shade700),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              'Comprobante S/D sin desglose de IVA (imputado en No Gravado). Puede usar "Editar" para discriminar IVA.',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.blueGrey.shade800,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                  ],
                   if (isEdited && _doc['last_edited_by_name'] != null) ...[
                     const SizedBox(height: 6),
                     Text(
@@ -1682,6 +1815,22 @@ class _SupplierDocumentsHistoryDialogState extends State<SupplierDocumentsHistor
                               final isDeleted =
                                   doc['is_deleted'] == true || doc['deleted_at'] != null;
 
+                              bool isRI = false;
+                              try {
+                                isRI = context.read<SettingsProvider>().isResponsableInscripto;
+                              } catch (_) {}
+                              final rawDocLetter = doc['voucher_letter']?.toString().toUpperCase();
+                              final docHasIva = (double.tryParse((doc['iva_21'] ?? 0).toString()) ?? 0) > 0 ||
+                                  (double.tryParse((doc['iva_105'] ?? 0).toString()) ?? 0) > 0 ||
+                                  (double.tryParse((doc['iva_27'] ?? 0).toString()) ?? 0) > 0 ||
+                                  (double.tryParse((doc['net_21'] ?? 0).toString()) ?? 0) > 0;
+                              final docFiscalBadge = (type != 'delivery_note' &&
+                                      (isRI || (rawDocLetter != null && rawDocLetter.isNotEmpty) || docHasIva))
+                                  ? ((rawDocLetter != null && rawDocLetter.isNotEmpty)
+                                      ? '${type == 'credit_note' ? 'NC' : 'FAC'} $rawDocLetter'
+                                      : (docHasIva ? '${type == 'credit_note' ? 'NC' : 'FAC'} A' : 'S/D'))
+                                  : null;
+
                               final subtitleParts = <String>[
                                 dateStr,
                                 'Cargó: $userName',
@@ -1739,6 +1888,34 @@ class _SupplierDocumentsHistoryDialogState extends State<SupplierDocumentsHistor
                                               isDeleted ? TextDecoration.lineThrough : null,
                                         ),
                                       ),
+                                      if (docFiscalBadge != null)
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 6,
+                                            vertical: 2,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: docFiscalBadge == 'S/D'
+                                                ? Colors.blueGrey.shade50
+                                                : Colors.indigo.shade50,
+                                            borderRadius: BorderRadius.circular(6),
+                                            border: Border.all(
+                                              color: docFiscalBadge == 'S/D'
+                                                  ? Colors.blueGrey.shade200
+                                                  : Colors.indigo.shade200,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            docFiscalBadge,
+                                            style: TextStyle(
+                                              fontSize: 10.5,
+                                              fontWeight: FontWeight.bold,
+                                              color: docFiscalBadge == 'S/D'
+                                                  ? Colors.blueGrey.shade700
+                                                  : Colors.indigo.shade800,
+                                            ),
+                                          ),
+                                        ),
                                       Text(
                                         doc['invoice_number'] != null &&
                                                 doc['invoice_number'].toString().isNotEmpty

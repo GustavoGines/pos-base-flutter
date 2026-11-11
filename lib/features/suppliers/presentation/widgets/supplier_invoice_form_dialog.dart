@@ -27,6 +27,7 @@ class _InvoiceItemModel {
   double? suggestedPrice;
   double manualPrice;
   bool updatePrice;
+  double vatRate; // 21.0 | 10.5 | 27.0 | 0.0
   String priceAnchor = 'cost'; // 'cost' | 'selling'
   late final TextEditingController qtyCtrl;
   late final TextEditingController costCtrl;
@@ -38,7 +39,8 @@ class _InvoiceItemModel {
     this.quantity = 1,
     required this.newCost,
     required this.manualPrice,
-    this.updatePrice = false,
+    this.updatePrice = true,
+    this.vatRate = 21.0,
   }) {
     priceAnchor = newCost > 0 ? 'cost' : 'selling';
     final qtyStr = product.isSoldByWeight || product.unitType == 'kg'
@@ -101,6 +103,12 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
   String _voucherLetter = 'A';
   bool _affectsVatBook = true;
   bool _isFiscalExpanded = true;
+  bool _autoSyncFiscal21 = true;
+  bool _costsIncludeVat = true; // true: costos cargados con IVA inc. | false: costos netos + IVA (Mayorista)
+  String? _selectedIibbMode; // '1_net', '1.5_net', '2_net', '2_gross', '2.5_net', '3_net', '3_gross', '4_net'
+  bool _didInitSupplierMeta = false;
+  String? _supplierTaxCategory;
+  String? _supplierCuit;
   String? _lastAutoInvoiceNumber;
   final _pointOfSaleCtrl = TextEditingController();
   final _voucherNumberCtrl = TextEditingController();
@@ -146,6 +154,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
     final inv = widget.initialInvoice;
     if (inv != null) {
       _payNow = false;
+      _autoSyncFiscal21 = false;
       _type = inv['type']?.toString() ?? 'invoice';
       _invoiceNumberController.text = inv['invoice_number']?.toString() ?? '';
       _descriptionController.text = inv['description']?.toString() ?? 'Mercadería';
@@ -214,6 +223,15 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
         _voucherLetter = 'S/D';
       }
 
+      double defaultExistingVatRate = 21.0;
+      if (n105 > 0 && n21 == 0 && n27 == 0) {
+        defaultExistingVatRate = 10.5;
+      } else if (n27 > 0 && n21 == 0 && n105 == 0) {
+        defaultExistingVatRate = 27.0;
+      } else if (ex > 0 && n21 == 0 && n105 == 0 && n27 == 0) {
+        defaultExistingVatRate = 0.0;
+      }
+
       final rawItems = inv['items'] as List<dynamic>? ?? [];
       for (final raw in rawItems) {
         if (raw is! Map) continue;
@@ -278,9 +296,35 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
             // En modo edición, no forzamos la reescritura del precio de venta en catálogo
             // salvo que el usuario modifique el PVP o marque la casilla explícitamente.
             updatePrice: false,
+            vatRate: defaultExistingVatRate,
           ),
         );
       }
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_didInitSupplierMeta) {
+      _didInitSupplierMeta = true;
+      try {
+        final suppliers = context.read<SupplierProvider>().suppliers;
+        for (final s in suppliers) {
+          if (s.id == widget.supplierId) {
+            _supplierTaxCategory = s.taxCategory;
+            _supplierCuit = s.cuit;
+            if (!_isEditing && s.taxCategory != null && s.taxCategory!.isNotEmpty) {
+              if (s.taxCategory == 'Monotributista' || s.taxCategory == 'Exento') {
+                _voucherLetter = 'C';
+              } else if (s.taxCategory == 'Responsable Inscripto') {
+                _voucherLetter = 'A';
+              }
+            }
+            break;
+          }
+        }
+      } catch (_) {}
     }
   }
 
@@ -354,6 +398,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
         item.qtyCtrl.text = item.product.isSoldByWeight || item.product.unitType == 'kg'
             ? item.quantity.toStringAsFixed(3)
             : item.quantity.toInt().toString();
+        _autoRecalculateFiscalIfNeeded();
       });
     } else {
       setState(() {
@@ -365,6 +410,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
             manualPrice: product.sellingPrice,
           ),
         );
+        _autoRecalculateFiscalIfNeeded();
       });
     }
     _searchController.clear();
@@ -398,6 +444,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
         final effMargin = ((item.manualPrice - parsed) / parsed) * 100;
         item.marginCtrl.text = effMargin.toCleanMargin();
       }
+      _autoRecalculateFiscalIfNeeded();
     });
   }
 
@@ -420,6 +467,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
         item.pvpCtrl.text = item.manualPrice.toArsInput();
         item.updatePrice = true;
       }
+      _autoRecalculateFiscalIfNeeded();
     });
   }
 
@@ -446,6 +494,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
       } else {
         item.priceAnchor = 'selling';
       }
+      _autoRecalculateFiscalIfNeeded();
     });
   }
 
@@ -533,10 +582,158 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
         _lastAutoInvoiceNumber = formatted;
       }
     }
+    setState(() {});
+  }
+
+  void _onPerceptionOrInternalTaxChanged() {
+    if (_items.isNotEmpty && (_voucherLetter == 'A' || _voucherLetter == 'M')) {
+      final ivaP = ArsThousandsInputFormatter.parse(_ivaPerceptionCtrl.text);
+      final iibbP = ArsThousandsInputFormatter.parse(_iibbPerceptionCtrl.text);
+      final impInt = ArsThousandsInputFormatter.parse(_internalTaxesCtrl.text);
+      final perceptionsSum = ivaP + iibbP + impInt;
+      if (_costsIncludeVat) {
+        _taxAmount = double.parse(perceptionsSum.toStringAsFixed(2));
+        _taxCtrl.text = _taxAmount > 0 ? _taxAmount.toArsInput() : '';
+      } else {
+        final i21 = ArsThousandsInputFormatter.parse(_iva21Ctrl.text);
+        final i105 = ArsThousandsInputFormatter.parse(_iva105Ctrl.text);
+        final i27 = ArsThousandsInputFormatter.parse(_iva27Ctrl.text);
+        _taxAmount = double.parse((i21 + i105 + i27 + perceptionsSum).toStringAsFixed(2));
+        _taxCtrl.text = _taxAmount > 0 ? _taxAmount.toArsInput() : '';
+      }
+    }
+    setState(() {});
+  }
+
+  void _applyIibbRate(String mode, {bool triggerSetState = true}) {
+    if (mode == 'clear') {
+      _selectedIibbMode = null;
+      _iibbPerceptionCtrl.clear();
+      if (triggerSetState) {
+        _onPerceptionOrInternalTaxChanged();
+      }
+      return;
+    }
+
+    _selectedIibbMode = mode;
+
+    final n21 = ArsThousandsInputFormatter.parse(_net21Ctrl.text);
+    final i21 = ArsThousandsInputFormatter.parse(_iva21Ctrl.text);
+    final n105 = ArsThousandsInputFormatter.parse(_net105Ctrl.text);
+    final i105 = ArsThousandsInputFormatter.parse(_iva105Ctrl.text);
+    final n27 = ArsThousandsInputFormatter.parse(_net27Ctrl.text);
+    final i27 = ArsThousandsInputFormatter.parse(_iva27Ctrl.text);
+    final nonT = ArsThousandsInputFormatter.parse(_nonTaxedCtrl.text);
+    final ex = ArsThousandsInputFormatter.parse(_exemptCtrl.text);
+
+    final netSum = n21 + n105 + n27;
+    final grossSum = netSum + i21 + i105 + i27;
+    final itemsSub = _items.fold(0.0, (s, i) => s + i.subtotal);
+
+    double base = 0.0;
+    double rate = 0.0;
+
+    switch (mode) {
+      case '1_net':
+        rate = 0.01;
+        base = netSum > 0 ? netSum : (nonT + ex > 0 ? nonT + ex : itemsSub);
+        break;
+      case '1.5_net':
+        rate = 0.015;
+        base = netSum > 0 ? netSum : (nonT + ex > 0 ? nonT + ex : itemsSub);
+        break;
+      case '2_net':
+        rate = 0.02;
+        base = netSum > 0 ? netSum : (nonT + ex > 0 ? nonT + ex : itemsSub);
+        break;
+      case '2_gross':
+        rate = 0.02;
+        base = grossSum > 0 ? grossSum : itemsSub;
+        break;
+      case '2.5_net':
+        rate = 0.025;
+        base = netSum > 0 ? netSum : (nonT + ex > 0 ? nonT + ex : itemsSub);
+        break;
+      case '3_net':
+        rate = 0.03;
+        base = netSum > 0 ? netSum : (nonT + ex > 0 ? nonT + ex : itemsSub);
+        break;
+      case '3_gross':
+        rate = 0.03;
+        base = grossSum > 0 ? grossSum : itemsSub;
+        break;
+      case '4_net':
+        rate = 0.04;
+        base = netSum > 0 ? netSum : (nonT + ex > 0 ? nonT + ex : itemsSub);
+        break;
+    }
+
+    if (base > 0 && rate > 0) {
+      final calc = (base * rate * 100).round() / 100.0;
+      _iibbPerceptionCtrl.text = calc.toArsInput();
+      if (triggerSetState) {
+        _onPerceptionOrInternalTaxChanged();
+      }
+    } else if (triggerSetState) {
+      setState(() {});
+    }
+  }
+
+  String get _iibbBadgeLabel {
+    final iibbVal = ArsThousandsInputFormatter.parse(_iibbPerceptionCtrl.text);
+    switch (_selectedIibbMode) {
+      case '1_net':
+        return '1% ▾';
+      case '1.5_net':
+        return '1.5% ▾';
+      case '2_net':
+        return '2% ▾';
+      case '2_gross':
+        return '2% c/IVA ▾';
+      case '2.5_net':
+        return '2.5% ▾';
+      case '3_net':
+        return '3% ▾';
+      case '3_gross':
+        return '3% c/IVA ▾';
+      case '4_net':
+        return '4% ▾';
+    }
+    if (iibbVal > 0) {
+      final netSum = ArsThousandsInputFormatter.parse(_net21Ctrl.text) +
+          ArsThousandsInputFormatter.parse(_net105Ctrl.text) +
+          ArsThousandsInputFormatter.parse(_net27Ctrl.text);
+      if (netSum > 0) {
+        final effPct = (iibbVal / netSum) * 100;
+        final rounded = (effPct * 100).round() / 100.0;
+        final str = rounded % 1 == 0
+            ? rounded.toInt().toString()
+            : rounded.toStringAsFixed(2).replaceAll(RegExp(r'0+$'), '').replaceAll(RegExp(r'\.$'), '').replaceAll('.', ',');
+        return '$str% ▾';
+      }
+    }
+    return '% ▾';
+  }
+
+  void _toggleCostsIncludeVat(bool includeVat) {
+    if (_costsIncludeVat == includeVat) return;
+    setState(() {
+      _costsIncludeVat = includeVat;
+      _autoSyncFiscal21 = true;
+      if (_costsIncludeVat) {
+        final otherPerceptions = ArsThousandsInputFormatter.parse(_ivaPerceptionCtrl.text) +
+            ArsThousandsInputFormatter.parse(_iibbPerceptionCtrl.text) +
+            ArsThousandsInputFormatter.parse(_internalTaxesCtrl.text);
+        _taxAmount = double.parse(otherPerceptions.toStringAsFixed(2));
+        _taxCtrl.text = _taxAmount > 0 ? _taxAmount.toArsInput() : '';
+      }
+      _autoRecalculateFiscalIfNeeded();
+    });
   }
 
   void _onNet21Changed(String v) {
     if (_voucherLetter == 'B' || _voucherLetter == 'C') return;
+    _autoSyncFiscal21 = false;
     final net = ArsThousandsInputFormatter.parse(v);
     if (net > 0) {
       final iva = (net * 0.21 * 100).round() / 100.0;
@@ -544,11 +741,16 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
     } else {
       _iva21Ctrl.clear();
     }
-    setState(() {});
+    if (!_costsIncludeVat) {
+      _onPerceptionOrInternalTaxChanged();
+    } else {
+      setState(() {});
+    }
   }
 
   void _onNet105Changed(String v) {
     if (_voucherLetter == 'B' || _voucherLetter == 'C') return;
+    _autoSyncFiscal21 = false;
     final net = ArsThousandsInputFormatter.parse(v);
     if (net > 0) {
       final iva = (net * 0.105 * 100).round() / 100.0;
@@ -556,11 +758,16 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
     } else {
       _iva105Ctrl.clear();
     }
-    setState(() {});
+    if (!_costsIncludeVat) {
+      _onPerceptionOrInternalTaxChanged();
+    } else {
+      setState(() {});
+    }
   }
 
   void _onNet27Changed(String v) {
     if (_voucherLetter == 'B' || _voucherLetter == 'C') return;
+    _autoSyncFiscal21 = false;
     final net = ArsThousandsInputFormatter.parse(v);
     if (net > 0) {
       final iva = (net * 0.27 * 100).round() / 100.0;
@@ -568,14 +775,30 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
     } else {
       _iva27Ctrl.clear();
     }
-    setState(() {});
+    if (!_costsIncludeVat) {
+      _onPerceptionOrInternalTaxChanged();
+    } else {
+      setState(() {});
+    }
   }
 
-  void _distributeTotalInNet21() {
-    final total = _totalAmount;
-    if (total <= 0) return;
-    if (_voucherLetter == 'B' || _voucherLetter == 'C' || _voucherLetter == 'S/D') {
-      if (_voucherLetter != 'S/D') {
+  void _autoRecalculateFiscalIfNeeded() {
+    if (_items.isEmpty) {
+      if (_autoSyncFiscal21) {
+        _net21Ctrl.clear();
+        _iva21Ctrl.clear();
+        _net105Ctrl.clear();
+        _iva105Ctrl.clear();
+        _net27Ctrl.clear();
+        _iva27Ctrl.clear();
+        _nonTaxedCtrl.clear();
+      }
+      return;
+    }
+
+    if (_voucherLetter == 'B' || _voucherLetter == 'C') {
+      final total = _totalAmount;
+      if (total > 0) {
         _nonTaxedCtrl.text = total.toArsInput();
       }
       _net21Ctrl.clear();
@@ -584,23 +807,175 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
       _iva105Ctrl.clear();
       _net27Ctrl.clear();
       _iva27Ctrl.clear();
-    } else {
-      final otherCharges = ArsThousandsInputFormatter.parse(_ivaPerceptionCtrl.text) +
+    } else if ((_voucherLetter == 'A' || _voucherLetter == 'M') && _autoSyncFiscal21) {
+      final otherPerceptions = ArsThousandsInputFormatter.parse(_ivaPerceptionCtrl.text) +
           ArsThousandsInputFormatter.parse(_iibbPerceptionCtrl.text) +
-          ArsThousandsInputFormatter.parse(_internalTaxesCtrl.text) +
-          ArsThousandsInputFormatter.parse(_exemptCtrl.text);
-      final distributable = (total - otherCharges) > 0 ? (total - otherCharges) : total;
-      final net = (distributable / 1.21 * 100).round() / 100.0;
-      final iva = double.parse((distributable - net).toStringAsFixed(2));
-      _net21Ctrl.text = net.toArsInput();
-      _iva21Ctrl.text = iva.toArsInput();
-      _net105Ctrl.clear();
-      _iva105Ctrl.clear();
-      _net27Ctrl.clear();
-      _iva27Ctrl.clear();
+          ArsThousandsInputFormatter.parse(_internalTaxesCtrl.text);
+
+      double raw21 = 0.0;
+      double raw105 = 0.0;
+      double raw27 = 0.0;
+      double rawEx = 0.0;
+      for (final item in _items) {
+        if (item.vatRate == 10.5) {
+          raw105 += item.subtotal;
+        } else if (item.vatRate == 27.0) {
+          raw27 += item.subtotal;
+        } else if (item.vatRate == 0.0) {
+          rawEx += item.subtotal;
+        } else {
+          raw21 += item.subtotal;
+        }
+      }
+
+      if (!_costsIncludeVat) {
+        // Modo Mayorista (Costos Netos + IVA): cada subtotal de artículo es Neto Gravado
+        final netDelta = _freightAmount - _discountAmount;
+        if (netDelta.abs() > 0.001) {
+          if (raw21 > 0) {
+            raw21 = (raw21 + netDelta).clamp(0.0, double.infinity);
+          } else if (raw105 > 0) {
+            raw105 = (raw105 + netDelta).clamp(0.0, double.infinity);
+          } else if (raw27 > 0) {
+            raw27 = (raw27 + netDelta).clamp(0.0, double.infinity);
+          } else if (rawEx > 0) {
+            rawEx = (rawEx + netDelta).clamp(0.0, double.infinity);
+          }
+        }
+
+        double i21 = 0.0;
+        double i105 = 0.0;
+        double i27 = 0.0;
+
+        if (raw21 > 0) {
+          final n21 = double.parse(raw21.toStringAsFixed(2));
+          i21 = (n21 * 0.21 * 100).round() / 100.0;
+          _net21Ctrl.text = n21.toArsInput();
+          _iva21Ctrl.text = i21.toArsInput();
+        } else {
+          _net21Ctrl.clear();
+          _iva21Ctrl.clear();
+        }
+
+        if (raw105 > 0) {
+          final n105 = double.parse(raw105.toStringAsFixed(2));
+          i105 = (n105 * 0.105 * 100).round() / 100.0;
+          _net105Ctrl.text = n105.toArsInput();
+          _iva105Ctrl.text = i105.toArsInput();
+        } else {
+          _net105Ctrl.clear();
+          _iva105Ctrl.clear();
+        }
+
+        if (raw27 > 0) {
+          final n27 = double.parse(raw27.toStringAsFixed(2));
+          i27 = (n27 * 0.27 * 100).round() / 100.0;
+          _net27Ctrl.text = n27.toArsInput();
+          _iva27Ctrl.text = i27.toArsInput();
+        } else {
+          _net27Ctrl.clear();
+          _iva27Ctrl.clear();
+        }
+
+        if (rawEx > 0) {
+          _exemptCtrl.text = double.parse(rawEx.toStringAsFixed(2)).toArsInput();
+        } else {
+          _exemptCtrl.clear();
+        }
+        _nonTaxedCtrl.clear();
+
+        if (_selectedIibbMode != null) {
+          _applyIibbRate(_selectedIibbMode!, triggerSetState: false);
+        }
+        final updatedPerceptions = ArsThousandsInputFormatter.parse(_ivaPerceptionCtrl.text) +
+            ArsThousandsInputFormatter.parse(_iibbPerceptionCtrl.text) +
+            ArsThousandsInputFormatter.parse(_internalTaxesCtrl.text);
+        final totalTaxes = double.parse((i21 + i105 + i27 + updatedPerceptions).toStringAsFixed(2));
+        _taxAmount = totalTaxes;
+        _taxCtrl.text = totalTaxes > 0 ? totalTaxes.toArsInput() : '';
+        return;
+      }
+
+      // Modo Estándar (Costos con IVA Incluido)
+      final total = _totalAmount;
+      if (total <= 0) return;
+      final distributable = (total - otherPerceptions) > 0 ? (total - otherPerceptions) : total;
+
+      final itemsSum = raw21 + raw105 + raw27 + rawEx;
+      final delta = distributable - itemsSum;
+      if (delta.abs() > 0.001) {
+        if (raw21 > 0) {
+          raw21 = (raw21 + delta).clamp(0.0, double.infinity);
+        } else if (raw105 > 0) {
+          raw105 = (raw105 + delta).clamp(0.0, double.infinity);
+        } else if (raw27 > 0) {
+          raw27 = (raw27 + delta).clamp(0.0, double.infinity);
+        } else if (rawEx > 0) {
+          rawEx = (rawEx + delta).clamp(0.0, double.infinity);
+        } else {
+          raw21 = distributable;
+        }
+      }
+
+      if (raw21 > 0) {
+        final n21 = (raw21 / 1.21 * 100).round() / 100.0;
+        final i21 = double.parse((raw21 - n21).toStringAsFixed(2));
+        _net21Ctrl.text = n21.toArsInput();
+        _iva21Ctrl.text = i21.toArsInput();
+      } else {
+        _net21Ctrl.clear();
+        _iva21Ctrl.clear();
+      }
+
+      if (raw105 > 0) {
+        final n105 = (raw105 / 1.105 * 100).round() / 100.0;
+        final i105 = double.parse((raw105 - n105).toStringAsFixed(2));
+        _net105Ctrl.text = n105.toArsInput();
+        _iva105Ctrl.text = i105.toArsInput();
+      } else {
+        _net105Ctrl.clear();
+        _iva105Ctrl.clear();
+      }
+
+      if (raw27 > 0) {
+        final n27 = (raw27 / 1.27 * 100).round() / 100.0;
+        final i27 = double.parse((raw27 - n27).toStringAsFixed(2));
+        _net27Ctrl.text = n27.toArsInput();
+        _iva27Ctrl.text = i27.toArsInput();
+      } else {
+        _net27Ctrl.clear();
+        _iva27Ctrl.clear();
+      }
+
+      if (rawEx > 0) {
+        _exemptCtrl.text = double.parse(rawEx.toStringAsFixed(2)).toArsInput();
+      } else {
+        _exemptCtrl.clear();
+      }
       _nonTaxedCtrl.clear();
+
+      if (_selectedIibbMode != null) {
+        _applyIibbRate(_selectedIibbMode!, triggerSetState: false);
+        final updatedPerceptions = ArsThousandsInputFormatter.parse(_ivaPerceptionCtrl.text) +
+            ArsThousandsInputFormatter.parse(_iibbPerceptionCtrl.text) +
+            ArsThousandsInputFormatter.parse(_internalTaxesCtrl.text);
+        _taxAmount = double.parse(updatedPerceptions.toStringAsFixed(2));
+        _taxCtrl.text = _taxAmount > 0 ? _taxAmount.toArsInput() : '';
+      }
     }
+  }
+
+  void _distributeTotalByRate(double rate) {
+    _autoSyncFiscal21 = true;
+    for (final item in _items) {
+      item.vatRate = rate;
+    }
+    _autoRecalculateFiscalIfNeeded();
     setState(() {});
+  }
+
+  void _distributeTotalInNet21() {
+    _distributeTotalByRate(21.0);
   }
 
   void _onVoucherLetterChanged(String newLetter) {
@@ -618,6 +993,9 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
         } else if (_totalAmount > 0) {
           _nonTaxedCtrl.text = _totalAmount.toArsInput();
         }
+      } else if (_voucherLetter == 'A' || _voucherLetter == 'M') {
+        _autoSyncFiscal21 = true;
+        _autoRecalculateFiscalIfNeeded();
       }
     });
   }
@@ -863,18 +1241,24 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
 
   @override
   Widget build(BuildContext context) {
+    bool isRIHeader = false;
+    try {
+      isRIHeader = context.watch<SettingsProvider>().isResponsableInscripto;
+    } catch (_) {}
+
     return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Container(
-        width: MediaQuery.of(context).size.width * 0.9,
-        height: MediaQuery.of(context).size.height * 0.9,
-        constraints: const BoxConstraints(maxWidth: 1100, maxHeight: 820),
+        width: MediaQuery.of(context).size.width * 0.95,
+        height: MediaQuery.of(context).size.height * 0.94,
+        constraints: const BoxConstraints(maxWidth: 1240, maxHeight: 880),
         padding: const EdgeInsets.all(0),
         child: Column(
           children: [
             // Header
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
               decoration: BoxDecoration(
                 color: _isEditing ? Colors.amber.shade900 : Colors.blue.shade800,
                 borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
@@ -884,32 +1268,60 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                   Icon(
                     _isEditing ? Icons.edit_document : Icons.inventory_2,
                     color: Colors.white,
-                    size: 28,
+                    size: 24,
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: 10),
                   Expanded(
                     child: Text(
                       _isEditing
                           ? 'Editar Comprobante de Proveedor #${widget.initialInvoice!['id']}'
                           : 'Espejo de Ventas - Carga de Remito / Factura',
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
                             color: Colors.white,
                             fontWeight: FontWeight.bold,
+                            fontSize: 18,
                           ),
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
                   const SizedBox(width: 12),
                   Flexible(
-                    child: Text(
-                      'Proveedor: ${widget.supplierName}',
-                      style: const TextStyle(color: Colors.white70, fontSize: 16),
-                      overflow: TextOverflow.ellipsis,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Flexible(
+                          child: Text(
+                            'Proveedor: ${widget.supplierName}${(_supplierCuit != null && _supplierCuit!.isNotEmpty) ? ' ($_supplierCuit)' : ''}',
+                            style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w500),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (isRIHeader && _supplierTaxCategory != null && _supplierTaxCategory!.isNotEmpty) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.18),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: Colors.white38),
+                            ),
+                            child: Text(
+                              _supplierTaxCategory!,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
-                  const SizedBox(width: 16),
+                  const SizedBox(width: 12),
                   IconButton(
                     icon: const Icon(Icons.close, color: Colors.white),
+                    visualDensity: VisualDensity.compact,
                     onPressed: () => Navigator.pop(context),
                   ),
                 ],
@@ -918,7 +1330,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
 
             Expanded(
               child: Padding(
-                padding: const EdgeInsets.all(24),
+                padding: const EdgeInsets.all(14),
                 child: Form(
                   key: _formKey,
                   child: LayoutBuilder(
@@ -943,7 +1355,13 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                                 separatorBuilder: (_, __) => const Divider(height: 1),
                                 itemBuilder: (context, index) {
                                   final item = _items[index];
-                                  return _buildItemRow(item, index);
+                                  return _buildItemRow(
+                                    item,
+                                    index,
+                                    showVatSelector: isRI &&
+                                        _type != 'delivery_note' &&
+                                        (_voucherLetter == 'A' || _voucherLetter == 'M'),
+                                  );
                                 },
                               ),
                       );
@@ -983,7 +1401,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                                         },
                                       ),
                                       border: InputBorder.none,
-                                      contentPadding: const EdgeInsets.all(16),
+                                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                                     ),
                                     onChanged: _onSearchChanged,
                                   ),
@@ -1030,7 +1448,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                               ),
                             ),
                           ),
-                          const SizedBox(height: 16),
+                          const SizedBox(height: 12),
 
                           // Tabla de Items
                           if (isWide)
@@ -1043,56 +1461,119 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                       final rightFormContent = Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            'Datos Generales',
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleMedium
-                                ?.copyWith(fontWeight: FontWeight.bold),
-                          ),
-                          const SizedBox(height: 16),
-                          DropdownButtonFormField<String>(
-                            isExpanded: true,
-                            initialValue: _type,
-                            decoration: const InputDecoration(
-                              labelText: 'Tipo de Comprobante',
-                              isDense: true,
-                            ),
-                            items: const [
-                              DropdownMenuItem(
-                                value: 'invoice',
+                          Row(
+                            children: [
+                              Expanded(
                                 child: Text(
-                                  'Factura de Compra',
-                                  overflow: TextOverflow.ellipsis,
+                                  'Datos Generales',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .titleSmall
+                                      ?.copyWith(fontWeight: FontWeight.bold, fontSize: 13.5),
                                 ),
                               ),
-                              DropdownMenuItem(
-                                value: 'delivery_note',
-                                child: Text(
-                                  'Remito de Mercadería',
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              DropdownMenuItem(
-                                value: 'credit_note',
-                                child: Text(
-                                  'Nota de Crédito',
-                                  overflow: TextOverflow.ellipsis,
+                              SizedBox(
+                                height: 28,
+                                child: OutlinedButton.icon(
+                                  onPressed: _isUploading ? null : _pickAndUploadFile,
+                                  icon: _isUploading
+                                      ? const SizedBox(
+                                          width: 12,
+                                          height: 12,
+                                          child: CircularProgressIndicator(strokeWidth: 2),
+                                        )
+                                      : const Icon(Icons.attach_file, size: 14),
+                                  label: Text(
+                                    _attachmentUrl != null
+                                        ? 'Comprobante Adjunto ✓'
+                                        : 'Adjuntar Archivo',
+                                    style: const TextStyle(fontSize: 11.5),
+                                  ),
+                                  style: OutlinedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                                    foregroundColor: _attachmentUrl != null
+                                        ? Colors.green.shade700
+                                        : Colors.blue.shade700,
+                                    side: BorderSide(
+                                      color: _attachmentUrl != null
+                                          ? Colors.green.shade300
+                                          : Colors.blue.shade300,
+                                    ),
+                                  ),
                                 ),
                               ),
                             ],
-                            onChanged: (val) {
-                              setState(() {
-                                _type = val!;
-                                if (_type == 'credit_note') {
-                                  _payNow = false;
-                                } else if (!_isEditing) {
-                                  _payNow = true;
-                                }
-                              });
-                            },
                           ),
-                          const SizedBox(height: 16),
+                          const SizedBox(height: 6),
+                          // Fila 1: Tipo de Comprobante + Concepto
+                          Row(
+                            children: [
+                              Expanded(
+                                flex: 5,
+                                child: DropdownButtonFormField<String>(
+                                  isExpanded: true,
+                                  initialValue: _type,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Tipo de Comprobante',
+                                    isDense: true,
+                                    contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                  ),
+                                  items: const [
+                                    DropdownMenuItem(
+                                      value: 'invoice',
+                                      child: Text(
+                                        'Factura de Compra',
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(fontSize: 13),
+                                      ),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'delivery_note',
+                                      child: Text(
+                                        'Remito de Mercadería',
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(fontSize: 13),
+                                      ),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'credit_note',
+                                      child: Text(
+                                        'Nota de Crédito',
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(fontSize: 13),
+                                      ),
+                                    ),
+                                  ],
+                                  onChanged: (val) {
+                                    setState(() {
+                                      _type = val!;
+                                      if (_type == 'credit_note') {
+                                        _payNow = false;
+                                      } else if (!_isEditing) {
+                                        _payNow = true;
+                                      }
+                                    });
+                                  },
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                flex: 4,
+                                child: TextFormField(
+                                  controller: _descriptionController,
+                                  style: const TextStyle(fontSize: 13),
+                                  decoration: const InputDecoration(
+                                    labelText: 'Concepto',
+                                    isDense: true,
+                                    contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                  ),
+                                  maxLines: 1,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          // Fila 2: Fecha Emisión + Vencimiento
                           Row(
                             children: [
                               Expanded(
@@ -1124,11 +1605,13 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                                     decoration: const InputDecoration(
                                       labelText: 'Fecha Emisión',
                                       isDense: true,
+                                      contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                                     ),
                                     child: Text(
                                       _issueDate != null
                                           ? DateFormat('dd/MM/yyyy').format(_issueDate!)
                                           : 'Seleccionar',
+                                      style: const TextStyle(fontSize: 13),
                                     ),
                                   ),
                                 ),
@@ -1151,207 +1634,259 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                                     decoration: const InputDecoration(
                                       labelText: 'Vencimiento',
                                       isDense: true,
+                                      contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                                     ),
                                     child: Text(
                                       _dueDate != null
                                           ? DateFormat('dd/MM/yyyy').format(_dueDate!)
                                           : 'Opcional',
+                                      style: const TextStyle(fontSize: 13),
                                     ),
                                   ),
                                 ),
                               ),
                             ],
                           ),
-                          const SizedBox(height: 16),
-                          TextFormField(
-                            controller: _invoiceNumberController,
-                            decoration: const InputDecoration(
-                              labelText: 'Nº Comprobante (Opc.)',
-                              isDense: true,
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          TextFormField(
-                            controller: _descriptionController,
-                            decoration: const InputDecoration(
-                              labelText: 'Concepto',
-                              isDense: true,
-                            ),
-                            maxLines: 2,
-                          ),
-                          if (_isEditing) ...[
-                            const SizedBox(height: 16),
+                          const SizedBox(height: 6),
+                          // Fila 3: En modo edición mostramos Motivo de corrección; Nº Comprobante manual solo si no hay bloque fiscal
+                          if (_isEditing && (!isRI || _type == 'delivery_note'))
+                            Row(
+                              children: [
+                                Expanded(
+                                  flex: 4,
+                                  child: TextFormField(
+                                    controller: _invoiceNumberController,
+                                    style: const TextStyle(fontSize: 13),
+                                    decoration: const InputDecoration(
+                                      labelText: 'Nº Comprobante (Opc.)',
+                                      isDense: true,
+                                      contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  flex: 5,
+                                  child: TextFormField(
+                                    controller: _editReasonController,
+                                    style: const TextStyle(fontSize: 13),
+                                    decoration: InputDecoration(
+                                      labelText: 'Motivo de la corrección (Auditoría)',
+                                      hintText: 'Ej: Error en cantidad / IVA',
+                                      isDense: true,
+                                      contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                      prefixIcon: Icon(
+                                        Icons.history_edu,
+                                        color: Colors.amber.shade800,
+                                        size: 15,
+                                      ),
+                                      prefixIconConstraints: const BoxConstraints(minWidth: 28),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            )
+                          else if (_isEditing)
                             TextFormField(
                               controller: _editReasonController,
+                              style: const TextStyle(fontSize: 12.5),
                               decoration: InputDecoration(
                                 labelText: 'Motivo de la corrección (Auditoría)',
-                                hintText: 'Ej: Error en cantidad / precio de flete',
+                                hintText: 'Ej: Ajuste de costos / desglose IVA',
                                 isDense: true,
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
                                 prefixIcon: Icon(
                                   Icons.history_edu,
                                   color: Colors.amber.shade800,
-                                  size: 18,
+                                  size: 15,
                                 ),
+                                prefixIconConstraints: const BoxConstraints(minWidth: 28),
+                              ),
+                            )
+                          else if (!isRI || _type == 'delivery_note')
+                            TextFormField(
+                              controller: _invoiceNumberController,
+                              style: const TextStyle(fontSize: 13),
+                              decoration: const InputDecoration(
+                                labelText: 'Nº Comprobante (Opc.)',
+                                isDense: true,
+                                contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                               ),
                             ),
-                          ],
-                          const SizedBox(height: 16),
-                          // Attachment button
-                          OutlinedButton.icon(
-                            onPressed: _isUploading ? null : _pickAndUploadFile,
-                            icon: _isUploading
-                                ? const SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(strokeWidth: 2),
-                                  )
-                                : const Icon(Icons.attach_file),
-                            label: FittedBox(
-                              fit: BoxFit.scaleDown,
-                              child: Text(
-                                _attachmentUrl != null
-                                    ? 'Comprobante Adjunto ✓'
-                                    : 'Adjuntar Archivo',
-                              ),
-                            ),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: _attachmentUrl != null
-                                  ? Colors.green.shade700
-                                  : Colors.blue.shade700,
-                              side: BorderSide(
-                                color: _attachmentUrl != null
-                                    ? Colors.green.shade300
-                                    : Colors.blue.shade300,
-                              ),
-                            ),
-                          ),
                           if (isRI && _type != 'delivery_note') ...[
-                            const SizedBox(height: 16),
+                            const SizedBox(height: 6),
                             _buildFiscalSection(),
                           ],
-                          const SizedBox(height: 16),
+                          const SizedBox(height: 4),
                         ],
                       );
 
                       final rightBottomContent = Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          const Divider(height: 12),
                           if (!_isEditing && _type != 'credit_note')
                             Container(
-                              margin: const EdgeInsets.only(bottom: 16),
+                              margin: const EdgeInsets.only(bottom: 8),
                               child: Material(
                                 color: Colors.green.shade50,
                                 borderRadius: BorderRadius.circular(8),
                                 clipBehavior: Clip.antiAlias,
-                                child: Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: BoxDecoration(
-                                    border: Border.all(color: Colors.green.shade200),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: CheckboxListTile(
-                                    title: const Text(
-                                      'Abonar en el acto',
-                                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                                child: InkWell(
+                                  onTap: () => setState(() => _payNow = !_payNow),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      border: Border.all(color: Colors.green.shade200),
+                                      borderRadius: BorderRadius.circular(8),
                                     ),
-                                    subtitle: const Text(
-                                      'Abre un movimiento de caja al guardar.',
-                                      style: TextStyle(fontSize: 12),
+                                    child: Row(
+                                      children: [
+                                        SizedBox(
+                                          width: 28,
+                                          height: 28,
+                                          child: Checkbox(
+                                            value: _payNow,
+                                            visualDensity: VisualDensity.compact,
+                                            onChanged: (val) => setState(() => _payNow = val ?? false),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 6),
+                                        const Expanded(
+                                          child: Row(
+                                            children: [
+                                              Text(
+                                                'Abonar en el acto',
+                                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5),
+                                              ),
+                                              SizedBox(width: 6),
+                                              Expanded(
+                                                child: Text(
+                                                  'Abre un movimiento de caja al guardar.',
+                                                  style: TextStyle(fontSize: 11, color: Colors.black54),
+                                                  overflow: TextOverflow.ellipsis,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
                                     ),
-                                    value: _payNow,
-                                    onChanged: (val) => setState(() => _payNow = val ?? false),
-                                    contentPadding: EdgeInsets.zero,
-                                    controlAffinity: ListTileControlAffinity.leading,
                                   ),
                                 ),
                               ),
                             ),
 
-                          // Extra charges
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: [
-                              SizedBox(
-                                width: 90,
-                                child: TextFormField(
-                                  controller: _freightCtrl,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Flete (\$)',
-                                    isDense: true,
+                          // Extra charges (3-col via LayoutBuilder + Wrap to satisfy <=2 Expanded per Row rule)
+                          LayoutBuilder(
+                            builder: (context, box) {
+                              final fieldWidth = ((box.maxWidth - 16) / 3).clamp(85.0, 220.0);
+                              return Wrap(
+                                spacing: 8,
+                                runSpacing: 6,
+                                children: [
+                                  SizedBox(
+                                    width: fieldWidth,
+                                    child: TextFormField(
+                                      controller: _freightCtrl,
+                                      style: const TextStyle(fontSize: 13),
+                                      decoration: const InputDecoration(
+                                        labelText: 'Flete (\$)',
+                                        isDense: true,
+                                        contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                                      ),
+                                      keyboardType: TextInputType.number,
+                                      inputFormatters: [ArsThousandsInputFormatter()],
+                                      onChanged: (v) {
+                                        setState(() {
+                                          _freightAmount = ArsThousandsInputFormatter.parse(v);
+                                          _autoRecalculateFiscalIfNeeded();
+                                        });
+                                      },
+                                    ),
                                   ),
-                                  keyboardType: TextInputType.number,
-                                  inputFormatters: [ArsThousandsInputFormatter()],
-                                  onChanged: (v) {
-                                    setState(() => _freightAmount = ArsThousandsInputFormatter.parse(v));
-                                  },
-                                ),
-                              ),
-                              SizedBox(
-                                width: 90,
-                                child: TextFormField(
-                                  controller: _taxCtrl,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Impuestos (\$)',
-                                    isDense: true,
+                                  SizedBox(
+                                    width: fieldWidth,
+                                    child: TextFormField(
+                                      controller: _taxCtrl,
+                                      style: const TextStyle(fontSize: 13),
+                                      decoration: const InputDecoration(
+                                        labelText: 'Impuestos (\$)',
+                                        isDense: true,
+                                        contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                                      ),
+                                      keyboardType: TextInputType.number,
+                                      inputFormatters: [ArsThousandsInputFormatter()],
+                                      onChanged: (v) {
+                                        setState(() {
+                                          _taxAmount = ArsThousandsInputFormatter.parse(v);
+                                          _autoRecalculateFiscalIfNeeded();
+                                        });
+                                      },
+                                    ),
                                   ),
-                                  keyboardType: TextInputType.number,
-                                  inputFormatters: [ArsThousandsInputFormatter()],
-                                  onChanged: (v) {
-                                    setState(() => _taxAmount = ArsThousandsInputFormatter.parse(v));
-                                  },
-                                ),
-                              ),
-                              SizedBox(
-                                width: 90,
-                                child: TextFormField(
-                                  controller: _discountCtrl,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Descuento (\$)',
-                                    isDense: true,
+                                  SizedBox(
+                                    width: fieldWidth,
+                                    child: TextFormField(
+                                      controller: _discountCtrl,
+                                      style: const TextStyle(fontSize: 13),
+                                      decoration: const InputDecoration(
+                                        labelText: 'Descuento (\$)',
+                                        isDense: true,
+                                        contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                                      ),
+                                      keyboardType: TextInputType.number,
+                                      inputFormatters: [ArsThousandsInputFormatter()],
+                                      onChanged: (v) {
+                                        setState(() {
+                                          _discountAmount = ArsThousandsInputFormatter.parse(v);
+                                          _autoRecalculateFiscalIfNeeded();
+                                        });
+                                      },
+                                    ),
                                   ),
-                                  keyboardType: TextInputType.number,
-                                  inputFormatters: [ArsThousandsInputFormatter()],
-                                  onChanged: (v) {
-                                    setState(() => _discountAmount = ArsThousandsInputFormatter.parse(v));
-                                  },
-                                ),
-                              ),
-                            ],
+                                ],
+                              );
+                            },
                           ),
-                          const SizedBox(height: 16),
+                          const SizedBox(height: 8),
                           Container(
                             width: double.infinity,
-                            padding: const EdgeInsets.all(16),
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                             decoration: BoxDecoration(
                               color: _isEditing ? Colors.amber.shade900 : Colors.blue.shade900,
-                              borderRadius: BorderRadius.circular(12),
+                              borderRadius: BorderRadius.circular(10),
                             ),
-                            child: Column(
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
                                 const Text(
                                   'TOTAL',
                                   style: TextStyle(
                                     color: Colors.white70,
-                                    fontSize: 14,
+                                    fontSize: 13,
                                     fontWeight: FontWeight.bold,
+                                    letterSpacing: 0.8,
                                   ),
                                 ),
-                                Text(
-                                  '\$${_totalAmount.toCurrency()}',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 32,
-                                    fontWeight: FontWeight.w900,
+                                Flexible(
+                                  child: Text(
+                                    '\$${_totalAmount.toCurrency()}',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 24,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
                               ],
                             ),
                           ),
-                          const SizedBox(height: 16),
+                          const SizedBox(height: 8),
                           SizedBox(
                             width: double.infinity,
-                            height: 48,
+                            height: 42,
                             child: FilledButton.icon(
                               style: _isEditing
                                   ? FilledButton.styleFrom(
@@ -1361,14 +1896,14 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                               onPressed: _isLoading ? null : _submit,
                               icon: _isLoading
                                   ? const SizedBox(
-                                      width: 20,
-                                      height: 20,
+                                      width: 18,
+                                      height: 18,
                                       child: CircularProgressIndicator(
                                         color: Colors.white,
                                         strokeWidth: 2,
                                       ),
                                     )
-                                  : const Icon(Icons.save),
+                                  : const Icon(Icons.save, size: 18),
                               label: Text(
                                 _isEditing ? 'GUARDAR CAMBIOS' : 'CONFIRMAR CARGA',
                                 style: const TextStyle(
@@ -1382,7 +1917,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                       );
 
                       final rightPanel = Container(
-                        padding: const EdgeInsets.all(20),
+                        padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
                           color: Colors.grey.shade50,
                           borderRadius: BorderRadius.circular(12),
@@ -1407,9 +1942,9 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                         return Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Expanded(flex: 6, child: leftPanel),
-                            const SizedBox(width: 24),
-                            Expanded(flex: 3, child: rightPanel),
+                            Expanded(flex: 11, child: leftPanel),
+                            const SizedBox(width: 16),
+                            Expanded(flex: 8, child: rightPanel),
                           ],
                         );
                       } else {
@@ -1435,7 +1970,16 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
     );
   }
 
-  Widget _buildItemRow(_InvoiceItemModel item, int index) {
+  Widget _buildItemRow(_InvoiceItemModel item, int index, {bool showVatSelector = false}) {
+    final rateLabel = item.vatRate == 0.0
+        ? 'Exento 0%'
+        : (item.vatRate == 10.5 ? 'IVA 10.5%' : 'IVA ${item.vatRate.toInt()}%');
+    final rateColor = item.vatRate == 10.5
+        ? Colors.teal
+        : (item.vatRate == 27.0
+            ? Colors.deepOrange
+            : (item.vatRate == 0.0 ? Colors.blueGrey : Colors.indigo));
+
     return Padding(
       key: ValueKey('invoice_item_${item.product.id}'),
       padding: const EdgeInsets.all(12.0),
@@ -1461,7 +2005,62 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                   ],
                 ),
               ),
-              const SizedBox(width: 12),
+              if (showVatSelector) ...[
+                const SizedBox(width: 8),
+                PopupMenuButton<double>(
+                  tooltip: 'Cambiar alícuota de IVA de este artículo',
+                  initialValue: item.vatRate,
+                  onSelected: (rate) {
+                    setState(() {
+                      item.vatRate = rate;
+                      _autoSyncFiscal21 = true;
+                      _autoRecalculateFiscalIfNeeded();
+                    });
+                  },
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(
+                      value: 21.0,
+                      child: Text('IVA 21% (Estándar)', style: TextStyle(fontSize: 13)),
+                    ),
+                    PopupMenuItem(
+                      value: 10.5,
+                      child: Text('IVA 10.5% (Reducido)', style: TextStyle(fontSize: 13)),
+                    ),
+                    PopupMenuItem(
+                      value: 27.0,
+                      child: Text('IVA 27% (Servicios)', style: TextStyle(fontSize: 13)),
+                    ),
+                    PopupMenuItem(
+                      value: 0.0,
+                      child: Text('Exento / No Gravado (0%)', style: TextStyle(fontSize: 13)),
+                    ),
+                  ],
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: rateColor.shade50,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: rateColor.shade200),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          rateLabel,
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.bold,
+                            color: rateColor.shade800,
+                          ),
+                        ),
+                        const SizedBox(width: 2),
+                        Icon(Icons.arrow_drop_down, size: 16, color: rateColor.shade700),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+              const SizedBox(width: 10),
               Text(
                 '\$${item.subtotal.toCurrency()}',
                 style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
@@ -1471,7 +2070,10 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                 visualDensity: VisualDensity.compact,
                 onPressed: () {
                   item.dispose();
-                  setState(() => _items.removeAt(index));
+                  setState(() {
+                    _items.removeAt(index);
+                    _autoRecalculateFiscalIfNeeded();
+                  });
                 },
               ),
             ],
@@ -1490,7 +2092,12 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
                   onChanged: (val) {
                     final p = double.tryParse(val.replaceAll(',', '.'));
-                    if (p != null) setState(() => item.quantity = p);
+                    if (p != null) {
+                      setState(() {
+                        item.quantity = p;
+                        _autoRecalculateFiscalIfNeeded();
+                      });
+                    }
                   },
                 ),
               ),
@@ -1565,12 +2172,79 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
     );
   }
 
+  TextStyle _fiscalFieldStyle(
+    TextEditingController ctrl, {
+    MaterialColor accent = Colors.indigo,
+    bool isNumeric = true,
+  }) {
+    final hasVal = isNumeric
+        ? ArsThousandsInputFormatter.parse(ctrl.text) > 0
+        : ctrl.text.trim().isNotEmpty;
+    return TextStyle(
+      fontSize: hasVal ? 13.5 : 12.5,
+      fontWeight: hasVal ? FontWeight.w800 : FontWeight.w500,
+      color: hasVal ? accent.shade900 : Colors.blueGrey.shade700,
+    );
+  }
+
+  InputDecoration _fiscalBoxDecoration({
+    required String label,
+    required TextEditingController ctrl,
+    MaterialColor accent = Colors.indigo,
+    bool isNumeric = true,
+    String? hintText,
+    Widget? suffixIcon,
+  }) {
+    final hasVal = isNumeric
+        ? ArsThousandsInputFormatter.parse(ctrl.text) > 0
+        : ctrl.text.trim().isNotEmpty;
+    return InputDecoration(
+      labelText: label,
+      hintText: hintText,
+      isDense: true,
+      filled: true,
+      fillColor: hasVal
+          ? accent.shade50.withValues(alpha: 0.75)
+          : const Color(0xFFF8FAFC),
+      labelStyle: TextStyle(
+        fontSize: 11.5,
+        fontWeight: hasVal ? FontWeight.w700 : FontWeight.w500,
+        color: hasVal ? accent.shade800 : Colors.blueGrey.shade600,
+      ),
+      floatingLabelStyle: TextStyle(
+        fontSize: 11.5,
+        fontWeight: FontWeight.w700,
+        color: hasVal ? accent.shade800 : Colors.indigo.shade700,
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+      suffixIcon: suffixIcon,
+      suffixIconConstraints: suffixIcon != null
+          ? const BoxConstraints(minWidth: 28, minHeight: 24)
+          : null,
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(7),
+        borderSide: BorderSide(
+          color: hasVal ? accent.shade400 : Colors.grey.shade300,
+          width: hasVal ? 1.3 : 1.0,
+        ),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(7),
+        borderSide: BorderSide(color: accent.shade700, width: 1.5),
+      ),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(7),
+      ),
+    );
+  }
+
   Widget _buildFiscalSection() {
     final isBC = _voucherLetter == 'B' || _voucherLetter == 'C';
     final isSD = _voucherLetter == 'S/D';
     final fSum = _fiscalSum;
     final hasFiscalInput = fSum > 0;
     final isMatching = hasFiscalInput && (fSum - _totalAmount).abs() <= 0.05;
+    final invNoText = _invoiceNumberController.text.trim();
 
     return Container(
       decoration: BoxDecoration(
@@ -1580,6 +2254,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
           color: hasFiscalInput
               ? (isMatching ? Colors.green.shade300 : Colors.amber.shade300)
               : Colors.indigo.shade200,
+          width: 1.2,
         ),
       ),
       child: Column(
@@ -1590,15 +2265,15 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
             onTap: () => setState(() => _isFiscalExpanded = !_isFiscalExpanded),
             borderRadius: BorderRadius.circular(10),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               child: Row(
                 children: [
                   Icon(
                     Icons.account_balance_rounded,
-                    size: 18,
+                    size: 16,
                     color: Colors.indigo.shade800,
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 6),
                   Expanded(
                     child: Text(
                       'Datos Fiscales (ARCA / AFIP)',
@@ -1610,16 +2285,60 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  if (hasFiscalInput)
-                    Icon(
-                      isMatching ? Icons.check_circle : Icons.warning_amber_rounded,
-                      size: 16,
-                      color: isMatching ? Colors.green.shade700 : Colors.amber.shade800,
+                  if (invNoText.isNotEmpty) ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.indigo.shade50,
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: Colors.indigo.shade200),
+                      ),
+                      child: Text(
+                        invNoText,
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.indigo.shade900,
+                        ),
+                      ),
                     ),
-                  const SizedBox(width: 4),
+                    const SizedBox(width: 4),
+                  ],
+                  if (hasFiscalInput) ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: isMatching ? Colors.green.shade50 : Colors.amber.shade50,
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(
+                          color: isMatching ? Colors.green.shade300 : Colors.amber.shade300,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            isMatching ? Icons.check_circle : Icons.warning_amber_rounded,
+                            size: 13,
+                            color: isMatching ? Colors.green.shade700 : Colors.amber.shade800,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            isMatching ? 'IVA OK' : 'Revisar',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: isMatching ? Colors.green.shade800 : Colors.amber.shade900,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                  ],
                   Icon(
                     _isFiscalExpanded ? Icons.expand_less : Icons.expand_more,
-                    size: 20,
+                    size: 18,
                     color: Colors.blueGrey,
                   ),
                 ],
@@ -1630,7 +2349,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
           if (_isFiscalExpanded) ...[
             const Divider(height: 1),
             Padding(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(9),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -1638,22 +2357,51 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                   Row(
                     children: [
                       Expanded(
-                        flex: 4,
+                        flex: 5,
                         child: DropdownButtonFormField<String>(
+                          key: ValueKey('voucher_letter_$_voucherLetter'),
                           isExpanded: true,
                           initialValue: _voucherLetter,
-                          decoration: const InputDecoration(
+                          decoration: InputDecoration(
                             labelText: 'Letra',
                             isDense: true,
+                            filled: true,
+                            fillColor: Colors.indigo.shade50.withValues(alpha: 0.4),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(7),
+                              borderSide: BorderSide(color: Colors.indigo.shade200),
+                            ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(7),
+                            ),
                           ),
                           items: [
-                            const DropdownMenuItem(value: 'A', child: Text('A (Discrimina IVA)', overflow: TextOverflow.ellipsis)),
-                            const DropdownMenuItem(value: 'B', child: Text('B (No Computa)', overflow: TextOverflow.ellipsis)),
-                            const DropdownMenuItem(value: 'C', child: Text('C (Monotributo)', overflow: TextOverflow.ellipsis)),
-                            const DropdownMenuItem(value: 'M', child: Text('M (Retención 100%)', overflow: TextOverflow.ellipsis)),
-                            const DropdownMenuItem(value: 'X', child: Text('X (Comprobante Interno)', overflow: TextOverflow.ellipsis)),
+                            const DropdownMenuItem(
+                              value: 'A',
+                              child: Text('A (Discrimina IVA)', overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+                            ),
+                            const DropdownMenuItem(
+                              value: 'B',
+                              child: Text('B (No Computa)', overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12.5)),
+                            ),
+                            const DropdownMenuItem(
+                              value: 'C',
+                              child: Text('C (Monotributo)', overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12.5)),
+                            ),
+                            const DropdownMenuItem(
+                              value: 'M',
+                              child: Text('M (Retención 100%)', overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12.5)),
+                            ),
+                            const DropdownMenuItem(
+                              value: 'X',
+                              child: Text('X (Comprobante Interno)', overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12.5)),
+                            ),
                             if (_isEditing || _voucherLetter == 'S/D')
-                              const DropdownMenuItem(value: 'S/D', child: Text('S/D (Sin Desglose / Hist.)', overflow: TextOverflow.ellipsis)),
+                              const DropdownMenuItem(
+                                value: 'S/D',
+                                child: Text('S/D (Sin Desglose / Hist.)', overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12.5)),
+                              ),
                           ],
                           onChanged: (val) {
                             if (val != null) _onVoucherLetterChanged(val);
@@ -1666,10 +2414,23 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                         child: InkWell(
                           onTap: () => setState(() => _affectsVatBook = !_affectsVatBook),
                           child: InputDecorator(
-                            decoration: const InputDecoration(
+                            decoration: InputDecoration(
                               labelText: 'Libro IVA',
                               isDense: true,
-                              contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              filled: true,
+                              fillColor: _affectsVatBook
+                                  ? Colors.indigo.shade50.withValues(alpha: 0.4)
+                                  : Colors.grey.shade100,
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(7),
+                                borderSide: BorderSide(
+                                  color: _affectsVatBook ? Colors.indigo.shade200 : Colors.grey.shade300,
+                                ),
+                              ),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(7),
+                              ),
                             ),
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1679,14 +2440,14 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                                     _affectsVatBook ? 'Computa' : 'Excluido',
                                     style: TextStyle(
                                       fontSize: 11.5,
-                                      fontWeight: FontWeight.w600,
+                                      fontWeight: FontWeight.w700,
                                       color: _affectsVatBook ? Colors.indigo.shade800 : Colors.grey.shade600,
                                     ),
                                     overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
                                 Transform.scale(
-                                  scale: 0.8,
+                                  scale: 0.72,
                                   child: Switch(
                                     value: _affectsVatBook,
                                     onChanged: (v) => setState(() => _affectsVatBook = v),
@@ -1700,7 +2461,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 6),
 
                   // Fila 2: Punto de Venta + Nº Comprobante
                   Row(
@@ -1709,10 +2470,13 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                         flex: 4,
                         child: TextFormField(
                           controller: _pointOfSaleCtrl,
-                          decoration: const InputDecoration(
-                            labelText: 'Pto. Venta',
+                          style: _fiscalFieldStyle(_pointOfSaleCtrl, accent: Colors.blueGrey, isNumeric: false),
+                          decoration: _fiscalBoxDecoration(
+                            label: 'Pto. Venta',
+                            ctrl: _pointOfSaleCtrl,
+                            accent: Colors.blueGrey,
+                            isNumeric: false,
                             hintText: '0001',
-                            isDense: true,
                           ),
                           keyboardType: TextInputType.number,
                           maxLength: 5,
@@ -1725,10 +2489,13 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                         flex: 5,
                         child: TextFormField(
                           controller: _voucherNumberCtrl,
-                          decoration: const InputDecoration(
-                            labelText: 'Nº Comprobante',
+                          style: _fiscalFieldStyle(_voucherNumberCtrl, accent: Colors.blueGrey, isNumeric: false),
+                          decoration: _fiscalBoxDecoration(
+                            label: 'Nº Comprobante',
+                            ctrl: _voucherNumberCtrl,
+                            accent: Colors.blueGrey,
+                            isNumeric: false,
                             hintText: '00012345',
-                            isDense: true,
                           ),
                           keyboardType: TextInputType.number,
                           maxLength: 8,
@@ -1739,11 +2506,54 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                     ],
                   ),
 
+                  // Banner informativo para S/D (Histórico sin desglose)
+                  if (isSD) ...[
+                    const SizedBox(height: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.blueGrey.shade50,
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: Colors.blueGrey.shade200),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Text(
+                            'Sin desglose de IVA (se imputa en No Gravado).',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.blueGrey.shade800,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          SizedBox(
+                            height: 26,
+                            child: OutlinedButton.icon(
+                              onPressed: () => _onVoucherLetterChanged('A'),
+                              icon: const Icon(Icons.auto_fix_high, size: 13),
+                              label: const Text(
+                                'Convertir a Factura A y Calcular IVA 21%',
+                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                              ),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.indigo.shade700,
+                                side: BorderSide(color: Colors.indigo.shade300),
+                                padding: const EdgeInsets.symmetric(horizontal: 8),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+
                   // Banner informativo para Letra B/C
                   if (isBC) ...[
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 6),
                     Container(
-                      padding: const EdgeInsets.all(8),
+                      padding: const EdgeInsets.all(6),
                       decoration: BoxDecoration(
                         color: Colors.amber.shade50,
                         borderRadius: BorderRadius.circular(6),
@@ -1752,7 +2562,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Icon(Icons.info_outline, size: 16, color: Colors.amber.shade800),
+                          Icon(Icons.info_outline, size: 15, color: Colors.amber.shade800),
                           const SizedBox(width: 6),
                           Expanded(
                             child: Text(
@@ -1771,15 +2581,86 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
 
                   // Filas 3-5: Alícuotas de IVA (solo si no es B/C ni S/D)
                   if (!isBC && !isSD) ...[
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 6),
+                    // Sub-header visual + Selector de Modo de Costos (c/IVA vs Netos + IVA Mayorista)
+                    Wrap(
+                      alignment: WrapAlignment.spaceBetween,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 6,
+                      runSpacing: 4,
+                      children: [
+                        Text(
+                          'IVA CRÉDITO',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.4,
+                            color: Colors.indigo.shade800,
+                          ),
+                        ),
+                        Container(
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade100,
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: Colors.grey.shade300),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              InkWell(
+                                onTap: () => _toggleCostsIncludeVat(true),
+                                borderRadius: const BorderRadius.horizontal(left: Radius.circular(5)),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: _costsIncludeVat ? Colors.indigo.shade700 : Colors.transparent,
+                                    borderRadius: const BorderRadius.horizontal(left: Radius.circular(5)),
+                                  ),
+                                  child: Text(
+                                    'Costos c/IVA',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      color: _costsIncludeVat ? Colors.white : Colors.blueGrey.shade700,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              InkWell(
+                                onTap: () => _toggleCostsIncludeVat(false),
+                                borderRadius: const BorderRadius.horizontal(right: Radius.circular(5)),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: !_costsIncludeVat ? Colors.indigo.shade700 : Colors.transparent,
+                                    borderRadius: const BorderRadius.horizontal(right: Radius.circular(5)),
+                                  ),
+                                  child: Text(
+                                    'Costos Netos (+IVA)',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      color: !_costsIncludeVat ? Colors.white : Colors.blueGrey.shade700,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 5),
                     Row(
                       children: [
                         Expanded(
                           child: TextFormField(
                             controller: _net21Ctrl,
-                            decoration: const InputDecoration(
-                              labelText: 'Neto 21% (\$)',
-                              isDense: true,
+                            style: _fiscalFieldStyle(_net21Ctrl, accent: Colors.indigo),
+                            decoration: _fiscalBoxDecoration(
+                              label: 'Neto 21% (\$)',
+                              ctrl: _net21Ctrl,
+                              accent: Colors.indigo,
                             ),
                             keyboardType: TextInputType.number,
                             inputFormatters: [ArsThousandsInputFormatter()],
@@ -1790,26 +2671,30 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                         Expanded(
                           child: TextFormField(
                             controller: _iva21Ctrl,
-                            decoration: const InputDecoration(
-                              labelText: 'IVA 21% (\$)',
-                              isDense: true,
+                            style: _fiscalFieldStyle(_iva21Ctrl, accent: Colors.indigo),
+                            decoration: _fiscalBoxDecoration(
+                              label: 'IVA 21% (\$)',
+                              ctrl: _iva21Ctrl,
+                              accent: Colors.indigo,
                             ),
                             keyboardType: TextInputType.number,
                             inputFormatters: [ArsThousandsInputFormatter()],
-                            onChanged: (_) => setState(() {}),
+                            onChanged: (_) => setState(() => _autoSyncFiscal21 = false),
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 5),
                     Row(
                       children: [
                         Expanded(
                           child: TextFormField(
                             controller: _net105Ctrl,
-                            decoration: const InputDecoration(
-                              labelText: 'Neto 10.5% (\$)',
-                              isDense: true,
+                            style: _fiscalFieldStyle(_net105Ctrl, accent: Colors.teal),
+                            decoration: _fiscalBoxDecoration(
+                              label: 'Neto 10.5% (\$)',
+                              ctrl: _net105Ctrl,
+                              accent: Colors.teal,
                             ),
                             keyboardType: TextInputType.number,
                             inputFormatters: [ArsThousandsInputFormatter()],
@@ -1820,26 +2705,30 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                         Expanded(
                           child: TextFormField(
                             controller: _iva105Ctrl,
-                            decoration: const InputDecoration(
-                              labelText: 'IVA 10.5% (\$)',
-                              isDense: true,
+                            style: _fiscalFieldStyle(_iva105Ctrl, accent: Colors.teal),
+                            decoration: _fiscalBoxDecoration(
+                              label: 'IVA 10.5% (\$)',
+                              ctrl: _iva105Ctrl,
+                              accent: Colors.teal,
                             ),
                             keyboardType: TextInputType.number,
                             inputFormatters: [ArsThousandsInputFormatter()],
-                            onChanged: (_) => setState(() {}),
+                            onChanged: (_) => setState(() => _autoSyncFiscal21 = false),
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 5),
                     Row(
                       children: [
                         Expanded(
                           child: TextFormField(
                             controller: _net27Ctrl,
-                            decoration: const InputDecoration(
-                              labelText: 'Neto 27% (\$)',
-                              isDense: true,
+                            style: _fiscalFieldStyle(_net27Ctrl, accent: Colors.deepOrange),
+                            decoration: _fiscalBoxDecoration(
+                              label: 'Neto 27% (\$)',
+                              ctrl: _net27Ctrl,
+                              accent: Colors.deepOrange,
                             ),
                             keyboardType: TextInputType.number,
                             inputFormatters: [ArsThousandsInputFormatter()],
@@ -1850,123 +2739,283 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                         Expanded(
                           child: TextFormField(
                             controller: _iva27Ctrl,
-                            decoration: const InputDecoration(
-                              labelText: 'IVA 27% (\$)',
-                              isDense: true,
+                            style: _fiscalFieldStyle(_iva27Ctrl, accent: Colors.deepOrange),
+                            decoration: _fiscalBoxDecoration(
+                              label: 'IVA 27% (\$)',
+                              ctrl: _iva27Ctrl,
+                              accent: Colors.deepOrange,
                             ),
                             keyboardType: TextInputType.number,
                             inputFormatters: [ArsThousandsInputFormatter()],
-                            onChanged: (_) => setState(() {}),
+                            onChanged: (_) => setState(() => _autoSyncFiscal21 = false),
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 8),
-                    OutlinedButton.icon(
-                      onPressed: _distributeTotalInNet21,
-                      icon: const Icon(Icons.flash_on, size: 14),
-                      label: const Text(
-                        'Distribuir Total en Neto 21%',
-                        style: TextStyle(fontSize: 11),
-                      ),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.indigo.shade700,
-                        side: BorderSide(color: Colors.indigo.shade200),
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                      ),
+                    const SizedBox(height: 5),
+                    Row(
+                      children: [
+                        Expanded(
+                          flex: 5,
+                          child: SizedBox(
+                            height: 26,
+                            child: OutlinedButton.icon(
+                              onPressed: _distributeTotalInNet21,
+                              icon: const Icon(Icons.flash_on, size: 13),
+                              label: const Text(
+                                'Distribuir Total en Neto 21%',
+                                style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.indigo.shade700,
+                                side: BorderSide(color: Colors.indigo.shade200),
+                                padding: const EdgeInsets.symmetric(horizontal: 6),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        SizedBox(
+                          height: 26,
+                          child: OutlinedButton(
+                            onPressed: () => _distributeTotalByRate(10.5),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.teal.shade800,
+                              side: BorderSide(color: Colors.teal.shade300),
+                              padding: const EdgeInsets.symmetric(horizontal: 8),
+                            ),
+                            child: const Text(
+                              'Todo 10.5%',
+                              style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        SizedBox(
+                          height: 26,
+                          child: OutlinedButton(
+                            onPressed: () => _distributeTotalByRate(27.0),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.deepOrange.shade800,
+                              side: BorderSide(color: Colors.deepOrange.shade300),
+                              padding: const EdgeInsets.symmetric(horizontal: 8),
+                            ),
+                            child: const Text(
+                              'Todo 27%',
+                              style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
 
-                  // Fila 6: Percepciones
-                  const SizedBox(height: 8),
+                  // Sub-header de Percepciones Provinciales (Rentas IIBB) y Otros
+                  const SizedBox(height: 6),
+                  Wrap(
+                    alignment: WrapAlignment.spaceBetween,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 6,
+                    runSpacing: 2,
+                    children: [
+                      Text(
+                        'PERCEPCIONES (RENTAS IIBB / IVA) Y OTROS',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.4,
+                          color: Colors.deepPurple.shade800,
+                        ),
+                      ),
+                      Text(
+                        '+ Suma al Total',
+                        style: TextStyle(
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.deepPurple.shade600,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  // Fila 6: Percepciones (IVA Nacional + IIBB Rentas Provincial con calculadora %)
                   Row(
                     children: [
                       Expanded(
                         child: TextFormField(
                           controller: _ivaPerceptionCtrl,
-                          decoration: const InputDecoration(
-                            labelText: 'Percep. IVA (\$)',
-                            isDense: true,
+                          style: _fiscalFieldStyle(_ivaPerceptionCtrl, accent: Colors.purple),
+                          decoration: _fiscalBoxDecoration(
+                            label: 'Percep. IVA (\$)',
+                            ctrl: _ivaPerceptionCtrl,
+                            accent: Colors.purple,
                           ),
                           keyboardType: TextInputType.number,
                           inputFormatters: [ArsThousandsInputFormatter()],
-                          onChanged: (_) => setState(() {}),
+                          onChanged: (_) => _onPerceptionOrInternalTaxChanged(),
                         ),
                       ),
                       const SizedBox(width: 8),
                       Expanded(
-                        child: TextFormField(
-                          controller: _iibbPerceptionCtrl,
-                          decoration: const InputDecoration(
-                            labelText: 'Percep. IIBB (\$)',
-                            isDense: true,
-                          ),
-                          keyboardType: TextInputType.number,
-                          inputFormatters: [ArsThousandsInputFormatter()],
-                          onChanged: (_) => setState(() {}),
+                        child: Builder(
+                          builder: (context) {
+                            final iibbBadge = _iibbBadgeLabel;
+                            final hasIibbRate = iibbBadge != '% ▾';
+                            return TextFormField(
+                              controller: _iibbPerceptionCtrl,
+                              style: _fiscalFieldStyle(_iibbPerceptionCtrl, accent: Colors.deepPurple),
+                              decoration: _fiscalBoxDecoration(
+                                label: 'Percep. IIBB (\$)',
+                                ctrl: _iibbPerceptionCtrl,
+                                accent: Colors.deepPurple,
+                                suffixIcon: PopupMenuButton<String>(
+                                  tooltip: 'Calcular % Percepción IIBB (Rentas / ATP Formosa)',
+                                  initialValue: _selectedIibbMode,
+                                  onSelected: _applyIibbRate,
+                                  itemBuilder: (_) => const [
+                                    PopupMenuItem(
+                                      value: '1_net',
+                                      child: Text('1% sobre Neto Gravado', style: TextStyle(fontSize: 12.5)),
+                                    ),
+                                    PopupMenuItem(
+                                      value: '1.5_net',
+                                      child: Text('1.5% sobre Neto Gravado', style: TextStyle(fontSize: 12.5)),
+                                    ),
+                                    PopupMenuItem(
+                                      value: '2_net',
+                                      child: Text('2% sobre Neto Gravado', style: TextStyle(fontSize: 12.5)),
+                                    ),
+                                    PopupMenuItem(
+                                      value: '2_gross',
+                                      child: Text(
+                                        '2% s/ Subtotal+IVA (2,42% s/Neto - Ej. Resistencia)',
+                                        style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                                      ),
+                                    ),
+                                    PopupMenuItem(
+                                      value: '2.5_net',
+                                      child: Text('2.5% sobre Neto Gravado', style: TextStyle(fontSize: 12.5)),
+                                    ),
+                                    PopupMenuItem(
+                                      value: '3_net',
+                                      child: Text(
+                                        '3% sobre Neto (General Rentas Formosa)',
+                                        style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                                      ),
+                                    ),
+                                    PopupMenuItem(
+                                      value: '3_gross',
+                                      child: Text('3% s/ Subtotal+IVA (3,63% s/Neto)', style: TextStyle(fontSize: 12.5)),
+                                    ),
+                                    PopupMenuItem(
+                                      value: '4_net',
+                                      child: Text('4% sobre Neto (No Insc. / Riesgo)', style: TextStyle(fontSize: 12.5)),
+                                    ),
+                                    PopupMenuDivider(),
+                                    PopupMenuItem(
+                                      value: 'clear',
+                                      child: Text('Limpiar Percepción IIBB (\$0)', style: TextStyle(fontSize: 12.5, color: Colors.red)),
+                                    ),
+                                  ],
+                                  child: Container(
+                                    margin: const EdgeInsets.only(right: 4),
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: hasIibbRate ? Colors.deepPurple.shade700 : Colors.deepPurple.shade50,
+                                      borderRadius: BorderRadius.circular(5),
+                                      border: Border.all(
+                                        color: hasIibbRate ? Colors.deepPurple.shade800 : Colors.deepPurple.shade200,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      iibbBadge,
+                                      style: TextStyle(
+                                        fontSize: 10.5,
+                                        fontWeight: FontWeight.w800,
+                                        color: hasIibbRate ? Colors.white : Colors.deepPurple.shade800,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              keyboardType: TextInputType.number,
+                              inputFormatters: [ArsThousandsInputFormatter()],
+                              onChanged: (_) {
+                                _selectedIibbMode = null;
+                                _onPerceptionOrInternalTaxChanged();
+                              },
+                            );
+                          },
                         ),
                       ),
                     ],
                   ),
 
-                  // Fila 7: No Gravado & Exento
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextFormField(
-                          controller: _nonTaxedCtrl,
-                          decoration: const InputDecoration(
-                            labelText: 'No Gravado (\$)',
-                            isDense: true,
+                  // Fila 7 Compacta (3 columnas vía LayoutBuilder + Wrap): No Gravado, Exento e Imp. Internos
+                  const SizedBox(height: 5),
+                  LayoutBuilder(
+                    builder: (context, box) {
+                      final w = ((box.maxWidth - 16) / 3).clamp(80.0, 220.0);
+                      return Wrap(
+                        spacing: 8,
+                        runSpacing: 6,
+                        children: [
+                          SizedBox(
+                            width: w,
+                            child: TextFormField(
+                              controller: _nonTaxedCtrl,
+                              style: _fiscalFieldStyle(_nonTaxedCtrl, accent: Colors.amber),
+                              decoration: _fiscalBoxDecoration(
+                                label: 'No Gravado (\$)',
+                                ctrl: _nonTaxedCtrl,
+                                accent: Colors.amber,
+                              ),
+                              keyboardType: TextInputType.number,
+                              inputFormatters: [ArsThousandsInputFormatter()],
+                              onChanged: (_) => setState(() => _autoSyncFiscal21 = false),
+                            ),
                           ),
-                          keyboardType: TextInputType.number,
-                          inputFormatters: [ArsThousandsInputFormatter()],
-                          onChanged: (_) => setState(() {}),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: TextFormField(
-                          controller: _exemptCtrl,
-                          decoration: const InputDecoration(
-                            labelText: 'Exento (\$)',
-                            isDense: true,
+                          SizedBox(
+                            width: w,
+                            child: TextFormField(
+                              controller: _exemptCtrl,
+                              style: _fiscalFieldStyle(_exemptCtrl, accent: Colors.amber),
+                              decoration: _fiscalBoxDecoration(
+                                label: 'Exento (\$)',
+                                ctrl: _exemptCtrl,
+                                accent: Colors.amber,
+                              ),
+                              keyboardType: TextInputType.number,
+                              inputFormatters: [ArsThousandsInputFormatter()],
+                              onChanged: (_) => setState(() => _autoSyncFiscal21 = false),
+                            ),
                           ),
-                          keyboardType: TextInputType.number,
-                          inputFormatters: [ArsThousandsInputFormatter()],
-                          onChanged: (_) => setState(() {}),
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  // Fila 8: Impuestos Internos
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextFormField(
-                          controller: _internalTaxesCtrl,
-                          decoration: const InputDecoration(
-                            labelText: 'Imp. Internos (\$)',
-                            isDense: true,
+                          SizedBox(
+                            width: w,
+                            child: TextFormField(
+                              controller: _internalTaxesCtrl,
+                              style: _fiscalFieldStyle(_internalTaxesCtrl, accent: Colors.brown),
+                              decoration: _fiscalBoxDecoration(
+                                label: 'Imp. Internos (\$)',
+                                ctrl: _internalTaxesCtrl,
+                                accent: Colors.brown,
+                              ),
+                              keyboardType: TextInputType.number,
+                              inputFormatters: [ArsThousandsInputFormatter()],
+                              onChanged: (_) => _onPerceptionOrInternalTaxChanged(),
+                            ),
                           ),
-                          keyboardType: TextInputType.number,
-                          inputFormatters: [ArsThousandsInputFormatter()],
-                          onChanged: (_) => setState(() {}),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      const Expanded(child: SizedBox.shrink()),
-                    ],
+                        ],
+                      );
+                    },
                   ),
 
                   // Indicador de suma fiscal
                   if (hasFiscalInput) ...[
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 6),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
                         color: isMatching ? Colors.green.shade50 : Colors.amber.shade50,
                         borderRadius: BorderRadius.circular(6),
@@ -1978,7 +3027,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                         children: [
                           Icon(
                             isMatching ? Icons.check_circle_outline : Icons.error_outline,
-                            size: 15,
+                            size: 14,
                             color: isMatching ? Colors.green.shade700 : Colors.amber.shade800,
                           ),
                           const SizedBox(width: 6),
@@ -1989,7 +3038,7 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                                   : 'Suma fiscal: \$${fSum.toCurrency()} (Total: \$${_totalAmount.toCurrency()})',
                               style: TextStyle(
                                 fontSize: 11,
-                                fontWeight: FontWeight.w600,
+                                fontWeight: FontWeight.w700,
                                 color: isMatching ? Colors.green.shade800 : Colors.amber.shade900,
                               ),
                             ),
@@ -1998,18 +3047,21 @@ class _SupplierInvoiceFormDialogState extends State<SupplierInvoiceFormDialog> {
                       ),
                     ),
                     if (!isMatching && _items.isNotEmpty) ...[
-                      const SizedBox(height: 6),
-                      OutlinedButton.icon(
-                        onPressed: _syncTotalFromFiscalBreakdown,
-                        icon: const Icon(Icons.sync_alt, size: 14),
-                        label: const Text(
-                          'Sincronizar Impuestos / Total con Desglose',
-                          style: TextStyle(fontSize: 11),
-                        ),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.amber.shade900,
-                          side: BorderSide(color: Colors.amber.shade400),
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      const SizedBox(height: 5),
+                      SizedBox(
+                        height: 26,
+                        child: OutlinedButton.icon(
+                          onPressed: _syncTotalFromFiscalBreakdown,
+                          icon: const Icon(Icons.sync_alt, size: 14),
+                          label: const Text(
+                            'Sincronizar Impuestos / Total con Desglose',
+                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.amber.shade900,
+                            side: BorderSide(color: Colors.amber.shade400),
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                          ),
                         ),
                       ),
                     ],
