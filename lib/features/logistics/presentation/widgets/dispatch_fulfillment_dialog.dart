@@ -386,6 +386,7 @@ class _PostDispatchPrintSheetState extends State<_PostDispatchPrintSheet> {
       final isNarrow = localTerminal.printerFormat == 'thermal_58';
       final paperWidth =
           isNarrow ? ThermalPaperWidth.mm58 : ThermalPaperWidth.mm80;
+      ThermalPaperWidth selectedWidth = paperWidth;
       final sale = widget.note['sale'] ?? {};
       final customerName = sale['customer']?['name'];
       final vendorName = sale['user']?['name'];
@@ -404,88 +405,92 @@ class _PostDispatchPrintSheetState extends State<_PostDispatchPrintSheet> {
             '${pad(now.day)}/${pad(now.month)}/${now.year} ${pad(now.hour)}:${pad(now.minute)}';
         final remNum = widget.note['id'].toString().padLeft(6, '0');
 
-        List<TicketLine> buildCopy(String copyLabel) => [
-              if (settings?.companyName != null)
-                TicketLine(settings!.companyName!.toUpperCase(),
-                    align: TicketAlign.center, isBold: true, isLarge: true),
-              if (settings?.address != null && settings!.address!.isNotEmpty)
-                TicketLine(settings.address!, align: TicketAlign.center),
-              if (settings?.taxId != null && settings!.taxId!.isNotEmpty)
-                TicketLine('CUIT: ${settings.taxId}',
+        List<TicketLine> buildPreviewForWidth(bool narrow) {
+          List<TicketLine> buildCopy(String copyLabel) => [
+                if (settings?.companyName != null)
+                  TicketLine(settings!.companyName!.toUpperCase(),
+                      align: TicketAlign.center, isBold: true, isLarge: true),
+                if (settings?.address != null && settings!.address!.isNotEmpty)
+                  TicketLine(settings.address!, align: TicketAlign.center),
+                if (settings?.taxId != null && settings!.taxId!.isNotEmpty)
+                  TicketLine('CUIT: ${settings.taxId}',
+                      align: TicketAlign.center, isBold: true),
+                const TicketLine.hr(bold: true),
+                const TicketLine('REMITO DE DESPACHO',
                     align: TicketAlign.center, isBold: true),
-              const TicketLine.hr(bold: true),
-              const TicketLine('REMITO DE DESPACHO',
-                  align: TicketAlign.center, isBold: true),
-              TicketLine('[ $copyLabel ]', align: TicketAlign.center),
-              TicketLine(
-                  isNarrow
-                      ? 'DOC. NO VALIDO COMO FACTURA'
-                      : 'DOCUMENTO NO VÁLIDO COMO FACTURA',
-                  align: TicketAlign.center),
-              const TicketLine.hr(),
-              TicketLine('REM Nro: $remNum', isBold: true),
-              TicketLine('FECHA: $fecha'),
-              TicketLine('CLIENTE: ${customerName ?? 'Consumidor Final'}',
-                  isBold: true),
-              if (vendorName != null)
-                TicketLine('VENDIO: ${vendorName.toUpperCase()}'),
-              TicketLine('DESPACHO: ${dispatcherName.toUpperCase()}'),
-              const TicketLine.hr(),
-              ...deliveredList.expand((d) {
-                final item = items.firstWhere((i) => i['id'] == d['id'],
-                    orElse: () => null);
-                if (item == null) return [const TicketLine.space()];
-                final name =
-                    (item['product']?['name'] ?? 'Producto').toUpperCase();
-                final purchased =
-                    double.parse(item['quantity_purchased'].toString());
-                final deliveredBefore =
-                    double.parse(item['quantity_delivered'].toString());
-                final deliveredNow = (d['delivered_now'] as num).toDouble();
-                final remaining =
-                    (purchased - deliveredBefore - deliveredNow).clamp(0.0, double.infinity);
-                return [
-                  TicketLine(name, isBold: true),
-                  TicketLine(
-                      'Entregando: ${deliveredNow.toQty()} | Saldo: ${remaining.toQty()}'),
-                  const TicketLine.space(),
-                ];
-              }),
-              const TicketLine.hr(bold: true),
-            ];
+                TicketLine('[ $copyLabel ]', align: TicketAlign.center),
+                TicketLine(
+                    narrow
+                        ? 'DOC. NO VALIDO COMO FACTURA'
+                        : 'DOCUMENTO NO VÁLIDO COMO FACTURA',
+                    align: TicketAlign.center),
+                const TicketLine.hr(),
+                TicketLine('REM Nro: $remNum', isBold: true),
+                TicketLine('FECHA: $fecha'),
+                TicketLine('CLIENTE: ${customerName ?? 'Consumidor Final'}',
+                    isBold: true),
+                if (vendorName != null)
+                  TicketLine('VENDIO: ${vendorName.toUpperCase()}'),
+                TicketLine('DESPACHO: ${dispatcherName.toUpperCase()}'),
+                const TicketLine.hr(),
+                ...deliveredList.expand((d) {
+                  final item = items.firstWhere((i) => i['id'] == d['id'],
+                      orElse: () => null);
+                  if (item == null) return [const TicketLine.space()];
+                  final name =
+                      (item['product']?['name'] ?? 'Producto').toUpperCase();
+                  final purchased =
+                      double.parse(item['quantity_purchased'].toString());
+                  final deliveredBefore =
+                      double.parse(item['quantity_delivered'].toString());
+                  final deliveredNow = (d['delivered_now'] as num).toDouble();
+                  final remaining = (purchased - deliveredBefore - deliveredNow)
+                      .clamp(0.0, double.infinity);
+                  return [
+                    TicketLine(name, isBold: true),
+                    TicketLine(
+                        'Entregando: ${deliveredNow.toQty()} | Saldo: ${remaining.toQty()}'),
+                    const TicketLine.space(),
+                  ];
+                }),
+                const TicketLine.hr(bold: true),
+              ];
 
-        final previewLines = [
-          ...buildCopy('COPIA CLIENTE'),
-          const TicketLine.space(),
-          TicketLine(
-              isNarrow
-                  ? '✂ - - - - CORTE - - - - ✂'
-                  : '✂ - - - - - - - CORTE - - - - - - - ✂',
-              align: TicketAlign.center),
-          const TicketLine.space(),
-          ...buildCopy('COPIA DESPACHANTE - ORIGINAL'),
-          TicketLine(
-              isNarrow
-                  ? 'FIRMA CONFORMIDAD CLIENTE:'
-                  : 'FIRMA CONFORMIDAD DEL CLIENTE:',
-              isBold: true),
-          TicketLine(isNarrow
-              ? '____________________________'
-              : '___________________________________'),
-          TicketLine(isNarrow
-              ? 'Aclaración: ________________'
-              : 'Aclaración: ________________________'),
-          TicketLine(isNarrow
-              ? 'DNI / CUIT: ________________'
-              : 'DNI / CUIT: ________________________'),
-        ];
+          return [
+            ...buildCopy('COPIA CLIENTE'),
+            const TicketLine.space(),
+            TicketLine(
+                narrow
+                    ? '✂ - - - - CORTE - - - - ✂'
+                    : '✂ - - - - - - - CORTE - - - - - - - ✂',
+                align: TicketAlign.center),
+            const TicketLine.space(),
+            ...buildCopy('COPIA DESPACHANTE - ORIGINAL'),
+            TicketLine(
+                narrow
+                    ? 'FIRMA CONFORMIDAD CLIENTE:'
+                    : 'FIRMA CONFORMIDAD DEL CLIENTE:',
+                isBold: true),
+            TicketLine(narrow
+                ? '____________________________'
+                : '___________________________________'),
+            TicketLine(narrow
+                ? 'Aclaración: ________________'
+                : 'Aclaración: ________________________'),
+            TicketLine(narrow
+                ? 'DNI / CUIT: ________________'
+                : 'DNI / CUIT: ________________________'),
+          ];
+        }
 
         final confirmed = await TicketPreviewDialog.show(
           context,
           title:
               'Remito de Despacho #${widget.note['id']} (${isNarrow ? "58mm" : "80mm"})',
           paperWidth: paperWidth,
-          lines: previewLines,
+          onConfirmPrintWithWidth: (w) => selectedWidth = w,
+          linesBuilder: (w) =>
+              buildPreviewForWidth(w == ThermalPaperWidth.mm58),
         );
         if (!confirmed || !mounted) return;
       }
@@ -498,6 +503,8 @@ class _PostDispatchPrintSheetState extends State<_PostDispatchPrintSheet> {
         customerName: customerName,
         vendorName: vendorName,
         dispatcherName: dispatcherName,
+        paperSizeOverride:
+            selectedWidth == ThermalPaperWidth.mm58 ? '58mm' : '80mm',
       );
 
       if (mounted) {

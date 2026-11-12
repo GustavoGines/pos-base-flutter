@@ -249,11 +249,9 @@ class _ReprintSheetState extends State<_ReprintSheet> {
       final isNarrow = localTerminal.printerFormat == 'thermal_58';
       final paperWidth =
           isNarrow ? ThermalPaperWidth.mm58 : ThermalPaperWidth.mm80;
+      ThermalPaperWidth selectedWidth = paperWidth;
 
       if (widget.showPreview) {
-        final previewLines = _buildTicketLines(sale, customerName, vendorName,
-            dispatcherName, payloadToUse, items, settings,
-            isReprint: true, isNarrow: isNarrow);
         if (!ctx.mounted) return;
         final docLabel = noteStatus == 'pending'
             ? 'Orden de Retiro'
@@ -264,7 +262,18 @@ class _ReprintSheetState extends State<_ReprintSheet> {
           ctx,
           title: '$docLabel #${widget.note['id']} (${isNarrow ? "58mm" : "80mm"})',
           paperWidth: paperWidth,
-          lines: previewLines,
+          onConfirmPrintWithWidth: (w) => selectedWidth = w,
+          linesBuilder: (w) => _buildTicketLines(
+            sale,
+            customerName,
+            vendorName,
+            dispatcherName,
+            payloadToUse,
+            items,
+            settings,
+            isReprint: true,
+            isNarrow: w == ThermalPaperWidth.mm58,
+          ),
         );
         if (!confirmed || !ctx.mounted) return;
       }
@@ -278,6 +287,8 @@ class _ReprintSheetState extends State<_ReprintSheet> {
         vendorName: vendorName,
         dispatcherName: dispatcherName,
         isReprint: true,
+        paperSizeOverride:
+            selectedWidth == ThermalPaperWidth.mm58 ? '58mm' : '80mm',
       );
 
       if (ctx.mounted) {

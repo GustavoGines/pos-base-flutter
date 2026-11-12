@@ -120,7 +120,9 @@ class QuoteThermalReceiptWidget extends StatelessWidget {
       }
     }
 
-    return Container(
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeOutCubic,
       width: width,
       padding: EdgeInsets.symmetric(horizontal: padding, vertical: 12.0),
       decoration: BoxDecoration(
@@ -313,7 +315,9 @@ class QuoteThermalReceiptWidget extends StatelessWidget {
           if (cleanBarcode.isNotEmpty) ...[
             const SizedBox(height: 6),
             Center(
-              child: SizedBox(
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                curve: Curves.easeOutCubic,
                 width: is58mm ? 160.0 : 210.0,
                 height: 48.0,
                 child: CustomPaint(

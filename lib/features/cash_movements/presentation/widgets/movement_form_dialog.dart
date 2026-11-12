@@ -4,8 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/presentation/widgets/print_format_selector.dart';
+import '../../../../core/presentation/widgets/thermal_receipt_widget.dart';
+import '../../../../core/presentation/widgets/ticket_preview_dialog.dart';
 import '../../../../core/utils/currency_formatter.dart';
 import '../../providers/cash_movement_provider.dart';
 import '../../providers/expense_category_provider.dart';
@@ -158,14 +161,9 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
 
   Future<void> _loadPrintPreference() async {
     final prefs = await SharedPreferences.getInstance();
-    final localTerminal = context.read<LocalTerminalProvider>();
-    final hasPrinter =
-        localTerminal.printerConnection.toLowerCase() != 'none' ||
-            localTerminal.printerFormat.toLowerCase().startsWith('a4');
     if (mounted) {
       setState(() {
-        _printReceipt =
-            hasPrinter && (prefs.getBool('auto_print_cash_movement') ?? true);
+        _printReceipt = prefs.getBool('auto_print_cash_movement') ?? true;
       });
     }
   }
@@ -546,7 +544,7 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
           _selectedSupplierId != null;
 
       if (shouldPrint && !isA4) {
-        // ── Impresión Térmica ──
+        // ── Vista Previa + Impresión Térmica (58mm / 80mm) ──
         try {
           final paymentMaps = _payments
               .map((p) => <String, dynamic>{
@@ -556,36 +554,99 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                   })
               .toList();
 
-          if (isSupplierPayment && supplierName != null) {
-            await ReceiptPrinterService.instance.printSupplierPaymentTicket(
-              type: _type,
-              supplierName: supplierName,
-              supplierCuit: supplierCuit,
-              totalAmount: _totalAmount,
-              balanceBefore: balanceBeforePayment ?? 0.0,
-              payments: paymentMaps,
-              settings: settings,
-              localTerminal: localTerminal,
-              movementIds: createdIds,
-              description: _descriptionController.text,
-              receiptNumber: _receiptController.text,
-              cashierName: authProvider.currentUser?['name'],
-              openDrawer: hasCash,
+          final isNarrow = localTerminal.printerFormat == 'thermal_58';
+          ThermalPaperWidth chosenWidth =
+              isNarrow ? ThermalPaperWidth.mm58 : ThermalPaperWidth.mm80;
+          final cashierLabel = authProvider.currentUser?['name']?.toString();
+
+          bool confirmed = true;
+          if (mounted) {
+            confirmed = await TicketPreviewDialog.show(
+              context,
+              title: isSupplierPayment
+                  ? 'Vista Previa — Pago a Proveedor'
+                  : 'Vista Previa — Comprobante de Caja',
+              paperWidth: chosenWidth,
+              onConfirmPrintWithWidth: (w) => chosenWidth = w,
+              linesBuilder: (w) {
+                final use58 = w == ThermalPaperWidth.mm58;
+                if (isSupplierPayment && supplierName != null) {
+                  return CashMovementPdfService.buildSupplierPaymentTicketLines(
+                    type: _type,
+                    supplierName: supplierName,
+                    supplierCuit: supplierCuit,
+                    totalAmount: _totalAmount,
+                    balanceBefore: balanceBeforePayment ?? 0.0,
+                    payments: paymentMaps,
+                    businessName: settings.companyName ?? 'MI NEGOCIO',
+                    businessAddress: settings.address,
+                    businessTaxId: settings.taxId,
+                    movementIds: createdIds,
+                    description: _descriptionController.text,
+                    receiptNumber: _receiptController.text,
+                    cashierName: cashierLabel,
+                    is58mm: use58,
+                  );
+                }
+                return CashMovementPdfService.buildGenericMovementTicketLines(
+                  type: _type,
+                  category: _category,
+                  totalAmount: _totalAmount,
+                  payments: paymentMaps,
+                  businessName: settings.companyName ?? 'MI NEGOCIO',
+                  businessAddress: settings.address,
+                  businessTaxId: settings.taxId,
+                  movementIds: createdIds,
+                  description: _descriptionController.text,
+                  receiptNumber: _receiptController.text,
+                  cashierName: cashierLabel,
+                  is58mm: use58,
+                );
+              },
             );
-          } else {
-            await ReceiptPrinterService.instance.printCashMovementTicket(
-              type: _type,
-              category: _category,
-              totalAmount: _totalAmount,
-              payments: paymentMaps,
-              settings: settings,
-              localTerminal: localTerminal,
-              movementIds: createdIds,
-              description: _descriptionController.text,
-              receiptNumber: _receiptController.text,
-              cashierName: authProvider.currentUser?['name'],
-              openDrawer: hasCash,
-            );
+          }
+
+          if (confirmed) {
+            final targetPaper = chosenWidth == ThermalPaperWidth.mm58
+                ? PaperSize.mm58
+                : PaperSize.mm80;
+            if (isSupplierPayment && supplierName != null) {
+              await ReceiptPrinterService.instance.printSupplierPaymentTicket(
+                type: _type,
+                supplierName: supplierName,
+                supplierCuit: supplierCuit,
+                totalAmount: _totalAmount,
+                balanceBefore: balanceBeforePayment ?? 0.0,
+                payments: paymentMaps,
+                settings: settings,
+                localTerminal: localTerminal,
+                movementIds: createdIds,
+                description: _descriptionController.text,
+                receiptNumber: _receiptController.text,
+                cashierName: cashierLabel,
+                openDrawer: hasCash,
+                paperSizeOverride: targetPaper,
+              );
+            } else {
+              await ReceiptPrinterService.instance.printCashMovementTicket(
+                type: _type,
+                category: _category,
+                totalAmount: _totalAmount,
+                payments: paymentMaps,
+                settings: settings,
+                localTerminal: localTerminal,
+                movementIds: createdIds,
+                description: _descriptionController.text,
+                receiptNumber: _receiptController.text,
+                cashierName: cashierLabel,
+                openDrawer: hasCash,
+                paperSizeOverride: targetPaper,
+              );
+            }
+          } else if (hasCash) {
+            try {
+              await ReceiptPrinterService.instance.openCashDrawer(localTerminal);
+            } catch (_) {}
           }
         } catch (printError) {
           // ── Error de impresión: NUNCA bloquea la transacción ──
@@ -630,6 +691,7 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
               payments: paymentMaps,
               businessName: settings.companyName ?? 'MI NEGOCIO',
               businessTaxId: settings.taxId,
+              businessSettings: settings,
               movementIds: createdIds,
               description: _descriptionController.text,
               receiptNumber: _receiptController.text,
@@ -645,6 +707,7 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
               payments: paymentMaps,
               businessName: settings.companyName ?? 'MI NEGOCIO',
               businessTaxId: settings.taxId,
+              businessSettings: settings,
               movementIds: createdIds,
               description: _descriptionController.text,
               receiptNumber: _receiptController.text,
@@ -1685,37 +1748,37 @@ class _MovementFormDialogState extends State<MovementFormDialog> {
                     ),
                   ),
 
-                  // ── Checkbox de Impresión ──
-                  if (context
-                              .watch<LocalTerminalProvider>()
-                              .printerConnection
-                              .toLowerCase() !=
-                          'none' ||
-                      context
-                          .watch<LocalTerminalProvider>()
-                          .printerFormat
-                          .toLowerCase()
-                          .startsWith('a4'))
-                    Padding(
-                      padding: const EdgeInsets.only(top: 12, bottom: 4),
-                      child: CheckboxListTile(
-                        value: _printReceipt,
-                        onChanged: (val) {
-                          setState(() => _printReceipt = val ?? true);
-                          _savePrintPreference(val ?? true);
-                        },
-                        title: const Text('Imprimir comprobante',
-                            style: TextStyle(fontWeight: FontWeight.w500)),
-                        subtitle: const Text(
-                            'Imprime un vale con espacio para firma',
-                            style: TextStyle(fontSize: 12)),
-                        secondary: Icon(Icons.print,
-                            color: _printReceipt ? Colors.blue : Colors.grey),
-                        dense: true,
-                        contentPadding: EdgeInsets.zero,
-                        controlAffinity: ListTileControlAffinity.leading,
+                  // ── Checkbox de Impresión / Vista Previa (o Solo Registrar si se destilda) ──
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12, bottom: 4),
+                    child: CheckboxListTile(
+                      value: _printReceipt,
+                      onChanged: (val) {
+                        setState(() => _printReceipt = val ?? true);
+                        _savePrintPreference(val ?? true);
+                      },
+                      title: const Text(
+                        'Imprimir / Ver comprobante al registrar',
+                        style: TextStyle(fontWeight: FontWeight.w600),
                       ),
+                      subtitle: Text(
+                        _printReceipt
+                            ? 'Al guardar podrás elegir Ticket Térmico (58/80mm) o Hoja A4/Carta'
+                            : 'Solo registrar movimiento (sin abrir vista previa ni imprimir)',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: _printReceipt ? Colors.blueGrey.shade600 : Colors.grey.shade600,
+                        ),
+                      ),
+                      secondary: Icon(
+                        _printReceipt ? Icons.print : Icons.print_disabled_outlined,
+                        color: _printReceipt ? Colors.blue : Colors.grey,
+                      ),
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      controlAffinity: ListTileControlAffinity.leading,
                     ),
+                  ),
 
                   Container(
                     width: double.infinity,

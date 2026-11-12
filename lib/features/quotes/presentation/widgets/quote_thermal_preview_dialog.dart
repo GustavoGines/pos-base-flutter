@@ -211,11 +211,16 @@ class _QuoteThermalPreviewDialogState extends State<QuoteThermalPreviewDialog> {
                     vertical: 18,
                   ),
                   child: Center(
-                    child: QuoteThermalReceiptWidget(
-                      paperWidth: _currentWidth,
-                      quote: widget.quote,
-                      businessSettings: widget.settings,
-                      vendorName: widget.vendorName,
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      curve: Curves.easeOutCubic,
+                      width: _currentWidth.logicalWidth,
+                      child: QuoteThermalReceiptWidget(
+                        paperWidth: _currentWidth,
+                        quote: widget.quote,
+                        businessSettings: widget.settings,
+                        vendorName: widget.vendorName,
+                      ),
                     ),
                   ),
                 ),

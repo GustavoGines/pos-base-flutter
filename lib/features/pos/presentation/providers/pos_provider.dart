@@ -1804,6 +1804,7 @@ class PosProvider with ChangeNotifier {
           final isNarrow = localTerminal.printerFormat == 'thermal_58';
           final paperWidth =
               isNarrow ? ThermalPaperWidth.mm58 : ThermalPaperWidth.mm80;
+          ThermalPaperWidth selectedWidth = paperWidth;
           bool confirmedToPrint = true;
 
           // Mostrar Vista Previa Térmica DESPUÉS de que la venta y ARCA emitieron el comprobante real (igual que A4)
@@ -1815,8 +1816,9 @@ class PosProvider with ChangeNotifier {
                 title:
                     'Vista Previa — ${_lastElectronicInvoice != null ? "Ticket Fiscal ARCA" : "Ticket"} ${isNarrow ? "58mm" : "80mm"}',
                 paperWidth: paperWidth,
-                receiptWidget: ThermalReceiptWidget(
-                  paperWidth: paperWidth,
+                onConfirmPrintWithWidth: (w) => selectedWidth = w,
+                receiptBuilder: (w) => ThermalReceiptWidget(
+                  paperWidth: w,
                   businessSettings: settings,
                   items: cartSnapshot,
                   payments: resolvedPayments,
@@ -1854,6 +1856,8 @@ class PosProvider with ChangeNotifier {
           }
 
           if (confirmedToPrint) {
+            final selectedPaperStr =
+                selectedWidth == ThermalPaperWidth.mm58 ? '58mm' : '80mm';
             _activePrinter.electronicInvoice = _lastElectronicInvoice;
             if (requiresDispatch &&
                 fulfillmentStatus == 'delivered' &&
@@ -1892,8 +1896,7 @@ class PosProvider with ChangeNotifier {
                         customerSnapshot?.fiscalAddress ??
                         customerSnapshot?.deliveryAddress ??
                         deliveryAddress,
-                paperSizeOverride:
-                    localTerminal.printerFormat == 'thermal_58' ? '58mm' : '80mm',
+                paperSizeOverride: selectedPaperStr,
                 iibbPerceptionAmount: effectivePerceptionAmount,
               );
             } else {
@@ -1903,8 +1906,7 @@ class PosProvider with ChangeNotifier {
                 total: totalSnapshot,
                 settings: settings,
                 localTerminal: localTerminal,
-                paperSizeOverride:
-                    localTerminal.printerFormat == 'thermal_58' ? '58mm' : '80mm',
+                paperSizeOverride: selectedPaperStr,
                 paymentDetails: resolvedPayments,
                 receiptNumber: extractedSaleId,
                 userName: recalledUserSnapshot ?? userName,
@@ -2528,6 +2530,7 @@ class PosProvider with ChangeNotifier {
               final isNarrow = localTerminal.printerFormat == 'thermal_58';
               final paperWidth =
                   isNarrow ? ThermalPaperWidth.mm58 : ThermalPaperWidth.mm80;
+              ThermalPaperWidth selectedWidth = paperWidth;
 
               bool confirmedToPrint = true;
               if (showPreview) {
@@ -2538,8 +2541,9 @@ class PosProvider with ChangeNotifier {
                     title:
                         'Vista Previa — ${_lastElectronicInvoice != null ? "Ticket Fiscal ARCA" : "Ticket"} ${isNarrow ? "58mm" : "80mm"}',
                     paperWidth: paperWidth,
-                    receiptWidget: ThermalReceiptWidget(
-                      paperWidth: paperWidth,
+                    onConfirmPrintWithWidth: (w) => selectedWidth = w,
+                    receiptBuilder: (w) => ThermalReceiptWidget(
+                      paperWidth: w,
                       businessSettings: safeSettings,
                       items: ticketItems,
                       payments: resolvedPayments,
@@ -2563,6 +2567,8 @@ class PosProvider with ChangeNotifier {
               }
 
               if (confirmedToPrint) {
+                final selectedPaperStr =
+                    selectedWidth == ThermalPaperWidth.mm58 ? '58mm' : '80mm';
                 _activePrinter.electronicInvoice = _lastElectronicInvoice;
                 await _activePrinter.printSaleTicket(
                   electronicInvoice: _lastElectronicInvoice,
@@ -2582,7 +2588,7 @@ class PosProvider with ChangeNotifier {
                   tenderedAmount: tenderedAmount,
                   changeAmount: changeAmount,
                   shippingCost: shippingCost,
-                  paperSizeOverride: localTerminal.printerFormat == 'thermal_58' ? '58mm' : '80mm',
+                  paperSizeOverride: selectedPaperStr,
                   iibbPerceptionAmount: iibbPerceptionAmount ?? 0.0,
                 );
               } else if ((_hasCashInPayments(payments) || tenderedAmount > 0) &&

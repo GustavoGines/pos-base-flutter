@@ -1734,14 +1734,18 @@ class ReceiptPrinterService {
     String? vendorName,
     String? dispatcherName,
     bool isReprint = false,
+    String? paperSizeOverride,
   }) async {
-    reconfigure(localTerminal);
+    await reconfigure(localTerminal);
     if (localTerminal.printerConnection.toLowerCase() == 'none') return;
     if (config.connectionType == PrinterConnectionType.usb && (config.comPort == null || config.comPort!.trim().isEmpty)) return;
 
     final profile = await _getProfile();
-    final generator = Generator(config.paperSize, profile);
-    final is58mm = config.paperSize == PaperSize.mm58;
+    final effectivePaperSize = paperSizeOverride != null
+        ? (paperSizeOverride.contains('58') ? PaperSize.mm58 : PaperSize.mm80)
+        : config.paperSize;
+    final generator = Generator(effectivePaperSize, profile);
+    final is58mm = effectivePaperSize == PaperSize.mm58;
     List<int> bytes = [];
 
     final now = DateTime.now().toLocal();
@@ -1938,7 +1942,9 @@ class ReceiptPrinterService {
     String? receiptNumber,
     String? cashierName,
     bool openDrawer = true,
+    PaperSize? paperSizeOverride,
   }) async {
+    await reconfigure(localTerminal);
     if (localTerminal.printerConnection.toLowerCase() == 'none') {
       return;
     }
@@ -1948,7 +1954,7 @@ class ReceiptPrinterService {
     }
 
     final profile = await _getProfile();
-    final generator = Generator(config.paperSize, profile);
+    final generator = Generator(paperSizeOverride ?? config.paperSize, profile);
     List<int> bytes = [];
 
     bytes += generator.reset();
@@ -2123,7 +2129,9 @@ class ReceiptPrinterService {
     required BusinessSettings settings,
     required LocalTerminalProvider localTerminal,
     String? supplierCuit,
+    PaperSize? paperSizeOverride,
   }) async {
+    await reconfigure(localTerminal);
     if (localTerminal.printerConnection.toLowerCase() == 'none') {
       return;
     }
@@ -2133,7 +2141,7 @@ class ReceiptPrinterService {
     }
 
     final profile = await _getProfile();
-    final generator = Generator(config.paperSize, profile);
+    final generator = Generator(paperSizeOverride ?? config.paperSize, profile);
     List<int> bytes = [];
 
     bytes += generator.reset();
@@ -2186,7 +2194,9 @@ class ReceiptPrinterService {
     String? receiptNumber,
     String? cashierName,
     bool openDrawer = true,
+    PaperSize? paperSizeOverride,
   }) async {
+    await reconfigure(localTerminal);
     if (localTerminal.printerConnection.toLowerCase() == 'none') {
       return;
     }
@@ -2196,7 +2206,7 @@ class ReceiptPrinterService {
     }
 
     final profile = await _getProfile();
-    final generator = Generator(config.paperSize, profile);
+    final generator = Generator(paperSizeOverride ?? config.paperSize, profile);
     List<int> bytes = [];
 
     bytes += generator.reset();

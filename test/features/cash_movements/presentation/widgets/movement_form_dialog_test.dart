@@ -5,6 +5,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:frontend_desktop/core/utils/currency_formatter.dart';
 
 import 'package:frontend_desktop/features/cash_movements/presentation/widgets/movement_form_dialog.dart';
+import 'package:frontend_desktop/core/presentation/widgets/ticket_preview_dialog.dart';
+import 'package:frontend_desktop/features/cash_movements/services/cash_movement_pdf_service.dart';
 import 'package:frontend_desktop/features/cash_movements/providers/cash_movement_provider.dart';
 import 'package:frontend_desktop/features/cash_movements/providers/expense_category_provider.dart';
 import 'package:frontend_desktop/features/cash_movements/models/expense_category_model.dart';
@@ -123,6 +125,9 @@ class FakeAuthProvider extends ChangeNotifier implements AuthProvider {
   bool _isAdmin = true;
   @override
   bool get isAdmin => _isAdmin;
+
+  @override
+  Map<String, dynamic>? get currentUser => const {'id': 1, 'name': 'Admin'};
 
   void setIsAdmin(bool value) {
     _isAdmin = value;
@@ -599,6 +604,143 @@ void main() {
       expect(payments!.first['payment_method'], 'cash');
       expect(payments.first['funding_source'], 'owner_funds');
       expect(payments.first['amount'], 15000.0);
+    });
+
+    test('CashMovementPdfService formats currency with leading dollar sign and hyphenates CUIT', () async {
+      expect(CashMovementPdfService.formatCurrency(123187.24), '\$ 123.187,24');
+      expect(CashMovementPdfService.formatCurrency(0), '\$ 0,00');
+      expect(CashMovementPdfService.formatCuit('20396063299'), '20-39606329-9');
+      expect(CashMovementPdfService.formatCuit('27-38829149-7'), '27-38829149-7');
+
+      const mockSettings = BusinessSettings(
+        companyName: 'DEV4U',
+        address: 'Av. 25 de Mayo 123',
+        phone: '3704123456',
+        taxId: '20396063299',
+        taxCondition: 'responsable_inscripto',
+        iibb: '909-123456-1',
+      );
+
+      final pdfBytes = await CashMovementPdfService.generateSupplierPdfBytesForTest(
+        type: 'supplier_payment',
+        supplierName: '180 Pasteleria',
+        supplierCuit: '27388291497',
+        totalAmount: 123187.24,
+        balanceBefore: 123187.24,
+        payments: const [
+          {'payment_method': 'cash', 'funding_source': 'owner_funds', 'amount': 123187.24}
+        ],
+        businessName: 'DEV4U',
+        businessTaxId: '20396063299',
+        businessSettings: mockSettings,
+        movementIds: const [16],
+        cashierName: 'ADMINISTRADOR',
+      );
+      expect(pdfBytes, isNotEmpty);
+
+      final genericPdfBytes = await CashMovementPdfService.generateGenericPdfBytesForTest(
+        type: 'expense',
+        category: 'Flete',
+        totalAmount: 4500.0,
+        payments: const [
+          {'payment_method': 'cash', 'funding_source': 'cash_register', 'amount': 4500.0}
+        ],
+        businessName: 'DEV4U',
+        businessTaxId: '20396063299',
+        businessSettings: mockSettings,
+        movementIds: const [17],
+        cashierName: 'ADMINISTRADOR',
+        paperSize: 'letter',
+      );
+      expect(genericPdfBytes, isNotEmpty);
+
+      final lines80 = CashMovementPdfService.buildSupplierPaymentTicketLines(
+        type: 'supplier_payment',
+        supplierName: '180 Pasteleria',
+        supplierCuit: '27388291497',
+        totalAmount: 123187.24,
+        balanceBefore: 123187.24,
+        payments: const [
+          {'payment_method': 'cash', 'funding_source': 'owner_funds', 'amount': 123187.24}
+        ],
+        businessName: 'DEV4U',
+        businessTaxId: '20396063299',
+        movementIds: const [16],
+        cashierName: 'ADMINISTRADOR',
+        is58mm: false,
+      );
+      expect(lines80.any((l) => l.text.contains('180 PASTELERIA')), isTrue);
+      expect(lines80.any((l) => l.text == 'CUENTA AL DIA' && l.rightText == '\$0'), isTrue);
+
+      final lines58 = CashMovementPdfService.buildGenericMovementTicketLines(
+        type: 'expense',
+        category: 'Flete',
+        totalAmount: 4500.0,
+        payments: const [
+          {'payment_method': 'cash', 'funding_source': 'cash_register', 'amount': 4500.0}
+        ],
+        businessName: 'DEV4U',
+        movementIds: const [17],
+        is58mm: true,
+      );
+      expect(lines58.any((l) => l.text == 'PAGO:' && l.rightText == 'EFECTIVO (CAJA)'), isTrue);
+    });
+
+    testWidgets('Thermal Preview (58mm/80mm) opens when print checkbox is checked, and skips preview when unchecked', (tester) async {
+      setDesktopSize(tester);
+
+      await tester.pumpWidget(
+        buildTestDialog(
+          initialType: 'supplier_payment',
+          initialSupplierId: 1,
+          initialAmount: 15000.0,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Checkbox is always visible even when printerConnection == 'none'
+      final printCheckbox = find.text('Imprimir / Ver comprobante al registrar');
+      expect(printCheckbox, findsOneWidget);
+      expect(find.text('Solo registrar movimiento (sin abrir vista previa ni imprimir)'), findsOneWidget);
+
+      // Enable print checkbox
+      await tester.tap(printCheckbox);
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Al guardar podrás elegir Ticket Térmico (58/80mm)'), findsOneWidget);
+
+      // Submit movement -> PrintFormatSelector appears (CircularProgressIndicator is active on background button, so use pump)
+      await tester.tap(find.text('Procesar Movimiento'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(find.text('Ticket\nTérmico'), findsOneWidget);
+      await tester.tap(find.text('Ticket\nTérmico'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      // TicketPreviewDialog opens with 58mm and 80mm chips!
+      expect(find.text('Vista Previa — Pago a Proveedor'), findsOneWidget);
+      expect(find.text('58mm'), findsOneWidget);
+      expect(find.text('80mm'), findsOneWidget);
+      expect(find.text('Imprimir'), findsOneWidget);
+      expect(find.text('(80mm)'), findsOneWidget);
+
+      // Switch to 58mm in preview
+      await tester.tap(find.text('58mm'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+      expect(find.text('(58mm)'), findsOneWidget);
+
+      // Close preview
+      await tester.tap(
+        find.descendant(
+          of: find.byType(TicketPreviewDialog),
+          matching: find.text('Cancelar'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(fakeCashMovementProvider.createMovementCallCount, 1);
     });
   });
 }

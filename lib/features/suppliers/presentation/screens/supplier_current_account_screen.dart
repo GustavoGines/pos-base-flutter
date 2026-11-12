@@ -4,11 +4,15 @@ import 'package:intl/intl.dart';
 import 'package:frontend_desktop/core/presentation/widgets/compact_date_range_picker_dialog.dart';
 import '../../providers/supplier_provider.dart';
 import '../../../../core/presentation/widgets/global_app_bar.dart';
+import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
 import '../../../cash_movements/presentation/widgets/movement_form_dialog.dart';
+import '../../../cash_movements/services/cash_movement_pdf_service.dart';
 import '../../services/supplier_statement_pdf_service.dart';
 import '../../../settings/presentation/providers/settings_provider.dart';
 import '../../../../core/utils/receipt_printer_service.dart';
 import '../../../../core/presentation/widgets/print_format_selector.dart';
+import '../../../../core/presentation/widgets/thermal_receipt_widget.dart';
+import '../../../../core/presentation/widgets/ticket_preview_dialog.dart';
 import '../../../../core/providers/local_terminal_provider.dart';
 import '../../../cash_register/presentation/providers/cash_register_provider.dart';
 import '../../../auth/presentation/widgets/admin_pin_dialog.dart';
@@ -110,6 +114,117 @@ class _SupplierCurrentAccountScreenState extends State<SupplierCurrentAccountScr
     }
 
     _filteredHistory = temp;
+  }
+
+  Future<void> _reprintPaymentRow(
+    dynamic item,
+    DateTime issuedAt,
+    double amount,
+    double runningBalance,
+    bool isIncrease,
+  ) async {
+    final format = await PrintFormatSelector.show(context);
+    if (format == null || !mounted) return;
+
+    final localTerminal = context.read<LocalTerminalProvider>();
+    final settings = context.read<SettingsProvider>().settings;
+    final movId = int.tryParse(item['id']?.toString() ?? '') ?? 0;
+    final movType = item['type']?.toString() ?? 'supplier_payment';
+    final pm = item['payment_method']?.toString() ?? 'cash';
+    final fs = item['funding_source']?.toString() ??
+        (pm == 'owner_funds' ? 'owner_funds' : 'cash_register');
+    final payments = <Map<String, dynamic>>[
+      {
+        'payment_method': pm,
+        'funding_source': fs,
+        'amount': amount,
+      }
+    ];
+    final balanceBefore =
+        isIncrease ? runningBalance - amount : runningBalance + amount;
+    final cashierLabel = item['user_name']?.toString();
+    final desc = item['description']?.toString();
+    final recNum = item['invoice_number']?.toString();
+
+    if (format == 'a4') {
+      await CashMovementPdfService.printSupplierPayment(
+        context: context,
+        type: movType,
+        supplierName: widget.supplierName,
+        supplierCuit: _supplierCuit,
+        totalAmount: amount,
+        balanceBefore: balanceBefore,
+        payments: payments,
+        businessName: settings?.companyName ?? 'MI NEGOCIO',
+        businessTaxId: settings?.taxId,
+        businessSettings: settings,
+        movementIds: movId > 0 ? [movId] : const [],
+        description: desc,
+        receiptNumber: recNum,
+        cashierName: cashierLabel,
+        paperSize: localTerminal.pdfPaperSize,
+        issuedAt: issuedAt,
+      );
+    } else if (format == 'thermal') {
+      final isNarrow = localTerminal.printerFormat == 'thermal_58';
+      ThermalPaperWidth chosenWidth =
+          isNarrow ? ThermalPaperWidth.mm58 : ThermalPaperWidth.mm80;
+
+      final confirmed = await TicketPreviewDialog.show(
+        context,
+        title: 'Vista Previa — Pago a Proveedor${movId > 0 ? " #$movId" : ""}',
+        paperWidth: chosenWidth,
+        onConfirmPrintWithWidth: (w) => chosenWidth = w,
+        linesBuilder: (w) => CashMovementPdfService.buildSupplierPaymentTicketLines(
+          type: movType,
+          supplierName: widget.supplierName,
+          supplierCuit: _supplierCuit,
+          totalAmount: amount,
+          balanceBefore: balanceBefore,
+          payments: payments,
+          businessName: settings?.companyName ?? 'MI NEGOCIO',
+          businessAddress: settings?.address,
+          businessTaxId: settings?.taxId,
+          movementIds: movId > 0 ? [movId] : const [],
+          description: desc,
+          receiptNumber: recNum,
+          cashierName: cashierLabel,
+          issuedAt: issuedAt,
+          is58mm: w == ThermalPaperWidth.mm58,
+        ),
+      );
+      if (!confirmed || !mounted) return;
+
+      if (localTerminal.printerConnection.toLowerCase() == 'none') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No hay ticketera física configurada en Ajustes > Hardware.'),
+          ),
+        );
+        return;
+      }
+
+      if (settings != null) {
+        await ReceiptPrinterService.instance.printSupplierPaymentTicket(
+          type: movType,
+          supplierName: widget.supplierName,
+          supplierCuit: _supplierCuit,
+          totalAmount: amount,
+          balanceBefore: balanceBefore,
+          payments: payments,
+          settings: settings,
+          localTerminal: localTerminal,
+          movementIds: movId > 0 ? [movId] : const [],
+          description: desc,
+          receiptNumber: recNum,
+          cashierName: cashierLabel,
+          openDrawer: false,
+          paperSizeOverride: chosenWidth == ThermalPaperWidth.mm58
+              ? PaperSize.mm58
+              : PaperSize.mm80,
+        );
+      }
+    }
   }
 
   @override
@@ -254,6 +369,7 @@ class _SupplierCurrentAccountScreenState extends State<SupplierCurrentAccountScr
                                if (!context.mounted) return;
 
                                if (format == 'a4') {
+                                 final localTerminal = context.read<LocalTerminalProvider>();
                                  SupplierStatementPdfService.printStatement(
                                    context: context,
                                    supplierName: widget.supplierName,
@@ -263,20 +379,56 @@ class _SupplierCurrentAccountScreenState extends State<SupplierCurrentAccountScr
                                    businessName: settings?.companyName ?? 'MI NEGOCIO',
                                    businessTaxId: settings?.taxId ?? '',
                                    dateRange: _dateRange,
+                                   paperSize: localTerminal.pdfPaperSize,
                                  );
                                } else if (format == 'thermal') {
+                                 final localTerminal = context.read<LocalTerminalProvider>();
+                                 final isNarrow = localTerminal.printerFormat == 'thermal_58';
+                                 ThermalPaperWidth chosenWidth =
+                                     isNarrow ? ThermalPaperWidth.mm58 : ThermalPaperWidth.mm80;
+
+                                 final confirmed = await TicketPreviewDialog.show(
+                                   context,
+                                   title: 'Vista Previa — Estado de Cuenta',
+                                   paperWidth: chosenWidth,
+                                   onConfirmPrintWithWidth: (w) => chosenWidth = w,
+                                   linesBuilder: (w) => CashMovementPdfService.buildSupplierStatementTicketLines(
+                                     supplierName: widget.supplierName,
+                                     currentBalance: _currentBalance,
+                                     businessName: settings?.companyName ?? 'MI NEGOCIO',
+                                     businessTaxId: settings?.taxId,
+                                     supplierCuit: _supplierCuit,
+                                     is58mm: w == ThermalPaperWidth.mm58,
+                                   ),
+                                 );
+                                 if (!confirmed || !context.mounted) return;
+
+                                 if (localTerminal.printerConnection.toLowerCase() == 'none') {
+                                   ScaffoldMessenger.of(context).showSnackBar(
+                                     const SnackBar(
+                                       content: Text('No hay ticketera física configurada en Ajustes > Hardware.'),
+                                     ),
+                                   );
+                                   return;
+                                 }
+
                                  if (settings != null) {
                                    try {
                                      await ReceiptPrinterService.instance.printSupplierStatementTicket(
                                        supplierName: widget.supplierName,
                                        currentBalance: _currentBalance,
                                        settings: settings,
-                                       localTerminal: context.read<LocalTerminalProvider>(),
+                                       localTerminal: localTerminal,
                                        supplierCuit: _supplierCuit,
+                                       paperSizeOverride: chosenWidth == ThermalPaperWidth.mm58
+                                           ? PaperSize.mm58
+                                           : PaperSize.mm80,
                                      );
                                    } catch (e) {
                                      if (context.mounted) {
-                                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error de impresión: $e')));
+                                       ScaffoldMessenger.of(context).showSnackBar(
+                                         SnackBar(content: Text('Error de impresión: $e')),
+                                       );
                                      }
                                    }
                                  }
@@ -660,19 +812,32 @@ class _SupplierCurrentAccountScreenState extends State<SupplierCurrentAccountScr
                           ],
                         ),
                       ),
-                      trailing: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.end,
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text(
-                            '${isIncrease ? '+' : '-'}\$${amount.toCurrency()}',
-                            style: TextStyle(fontWeight: FontWeight.w900, color: actionColor, fontSize: 16),
+                          Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text(
+                                '${isIncrease ? '+' : '-'}\$${amount.toCurrency()}',
+                                style: TextStyle(fontWeight: FontWeight.w900, color: actionColor, fontSize: 16),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'Saldo: \$${runningBalance.toCurrency()}',
+                                style: TextStyle(color: Colors.grey.shade500, fontSize: 12, fontWeight: FontWeight.w600),
+                              ),
+                            ],
                           ),
-                          const SizedBox(height: 2),
-                          Text(
-                            'Saldo: \$${runningBalance.toCurrency()}',
-                            style: TextStyle(color: Colors.grey.shade500, fontSize: 12, fontWeight: FontWeight.w600),
-                          ),
+                          if (item['source'] == 'payment') ...[
+                            const SizedBox(width: 8),
+                            IconButton(
+                              icon: const Icon(Icons.print_outlined, size: 20, color: Colors.blueGrey),
+                              tooltip: 'Imprimir / Vista Previa del Pago',
+                              onPressed: () => _reprintPaymentRow(item, date, amount, runningBalance, isIncrease),
+                            ),
+                          ],
                         ],
                       ),
                       ),

@@ -10,9 +10,12 @@ import '../../../../core/presentation/widgets/global_app_bar.dart';
 import '../../providers/cash_movement_provider.dart';
 import '../widgets/movement_form_dialog.dart';
 import '../../../../features/cash_register/presentation/providers/cash_register_provider.dart';
+import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
 import '../../../../core/utils/receipt_printer_service.dart';
 import '../../services/cash_movement_pdf_service.dart';
 import 'package:frontend_desktop/core/presentation/widgets/print_format_selector.dart';
+import 'package:frontend_desktop/core/presentation/widgets/thermal_receipt_widget.dart';
+import 'package:frontend_desktop/core/presentation/widgets/ticket_preview_dialog.dart';
 import '../../../../core/providers/local_terminal_provider.dart';
 import '../../../settings/presentation/providers/settings_provider.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
@@ -102,21 +105,19 @@ class _CashMovementsScreenState extends State<CashMovementsScreen> {
     final localTerminal = context.read<LocalTerminalProvider>();
     final settingsProv = context.read<SettingsProvider>();
     final authProv = context.read<AuthProvider>();
-    
-    if (localTerminal.printerConnection.toLowerCase() == 'none' && !localTerminal.printerFormat.startsWith('a4')) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No hay impresora configurada.')));
-      return;
-    }
 
     final format = await PrintFormatSelector.show(context);
     if (format == null) return;
     if (!mounted) return;
-    
+
     final isA4 = format == 'a4';
     final settings = settingsProv.settings;
-    
-    final isSupplierPayment = (movement.category == 'Pago a Proveedor' || movement.category == 'Cobro de Saldo a Favor') && movement.supplier != null;
-    
+
+    final isSupplierPayment =
+        (movement.category == 'Pago a Proveedor' ||
+            movement.category == 'Cobro de Saldo a Favor') &&
+        movement.supplier != null;
+
     final List<Map<String, dynamic>> payments = [
       {
         'payment_method': movement.paymentMethod,
@@ -125,78 +126,157 @@ class _CashMovementsScreenState extends State<CashMovementsScreen> {
       }
     ];
 
+    final cashierLabel =
+        (movement.user?['name'] ?? authProv.currentUser?['name'])?.toString();
+    final DateTime? issuedAt = movement.createdAt is DateTime
+        ? movement.createdAt as DateTime
+        : DateTime.tryParse(movement.createdAt?.toString() ?? '')?.toLocal();
+
     try {
       if (isA4) {
         if (isSupplierPayment) {
           await CashMovementPdfService.printSupplierPayment(
             context: context,
             type: movement.type,
-            supplierName: movement.supplier!['name'],
-            supplierCuit: movement.supplier!['tax_id'],
-            totalAmount: movement.amount,
+            supplierName: movement.supplier!['name']?.toString() ?? 'Proveedor',
+            supplierCuit: (movement.supplier!['cuit'] ?? movement.supplier!['tax_id'])?.toString(),
+            totalAmount: (movement.amount as num).toDouble(),
             balanceBefore: null,
             payments: payments,
             businessName: settings?.companyName ?? 'MI NEGOCIO',
             businessTaxId: settings?.taxId,
-            movementIds: [movement.id],
-            description: movement.description,
-            receiptNumber: movement.receiptNumber,
-            cashierName: movement.user?['name'] ?? authProv.currentUser?['name'],
+            businessSettings: settings,
+            movementIds: [movement.id as int],
+            description: movement.description?.toString(),
+            receiptNumber: movement.receiptNumber?.toString(),
+            cashierName: cashierLabel,
             paperSize: localTerminal.pdfPaperSize,
+            issuedAt: issuedAt,
           );
         } else {
           await CashMovementPdfService.printGenericMovement(
             context: context,
             type: movement.type,
             category: movement.category,
-            totalAmount: movement.amount,
+            totalAmount: (movement.amount as num).toDouble(),
             payments: payments,
             businessName: settings?.companyName ?? 'MI NEGOCIO',
             businessTaxId: settings?.taxId,
-            movementIds: [movement.id],
-            description: movement.description,
-            receiptNumber: movement.receiptNumber,
-            cashierName: movement.user?['name'] ?? authProv.currentUser?['name'],
+            businessSettings: settings,
+            movementIds: [movement.id as int],
+            description: movement.description?.toString(),
+            receiptNumber: movement.receiptNumber?.toString(),
+            cashierName: cashierLabel,
             paperSize: localTerminal.pdfPaperSize,
+            issuedAt: issuedAt,
           );
         }
       } else {
+        final isNarrow = localTerminal.printerFormat == 'thermal_58';
+        ThermalPaperWidth chosenWidth =
+            isNarrow ? ThermalPaperWidth.mm58 : ThermalPaperWidth.mm80;
+
+        final confirmed = await TicketPreviewDialog.show(
+          context,
+          title: isSupplierPayment
+              ? 'Vista Previa — Pago a Proveedor #${movement.id}'
+              : 'Vista Previa — Comprobante #${movement.id}',
+          paperWidth: chosenWidth,
+          onConfirmPrintWithWidth: (w) => chosenWidth = w,
+          linesBuilder: (w) {
+            final use58 = w == ThermalPaperWidth.mm58;
+            if (isSupplierPayment) {
+              return CashMovementPdfService.buildSupplierPaymentTicketLines(
+                type: movement.type,
+                supplierName: movement.supplier!['name']?.toString() ?? 'Proveedor',
+                supplierCuit: (movement.supplier!['cuit'] ?? movement.supplier!['tax_id'])?.toString(),
+                totalAmount: (movement.amount as num).toDouble(),
+                balanceBefore: null,
+                payments: payments,
+                businessName: settings?.companyName ?? 'MI NEGOCIO',
+                businessAddress: settings?.address,
+                businessTaxId: settings?.taxId,
+                movementIds: [movement.id as int],
+                description: movement.description?.toString(),
+                receiptNumber: movement.receiptNumber?.toString(),
+                cashierName: cashierLabel,
+                issuedAt: issuedAt,
+                is58mm: use58,
+              );
+            }
+            return CashMovementPdfService.buildGenericMovementTicketLines(
+              type: movement.type,
+              category: movement.category,
+              totalAmount: (movement.amount as num).toDouble(),
+              payments: payments,
+              businessName: settings?.companyName ?? 'MI NEGOCIO',
+              businessAddress: settings?.address,
+              businessTaxId: settings?.taxId,
+              movementIds: [movement.id as int],
+              description: movement.description?.toString(),
+              receiptNumber: movement.receiptNumber?.toString(),
+              cashierName: cashierLabel,
+              issuedAt: issuedAt,
+              is58mm: use58,
+            );
+          },
+        );
+
+        if (!confirmed || !mounted) return;
+
+        if (localTerminal.printerConnection.toLowerCase() == 'none') {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('No hay ticketera física configurada en Ajustes > Hardware.'),
+            ),
+          );
+          return;
+        }
+
+        final targetPaper = chosenWidth == ThermalPaperWidth.mm58
+            ? PaperSize.mm58
+            : PaperSize.mm80;
+
         if (isSupplierPayment) {
           await ReceiptPrinterService.instance.printSupplierPaymentTicket(
             type: movement.type,
-            supplierName: movement.supplier!['name'],
-            supplierCuit: movement.supplier!['tax_id'],
-            totalAmount: movement.amount,
+            supplierName: movement.supplier!['name']?.toString() ?? 'Proveedor',
+            supplierCuit: (movement.supplier!['cuit'] ?? movement.supplier!['tax_id'])?.toString(),
+            totalAmount: (movement.amount as num).toDouble(),
             balanceBefore: null,
             payments: payments,
             settings: settings!,
             localTerminal: localTerminal,
-            movementIds: [movement.id],
-            description: movement.description,
-            receiptNumber: movement.receiptNumber,
-            cashierName: movement.user?['name'] ?? authProv.currentUser?['name'],
+            movementIds: [movement.id as int],
+            description: movement.description?.toString(),
+            receiptNumber: movement.receiptNumber?.toString(),
+            cashierName: cashierLabel,
             openDrawer: false,
+            paperSizeOverride: targetPaper,
           );
         } else {
           await ReceiptPrinterService.instance.printCashMovementTicket(
             type: movement.type,
             category: movement.category,
-            totalAmount: movement.amount,
+            totalAmount: (movement.amount as num).toDouble(),
             payments: payments,
             settings: settings!,
             localTerminal: localTerminal,
-            movementIds: [movement.id],
-            description: movement.description,
-            receiptNumber: movement.receiptNumber,
-            cashierName: movement.user?['name'] ?? authProv.currentUser?['name'],
+            movementIds: [movement.id as int],
+            description: movement.description?.toString(),
+            receiptNumber: movement.receiptNumber?.toString(),
+            cashierName: cashierLabel,
             openDrawer: false,
+            paperSizeOverride: targetPaper,
           );
         }
       }
     } catch (e) {
       debugPrint('Error reimprimiendo: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Error al reimprimir comprobante.')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Error al reimprimir comprobante.')),
+        );
       }
     }
   }

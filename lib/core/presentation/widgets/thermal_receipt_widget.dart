@@ -188,7 +188,9 @@ class ThermalReceiptWidget extends StatelessWidget {
         ? businessSettings!.activityStartDate!.trim()
         : '';
 
-    return Container(
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeOutCubic,
       width: width,
       padding: EdgeInsets.symmetric(horizontal: padding, vertical: 8.0),
       decoration: BoxDecoration(

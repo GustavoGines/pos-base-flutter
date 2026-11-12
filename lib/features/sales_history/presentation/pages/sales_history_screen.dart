@@ -1440,14 +1440,16 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
         final isNarrow = localTerminal.printerFormat == 'thermal_58';
         final paperWidth =
             isNarrow ? ThermalPaperWidth.mm58 : ThermalPaperWidth.mm80;
+        ThermalPaperWidth selectedWidth = paperWidth;
         if (context.mounted) {
           final confirmed = await TicketPreviewDialog.show(
             context,
             title:
                 'Vista Previa — Ticket #${sale.id} (${isNarrow ? "58mm" : "80mm"})',
             paperWidth: paperWidth,
-            receiptWidget: ThermalReceiptWidget(
-              paperWidth: paperWidth,
+            onConfirmPrintWithWidth: (w) => selectedWidth = w,
+            receiptBuilder: (w) => ThermalReceiptWidget(
+              paperWidth: w,
               businessSettings: settings,
               items: itemsParaImprimir,
               payments: paymentDetails,
@@ -1474,6 +1476,8 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
           if (!confirmed) return;
         }
 
+        final selectedPaperStr =
+            selectedWidth == ThermalPaperWidth.mm58 ? '58mm' : '80mm';
         ReceiptPrinterService.instance.reconfigure(localTerminal);
         ReceiptPrinterService.instance.electronicInvoice = null;
         if (hasDeliveredNote) {
@@ -1499,7 +1503,7 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
             discountLabel: sale.hasSavings ? 'Ahorro / Descuento' : null,
             tenderedAmount: sale.tenderedAmount ?? sale.grandTotal,
             changeAmount: sale.changeAmount ?? 0.0,
-            paperSizeOverride: isNarrow ? '58mm' : '80mm',
+            paperSizeOverride: selectedPaperStr,
             iibbPerceptionAmount: sale.iibbPerceptionAmount ?? 0.0,
           );
         } else {
@@ -1522,7 +1526,7 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
             discountLabel: sale.hasSavings ? 'Ahorro / Descuento' : null,
             tenderedAmount: sale.tenderedAmount ?? sale.grandTotal,
             changeAmount: sale.changeAmount ?? 0.0,
-            paperSizeOverride: isNarrow ? '58mm' : '80mm',
+            paperSizeOverride: selectedPaperStr,
             iibbPerceptionAmount: sale.iibbPerceptionAmount ?? 0.0,
           );
         }
@@ -1745,14 +1749,17 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
         final isNarrow = localTerminal.printerFormat == 'thermal_58';
         final paperWidth =
             isNarrow ? ThermalPaperWidth.mm58 : ThermalPaperWidth.mm80;
+        ThermalPaperWidth selectedWidth = paperWidth;
+        final safeInvoice = Map<String, dynamic>.from(invoice);
         if (context.mounted) {
           final confirmed = await TicketPreviewDialog.show(
             context,
             title:
                 'Vista Previa — ${isCreditNote ? "Nota de Crédito" : "Factura"} ARCA (${isNarrow ? "58mm" : "80mm"})',
             paperWidth: paperWidth,
-            receiptWidget: ThermalReceiptWidget(
-              paperWidth: paperWidth,
+            onConfirmPrintWithWidth: (w) => selectedWidth = w,
+            receiptBuilder: (w) => ThermalReceiptWidget(
+              paperWidth: w,
               businessSettings: settings,
               items: itemsParaImprimir,
               payments: paymentDetails,
@@ -1765,16 +1772,16 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
               changeAmount: sale.changeAmount ?? 0.0,
               iibbPerceptionAmount: sale.iibbPerceptionAmount ?? 0.0,
               iibbPerceptionRate: sale.iibbPerceptionRate ?? 0.0,
-              electronicInvoice: invoice,
+              electronicInvoice: safeInvoice,
               deliveryNote: hasDeliveredNote ? sale.deliveryNote : null,
               saleNumber: sale.id.toString(),
               cashierName: sale.cashierName ?? sale.userName,
               customerName:
-                  invoice['receiver_name']?.toString() ?? sale.customerName,
+                  safeInvoice['receiver_name']?.toString() ?? sale.customerName,
               customerDoc:
-                  invoice['doc_number']?.toString() ?? sale.customerDocumentNumber,
+                  safeInvoice['doc_number']?.toString() ?? sale.customerDocumentNumber,
               customerAddress:
-                  invoice['receiver_address']?.toString() ??
+                  safeInvoice['receiver_address']?.toString() ??
                       sale.customerAddress ??
                       (sale.deliveryNote?['delivery_address'] as String?),
               dateTime: sale.createdAt,
@@ -1783,6 +1790,8 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
           if (!confirmed) return;
         }
 
+        final selectedPaperStr =
+            selectedWidth == ThermalPaperWidth.mm58 ? '58mm' : '80mm';
         ReceiptPrinterService.instance.reconfigure(localTerminal);
         if (hasDeliveredNote) {
           await ReceiptPrinterService.instance.printSplitTicket(
@@ -1811,7 +1820,7 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
             discountLabel: sale.hasSavings ? 'Ahorro / Descuento' : null,
             tenderedAmount: sale.tenderedAmount ?? sale.grandTotal,
             changeAmount: sale.changeAmount ?? 0.0,
-            paperSizeOverride: isNarrow ? '58mm' : '80mm',
+            paperSizeOverride: selectedPaperStr,
             iibbPerceptionAmount: sale.iibbPerceptionAmount ?? 0.0,
           );
         } else {
@@ -1839,7 +1848,7 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
             discountLabel: sale.hasSavings ? 'Ahorro / Descuento' : null,
             tenderedAmount: sale.tenderedAmount ?? sale.grandTotal,
             changeAmount: sale.changeAmount ?? 0.0,
-            paperSizeOverride: isNarrow ? '58mm' : '80mm',
+            paperSizeOverride: selectedPaperStr,
             iibbPerceptionAmount: sale.iibbPerceptionAmount ?? 0.0,
           );
         }

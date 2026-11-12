@@ -11,6 +11,15 @@ class SupplierStatementPdfService {
   static const _textGrey = PdfColor.fromInt(0xFF757575);
   static const _bgLight = PdfColor.fromInt(0xFFF5F5F5);
 
+  static String _formatCuit(String? raw) {
+    if (raw == null || raw.trim().isEmpty) return '';
+    final digits = raw.replaceAll(RegExp(r'[^0-9]'), '');
+    if (digits.length == 11) {
+      return '${digits.substring(0, 2)}-${digits.substring(2, 10)}-${digits.substring(10)}';
+    }
+    return raw.trim();
+  }
+
   static Future<void> printStatement({
     required BuildContext context,
     required String supplierName,
@@ -20,6 +29,7 @@ class SupplierStatementPdfService {
     required String businessName,
     required String? businessTaxId,
     DateTimeRange? dateRange,
+    String paperSize = 'a4',
   }) async {
     final pdfBytes = await _generateStatementBytes(
       supplierName: supplierName,
@@ -29,17 +39,19 @@ class SupplierStatementPdfService {
       businessName: businessName,
       businessTaxId: businessTaxId,
       dateRange: dateRange,
+      paperSize: paperSize,
     );
 
+    final paperLabel = paperSize.toLowerCase() == 'letter' ? 'Carta' : 'A4';
     if (context.mounted) {
       await showDialog(
         context: context,
         builder: (ctx) => Dialog(
           child: SizedBox(
-            width: 800,
-            height: 600,
+            width: 860,
+            height: MediaQuery.of(ctx).size.height * 0.88,
             child: Scaffold(
-              appBar: AppBar(title: const Text('Estado de Cuenta - Vista Previa')),
+              appBar: AppBar(title: Text('Estado de Cuenta — Vista Previa ($paperLabel)')),
               body: PdfPreview(
                 allowPrinting: true,
                 allowSharing: true,
@@ -63,6 +75,7 @@ class SupplierStatementPdfService {
     required String businessName,
     required String? businessTaxId,
     DateTimeRange? dateRange,
+    String paperSize = 'a4',
   }) async {
     pw.ThemeData? theme;
     try {
@@ -79,6 +92,9 @@ class SupplierStatementPdfService {
     final pdf = pw.Document(theme: theme);
     final dateFmt = DateFormat('dd/MM/yyyy');
     final timeFmt = DateFormat('HH:mm');
+    final format = paperSize.toLowerCase() == 'letter' ? PdfPageFormat.letter : PdfPageFormat.a4;
+    final formattedBusinessCuit = _formatCuit(businessTaxId);
+    final formattedSupplierCuit = _formatCuit(supplierCuit);
 
     // Dividimos el historial en páginas (ej. 20 items por página)
     const itemsPerPage = 20;
@@ -91,8 +107,8 @@ class SupplierStatementPdfService {
 
       pdf.addPage(
         pw.Page(
-          pageFormat: PdfPageFormat.a4,
-          margin: const pw.EdgeInsets.all(32),
+          pageFormat: format,
+          margin: const pw.EdgeInsets.all(28),
           build: (pw.Context context) {
             return pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -106,22 +122,22 @@ class SupplierStatementPdfService {
                       pw.Column(
                         crossAxisAlignment: pw.CrossAxisAlignment.start,
                         children: [
-                          pw.Text(businessName.toUpperCase(), style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold, color: _primaryColor)),
-                          if (businessTaxId != null && businessTaxId.isNotEmpty)
-                            pw.Text('CUIT: $businessTaxId', style: const pw.TextStyle(fontSize: 12, color: _textGrey)),
+                          pw.Text(businessName.toUpperCase(), style: pw.TextStyle(fontSize: 22, fontWeight: pw.FontWeight.bold, color: _primaryColor)),
+                          if (formattedBusinessCuit.isNotEmpty)
+                            pw.Text('CUIT: $formattedBusinessCuit', style: const pw.TextStyle(fontSize: 11, color: _textGrey)),
                         ],
                       ),
                       pw.Column(
                         crossAxisAlignment: pw.CrossAxisAlignment.end,
                         children: [
-                          pw.Text('ESTADO DE CUENTA', style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold)),
+                          pw.Text('ESTADO DE CUENTA CORRIENTE', style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
                           pw.SizedBox(height: 4),
-                          pw.Text('Fecha Emisión: ${dateFmt.format(DateTime.now())}', style: const pw.TextStyle(fontSize: 12)),
+                          pw.Text('Fecha Emisión: ${dateFmt.format(DateTime.now())}', style: const pw.TextStyle(fontSize: 11)),
                         ],
                       ),
                     ],
                   ),
-                  pw.SizedBox(height: 24),
+                  pw.SizedBox(height: 18),
                   
                   // Resumen
                   pw.Row(
@@ -138,8 +154,8 @@ class SupplierStatementPdfService {
                               pw.Text('PROVEEDOR:', style: pw.TextStyle(color: _textGrey, fontSize: 10, fontWeight: pw.FontWeight.bold)),
                               pw.SizedBox(height: 4),
                               pw.Text(supplierName.toUpperCase(), style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
-                              if (supplierCuit != null && supplierCuit.isNotEmpty)
-                                pw.Text('CUIT: $supplierCuit', style: const pw.TextStyle(fontSize: 12)),
+                              if (formattedSupplierCuit.isNotEmpty)
+                                pw.Text('CUIT: $formattedSupplierCuit', style: const pw.TextStyle(fontSize: 11)),
                             ],
                           ),
                         ),
