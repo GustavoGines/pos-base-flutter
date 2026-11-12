@@ -1142,33 +1142,42 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
   }
 
   Future<void> _resolveInvoice() async {
-    if (widget.sale.electronicInvoice != null) {
-      if (mounted) {
-        setState(() {
-          _electronicInvoice = widget.sale.electronicInvoice;
-        });
-      }
-      return;
+    final targetSaleId = widget.sale.id;
+    final initialInvoice = widget.sale.electronicInvoice;
+
+    // Resetear o sincronizar inmediatamente con la factura del ticket seleccionado
+    // para nunca arrastrar el estado (_electronicInvoice) del ticket anterior.
+    if (mounted) {
+      setState(() {
+        _electronicInvoice = initialInvoice;
+      });
     }
 
-    if (widget.sale.hasCae ||
-        widget.sale.invoiceStatus == 'invoiced' ||
-        widget.sale.status == 'completed' ||
-        widget.sale.status == 'active') {
-      try {
-        final inv =
-            await context.read<PosProvider>().fetchElectronicInvoice(widget.sale.id);
-        if (mounted) {
-          setState(() {
-            _electronicInvoice = inv;
-          });
-        }
-      } catch (_) {
+    if (initialInvoice != null) {
+      if (!widget.sale.isVoided ||
+          initialInvoice['credit_note_cae'] != null) {
+        return;
       }
-    } else {
-      if (mounted) {
+    }
+
+    final shouldFetchRemote = initialInvoice != null ||
+        widget.sale.hasCae ||
+        widget.sale.invoiceStatus == 'invoiced' ||
+        widget.sale.invoiceStatus == 'authorized';
+
+    if (shouldFetchRemote) {
+      try {
+        final inv = await context
+            .read<PosProvider>()
+            .fetchElectronicInvoice(targetSaleId);
+        if (!mounted || widget.sale.id != targetSaleId) return;
         setState(() {
-          _electronicInvoice = null;
+          _electronicInvoice = inv ?? initialInvoice;
+        });
+      } catch (_) {
+        if (!mounted || widget.sale.id != targetSaleId) return;
+        setState(() {
+          _electronicInvoice = initialInvoice;
         });
       }
     }
@@ -1304,6 +1313,7 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
             'quantity': i.quantity,
             'unit_price': i.unitPrice,
             'iva_rate': i.ivaRate,
+            'is_service': i.isService,
             'regular_price': i.regularPrice > 0 ? i.regularPrice : i.unitPrice,
             'regular_subtotal': (i.regularPrice > 0 ? i.regularPrice : i.unitPrice) * i.quantity,
             'discount_amount': i.discountSavings,
@@ -1315,6 +1325,7 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
               'internal_code': i.internalCode,
               'iva_rate': i.ivaRate,
               'is_sold_by_weight': i.isSoldByWeight,
+              'is_service': i.isService,
               'selling_price': i.regularPrice > 0 ? i.regularPrice : i.unitPrice,
             }
           }).toList(),
@@ -1410,6 +1421,7 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
               costPrice: item.unitPrice,
               ivaRate: item.ivaRate,
               isSoldByWeight: item.isSoldByWeight,
+              isService: item.isService,
               stock: 0,
               internalCode: item.internalCode,
               barcode: '',
@@ -1505,6 +1517,8 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
             changeAmount: sale.changeAmount ?? 0.0,
             paperSizeOverride: selectedPaperStr,
             iibbPerceptionAmount: sale.iibbPerceptionAmount ?? 0.0,
+            iibbPerceptionRate: sale.iibbPerceptionRate ?? 0.0,
+            saleDate: sale.createdAt,
           );
         } else {
           await ReceiptPrinterService.instance.printSaleTicket(
@@ -1528,6 +1542,8 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
             changeAmount: sale.changeAmount ?? 0.0,
             paperSizeOverride: selectedPaperStr,
             iibbPerceptionAmount: sale.iibbPerceptionAmount ?? 0.0,
+            iibbPerceptionRate: sale.iibbPerceptionRate ?? 0.0,
+            saleDate: sale.createdAt,
           );
         }
         if (context.mounted) {
@@ -1601,6 +1617,43 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
       if (format == null) return;
       final isA4 = format == 'a4';
 
+      final resolvedIibbAmount = (sale.iibbPerceptionAmount != null &&
+              sale.iibbPerceptionAmount! > 0)
+          ? sale.iibbPerceptionAmount!
+          : (double.tryParse((invoice['tribute_amount'] ??
+                      invoice['iibb_perception_amount'] ??
+                      0)
+                  .toString()) ??
+              0.0);
+
+      double resolvedIibbRate = sale.iibbPerceptionRate ??
+          double.tryParse(
+              (invoice['iibb_perception_rate'] ?? 0).toString()) ??
+          0.0;
+      if (resolvedIibbRate <= 0 && invoice['tributes_breakdown'] is List) {
+        for (final t in (invoice['tributes_breakdown'] as List)) {
+          if (t is Map) {
+            final alic = (t['Alic'] ?? t['alic'] ?? t['rate']);
+            final parsed = (alic is num)
+                ? alic.toDouble()
+                : double.tryParse(alic?.toString() ?? '');
+            if (parsed != null && parsed > 0) {
+              resolvedIibbRate = parsed;
+              break;
+            }
+          }
+        }
+      }
+
+      DateTime effectivePrintDate = sale.createdAt;
+      if (isCreditNote && invoice['issued_at'] != null) {
+        final parsedCnDate =
+            DateTime.tryParse(invoice['issued_at'].toString())?.toLocal();
+        if (parsedCnDate != null) {
+          effectivePrintDate = parsedCnDate;
+        }
+      }
+
       if (isA4) {
         final salePayload = {
           'id': sale.id,
@@ -1620,18 +1673,19 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
             'tax_id': invoice['doc_number'] ?? '---',
             'address': invoice['receiver_address'] ?? '---',
           },
-          'created_at': sale.createdAt.toIso8601String(),
+          'created_at': effectivePrintDate.toIso8601String(),
           'cashier': {'name': sale.cashierName ?? sale.userName ?? 'Cajero'},
           'cashier_name': sale.cashierName ?? sale.userName ?? 'Cajero',
           'user': {'name': sale.userName ?? 'Cajero'},
           'userName': sale.userName ?? 'Cajero',
-          'iibb_perception_amount': sale.iibbPerceptionAmount,
-          'iibb_perception_rate': sale.iibbPerceptionRate,
+          'iibb_perception_amount': resolvedIibbAmount,
+          'iibb_perception_rate': resolvedIibbRate,
           'items': sale.items.map((i) => {
             'subtotal': i.subtotal,
             'quantity': i.quantity,
             'unit_price': i.unitPrice,
             'iva_rate': i.ivaRate,
+            'is_service': i.isService,
             'regular_price': i.regularPrice > 0 ? i.regularPrice : i.unitPrice,
             'regular_subtotal': (i.regularPrice > 0 ? i.regularPrice : i.unitPrice) * i.quantity,
             'discount_amount': i.discountSavings,
@@ -1643,6 +1697,7 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
               'internal_code': i.internalCode,
               'iva_rate': i.ivaRate,
               'is_sold_by_weight': i.isSoldByWeight,
+              'is_service': i.isService,
               'selling_price': i.regularPrice > 0 ? i.regularPrice : i.unitPrice,
             }
           }).toList(),
@@ -1698,7 +1753,8 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
                         build: (format) async => pdfBytes,
                         canChangePageFormat: false,
                         canChangeOrientation: false,
-                        pdfFileName: 'Factura_ARCA_${sale.id}.pdf',
+                        pdfFileName:
+                            '${isCreditNote ? "Nota_Credito" : "Factura"}_ARCA_${sale.id}.pdf',
                         canDebug: false,
                       ),
                     ),
@@ -1718,6 +1774,7 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
               costPrice: item.unitPrice,
               ivaRate: item.ivaRate,
               isSoldByWeight: item.isSoldByWeight,
+              isService: item.isService,
               stock: 0,
               internalCode: item.internalCode,
               barcode: '',
@@ -1770,8 +1827,8 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
               shippingCost: sale.shippingCost,
               tenderedAmount: sale.tenderedAmount ?? sale.grandTotal,
               changeAmount: sale.changeAmount ?? 0.0,
-              iibbPerceptionAmount: sale.iibbPerceptionAmount ?? 0.0,
-              iibbPerceptionRate: sale.iibbPerceptionRate ?? 0.0,
+              iibbPerceptionAmount: resolvedIibbAmount,
+              iibbPerceptionRate: resolvedIibbRate,
               electronicInvoice: safeInvoice,
               deliveryNote: hasDeliveredNote ? sale.deliveryNote : null,
               saleNumber: sale.id.toString(),
@@ -1784,7 +1841,7 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
                   safeInvoice['receiver_address']?.toString() ??
                       sale.customerAddress ??
                       (sale.deliveryNote?['delivery_address'] as String?),
-              dateTime: sale.createdAt,
+              dateTime: effectivePrintDate,
             ),
           );
           if (!confirmed) return;
@@ -1821,7 +1878,9 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
             tenderedAmount: sale.tenderedAmount ?? sale.grandTotal,
             changeAmount: sale.changeAmount ?? 0.0,
             paperSizeOverride: selectedPaperStr,
-            iibbPerceptionAmount: sale.iibbPerceptionAmount ?? 0.0,
+            iibbPerceptionAmount: resolvedIibbAmount,
+            iibbPerceptionRate: resolvedIibbRate,
+            saleDate: effectivePrintDate,
           );
         } else {
           await ReceiptPrinterService.instance.printSaleTicket(
@@ -1849,12 +1908,15 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
             tenderedAmount: sale.tenderedAmount ?? sale.grandTotal,
             changeAmount: sale.changeAmount ?? 0.0,
             paperSizeOverride: selectedPaperStr,
-            iibbPerceptionAmount: sale.iibbPerceptionAmount ?? 0.0,
+            iibbPerceptionAmount: resolvedIibbAmount,
+            iibbPerceptionRate: resolvedIibbRate,
+            saleDate: effectivePrintDate,
           );
         }
         if (context.mounted) {
           SnackBarService.success(
-              context, 'Factura ARCA #${sale.id} enviada a la impresora.');
+              context,
+              '${isCreditNote ? "Nota de Crédito" : "Factura"} ARCA #${sale.id} enviada a la impresora.');
         }
       }
     } catch (e) {
@@ -1936,6 +1998,41 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
                                     fontWeight: FontWeight.bold,
                                     letterSpacing: 1)),
                           ),
+                          if ((_electronicInvoice ?? sale.electronicInvoice)?['credit_note_cae'] != null) ...[
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                  color: Colors.purple.shade100,
+                                  borderRadius: BorderRadius.circular(4)),
+                              child: Text(
+                                'NC ${(_electronicInvoice ?? sale.electronicInvoice)?['voucher_letter'] ?? ''} Emitida (CAE: ${(_electronicInvoice ?? sale.electronicInvoice)?['credit_note_cae']})',
+                                style: TextStyle(
+                                    color: Colors.purple.shade900,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                          ] else if (sale.voidReason != null &&
+                              sale.voidReason!.trim().isNotEmpty) ...[
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                  color: Colors.orange.shade50,
+                                  border: Border.all(color: Colors.orange.shade200),
+                                  borderRadius: BorderRadius.circular(4)),
+                              child: Text(
+                                sale.voidReason!,
+                                style: TextStyle(
+                                    color: Colors.orange.shade900,
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                          ],
                         ],
                       ],
                     ),
@@ -2183,7 +2280,9 @@ class _TicketDetailPanelState extends State<_TicketDetailPanel> {
                   ),
                   onPressed: () => _handlePrintAfipInvoice(context),
                 ),
-              if (sale.isVoided && _electronicInvoice != null && _electronicInvoice!['credit_note_cae'] != null)
+              if (sale.isVoided &&
+                  (_electronicInvoice ?? sale.electronicInvoice) != null &&
+                  (_electronicInvoice ?? sale.electronicInvoice)!['credit_note_cae'] != null)
                 FilledButton.icon(
                   icon: const Icon(Icons.assignment_return_outlined),
                   label: const Text('Imprimir Nota de Crédito'),
@@ -3035,16 +3134,35 @@ class _EmitArcaInvoiceDialogState extends State<_EmitArcaInvoiceDialog> {
                                     child: Text('Resp. Monotributo',
                                         style: TextStyle(fontSize: 12.5))),
                               ]
-                            : const [
-                                DropdownMenuItem(
-                                    value: 'consumidor_final',
-                                    child: Text('Consumidor Final',
-                                        style: TextStyle(fontSize: 12.5))),
-                                DropdownMenuItem(
-                                    value: 'exento',
-                                    child: Text('IVA Sujeto Exento',
-                                        style: TextStyle(fontSize: 12.5))),
-                              ],
+                            : _voucherType == 6
+                                ? const [
+                                    DropdownMenuItem(
+                                        value: 'consumidor_final',
+                                        child: Text('Consumidor Final',
+                                            style: TextStyle(fontSize: 12.5))),
+                                    DropdownMenuItem(
+                                        value: 'exento',
+                                        child: Text('IVA Sujeto Exento',
+                                            style: TextStyle(fontSize: 12.5))),
+                                  ]
+                                : const [
+                                    DropdownMenuItem(
+                                        value: 'consumidor_final',
+                                        child: Text('Consumidor Final',
+                                            style: TextStyle(fontSize: 12.5))),
+                                    DropdownMenuItem(
+                                        value: 'responsable_inscripto',
+                                        child: Text('IVA Resp. Inscripto',
+                                            style: TextStyle(fontSize: 12.5))),
+                                    DropdownMenuItem(
+                                        value: 'monotributo',
+                                        child: Text('Resp. Monotributo',
+                                            style: TextStyle(fontSize: 12.5))),
+                                    DropdownMenuItem(
+                                        value: 'exento',
+                                        child: Text('IVA Sujeto Exento',
+                                            style: TextStyle(fontSize: 12.5))),
+                                  ],
                         onChanged: _isSubmitting
                             ? null
                             : (val) {

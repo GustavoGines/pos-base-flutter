@@ -115,10 +115,16 @@ class MockPosProvider extends ChangeNotifier implements PosProvider {
   String? get printerWarning => null;
 
   @override
-  double calculateIibbPerceptionAmount({BusinessSettings? settings, Customer? customer, double extraAmount = 0.0, double? overrideTotal}) => 0.0;
+  double calculateIibbPerceptionAmount({BusinessSettings? settings, Customer? customer, double extraAmount = 0.0, double? overrideTotal, double? overrideRate}) => 0.0;
 
   @override
-  bool checkAppliesIibbPerception({BusinessSettings? settings, Customer? customer}) => false;
+  bool checkAppliesIibbPerception({BusinessSettings? settings, Customer? customer, double? overrideRate}) => false;
+
+  @override
+  double? get overrideIibbPerceptionRate => null;
+
+  @override
+  void setOverrideIibbPerceptionRate(double? rate) {}
 
   @override
   double get iibbPerceptionAmount => 0.0;

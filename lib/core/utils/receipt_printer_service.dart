@@ -590,6 +590,82 @@ class ReceiptPrinterService {
     await _send(ticketBytes);
   }
 
+  double _resolvePerceptionAmount(double passedAmount, Map<String, dynamic>? invoice) {
+    if (passedAmount > 0.01) return passedAmount;
+    if (invoice != null) {
+      final fromInv = double.tryParse((invoice['tribute_amount'] ??
+                  invoice['iibb_perception_amount'] ??
+                  0)
+              .toString()) ??
+          0.0;
+      if (fromInv > 0.01) return fromInv;
+    }
+    return 0.0;
+  }
+
+  double _resolvePerceptionRate(double passedRate, Map<String, dynamic>? invoice) {
+    if (passedRate > 0.01) return passedRate;
+    if (invoice != null) {
+      final explicitRate =
+          double.tryParse((invoice['iibb_perception_rate'] ?? 0).toString()) ?? 0.0;
+      if (explicitRate > 0.01) return explicitRate;
+      final tributes = invoice['tributes_breakdown'];
+      if (tributes is List && tributes.isNotEmpty) {
+        final first = tributes.first;
+        if (first is Map) {
+          final alic =
+              double.tryParse((first['Alic'] ?? first['alic'] ?? 0).toString()) ?? 0.0;
+          if (alic > 0.01) return alic;
+        }
+      }
+    }
+    return 0.0;
+  }
+
+  String _resolveConceptLabel(Map<String, dynamic>? invoice, List<CartItem> items) {
+    final explicitConcept =
+        int.tryParse(invoice?['concept']?.toString() ?? '0') ?? 0;
+    if (explicitConcept == 2) return '2 - SERVICIOS';
+    if (explicitConcept == 3) return '3 - PROD. Y SERVICIOS';
+    if (explicitConcept == 1) return '1 - PRODUCTOS';
+
+    bool hasProducts = false;
+    bool hasServices = false;
+    for (final it in items) {
+      if (it.product.isService) {
+        hasServices = true;
+      } else {
+        hasProducts = true;
+      }
+    }
+    if (hasProducts && hasServices) return '3 - PROD. Y SERVICIOS';
+    if (hasServices && !hasProducts) return '2 - SERVICIOS';
+    return '1 - PRODUCTOS';
+  }
+
+  DateTime _resolveEffectiveDate(DateTime? saleDate, Map<String, dynamic>? invoice) {
+    final rawIssued = invoice?['issued_at']?.toString().trim() ?? '';
+    if (rawIssued.isNotEmpty) {
+      final parsed = DateTime.tryParse(rawIssued);
+      if (parsed != null) {
+        final localIssued = parsed.toLocal();
+        // Si issued_at solo traía fecha (00:00:00) y tenemos saleDate del mismo día, preservar la hora real
+        if (!rawIssued.contains(':') && saleDate != null) {
+          return DateTime(
+            localIssued.year,
+            localIssued.month,
+            localIssued.day,
+            saleDate.hour,
+            saleDate.minute,
+            saleDate.second,
+          );
+        }
+        return localIssued;
+      }
+    }
+    return saleDate ?? DateTime.now();
+  }
+
 
   /// Imprime el ticket de una venta.
   ///
@@ -615,6 +691,8 @@ class ReceiptPrinterService {
     double changeAmount = 0.0,
     double shippingCost = 0.0,
     double iibbPerceptionAmount = 0.0,
+    double iibbPerceptionRate = 0.0,
+    DateTime? saleDate,
     String? paperSizeOverride,
     Map<String, dynamic>? electronicInvoice,
   }) async {
@@ -754,9 +832,10 @@ class ReceiptPrinterService {
       final recName = (invoice['receiver_name']?.toString().trim().isNotEmpty == true)
           ? invoice['receiver_name'].toString()
           : (customerName?.trim().isNotEmpty == true ? customerName! : 'CONSUMIDOR FINAL');
-      final recDoc = (invoice['doc_number']?.toString().trim().isNotEmpty == true)
+      final rawRecDoc = (invoice['doc_number']?.toString().trim().isNotEmpty == true)
           ? invoice['doc_number'].toString()
           : (customerDoc?.trim().isNotEmpty == true ? customerDoc! : '---');
+      final recDoc = _formatCuit(rawRecDoc);
       final recCond = _formatReceiverTaxCondition(invoice['receiver_tax_condition']?.toString(), letter);
       final recAddress = (invoice['receiver_address']?.toString() ?? customerAddress ?? '').trim();
       bytes += generator.text('CLIENTE: ${_cleanText(recName).toUpperCase()}', styles: const PosStyles(align: PosAlign.left));
@@ -766,7 +845,7 @@ class ReceiptPrinterService {
       } else {
         bytes += generator.text('DOC: $recDoc | IVA: ${_cleanText(recCond)}', styles: const PosStyles(align: PosAlign.left));
       }
-      if (recAddress.isNotEmpty && recAddress != '---') {
+      if (recAddress.isNotEmpty && recAddress != '---' && recAddress != '-') {
         bytes += generator.text('DOMICILIO: ${_cleanText(recAddress).toUpperCase()}', styles: const PosStyles(align: PosAlign.left));
       }
     } else {
@@ -782,8 +861,11 @@ class ReceiptPrinterService {
     bytes += generator.hr(ch: '-');
 
     // ── Fecha y número de comprobante ────────────────────────────
-    final now = DateTime.now();
-    bytes += _labelValue(generator, 'FECHA:', _formatDate(now));
+    final effectiveDate = _resolveEffectiveDate(saleDate, invoice);
+    bytes += _labelValue(generator, 'FECHA:', _formatDate(effectiveDate));
+    if (invoice != null) {
+      bytes += _labelValue(generator, 'CONCEPTO:', _resolveConceptLabel(invoice, items));
+    }
     if (receiptNumber != null) {
       bytes += _labelValue(generator, 'TICKET Nro:', receiptNumber.padLeft(6, '0'));
     }
@@ -876,8 +958,13 @@ class ReceiptPrinterService {
                     item.promotionalLabel!.trim().isNotEmpty
                 ? item.promotionalLabel!.trim()
                 : 'Descuento');
+        final regPrice = item.effectiveRegularUnitPrice;
+        final itemSav = item.discountSavings;
+        final discLine = (regPrice > price + 0.01 && itemSav > 0.01)
+            ? '($tag) Lista: \$${_formatPrice(regPrice)} (-\$${_formatPrice(itemSav)})'
+            : '($tag)';
         bytes += generator.text(
-          _cleanText('($tag)'),
+          _cleanText(discLine),
           styles: const PosStyles(align: PosAlign.left),
         );
       }
@@ -904,149 +991,44 @@ class ReceiptPrinterService {
     final grandTotal = total + surchargeAmount;
     final hasTendered = tenderedAmount > 0.01;
 
-    final hasPerception = iibbPerceptionAmount > 0.01;
+    final effectivePerceptionAmount =
+        _resolvePerceptionAmount(iibbPerceptionAmount, invoice);
+    final effectivePerceptionRate =
+        _resolvePerceptionRate(iibbPerceptionRate, invoice);
+    final hasPerception = effectivePerceptionAmount > 0.01;
+    final voucherLetter = invoice?['voucher_letter']?.toString().toUpperCase();
+    final vType = int.tryParse(invoice?['voucher_type']?.toString() ?? '0') ?? 0;
+    final isFacturaA = invoice != null &&
+        (voucherLetter == 'A' || vType == 1 || vType == 2 || vType == 3);
+    final isFacturaB = invoice != null &&
+        (voucherLetter == 'B' || vType == 6 || vType == 7 || vType == 8);
     final bool isComplexPayment = paymentDetails.length > 1 ||
         hasSurcharge ||
         hasShipping ||
         hasPerception ||
-        hasSavings;
+        hasSavings ||
+        isFacturaA;
 
     if (isComplexPayment) {
-      // Caso 3: Venta Compleja (Múltiples métodos, Envío, Recargos, Ahorro o Percepciones)
+      // Caso 3: Venta Compleja (Múltiples métodos, Envío, Recargos, Ahorro, Percepciones o Factura A)
       if (hasSavings) {
         bytes += _labelValue(
             generator,
             'SUBTOTAL LISTA:',
-            '\$${_formatPrice(total + totalSavings - shippingCost - iibbPerceptionAmount)}');
+            '\$${_formatPrice(total + totalSavings - shippingCost - effectivePerceptionAmount)}');
         final discTitle = (discountLabel != null && discountLabel.trim().isNotEmpty)
             ? '${discountLabel.replaceAll(RegExp(r'[^\w\s\/\-]'), '').trim().toUpperCase()}:'
             : 'AHORRO / DESCUENTO:';
         bytes += _labelValue(generator, discTitle, '-\$${_formatPrice(totalSavings)}');
-      } else {
-        bytes += _labelValue(generator, 'SUBTOTAL:', '\$${_formatPrice(total - shippingCost - iibbPerceptionAmount)}');
-      }
-      
-      if (hasPerception) {
-        bytes += _labelValue(generator, 'PERC. IIBB:', '\$${_formatPrice(iibbPerceptionAmount)}');
+      } else if (!isFacturaA) {
+        bytes += _labelValue(generator, 'SUBTOTAL:', '\$${_formatPrice(total - shippingCost - effectivePerceptionAmount)}');
       }
 
-      if (hasShipping) {
-        bytes += _labelValue(generator, 'FLETE / ENVIO:', '\$${_formatPrice(shippingCost)}');
-      }
-
-      if (paymentDetails.isNotEmpty) {
-        bytes += generator.hr(ch: '-');
-        for (final pd in paymentDetails) {
-          final methodName = _cleanText((pd['name'] as String? ?? 'PAGO').toUpperCase());
-          final methodAmt = (pd['amount'] as num?)?.toDouble() ?? 0.0;
-          bytes += _labelValue(generator, methodName, '\$${_formatPrice(methodAmt)}');
-        }
-      } else {
-        bytes += generator.hr(ch: '-');
-        bytes += _labelValue(generator, _cleanText(paymentMethod.toUpperCase()), '\$${_formatPrice(total)}');
-      }
-
-      if (hasSurcharge) {
-        bytes += _labelValue(generator, 'RECARGO BANCARIO:', '\$${_formatPrice(surchargeAmount)}');
-      }
-
-      bytes += generator.hr(ch: '-');
-      bytes += _labelValue(generator, 'TOTAL COBRADO:', '\$${_formatPrice(grandTotal)}');
-
-      if (hasTendered && (paymentDetails.length <= 1 || changeAmount > 0.01)) {
-        bytes += _labelValue(generator, 'EFECTIVO RECIBIDO:', '\$${_formatPrice(tenderedAmount)}');
-        bytes += _labelValue(generator, 'SU VUELTO:', '\$${_formatPrice(changeAmount)}');
-      }
-    } else {
-      // Casos 1 y 2: Venta Simple (Un solo pago, sin recargos)
-      bytes += _labelValue(generator, 'TOTAL GENERAL:', '\$${_formatPrice(grandTotal)}');
-      bytes += generator.hr(ch: '-');
-
-      final singlePaymentName = paymentDetails.isNotEmpty
-          ? _cleanText((paymentDetails.first['name'] as String? ?? 'PAGO').toUpperCase())
-          : _cleanText(paymentMethod.toUpperCase());
-
-      bytes += _labelValue(generator, 'PAGO EN:', singlePaymentName);
-
-      // Si pagó con efectivo, mostramos siempre con cuánto abonó para control de caja.
-      if (hasTendered && (paymentDetails.length <= 1 || changeAmount > 0.01)) {
-        bytes += _labelValue(generator, 'EFECTIVO RECIBIDO:', '\$${_formatPrice(tenderedAmount)}');
-        bytes += _labelValue(generator, 'SU VUELTO:', '\$${_formatPrice(changeAmount)}');
-      }
-    }
-
-    bytes += generator.feed(1);
-
-    bytes += generator.row([
-      PosColumn(
-        text: 'UNIDADES VENDIDAS:',
-        width: 9,
-        styles: const PosStyles(bold: true),
-      ),
-      PosColumn(
-        text: '$totalItemsQty',
-        width: 3,
-        styles: const PosStyles(align: PosAlign.right, bold: true),
-      ),
-    ]);
-    bytes += generator.hr(ch: '-');
-
-
-    // ── Código de barras del comprobante (sin número duplicado) ──
-    if (receiptNumber != null && receiptNumber.isNotEmpty) {
-      try {
-        final cleanStringForBarcode = receiptNumber.replaceAll(RegExp(r'[^A-Z0-9\-\.\ \$\/\+\%]'), '');
-        if (cleanStringForBarcode.isNotEmpty) {
-          bytes += generator.barcode(
-            Barcode.code39(cleanStringForBarcode.split('')),
-            width: 2,
-            height: 60,
-            textPos: BarcodeText.none, // Suprime el *47* del hardware
-          );
-          // Texto legible limpio, sin asteriscos
-          bytes += generator.text(
-            cleanStringForBarcode,
-            styles: const PosStyles(align: PosAlign.center),
-          );
-        }
-      } catch (e) {
-        debugPrint("Error imprimiendo Code39 barcode: $e");
-      }
-      bytes += generator.feed(1);
-    }
-
-    // ── Pie de ticket ──
-    if (hasSavings) {
-      bytes += generator.text(
-        _cleanText('*** ¡USTED AHORRO: \$${_formatPrice(totalSavings)}! ***'),
-        styles: const PosStyles(align: PosAlign.center, bold: true),
-      );
-      bytes += generator.feed(1);
-    }
-
-    final footerText = (settings.receiptFooterMessage != null &&
-            settings.receiptFooterMessage!.trim().isNotEmpty)
-        ? settings.receiptFooterMessage!.trim()
-        : (invoice == null ? 'Gracias por su compra!' : '');
-    if (footerText.isNotEmpty) {
-      bytes += generator.text(
-        _cleanText(footerText),
-        styles: const PosStyles(align: PosAlign.center, bold: true),
-      );
-      bytes += generator.feed(1);
-    }
-
-    if (invoice != null) {
-      // FINDING-SALES-05: Desglose de impuestos para Factura A y Transparencia Fiscal (RG 5614 Ley 27.743) para Factura B
-      final voucherLetter = invoice['voucher_letter']?.toString().toUpperCase();
-      final vType = int.tryParse(invoice['voucher_type']?.toString() ?? '0') ?? 0;
-      final isFacturaA = voucherLetter == 'A' || vType == 1 || vType == 2 || vType == 3;
-      final isFacturaB = voucherLetter == 'B' || vType == 6 || vType == 7 || vType == 8;
-      final netAmount = invoice['net_amount'];
-      final ivaAmount = invoice['iva_amount'];
-      if (isFacturaA && netAmount != null && ivaAmount != null) {
-        final net = double.tryParse(netAmount.toString()) ?? 0.0;
-        final iva = double.tryParse(ivaAmount.toString()) ?? 0.0;
+      if (isFacturaA) {
+        final netAmount = invoice['net_amount'];
+        final ivaAmount = invoice['iva_amount'];
+        final net = double.tryParse(netAmount?.toString() ?? '') ?? 0.0;
+        final iva = double.tryParse(ivaAmount?.toString() ?? '') ?? 0.0;
         double iva21 = 0.0;
         double iva105 = 0.0;
         double iva27 = 0.0;
@@ -1082,41 +1064,154 @@ class ReceiptPrinterService {
             }
           }
         }
-        bytes += generator.hr(ch: '-');
-        bytes += generator.row([
-          PosColumn(text: 'Neto Gravado:', width: 6, styles: const PosStyles(bold: true)),
-          PosColumn(text: '\$${net.toStringAsFixed(2)}', width: 6, styles: const PosStyles(align: PosAlign.right)),
-        ]);
+        final effectiveNet = net > 0
+            ? net
+            : (total - shippingCost - effectivePerceptionAmount - (iva > 0 ? iva : (iva21 + iva105 + iva27))).clamp(0.0, double.infinity);
+        final effectiveIva = iva > 0 ? iva : (iva21 + iva105 + iva27);
+        bytes += _labelValue(generator, 'Neto Gravado:', '\$${_formatPrice(effectiveNet)}');
         if (iva105 > 0 || iva27 > 0) {
           if (iva21 > 0) {
-            bytes += generator.row([
-              PosColumn(text: 'IVA 21%:', width: 6, styles: const PosStyles(bold: true)),
-              PosColumn(text: '\$${iva21.toStringAsFixed(2)}', width: 6, styles: const PosStyles(align: PosAlign.right)),
-            ]);
+            bytes += _labelValue(generator, 'IVA 21%:', '\$${_formatPrice(iva21)}');
           }
           if (iva105 > 0) {
-            bytes += generator.row([
-              PosColumn(text: 'IVA 10.5%:', width: 6, styles: const PosStyles(bold: true)),
-              PosColumn(text: '\$${iva105.toStringAsFixed(2)}', width: 6, styles: const PosStyles(align: PosAlign.right)),
-            ]);
+            bytes += _labelValue(generator, 'IVA 10.5%:', '\$${_formatPrice(iva105)}');
           }
           if (iva27 > 0) {
-            bytes += generator.row([
-              PosColumn(text: 'IVA 27%:', width: 6, styles: const PosStyles(bold: true)),
-              PosColumn(text: '\$${iva27.toStringAsFixed(2)}', width: 6, styles: const PosStyles(align: PosAlign.right)),
-            ]);
+            bytes += _labelValue(generator, 'IVA 27%:', '\$${_formatPrice(iva27)}');
           }
         } else {
-          bytes += generator.row([
-            PosColumn(text: 'IVA:', width: 6, styles: const PosStyles(bold: true)),
-            PosColumn(text: '\$${iva.toStringAsFixed(2)}', width: 6, styles: const PosStyles(align: PosAlign.right)),
-          ]);
+          bytes += _labelValue(generator, 'IVA 21%:', '\$${_formatPrice(effectiveIva)}');
         }
-        bytes += generator.hr(ch: '-');
-      } else if (isFacturaB) {
+        final exemptAmt = double.tryParse(invoice['exempt_amount']?.toString() ?? '0') ?? 0.0;
+        if (exemptAmt > 0) {
+          bytes += _labelValue(generator, 'Importe Exento:', '\$${_formatPrice(exemptAmt)}');
+        }
+        if (hasPerception || settings.isIibbPerceptionAgent == true) {
+          final pRateStr = (hasPerception && effectivePerceptionRate > 0)
+              ? effectivePerceptionRate.toStringAsFixed(1)
+              : '0.0';
+          bytes += _labelValue(generator, 'PERCEPCION IIBB ($pRateStr%):', '\$${_formatPrice(effectivePerceptionAmount)}');
+        }
+      } else if (hasPerception) {
+        final rateStr = effectivePerceptionRate > 0.01
+            ? ' (${effectivePerceptionRate.toStringAsFixed(1)}%)'
+            : '';
+        bytes += _labelValue(generator, 'PERCEPCION IIBB$rateStr:', '\$${_formatPrice(effectivePerceptionAmount)}');
+      }
+
+      if (hasShipping) {
+        bytes += _labelValue(generator, 'FLETE / ENVIO:', '\$${_formatPrice(shippingCost)}');
+      }
+
+      if (hasSurcharge) {
+        bytes += _labelValue(generator, 'RECARGO BANCARIO:', '\$${_formatPrice(surchargeAmount)}');
+      }
+
+      bytes += generator.hr(ch: '-');
+      bytes += _labelValue(generator, 'TOTAL COBRADO:', '\$${_formatPrice(grandTotal)}');
+      bytes += generator.hr(ch: '-');
+
+      if (paymentDetails.isNotEmpty) {
+        for (final pd in paymentDetails) {
+          final methodName = _cleanText((pd['name'] as String? ?? 'PAGO').toUpperCase());
+          final methodAmt = (pd['amount'] as num?)?.toDouble() ?? 0.0;
+          bytes += _labelValue(generator, methodName, '\$${_formatPrice(methodAmt)}');
+        }
+      } else {
+        bytes += _labelValue(generator, _cleanText(paymentMethod.toUpperCase()), '\$${_formatPrice(grandTotal)}');
+      }
+
+      if (hasTendered && (paymentDetails.length <= 1 || changeAmount > 0.01)) {
+        bytes += _labelValue(generator, 'EFECTIVO RECIBIDO:', '\$${_formatPrice(tenderedAmount)}');
+        bytes += _labelValue(generator, 'SU VUELTO:', '\$${_formatPrice(changeAmount)}');
+      }
+    } else {
+      // Casos 1 y 2: Venta Simple (Un solo pago, sin recargos)
+      bytes += _labelValue(generator, 'TOTAL GENERAL:', '\$${_formatPrice(grandTotal)}');
+      bytes += generator.hr(ch: '-');
+
+      final singlePaymentName = paymentDetails.isNotEmpty
+          ? _cleanText((paymentDetails.first['name'] as String? ?? 'PAGO').toUpperCase())
+          : _cleanText(paymentMethod.toUpperCase());
+
+      bytes += _labelValue(generator, 'PAGO EN:', singlePaymentName);
+
+      // Si pagó con efectivo, mostramos siempre con cuánto abonó para control de caja.
+      if (hasTendered && (paymentDetails.length <= 1 || changeAmount > 0.01)) {
+        bytes += _labelValue(generator, 'EFECTIVO RECIBIDO:', '\$${_formatPrice(tenderedAmount)}');
+        bytes += _labelValue(generator, 'SU VUELTO:', '\$${_formatPrice(changeAmount)}');
+      }
+    }
+
+    bytes += generator.feed(1);
+
+    if (invoice == null) {
+      bytes += generator.row([
+        PosColumn(
+          text: 'UNIDADES VENDIDAS:',
+          width: 9,
+          styles: const PosStyles(bold: true),
+        ),
+        PosColumn(
+          text: '$totalItemsQty',
+          width: 3,
+          styles: const PosStyles(align: PosAlign.right, bold: true),
+        ),
+      ]);
+      bytes += generator.hr(ch: '-');
+
+      // ── Código de barras del comprobante (sin número duplicado) ──
+      if (receiptNumber != null && receiptNumber.isNotEmpty) {
+        try {
+          final cleanStringForBarcode = receiptNumber.replaceAll(RegExp(r'[^A-Z0-9\-\.\ \$\/\+\%]'), '');
+          if (cleanStringForBarcode.isNotEmpty) {
+            bytes += generator.barcode(
+              Barcode.code39(cleanStringForBarcode.split('')),
+              width: 2,
+              height: 60,
+              textPos: BarcodeText.none, // Suprime el *47* del hardware
+            );
+            // Texto legible limpio, sin asteriscos
+            bytes += generator.text(
+              cleanStringForBarcode,
+              styles: const PosStyles(align: PosAlign.center),
+            );
+          }
+        } catch (e) {
+          debugPrint("Error imprimiendo Code39 barcode: $e");
+        }
+        bytes += generator.feed(1);
+      }
+
+      // ── Pie de ticket ──
+      if (hasSavings) {
+        bytes += generator.text(
+          _cleanText('*** ¡USTED AHORRO: \$${_formatPrice(totalSavings)}! ***'),
+          styles: const PosStyles(align: PosAlign.center, bold: true),
+        );
+        bytes += generator.feed(1);
+      }
+
+      final footerText = (settings.receiptFooterMessage != null &&
+              settings.receiptFooterMessage!.trim().isNotEmpty)
+          ? settings.receiptFooterMessage!.trim()
+          : 'Gracias por su compra!';
+      if (footerText.isNotEmpty) {
+        bytes += generator.text(
+          _cleanText(footerText),
+          styles: const PosStyles(align: PosAlign.center, bold: true),
+        );
+        bytes += generator.feed(1);
+      }
+    } else {
+      // FINDING-SALES-05: Transparencia Fiscal (RG 5614 Ley 27.743) para Factura B
+      // Nota: El desglose de IVA e IIBB de Factura A ya se imprime en el bloque de cálculo superior antes de TOTAL COBRADO.
+      final netAmount = invoice['net_amount'];
+      final ivaAmount = invoice['iva_amount'];
+      if (isFacturaB) {
         final explicitNet = double.tryParse(netAmount?.toString() ?? '') ?? 0.0;
         final explicitIva = double.tryParse(ivaAmount?.toString() ?? '') ?? 0.0;
-        final baseTotal = total - shippingCost - iibbPerceptionAmount;
+        final baseTotal = total - shippingCost - effectivePerceptionAmount;
         double itemsIva = 0.0;
         bool hasItemsSub = false;
         for (final it in items) {
@@ -1142,12 +1237,14 @@ class ReceiptPrinterService {
           'Precio s/imp: \$${_formatPrice(containedNet)} - IVA Contenido: \$${_formatPrice(containedIva)}',
           styles: PosStyles(
             align: PosAlign.center,
-            fontType: config.paperSize == PaperSize.mm58
+            fontType: targetPaperSize == PaperSize.mm58
                 ? PosFontType.fontB
                 : PosFontType.fontA,
           ),
         );
         bytes += _labelValue(generator, 'Otros Imp. Nac. Ind.:', '\$0');
+        bytes += generator.hr(ch: '-');
+      } else {
         bytes += generator.hr(ch: '-');
       }
 
@@ -1217,6 +1314,8 @@ class ReceiptPrinterService {
     double tenderedAmount = 0.0,
     double changeAmount = 0.0,
     double iibbPerceptionAmount = 0.0,
+    double iibbPerceptionRate = 0.0,
+    DateTime? saleDate,
     String? customerName,
     String? customerDoc,
     String? customerAddress,
@@ -1253,7 +1352,7 @@ class ReceiptPrinterService {
       bytes += generator.text(_cleanText(settings.address!), styles: const PosStyles(align: PosAlign.center));
     }
     if (settings.taxId != null && settings.taxId!.isNotEmpty) {
-      bytes += generator.text('CUIT: ${settings.taxId}', styles: const PosStyles(align: PosAlign.center, bold: true));
+      bytes += generator.text('CUIT: ${_formatCuit(settings.taxId!)}', styles: const PosStyles(align: PosAlign.center, bold: true));
     }
     final invoice = resolvedInvoice;
     if (invoice != null) {
@@ -1311,9 +1410,10 @@ class ReceiptPrinterService {
       final recName = (invoice['receiver_name']?.toString().trim().isNotEmpty == true)
           ? invoice['receiver_name'].toString()
           : (customerName?.trim().isNotEmpty == true ? customerName! : 'CONSUMIDOR FINAL');
-      final recDoc = (invoice['doc_number']?.toString().trim().isNotEmpty == true)
+      final rawRecDoc = (invoice['doc_number']?.toString().trim().isNotEmpty == true)
           ? invoice['doc_number'].toString()
           : (customerDoc?.trim().isNotEmpty == true ? customerDoc! : '---');
+      final recDoc = _formatCuit(rawRecDoc);
       final recCond = _formatReceiverTaxCondition(invoice['receiver_tax_condition']?.toString(), letter);
       final recAddress = (invoice['receiver_address']?.toString() ?? customerAddress ?? '').trim();
       bytes += generator.text('CLIENTE: ${_cleanText(recName).toUpperCase()}', styles: const PosStyles(align: PosAlign.left));
@@ -1323,7 +1423,7 @@ class ReceiptPrinterService {
       } else {
         bytes += generator.text('DOC: $recDoc | IVA: ${_cleanText(recCond)}', styles: const PosStyles(align: PosAlign.left));
       }
-      if (recAddress.isNotEmpty && recAddress != '---') {
+      if (recAddress.isNotEmpty && recAddress != '---' && recAddress != '-') {
         bytes += generator.text('DOMICILIO: ${_cleanText(recAddress).toUpperCase()}', styles: const PosStyles(align: PosAlign.left));
       }
     } else {
@@ -1332,8 +1432,11 @@ class ReceiptPrinterService {
     }
     bytes += generator.hr(ch: '-');
 
-    final now = DateTime.now();
-    bytes += _labelValue(generator, 'FECHA:', _formatDate(now));
+    final effectiveDate = _resolveEffectiveDate(saleDate, invoice);
+    bytes += _labelValue(generator, 'FECHA:', _formatDate(effectiveDate));
+    if (invoice != null) {
+      bytes += _labelValue(generator, 'CONCEPTO:', _resolveConceptLabel(invoice, items));
+    }
     if (receiptNumber != null) {
       bytes += _labelValue(generator, 'TICKET Nro:', receiptNumber.padLeft(6, '0'));
     }
@@ -1403,8 +1506,13 @@ class ReceiptPrinterService {
                     item.promotionalLabel!.trim().isNotEmpty
                 ? item.promotionalLabel!.trim()
                 : 'Descuento');
+        final regPrice = item.effectiveRegularUnitPrice;
+        final itemSav = item.discountSavings;
+        final discLine = (regPrice > item.unitPrice + 0.01 && itemSav > 0.01)
+            ? '($tag) Lista: \$${_formatPrice(regPrice)} (-\$${_formatPrice(itemSav)})'
+            : '($tag)';
         bytes += generator.text(
-          _cleanText('($tag)'),
+          _cleanText(discLine),
           styles: const PosStyles(align: PosAlign.left),
         );
       }
@@ -1420,54 +1528,36 @@ class ReceiptPrinterService {
     final hasShipping = shippingCost > 0.01;
     final grandTotal = total + surchargeAmount;
 
-    final hasPerception = iibbPerceptionAmount > 0.01;
-    if (paymentDetails.length > 1 || hasSurcharge || hasShipping || hasPerception || hasSplitSavings) {
+    final effectivePerceptionAmount = _resolveEffectivePerceptionAmount(
+      iibbPerceptionAmount,
+      electronicInvoice,
+    );
+    final effectivePerceptionRate = _resolveEffectivePerceptionRate(
+      iibbPerceptionRate,
+      electronicInvoice,
+    );
+    final hasPerception = effectivePerceptionAmount > 0.01;
+    final voucherLetter = invoice?['voucher_letter']?.toString().toUpperCase();
+    final vType = int.tryParse(invoice?['voucher_type']?.toString() ?? '0') ?? 0;
+    final isFacturaA = invoice != null &&
+        (voucherLetter == 'A' || vType == 1 || vType == 2 || vType == 3);
+    final isFacturaB = invoice != null &&
+        (voucherLetter == 'B' || vType == 6 || vType == 7 || vType == 8);
+    if (paymentDetails.length > 1 || hasSurcharge || hasShipping || hasPerception || hasSplitSavings || isFacturaA) {
       if (hasSplitSavings) {
-        bytes += _labelValue(generator, 'SUBTOTAL LISTA:', '\$${_formatPrice(total + splitTotalSavings - shippingCost - iibbPerceptionAmount)}');
+        bytes += _labelValue(generator, 'SUBTOTAL LISTA:', '\$${_formatPrice(total + splitTotalSavings - shippingCost - effectivePerceptionAmount)}');
         final discTitle = (discountLabel != null && discountLabel.trim().isNotEmpty)
             ? '${discountLabel.replaceAll(RegExp(r'[^\w\s\/\-]'), '').trim().toUpperCase()}:'
             : 'AHORRO / DESCUENTO:';
         bytes += _labelValue(generator, discTitle, '-\$${_formatPrice(splitTotalSavings)}');
-      } else {
-        bytes += _labelValue(generator, 'SUBTOTAL:', '\$${_formatPrice(total - shippingCost - iibbPerceptionAmount)}');
+      } else if (!isFacturaA) {
+        bytes += _labelValue(generator, 'SUBTOTAL:', '\$${_formatPrice(total - shippingCost - effectivePerceptionAmount)}');
       }
-      if (hasPerception) bytes += _labelValue(generator, 'PERC. IIBB:', '\$${_formatPrice(iibbPerceptionAmount)}');
-      if (hasShipping) bytes += _labelValue(generator, 'FLETE / ENVIO:', '\$${_formatPrice(shippingCost)}');
-      if (paymentDetails.isNotEmpty) {
-        bytes += generator.hr(ch: '-');
-        for (final pd in paymentDetails) {
-          bytes += _labelValue(generator, _cleanText((pd['name'] as String? ?? 'PAGO').toUpperCase()), '\$${_formatPrice((pd['amount'] as num?)?.toDouble() ?? 0.0)}');
-        }
-      }
-      if (hasSurcharge) bytes += _labelValue(generator, 'RECARGO:', '\$${_formatPrice(surchargeAmount)}');
-      bytes += generator.hr(ch: '-');
-      bytes += _labelValue(generator, 'TOTAL COBRADO:', '\$${_formatPrice(grandTotal)}');
-    } else {
-      bytes += _labelValue(generator, 'TOTAL GENERAL:', '\$${_formatPrice(grandTotal)}');
-      bytes += generator.hr(ch: '-');
-      if (paymentDetails.isNotEmpty) {
-        bytes += _labelValue(generator, 'PAGO EN:', _cleanText((paymentDetails.first['name'] as String? ?? 'PAGO').toUpperCase()));
-      }
-    }
-    if (tenderedAmount > 0.01 && (paymentDetails.length <= 1 || changeAmount > 0.01)) {
-      bytes += _labelValue(generator, 'EFECTIVO RECIBIDO:', '\$${_formatPrice(tenderedAmount)}');
-      bytes += _labelValue(generator, 'SU VUELTO:', '\$${_formatPrice(changeAmount)}');
-    }
-
-    bytes += generator.feed(1);
-    bytes += generator.text('UNIDADES VENDIDAS: $totalItemsQty', styles: const PosStyles(bold: true));
-    bytes += generator.hr(ch: '-');
-    if (invoice != null) {
-      // FINDING-SALES-05: Desglose de impuestos para Factura A y Transparencia Fiscal (RG 5614 Ley 27.743) para Factura B
-      final voucherLetter = invoice['voucher_letter']?.toString().toUpperCase();
-      final vType = int.tryParse(invoice['voucher_type']?.toString() ?? '0') ?? 0;
-      final isFacturaA = voucherLetter == 'A' || vType == 1 || vType == 2 || vType == 3;
-      final isFacturaB = voucherLetter == 'B' || vType == 6 || vType == 7 || vType == 8;
-      final netAmount = invoice['net_amount'];
-      final ivaAmount = invoice['iva_amount'];
-      if (isFacturaA && netAmount != null && ivaAmount != null) {
-        final net = double.tryParse(netAmount.toString()) ?? 0.0;
-        final iva = double.tryParse(ivaAmount.toString()) ?? 0.0;
+      if (isFacturaA) {
+        final netAmount = invoice['net_amount'];
+        final ivaAmount = invoice['iva_amount'];
+        final net = double.tryParse(netAmount?.toString() ?? '') ?? 0.0;
+        final iva = double.tryParse(ivaAmount?.toString() ?? '') ?? 0.0;
         double iva21 = 0.0;
         double iva105 = 0.0;
         double iva27 = 0.0;
@@ -1503,41 +1593,70 @@ class ReceiptPrinterService {
             }
           }
         }
-        bytes += generator.hr(ch: '-');
-        bytes += generator.row([
-          PosColumn(text: 'Neto Gravado:', width: 6, styles: const PosStyles(bold: true)),
-          PosColumn(text: '\$${net.toStringAsFixed(2)}', width: 6, styles: const PosStyles(align: PosAlign.right)),
-        ]);
+        final effectiveNet = net > 0
+            ? net
+            : (total - shippingCost - effectivePerceptionAmount - (iva > 0 ? iva : (iva21 + iva105 + iva27))).clamp(0.0, double.infinity);
+        final effectiveIva = iva > 0 ? iva : (iva21 + iva105 + iva27);
+        bytes += _labelValue(generator, 'Neto Gravado:', '\$${_formatPrice(effectiveNet)}');
         if (iva105 > 0 || iva27 > 0) {
           if (iva21 > 0) {
-            bytes += generator.row([
-              PosColumn(text: 'IVA 21%:', width: 6, styles: const PosStyles(bold: true)),
-              PosColumn(text: '\$${iva21.toStringAsFixed(2)}', width: 6, styles: const PosStyles(align: PosAlign.right)),
-            ]);
+            bytes += _labelValue(generator, 'IVA 21%:', '\$${_formatPrice(iva21)}');
           }
           if (iva105 > 0) {
-            bytes += generator.row([
-              PosColumn(text: 'IVA 10.5%:', width: 6, styles: const PosStyles(bold: true)),
-              PosColumn(text: '\$${iva105.toStringAsFixed(2)}', width: 6, styles: const PosStyles(align: PosAlign.right)),
-            ]);
+            bytes += _labelValue(generator, 'IVA 10.5%:', '\$${_formatPrice(iva105)}');
           }
           if (iva27 > 0) {
-            bytes += generator.row([
-              PosColumn(text: 'IVA 27%:', width: 6, styles: const PosStyles(bold: true)),
-              PosColumn(text: '\$${iva27.toStringAsFixed(2)}', width: 6, styles: const PosStyles(align: PosAlign.right)),
-            ]);
+            bytes += _labelValue(generator, 'IVA 27%:', '\$${_formatPrice(iva27)}');
           }
         } else {
-          bytes += generator.row([
-            PosColumn(text: 'IVA:', width: 6, styles: const PosStyles(bold: true)),
-            PosColumn(text: '\$${iva.toStringAsFixed(2)}', width: 6, styles: const PosStyles(align: PosAlign.right)),
-          ]);
+          bytes += _labelValue(generator, 'IVA 21%:', '\$${_formatPrice(effectiveIva)}');
         }
-        bytes += generator.hr(ch: '-');
-      } else if (isFacturaB) {
+        final exemptAmt = double.tryParse(invoice['exempt_amount']?.toString() ?? '0') ?? 0.0;
+        if (exemptAmt > 0) {
+          bytes += _labelValue(generator, 'Importe Exento:', '\$${_formatPrice(exemptAmt)}');
+        }
+        if (hasPerception || settings.isIibbPerceptionAgent == true) {
+          final pRateStr = (hasPerception && effectivePerceptionRate > 0)
+              ? effectivePerceptionRate.toStringAsFixed(1)
+              : '0.0';
+          bytes += _labelValue(generator, 'PERCEPCION IIBB ($pRateStr%):', '\$${_formatPrice(effectivePerceptionAmount)}');
+        }
+      } else if (hasPerception) {
+        final rateStr = effectivePerceptionRate > 0 ? ' (${effectivePerceptionRate.toStringAsFixed(1)}%)' : '';
+        bytes += _labelValue(generator, 'PERCEPCION IIBB$rateStr:', '\$${_formatPrice(effectivePerceptionAmount)}');
+      }
+      if (hasShipping) bytes += _labelValue(generator, 'FLETE / ENVIO:', '\$${_formatPrice(shippingCost)}');
+      if (hasSurcharge) bytes += _labelValue(generator, 'RECARGO:', '\$${_formatPrice(surchargeAmount)}');
+      bytes += generator.hr(ch: '-');
+      bytes += _labelValue(generator, 'TOTAL COBRADO:', '\$${_formatPrice(grandTotal)}');
+      bytes += generator.hr(ch: '-');
+      if (paymentDetails.isNotEmpty) {
+        for (final pd in paymentDetails) {
+          bytes += _labelValue(generator, _cleanText((pd['name'] as String? ?? 'PAGO').toUpperCase()), '\$${_formatPrice((pd['amount'] as num?)?.toDouble() ?? 0.0)}');
+        }
+      }
+    } else {
+      bytes += _labelValue(generator, 'TOTAL GENERAL:', '\$${_formatPrice(grandTotal)}');
+      bytes += generator.hr(ch: '-');
+      if (paymentDetails.isNotEmpty) {
+        bytes += _labelValue(generator, 'PAGO EN:', _cleanText((paymentDetails.first['name'] as String? ?? 'PAGO').toUpperCase()));
+      }
+    }
+    if (tenderedAmount > 0.01 && (paymentDetails.length <= 1 || changeAmount > 0.01)) {
+      bytes += _labelValue(generator, 'EFECTIVO RECIBIDO:', '\$${_formatPrice(tenderedAmount)}');
+      bytes += _labelValue(generator, 'SU VUELTO:', '\$${_formatPrice(changeAmount)}');
+    }
+
+    bytes += generator.feed(1);
+    if (invoice != null) {
+      // FINDING-SALES-05: Transparencia Fiscal (RG 5614 Ley 27.743) para Factura B
+      // Nota: El desglose de IVA e IIBB de Factura A ya se imprime en el bloque de cálculo superior antes de TOTAL COBRADO.
+      final netAmount = invoice['net_amount'];
+      final ivaAmount = invoice['iva_amount'];
+      if (isFacturaB) {
         final explicitNet = double.tryParse(netAmount?.toString() ?? '') ?? 0.0;
         final explicitIva = double.tryParse(ivaAmount?.toString() ?? '') ?? 0.0;
-        final baseTotal = total - shippingCost - iibbPerceptionAmount;
+        final baseTotal = total - shippingCost - effectivePerceptionAmount;
         double itemsIva = 0.0;
         bool hasItemsSub = false;
         for (final it in items) {
@@ -1563,12 +1682,14 @@ class ReceiptPrinterService {
           'Precio s/imp: \$${_formatPrice(containedNet)} - IVA Contenido: \$${_formatPrice(containedIva)}',
           styles: PosStyles(
             align: PosAlign.center,
-            fontType: config.paperSize == PaperSize.mm58
+            fontType: targetPaperSize == PaperSize.mm58
                 ? PosFontType.fontB
                 : PosFontType.fontA,
           ),
         );
         bytes += _labelValue(generator, 'Otros Imp. Nac. Ind.:', '\$0');
+        bytes += generator.hr(ch: '-');
+      } else {
         bytes += generator.hr(ch: '-');
       }
 
@@ -1598,6 +1719,8 @@ class ReceiptPrinterService {
         styles: const PosStyles(align: PosAlign.center, bold: true),
       );
     } else {
+      bytes += generator.text('UNIDADES VENDIDAS: $totalItemsQty', styles: const PosStyles(bold: true));
+      bytes += generator.hr(ch: '-');
       if (hasSplitSavings) {
         bytes += generator.text(
           _cleanText('*** ¡USTED AHORRO: \$${_formatPrice(splitTotalSavings)}! ***'),
@@ -1650,7 +1773,7 @@ class ReceiptPrinterService {
     if (receiptNumber != null) {
       bytes += generator.text('VENTA ASOC: ${receiptNumber.padLeft(6, '0')}');
     }
-    bytes += generator.text('FECHA: ${_formatDate(now)}');
+    bytes += generator.text('FECHA: ${_formatDate(effectiveDate)}');
     final effectiveCustName = (customerName != null && customerName.isNotEmpty)
         ? customerName
         : invoice?['receiver_name']?.toString();
@@ -2730,6 +2853,46 @@ class ReceiptPrinterService {
   String _formatDate(DateTime dt) {
     final localDt = dt.toLocal();
     return '${localDt.day.toString().padLeft(2, '0')}/${localDt.month.toString().padLeft(2, '0')}/${localDt.year} ${localDt.hour.toString().padLeft(2, '0')}:${localDt.minute.toString().padLeft(2, '0')}';
+  }
+
+  double _resolveEffectivePerceptionAmount(
+    double explicitAmount,
+    Map<String, dynamic>? invoice,
+  ) {
+    if (explicitAmount > 0.01) return explicitAmount;
+    if (invoice == null) return 0.0;
+    final trib = invoice['tribute_amount'] ?? invoice['iibb_perception_amount'];
+    if (trib is num) return trib.toDouble();
+    if (trib is String) return double.tryParse(trib) ?? 0.0;
+    return 0.0;
+  }
+
+  double _resolveEffectivePerceptionRate(
+    double explicitRate,
+    Map<String, dynamic>? invoice,
+  ) {
+    if (explicitRate > 0.0) return explicitRate;
+    if (invoice == null) return 0.0;
+    final directRate = invoice['iibb_perception_rate'];
+    if (directRate is num && directRate > 0) return directRate.toDouble();
+    if (directRate is String) {
+      final parsed = double.tryParse(directRate);
+      if (parsed != null && parsed > 0) return parsed;
+    }
+    final tributes = invoice['tributes_breakdown'];
+    if (tributes is List) {
+      for (final t in tributes) {
+        if (t is Map) {
+          final alic = t['Alic'] ?? t['alic'] ?? t['rate'];
+          if (alic is num && alic > 0) return alic.toDouble();
+          if (alic is String) {
+            final parsed = double.tryParse(alic);
+            if (parsed != null && parsed > 0) return parsed;
+          }
+        }
+      }
+    }
+    return 0.0;
   }
 
   /// Envía los bytes a la impresora según el tipo de conexión configurado.

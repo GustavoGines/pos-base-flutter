@@ -15,6 +15,7 @@ class VatPurchasesReportView extends StatefulWidget {
 
 class _VatPurchasesReportViewState extends State<VatPurchasesReportView> {
   final TextEditingController _searchCtrl = TextEditingController();
+  bool _sortAscending = false;
 
   @override
   void initState() {
@@ -24,6 +25,8 @@ class _VatPurchasesReportViewState extends State<VatPurchasesReportView> {
       final provider = context.read<ReportsProvider>();
       if (provider.vatPurchasesSummary.isEmpty && !provider.isLoadingVatPurchases) {
         provider.fetchVatPurchases();
+      } else if (!provider.isLoadingVatPurchases) {
+        provider.fetchVatPurchases(silent: true);
       }
     });
   }
@@ -102,7 +105,27 @@ class _VatPurchasesReportViewState extends State<VatPurchasesReportView> {
             }
           }
           return true;
-        }).toList();
+        }).toList()
+          ..sort((rawA, rawB) {
+            final a = rawA is Map ? rawA : <String, dynamic>{};
+            final b = rawB is Map ? rawB : <String, dynamic>{};
+            final dtA = DateTime.tryParse((a['issue_date'] ?? a['date'] ?? '').toString());
+            final dtB = DateTime.tryParse((b['issue_date'] ?? b['date'] ?? '').toString());
+            int cmp = 0;
+            if (dtA != null && dtB != null) {
+              cmp = dtA.compareTo(dtB);
+            } else if (dtA != null) {
+              cmp = 1;
+            } else if (dtB != null) {
+              cmp = -1;
+            }
+            if (cmp == 0) {
+              final idA = int.tryParse((a['id'] ?? '0').toString()) ?? 0;
+              final idB = int.tryParse((b['id'] ?? '0').toString()) ?? 0;
+              cmp = idA.compareTo(idB);
+            }
+            return _sortAscending ? cmp : -cmp;
+          });
 
         final totalCreditFiscal = _toDouble(summary['total_credit_fiscal'] ?? summary['total_iva']);
         final totalNet = _toDouble(summary['total_net']);
@@ -465,6 +488,26 @@ class _VatPurchasesReportViewState extends State<VatPurchasesReportView> {
                                         color: Colors.red.shade700,
                                         onTap: () => provider.setVatPurchasesFilter('NC'),
                                       ),
+                                      ActionChip(
+                                        avatar: Icon(
+                                          _sortAscending ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded,
+                                          size: 14,
+                                          color: Colors.indigo.shade800,
+                                        ),
+                                        label: Text(
+                                          _sortAscending ? 'Fecha: Cronológico ↑' : 'Fecha: Más recientes ↓',
+                                          style: TextStyle(
+                                            fontSize: 11.5,
+                                            fontWeight: FontWeight.w700,
+                                            color: Colors.indigo.shade900,
+                                          ),
+                                        ),
+                                        backgroundColor: Colors.indigo.shade50.withValues(alpha: 0.6),
+                                        side: BorderSide(color: Colors.indigo.shade200),
+                                        visualDensity: VisualDensity.compact,
+                                        tooltip: 'Cambiar orden de fecha y hora',
+                                        onPressed: () => setState(() => _sortAscending = !_sortAscending),
+                                      ),
                                     ],
                                   ),
                                   SizedBox(
@@ -531,23 +574,28 @@ class _VatPurchasesReportViewState extends State<VatPurchasesReportView> {
                                     minWidth: MediaQuery.of(context).size.width - 84,
                                   ),
                                   child: DataTable(
+                                    sortColumnIndex: 0,
+                                    sortAscending: _sortAscending,
                                     headingRowColor: WidgetStateProperty.all(const Color(0xFFF8FAFC)),
                                     dataRowMinHeight: 46,
                                     dataRowMaxHeight: 52,
                                     columnSpacing: 20,
                                     horizontalMargin: 20,
-                                    columns: const [
-                                      DataColumn(label: Text('FECHA', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11.5))),
-                                      DataColumn(label: Text('COMPROBANTE', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11.5))),
-                                      DataColumn(label: Text('NÚMERO', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11.5))),
-                                      DataColumn(label: Text('PROVEEDOR / CUIT', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11.5))),
-                                      DataColumn(label: Text('NETO GRAV.', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11.5)), numeric: true),
-                                      DataColumn(label: Text('IVA 21%', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11.5)), numeric: true),
-                                      DataColumn(label: Text('IVA 10.5%', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11.5)), numeric: true),
-                                      DataColumn(label: Text('IVA 27%', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11.5)), numeric: true),
-                                      DataColumn(label: Text('NO GRAV. / EX.', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11.5)), numeric: true),
-                                      DataColumn(label: Text('PERCEP. / OTROS', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11.5)), numeric: true),
-                                      DataColumn(label: Text('TOTAL COMPRA', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11.5)), numeric: true),
+                                    columns: [
+                                      DataColumn(
+                                        label: const Text('FECHA', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11.5)),
+                                        onSort: (_, ascending) => setState(() => _sortAscending = ascending),
+                                      ),
+                                      const DataColumn(label: Text('COMPROBANTE', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11.5))),
+                                      const DataColumn(label: Text('NÚMERO', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11.5))),
+                                      const DataColumn(label: Text('PROVEEDOR / CUIT', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11.5))),
+                                      const DataColumn(label: Text('NETO GRAV.', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11.5)), numeric: true),
+                                      const DataColumn(label: Text('IVA 21%', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11.5)), numeric: true),
+                                      const DataColumn(label: Text('IVA 10.5%', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11.5)), numeric: true),
+                                      const DataColumn(label: Text('IVA 27%', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11.5)), numeric: true),
+                                      const DataColumn(label: Text('NO GRAV. / EX.', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11.5)), numeric: true),
+                                      const DataColumn(label: Text('PERCEP. / OTROS', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11.5)), numeric: true),
+                                      const DataColumn(label: Text('TOTAL COMPRA', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11.5)), numeric: true),
                                     ],
                                     rows: filteredVouchers.map((raw) {
                                       final v = raw is Map ? raw : <String, dynamic>{};

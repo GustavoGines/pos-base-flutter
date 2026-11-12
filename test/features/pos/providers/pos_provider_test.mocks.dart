@@ -566,8 +566,10 @@ class MockReceiptPrinterService extends _i1.Mock
     double? changeAmount = 0.0,
     double? shippingCost = 0.0,
     double? iibbPerceptionAmount = 0.0,
+    double? iibbPerceptionRate = 0.0,
     String? paperSizeOverride,
     Map<String, dynamic>? electronicInvoice,
+    DateTime? saleDate,
   }) =>
       (super.noSuchMethod(
         Invocation.method(
@@ -593,8 +595,10 @@ class MockReceiptPrinterService extends _i1.Mock
             #changeAmount: changeAmount,
             #shippingCost: shippingCost,
             #iibbPerceptionAmount: iibbPerceptionAmount,
+            #iibbPerceptionRate: iibbPerceptionRate,
             #paperSizeOverride: paperSizeOverride,
             #electronicInvoice: electronicInvoice,
+            #saleDate: saleDate,
           },
         ),
         returnValue: _i6.Future<void>.value(),
@@ -620,11 +624,13 @@ class MockReceiptPrinterService extends _i1.Mock
     double? tenderedAmount = 0.0,
     double? changeAmount = 0.0,
     double? iibbPerceptionAmount = 0.0,
+    double? iibbPerceptionRate = 0.0,
     String? customerName,
     String? customerDoc,
     String? customerAddress,
     String? paperSizeOverride,
     Map<String, dynamic>? electronicInvoice,
+    DateTime? saleDate,
   }) =>
       (super.noSuchMethod(
         Invocation.method(
@@ -648,11 +654,13 @@ class MockReceiptPrinterService extends _i1.Mock
             #tenderedAmount: tenderedAmount,
             #changeAmount: changeAmount,
             #iibbPerceptionAmount: iibbPerceptionAmount,
+            #iibbPerceptionRate: iibbPerceptionRate,
             #customerName: customerName,
             #customerDoc: customerDoc,
             #customerAddress: customerAddress,
             #paperSizeOverride: paperSizeOverride,
             #electronicInvoice: electronicInvoice,
+            #saleDate: saleDate,
           },
         ),
         returnValue: _i6.Future<void>.value(),

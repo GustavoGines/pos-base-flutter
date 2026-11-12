@@ -190,6 +190,20 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
                 if (cuit.length == 11) {
                   _documentController.text = cuit;
                 }
+                if (widget.customer == null && !_isInternalAccount) {
+                  try {
+                    final settings =
+                        context.read<SettingsProvider?>()?.settings;
+                    if (settings?.isIibbPerceptionAgent == true &&
+                        settings!.defaultIibbPerceptionRate > 0) {
+                      _appliesIibbPerception = true;
+                      if (_iibbRateController.text.trim().isEmpty) {
+                        _iibbRateController.text =
+                            settings.defaultIibbPerceptionRate.toString();
+                      }
+                    }
+                  } catch (_) {}
+                }
               }
             }
             _padronMatchedName = name;
@@ -408,6 +422,21 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
                       _taxCondition = val;
                       if (val == 'responsable_inscripto' || val == 'monotributo') {
                         _documentType = 80; // Forzar CUIT automáticamente
+                        if (widget.customer == null && !_isInternalAccount) {
+                          try {
+                            final settings =
+                                context.read<SettingsProvider?>()?.settings;
+                            if (settings?.isIibbPerceptionAgent == true &&
+                                settings!.defaultIibbPerceptionRate > 0) {
+                              _appliesIibbPerception = true;
+                              if (_iibbRateController.text.trim().isEmpty) {
+                                _iibbRateController.text = settings
+                                    .defaultIibbPerceptionRate
+                                    .toString();
+                              }
+                            }
+                          } catch (_) {}
+                        }
                       } else if (val == 'consumidor_final') {
                         _documentType = 96; // Forzar DNI automáticamente
                         _appliesIibbPerception = false; // Desactivar percepción para Consumidor Final
@@ -471,7 +500,7 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
                 title: const Text('Aplica Percepción IIBB',
                     style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
                 subtitle: const Text(
-                    'Calcular percepción de Ingresos Brutos en compras mayoristas.',
+                    'Aplicar percepción de Ingresos Brutos (Rentas / ATP) al facturarle a este cliente.',
                     style: TextStyle(fontSize: 12)),
                 value: _appliesIibbPerception,
                 activeThumbColor: Theme.of(context).colorScheme.primary,
@@ -503,30 +532,51 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
                 child: _appliesIibbPerception
                     ? Padding(
                         padding: const EdgeInsets.only(top: 12),
-                        child: TextFormField(
-                          key: const ValueKey('field_iibb_perception_rate'),
-                          controller: _iibbRateController,
-                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                          inputFormatters: [
-                            FilteringTextInputFormatter.allow(RegExp(r'^\d*[\.,]?\d{0,2}')),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            TextFormField(
+                              key: const ValueKey('field_iibb_perception_rate'),
+                              controller: _iibbRateController,
+                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                              inputFormatters: [
+                                FilteringTextInputFormatter.allow(RegExp(r'^\d*[\.,]?\d{0,2}')),
+                              ],
+                              onChanged: (_) => setState(() {}),
+                              decoration: const InputDecoration(
+                                labelText: 'Alícuota IIBB (%) *',
+                                hintText: 'Ej: 3.0',
+                                prefixIcon: Icon(Icons.percent),
+                                border: OutlineInputBorder(),
+                              ),
+                              validator: (val) {
+                                if (!_appliesIibbPerception) return null;
+                                if (val == null || val.trim().isEmpty) {
+                                  return 'La alícuota es requerida si aplica percepción';
+                                }
+                                final n = double.tryParse(val.trim().replaceAll(',', '.'));
+                                if (n == null || n < 0 || n > 100) {
+                                  return 'Ingrese un porcentaje válido (0 - 100)';
+                                }
+                                return null;
+                              },
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Presets Rentas / ATP Formosa:',
+                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.grey.shade600),
+                            ),
+                            const SizedBox(height: 4),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 4,
+                              children: [
+                                _buildIibbPresetChip('1.5', '1.5% (Conv. Multilateral)'),
+                                _buildIibbPresetChip('3.0', '3.0% (Inscripto Local FSA)'),
+                                _buildIibbPresetChip('6.0', '6.0% (No Inscripto / Riesgo)'),
+                              ],
+                            ),
                           ],
-                          decoration: const InputDecoration(
-                            labelText: 'Alícuota IIBB (%) *',
-                            hintText: 'Ej: 3.0',
-                            prefixIcon: Icon(Icons.percent),
-                            border: OutlineInputBorder(),
-                          ),
-                          validator: (val) {
-                            if (!_appliesIibbPerception) return null;
-                            if (val == null || val.trim().isEmpty) {
-                              return 'La alícuota es requerida si aplica percepción';
-                            }
-                            final n = double.tryParse(val.trim().replaceAll(',', '.'));
-                            if (n == null || n < 0 || n > 100) {
-                              return 'Ingrese un porcentaje válido (0 - 100)';
-                            }
-                            return null;
-                          },
                         ),
                       )
                     : const SizedBox.shrink(),
@@ -553,6 +603,35 @@ class _CustomerFormDialogState extends State<CustomerFormDialog> {
               : const Text('Guardar', style: TextStyle(color: Colors.white)),
         ),
       ],
+    );
+  }
+
+  Widget _buildIibbPresetChip(String rate, String label) {
+    final currentVal = _iibbRateController.text.trim().replaceAll(',', '.');
+    final isSelected = currentVal == rate;
+    final theme = Theme.of(context);
+    return ChoiceChip(
+      label: Text(
+        label,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+          color: isSelected ? theme.colorScheme.onPrimary : Colors.grey.shade800,
+        ),
+      ),
+      selected: isSelected,
+      selectedColor: theme.colorScheme.primary,
+      backgroundColor: Colors.grey.shade100,
+      showCheckmark: false,
+      side: BorderSide(
+        color: isSelected ? theme.colorScheme.primary : Colors.grey.shade300,
+      ),
+      visualDensity: VisualDensity.compact,
+      onSelected: (_) {
+        setState(() {
+          _iibbRateController.text = rate;
+        });
+      },
     );
   }
 }

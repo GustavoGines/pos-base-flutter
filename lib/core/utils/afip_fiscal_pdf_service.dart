@@ -461,7 +461,10 @@ class AfipFiscalPdfService {
 
     String issueTime;
     try {
-      final rawCreatedAt = sale['created_at'] ?? electronicInvoice['issued_at'];
+      final rawIssuedStr = electronicInvoice['issued_at']?.toString().trim() ?? '';
+      final rawCreatedAt = rawIssuedStr.contains(':')
+          ? electronicInvoice['issued_at']
+          : (sale['created_at'] ?? electronicInvoice['issued_at']);
       if (rawCreatedAt != null) {
         if (rawCreatedAt is DateTime) {
           issueTime = DateFormat('HH:mm').format(rawCreatedAt.toLocal());
@@ -753,6 +756,12 @@ class AfipFiscalPdfService {
       items: items,
       iibbPerceptionAmount: iibbPerceptionAmount,
       iibbPerceptionRate: iibbPerceptionRate,
+      isIibbPerceptionAgent: businessSettings is BusinessSettings
+          ? businessSettings.isIibbPerceptionAgent
+          : (businessSettings is Map
+              ? (businessSettings['is_iibb_perception_agent'] == true ||
+                  businessSettings['isIibbPerceptionAgent'] == true)
+              : false),
     );
 
     final footerWidget = _buildFiscalFooter(
@@ -1597,7 +1606,8 @@ class AfipFiscalPdfService {
             child: pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
-                pw.Text('Domicilio: $receiverAddress',
+                pw.Text(
+                    'Domicilio: ${receiverAddress.trim().isNotEmpty ? receiverAddress.trim() : "-"}',
                     style: const pw.TextStyle(fontSize: 8)),
                 pw.SizedBox(height: 2),
                 pw.Text('Condición de venta: $paymentCondition',
@@ -1678,6 +1688,33 @@ class AfipFiscalPdfService {
                 ? '${ivaRate.toInt()}%'
                 : '${ivaRate.toStringAsFixed(1)}%';
 
+            final unitPrice = double.tryParse(
+                    (item['unit_price'] ?? item['price'] ?? 0).toString()) ??
+                (qty > 0 ? subtotal / qty : 0.0);
+            final regularPrice = double.tryParse((item['regular_price'] ??
+                        item['product']?['selling_price'] ??
+                        0)
+                    .toString()) ??
+                0.0;
+            final discountSaving =
+                double.tryParse((item['discount_amount'] ?? 0).toString()) ??
+                    0.0;
+            final hasItemDiscount =
+                discountSaving > 0.01 || (regularPrice > unitPrice + 0.01);
+            final effectiveRegularPrice = regularPrice > unitPrice + 0.01
+                ? regularPrice
+                : (qty > 0 ? unitPrice + (discountSaving / qty) : unitPrice);
+            final effectiveSaving = discountSaving > 0.01
+                ? discountSaving
+                : (effectiveRegularPrice - unitPrice) * qty;
+            final rawLabel = (item['discount_label'] ??
+                    item['offer_label'] ??
+                    'Bonificación')
+                .toString()
+                .trim();
+            final discountLabel =
+                rawLabel.isNotEmpty ? rawLabel : 'Bonificación';
+
             return pw.TableRow(
               children: [
                 _buildTableCell(qtyText, textAlign: pw.TextAlign.center),
@@ -1702,6 +1739,18 @@ class AfipFiscalPdfService {
                               fontSize: 6.8,
                               fontStyle: pw.FontStyle.italic,
                               color: PdfColors.grey700,
+                            ),
+                          ),
+                        ),
+                      if (hasItemDiscount)
+                        pw.Padding(
+                          padding: const pw.EdgeInsets.only(top: 1.5),
+                          child: pw.Text(
+                            '($discountLabel) Precio Lista Final: ${formatCurrency(effectiveRegularPrice)} (-${formatCurrency(effectiveSaving)})',
+                            style: pw.TextStyle(
+                              fontSize: 7.0,
+                              fontStyle: pw.FontStyle.italic,
+                              color: PdfColors.grey800,
                             ),
                           ),
                         ),
@@ -1888,6 +1937,7 @@ class AfipFiscalPdfService {
     List<dynamic>? items,
     double iibbPerceptionAmount = 0.0,
     double iibbPerceptionRate = 0.0,
+    bool isIibbPerceptionAgent = false,
   }) {
     if (isFacturaA) {
       double iva21 = 0.0;
@@ -1950,7 +2000,7 @@ class AfipFiscalPdfService {
       }
 
       final resolvedNetAmount =
-          netAmount > 0 ? netAmount : (totalAmount - ivaAmount);
+          netAmount > 0 ? netAmount : (totalAmount - ivaAmount - iibbPerceptionAmount);
 
       return pw.Container(
         decoration: pw.BoxDecoration(
@@ -1966,6 +2016,12 @@ class AfipFiscalPdfService {
               child: pw.Column(
                 crossAxisAlignment: pw.CrossAxisAlignment.start,
                 children: [
+                  if (totalSavings > 0.01)
+                    pw.Text(
+                      'Ahorro / Descuento: -${formatCurrency(totalSavings)}',
+                      style: pw.TextStyle(
+                          fontSize: 8, fontWeight: pw.FontWeight.bold),
+                    ),
                   pw.Text(
                     'Subtotal Neto Gravado: ${formatCurrency(resolvedNetAmount)}',
                     style: const pw.TextStyle(fontSize: 8),
@@ -1974,6 +2030,11 @@ class AfipFiscalPdfService {
                     pw.Text(
                       'Incluye Flete / Envío (Neto s/IVA): ${formatCurrency(shippingCost / 1.21)}',
                       style: const pw.TextStyle(fontSize: 7.5),
+                    ),
+                  if (discountsOrSurcharges.abs() > 0.01)
+                    pw.Text(
+                      'Descuentos / Recargos: ${formatCurrency(discountsOrSurcharges)}',
+                      style: const pw.TextStyle(fontSize: 8),
                     ),
                   if (iva21 > 0 || (iva105 == 0 && iva27 == 0 && otherIvas.isEmpty))
                     pw.Text('IVA 21%: ${formatCurrency(iva21)}',
@@ -1988,9 +2049,9 @@ class AfipFiscalPdfService {
                   if (exemptAmount > 0)
                     pw.Text('Importe Exento: ${formatCurrency(exemptAmount)}',
                         style: const pw.TextStyle(fontSize: 8)),
-                  if (iibbPerceptionAmount > 0)
+                  if (iibbPerceptionAmount > 0 || isIibbPerceptionAgent)
                     pw.Text(
-                      'Percepción IIBB (${iibbPerceptionRate > 0 ? iibbPerceptionRate.toStringAsFixed(1) : "0.0"}%): ${formatCurrency(iibbPerceptionAmount)}',
+                      'Percepción IIBB (${iibbPerceptionAmount > 0 && iibbPerceptionRate > 0 ? iibbPerceptionRate.toStringAsFixed(1) : "0.0"}%): ${formatCurrency(iibbPerceptionAmount)}',
                       style: const pw.TextStyle(fontSize: 8),
                     ),
                 ],
@@ -2058,9 +2119,9 @@ class AfipFiscalPdfService {
                       'Descuentos / Recargos: ${formatCurrency(discountsOrSurcharges)}',
                       style: const pw.TextStyle(fontSize: 8),
                     ),
-                  if (iibbPerceptionAmount > 0)
+                  if (iibbPerceptionAmount > 0 || (!isFacturaB && isIibbPerceptionAgent))
                     pw.Text(
-                      'Percepción IIBB (${iibbPerceptionRate > 0 ? iibbPerceptionRate.toStringAsFixed(1) : "0.0"}%): ${formatCurrency(iibbPerceptionAmount)}',
+                      'Percepción IIBB (${iibbPerceptionAmount > 0 && iibbPerceptionRate > 0 ? iibbPerceptionRate.toStringAsFixed(1) : "0.0"}%): ${formatCurrency(iibbPerceptionAmount)}',
                       style: const pw.TextStyle(fontSize: 8),
                     ),
                   if (isFacturaB) ...[

@@ -34,6 +34,8 @@ class _VatPositionReportViewState extends State<VatPositionReportView> {
       final provider = context.read<ReportsProvider>();
       if (provider.vatPositionData.isEmpty && !provider.isLoadingVatPosition) {
         provider.fetchVatPosition();
+      } else if (!provider.isLoadingVatPosition) {
+        provider.fetchVatPosition(silent: true);
       }
     });
   }
@@ -96,6 +98,7 @@ class _VatPositionReportViewState extends State<VatPositionReportView> {
         final debit21 = _toDouble(sales['debit_21']);
         final debit105 = _toDouble(sales['debit_105']);
         final debit27 = _toDouble(sales['debit_27']);
+        final salesIibbPerceptions = _toDouble(sales['iibb_perceptions']);
         final totalSalesAmount = _toDouble(sales['total_sales_amount']);
         final salesNet = _toDouble(sales['total_invoiced_net']);
         final salesCount = sales['invoices_count'] ?? 0;
@@ -105,7 +108,7 @@ class _VatPositionReportViewState extends State<VatPositionReportView> {
         final credit21 = _toDouble(purchases['credit_21']);
         final credit105 = _toDouble(purchases['credit_105']);
         final credit27 = _toDouble(purchases['credit_27']);
-        final iibbPerceptions = _toDouble(purchases['iibb_perceptions']);
+        final purchasesIibbPerceptions = _toDouble(purchases['iibb_perceptions']);
         final totalPurchasesAmount = _toDouble(purchases['total_purchases_amount']);
         final purchasesNet = _toDouble(purchases['total_purchases_net']);
         final purchasesCount = purchases['invoices_count'] ?? 0;
@@ -309,6 +312,7 @@ class _VatPositionReportViewState extends State<VatPositionReportView> {
                             debit27: debit27,
                             salesCount: salesCount,
                             salesNcCount: salesNcCount,
+                            salesIibbPerceptions: salesIibbPerceptions,
                           );
 
                           final purchasesPanel = _buildPurchasesComparativePanel(
@@ -319,7 +323,7 @@ class _VatPositionReportViewState extends State<VatPositionReportView> {
                             credit105: credit105,
                             credit27: credit27,
                             ivaPerceptions: ivaPerceptions,
-                            iibbPerceptions: iibbPerceptions,
+                            iibbPerceptions: purchasesIibbPerceptions,
                             purchasesCount: purchasesCount,
                             purchasesNcCount: purchasesNcCount,
                           );
@@ -348,7 +352,8 @@ class _VatPositionReportViewState extends State<VatPositionReportView> {
 
                       // ── 3.5. Resumen Provincial: Percepciones IIBB (Rentas / ATP) ──
                       _buildProvincialIibbCard(
-                        iibbPerceptions: iibbPerceptions,
+                        salesIibbPerceptions: salesIibbPerceptions,
+                        purchasesIibbPerceptions: purchasesIibbPerceptions,
                         monthName: _months[currentMonth - 1],
                         year: currentYear,
                       ),
@@ -605,6 +610,7 @@ class _VatPositionReportViewState extends State<VatPositionReportView> {
     required double debit27,
     required int salesCount,
     required int salesNcCount,
+    double salesIibbPerceptions = 0.0,
   }) {
     return Container(
       padding: const EdgeInsets.all(18),
@@ -641,6 +647,13 @@ class _VatPositionReportViewState extends State<VatPositionReportView> {
           _buildDetailItem('Total Neto Gravado', '\$${salesNet.toCurrency()}'),
           _buildDetailItem('Facturación Bruta (con IVA)', '\$${totalSalesAmount.toCurrency()}'),
           _buildDetailItem('Comprobantes Emitidos', '$salesCount fac. · $salesNcCount NC'),
+          if (salesIibbPerceptions > 0)
+            _buildDetailItem(
+              'Percepciones IIBB Emitidas (Agente Rentas)',
+              '\$${salesIibbPerceptions.toCurrency()}',
+              isHighlight: true,
+              color: Colors.deepPurple.shade700,
+            ),
           const Divider(height: 12),
           _buildDetailItem('TOTAL DÉBITO FISCAL', '\$${fiscalDebit.toCurrency()}', isHighlight: true, color: Colors.amber.shade900),
         ],
@@ -710,69 +723,260 @@ class _VatPositionReportViewState extends State<VatPositionReportView> {
   }
 
   Widget _buildProvincialIibbCard({
-    required double iibbPerceptions,
+    required double salesIibbPerceptions,
+    required double purchasesIibbPerceptions,
     required String monthName,
     required int year,
   }) {
-    final hasIibb = iibbPerceptions > 0;
+    final hasAny = salesIibbPerceptions > 0 || purchasesIibbPerceptions > 0;
+    final netBalance = salesIibbPerceptions - purchasesIibbPerceptions;
+    final isToPay = netBalance > 0.001;
+    final isFavorable = netBalance < -0.001;
+
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: hasIibb ? Colors.deepPurple.shade50.withValues(alpha: 0.65) : Colors.grey.shade50,
-        borderRadius: BorderRadius.circular(12),
+        color: hasAny ? Colors.deepPurple.shade50.withValues(alpha: 0.65) : Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(
-          color: hasIibb ? Colors.deepPurple.shade200 : Colors.grey.shade300,
+          color: hasAny ? Colors.deepPurple.shade200 : Colors.grey.shade300,
         ),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: hasIibb ? Colors.deepPurple.shade100 : Colors.grey.shade200,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(
-              Icons.account_balance_wallet_outlined,
-              size: 22,
-              color: hasIibb ? Colors.deepPurple.shade800 : Colors.blueGrey.shade600,
-            ),
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: hasAny ? Colors.deepPurple.shade100 : Colors.grey.shade200,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  Icons.account_balance_outlined,
+                  size: 20,
+                  color: hasAny ? Colors.deepPurple.shade800 : Colors.blueGrey.shade600,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'RENTAS / ATP FORMOSA (PERCEPCIONES IIBB) — $monthName $year',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.5,
+                        color: hasAny ? Colors.deepPurple.shade900 : Colors.blueGrey.shade700,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Régimen provincial independiente del IVA Nacional (ARCA). Cruce entre percepciones practicadas como Agente y pagos a cuenta sufridos.',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: hasAny ? Colors.deepPurple.shade800 : Colors.blueGrey.shade600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'CRÉDITO PROVINCIAL POR PERCEPCIONES IIBB (RENTAS / ATP) — $monthName $year',
-                  style: TextStyle(
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.4,
-                    color: hasIibb ? Colors.deepPurple.shade900 : Colors.blueGrey.shade700,
+          const SizedBox(height: 16),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final isCompact = constraints.maxWidth < 650;
+              final col1 = Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: salesIibbPerceptions > 0 ? Colors.deepPurple.shade200 : Colors.grey.shade200,
                   ),
                 ),
-                const SizedBox(height: 3),
-                Text(
-                  'Pago a cuenta provincial sufrido en facturas de proveedores. No se resta del IVA Nacional (ARCA), sino que se descuenta directamente en la Declaración Jurada mensual de Ingresos Brutos (Rentas / ATP Formosa).',
-                  style: TextStyle(
-                    fontSize: 11.5,
-                    color: hasIibb ? Colors.deepPurple.shade800 : Colors.blueGrey.shade600,
-                    height: 1.3,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Text(
+                          'IIBB Percibido en Ventas',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.grey.shade800,
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.deepPurple.shade50,
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: Colors.deepPurple.shade200),
+                          ),
+                          child: Text(
+                            'Agente Recaudación',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.deepPurple.shade800,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      '\$${salesIibbPerceptions.toCurrency()}',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w900,
+                        color: salesIibbPerceptions > 0 ? Colors.deepPurple.shade900 : Colors.grey.shade600,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Cobrado en facturas emitidas — a ingresar a Rentas',
+                      style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                    ),
+                  ],
+                ),
+              );
+
+              final col2 = Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: purchasesIibbPerceptions > 0 ? Colors.teal.shade200 : Colors.grey.shade200,
                   ),
                 ),
-              ],
-            ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Text(
+                          'IIBB Sufrido en Compras',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.grey.shade800,
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.teal.shade50,
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: Colors.teal.shade200),
+                          ),
+                          child: Text(
+                            'Pago a Cuenta',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.teal.shade800,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      '\$${purchasesIibbPerceptions.toCurrency()}',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w900,
+                        color: purchasesIibbPerceptions > 0 ? Colors.teal.shade900 : Colors.grey.shade600,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Sufrido en facturas de proveedores — saldo a favor en Rentas',
+                      style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                    ),
+                  ],
+                ),
+              );
+
+              if (isCompact) {
+                return Column(
+                  children: [
+                    col1,
+                    const SizedBox(height: 10),
+                    col2,
+                  ],
+                );
+              }
+              return Row(
+                children: [
+                  Expanded(child: col1),
+                  const SizedBox(width: 12),
+                  Expanded(child: col2),
+                ],
+              );
+            },
           ),
-          const SizedBox(width: 16),
-          Text(
-            '\$${iibbPerceptions.toCurrency()}',
-            style: TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.w900,
-              color: hasIibb ? Colors.deepPurple.shade900 : Colors.blueGrey.shade500,
+          if (hasAny) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: isToPay
+                    ? Colors.amber.shade50
+                    : (isFavorable ? Colors.green.shade50 : Colors.grey.shade100),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: isToPay
+                      ? Colors.amber.shade200
+                      : (isFavorable ? Colors.green.shade200 : Colors.grey.shade300),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    isToPay
+                        ? Icons.info_outline
+                        : (isFavorable ? Icons.check_circle_outline : Icons.horizontal_rule),
+                    size: 16,
+                    color: isToPay
+                        ? Colors.amber.shade900
+                        : (isFavorable ? Colors.green.shade900 : Colors.grey.shade700),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      isToPay
+                          ? 'Balance Percepciones a Ingresar a Rentas (ATP): \$${netBalance.toCurrency()}'
+                          : (isFavorable
+                              ? 'Crédito Neto Provincial a Favor por Compras: \$${netBalance.abs().toCurrency()}'
+                              : 'Percepciones de Ventas y Compras equilibradas (\$0.00)'),
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.bold,
+                        color: isToPay
+                            ? Colors.amber.shade900
+                            : (isFavorable ? Colors.green.shade900 : Colors.grey.shade800),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
+          ],
         ],
       ),
     );

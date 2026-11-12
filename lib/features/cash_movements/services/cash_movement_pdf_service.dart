@@ -12,10 +12,6 @@ class CashMovementPdfService {
   static final _numberFmt = NumberFormat('#,##0.00', 'es_AR');
   static final _dateFmt = DateFormat('dd/MM/yyyy HH:mm');
 
-  static const _primary = PdfColor.fromInt(0xFF1A4B8C); // Azul corporativo
-  static const _bgLight = PdfColor.fromInt(0xFFF5F7FA);
-  static const _textGrey = PdfColor.fromInt(0xFF6B7280);
-
   /// Formatea importes con el signo $ adelante ($ 123.187,24), consistente con todo el sistema.
   static String formatCurrency(num amount) {
     if (amount < 0) {
@@ -177,71 +173,32 @@ class CashMovementPdfService {
     pdf.addPage(
       pw.Page(
         pageFormat: format,
-        margin: const pw.EdgeInsets.all(24),
+        margin: const pw.EdgeInsets.all(22),
         build: (pw.Context context) {
-          return pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-            children: [
-              pw.Container(
-                decoration: pw.BoxDecoration(
-                  border: pw.Border.all(color: PdfColors.grey800, width: 1.0),
-                ),
-                child: pw.Column(
-                  crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-                  children: [
-                    ..._buildArcaStyleHeader(
-                      businessName: businessName,
-                      businessTaxId: businessTaxId,
-                      businessSettings: businessSettings,
-                      logoBytes: resolvedLogo,
-                      titulo: titulo,
-                      movementIds: movementIds,
-                      cashierName: cashierName,
-                      issuedAt: issuedAt,
-                    ),
-                    pw.Padding(
-                      padding: const pw.EdgeInsets.all(14),
-                      child: pw.Column(
-                        crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-                        children: [
-                          pw.Container(
-                            padding: const pw.EdgeInsets.all(10),
-                            decoration: pw.BoxDecoration(
-                              color: _bgLight,
-                              borderRadius: const pw.BorderRadius.all(pw.Radius.circular(6)),
-                              border: pw.Border.all(color: PdfColors.grey300),
-                            ),
-                            child: pw.Column(
-                              crossAxisAlignment: pw.CrossAxisAlignment.start,
-                              children: [
-                                _buildInfoRow('CONCEPTO / CATEGORÍA:', category.toUpperCase()),
-                                if (description != null && description.trim().isNotEmpty)
-                                  _buildInfoRow('DETALLE / OBSERVACIÓN:', description.trim()),
-                                if (receiptNumber != null && receiptNumber.trim().isNotEmpty)
-                                  _buildInfoRow('Nº COMPROBANTE ASOC.:', receiptNumber.trim()),
-                              ],
-                            ),
-                          ),
-                          pw.SizedBox(height: 14),
-                          _buildPaymentBreakdown(
-                            payments,
-                            totalAmount,
-                            type == 'deposit',
-                            totalLabel: type == 'deposit' ? 'TOTAL INGRESADO:' : 'TOTAL EGRESADO:',
-                          ),
-                          pw.SizedBox(height: 28),
-                          _buildSignatures(
-                            leftLabel: 'Firma quien entrega',
-                            rightLabel: 'Firma quien recibe / Conforme',
-                          ),
-                        ],
-                      ),
-                    ),
-                    _buildVoucherFooter(businessName),
-                  ],
-                ),
+          return _buildHalfPageLayout(
+            voucherContent: _buildCanonicalVoucherCard(
+              businessName: businessName,
+              businessTaxId: businessTaxId,
+              businessSettings: businessSettings,
+              logoBytes: resolvedLogo,
+              titulo: titulo,
+              movementIds: movementIds,
+              cashierName: cashierName,
+              issuedAt: issuedAt,
+              recipientBox: _buildGenericConceptBox(
+                type: type,
+                category: category,
+                description: description,
+                receiptNumber: receiptNumber,
               ),
-            ],
+              payments: payments,
+              totalAmount: totalAmount,
+              totalLabel: type == 'deposit' ? 'TOTAL INGRESADO:' : 'TOTAL EGRESADO:',
+              balanceBefore: null,
+              isExpense: type != 'deposit',
+              leftSignatureLabel: 'ENTREGADO POR (COMERCIO / CAJA)',
+              rightSignatureLabel: 'RECIBÍ CONFORME / AUTORIZACIÓN',
+            ),
           );
         },
       ),
@@ -373,136 +330,32 @@ class CashMovementPdfService {
     pdf.addPage(
       pw.Page(
         pageFormat: format,
-        margin: const pw.EdgeInsets.all(24),
+        margin: const pw.EdgeInsets.all(22),
         build: (pw.Context context) {
-          return pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-            children: [
-              pw.Container(
-                decoration: pw.BoxDecoration(
-                  border: pw.Border.all(color: PdfColors.grey800, width: 1.0),
-                ),
-                child: pw.Column(
-                  crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-                  children: [
-                    ..._buildArcaStyleHeader(
-                      businessName: businessName,
-                      businessTaxId: businessTaxId,
-                      businessSettings: businessSettings,
-                      logoBytes: resolvedLogo,
-                      titulo: titulo,
-                      movementIds: movementIds,
-                      cashierName: cashierName,
-                      issuedAt: issuedAt,
-                    ),
-                    // Casillero de Receptor / Proveedor estilo ARCA
-                    pw.Container(
-                      decoration: const pw.BoxDecoration(
-                        color: _bgLight,
-                        border: pw.Border(
-                          bottom: pw.BorderSide(color: PdfColors.grey800, width: 1.0),
-                        ),
-                      ),
-                      padding: const pw.EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      child: pw.Row(
-                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                        crossAxisAlignment: pw.CrossAxisAlignment.center,
-                        children: [
-                          pw.Expanded(
-                            child: pw.Column(
-                              crossAxisAlignment: pw.CrossAxisAlignment.start,
-                              children: [
-                                pw.Text(
-                                  'PROVEEDOR / RAZÓN SOCIAL:',
-                                  style: pw.TextStyle(
-                                    color: _textGrey,
-                                    fontSize: 8,
-                                    fontWeight: pw.FontWeight.bold,
-                                  ),
-                                ),
-                                pw.SizedBox(height: 2),
-                                pw.Text(
-                                  supplierName.toUpperCase(),
-                                  style: pw.TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: pw.FontWeight.bold,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          if (formattedSupplierCuit.isNotEmpty)
-                            pw.Container(
-                              padding: const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                              decoration: pw.BoxDecoration(
-                                color: PdfColors.white,
-                                borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
-                                border: pw.Border.all(color: PdfColors.grey400),
-                              ),
-                              child: pw.Text(
-                                'CUIT: $formattedSupplierCuit',
-                                style: pw.TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: pw.FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                    pw.Padding(
-                      padding: const pw.EdgeInsets.all(14),
-                      child: pw.Column(
-                        crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-                        children: [
-                          if ((description != null && description.trim().isNotEmpty) ||
-                              (receiptNumber != null && receiptNumber.trim().isNotEmpty)) ...[
-                            pw.Container(
-                              padding: const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                              decoration: pw.BoxDecoration(
-                                color: PdfColors.grey100,
-                                borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
-                                border: pw.Border.all(color: PdfColors.grey300),
-                              ),
-                              child: pw.Column(
-                                crossAxisAlignment: pw.CrossAxisAlignment.start,
-                                children: [
-                                  if (description != null && description.trim().isNotEmpty)
-                                    _buildInfoRow('DETALLE / CONCEPTO:', description.trim()),
-                                  if (receiptNumber != null && receiptNumber.trim().isNotEmpty)
-                                    _buildInfoRow('COMPROBANTE / REF.:', receiptNumber.trim()),
-                                ],
-                              ),
-                            ),
-                            pw.SizedBox(height: 12),
-                          ],
-                          _buildPaymentBreakdown(
-                            payments,
-                            totalAmount,
-                            type == 'deposit',
-                            totalLabel: type == 'deposit' ? 'TOTAL COBRADO:' : 'TOTAL ABONADO:',
-                          ),
-                          if (balanceBefore != null) ...[
-                            pw.SizedBox(height: 12),
-                            _buildSupplierBalance(
-                              balanceBefore,
-                              totalAmount,
-                              type == 'expense' || type == 'supplier_payment',
-                            ),
-                          ],
-                          pw.SizedBox(height: 28),
-                          _buildSignatures(
-                            leftLabel: 'Firma quien entrega (Comercio)',
-                            rightLabel: 'Firma quien recibe / Conforme (Proveedor)',
-                          ),
-                        ],
-                      ),
-                    ),
-                    _buildVoucherFooter(businessName),
-                  ],
-                ),
+          return _buildHalfPageLayout(
+            voucherContent: _buildCanonicalVoucherCard(
+              businessName: businessName,
+              businessTaxId: businessTaxId,
+              businessSettings: businessSettings,
+              logoBytes: resolvedLogo,
+              titulo: titulo,
+              movementIds: movementIds,
+              cashierName: cashierName,
+              issuedAt: issuedAt,
+              recipientBox: _buildSupplierRecipientBox(
+                supplierName: supplierName,
+                formattedSupplierCuit: formattedSupplierCuit,
+                description: description,
+                receiptNumber: receiptNumber,
               ),
-            ],
+              payments: payments,
+              totalAmount: totalAmount,
+              totalLabel: type == 'deposit' ? 'TOTAL COBRADO:' : 'TOTAL ABONADO:',
+              balanceBefore: balanceBefore,
+              isExpense: type == 'expense' || type == 'supplier_payment',
+              leftSignatureLabel: 'ENTREGADO POR (COMERCIO)',
+              rightSignatureLabel: 'RECIBÍ CONFORME (PROVEEDOR)',
+            ),
           );
         },
       ),
@@ -579,9 +432,113 @@ class CashMovementPdfService {
     );
   }
 
-  // --- Helpers PDF ---
+  // --- Helpers PDF (100% compatibles con diseño monocromático técnico ARCA / Media Hoja A4) ---
 
-  static List<pw.Widget> _buildArcaStyleHeader({
+  static pw.Widget _buildHalfPageLayout({required pw.Widget voucherContent}) {
+    return pw.Column(
+      mainAxisSize: pw.MainAxisSize.min,
+      crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+      children: [
+        voucherContent,
+        pw.Padding(
+          padding: const pw.EdgeInsets.only(top: 10, bottom: 4),
+          child: pw.Row(
+            children: [
+              pw.Expanded(
+                child: pw.Container(
+                  decoration: const pw.BoxDecoration(
+                    border: pw.Border(
+                      bottom: pw.BorderSide(
+                        color: PdfColors.grey500,
+                        width: 0.7,
+                        style: pw.BorderStyle.dashed,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              pw.Padding(
+                padding: const pw.EdgeInsets.symmetric(horizontal: 8),
+                child: pw.Text(
+                  '--- CORTAR AQUÍ ---',
+                  style: const pw.TextStyle(
+                    fontSize: 7,
+                    color: PdfColors.grey600,
+                  ),
+                ),
+              ),
+              pw.Expanded(
+                child: pw.Container(
+                  decoration: const pw.BoxDecoration(
+                    border: pw.Border(
+                      bottom: pw.BorderSide(
+                        color: PdfColors.grey500,
+                        width: 0.7,
+                        style: pw.BorderStyle.dashed,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  static pw.Widget _buildCanonicalVoucherCard({
+    required String businessName,
+    required String? businessTaxId,
+    required dynamic businessSettings,
+    required Uint8List? logoBytes,
+    required String titulo,
+    required List<int> movementIds,
+    required String? cashierName,
+    DateTime? issuedAt,
+    required pw.Widget recipientBox,
+    required List<Map<String, dynamic>> payments,
+    required double totalAmount,
+    required String totalLabel,
+    required double? balanceBefore,
+    required bool isExpense,
+    required String leftSignatureLabel,
+    required String rightSignatureLabel,
+  }) {
+    return pw.Column(
+      mainAxisSize: pw.MainAxisSize.min,
+      crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+      children: [
+        _buildCanonicalHeader(
+          businessName: businessName,
+          businessTaxId: businessTaxId,
+          businessSettings: businessSettings,
+          logoBytes: logoBytes,
+          titulo: titulo,
+          movementIds: movementIds,
+          cashierName: cashierName,
+          issuedAt: issuedAt,
+        ),
+        pw.SizedBox(height: 4),
+        recipientBox,
+        pw.SizedBox(height: 4),
+        _buildCanonicalPaymentTable(payments),
+        pw.SizedBox(height: 4),
+        _buildCanonicalBottomSection(
+          totalAmount: totalAmount,
+          totalLabel: totalLabel,
+          balanceBefore: balanceBefore,
+          isExpense: isExpense,
+          leftSignatureLabel: leftSignatureLabel,
+          rightSignatureLabel: rightSignatureLabel,
+        ),
+        pw.SizedBox(height: 3),
+        _buildCanonicalFooter(businessName),
+      ],
+    );
+  }
+
+  static pw.Widget _buildCanonicalHeader({
     required String businessName,
     required String? businessTaxId,
     required dynamic businessSettings,
@@ -591,12 +548,15 @@ class CashMovementPdfService {
     required String? cashierName,
     DateTime? issuedAt,
   }) {
-    String movNumber = 'S/N';
+    String movNumber = 'MOV-000000';
+    String barcodeData = 'MOV-000000';
     if (movementIds.isNotEmpty) {
+      final firstPadded = movementIds.first.toString().padLeft(6, '0');
+      barcodeData = 'MOV-$firstPadded';
       if (movementIds.length == 1) {
-        movNumber = 'MOV-${movementIds.first.toString().padLeft(6, '0')}';
+        movNumber = barcodeData;
       } else {
-        movNumber = 'MOV-${movementIds.first.toString().padLeft(6, '0')}/${movementIds.last.toString().padLeft(6, '0')}';
+        movNumber = '$barcodeData/${movementIds.last.toString().padLeft(6, '0')}';
       }
     }
 
@@ -615,428 +575,672 @@ class CashMovementPdfService {
       }
     }
 
-    return [
-      // Barra Superior ORIGINAL / DOCUMENTO NO VÁLIDO COMO FACTURA
-      pw.Container(
-        width: double.infinity,
-        padding: const pw.EdgeInsets.symmetric(vertical: 4, horizontal: 10),
-        decoration: const pw.BoxDecoration(
-          color: PdfColors.grey200,
-          border: pw.Border(
-            bottom: pw.BorderSide(color: PdfColors.grey800, width: 1.0),
+    return pw.Stack(
+      alignment: pw.Alignment.topCenter,
+      children: [
+        pw.Container(
+          decoration: pw.BoxDecoration(
+            border: pw.Border.all(color: PdfColors.black, width: 1.0),
+            borderRadius: const pw.BorderRadius.all(pw.Radius.circular(2)),
           ),
-        ),
-        child: pw.Row(
-          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-          children: [
-            pw.Text(
-              'ORIGINAL',
-              style: pw.TextStyle(
-                fontSize: 8.5,
-                fontWeight: pw.FontWeight.bold,
-                letterSpacing: 1.2,
-              ),
-            ),
-            pw.Text(
-              'DOCUMENTO INTERNO - NO VÁLIDO COMO FACTURA',
-              style: pw.TextStyle(
-                fontSize: 8,
-                fontWeight: pw.FontWeight.bold,
-                color: PdfColors.grey800,
-              ),
-            ),
-          ],
-        ),
-      ),
-
-      // Encabezado Partido con Letra [X] Central
-      pw.Stack(
-        alignment: pw.Alignment.topCenter,
-        children: [
-          pw.Table(
-            border: const pw.TableBorder(
-              bottom: pw.BorderSide(color: PdfColors.grey800, width: 1.0),
-              verticalInside: pw.BorderSide(color: PdfColors.grey800, width: 1.0),
-            ),
-            columnWidths: const {
-              0: pw.FlexColumnWidth(1),
-              1: pw.FlexColumnWidth(1),
-            },
+          child: pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.stretch,
             children: [
-              pw.TableRow(
+              // Barra Superior ORIGINAL / DOCUMENTO INTERNO - NO VÁLIDO COMO FACTURA
+              pw.Container(
+                width: double.infinity,
+                padding: const pw.EdgeInsets.symmetric(vertical: 3, horizontal: 8),
+                decoration: const pw.BoxDecoration(
+                  color: PdfColors.grey200,
+                  border: pw.Border(
+                    bottom: pw.BorderSide(color: PdfColors.black, width: 1.0),
+                  ),
+                ),
+                child: pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                    pw.Text(
+                      'ORIGINAL',
+                      style: pw.TextStyle(
+                        fontSize: 8,
+                        fontWeight: pw.FontWeight.bold,
+                        letterSpacing: 1.2,
+                        color: PdfColors.black,
+                      ),
+                    ),
+                    pw.Text(
+                      'DOCUMENTO INTERNO - NO VÁLIDO COMO FACTURA',
+                      style: pw.TextStyle(
+                        fontSize: 7.5,
+                        fontWeight: pw.FontWeight.bold,
+                        color: PdfColors.black,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              pw.Table(
+                border: const pw.TableBorder(
+                  verticalInside: pw.BorderSide(color: PdfColors.black, width: 1.0),
+                ),
+                columnWidths: const {
+                  0: pw.FlexColumnWidth(1),
+                  1: pw.FlexColumnWidth(1),
+                },
                 children: [
-                  // Columna Izquierda: Emisor
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.fromLTRB(10, 10, 28, 10),
-                    child: pw.Row(
-                      crossAxisAlignment: pw.CrossAxisAlignment.center,
-                      children: [
-                        if (safeLogoImage != null) ...[
-                          pw.Container(
-                            width: 42,
-                            height: 42,
-                            child: pw.Image(
-                              safeLogoImage,
-                              fit: pw.BoxFit.contain,
-                            ),
-                          ),
-                          pw.SizedBox(width: 8),
-                        ],
-                        pw.Expanded(
-                          child: pw.Column(
-                            crossAxisAlignment: pw.CrossAxisAlignment.start,
-                            children: [
-                              pw.Text(
-                                businessName.toUpperCase(),
-                                style: pw.TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: pw.FontWeight.bold,
-                                  color: _primary,
+                  pw.TableRow(
+                    children: [
+                      // Columna Izquierda: Emisor
+                      pw.Padding(
+                        padding: const pw.EdgeInsets.fromLTRB(8, 6, 24, 6),
+                        child: pw.Row(
+                          crossAxisAlignment: pw.CrossAxisAlignment.center,
+                          children: [
+                            if (safeLogoImage != null) ...[
+                              pw.Container(
+                                width: 34,
+                                height: 34,
+                                child: pw.Image(
+                                  safeLogoImage,
+                                  fit: pw.BoxFit.contain,
                                 ),
                               ),
-                              pw.SizedBox(height: 3),
-                              if (address != null && address.trim().isNotEmpty)
-                                pw.Text(
-                                  'Domicilio: ${address.trim()}',
-                                  style: const pw.TextStyle(fontSize: 8),
-                                ),
-                              if (phone != null && phone.trim().isNotEmpty)
-                                pw.Text(
-                                  'Teléfono: ${phone.trim()}',
-                                  style: const pw.TextStyle(fontSize: 8),
-                                ),
-                              if (taxCond.isNotEmpty)
-                                pw.Text(
-                                  'Cond. IVA: $taxCond',
-                                  style: pw.TextStyle(
-                                    fontSize: 8,
-                                    fontWeight: pw.FontWeight.bold,
+                              pw.SizedBox(width: 7),
+                            ],
+                            pw.Expanded(
+                              child: pw.Column(
+                                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                                children: [
+                                  pw.Text(
+                                    businessName.toUpperCase(),
+                                    style: pw.TextStyle(
+                                      fontSize: 12.5,
+                                      fontWeight: pw.FontWeight.bold,
+                                      color: PdfColors.black,
+                                    ),
+                                  ),
+                                  pw.SizedBox(height: 1.5),
+                                  if (address != null && address.trim().isNotEmpty)
+                                    pw.Text(
+                                      'Domicilio Comercial: ${address.trim()}',
+                                      style: const pw.TextStyle(fontSize: 7.5),
+                                    ),
+                                  if (phone != null && phone.trim().isNotEmpty)
+                                    pw.Text(
+                                      'Teléfono: ${phone.trim()}',
+                                      style: const pw.TextStyle(fontSize: 7.5),
+                                    ),
+                                  if (taxCond.isNotEmpty)
+                                    pw.Text(
+                                      'Cond. frente al IVA: $taxCond',
+                                      style: pw.TextStyle(
+                                        fontSize: 7.5,
+                                        fontWeight: pw.FontWeight.bold,
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      // Columna Derecha: Datos del Comprobante + Código de Barras Code128
+                      pw.Padding(
+                        padding: const pw.EdgeInsets.fromLTRB(24, 6, 8, 6),
+                        child: pw.Column(
+                          crossAxisAlignment: pw.CrossAxisAlignment.start,
+                          children: [
+                            pw.Row(
+                              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                              crossAxisAlignment: pw.CrossAxisAlignment.start,
+                              children: [
+                                pw.Expanded(
+                                  child: pw.Column(
+                                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                                    children: [
+                                      pw.Text(
+                                        titulo,
+                                        style: pw.TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: pw.FontWeight.bold,
+                                          color: PdfColors.black,
+                                        ),
+                                      ),
+                                      pw.SizedBox(height: 1.5),
+                                      pw.Text(
+                                        'Comp. Nro: $movNumber',
+                                        style: pw.TextStyle(
+                                          fontSize: 8.5,
+                                          fontWeight: pw.FontWeight.bold,
+                                        ),
+                                      ),
+                                      pw.Text(
+                                        'Fecha de Emisión: ${_dateFmt.format(effectiveDate)}',
+                                        style: const pw.TextStyle(fontSize: 7.8),
+                                      ),
+                                    ],
                                   ),
                                 ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  // Columna Derecha: Datos del Comprobante
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.fromLTRB(28, 10, 10, 10),
-                    child: pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.start,
-                      children: [
-                        pw.Text(
-                          titulo,
-                          style: pw.TextStyle(
-                            fontSize: 12.5,
-                            fontWeight: pw.FontWeight.bold,
-                            color: PdfColors.black,
-                          ),
-                        ),
-                        pw.SizedBox(height: 3),
-                        pw.Text(
-                          'Comp. Nro: $movNumber',
-                          style: pw.TextStyle(
-                            fontSize: 9.5,
-                            fontWeight: pw.FontWeight.bold,
-                          ),
-                        ),
-                        pw.Text(
-                          'Fecha de Emisión: ${_dateFmt.format(effectiveDate)}',
-                          style: const pw.TextStyle(fontSize: 8.5),
-                        ),
-                        if (formattedEmitterCuit.isNotEmpty)
-                          pw.Text(
-                            'CUIT: $formattedEmitterCuit',
-                            style: pw.TextStyle(
-                              fontSize: 8.5,
-                              fontWeight: pw.FontWeight.bold,
+                                pw.SizedBox(width: 6),
+                                pw.BarcodeWidget(
+                                  barcode: pw.Barcode.code128(),
+                                  data: barcodeData,
+                                  width: 78,
+                                  height: 20,
+                                  drawText: false,
+                                ),
+                              ],
                             ),
-                          ),
-                        if (iibb != null && iibb.trim().isNotEmpty)
-                          pw.Text(
-                            'Ing. Brutos: ${iibb.trim()}',
-                            style: const pw.TextStyle(fontSize: 8),
-                          ),
-                        if (cashierName != null && cashierName.trim().isNotEmpty)
-                          pw.Text(
-                            'Operador / Caja: ${cashierName.trim().toUpperCase()}',
-                            style: const pw.TextStyle(fontSize: 8),
-                          ),
-                      ],
-                    ),
+                            pw.SizedBox(height: 1.5),
+                            pw.Row(
+                              children: [
+                                if (formattedEmitterCuit.isNotEmpty)
+                                  pw.Text(
+                                    'CUIT: $formattedEmitterCuit',
+                                    style: pw.TextStyle(
+                                      fontSize: 7.5,
+                                      fontWeight: pw.FontWeight.bold,
+                                    ),
+                                  ),
+                                if (formattedEmitterCuit.isNotEmpty &&
+                                    iibb != null &&
+                                    iibb.trim().isNotEmpty)
+                                  pw.Text('   |   ', style: const pw.TextStyle(fontSize: 7.2)),
+                                if (iibb != null && iibb.trim().isNotEmpty)
+                                  pw.Text(
+                                    'Ing. Brutos: ${iibb.trim()}',
+                                    style: const pw.TextStyle(fontSize: 7.5),
+                                  ),
+                              ],
+                            ),
+                            if (cashierName != null && cashierName.trim().isNotEmpty)
+                              pw.Text(
+                                'Operador / Caja: ${cashierName.trim().toUpperCase()}',
+                                style: const pw.TextStyle(fontSize: 7.5),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
             ],
           ),
+        ),
 
-          // Recuadro Central [X]
-          pw.Positioned(
-            top: 0,
-            child: pw.Container(
-              width: 40,
-              height: 40,
-              decoration: pw.BoxDecoration(
-                color: PdfColors.white,
-                border: pw.Border.all(color: PdfColors.grey800, width: 1.5),
-              ),
-              child: pw.Column(
-                mainAxisAlignment: pw.MainAxisAlignment.center,
-                children: [
-                  pw.Text(
-                    'X',
-                    style: pw.TextStyle(
-                      fontSize: 18,
-                      fontWeight: pw.FontWeight.bold,
-                      color: PdfColors.black,
-                    ),
-                  ),
-                  pw.Text(
-                    'NO FISCAL',
-                    style: pw.TextStyle(
-                      fontSize: 5.2,
-                      fontWeight: pw.FontWeight.bold,
-                      color: PdfColors.grey800,
-                    ),
-                  ),
-                ],
-              ),
+        // Recuadro Central [X | INTERNO]
+        pw.Positioned(
+          top: 16,
+          child: pw.Container(
+            width: 36,
+            height: 36,
+            decoration: pw.BoxDecoration(
+              color: PdfColors.white,
+              border: pw.Border.all(color: PdfColors.black, width: 1.5),
+              borderRadius: const pw.BorderRadius.all(pw.Radius.circular(2)),
             ),
-          ),
-        ],
-      ),
-    ];
-  }
-
-  static pw.Widget _buildInfoRow(String label, String value) {
-    return pw.Padding(
-      padding: const pw.EdgeInsets.symmetric(vertical: 2.5),
-      child: pw.Row(
-        crossAxisAlignment: pw.CrossAxisAlignment.start,
-        children: [
-          pw.SizedBox(
-            width: 150,
-            child: pw.Text(
-              label,
-              style: pw.TextStyle(color: _textGrey, fontSize: 9.5, fontWeight: pw.FontWeight.bold),
-            ),
-          ),
-          pw.Expanded(
-            child: pw.Text(
-              value,
-              style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  static pw.Widget _buildPaymentBreakdown(
-    List<Map<String, dynamic>> payments,
-    double total,
-    bool isDeposit, {
-    required String totalLabel,
-  }) {
-    return pw.Container(
-      decoration: pw.BoxDecoration(
-        border: pw.Border.all(color: PdfColors.grey400),
-        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(6)),
-      ),
-      child: pw.Column(
-        children: [
-          // Cabecera desglose
-          pw.Container(
-            padding: const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: const pw.BoxDecoration(
-              color: PdfColors.blueGrey900,
-              borderRadius: pw.BorderRadius.only(
-                topLeft: pw.Radius.circular(5),
-                topRight: pw.Radius.circular(5),
-              ),
-            ),
-            child: pw.Row(
-              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+            child: pw.Column(
+              mainAxisAlignment: pw.MainAxisAlignment.center,
               children: [
                 pw.Text(
-                  'MEDIO DE PAGO / ORIGEN DE FONDOS',
+                  'X',
                   style: pw.TextStyle(
-                    color: PdfColors.white,
+                    fontSize: 16,
                     fontWeight: pw.FontWeight.bold,
-                    fontSize: 9,
+                    color: PdfColors.black,
                   ),
                 ),
                 pw.Text(
-                  'IMPORTE',
+                  'INTERNO',
                   style: pw.TextStyle(
-                    color: PdfColors.white,
+                    fontSize: 5.2,
                     fontWeight: pw.FontWeight.bold,
-                    fontSize: 9,
+                    color: PdfColors.black,
                   ),
                 ),
               ],
             ),
           ),
-          // Filas
-          ...payments.map((p) {
+        ),
+      ],
+    );
+  }
+
+  static pw.Widget _buildGenericConceptBox({
+    required String type,
+    required String category,
+    required String? description,
+    required String? receiptNumber,
+  }) {
+    final opLabel = type == 'withdrawal'
+        ? 'RETIRO DE CAJA'
+        : (type == 'deposit' ? 'INGRESO A CAJA' : 'EGRESO / GASTO OPERATIVO');
+    final cleanDesc = (description != null && description.trim().isNotEmpty)
+        ? description.trim()
+        : 'Movimiento interno de caja';
+    final cleanRef = (receiptNumber != null && receiptNumber.trim().isNotEmpty)
+        ? receiptNumber.trim()
+        : '-';
+
+    return pw.Container(
+      decoration: pw.BoxDecoration(
+        border: pw.Border.all(color: PdfColors.black, width: 1.0),
+        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(2)),
+      ),
+      padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4.5),
+      child: pw.Row(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Expanded(
+            flex: 6,
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Row(
+                  children: [
+                    pw.Text('Concepto / Categoría: ',
+                        style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
+                    pw.Expanded(
+                      child: pw.Text(category.toUpperCase(),
+                          style: pw.TextStyle(fontSize: 8.5, fontWeight: pw.FontWeight.bold)),
+                    ),
+                  ],
+                ),
+                pw.SizedBox(height: 1.5),
+                pw.Row(
+                  children: [
+                    pw.Text('Detalle / Observación: ',
+                        style: pw.TextStyle(fontSize: 7.8, fontWeight: pw.FontWeight.bold)),
+                    pw.Expanded(
+                      child: pw.Text(cleanDesc, style: const pw.TextStyle(fontSize: 7.8)),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          pw.SizedBox(width: 10),
+          pw.Expanded(
+            flex: 4,
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Row(
+                  children: [
+                    pw.Text('Tipo de Operación: ',
+                        style: pw.TextStyle(fontSize: 7.8, fontWeight: pw.FontWeight.bold)),
+                    pw.Expanded(
+                      child: pw.Text(opLabel, style: const pw.TextStyle(fontSize: 7.8)),
+                    ),
+                  ],
+                ),
+                pw.SizedBox(height: 1.5),
+                pw.Row(
+                  children: [
+                    pw.Text('Comprobante Asoc.: ',
+                        style: pw.TextStyle(fontSize: 7.8, fontWeight: pw.FontWeight.bold)),
+                    pw.Expanded(
+                      child: pw.Text(cleanRef, style: const pw.TextStyle(fontSize: 7.8)),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static pw.Widget _buildSupplierRecipientBox({
+    required String supplierName,
+    required String formattedSupplierCuit,
+    required String? description,
+    required String? receiptNumber,
+  }) {
+    final cleanDesc = (description != null && description.trim().isNotEmpty)
+        ? description.trim()
+        : 'Imputación en Cuenta Corriente de Proveedor';
+    final cleanRef = (receiptNumber != null && receiptNumber.trim().isNotEmpty)
+        ? receiptNumber.trim()
+        : '-';
+
+    return pw.Container(
+      decoration: pw.BoxDecoration(
+        border: pw.Border.all(color: PdfColors.black, width: 1.0),
+        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(2)),
+      ),
+      padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4.5),
+      child: pw.Row(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Expanded(
+            flex: 6,
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Row(
+                  children: [
+                    pw.Text('Proveedor / Razón Social: ',
+                        style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
+                    pw.Expanded(
+                      child: pw.Text(supplierName.toUpperCase(),
+                          style: pw.TextStyle(fontSize: 8.8, fontWeight: pw.FontWeight.bold)),
+                    ),
+                  ],
+                ),
+                pw.SizedBox(height: 1.5),
+                pw.Row(
+                  children: [
+                    pw.Text('Detalle / Concepto: ',
+                        style: pw.TextStyle(fontSize: 7.8, fontWeight: pw.FontWeight.bold)),
+                    pw.Expanded(
+                      child: pw.Text(cleanDesc, style: const pw.TextStyle(fontSize: 7.8)),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          pw.SizedBox(width: 10),
+          pw.Expanded(
+            flex: 4,
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Row(
+                  children: [
+                    pw.Text('CUIT Proveedor: ',
+                        style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
+                    pw.Text(
+                      formattedSupplierCuit.isNotEmpty ? formattedSupplierCuit : 'S/D',
+                      style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold),
+                    ),
+                  ],
+                ),
+                pw.SizedBox(height: 1.5),
+                pw.Row(
+                  children: [
+                    pw.Text('Comprobante / Ref.: ',
+                        style: pw.TextStyle(fontSize: 7.8, fontWeight: pw.FontWeight.bold)),
+                    pw.Expanded(
+                      child: pw.Text(cleanRef, style: const pw.TextStyle(fontSize: 7.8)),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static pw.Widget _buildCanonicalPaymentTable(List<Map<String, dynamic>> payments) {
+    return pw.Table(
+      border: pw.TableBorder.all(color: PdfColors.black, width: 0.5),
+      columnWidths: const {
+        0: pw.FlexColumnWidth(1.0),
+        1: pw.FlexColumnWidth(6.5),
+        2: pw.FlexColumnWidth(2.5),
+      },
+      children: [
+        pw.TableRow(
+          decoration: const pw.BoxDecoration(color: PdfColors.grey200),
+          children: [
+            pw.Padding(
+              padding: const pw.EdgeInsets.symmetric(vertical: 4, horizontal: 5),
+              child: pw.Text('ÍTEM',
+                  textAlign: pw.TextAlign.center,
+                  style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
+            ),
+            pw.Padding(
+              padding: const pw.EdgeInsets.symmetric(vertical: 4, horizontal: 6),
+              child: pw.Text('MEDIO DE PAGO / ORIGEN DE FONDOS',
+                  textAlign: pw.TextAlign.left,
+                  style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
+            ),
+            pw.Padding(
+              padding: const pw.EdgeInsets.symmetric(vertical: 4, horizontal: 6),
+              child: pw.Text('IMPORTE',
+                  textAlign: pw.TextAlign.right,
+                  style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
+            ),
+          ],
+        ),
+        for (int i = 0; i < payments.length; i++)
+          () {
+            final p = payments[i];
             final method = mapPaymentMethod(
               p['payment_method'] as String? ?? 'cash',
               fundingSource: p['funding_source'] as String?,
             );
             final amount = (p['amount'] as num).toDouble();
-            return pw.Container(
-              padding: const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-              decoration: const pw.BoxDecoration(
-                border: pw.Border(top: pw.BorderSide(color: PdfColors.grey300)),
-              ),
-              child: pw.Row(
-                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                children: [
-                  pw.Text(method, style: pw.TextStyle(fontSize: 10.5, fontWeight: pw.FontWeight.bold)),
-                  pw.Text(formatCurrency(amount), style: pw.TextStyle(fontSize: 10.5, fontWeight: pw.FontWeight.bold)),
-                ],
-              ),
-            );
-          }),
-          // Total
-          pw.Container(
-            decoration: const pw.BoxDecoration(
-              border: pw.Border(top: pw.BorderSide(color: PdfColors.grey400)),
-            ),
-            child: pw.Container(
-              padding: const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 9),
-              decoration: pw.BoxDecoration(
-                color: isDeposit ? const PdfColor.fromInt(0xFFE8F5E9) : const PdfColor.fromInt(0xFFFFEBEE),
-                borderRadius: const pw.BorderRadius.only(
-                  bottomLeft: pw.Radius.circular(5),
-                  bottomRight: pw.Radius.circular(5),
+            return pw.TableRow(
+              children: [
+                pw.Padding(
+                  padding: const pw.EdgeInsets.symmetric(vertical: 5, horizontal: 5),
+                  child: pw.Text((i + 1).toString().padLeft(2, '0'),
+                      textAlign: pw.TextAlign.center,
+                      style: const pw.TextStyle(fontSize: 8)),
                 ),
-              ),
-              child: pw.Row(
-                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                children: [
-                  pw.Text(
-                    totalLabel,
-                    style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 12),
-                  ),
-                  pw.Text(
-                    formatCurrency(total),
-                    style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 14),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
+                pw.Padding(
+                  padding: const pw.EdgeInsets.symmetric(vertical: 5, horizontal: 6),
+                  child: pw.Text(method,
+                      textAlign: pw.TextAlign.left,
+                      style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
+                ),
+                pw.Padding(
+                  padding: const pw.EdgeInsets.symmetric(vertical: 5, horizontal: 6),
+                  child: pw.Text(formatCurrency(amount),
+                      textAlign: pw.TextAlign.right,
+                      style: pw.TextStyle(fontSize: 8.2, fontWeight: pw.FontWeight.bold)),
+                ),
+              ],
+            );
+          }(),
+      ],
     );
   }
 
-  static pw.Widget _buildSupplierBalance(double balanceBefore, double totalAmount, bool isExpense) {
-    final balanceAfter = isExpense ? balanceBefore - totalAmount : balanceBefore + totalAmount;
-    final balanceLabel = balanceAfter > 0
+  static pw.Widget _buildCanonicalBottomSection({
+    required double totalAmount,
+    required String totalLabel,
+    required double? balanceBefore,
+    required bool isExpense,
+    required String leftSignatureLabel,
+    required String rightSignatureLabel,
+  }) {
+    final bool hasBalance = balanceBefore != null;
+    final double balanceAfter = hasBalance
+        ? (isExpense ? balanceBefore - totalAmount : balanceBefore + totalAmount)
+        : 0.0;
+    final String balanceLabel = balanceAfter > 0
         ? 'SALDO DEUDOR RESTANTE:'
         : (balanceAfter < 0 ? 'SALDO A FAVOR DEL COMERCIO:' : 'CUENTA AL DÍA (SALDO \$ 0,00)');
 
     return pw.Container(
-      padding: const pw.EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: pw.BoxDecoration(
-        color: _bgLight,
-        border: pw.Border.all(color: _primary, width: 1.0),
-        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(6)),
+        border: pw.Border.all(color: PdfColors.black, width: 1.0),
+        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(2)),
       ),
+      padding: const pw.EdgeInsets.all(6),
       child: pw.Column(
-        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        crossAxisAlignment: pw.CrossAxisAlignment.stretch,
         children: [
-          pw.Text(
-            'RESUMEN DE ESTADO DE CUENTA CORRIENTE',
-            style: pw.TextStyle(fontSize: 9.5, fontWeight: pw.FontWeight.bold, color: _primary),
-          ),
-          pw.SizedBox(height: 6),
           pw.Row(
-            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: pw.CrossAxisAlignment.center,
             children: [
-              pw.Text('Saldo Anterior:', style: const pw.TextStyle(fontSize: 10)),
-              pw.Text(formatCurrency(balanceBefore.abs()), style: const pw.TextStyle(fontSize: 10)),
-            ],
-          ),
-          pw.SizedBox(height: 2),
-          pw.Row(
-            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-            children: [
-              pw.Text(isExpense ? 'Importe Abonado en este recibo:' : 'Importe Imputado:', style: const pw.TextStyle(fontSize: 10)),
-              pw.Text(
-                '${isExpense ? '-' : '+'} ${formatCurrency(totalAmount)}',
-                style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold),
+              pw.Expanded(
+                flex: 6,
+                child: hasBalance
+                    ? pw.Container(
+                        padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                        decoration: pw.BoxDecoration(
+                          border: pw.Border.all(color: PdfColors.black, width: 0.6),
+                          borderRadius: const pw.BorderRadius.all(pw.Radius.circular(2)),
+                        ),
+                        child: pw.Column(
+                          crossAxisAlignment: pw.CrossAxisAlignment.start,
+                          children: [
+                            pw.Text(
+                              'RESUMEN DE ESTADO DE CUENTA CORRIENTE',
+                              style: pw.TextStyle(
+                                fontSize: 7.5,
+                                fontWeight: pw.FontWeight.bold,
+                                color: PdfColors.black,
+                              ),
+                            ),
+                            pw.SizedBox(height: 2),
+                            pw.Row(
+                              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                              children: [
+                                pw.Text('Saldo Anterior:', style: const pw.TextStyle(fontSize: 7.5)),
+                                pw.Text(formatCurrency(balanceBefore.abs()),
+                                    style: const pw.TextStyle(fontSize: 7.5)),
+                              ],
+                            ),
+                            pw.Row(
+                              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                              children: [
+                                pw.Text(
+                                  isExpense
+                                      ? 'Importe Abonado en este recibo:'
+                                      : 'Importe Imputado:',
+                                  style: const pw.TextStyle(fontSize: 7.5),
+                                ),
+                                pw.Text(
+                                  '${isExpense ? '-' : '+'} ${formatCurrency(totalAmount)}',
+                                  style: pw.TextStyle(
+                                      fontSize: 7.5, fontWeight: pw.FontWeight.bold),
+                                ),
+                              ],
+                            ),
+                            pw.Divider(color: PdfColors.black, height: 5, thickness: 0.5),
+                            pw.Row(
+                              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                              children: [
+                                pw.Text(balanceLabel,
+                                    style: pw.TextStyle(
+                                        fontSize: 8, fontWeight: pw.FontWeight.bold)),
+                                pw.Text(formatCurrency(balanceAfter.abs()),
+                                    style: pw.TextStyle(
+                                        fontSize: 8.5, fontWeight: pw.FontWeight.bold)),
+                              ],
+                            ),
+                          ],
+                        ),
+                      )
+                    : _buildInlineSignatures(
+                        leftLabel: leftSignatureLabel,
+                        rightLabel: rightSignatureLabel,
+                      ),
+              ),
+              pw.SizedBox(width: 8),
+              pw.Expanded(
+                flex: 4,
+                child: pw.Container(
+                  padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+                  decoration: pw.BoxDecoration(
+                    color: PdfColors.grey200,
+                    border: pw.Border.all(color: PdfColors.black, width: 1.0),
+                    borderRadius: const pw.BorderRadius.all(pw.Radius.circular(2)),
+                  ),
+                  child: pw.Row(
+                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                    children: [
+                      pw.Text(
+                        totalLabel,
+                        style: pw.TextStyle(
+                          fontSize: 8.8,
+                          fontWeight: pw.FontWeight.bold,
+                          color: PdfColors.black,
+                        ),
+                      ),
+                      pw.Text(
+                        formatCurrency(totalAmount),
+                        style: pw.TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: pw.FontWeight.bold,
+                          color: PdfColors.black,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ],
           ),
-          pw.Divider(color: PdfColors.grey400, height: 10),
-          pw.Row(
-            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-            children: [
-              pw.Text(balanceLabel, style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11.5)),
-              pw.Text(formatCurrency(balanceAfter.abs()), style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 12)),
-            ],
-          ),
+          if (hasBalance) ...[
+            pw.SizedBox(height: 5),
+            _buildInlineSignatures(
+              leftLabel: leftSignatureLabel,
+              rightLabel: rightSignatureLabel,
+            ),
+          ],
         ],
       ),
     );
   }
 
-  static pw.Widget _buildSignatures({
+  static pw.Widget _buildInlineSignatures({
     required String leftLabel,
     required String rightLabel,
   }) {
     return pw.Padding(
-      padding: const pw.EdgeInsets.only(top: 12, bottom: 4),
+      padding: const pw.EdgeInsets.only(top: 4),
       child: pw.Row(
-        mainAxisAlignment: pw.MainAxisAlignment.spaceAround,
         children: [
-          pw.Column(
-            children: [
-              pw.Container(width: 190, height: 1, color: PdfColors.grey800),
-              pw.SizedBox(height: 5),
-              pw.Text(leftLabel, style: pw.TextStyle(fontSize: 9.5, fontWeight: pw.FontWeight.bold)),
-              pw.Text('Aclaración / DNI', style: const pw.TextStyle(fontSize: 8, color: _textGrey)),
-            ],
+          pw.Expanded(
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Text(leftLabel,
+                    style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold)),
+                pw.SizedBox(height: 11),
+                pw.Text('Firma y Aclaración: ___________________________',
+                    style: const pw.TextStyle(fontSize: 7)),
+              ],
+            ),
           ),
-          pw.Column(
-            children: [
-              pw.Container(width: 190, height: 1, color: PdfColors.grey800),
-              pw.SizedBox(height: 5),
-              pw.Text(rightLabel, style: pw.TextStyle(fontSize: 9.5, fontWeight: pw.FontWeight.bold)),
-              pw.Text('Aclaración / DNI', style: const pw.TextStyle(fontSize: 8, color: _textGrey)),
-            ],
+          pw.SizedBox(width: 10),
+          pw.Expanded(
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Text(rightLabel,
+                    style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold)),
+                pw.SizedBox(height: 11),
+                pw.Text('Firma / Aclaración / DNI: ______________________',
+                    style: const pw.TextStyle(fontSize: 7)),
+              ],
+            ),
           ),
         ],
       ),
     );
   }
 
-  static pw.Widget _buildVoucherFooter(String businessName) {
-    return pw.Container(
-      width: double.infinity,
-      padding: const pw.EdgeInsets.symmetric(vertical: 4, horizontal: 10),
-      decoration: const pw.BoxDecoration(
-        color: PdfColors.grey100,
-        border: pw.Border(top: pw.BorderSide(color: PdfColors.grey400, width: 0.8)),
-      ),
-      child: pw.Row(
-        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-        children: [
-          pw.Text(
-            'Comprobante interno emitido por $businessName',
-            style: const pw.TextStyle(fontSize: 7.5, color: _textGrey),
+  static pw.Widget _buildCanonicalFooter(String businessName) {
+    return pw.Row(
+      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+      children: [
+        pw.Text(
+          'Comprobante interno emitido por $businessName',
+          style: const pw.TextStyle(fontSize: 7, color: PdfColors.grey800),
+        ),
+        pw.Text(
+          '*** DOCUMENTO INTERNO - NO VÁLIDO COMO FACTURA ***',
+          style: pw.TextStyle(
+            fontSize: 7,
+            color: PdfColors.grey800,
+            fontWeight: pw.FontWeight.bold,
           ),
-          pw.Text(
-            '*** DOCUMENTO NO VÁLIDO COMO FACTURA ***',
-            style: pw.TextStyle(fontSize: 7.5, color: _textGrey, fontWeight: pw.FontWeight.bold),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 

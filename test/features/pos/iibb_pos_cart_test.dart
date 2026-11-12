@@ -257,6 +257,88 @@ void main() {
         priceList: anyNamed('priceList'),
       )).called(1);
     });
+
+    test('Checkout with explicit 0% override forwards iibbPerceptionRate: 0.0 instead of null', () async {
+      provider.setIsIibbPerceptionAgent(true);
+      provider.requestAddToCart(product1);
+      provider.selectCustomer(customerWithPerception);
+      provider.setOverrideIibbPerceptionRate(0.0);
+
+      final dummyShift = CashRegisterShift(
+        id: 1,
+        cashRegisterId: 1,
+        userId: 1,
+        openedAt: DateTime.now(),
+        openingBalance: 5000.0,
+        status: 'open',
+      );
+
+      final dummySale = Sale(
+        id: 102,
+        total: 1210.0,
+        paymentMethod: 'efectivo',
+        shift: dummyShift,
+        iibbPerceptionAmount: 0.0,
+        iibbPerceptionRate: 0.0,
+      );
+
+      when(mockProcessSaleUseCase.call(
+        total: anyNamed('total'),
+        totalSurcharge: anyNamed('totalSurcharge'),
+        iibbPerceptionAmount: anyNamed('iibbPerceptionAmount'),
+        iibbPerceptionRate: anyNamed('iibbPerceptionRate'),
+        payments: anyNamed('payments'),
+        tenderedAmount: anyNamed('tenderedAmount'),
+        changeAmount: anyNamed('changeAmount'),
+        shiftId: anyNamed('shiftId'),
+        items: anyNamed('items'),
+        userId: anyNamed('userId'),
+        customerId: anyNamed('customerId'),
+        quoteId: anyNamed('quoteId'),
+        status: anyNamed('status'),
+        requiresDispatch: anyNamed('requiresDispatch'),
+        fulfillmentStatus: anyNamed('fulfillmentStatus'),
+        checkDetails: anyNamed('checkDetails'),
+        deliveryAddress: anyNamed('deliveryAddress'),
+        shippingCost: anyNamed('shippingCost'),
+        priceList: anyNamed('priceList'),
+      )).thenAnswer((_) async => dummySale);
+
+      final mockTerminal = FakeTestTerminalProvider();
+
+      final success = await provider.processCheckout(
+        shiftId: 1,
+        totalSurcharge: 0.0,
+        payments: [{'payment_method_id': 1, 'amount': 1210.0}],
+        tenderedAmount: 1210.0,
+        changeAmount: 0.0,
+        printerFormat: 'thermal_80',
+        localTerminal: mockTerminal,
+      );
+
+      expect(success, isTrue);
+      verify(mockProcessSaleUseCase.call(
+        total: 1210.0,
+        totalSurcharge: 0.0,
+        iibbPerceptionAmount: 0.0,
+        iibbPerceptionRate: 0.0,
+        payments: anyNamed('payments'),
+        tenderedAmount: anyNamed('tenderedAmount'),
+        changeAmount: anyNamed('changeAmount'),
+        shiftId: 1,
+        items: anyNamed('items'),
+        userId: anyNamed('userId'),
+        customerId: anyNamed('customerId'),
+        quoteId: anyNamed('quoteId'),
+        status: anyNamed('status'),
+        requiresDispatch: anyNamed('requiresDispatch'),
+        fulfillmentStatus: anyNamed('fulfillmentStatus'),
+        checkDetails: anyNamed('checkDetails'),
+        deliveryAddress: anyNamed('deliveryAddress'),
+        shippingCost: anyNamed('shippingCost'),
+        priceList: anyNamed('priceList'),
+      )).called(1);
+    });
   });
 
   group('CheckoutDialog IIBB Perception UI Tests', () {
@@ -337,9 +419,98 @@ void main() {
 
       await tester.pumpAndSettle();
 
-      // Gran Total must be: 1210.0 + round(1000.0 * 0.03, 2) = 1210 + 30 = 1240.0
-      // expect(find.text('Percep. IIBB (3.0%)'), findsOneWidget);
-      // expect(find.text('Gran Total'), findsOneWidget);
+      // Debe aparecer exactamente 1 vez (sin duplicación) en el panel derecho
+      expect(find.text('Percepción IIBB (Rentas):'), findsOneWidget);
+
+      // Si además se activa Factura Fiscal ARCA con cliente seleccionado, sigue apareciendo 1 sola vez
+      final dynamic state = tester.state(find.byType(CheckoutDialog));
+      state.setFiscalModeForTesting(true);
+      state.setVoucherTypeForTesting(1);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Percepción IIBB (Rentas):'), findsOneWidget);
+    });
+
+    testWidgets('CheckoutDialog in Factura A mode applies 3% defaultIibbPerceptionRate from General Settings even without customer custom rate', (tester) async {
+      tester.view.physicalSize = const Size(1280, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      final mockProcessSaleUseCase = MockProcessSaleUseCase();
+      final mockSearchProductsUseCase = MockSearchProductsUseCase();
+      final mockPosRepository = MockPosRepository();
+
+      when(mockPosRepository.fetchPaymentMethods()).thenAnswer((_) async => [
+            {
+              'id': 1,
+              'name': 'Efectivo',
+              'code': 'efectivo',
+              'surcharge_type': 'none',
+              'surcharge_value': 0.0,
+              'is_cash': true,
+              'is_active': true,
+              'sort_order': 1,
+            },
+          ]);
+
+      final posProvider = PosProvider(
+        processSaleUseCase: mockProcessSaleUseCase,
+        searchProductsUseCase: mockSearchProductsUseCase,
+        repository: mockPosRepository,
+      );
+
+      final settingsProvider = FakeSettingsProviderWithPerception();
+      posProvider.updateSettings(settingsProvider.settings);
+      posProvider.requestAddToCart(Product(
+        id: 1,
+        name: 'Yerba Mate 1Kg',
+        internalCode: 'P01',
+        costPrice: 800,
+        sellingPrice: 1210.0,
+        stock: 50,
+        active: true,
+        isSoldByWeight: false,
+      ));
+
+      final apiClient = ApiClient(
+        MockClient((request) async => http.Response('{"success": true}', 200)),
+      );
+
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<PosProvider>.value(value: posProvider),
+            ChangeNotifierProvider<SettingsProvider>.value(value: settingsProvider),
+            ChangeNotifierProvider<LocalTerminalProvider>(create: (_) => FakeTestTerminalProvider()),
+            ChangeNotifierProvider<AuthProvider>(create: (_) => FakeTestAuthProvider()),
+            ChangeNotifierProvider<CustomerProvider>(create: (_) => FakeTestCustomerProvider()),
+            ChangeNotifierProvider<CashRegisterProvider>(create: (_) => FakeTestCashRegisterProvider()),
+            ChangeNotifierProvider<CatalogProvider>(create: (_) => FakeTestCatalogProvider()),
+            Provider<ApiClient>.value(value: apiClient),
+          ],
+          child: const MaterialApp(
+            home: Scaffold(
+              body: CheckoutDialog(
+                total: 1210.0,
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      final dynamic state = tester.state(find.byType(CheckoutDialog));
+      state.setFiscalModeForTesting(true);
+      state.setVoucherTypeForTesting(1); // Factura A
+      await tester.pumpAndSettle();
+
+      expect(find.text('Percepción IIBB (Rentas):'), findsOneWidget);
+      expect(find.text('Perc. IIBB'), findsOneWidget);
+      expect(find.text('Gran Total'), findsOneWidget);
     });
   });
 }
@@ -408,6 +579,7 @@ class FakeSettingsProviderWithPerception extends ChangeNotifier implements Setti
   final BusinessSettings _settings = const BusinessSettings(
     companyName: 'Empresa Mayorista SA',
     taxId: '30-50001091-2',
+    taxCondition: 'responsable_inscripto',
     address: 'Av. Corrientes 100',
     afipEnabled: true,
     isIibbPerceptionAgent: true,

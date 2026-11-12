@@ -11,6 +11,7 @@ import 'package:frontend_desktop/features/catalog/domain/entities/product.dart';
 import 'package:frontend_desktop/core/utils/receipt_printer_service.dart';
 import 'package:frontend_desktop/features/pos/domain/entities/cart_item.dart';
 import 'package:frontend_desktop/features/offers/data/models/offer_model.dart';
+import 'package:frontend_desktop/features/customers/models/customer_model.dart';
 
 @GenerateMocks([
   ProcessSaleUseCase,
@@ -285,6 +286,52 @@ void main() {
 
       // Debe conservar los $700 pactados y no encarecerlo a $900
       expect(provider.cart.first.unitPrice, 700.0);
+    });
+
+    test('PosProvider IIBB Perception with override rate in POS', () {
+      // Comercio como Agente de Percepción IIBB
+      provider.setIsIibbPerceptionAgent(true);
+
+      final customer = Customer(
+        id: 10,
+        name: 'Cliente Responsable Inscripto',
+        documentNumber: '30-11223344-5',
+        documentType: 80, // CUIT
+        taxCondition: 'responsable_inscripto',
+        creditLimit: 50000,
+        balance: 0,
+        isActive: true,
+        appliesIibbPerception: true,
+        iibbPerceptionRate: 3.0,
+      );
+
+      provider.selectCustomer(customer);
+      expect(provider.overrideIibbPerceptionRate, isNull);
+      expect(provider.appliesIibbPerception, isTrue);
+      expect(provider.iibbPerceptionRate, 3.0);
+
+      // Override a "Sin percepción (0%)"
+      provider.setOverrideIibbPerceptionRate(0.0);
+      expect(provider.overrideIibbPerceptionRate, 0.0);
+      expect(provider.appliesIibbPerception, isFalse);
+      expect(provider.iibbPerceptionRate, 0.0);
+
+      // Override a 6.0% (Riesgo fiscal / no inscripto)
+      provider.setOverrideIibbPerceptionRate(6.0);
+      expect(provider.overrideIibbPerceptionRate, 6.0);
+      expect(provider.appliesIibbPerception, isTrue);
+      expect(provider.iibbPerceptionRate, 6.0);
+
+      // Al cambiar cliente, el override se resetea a null
+      provider.selectCustomer(customer);
+      expect(provider.overrideIibbPerceptionRate, isNull);
+      expect(provider.iibbPerceptionRate, 3.0);
+
+      // Al limpiar carrito, el override se resetea a null
+      provider.setOverrideIibbPerceptionRate(1.5);
+      expect(provider.overrideIibbPerceptionRate, 1.5);
+      provider.clearCart();
+      expect(provider.overrideIibbPerceptionRate, isNull);
     });
   });
 }

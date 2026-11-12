@@ -22,10 +22,17 @@ class SalePayment {
 
   factory SalePayment.fromJson(Map<String, dynamic> json) {
     final pm = json['payment_method'] as Map<String, dynamic>?;
+    final rawName = pm?['name'] as String? ?? 'Desconocido';
+    final alias = json['transfer_account_alias']?.toString().trim();
+    final effectiveName = (alias != null &&
+            alias.isNotEmpty &&
+            !rawName.toLowerCase().contains(alias.toLowerCase()))
+        ? '$rawName ($alias)'
+        : rawName;
     return SalePayment(
       id: json['id'] as int? ?? 0,
       paymentMethodId: json['payment_method_id'] as int? ?? 0,
-      methodName: pm?['name'] as String? ?? 'Desconocido',
+      methodName: effectiveName,
       methodCode: pm?['code'] as String? ?? '',
       isCash: pm?['is_cash'] == true || pm?['is_cash'] == 1,
       baseAmount: double.parse((json['base_amount'] ?? '0').toString()),
@@ -47,6 +54,7 @@ class SaleItemRecord {
   final double subtotal;
   final double ivaRate;
   final bool isSoldByWeight;
+  final bool isService;
   final String? discountLabel;
 
   const SaleItemRecord({
@@ -60,6 +68,7 @@ class SaleItemRecord {
     required this.subtotal,
     this.ivaRate = 21.0,
     this.isSoldByWeight = false,
+    this.isService = false,
     this.discountLabel,
   }) : regularPrice = (regularPrice != null && regularPrice > 0) ? regularPrice : unitPrice;
 
@@ -117,6 +126,10 @@ class SaleItemRecord {
       subtotal: double.tryParse(json['subtotal']?.toString() ?? '0') ?? 0.0,
       ivaRate: double.tryParse(rawIvaRate.toString()) ?? 21.0,
       isSoldByWeight: product?['is_sold_by_weight'] == true || product?['is_sold_by_weight'] == 1,
+      isService: json['is_service'] == true ||
+          json['is_service'] == 1 ||
+          product?['is_service'] == true ||
+          product?['is_service'] == 1,
       discountLabel: discountLabel,
     );
   }
@@ -144,6 +157,7 @@ class SaleRecord {
   final double? iibbPerceptionAmount;
   final double? iibbPerceptionRate;
   final String invoiceStatus;
+  final String? voidReason;
   final Map<String, dynamic>? electronicInvoice;
   final Map<String, dynamic>? deliveryNote;
   final int? customerId;
@@ -174,6 +188,7 @@ class SaleRecord {
     this.iibbPerceptionAmount,
     this.iibbPerceptionRate,
     this.invoiceStatus = 'none',
+    this.voidReason,
     this.electronicInvoice,
     this.deliveryNote,
     this.customerId,
@@ -279,6 +294,7 @@ class SaleRecord {
           ? double.tryParse(json['iibb_perception_rate'].toString())
           : null,
       invoiceStatus: json['invoice_status'] as String? ?? 'none',
+      voidReason: json['void_reason']?.toString(),
       electronicInvoice: json['electronic_invoice'] as Map<String, dynamic>? ??
           json['electronicInvoice'] as Map<String, dynamic>?,
       deliveryNote: json['delivery_note'] as Map<String, dynamic>? ??

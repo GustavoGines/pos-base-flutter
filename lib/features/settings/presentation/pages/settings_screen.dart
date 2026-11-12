@@ -4643,33 +4643,49 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                   ),
                   if (isIibbActive) ...[
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    key: const ValueKey('field_default_iibb_rate'),
-                    controller: _defaultIibbRateCtrl,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    inputFormatters: [
-                      FilteringTextInputFormatter.allow(RegExp(r'^\d*[\.,]?\d{0,2}')),
-                    ],
-                    decoration: InputDecoration(
-                      labelText: 'Alícuota por defecto IIBB (%)',
-                      hintText: 'Ej: 3.0',
-                      prefixIcon: const Icon(Icons.percent, size: 20),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                      filled: true,
-                      fillColor: Colors.white,
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      key: const ValueKey('field_default_iibb_rate'),
+                      controller: _defaultIibbRateCtrl,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(RegExp(r'^\d*[\.,]?\d{0,2}')),
+                      ],
+                      onChanged: (_) => setState(() {}),
+                      decoration: InputDecoration(
+                        labelText: 'Alícuota por defecto IIBB (%)',
+                        hintText: 'Ej: 3.0',
+                        prefixIcon: const Icon(Icons.percent, size: 20),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                        filled: true,
+                        fillColor: Colors.white,
+                      ),
+                      validator: (val) {
+                        if (!_isIibbPerceptionAgent) return null;
+                        if (val == null || val.trim().isEmpty) return null;
+                        final parsed = double.tryParse(val.trim().replaceAll(',', '.'));
+                        if (parsed == null || parsed < 0 || parsed > 100) {
+                          return 'Ingrese una alícuota válida (0 - 100%)';
+                        }
+                        return null;
+                      },
                     ),
-                    validator: (val) {
-                      if (!_isIibbPerceptionAgent) return null;
-                      if (val == null || val.trim().isEmpty) return null;
-                      final parsed = double.tryParse(val.trim().replaceAll(',', '.'));
-                      if (parsed == null || parsed < 0 || parsed > 100) {
-                        return 'Ingrese una alícuota válida (0 - 100%)';
-                      }
-                      return null;
-                    },
-                  ),
-                ],
+                    const SizedBox(height: 8),
+                    Text(
+                      'Presets Rentas / ATP Formosa:',
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.grey.shade600),
+                    ),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      children: [
+                        _buildDefaultIibbPresetChip('1.5', '1.5% (Conv. Multilateral)'),
+                        _buildDefaultIibbPresetChip('3.0', '3.0% (Inscripto Local FSA)'),
+                        _buildDefaultIibbPresetChip('6.0', '6.0% (No Inscripto / Riesgo)'),
+                      ],
+                    ),
+                  ],
               ],
               ),
             ),
@@ -4681,6 +4697,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _buildBackupSection(provider),
         const SizedBox(height: 32),
       ],
+    );
+  }
+
+  Widget _buildDefaultIibbPresetChip(String rate, String label) {
+    final currentVal = _defaultIibbRateCtrl.text.trim().replaceAll(',', '.');
+    final isSelected = currentVal == rate;
+    final theme = Theme.of(context);
+    return ChoiceChip(
+      label: Text(
+        label,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+          color: isSelected ? theme.colorScheme.onPrimary : Colors.grey.shade800,
+        ),
+      ),
+      selected: isSelected,
+      selectedColor: theme.colorScheme.primary,
+      backgroundColor: Colors.grey.shade100,
+      showCheckmark: false,
+      side: BorderSide(
+        color: isSelected ? theme.colorScheme.primary : Colors.grey.shade300,
+      ),
+      visualDensity: VisualDensity.compact,
+      onSelected: (_) {
+        setState(() {
+          _defaultIibbRateCtrl.text = rate;
+        });
+      },
     );
   }
 

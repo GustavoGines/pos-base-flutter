@@ -15,6 +15,7 @@ class VatSalesReportView extends StatefulWidget {
 
 class _VatSalesReportViewState extends State<VatSalesReportView> {
   final TextEditingController _searchCtrl = TextEditingController();
+  bool _sortAscending = false;
 
   @override
   void initState() {
@@ -24,6 +25,8 @@ class _VatSalesReportViewState extends State<VatSalesReportView> {
       final provider = context.read<ReportsProvider>();
       if (provider.vatSalesSummary.isEmpty && !provider.isLoadingVatSales) {
         provider.fetchVatSales();
+      } else if (!provider.isLoadingVatSales) {
+        provider.fetchVatSales(silent: true);
       }
     });
   }
@@ -74,6 +77,25 @@ class _VatSalesReportViewState extends State<VatSalesReportView> {
         final filter = provider.vatVoucherFilter;
         final q = provider.vatSearchQuery.trim().toLowerCase();
 
+        int countA = 0;
+        int countB = 0;
+        int countC = 0;
+        int countNc = 0;
+        for (final raw in allVouchers) {
+          final v = raw is Map ? raw : <String, dynamic>{};
+          final kind = (v['kind'] ?? 'invoice').toString();
+          final letter = (v['voucher_letter'] ?? '').toString().toUpperCase();
+          if (kind == 'credit_note') {
+            countNc++;
+          } else if (letter == 'A') {
+            countA++;
+          } else if (letter == 'B') {
+            countB++;
+          } else if (letter == 'C') {
+            countC++;
+          }
+        }
+
         final filteredVouchers = allVouchers.where((raw) {
           final v = raw is Map ? raw : <String, dynamic>{};
           final kind = (v['kind'] ?? 'invoice').toString();
@@ -82,6 +104,7 @@ class _VatSalesReportViewState extends State<VatSalesReportView> {
           if (filter == 'NC' && kind != 'credit_note') return false;
           if (filter == 'A' && (kind != 'invoice' || letter != 'A')) return false;
           if (filter == 'B' && (kind != 'invoice' || letter != 'B')) return false;
+          if (filter == 'C' && (kind != 'invoice' || letter != 'C')) return false;
 
           if (q.isNotEmpty) {
             final numStr = (v['formatted_number'] ?? '').toString().toLowerCase();
@@ -93,7 +116,27 @@ class _VatSalesReportViewState extends State<VatSalesReportView> {
             }
           }
           return true;
-        }).toList();
+        }).toList()
+          ..sort((rawA, rawB) {
+            final a = rawA is Map ? rawA : <String, dynamic>{};
+            final b = rawB is Map ? rawB : <String, dynamic>{};
+            final dtA = DateTime.tryParse((a['issued_at'] ?? '').toString());
+            final dtB = DateTime.tryParse((b['issued_at'] ?? '').toString());
+            int cmp = 0;
+            if (dtA != null && dtB != null) {
+              cmp = dtA.compareTo(dtB);
+            } else if (dtA != null) {
+              cmp = 1;
+            } else if (dtB != null) {
+              cmp = -1;
+            }
+            if (cmp == 0) {
+              final numA = int.tryParse((a['voucher_number'] ?? '0').toString()) ?? 0;
+              final numB = int.tryParse((b['voucher_number'] ?? '0').toString()) ?? 0;
+              cmp = numA.compareTo(numB);
+            }
+            return _sortAscending ? cmp : -cmp;
+          });
 
         final totalIva = _toDouble(summary['total_iva']);
         final totalNet = _toDouble(summary['total_net']);
@@ -443,17 +486,43 @@ class _VatSalesReportViewState extends State<VatSalesReportView> {
                                       _buildVoucherTypeFilterChip(
                                         provider: provider,
                                         value: 'A',
-                                        label: 'Factura A',
+                                        label: 'Factura A ($countA)',
                                       ),
                                       _buildVoucherTypeFilterChip(
                                         provider: provider,
                                         value: 'B',
-                                        label: 'Factura B',
+                                        label: 'Factura B ($countB)',
                                       ),
+                                      if (countC > 0 || filter == 'C')
+                                        _buildVoucherTypeFilterChip(
+                                          provider: provider,
+                                          value: 'C',
+                                          label: 'Factura C ($countC)',
+                                        ),
                                       _buildVoucherTypeFilterChip(
                                         provider: provider,
                                         value: 'NC',
-                                        label: 'Notas de Crédito',
+                                        label: 'Notas de Crédito ($countNc)',
+                                      ),
+                                      ActionChip(
+                                        avatar: Icon(
+                                          _sortAscending ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded,
+                                          size: 14,
+                                          color: Colors.indigo.shade800,
+                                        ),
+                                        label: Text(
+                                          _sortAscending ? 'Fecha: Cronológico ↑' : 'Fecha: Más recientes ↓',
+                                          style: TextStyle(
+                                            fontSize: 11.5,
+                                            fontWeight: FontWeight.w700,
+                                            color: Colors.indigo.shade900,
+                                          ),
+                                        ),
+                                        backgroundColor: Colors.indigo.shade50.withValues(alpha: 0.6),
+                                        side: BorderSide(color: Colors.indigo.shade200),
+                                        visualDensity: VisualDensity.compact,
+                                        tooltip: 'Cambiar orden de fecha y hora',
+                                        onPressed: () => setState(() => _sortAscending = !_sortAscending),
                                       ),
                                     ],
                                   ),
@@ -515,6 +584,8 @@ class _VatSalesReportViewState extends State<VatSalesReportView> {
                                     minWidth: MediaQuery.of(context).size.width - 84,
                                   ),
                                   child: DataTable(
+                                    sortColumnIndex: 0,
+                                    sortAscending: _sortAscending,
                                     headingRowColor: const WidgetStatePropertyAll(Color(0xFFF8FAFC)),
                                     headingTextStyle: const TextStyle(
                                       fontWeight: FontWeight.w800,
@@ -524,17 +595,20 @@ class _VatSalesReportViewState extends State<VatSalesReportView> {
                                     dataRowMinHeight: 42,
                                     dataRowMaxHeight: 54,
                                     columnSpacing: 18,
-                                    columns: const [
-                                      DataColumn(label: Text('FECHA')),
-                                      DataColumn(label: Text('COMPROBANTE')),
-                                      DataColumn(label: Text('NÚMERO')),
-                                      DataColumn(label: Text('CLIENTE / RECEPTOR')),
-                                      DataColumn(label: Text('NETO GRAV.'), numeric: true),
-                                      DataColumn(label: Text('IVA 21%'), numeric: true),
-                                      DataColumn(label: Text('IVA 10.5%'), numeric: true),
-                                      DataColumn(label: Text('PERCEP. / EX.'), numeric: true),
-                                      DataColumn(label: Text('TOTAL FISCAL'), numeric: true),
-                                      DataColumn(label: Text('CAE')),
+                                    columns: [
+                                      DataColumn(
+                                        label: const Text('FECHA'),
+                                        onSort: (_, ascending) => setState(() => _sortAscending = ascending),
+                                      ),
+                                      const DataColumn(label: Text('COMPROBANTE')),
+                                      const DataColumn(label: Text('NÚMERO')),
+                                      const DataColumn(label: Text('CLIENTE / RECEPTOR')),
+                                      const DataColumn(label: Text('NETO GRAV.'), numeric: true),
+                                      const DataColumn(label: Text('IVA 21%'), numeric: true),
+                                      const DataColumn(label: Text('IVA 10.5%'), numeric: true),
+                                      const DataColumn(label: Text('PERCEP. / EX.'), numeric: true),
+                                      const DataColumn(label: Text('TOTAL FISCAL'), numeric: true),
+                                      const DataColumn(label: Text('CAE')),
                                     ],
                                     rows: filteredVouchers.map((raw) {
                                       final v = raw is Map ? raw : <String, dynamic>{};

@@ -303,6 +303,29 @@ class PosProvider with ChangeNotifier {
   bool _isIibbPerceptionAgent = false;
   bool get isIibbPerceptionAgent => _isIibbPerceptionAgent;
 
+  double? _overrideIibbPerceptionRate;
+  double? get overrideIibbPerceptionRate => _overrideIibbPerceptionRate;
+  void setOverrideIibbPerceptionRate(double? rate) {
+    _overrideIibbPerceptionRate = rate;
+    notifyListeners();
+  }
+
+  double _defaultIibbPerceptionRate = 0.0;
+  double get defaultIibbPerceptionRate => _defaultIibbPerceptionRate;
+  void setDefaultIibbPerceptionRate(double value) {
+    if (_defaultIibbPerceptionRate != value) {
+      _defaultIibbPerceptionRate = value;
+      notifyListeners();
+    }
+  }
+
+  /// El override de caja pertenece exclusivamente al cliente del carrito activo.
+  double? _activeCartOverrideFor(Customer? target) {
+    if (_overrideIibbPerceptionRate == null) return null;
+    if (target == null || _selectedCustomer == null) return null;
+    return target.id == _selectedCustomer!.id ? _overrideIibbPerceptionRate : null;
+  }
+
   void setIsIibbPerceptionAgent(bool value) {
     if (_isIibbPerceptionAgent != value) {
       _isIibbPerceptionAgent = value;
@@ -313,12 +336,14 @@ class PosProvider with ChangeNotifier {
   void updateSettings(BusinessSettings? settings) {
     if (settings != null) {
       setIsIibbPerceptionAgent(settings.isIibbPerceptionAgent);
+      setDefaultIibbPerceptionRate(settings.defaultIibbPerceptionRate);
     }
   }
 
   void selectCustomer(Customer? customer, {bool? isPerceptionAgent}) {
     _selectedCustomer = customer;
     _lastSelectedCustomer = customer;
+    _overrideIibbPerceptionRate = null;
     if (isPerceptionAgent != null) {
       _isIibbPerceptionAgent = isPerceptionAgent;
     }
@@ -511,13 +536,31 @@ class PosProvider with ChangeNotifier {
 
   /// Indica si corresponde aplicar Percepción IIBB al cliente seleccionado
   bool get appliesIibbPerception {
+    if (_overrideIibbPerceptionRate != null) {
+      if (_overrideIibbPerceptionRate! <= 0) return false;
+      return _isIibbPerceptionAgent &&
+          _selectedCustomer != null &&
+          _selectedCustomer!.documentType == 80 &&
+          _selectedCustomer!.taxCondition != 'consumidor_final' &&
+          _selectedCustomer!.taxCondition != 'exento';
+    }
+    final custRate = (_selectedCustomer?.iibbPerceptionRate ?? 0.0) > 0
+        ? _selectedCustomer!.iibbPerceptionRate!
+        : _defaultIibbPerceptionRate;
     return _isIibbPerceptionAgent &&
         (_selectedCustomer?.appliesIibbPerception == true) &&
-        ((_selectedCustomer?.iibbPerceptionRate ?? 0.0) > 0);
+        (custRate > 0);
   }
 
   /// Alícuota de percepción IIBB activa para el cliente
-  double get iibbPerceptionRate => _selectedCustomer?.iibbPerceptionRate ?? 0.0;
+  double get iibbPerceptionRate {
+    if (_overrideIibbPerceptionRate != null) {
+      return appliesIibbPerception ? _overrideIibbPerceptionRate! : 0.0;
+    }
+    if (_selectedCustomer?.appliesIibbPerception != true) return 0.0;
+    final custRate = _selectedCustomer?.iibbPerceptionRate ?? 0.0;
+    return custRate > 0 ? custRate : _defaultIibbPerceptionRate;
+  }
 
   /// Monto monetario de la Percepción IIBB: Base Neta * (Alícuota / 100)
   double get iibbPerceptionAmount {
@@ -536,25 +579,61 @@ class PosProvider with ChangeNotifier {
         (applyShipping ? _shippingCost : 0.0);
   }
 
-  /// Helper que permite validar percepción pasando BusinessSettings opcionales
-  bool checkAppliesIibbPerception({BusinessSettings? settings, Customer? customer}) {
+  /// Helper que permite validar percepción pasando BusinessSettings opcionales y overrideRate
+  bool checkAppliesIibbPerception({
+    BusinessSettings? settings,
+    Customer? customer,
+    double? overrideRate,
+  }) {
     final isAgent = settings?.isIibbPerceptionAgent ?? _isIibbPerceptionAgent;
+    final defaultRate = settings?.defaultIibbPerceptionRate ?? _defaultIibbPerceptionRate;
     final targetCustomer = customer ?? _selectedCustomer;
+    final effectiveOverride = overrideRate ?? _activeCartOverrideFor(targetCustomer);
+
+    if (effectiveOverride != null) {
+      if (effectiveOverride <= 0) return false;
+      // Si overrideRate fue pasado explícitamente (ej. desde CheckoutDialog en Factura A
+      // o al tocar un chip de percepción), el diálogo ya validó que el comprobante/receptor califica,
+      // incluso si el registro viejo del cliente en BD tenía tax_condition = 'consumidor_final'.
+      if (overrideRate != null || targetCustomer == null) {
+        return isAgent;
+      }
+      return isAgent &&
+          targetCustomer.documentType == 80 &&
+          targetCustomer.taxCondition != 'consumidor_final' &&
+          targetCustomer.taxCondition != 'exento';
+    }
+
+    final custRate = (targetCustomer?.iibbPerceptionRate ?? 0.0) > 0
+        ? targetCustomer!.iibbPerceptionRate!
+        : defaultRate;
     return isAgent &&
         (targetCustomer?.appliesIibbPerception == true) &&
-        ((targetCustomer?.iibbPerceptionRate ?? 0.0) > 0);
+        (custRate > 0);
   }
 
-  /// Helper que calcula el monto de percepción pasando BusinessSettings opcionales
+  /// Helper que calcula el monto de percepción pasando BusinessSettings opcionales y overrideRate
   double calculateIibbPerceptionAmount({
     BusinessSettings? settings,
     Customer? customer,
     double extraAmount = 0.0,
     double? overrideTotal,
+    double? overrideRate,
   }) {
-    if (!checkAppliesIibbPerception(settings: settings, customer: customer)) return 0.0;
+    if (!checkAppliesIibbPerception(
+      settings: settings,
+      customer: customer,
+      overrideRate: overrideRate,
+    )) {
+      return 0.0;
+    }
+    final defaultRate = settings?.defaultIibbPerceptionRate ?? _defaultIibbPerceptionRate;
     final targetCustomer = customer ?? _selectedCustomer;
-    final rate = targetCustomer?.iibbPerceptionRate ?? 0.0;
+    final effectiveOverride = overrideRate ?? _activeCartOverrideFor(targetCustomer);
+    final custRate = (targetCustomer?.iibbPerceptionRate ?? 0.0) > 0
+        ? targetCustomer!.iibbPerceptionRate!
+        : defaultRate;
+    final rate = effectiveOverride ?? custRate;
     // FINDING-SALES-02: Sincronización con AfipWsfeService: base gravada incluye neto de recargos/fletes gravados al 21%
     final baseNet = overrideTotal != null
         ? ((overrideTotal / 1.21) * 100).roundToDouble() / 100.0
@@ -980,6 +1059,7 @@ class PosProvider with ChangeNotifier {
     _checkoutDraft = null;
     _selectedCustomer = null;
     _lastSelectedCustomer = null;
+    _overrideIibbPerceptionRate = null;
     _activePendingSaleId = null;
     _activeQuoteId = null;
     _recalledUserName = null;
@@ -1336,7 +1416,10 @@ class PosProvider with ChangeNotifier {
     // Solo aplicamos flete al comprobante si se requiere despacho y no es entrega inmediata
     final shippingCostSnapshot = (requiresDispatch && fulfillmentStatus == 'pending') ? _shippingCost : 0.0;
     final effectivePerceptionAmount = iibbPerceptionAmount ?? this.iibbPerceptionAmount;
-    final effectivePerceptionRate = iibbPerceptionRate ?? (this.iibbPerceptionRate > 0 ? this.iibbPerceptionRate : null);
+    final effectivePerceptionRate = iibbPerceptionRate ??
+        (this.iibbPerceptionRate > 0
+            ? this.iibbPerceptionRate
+            : (_overrideIibbPerceptionRate != null ? 0.0 : null));
     final totalSnapshot = ((cartSubtotal + effectivePerceptionAmount + shippingCostSnapshot) * 100).roundToDouble() / 100.0;
     final totalSavingsSnapshot = cartTotalSavings;
     final grossSubtotalSnapshot = cartGrossSubtotal;
@@ -1898,6 +1981,7 @@ class PosProvider with ChangeNotifier {
                         deliveryAddress,
                 paperSizeOverride: selectedPaperStr,
                 iibbPerceptionAmount: effectivePerceptionAmount,
+                iibbPerceptionRate: effectivePerceptionRate ?? 0.0,
               );
             } else {
               await _activePrinter.printSaleTicket(
@@ -1929,6 +2013,7 @@ class PosProvider with ChangeNotifier {
                 changeAmount: changeAmount,
                 shippingCost: shippingCostSnapshot,
                 iibbPerceptionAmount: effectivePerceptionAmount,
+                iibbPerceptionRate: effectivePerceptionRate ?? 0.0,
               );
             }
           } else if ((_hasCashInPayments(resolvedPayments) ||
@@ -2590,6 +2675,7 @@ class PosProvider with ChangeNotifier {
                   shippingCost: shippingCost,
                   paperSizeOverride: selectedPaperStr,
                   iibbPerceptionAmount: iibbPerceptionAmount ?? 0.0,
+                  iibbPerceptionRate: iibbPerceptionRate ?? 0.0,
                 );
               } else if ((_hasCashInPayments(payments) || tenderedAmount > 0) &&
                   localTerminal.autoOpenCashDrawer) {

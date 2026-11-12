@@ -350,6 +350,45 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
 
   Customer? _selectedCustomer;
   Customer? _matchedFiscalCustomer;
+  double? _customIibbRateOverride;
+
+  Customer? get _effectiveIibbCustomer =>
+      _selectedCustomer ?? _matchedFiscalCustomer;
+
+  bool get _isFiscalCuitSubjectToIibb =>
+      _isFiscalMode &&
+      (_voucherType == 1 ||
+          (_fiscalDocType == 80 &&
+              _fiscalTaxCondition != 'consumidor_final' &&
+              _fiscalTaxCondition != 'exento'));
+
+  double? get _effectiveIibbRate {
+    if (_customIibbRateOverride != null) {
+      return _customIibbRateOverride! > 0 ? _customIibbRateOverride : 0.0;
+    }
+    final settings = context.read<SettingsProvider>().settings;
+    if (settings?.isIibbPerceptionAgent != true) return 0.0;
+
+    final customer = _effectiveIibbCustomer;
+    if (customer?.appliesIibbPerception == true) {
+      final custRate = customer?.iibbPerceptionRate ?? 0.0;
+      return custRate > 0
+          ? custRate
+          : (settings?.defaultIibbPerceptionRate ?? 0.0);
+    }
+    // Si se emite Factura A o C sujeta a IIBB (receptor CUIT RI/Monotributo) y el cliente no tiene
+    // una alícuota desactivada manualmente con tasa previa, aplicar la alícuota general de Ajustes.
+    if (_isFiscalCuitSubjectToIibb) {
+      final hasExplicitlyDisabledCustomRate = customer != null &&
+          customer.appliesIibbPerception == false &&
+          (customer.iibbPerceptionRate ?? 0.0) > 0;
+      if (!hasExplicitlyDisabledCustomRate) {
+        return settings?.defaultIibbPerceptionRate ?? 0.0;
+      }
+    }
+    return 0.0;
+  }
+
   String? _remoteMatchedName;
   String? _remoteMatchedSource;
   bool _autoMatchedCustomerByDoc = false;
@@ -411,8 +450,12 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       );
 
       if (matched != null) {
+        final previousMatchedId = _matchedFiscalCustomer?.id;
         _autoMatchedCustomerByDoc = true;
         _matchedFiscalCustomer = matched;
+        if (_selectedCustomer == null && previousMatchedId != matched.id) {
+          _customIibbRateOverride = null;
+        }
         _remoteMatchedName = null;
         _remoteMatchedSource = null;
         _fiscalReceiverNameCtrl.text = matched.name;
@@ -434,14 +477,19 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         } else {
           _fiscalTaxCondition = matched.taxCondition;
         }
+        if (_selectedCustomer == null) {
+          _syncPaymentsWithGrandTotal();
+        }
       } else if (_autoMatchedCustomerByDoc) {
         _autoMatchedCustomerByDoc = false;
         _matchedFiscalCustomer = null;
         _remoteMatchedName = null;
         _remoteMatchedSource = null;
         if (_selectedCustomer == null) {
+          _customIibbRateOverride = null;
           _fiscalReceiverNameCtrl.clear();
           _fiscalReceiverAddressCtrl.clear();
+          _syncPaymentsWithGrandTotal();
         }
       }
     });
@@ -609,6 +657,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         }
         _syncFiscalDocTypeWithAmount();
       }
+      _syncPaymentsWithGrandTotal();
     });
     SharedPreferences.getInstance()
         .then((prefs) => prefs.setInt('last_voucher_type', newType));
@@ -715,7 +764,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         .toList();
 
     final currentIibb = posProvider.calculateIibbPerceptionAmount(
-      customer: _selectedCustomer,
+      customer: _effectiveIibbCustomer,
+      overrideRate: _customIibbRateOverride,
     );
     final currentShipping = (_requiresDispatch && _fulfillmentStatus == 'pending')
         ? ArsThousandsInputFormatter.parse(_shippingCostCtrl.text)
@@ -747,6 +797,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     super.initState();
     final posProvider = context.read<PosProvider>();
     _posProviderRef = posProvider;
+    _customIibbRateOverride =
+        widget.saleId == null ? posProvider.overrideIibbPerceptionRate : null;
 
     // Limpiar datos fiscales residuales de ventas anteriores para evitar contaminación
     posProvider.setPendingFiscalInvoiceData(null);
@@ -1018,6 +1070,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
             }
             _syncFiscalDocTypeWithAmount();
           }
+          _syncPaymentsWithGrandTotal();
         });
         return true;
       }
@@ -1450,11 +1503,16 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     final posProvider = context.read<PosProvider>();
     final settings = context.read<SettingsProvider>().settings;
     final extra = _totalSurcharge + _shippingCostToApply;
+    final effectiveRateOverride = _customIibbRateOverride ??
+        ((_isFiscalCuitSubjectToIibb && (_effectiveIibbRate ?? 0.0) > 0)
+            ? _effectiveIibbRate
+            : null);
     return posProvider.calculateIibbPerceptionAmount(
         settings: settings,
-        customer: _selectedCustomer,
+        customer: _effectiveIibbCustomer,
         extraAmount: extra,
-        overrideTotal: widget.saleId != null ? widget.total : null);
+        overrideTotal: widget.saleId != null ? widget.total : null,
+        overrideRate: effectiveRateOverride);
   }
 
   double get _effectiveCartTotal {
@@ -1646,6 +1704,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
               .firstOrNull;
           setState(() {
             _selectedCustomer = c;
+            _customIibbRateOverride = null;
             _deliveryAddressCtrl.text = c.deliveryAddress ?? '';
             _syncCustomerWithFiscal(c);
             if (ccMethod != null &&
@@ -1692,6 +1751,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     if (updated != null) {
       setState(() {
         _selectedCustomer = updated;
+        _customIibbRateOverride = null;
         if (_deliveryAddressCtrl.text.trim().isEmpty &&
             updated.deliveryAddress != null &&
             updated.deliveryAddress!.isNotEmpty) {
@@ -1842,12 +1902,23 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                   _selectedCustomer?.deliveryAddress ??
                   ''),
           'receiver_tax_condition': _fiscalTaxCondition,
+          // Percepción IIBB en caja (tanto por override manual como por alícuota general en Factura A):
+          // se envía explícito para que el backend use exactamente el monto y tasa cobrados.
+          if (_customIibbRateOverride != null || _currentIibbAmount > 0) ...{
+            'iibb_perception_amount': _currentIibbAmount,
+            'iibb_perception_rate':
+                _currentIibbAmount > 0 ? (_effectiveIibbRate ?? 0.0) : 0.0,
+          },
         };
       }
 
       posProvider.setPendingFiscalInvoiceData(
         (_isFiscalMode && fiscalPayload != null) ? fiscalPayload : null,
       );
+
+      final explicitSaleIibbRate = _currentIibbAmount > 0
+          ? _effectiveIibbRate
+          : (_customIibbRateOverride != null ? 0.0 : null);
 
       Future<bool> executeCheckoutCall() async {
         if (isPending) {
@@ -1857,9 +1928,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
             totalSurcharge: _totalSurcharge,
             iibbPerceptionAmount:
                 _currentIibbAmount > 0 ? _currentIibbAmount : null,
-            iibbPerceptionRate: _currentIibbAmount > 0
-                ? _selectedCustomer?.iibbPerceptionRate
-                : null,
+            iibbPerceptionRate: explicitSaleIibbRate,
             payments: paymentsPayload,
             tenderedAmount: _actualTendered,
             changeAmount: _change > 0 ? _change : 0.0,
@@ -1879,9 +1948,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
             totalSurcharge: _totalSurcharge,
             iibbPerceptionAmount:
                 _currentIibbAmount > 0 ? _currentIibbAmount : null,
-            iibbPerceptionRate: _currentIibbAmount > 0
-                ? _selectedCustomer?.iibbPerceptionRate
-                : null,
+            iibbPerceptionRate: explicitSaleIibbRate,
             payments: paymentsPayload,
             tenderedAmount: _actualTendered,
             changeAmount: _change > 0 ? _change : 0.0,
@@ -2162,6 +2229,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                         _syncFiscalDocTypeWithAmount();
                       }
                     }
+                    _syncPaymentsWithGrandTotal();
                   });
                 },
               ),
@@ -2324,6 +2392,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                         onPressed: () {
                           setState(() {
                             _selectedCustomer = null;
+                            _matchedFiscalCustomer = null;
+                            _customIibbRateOverride = null;
                             _autoMatchedCustomerByDoc = false;
                             _fiscalDocType = _voucherType == 1
                                 ? 80
@@ -2393,7 +2463,10 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                             ? null
                             : (val) {
                                 if (val != null) {
-                                  setState(() => _fiscalDocType = val);
+                                  setState(() {
+                                    _fiscalDocType = val;
+                                    _syncPaymentsWithGrandTotal();
+                                  });
                                 }
                               },
                       ),
@@ -2446,7 +2519,10 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                             ? null
                             : (val) {
                                 if (val != null) {
-                                  setState(() => _fiscalDocType = val);
+                                  setState(() {
+                                    _fiscalDocType = val;
+                                    _syncPaymentsWithGrandTotal();
+                                  });
                                 }
                               },
                       ),
@@ -2568,7 +2644,10 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                                   ],
                         onChanged: (val) {
                           if (val != null) {
-                            setState(() => _fiscalTaxCondition = val);
+                            setState(() {
+                              _fiscalTaxCondition = val;
+                              _syncPaymentsWithGrandTotal();
+                            });
                           }
                         },
                       ),
@@ -2647,7 +2726,10 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                                   ],
                         onChanged: (val) {
                           if (val != null) {
-                            setState(() => _fiscalTaxCondition = val);
+                            setState(() {
+                              _fiscalTaxCondition = val;
+                              _syncPaymentsWithGrandTotal();
+                            });
                           }
                         },
                       ),
@@ -2672,6 +2754,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                 );
               },
             ),
+            _buildIibbPerceptionSelectorBar(),
           ],
         ],
       ),
@@ -4570,6 +4653,10 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                                                       setState(() {
                                                         _selectedCustomer =
                                                             null;
+                                                        _matchedFiscalCustomer =
+                                                            null;
+                                                        _customIibbRateOverride =
+                                                            null;
                                                         _fiscalDocType =
                                                             _voucherType == 1
                                                                 ? 80
@@ -4596,6 +4683,9 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                                                 ],
                                               ],
                                             ),
+                                            if (!_isFiscalMode ||
+                                                settings?.afipEnabled != true)
+                                              _buildIibbPerceptionSelectorBar(),
                                             if (_selectedCustomer != null &&
                                                 !_hasCuentaCorriente) ...[
                                               const SizedBox(height: 8),
@@ -4846,6 +4936,120 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       ),
           ),
         ),
+    );
+  }
+
+  Widget _buildIibbPerceptionSelectorBar() {
+    final settings = context.read<SettingsProvider>().settings;
+    if (settings?.isIibbPerceptionAgent != true) return const SizedBox.shrink();
+    final targetCustomer = _effectiveIibbCustomer;
+    final qualifiesByCustomer = targetCustomer != null &&
+        targetCustomer.documentType == 80 &&
+        targetCustomer.taxCondition != 'consumidor_final' &&
+        targetCustomer.taxCondition != 'exento';
+    if (!qualifiesByCustomer && !_isFiscalCuitSubjectToIibb) {
+      return const SizedBox.shrink();
+    }
+
+    final effectiveRate = _effectiveIibbRate ?? 0.0;
+
+    return Container(
+      margin: const EdgeInsets.only(top: 10, bottom: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.deepPurple.shade50.withValues(alpha: 0.6),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.deepPurple.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.tune_rounded, size: 16, color: Colors.deepPurple.shade800),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Percepción IIBB (Rentas):',
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.deepPurple.shade900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              _buildIibbOverrideChip(
+                label: 'Sin perc. (0%)',
+                rate: 0.0,
+                isSelected: effectiveRate == 0.0,
+              ),
+              _buildIibbOverrideChip(
+                label: '1.5%',
+                rate: 1.5,
+                isSelected: (effectiveRate - 1.5).abs() < 0.01,
+              ),
+              _buildIibbOverrideChip(
+                label: '3.0%',
+                rate: 3.0,
+                isSelected: (effectiveRate - 3.0).abs() < 0.01,
+              ),
+              _buildIibbOverrideChip(
+                label: '6.0%',
+                rate: 6.0,
+                isSelected: (effectiveRate - 6.0).abs() < 0.01,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildIibbOverrideChip({
+    required String label,
+    required double rate,
+    required bool isSelected,
+  }) {
+    return InkWell(
+      onTap: () {
+        setState(() {
+          _customIibbRateOverride = rate;
+          // Solo persistir en el carrito activo; una venta pendiente cobrada desde la lista
+          // no debe contaminar el override del carrito en segundo plano.
+          if (widget.saleId == null) {
+            context.read<PosProvider>().setOverrideIibbPerceptionRate(rate);
+          }
+          _syncPaymentsWithGrandTotal();
+        });
+      },
+      borderRadius: BorderRadius.circular(6),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.deepPurple.shade700 : Colors.white,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(
+            color: isSelected ? Colors.deepPurple.shade800 : Colors.deepPurple.shade200,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+            color: isSelected ? Colors.white : Colors.deepPurple.shade900,
+          ),
+        ),
+      ),
     );
   }
 }

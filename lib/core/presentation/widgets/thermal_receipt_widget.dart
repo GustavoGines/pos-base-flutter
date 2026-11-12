@@ -82,6 +82,81 @@ class ThermalReceiptWidget extends StatelessWidget {
     return value.toCurrency();
   }
 
+  double get _effectivePerceptionAmount {
+    if (iibbPerceptionAmount > 0.01) return iibbPerceptionAmount;
+    if (electronicInvoice != null) {
+      final fromInv = double.tryParse((electronicInvoice!['tribute_amount'] ??
+                  electronicInvoice!['iibb_perception_amount'] ??
+                  0)
+              .toString()) ??
+          0.0;
+      if (fromInv > 0.01) return fromInv;
+    }
+    return 0.0;
+  }
+
+  double get _effectivePerceptionRate {
+    if (iibbPerceptionRate > 0.01) return iibbPerceptionRate;
+    if (electronicInvoice != null) {
+      final explicitRate = double.tryParse(
+              (electronicInvoice!['iibb_perception_rate'] ?? 0).toString()) ??
+          0.0;
+      if (explicitRate > 0.01) return explicitRate;
+      final tributes = electronicInvoice!['tributes_breakdown'];
+      if (tributes is List && tributes.isNotEmpty) {
+        final first = tributes.first;
+        if (first is Map) {
+          final alic =
+              double.tryParse((first['Alic'] ?? first['alic'] ?? 0).toString()) ??
+                  0.0;
+          if (alic > 0.01) return alic;
+        }
+      }
+    }
+    return 0.0;
+  }
+
+  String _resolveConceptLabel() {
+    final explicitConcept =
+        int.tryParse(electronicInvoice?['concept']?.toString() ?? '0') ?? 0;
+    if (explicitConcept == 2) return '2 - SERVICIOS';
+    if (explicitConcept == 3) return '3 - PROD. Y SERVICIOS';
+    if (explicitConcept == 1) return '1 - PRODUCTOS';
+
+    bool hasProducts = false;
+    bool hasServices = false;
+    for (final rawItem in items) {
+      bool isSrv = false;
+      if (rawItem is CartItem) {
+        isSrv = rawItem.product.isService;
+      } else if (rawItem is Map<String, dynamic>) {
+        final prod = rawItem['product'] as Map<String, dynamic>? ?? {};
+        isSrv = rawItem['is_service'] == true ||
+            rawItem['is_service'] == 1 ||
+            prod['is_service'] == true ||
+            prod['is_service'] == 1;
+      }
+      if (isSrv) {
+        hasServices = true;
+      } else {
+        hasProducts = true;
+      }
+    }
+    if (hasProducts && hasServices) return '3 - PROD. Y SERVICIOS';
+    if (hasServices && !hasProducts) return '2 - SERVICIOS';
+    return '1 - PRODUCTOS';
+  }
+
+  DateTime _resolveEffectiveDate() {
+    if (dateTime != null) return dateTime!;
+    final rawIssued = electronicInvoice?['issued_at']?.toString().trim() ?? '';
+    if (rawIssued.isNotEmpty) {
+      final parsed = DateTime.tryParse(rawIssued);
+      if (parsed != null) return parsed.toLocal();
+    }
+    return DateTime.now();
+  }
+
   double _calculateTotalSavings() {
     if (discountAmount > 0.01) return discountAmount;
     double savings = 0.0;
@@ -177,7 +252,7 @@ class ThermalReceiptWidget extends StatelessWidget {
     final padding = paperWidth.innerPadding;
     final factor = paperWidth.fontSizeFactor;
     final isFiscal = electronicInvoice != null;
-    final date = dateTime ?? DateTime.now();
+    final date = _resolveEffectiveDate();
     final formattedDate = DateFormat('dd/MM/yyyy HH:mm').format(date);
 
     final iibbStr = (businessSettings?.iibb != null && businessSettings!.iibb!.trim().isNotEmpty)
@@ -280,8 +355,10 @@ class ThermalReceiptWidget extends StatelessWidget {
           const SizedBox(height: 2),
           _buildDivider(),
 
-          // ── 3. Metadatos (Fecha, Cajero, Ticket) ──
+          // ── 3. Metadatos (Fecha, Cajero, Ticket, Concepto) ──
           _buildKeyValueRow('FECHA:', formattedDate, factor: factor),
+          if (isFiscal)
+            _buildKeyValueRow('CONCEPTO:', _resolveConceptLabel(), factor: factor),
           if (saleNumber != null && saleNumber!.isNotEmpty)
             _buildKeyValueRow(
               'TICKET N°:',
@@ -483,7 +560,7 @@ class ThermalReceiptWidget extends StatelessWidget {
     }
     if (hasValidSubtotals) return sumIva;
 
-    final baseTotal = total - shippingCost - iibbPerceptionAmount;
+    final baseTotal = total - shippingCost - _effectivePerceptionAmount;
     if (baseTotal > 0) {
       return baseTotal - (baseTotal / 1.21);
     }
@@ -497,12 +574,7 @@ class ThermalReceiptWidget extends StatelessWidget {
           double.tryParse(invoice['net_amount']?.toString() ?? '') ?? 0.0;
       if (explicitNet > 0) return explicitNet;
     }
-    final perceptionAmt = iibbPerceptionAmount > 0
-        ? iibbPerceptionAmount
-        : (double.tryParse(
-                electronicInvoice?['iibb_perception_amount']?.toString() ??
-                    '') ??
-            0.0);
+    final perceptionAmt = _effectivePerceptionAmount;
     final baseTotal = total - shippingCost - perceptionAmt;
     final containedIva = _calculateContainedIva();
     return (baseTotal - containedIva).clamp(0.0, double.infinity);
@@ -523,103 +595,14 @@ class ThermalReceiptWidget extends StatelessWidget {
     final invoice = electronicInvoice!;
     final voucherLetter = invoice['voucher_letter']?.toString().toUpperCase();
     final vType = int.tryParse(invoice['voucher_type']?.toString() ?? '0') ?? 0;
-    final isFacturaA = voucherLetter == 'A' || vType == 1 || vType == 2 || vType == 3;
     final isFacturaB = voucherLetter == 'B' || vType == 6 || vType == 7 || vType == 8;
-    final netAmount = invoice['net_amount'];
-    final ivaAmount = invoice['iva_amount'];
     final cae = invoice['cae']?.toString() ?? '';
     final caeVto = _formatCaeExpiration(invoice['cae_expiration']);
     final qrData = invoice['qr_data']?.toString();
 
-    double iva21 = 0.0;
-    double iva105 = 0.0;
-    double iva27 = 0.0;
-    final rawBreakdown = invoice['iva_breakdown'];
-    if (isFacturaA && rawBreakdown is List && rawBreakdown.isNotEmpty) {
-      for (final b in rawBreakdown) {
-        if (b is Map) {
-          final rawId = b['Id'] ?? b['id'] ?? b['iva_id'];
-          final id = rawId is int ? rawId : int.tryParse(rawId?.toString() ?? '0') ?? 0;
-          final imp = double.tryParse((b['Importe'] ?? b['importe'] ?? b['amount'] ?? 0).toString()) ?? 0.0;
-          if (id == 4) {
-            iva105 += imp;
-          } else if (id == 5) {
-            iva21 += imp;
-          } else if (id == 6) {
-            iva27 += imp;
-          }
-        }
-      }
-    } else if (isFacturaA && items.isNotEmpty) {
-      for (final rawItem in items) {
-        double sub = 0.0;
-        double rate = 21.0;
-        if (rawItem is CartItem) {
-          sub = rawItem.subtotal;
-          rate = rawItem.product.ivaRate;
-        } else if (rawItem is Map<String, dynamic>) {
-          final q = double.tryParse(rawItem['quantity']?.toString() ?? '1') ?? 1.0;
-          final up = double.tryParse(rawItem['unit_price']?.toString() ?? rawItem['price']?.toString() ?? '0') ?? 0.0;
-          sub = double.tryParse(rawItem['subtotal']?.toString() ?? '') ?? (q * up);
-          rate = double.tryParse((rawItem['iva_rate'] ?? rawItem['product']?['iva_rate'] ?? rawItem['tax_rate'] ?? 21).toString()) ?? 21.0;
-        }
-        if (sub > 0 && rate > 0) {
-          final itemIva = sub - (sub / (1 + (rate / 100.0)));
-          if ((rate - 10.5).abs() < 0.1) {
-            iva105 += itemIva;
-          } else if ((rate - 27.0).abs() < 0.1) {
-            iva27 += itemIva;
-          } else {
-            iva21 += itemIva;
-          }
-        }
-      }
-    }
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Desglose de IVA para Factura A
-        if (isFacturaA && netAmount != null && ivaAmount != null) ...[
-          const SizedBox(height: 4),
-          _buildDivider(),
-          _buildKeyValueRow(
-            'Neto Gravado:',
-            '\$${_formatPrice(double.tryParse(netAmount.toString()) ?? 0.0)}',
-            factor: factor,
-            isBold: true,
-          ),
-          if (iva105 > 0 || iva27 > 0) ...[
-            if (iva21 > 0)
-              _buildKeyValueRow(
-                'IVA 21%:',
-                '\$${_formatPrice(iva21)}',
-                factor: factor,
-                isBold: true,
-              ),
-            if (iva105 > 0)
-              _buildKeyValueRow(
-                'IVA 10.5%:',
-                '\$${_formatPrice(iva105)}',
-                factor: factor,
-                isBold: true,
-              ),
-            if (iva27 > 0)
-              _buildKeyValueRow(
-                'IVA 27%:',
-                '\$${_formatPrice(iva27)}',
-                factor: factor,
-                isBold: true,
-              ),
-          ] else
-            _buildKeyValueRow(
-              'IVA:',
-              '\$${_formatPrice(double.tryParse(ivaAmount.toString()) ?? 0.0)}',
-              factor: factor,
-              isBold: true,
-            ),
-        ],
-
         // Régimen de Transparencia Fiscal al Consumidor (Ley 27.743 / RG 5614) para Factura B
         if (isFacturaB) ...[
           const SizedBox(height: 2),
@@ -773,6 +756,8 @@ class ThermalReceiptWidget extends StatelessWidget {
       bool isSoldByWeight = false;
       double ivaRate = 21.0;
       String discountTag = '';
+      double regularPrice = 0.0;
+      double itemSavings = 0.0;
 
       if (rawItem is CartItem) {
         name = rawItem.effectiveDisplayName;
@@ -782,6 +767,8 @@ class ThermalReceiptWidget extends StatelessWidget {
         subtotal = rawItem.subtotal;
         isSoldByWeight = rawItem.product.isSoldByWeight;
         ivaRate = rawItem.product.ivaRate;
+        regularPrice = rawItem.effectiveRegularUnitPrice;
+        itemSavings = rawItem.discountSavings;
         if (rawItem.hasDiscount) {
           discountTag = rawItem.hasActiveOffer
               ? rawItem.offerBadgeLabel
@@ -823,6 +810,12 @@ class ThermalReceiptWidget extends StatelessWidget {
                     prod['selling_price']?.toString() ??
                     '') ??
             0.0;
+        regularPrice = regPrice > unitPrice + 0.01 ? regPrice : unitPrice;
+        itemSavings = dAmt > 0.01
+            ? dAmt
+            : (regularPrice > unitPrice + 0.01
+                ? (regularPrice - unitPrice) * quantity
+                : 0.0);
         if (dAmt > 0.01 || (regPrice > unitPrice + 0.01)) {
           final lbl = rawItem['discount_label']?.toString() ??
               rawItem['offer_label']?.toString() ??
@@ -870,15 +863,30 @@ class ThermalReceiptWidget extends StatelessWidget {
               ],
               if (discountTag.isNotEmpty) ...[
                 const SizedBox(height: 1),
-                Text(
-                  '($discountTag)',
-                  style: TextStyle(
-                    fontFamily: 'monospace',
-                    fontSize: 9.2 * factor,
-                    fontStyle: FontStyle.italic,
-                    color: Colors.black87,
-                    fontWeight: FontWeight.w600,
-                  ),
+                Wrap(
+                  spacing: 4,
+                  children: [
+                    Text(
+                      '($discountTag)',
+                      style: TextStyle(
+                        fontFamily: 'monospace',
+                        fontSize: 9.0 * factor,
+                        fontStyle: FontStyle.italic,
+                        color: Colors.black87,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    if (regularPrice > unitPrice + 0.01 && itemSavings > 0.01)
+                      Text(
+                        'Lista: \$${_formatPrice(regularPrice)} (-\$${_formatPrice(itemSavings)})',
+                        style: TextStyle(
+                          fontFamily: 'monospace',
+                          fontSize: 8.8 * factor,
+                          fontStyle: FontStyle.italic,
+                          color: Colors.black87,
+                        ),
+                      ),
+                  ],
                 ),
               ],
               const SizedBox(height: 1.5),
@@ -933,16 +941,8 @@ class ThermalReceiptWidget extends StatelessWidget {
   // ─────────────────────────────────────────────────────────────────────────
 
   Widget _buildFinancialSummary(double factor) {
-    final perceptionAmt = iibbPerceptionAmount > 0
-        ? iibbPerceptionAmount
-        : (double.tryParse(
-                electronicInvoice?['iibb_perception_amount']?.toString() ?? '') ??
-            0.0);
-    final perceptionRt = iibbPerceptionRate > 0
-        ? iibbPerceptionRate
-        : (double.tryParse(
-                electronicInvoice?['iibb_perception_rate']?.toString() ?? '') ??
-            0.0);
+    final perceptionAmt = _effectivePerceptionAmount;
+    final perceptionRt = _effectivePerceptionRate;
     final hasPerception = perceptionAmt > 0.01;
 
     final totalSavings = _calculateTotalSavings();
@@ -952,11 +952,83 @@ class ThermalReceiptWidget extends StatelessWidget {
     final hasShipping = shippingCost > 0.01;
     final hasMultiplePayments = payments.length > 1;
 
+    final invoice = electronicInvoice;
+    final voucherLetter = invoice?['voucher_letter']?.toString().toUpperCase();
+    final vType = int.tryParse(invoice?['voucher_type']?.toString() ?? '0') ?? 0;
+    final isFacturaA = invoice != null &&
+        (voucherLetter == 'A' || vType == 1 || vType == 2 || vType == 3);
+    final netAmountRaw = invoice?['net_amount'];
+    final ivaAmountRaw = invoice?['iva_amount'];
+    final hasFacturaABreakdown =
+        isFacturaA && netAmountRaw != null && ivaAmountRaw != null;
+
+    double iva21 = 0.0;
+    double iva105 = 0.0;
+    double iva27 = 0.0;
+    if (hasFacturaABreakdown) {
+      final rawBreakdown = invoice['iva_breakdown'];
+      if (rawBreakdown is List && rawBreakdown.isNotEmpty) {
+        for (final b in rawBreakdown) {
+          if (b is Map) {
+            final rawId = b['Id'] ?? b['id'] ?? b['iva_id'];
+            final id =
+                rawId is int ? rawId : int.tryParse(rawId?.toString() ?? '0') ?? 0;
+            final imp = double.tryParse(
+                    (b['Importe'] ?? b['importe'] ?? b['amount'] ?? 0)
+                        .toString()) ??
+                0.0;
+            if (id == 4) {
+              iva105 += imp;
+            } else if (id == 5) {
+              iva21 += imp;
+            } else if (id == 6) {
+              iva27 += imp;
+            }
+          }
+        }
+      } else if (items.isNotEmpty) {
+        for (final rawItem in items) {
+          double sub = 0.0;
+          double rate = 21.0;
+          if (rawItem is CartItem) {
+            sub = rawItem.subtotal;
+            rate = rawItem.product.ivaRate;
+          } else if (rawItem is Map<String, dynamic>) {
+            final q =
+                double.tryParse(rawItem['quantity']?.toString() ?? '1') ?? 1.0;
+            final up = double.tryParse(rawItem['unit_price']?.toString() ??
+                    rawItem['price']?.toString() ??
+                    '0') ??
+                0.0;
+            sub = double.tryParse(rawItem['subtotal']?.toString() ?? '') ??
+                (q * up);
+            rate = double.tryParse((rawItem['iva_rate'] ??
+                        rawItem['product']?['iva_rate'] ??
+                        rawItem['tax_rate'] ??
+                        21)
+                    .toString()) ??
+                21.0;
+          }
+          if (sub > 0 && rate > 0) {
+            final itemIva = sub - (sub / (1 + (rate / 100.0)));
+            if ((rate - 10.5).abs() < 0.1) {
+              iva105 += itemIva;
+            } else if ((rate - 27.0).abs() < 0.1) {
+              iva27 += itemIva;
+            } else {
+              iva21 += itemIva;
+            }
+          }
+        }
+      }
+    }
+
     final isComplexSummary = hasMultiplePayments ||
         hasSurcharge ||
         hasShipping ||
         hasPerception ||
-        hasSavings;
+        hasSavings ||
+        hasFacturaABreakdown;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -976,23 +1048,74 @@ class ThermalReceiptWidget extends StatelessWidget {
               factor: factor,
               isBold: true,
             ),
-          ] else ...[
+          ] else if (!hasFacturaABreakdown) ...[
             _buildKeyValueRow(
               'SUBTOTAL:',
               '\$${_formatPrice(total - shippingCost - perceptionAmt)}',
               factor: factor,
             ),
           ],
+          if (hasFacturaABreakdown) ...[
+            _buildKeyValueRow(
+              'Neto Gravado:',
+              '\$${_formatPrice(double.tryParse(netAmountRaw.toString()) ?? 0.0)}',
+              factor: factor,
+              isBold: true,
+            ),
+            if (iva105 > 0 || iva27 > 0) ...[
+              if (iva21 > 0)
+                _buildKeyValueRow(
+                  'IVA 21%:',
+                  '\$${_formatPrice(iva21)}',
+                  factor: factor,
+                  isBold: true,
+                ),
+              if (iva105 > 0)
+                _buildKeyValueRow(
+                  'IVA 10.5%:',
+                  '\$${_formatPrice(iva105)}',
+                  factor: factor,
+                  isBold: true,
+                ),
+              if (iva27 > 0)
+                _buildKeyValueRow(
+                  'IVA 27%:',
+                  '\$${_formatPrice(iva27)}',
+                  factor: factor,
+                  isBold: true,
+                ),
+            ] else
+              _buildKeyValueRow(
+                'IVA 21%:',
+                '\$${_formatPrice(double.tryParse(ivaAmountRaw.toString()) ?? 0.0)}',
+                factor: factor,
+                isBold: true,
+              ),
+            if ((double.tryParse(invoice['exempt_amount']?.toString() ?? '0') ??
+                    0.0) >
+                0)
+              _buildKeyValueRow(
+                'Importe Exento:',
+                '\$${_formatPrice(double.tryParse(invoice['exempt_amount'].toString()) ?? 0.0)}',
+                factor: factor,
+                isBold: true,
+              ),
+            if (hasPerception || businessSettings?.isIibbPerceptionAgent == true)
+              _buildKeyValueRow(
+                'PERCEPCION IIBB (${hasPerception && perceptionRt > 0 ? perceptionRt.toStringAsFixed(1) : "0.0"}%):',
+                '\$${_formatPrice(perceptionAmt)}',
+                factor: factor,
+              ),
+          ] else if (hasPerception)
+            _buildKeyValueRow(
+              'PERCEPCION IIBB (${perceptionRt.toStringAsFixed(1)}%):',
+              '\$${_formatPrice(perceptionAmt)}',
+              factor: factor,
+            ),
           if (hasShipping)
             _buildKeyValueRow(
               'FLETE / ENVIO:',
               '\$${_formatPrice(shippingCost)}',
-              factor: factor,
-            ),
-          if (hasPerception)
-            _buildKeyValueRow(
-              'PERCEPCION IIBB (${perceptionRt.toStringAsFixed(1)}%):',
-              '\$${_formatPrice(perceptionAmt)}',
               factor: factor,
             ),
           if (hasSurcharge)
@@ -1001,6 +1124,14 @@ class ThermalReceiptWidget extends StatelessWidget {
               '\$${_formatPrice(surchargeAmount)}',
               factor: factor,
             ),
+          _buildDivider(),
+          _buildKeyValueRow(
+            'TOTAL COBRADO:',
+            '\$${_formatPrice(grandTotal)}',
+            factor: factor,
+            isBold: true,
+            fontSize: 13.0,
+          ),
           if (payments.isNotEmpty) ...[
             _buildDivider(),
             for (final p in payments)
@@ -1010,14 +1141,6 @@ class ThermalReceiptWidget extends StatelessWidget {
                 factor: factor,
               ),
           ],
-          _buildDivider(),
-          _buildKeyValueRow(
-            'TOTAL COBRADO:',
-            '\$${_formatPrice(grandTotal)}',
-            factor: factor,
-            isBold: true,
-            fontSize: 13.0,
-          ),
         ] else ...[
           _buildKeyValueRow(
             'TOTAL GENERAL:',
