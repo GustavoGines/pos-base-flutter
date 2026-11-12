@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Fondo de marca Caja4U: coincide con el fondo de la animación de inicio (splash_caja4u.webp) -->
+    <color name="caja4u_splash_background">#121C33</color>
+</resources>

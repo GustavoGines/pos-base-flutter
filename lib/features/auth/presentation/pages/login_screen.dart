@@ -15,6 +15,7 @@ import '../../../updater/data/models/update_info.dart';
 import '../../../updater/data/services/mobile_update_service.dart';
 import '../../../updater/presentation/widgets/mobile_update_dialog.dart';
 import '../../../../core/config/app_config.dart';
+import '../../../../core/presentation/widgets/caja4u_startup_splash.dart';
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -38,6 +39,10 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
   UpdateInfo? _backendUpdate;
   String _appVersion = '';
   bool _updateCheckCompleted = false;
+  bool _waitingForSplash = false;
+  final GlobalKey _logoSlotKey = GlobalKey();
+  double? _measuredStartDy;
+  Size? _lastMeasuredViewport;
 
   @override
   void initState() {
@@ -59,16 +64,51 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       parent: _bootTransitionCtrl,
       curve: const Interval(0.28, 1.0, curve: Curves.easeOutCubic),
     );
-    _bootTransitionCtrl.forward();
+
+    _waitingForSplash = Caja4uStartupSplash.isOverlayActiveNotifier.value;
+    if (_waitingForSplash) {
+      Caja4uStartupSplash.isOverlayActiveNotifier
+          .addListener(_onSplashOverlayChanged);
+    } else {
+      _bootTransitionCtrl.forward();
+    }
 
     // Bulletproof #2: Esperar que el primer frame esté completamente
     // renderizado antes de pedir el foco. En Windows, autofocus puede
     // ser silenciosamente ignorado si la ventana aún no tiene el foco
     // del SO en el primer build tick.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _keyboardFocus.requestFocus();
+      _measureLogoStartDy();
+      if (mounted && !_waitingForSplash) _keyboardFocus.requestFocus();
       _checkForUpdates(); // Chequeo pasivo OTA
     });
+  }
+
+  void _measureLogoStartDy() {
+    if (!mounted) return;
+    final RenderObject? ro = _logoSlotKey.currentContext?.findRenderObject();
+    if (ro is! RenderBox || !ro.hasSize) return;
+    final double screenCenterY = MediaQuery.sizeOf(context).height / 2;
+    final double logoRestCenterY =
+        ro.localToGlobal(ro.size.center(Offset.zero)).dy;
+    final double dy = screenCenterY - logoRestCenterY;
+    if (_measuredStartDy == null || (_measuredStartDy! - dy).abs() > 0.5) {
+      setState(() => _measuredStartDy = dy);
+    }
+  }
+
+  void _onSplashOverlayChanged() {
+    if (!Caja4uStartupSplash.isOverlayActiveNotifier.value && _waitingForSplash) {
+      _waitingForSplash = false;
+      Caja4uStartupSplash.isOverlayActiveNotifier
+          .removeListener(_onSplashOverlayChanged);
+      if (!mounted) return;
+      _measureLogoStartDy();
+      _bootTransitionCtrl.forward();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _keyboardFocus.requestFocus();
+      });
+    }
   }
 
   Future<void> _checkForUpdates() async {
@@ -153,6 +193,8 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
 
   @override
   void dispose() {
+    Caja4uStartupSplash.isOverlayActiveNotifier
+        .removeListener(_onSplashOverlayChanged);
     _bootTransitionCtrl.dispose();
     _keyboardFocus.dispose();
     super.dispose();
@@ -319,7 +361,9 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
 
           if (!mounted) return;
 
-          _isNavigating = true;
+          // Actualizamos la UI de inmediato para mostrar los 4 puntos en verde
+          // antes de iniciar la transición de ruta hacia /home.
+          setState(() => _isNavigating = true);
 
           // Encolamos la navegación al final del frame para que el Navigator 
           // no colapse ni arroje !_debugLocked si hay builds en curso o si 
@@ -466,6 +510,17 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<AuthProvider>();
+    final Size viewport = MediaQuery.sizeOf(context);
+    if (_lastMeasuredViewport != viewport) {
+      _lastMeasuredViewport = viewport;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _measureLogoStartDy());
+    }
+    final double splashSize = Caja4uStartupSplash.logoSizeForViewport(viewport);
+    // Iguala al píxel el tamaño de la marca del WebP animado (640x640, marca ~51.25%)
+    // con caja4u_logo_full.png (184x156 base, marca ~66.50%).
+    final double startScale = splashSize * 0.0041885;
+    final double fallbackDy = (viewport.height / 2 - 126.0).clamp(0.0, 319.0);
+    final double startDy = _measuredStartDy ?? fallbackDy;
 
     // ── ARQUITECTURA BULLETPROOF ──────────────────────────────────────
     // #1 autofocus: true  → pide foco al montar el widget
@@ -479,7 +534,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
         autofocus: true, // Bulletproof #1
         onKeyEvent: _handleKeyEvent,
         child: Scaffold(
-          backgroundColor: const Color(0xFF1E2D45),
+          backgroundColor: Caja4uStartupSplash.backgroundColor,
           body: Stack(
             children: [
 // Remove this Positioned block entirely from here, it will be placed at the end of the Stack
@@ -515,41 +570,67 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   const SizedBox(height: 8),
-                                  Transform.translate(
-                                    offset: Offset(0, 185 * (1.0 - logoT)),
-                                    child: Transform.scale(
-                                      scale: 1.08 - (0.08 * logoT),
-                                      child: Container(
-                                        decoration: BoxDecoration(
-                                          borderRadius: BorderRadius.circular(22),
-                                          boxShadow: [
-                                            BoxShadow(
-                                              color: const Color(0xFF10B981)
-                                                  .withValues(alpha: 0.20 * (1.0 - logoT)),
-                                              blurRadius: 32 * (1.0 - logoT),
-                                              spreadRadius: 2 * (1.0 - logoT),
-                                            ),
-                                            BoxShadow(
-                                              color: const Color(0xFF121A2D)
-                                                  .withValues(alpha: 0.25),
-                                              blurRadius: 16,
-                                              offset: const Offset(0, 8),
-                                            ),
-                                          ],
-                                        ),
-                                        child: ClipRRect(
-                                          borderRadius: BorderRadius.circular(22),
-                                          child: Image.asset(
-                                            'assets/caja4u_logo_full.png',
-                                            width: 184,
-                                            height: 156,
-                                            fit: BoxFit.cover,
-                                            errorBuilder: (_, __, ___) => const Icon(
-                                              Icons.point_of_sale_rounded,
-                                              size: 64,
-                                              color: Color(0xFF3B82F6),
-                                            ),
+                                  KeyedSubtree(
+                                    key: _logoSlotKey,
+                                    child: Transform.translate(
+                                      offset: Offset(0, startDy * (1.0 - logoT)),
+                                      child: Transform.scale(
+                                        scale: startScale - ((startScale - 1.0) * logoT),
+                                        child: Container(
+                                          decoration: BoxDecoration(
+                                            borderRadius:
+                                                BorderRadius.circular(22 * logoT),
+                                            boxShadow: [
+                                              BoxShadow(
+                                                color: const Color(0xFF10B981).withValues(
+                                                    alpha: 0.18 * logoT * (1.0 - logoT) * 4),
+                                                blurRadius: 28 * cardT,
+                                                spreadRadius: 1.5 * cardT,
+                                              ),
+                                              BoxShadow(
+                                                color: const Color(0xFF121A2D)
+                                                    .withValues(alpha: 0.25 * cardT),
+                                                blurRadius: 16 * cardT,
+                                                offset: Offset(0, 8 * cardT),
+                                              ),
+                                            ],
                                           ),
+                                          child: () {
+                                            Widget logoImage = ClipRRect(
+                                              borderRadius:
+                                                  BorderRadius.circular(22 * logoT),
+                                              child: Image.asset(
+                                                'assets/caja4u_logo_full.png',
+                                                width: 184,
+                                                height: 156,
+                                                fit: BoxFit.cover,
+                                                errorBuilder: (_, __, ___) => const Icon(
+                                                  Icons.point_of_sale_rounded,
+                                                  size: 64,
+                                                  color: Color(0xFF3B82F6),
+                                                ),
+                                              ),
+                                            );
+                                            // Al inicio (logoT=0) suaviza las esquinas del PNG sobre #121C33;
+                                            // al subir hacia la tarjeta blanca, descubre el borde nítido.
+                                            if (logoT < 0.35) {
+                                              final double t = (logoT / 0.35).clamp(0.0, 1.0);
+                                              logoImage = ShaderMask(
+                                                blendMode: BlendMode.dstIn,
+                                                shaderCallback: (bounds) => RadialGradient(
+                                                  radius: 0.72 + (0.60 * t),
+                                                  colors: const [
+                                                    Colors.white,
+                                                    Colors.white,
+                                                    Colors.transparent,
+                                                  ],
+                                                  stops: [0.0, 0.74 + (0.26 * t), 1.0],
+                                                ).createShader(bounds),
+                                                child: logoImage,
+                                              );
+                                            }
+                                            return logoImage;
+                                          }(),
                                         ),
                                       ),
                                     ),
@@ -569,30 +650,74 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                         // ── Indicadores de PIN ────────────────────────
                         SizedBox(
                           height: 24,
-                          child: (provider.isLoading || _isSubmitting || _isNavigating)
-                              ? const SizedBox(
-                                  width: 24, height: 24,
-                                  child: CircularProgressIndicator(strokeWidth: 3))
-                              : Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: List.generate(_pinLength, (index) {
-                                    final isActive = index < _pin.length;
-                                    return Container(
-                                      margin: const EdgeInsets.symmetric(horizontal: 8),
-                                      width: 24, height: 24,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            mainAxisSize: MainAxisSize.min,
+                            children: List.generate(_pinLength, (index) {
+                              final isAccepted = _isNavigating;
+                              final isActive = isAccepted || index < _pin.length;
+                              final activeColor = isAccepted
+                                  ? const Color(0xFF10B981)
+                                  : const Color(0xFF3B82F6);
+                              final dotSize = isActive ? 24.0 : 20.0;
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 8),
+                                child: SizedBox(
+                                  width: 24,
+                                  height: 24,
+                                  child: Center(
+                                    child: AnimatedContainer(
+                                      duration: const Duration(milliseconds: 150),
+                                      curve: Curves.easeOutCubic,
+                                      width: dotSize,
+                                      height: dotSize,
                                       decoration: BoxDecoration(
                                         shape: BoxShape.circle,
-                                        color: isActive ? const Color(0xFF3B82F6) : Colors.grey.shade200,
+                                        color: isActive ? activeColor : Colors.grey.shade200,
                                         border: Border.all(
-                                          color: isActive ? const Color(0xFF3B82F6) : Colors.grey.shade400,
+                                          color: isActive ? activeColor : Colors.grey.shade400,
                                           width: 2,
                                         ),
+                                        boxShadow: isActive
+                                            ? [
+                                                BoxShadow(
+                                                  color: activeColor.withAlpha(isAccepted ? 90 : 56),
+                                                  blurRadius: isAccepted ? 10 : 6,
+                                                  spreadRadius: isAccepted ? 1 : 0,
+                                                ),
+                                              ]
+                                            : null,
                                       ),
-                                    );
-                                  }),
+                                    ),
+                                  ),
                                 ),
+                              );
+                            }),
+                          ),
                         ),
-                        const SizedBox(height: 16),
+                        SizedBox(
+                          height: 16,
+                          child: Center(
+                            child: SizedBox(
+                              width: 128,
+                              height: 3,
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(999),
+                                child: _isNavigating
+                                    ? const ColoredBox(color: Color(0xFF10B981))
+                                    : (provider.isLoading || _isSubmitting)
+                                        ? const LinearProgressIndicator(
+                                            minHeight: 3,
+                                            backgroundColor: Color(0xFFE2E8F0),
+                                            valueColor: AlwaysStoppedAnimation<Color>(
+                                              Color(0xFF3B82F6),
+                                            ),
+                                          )
+                                        : const SizedBox.shrink(),
+                              ),
+                            ),
+                          ),
+                        ),
 
                         // ── Mensaje de error ──────────────────────────
                         if (_errorDetail != null)

@@ -30,6 +30,7 @@ import 'core/config/app_config.dart';
 import 'features/updater/data/services/ota_startup_checker.dart';
 
 import 'core/presentation/widgets/license_guard.dart';
+import 'core/presentation/widgets/caja4u_startup_splash.dart';
 import 'core/presentation/widgets/plan_upgrade_dialog.dart';
 import 'core/network/api_client.dart';
 import 'core/utils/receipt_printer_service.dart';
@@ -121,7 +122,26 @@ class FadePageRouteTransitionsBuilder extends PageTransitionsBuilder {
     Animation<double> secondaryAnimation,
     Widget child,
   ) {
-    return FadeTransition(opacity: animation, child: child);
+    final Animation<double> enterCurve = animation.drive(
+      CurveTween(curve: Curves.easeOutCubic),
+    );
+    final Animation<double> exitCurve = secondaryAnimation.drive(
+      CurveTween(curve: Curves.easeInOutCubic),
+    );
+
+    return ScaleTransition(
+      scale: exitCurve.drive(Tween<double>(begin: 1.0, end: 0.97)),
+      child: FadeTransition(
+        opacity: exitCurve.drive(Tween<double>(begin: 1.0, end: 0.72)),
+        child: FadeTransition(
+          opacity: enterCurve,
+          child: ScaleTransition(
+            scale: enterCurve.drive(Tween<double>(begin: 0.985, end: 1.0)),
+            child: child,
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -400,6 +420,10 @@ ie4uinit.exe -show
 /// y mostrar una pantalla de recuperación en lugar de una ventana blanca vacía.
 final ValueNotifier<String?> _globalFatalErrorNotifier = ValueNotifier<String?>(null);
 
+/// Se pone en `true` cuando [MainApp] terminó su carga inicial (con éxito o con error).
+/// La pantalla de inicio animada espera esta señal para retirarse.
+final ValueNotifier<bool> _startupReadyNotifier = ValueNotifier<bool>(false);
+
 void main() async {
   // CRÍTICO: Inicialización obligatoria para assets y plugins en desktop
   WidgetsFlutterBinding.ensureInitialized();
@@ -438,7 +462,7 @@ void main() async {
 
   ErrorWidget.builder = (FlutterErrorDetails details) {
     return Material(
-      color: const Color(0xFF1E2D45),
+      color: Caja4uStartupSplash.backgroundColor,
       child: Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -485,16 +509,20 @@ class _AppBootstrapState extends State<AppBootstrap> {
   String? _bootstrapError;
   bool _isBootstrapping = true;
   bool _windowInitialized = false;
+  bool _splashDismissed = false;
 
   @override
   void initState() {
     super.initState();
+    _startupReadyNotifier.value = false;
+    Caja4uStartupSplash.isOverlayActiveNotifier.value = true;
     _globalFatalErrorNotifier.addListener(_onGlobalFatalError);
     _runBootstrap();
   }
 
   @override
   void dispose() {
+    Caja4uStartupSplash.isOverlayActiveNotifier.value = false;
     _globalFatalErrorNotifier.removeListener(_onGlobalFatalError);
     super.dispose();
   }
@@ -832,6 +860,43 @@ class _AppBootstrapState extends State<AppBootstrap> {
 
   @override
   Widget build(BuildContext context) {
+    // La animación de inicio se monta como capa superior sobre el arranque real:
+    // la carga sigue en paralelo debajo y la capa se retira con un fundido.
+    // IMPORTANTE: la estructura (Directionality > Stack > contenido) se mantiene fija
+    // aunque la capa se retire, para que Flutter NO vuelva a montar la app
+    // (lo que repetiría toda la inicialización y perdería el estado).
+    return Directionality(
+      textDirection: TextDirection.ltr,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          KeyedSubtree(
+            key: const ValueKey('caja4u_app_content'),
+            child: IgnorePointer(
+              ignoring: !_splashDismissed,
+              child: FocusScope(
+                canRequestFocus: _splashDismissed,
+                child: _buildContent(),
+              ),
+            ),
+          ),
+          if (!_splashDismissed)
+            ValueListenableBuilder<bool>(
+              valueListenable: _startupReadyNotifier,
+              builder: (context, mainAppReady, _) => Caja4uStartupSplash(
+                isReady: mainAppReady || _bootstrapError != null,
+                onDismissed: () {
+                  if (mounted) setState(() => _splashDismissed = true);
+                  Caja4uStartupSplash.isOverlayActiveNotifier.value = false;
+                },
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildContent() {
     if (_initializedApp != null && _bootstrapError == null) {
       return _initializedApp!;
     }
@@ -840,7 +905,7 @@ class _AppBootstrapState extends State<AppBootstrap> {
       debugShowCheckedModeBanner: false,
       title: 'Caja4U  •  by Dev4U',
       home: Scaffold(
-        backgroundColor: const Color(0xFF1E2D45),
+        backgroundColor: Caja4uStartupSplash.backgroundColor,
         body: Center(
           child: Container(
             constraints: const BoxConstraints(maxWidth: 440),
@@ -1192,6 +1257,7 @@ class _MainAppState extends State<MainApp> {
         _initError =
             'No se pudo conectar al servidor ($currentUrl). Verifique la IP o su conexión de red.';
       });
+      _startupReadyNotifier.value = true;
 
       // Redirigir / abrir inmediatamente el diálogo de configuración de red/servidor
       // para que el usuario pueda ingresar la IP correcta sin congelar la pantalla.
@@ -1223,6 +1289,7 @@ class _MainAppState extends State<MainApp> {
         _isInitializing = false;
         _initError = null;
       });
+      _startupReadyNotifier.value = true;
 
       // ── CHECK DE RESULTADO OTA (Smart Chaining) ──
       // Si el updater corrió mientras la app estaba cerrada, mostrar el
@@ -1356,7 +1423,7 @@ class _MainAppState extends State<MainApp> {
       debugShowCheckedModeBanner: false,
       home: Builder(
         builder: (innerContext) => Scaffold(
-          backgroundColor: const Color(0xFF1E2D45),
+          backgroundColor: Caja4uStartupSplash.backgroundColor,
           body: Center(
             child: Container(
               constraints: const BoxConstraints(maxWidth: 440),
@@ -1620,79 +1687,58 @@ class _MainAppState extends State<MainApp> {
             TargetPlatform.windows: FadePageRouteTransitionsBuilder(),
             TargetPlatform.linux: FadePageRouteTransitionsBuilder(),
             TargetPlatform.macOS: FadePageRouteTransitionsBuilder(),
+            TargetPlatform.android: FadePageRouteTransitionsBuilder(),
+            TargetPlatform.iOS: FadePageRouteTransitionsBuilder(),
           },
         ),
       ),
       initialRoute: '/login',
+      onGenerateRoute: (settings) {
+        if (settings.name != '/home') return null;
+        return PageRouteBuilder<void>(
+          settings: settings,
+          transitionDuration: const Duration(milliseconds: 460),
+          reverseTransitionDuration: const Duration(milliseconds: 320),
+          pageBuilder: (_, __, ___) => _buildHomeScreen(),
+          transitionsBuilder: (_, animation, secondaryAnimation, child) {
+            // Deja completar el primer layout pesado del POS mientras la opacidad
+            // está en 0 para que el fundido corra fluido sin saltos ni destellos.
+            final CurvedAnimation enterFade = CurvedAnimation(
+              parent: animation,
+              curve: const Interval(0.16, 1.0, curve: Curves.easeOutCubic),
+            );
+            final CurvedAnimation enterMotion = CurvedAnimation(
+              parent: animation,
+              curve: const Interval(0.10, 1.0, curve: Curves.easeOutCubic),
+            );
+            final CurvedAnimation exitCurve = CurvedAnimation(
+              parent: secondaryAnimation,
+              curve: Curves.easeInOutCubic,
+            );
+
+            return ScaleTransition(
+              scale: exitCurve.drive(Tween<double>(begin: 1.0, end: 0.97)),
+              child: FadeTransition(
+                opacity: enterFade,
+                child: SlideTransition(
+                  position: enterMotion.drive(
+                    Tween<Offset>(
+                      begin: const Offset(0, 0.018),
+                      end: Offset.zero,
+                    ),
+                  ),
+                  child: ScaleTransition(
+                    scale: enterMotion.drive(Tween<double>(begin: 0.978, end: 1.0)),
+                    child: child,
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
       routes: {
         '/login': (context) => const LoginScreen(),
-        '/home': (context) => Consumer<CashRegisterProvider>(
-              builder: (ctx, cashProv, _) {
-                if (AppConfig.isMobile) {
-                  return const MobileMenuScreen();
-                }
-                final shift = cashProv.currentShift;
-                final bool open = shift != null && shift.isOpen;
-                if (open) {
-                  return const PosScreen();
-                } else {
-                  return CashRegisterScreen(
-                    isLoading: cashProv.isLoading,
-                    errorMessage: cashProv.errorMessage,
-                    onOpenShift: (amount, registerId) async {
-                      final userId =
-                          ctx.read<AuthProvider>().currentUser?['id'] ?? 1;
-
-                      final success =
-                          await cashProv.openShift(amount, userId, registerId);
-                      if (success) {
-                        navigatorKey.currentState?.pushReplacementNamed('/pos');
-                      } else {
-                        final rawError = cashProv.errorMessage ?? '';
-                        final msg = rawError.replaceAll('Exception: ', '');
-
-                        // SESSION_EXPIRED: manejado globalmente por ApiClient.
-                        if (rawError.contains('SESSION_EXPIRED') ||
-                            rawError.contains('otro dispositivo')) {
-                          return;
-                        }
-
-                        // Detectar error de límite de plan -> mostrar modal de upselling
-                        final isPlanLimitError =
-                            rawError.contains('Límite de cajas') ||
-                                rawError.contains('plan a PRO') ||
-                                rawError.contains('plan a PREMIUM') ||
-                                rawError.contains('Actualice su plan');
-
-                        if (isPlanLimitError && ctx.mounted) {
-                          PlanUpgradeDialog.show(
-                            ctx,
-                            featureName: 'Múltiples Cajas Simultáneas',
-                            description:
-                                'Su plan actual permite 1 caja activa a la vez. '
-                                'Para operar con varias terminales simultáneamente '
-                                'es necesario el Plan Premium.\n\n'
-                                'Comuníquese con soporte para ampliar su licencia.',
-                            onNavigateToSettings: () => navigatorKey
-                                .currentState
-                                ?.pushNamed('/settings'),
-                          );
-                        } else if (ctx.mounted) {
-                          ScaffoldMessenger.of(ctx).showSnackBar(
-                            SnackBar(
-                                content: Text(msg),
-                                backgroundColor: Colors.red),
-                          );
-                        }
-                      }
-                    },
-                    onContinueToPos: () {
-                      navigatorKey.currentState?.pushReplacementNamed('/pos');
-                    },
-                  );
-                }
-              },
-            ),
         '/pos': (context) => const PosScreen(),
         '/close-shift': (context) => const CloseShiftScreen(),
         '/catalog': (context) => const PermissionGuard(
@@ -1782,6 +1828,68 @@ class _MainAppState extends State<MainApp> {
               permissionKey: AppPermissions.viewReports,
               child: MobileDashboardScreen(),
             ),
+      },
+    );
+  }
+
+  Widget _buildHomeScreen() {
+    return Consumer<CashRegisterProvider>(
+      builder: (ctx, cashProv, _) {
+        if (AppConfig.isMobile) {
+          return const MobileMenuScreen();
+        }
+        final shift = cashProv.currentShift;
+        final bool open = shift != null && shift.isOpen;
+        if (open) {
+          return const PosScreen();
+        }
+        return CashRegisterScreen(
+          isLoading: cashProv.isLoading,
+          errorMessage: cashProv.errorMessage,
+          onOpenShift: (amount, registerId) async {
+            final userId = ctx.read<AuthProvider>().currentUser?['id'] ?? 1;
+
+            final success =
+                await cashProv.openShift(amount, userId, registerId);
+            if (success) {
+              navigatorKey.currentState?.pushReplacementNamed('/pos');
+            } else {
+              final rawError = cashProv.errorMessage ?? '';
+              final msg = rawError.replaceAll('Exception: ', '');
+
+              if (rawError.contains('SESSION_EXPIRED') ||
+                  rawError.contains('otro dispositivo')) {
+                return;
+              }
+
+              final isPlanLimitError = rawError.contains('Límite de cajas') ||
+                  rawError.contains('plan a PRO') ||
+                  rawError.contains('plan a PREMIUM') ||
+                  rawError.contains('Actualice su plan');
+
+              if (isPlanLimitError && ctx.mounted) {
+                PlanUpgradeDialog.show(
+                  ctx,
+                  featureName: 'Múltiples Cajas Simultáneas',
+                  description:
+                      'Su plan actual permite 1 caja activa a la vez. '
+                      'Para operar con varias terminales simultáneamente '
+                      'es necesario el Plan Premium.\n\n'
+                      'Comuníquese con soporte para ampliar su licencia.',
+                  onNavigateToSettings: () =>
+                      navigatorKey.currentState?.pushNamed('/settings'),
+                );
+              } else if (ctx.mounted) {
+                ScaffoldMessenger.of(ctx).showSnackBar(
+                  SnackBar(content: Text(msg), backgroundColor: Colors.red),
+                );
+              }
+            }
+          },
+          onContinueToPos: () {
+            navigatorKey.currentState?.pushReplacementNamed('/pos');
+          },
+        );
       },
     );
   }
