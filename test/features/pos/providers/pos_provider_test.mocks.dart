@@ -669,6 +669,7 @@ class MockReceiptPrinterService extends _i1.Mock
     String? vendorName,
     String? dispatcherName,
     bool? isReprint = false,
+    String? paperSizeOverride,
   }) =>
       (super.noSuchMethod(
         Invocation.method(
@@ -683,6 +684,7 @@ class MockReceiptPrinterService extends _i1.Mock
             #vendorName: vendorName,
             #dispatcherName: dispatcherName,
             #isReprint: isReprint,
+            #paperSizeOverride: paperSizeOverride,
           },
         ),
         returnValue: _i6.Future<void>.value(),
@@ -712,6 +714,7 @@ class MockReceiptPrinterService extends _i1.Mock
     String? receiptNumber,
     String? cashierName,
     bool? openDrawer = true,
+    dynamic paperSizeOverride,
   }) =>
       (super.noSuchMethod(
         Invocation.method(
@@ -729,6 +732,7 @@ class MockReceiptPrinterService extends _i1.Mock
             #receiptNumber: receiptNumber,
             #cashierName: cashierName,
             #openDrawer: openDrawer,
+            #paperSizeOverride: paperSizeOverride,
           },
         ),
         returnValue: _i6.Future<void>.value(),
@@ -742,6 +746,7 @@ class MockReceiptPrinterService extends _i1.Mock
     required _i13.BusinessSettings? settings,
     required _i11.LocalTerminalProvider? localTerminal,
     String? supplierCuit,
+    dynamic paperSizeOverride,
   }) =>
       (super.noSuchMethod(
         Invocation.method(
@@ -753,6 +758,7 @@ class MockReceiptPrinterService extends _i1.Mock
             #settings: settings,
             #localTerminal: localTerminal,
             #supplierCuit: supplierCuit,
+            #paperSizeOverride: paperSizeOverride,
           },
         ),
         returnValue: _i6.Future<void>.value(),
@@ -774,6 +780,7 @@ class MockReceiptPrinterService extends _i1.Mock
     String? receiptNumber,
     String? cashierName,
     bool? openDrawer = true,
+    dynamic paperSizeOverride,
   }) =>
       (super.noSuchMethod(
         Invocation.method(
@@ -793,6 +800,7 @@ class MockReceiptPrinterService extends _i1.Mock
             #receiptNumber: receiptNumber,
             #cashierName: cashierName,
             #openDrawer: openDrawer,
+            #paperSizeOverride: paperSizeOverride,
           },
         ),
         returnValue: _i6.Future<void>.value(),
